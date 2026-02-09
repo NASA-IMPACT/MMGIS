@@ -1,6 +1,7 @@
 # MMGIS Plugin Communication Model Research
 
 **Date**: February 2026
+
 **Purpose**: Trade study for selecting a communication model for MMGIS's enterprise plugin framework and marketplace
 
 ---
@@ -752,7 +753,7 @@ export const toolModules = {
 
 Based on MMGIS's current architecture, web-based nature, enterprise marketplace goals, and **preference for simplicity and consistency**, we recommend a **single unified communication pattern** across three tiers.
 
-**See [ADR: Plugin Communication Model](docs/adr/20260206-plugin-communication-model.md) for the full architectural decision record.**
+**See [ADR: Plugin Communication Model](./adr/20260209-plugin-communication-model.md) for the full architectural decision record.**
 
 ### Design Principles
 
