@@ -7,7 +7,7 @@
 
 ## Context and Problem Statement
 
-MMGIS is transitioning from an internally-used mission visualization interface builder to an **enterprise service with a plugin framework and marketplace** for user-contributed plugins. This transition requires a robust communication model that:
+MMGIS currently uses plugins from a local plugin repository (located in `src/essence/Tools`). We're preparing MMGIS to be an **enterprise service with a plugin framework and marketplace** which needs to support user-contributed remote plugins. This transition requires a robust communication model that:
 
 1. Enables third-party developers to build custom visualization tools
 2. Provides security isolation for untrusted marketplace plugins
