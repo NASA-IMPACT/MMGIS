@@ -59,12 +59,22 @@ MMGIS currently uses **4 distinct communication mechanisms**:
 1. **Iframe sandboxing for marketplace plugins**: Untrusted third-party plugins will run in sandboxed iframes with restricted permissions. This provides security isolation without the complexity of WebAssembly. The iframe sandbox uses:
    - `sandbox="allow-scripts"` - allows JavaScript but restricts DOM access to parent
    - Null origin - no access to MMGIS cookies/localStorage
-   - CSP headers - restricts network access to declared domains
    - `postMessage` - only communication channel with parent application
 
-2. **Two trust tiers**: Plugins are either "core" (trusted, runs directly) or "marketplace" (untrusted, sandboxed). No intermediate trust levels initially.
+2. **Plugin loading flow for marketplace plugins**:
+   ```
+   Marketplace Registry → MMGIS Instance → Sandboxed Iframe
+   ```
+   - Plugin bundles are uploaded to a marketplace registry (signed, reviewed)
+   - MMGIS instance downloads the bundle (or fetches metadata + bundle URL)
+   - MMGIS creates an iframe with `sandbox="allow-scripts"` and null origin
+   - Bundle is loaded via `srcdoc` or blob URL (MMGIS controls the HTML)
+   - MMGIS injects the SandboxBridge **before** the plugin code runs
+   - Plugin code executes with `mmgisAPI` already available (the bridge)
 
-3. **Plugins are UI components**: MMGIS plugins primarily render UI in panels and interact with the map. They don't need direct filesystem or database access - all data flows through the Event Bus API.
+3. **Two trust tiers**: Plugins are either "core" (trusted, runs directly) or "marketplace" (untrusted, sandboxed). No intermediate trust levels initially.
+
+4. **Plugins are UI components**: MMGIS plugins primarily render UI in panels and interact with the map. They don't need direct filesystem or database access - all data flows through the Event Bus API.
 
 ## Considered Options
 
@@ -451,6 +461,27 @@ plugin:chart:refresh
 
 ## Implementation Details
 
+### File Structure
+
+The Event Bus methods are added directly to `mmgisAPI`. Sandbox infrastructure for marketplace plugins lives in a separate `Sandbox/` folder:
+
+```
+src/essence/
+├── mmgisAPI/
+│   └── mmgisAPI.js              # Extended with on/emit/request/provide
+│
+├── Sandbox/                      # NEW - Marketplace plugin infrastructure
+│   ├── SandboxBridge.js         # Parent-side: receives postMessage, routes to mmgisAPI
+│   ├── SandboxClient.js         # Injected into sandboxed iframes
+│   ├── capabilities.js          # Capability definitions and checking
+│   └── validation/
+│       └── schemas.js           # Zod schemas for marketplace validation
+│
+├── Basics/                       # Existing foundational modules
+├── Tools/                        # Existing core plugins
+└── ...
+```
+
 ### Implementation Approach: Use Existing Libraries
 
 Rather than building a custom event bus from scratch, we use **battle-tested libraries** for the core functionality:
@@ -472,22 +503,32 @@ Rather than building a custom event bus from scratch, we use **battle-tested lib
 
 ### Core Implementation
 
+We **extend mmgisAPI** with the new Event Bus methods. This provides:
+
+- **Backward compatibility**: Existing `mmgisAPI.toggleLayer()`, `mmgisAPI.addEventListener()`, etc. continue to work
+- **Single API surface**: Developers learn one API, not two
+- **Gradual migration**: Old methods can be deprecated over time
+
 ```javascript
+// src/essence/mmgisAPI/mmgisAPI.js (extended)
 import mitt from 'mitt';
 
-// Events: use mitt (200 bytes, battle-tested)
 const events = mitt();
-
-// Request/Response: simple function registry
 const handlers = new Map();
 
-const mmgis = {
-    // ============ EVENTS (via mitt) ============
+const mmgisAPI = {
+    // ============ EXISTING METHODS (backward compatible) ============
+    toggleLayer: mmgisAPI_.toggleLayer,
+    addEventListener: mmgisAPI_.addEventListener,
+    getVisibleLayers: mmgisAPI_.getVisibleLayers,
+    // ... all existing methods remain ...
+
+    // ============ NEW: EVENTS (via mitt) ============
     on: events.on,
     off: events.off,
     emit: events.emit,
 
-    // ============ REQUEST/RESPONSE ============
+    // ============ NEW: REQUEST/RESPONSE ============
     provide(name, handler) {
         if (handlers.has(name)) {
             console.warn(`Handler "${name}" is being replaced`);
@@ -509,7 +550,18 @@ const mmgis = {
     }
 };
 
-export default mmgis;
+window.mmgisAPI = mmgisAPI;
+```
+
+**Usage examples:**
+```javascript
+// Old way (still works)
+mmgisAPI.addEventListener('layerVisibilityChange', callback);
+mmgisAPI.toggleLayer('Terrain');
+
+// New way (same object, new methods)
+mmgisAPI.on('layer:toggle', callback);
+mmgisAPI.request('layers:toggle', 'Terrain');
 ```
 
 **Total custom code: ~15 lines** (plus mitt at 200 bytes)
@@ -619,6 +671,64 @@ class SandboxBridge {
 ```
 
 **Note:** Sandboxed plugins can `provide()` data, but only within a namespaced scope (see [Plugin-to-Plugin Communication](#plugin-to-plugin-communication)). They cannot override core data providers.
+
+### Performance Considerations for Sandbox Bridge
+
+High-frequency events (`map:mousemove`, `map:move`, `map:zoom`) through the sandbox bridge involve `postMessage` serialization, which can impact responsiveness for plugins that subscribe to map movement.
+
+**Mitigation strategies:**
+
+#### 1. Automatic Throttling (default for high-frequency events)
+
+```javascript
+// Bridge automatically throttles these events
+const HIGH_FREQUENCY_EVENTS = {
+    'map:mousemove': { throttle: 16 },  // ~60fps max
+    'map:move': { throttle: 32 },       // ~30fps max
+    'map:zoom': { throttle: 100 }       // 10fps max
+};
+
+function forwardEventToPlugin(event, data) {
+    const config = HIGH_FREQUENCY_EVENTS[event];
+    if (config) {
+        throttledSend(event, data, config.throttle);
+    } else {
+        sendToPlugin(event, data);
+    }
+}
+```
+
+#### 2. Opt-in Batching
+
+Plugins can request batched delivery for even lower overhead:
+
+```javascript
+// Plugin receives array of events every 100ms instead of individual events
+mmgisAPI.on('map:mousemove', handler, { batch: true, interval: 100 });
+```
+
+#### 3. "Last Value Only" Mode
+
+For plugins that only care about current position, not every intermediate:
+
+```javascript
+// Only receives the most recent event, drops intermediate values
+mmgisAPI.on('map:move', handler, { lastOnly: true });
+```
+
+#### 4. Idle Events
+
+Core pushes `map:idle` event when movement stops - plugins can wait for this instead of tracking every move:
+
+```javascript
+// Instead of tracking every move...
+mmgisAPI.on('map:idle', () => {
+    const center = await mmgisAPI.request('map:getCenter');
+    updateAnalysis(center);
+});
+```
+
+**Recommendation:** Start with default throttling. Add batching/lastOnly options if needed later.
 
 ### Plugin-to-Plugin Communication
 
@@ -773,53 +883,59 @@ function handlePluginEmit(pluginId, event, data) {
 }
 ```
 
+
 ## Migration Path
 
 ### How Current Patterns Map to New API
 
-All 4 existing communication mechanisms can be migrated to the unified Event Bus:
+All 5 existing communication mechanisms can be migrated to the unified Event Bus (including `mmgisAPI`):
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       MIGRATION MAPPING                              │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  L_.subscribeTimeChange(id, cb)     →  mmgis.on('time:change', cb)  │
-│  L_.subscribeOnLayerToggle(id, cb)  →  mmgis.on('layer:toggle', cb) │
-│  L_.unsubscribeTimeChange(id)       →  unsubscribe() return value   │
-│                                                                      │
-│  document.dispatchEvent(...)        →  mmgis.emit('event', data)    │
-│  document.addEventListener(...)     →  mmgis.on('event', cb)        │
-│                                                                      │
-│  getTool('InfoTool').use(feature)   →  mmgis.request('plugin:info:show', f)│
-│                                                                      │
-│  notifyActiveTool('feature', f)     →  mmgis.emit('feature:select',f)│
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                          MIGRATION MAPPING                               │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  L_.subscribeTimeChange(id, cb)     →  mmgisAPI.on('time:change', cb)   │
+│  L_.subscribeOnLayerToggle(id, cb)  →  mmgisAPI.on('layer:toggle', cb)  │
+│  L_.unsubscribeTimeChange(id)       →  unsubscribe() return value       │
+│                                                                          │
+│  document.dispatchEvent(...)        →  mmgisAPI.emit('event', data)     │
+│  document.addEventListener(...)     →  mmgisAPI.on('event', cb)         │
+│                                                                          │
+│  getTool('InfoTool').use(feature)   →  mmgisAPI.request('plugin:info:show', f)│
+│                                                                          │
+│  notifyActiveTool('feature', f)     →  mmgisAPI.emit('feature:select',f)│
+│                                                                          │
+│  mmgisAPI.addEventListener(e, cb)   →  mmgisAPI.on(e, cb)               │
+│  mmgisAPI.toggleLayer(name)         →  mmgisAPI.request('layers:toggle', name)│
+│  mmgisAPI.getVisibleLayers()        →  mmgisAPI.request('layers:getVisible')│
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Migration Difficulty by Pattern
 
 | Current Pattern | New Pattern | Difficulty | Notes |
 |-----------------|-------------|------------|-------|
-| `L_.subscribe*` | `mmgis.on()` | Easy | Same concept, different syntax |
-| `CustomEvent` | `mmgis.emit/on` | Easy | Already event-based |
-| `getTool()` | `mmgis.request/provide` | Medium | Better decoupling |
-| `notifyActiveTool()` | `mmgis.emit()` | Easy | More flexible - any tool can listen |
+| `L_.subscribe*` | `mmgisAPI.on()` | Easy | Same concept, different syntax |
+| `CustomEvent` | `mmgisAPI.emit/on` | Easy | Already event-based |
+| `getTool()` | `mmgisAPI.request/provide` | Medium | Better decoupling |
+| `notifyActiveTool()` | `mmgisAPI.emit()` | Easy | More flexible - any tool can listen |
+| `mmgisAPI.addEventListener` | `mmgisAPI.on()` | Easy | Same object, cleaner method |
+| `mmgisAPI.toggleLayer` | `mmgisAPI.request()` | Easy | Consistent with other requests |
 
 ### Phase 1: Event Bus Foundation
-1. Introduce Event Bus alongside existing patterns (both work simultaneously)
-2. Add `window.mmgis` global with `emit`, `on`, `request`, `provide`
-3. Document available events
+1. Extend `mmgisAPI` with new Event Bus methods (`on`, `off`, `emit`, `request`, `provide`)
+2. Document available events
 
 ```javascript
 // Before
 L_.subscribeTimeChange('MyTool', callback);
 document.dispatchEvent(new CustomEvent('toolChange', { detail }));
 
-// After
-mmgis.on('time:change', callback);
-mmgis.emit('tool:change', detail);
+// After (same mmgisAPI object, new methods)
+mmgisAPI.on('time:change', callback);
+mmgisAPI.emit('tool:change', detail);
 ```
 
 ### Phase 2: Request Handlers for Core Services
@@ -830,15 +946,15 @@ mmgis.emit('tool:change', detail);
 
 ```javascript
 // In Map_.js (core module - no plugin: prefix)
-mmgis.provide('map:getCenter', () => Map_.map.getCenter());
-mmgis.provide('map:getBounds', () => Map_.map.getBounds());
-mmgis.provide('map:setView', ({ center, zoom }) => Map_.map.setView(center, zoom));
+mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter());
+mmgisAPI.provide('map:getBounds', () => Map_.map.getBounds());
+mmgisAPI.provide('map:setView', ({ center, zoom }) => Map_.map.setView(center, zoom));
 
 // In InfoTool.js (core plugin - uses plugin: prefix)
-mmgis.provide('plugin:info:showFeature', (feature) => InfoTool.use(feature));
+mmgisAPI.provide('plugin:info:showFeature', (feature) => InfoTool.use(feature));
 
 // Replaces: ToolController_.getTool('InfoTool').use(feature)
-await mmgis.request('plugin:info:showFeature', feature);
+await mmgisAPI.request('plugin:info:showFeature', feature);
 ```
 
 ### Phase 3: Plugin Manifest & Lifecycle
