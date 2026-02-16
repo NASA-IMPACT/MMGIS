@@ -98,7 +98,7 @@ const InfoTool = {
 |---------|--------|
 | **Single-Active Component** | Only one plugin active at a time; activating new one destroys previous |
 | **No Panel Controls** | Cannot minimize or close panels without switching tools |
-| **Limited Floating Panels** | Floating panels stack and obstruct each other |
+| **Limitation of Floating Panels** | Floating panels stack and obstruct each other |
 | **Basic Visual Design** | Panels lack modern styling, spacing, and visual hierarchy |
 | **No Multi-Panel Management** | Cannot manage multiple open panels simultaneously |
 
@@ -146,7 +146,7 @@ src/essence/Tools/<ToolName>/
 1. **Multi-Panel Support**: Enable multiple active plugins simultaneously (e.g., Draw + Measure + Layers)
 2. **Modern Visual Design**: Improve panel styling with proper spacing, and visual hierarchy
 3. **Floating Panel Management**: Better z-index and stacking management for overlapping panels
-4. **Design System Alignment**: Match USWDS or Horizon for enterprise consistency
+4. **Design System Alignment**: Match USWDS or Horizon for overall consistency with all our instances
 5. **Configuration-Driven**: Panel behavior and theming defined in mission/tool configs, not hard-coded
 6. **Gradual Migration**: Can adopt incrementally without rewriting all 16+ existing tools
 7. **Incremental Enhancement**: Build foundation for future grid-based layout system
@@ -158,12 +158,14 @@ src/essence/Tools/<ToolName>/
 1. **Panel Architecture Preservation**: Current panel system (left, bottom, floating) can be enhanced without fundamental rewrite
 2. **Desktop-First**: Initial implementation focuses on desktop; mobile layout improvements are future work
 3. **Backward Compatibility**: Existing tools continue working with current configuration until migrated
-4. **Plugin Lifecycle Compatibility**: `make()` and `destroy()` functions can be minimally updated to support multi-panel scenarios
+4. **Plugin Lifecycle Compatibility**: `make()` and `destroy()` functions can be minimally updated to support multi-panel scenarios (see [Tool Interface Changes](#tool-interface-changes))
 5. **Grid Layout Deferred**: Full grid-based layout system (Gridstack.js) will be implemented in a later development cycle
 
 ---
 
 ## Considered Options
+
+### Layout
 
 #### Option 1: Enhanced Panel System (Selected)
 
@@ -279,6 +281,333 @@ In parallel, structure the codebase to support theming so that USWDS becomes one
 - Standardized panel header with minimize, maximize, close controls
 - State transition animations and accessibility (keyboard shortcuts)
 - USWDS-based styling replacing legacy `mmgisUI.css` components
+
+---
+
+## Proposed Configuration Schema
+
+### Tool Configuration
+
+Tools will be configured with extended panel properties in the mission configuration:
+
+```javascript
+// Current Configuration (Backward Compatible)
+{
+  "name": "Draw",
+  "icon": "vector-square",
+  "js": "DrawTool",
+  "separatedTool": false  // false = left/bottom panel, true = floating
+}
+
+// Proposed Enhanced Configuration
+{
+  "name": "Draw",
+  "icon": "vector-square",
+  "js": "DrawTool",
+  "panel": {
+    "type": "left",           // "left" | "right" | "top" | "bottom" | "floating"
+    "defaultState": "open",   // "open" | "minimized" | "closed"
+    "allowMinimize": true,    // Can user minimize this panel?
+    "allowClose": true,       // Can user close this panel?
+    "width": 300,             // Panel width (for left/floating panels)
+    "height": 0,              // Panel height (0 = left panel, >0 = bottom panel)
+    "justification": "left",  // "left" | "center" | "right" (for floating panels)
+    "zIndex": 1005,           // Stacking order (for floating panels)
+  }
+}
+```
+
+**Backward Compatibility Mapping:**
+```javascript
+// Old format automatically converts to new format
+{
+  "separatedTool": true,
+  "variables": { "justification": "right" }
+}
+// Becomes:
+{
+  "panel": {
+    "type": "floating",
+    "justification": "right",
+    "defaultState": "open",
+    "allowMinimize": true,
+    "allowClose": true
+  }
+}
+```
+*Note: We may need to keep the old configuration for the backward compatibility*
+
+### Panel State Management
+
+PanelManager will track multiple active panels:
+
+```javascript
+// Current: Single active tool (ToolController_.js:18-19)
+ToolController_ = {
+  activeTool: null,
+  activeToolName: null,
+  // ...
+}
+
+// Proposed: Multiple active panels
+PanelManager_ = {
+  activePanels: {
+    'DrawTool': {
+      state: 'open',           // 'open' | 'minimized' | 'closed'
+      instance: toolInstance,  // Reference to tool object
+      containerId: 'toolContent_Draw',
+      panelType: 'left',       // 'left' | 'bottom' | 'floating'
+      zIndex: 1005
+    },
+    'MeasureTool': {
+      state: 'minimized',
+      instance: toolInstance,
+      containerId: 'toolContentSeparated_Measure',
+      panelType: 'floating',
+      zIndex: 1006
+    },
+    'LayersTool': {
+      state: 'open',
+      instance: toolInstance,
+      containerId: 'toolContent_Layers',
+      panelType: 'bottom',
+      zIndex: null
+    }
+  },
+}
+```
+
+### Panel Header UI
+
+Each panel will have a standardized header with controls:
+
+```html
+<!-- Panel Header Structure -->
+<div class="mmgis-panel-header">
+  <div class="mmgis-panel-title">
+    <i class="mdi mdi-vector-square"></i>
+    <span>Draw Tool</span>
+  </div>
+  <div class="mmgis-panel-controls">
+    <button class="mmgis-panel-minimize" aria-label="Minimize" title="Minimize">
+      <i class="mdi mdi-window-minimize"></i>
+    </button>
+    <button class="mmgis-panel-close" aria-label="Close" title="Close">
+      <i class="mdi mdi-close"></i>
+    </button>
+  </div>
+</div>
+<div class="mmgis-panel-content">
+  <!-- Tool content here -->
+</div>
+```
+
+*We need to work on ui/ux later to determine how/where to show these panel controls*
+
+---
+
+## Tool Lifecycle Changes
+
+### Current Behavior (ToolController_.js:494-547)
+
+**Problem**: Only one tool can be active at a time. Switching tools destroys the previous one.
+
+```javascript
+// Current: makeTool() in ToolController_.js
+makeTool: function(name, idx) {
+  var tool = this.getTool(name);
+
+  if (this.activeToolName == null || name != this.activeToolName) {
+    // Change tool
+    if (this.activeTool != null) {
+      this.activeTool.destroy();  // Destroys previous tool
+    }
+
+    this.activeTool = tool;
+    this.activeTool.make(this);  // Make new tool
+    this.activeToolName = name;
+  } else {
+    // Close tool (same tool clicked again)
+    this.closeActiveTool();
+  }
+}
+```
+
+### Proposed Behavior
+
+**Solution**: Track multiple active tools and manage visibility instead of destroying them.
+
+```javascript
+// Proposed: makeTool() with multi-panel support
+makeTool: function(name, idx) {
+  var tool = this.getTool(name);
+  var toolConfig = this.tools[idx];
+
+  // Check if tool is already active
+  if (PanelManager_.isActive(name)) {
+    // Toggle visibility or bring to front
+    PanelManager_.togglePanel(name);
+  } else {
+    // Make new tool (first time opening)
+    tool.make(this);
+
+    // Register with PanelManager
+    PanelManager_.registerPanel(name, {
+      instance: tool,
+      state: 'open',
+      panelType: toolConfig.panel?.type || 'left',
+      containerId: `toolContent_${toolConfig.name}`
+    });
+
+    // Notify tool it became visible
+    if (typeof tool.notify === 'function') {
+      tool.notify('visibility', { visible: true });
+    }
+  }
+}
+```
+
+```javascript
+// Close panel without destroying (unless user explicitly closes)
+closePanel: function(toolName, permanent = false) {
+  var panelState = PanelManager_.activePanels[toolName];
+
+  if (permanent) {
+    // User clicked close button - destroy the tool
+    panelState.instance.destroy();
+    delete PanelManager_.activePanels[toolName];
+  } else {
+    // Just hide the panel (minimize or switch tools)
+    panelState.state = 'minimized';
+    $(`#${panelState.containerId}`).hide();
+
+    // Notify tool it became hidden
+    if (typeof panelState.instance.notify === 'function') {
+      panelState.instance.notify('visibility', { visible: false });
+    }
+  }
+}
+```
+
+### Tool Interface Changes
+
+**Key Insight**: Tool interfaces (`make()` and `destroy()`) do NOT need to change. We just manage when they're called differently.
+
+**Current Tool Structure** (remains unchanged):
+```javascript
+// src/essence/Tools/ToolName/ToolName.js
+const ToolName = {
+  height: 0,
+  width: 300,
+  MMGISInterface: null,
+
+  make: function() {
+    // NO CHANGES NEEDED
+    // Initialize tool UI and event handlers
+    this.MMGISInterface = new interfaceWithMMGIS();
+  },
+
+  destroy: function() {
+    // NO CHANGES NEEDED
+    // Clean up event handlers and UI
+    this.MMGISInterface.separateFromMMGIS();
+  }
+}
+```
+
+**Optional Enhancement**: Tools can implement `notify()` to handle visibility changes efficiently:
+
+```javascript
+const ToolName = {
+  height: 0,
+  width: 300,
+  MMGISInterface: null,
+  animationFrameId: null,
+
+  make: function() {
+    this.MMGISInterface = new interfaceWithMMGIS();
+    this.startUpdates();
+  },
+
+  destroy: function() {
+    this.stopUpdates();
+    this.MMGISInterface.separateFromMMGIS();
+  },
+
+  // OPTIONAL: Handle visibility changes for performance
+  notify: function(type, payload) {
+    if (type === 'visibility') {
+      if (payload.visible) {
+        // Panel became visible - resume expensive operations
+        this.startUpdates();
+      } else {
+        // Panel minimized/hidden - pause expensive operations
+        this.stopUpdates();
+      }
+    }
+  },
+
+  startUpdates: function() {
+    // Resume animation loops, data fetching, etc.
+    if (!this.animationFrameId) {
+      this.animationFrameId = requestAnimationFrame(this.update.bind(this));
+    }
+  },
+
+  stopUpdates: function() {
+    // Pause expensive operations when panel is hidden
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+      this.animationFrameId = null;
+    }
+  }
+}
+```
+
+### Separated Tools (Floating Panels)
+
+Separated tools already support multiple instances. (ToolController_.js:136-186)
+
+```javascript
+// Current: Separated tools already track multiple active instances
+ToolController_ = {
+  activeSeparatedTools: [],  // Already supports multiple!
+  // ...
+}
+
+// Click handler for separated tools (already works correctly)
+toolButton.on('click', function() {
+  if (tM.made === false) {
+    tM.make(`toolContentSeparated_${toolName}`);
+    ToolController_.activeSeparatedTools.push(toolName);
+  } else {
+    tM.destroy();
+    ToolController_.activeSeparatedTools =
+      ToolController_.activeSeparatedTools.filter(a => a != toolName);
+  }
+});
+```
+
+**Proposed Enhancement**: Use separated tools with new panel management:
+
+```javascript
+// Unified panel management for all panel types
+toolButton.on('click', function() {
+  if (PanelManager_.isActive(toolName)) {
+    // Close panel
+    PanelManager_.closePanel(toolName, true);
+  } else {
+    // Open panel
+    tM.make(`toolContentSeparated_${toolName}`);
+    PanelManager_.registerPanel(toolName, {
+      instance: tM,
+      state: 'open',
+      panelType: 'floating',
+      containerId: `toolContentSeparated_${toolName}`
+    });
+  }
+});
+```
 
 ### Future Extensibility
 
