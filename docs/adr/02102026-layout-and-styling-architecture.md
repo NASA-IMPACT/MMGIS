@@ -203,7 +203,6 @@ src/essence/Tools/<ToolName>/
 - More complex than needed for current requirements
 - Can be added later as enhancement to panel system
 - Requires more extensive testing and migration effort
-- See [Phase 6: Grid-Based Layout System](#phase-6-grid-based-layout-system-q3-2026) for planned implementation
 
 ---
 
@@ -221,7 +220,7 @@ src/essence/Tools/<ToolName>/
 
 ### Styling
 
-#### Option 1: USWDS / Horizon
+#### Option 1: USWDS / Horizon (Selected)
 
 **Description**: A government-standard design system with built-in accessibility and a mature component ecosystem.
 
@@ -236,7 +235,7 @@ src/essence/Tools/<ToolName>/
 
 ---
 
-#### Option 2: Custom Theme System (CSS Variables)
+#### Option 2: Custom Theme System (CSS Variables) (Deferred)
 
 **Description**: A flexible, custom theming approach built on top of CSS variables.
 
@@ -257,78 +256,54 @@ In parallel, structure the codebase to support theming so that USWDS becomes one
 
 ---
 
-## Migration Path
+## Implementation Details
 
-### Phase 1: Panel Manager Foundation (Week 1-2)
-- [ ] Create `PanelManager_.js` module for multi-panel state management
-- [ ] Implement panel registration and tracking system
-- [ ] Add panel state management (open, minimized, closed)
-- [ ] Add theme loader (`Theme_.js`)
+### Core Architecture
 
-### Phase 2: Panel Controls & UI (Week 3-4)
-- [ ] Design and implement panel header component with controls
-- [ ] Add minimize, maximize, close button functionality
-- [ ] Implement panel state transitions with animations
-- [ ] Add keyboard shortcuts for panel controls (accessibility)
-- [ ] Create modern panel styling with USWDS design tokens
+**Panel Management System (`PanelManager_.js`)**
+- Multi-panel state management with registration and tracking
+- Panel state lifecycle (open, minimized, closed) with persistence
+- Backward compatibility layer for single-panel tools
 
-### Phase 3: Multi-Panel Support (Week 5-6)
-- [ ] Update `ToolController_.js` to support multiple active tools
-- [ ] Refactor `make()` / `destroy()` lifecycle for multi-panel scenarios
-- [ ] Implement backward compatibility layer for single-panel tools
-- [ ] Add panel state persistence to database/local storage
-- [ ] Test multi-panel scenarios (2-3 panels open simultaneously)
+**Tool Controller Enhancements (`ToolController_.js`)**
+- Support for multiple simultaneously active tools
+- Updated `make()` / `destroy()` lifecycle for multi-panel scenarios
+- Plugin API for panel controls and state management
 
-### Phase 4: Theming Integration (Week 7-8)
-- [ ] Integrate USWDS CSS framework
-- [ ] Create `geospatial-dark.css` preserving current theme as default
-- [ ] Update panel components to use USWDS design tokens
-- [ ] Replace `mmgisUI.css` components with USWDS equivalents
-- [ ] Add theme switcher to Configure page
+**Theme System (`Theme_.js`)**
+- USWDS design token integration
+- Default geospatial-dark theme preserving current aesthetics
+- Theme configuration by extracting css properties to a single file
 
-### Phase 5: Tool Migration & Testing (Week 9-10)
-- [ ] Update 3-5 high-priority tools (Draw, Measure, Layers, Info, Legend)
-- [ ] Test multi-panel scenarios with updated tools
-- [ ] Document plugin migration guide for panel controls
-- [ ] Update plugin template with panel best practices
-- [ ] Conduct accessibility testing (keyboard navigation, screen readers)
+**Panel UI Components**
+- Standardized panel header with minimize, maximize, close controls
+- State transition animations and accessibility (keyboard shortcuts)
+- USWDS-based styling replacing legacy `mmgisUI.css` components
 
----
+### Future Extensibility
 
-## Future Roadmap
+**Grid-Based Layout System**
+- Drag-and-drop panel positioning with Gridstack.js or similar
+- Panel resizing with collision detection
+- Responsive breakpoints for different screen sizes
+- Config schema extensions for layout persistence
 
-### Phase 6: Grid-Based Layout System
-- [ ] Evaluate and integrate Gridstack.js library
-- [ ] Create grid initialization in `UserInterfaceDefault_.js`
-- [ ] Extend config schema with grid `layout` key
-- [ ] Implement drag-and-drop panel positioning
-- [ ] Add panel resizing with collision detection
-- [ ] Migrate panel system to grid-based containers
-- [ ] Implement responsive breakpoints for different screen sizes
-- [ ] Test backward compatibility with enhanced panel system
+**Visual Layout Builder**
+- Drag-and-drop editor in Configure page
+- Real-time layout preview and template export/import
+- Visual grid overlay for alignment and validation
 
-### Phase 7: Visual Layout Builder
-- [ ] Add drag-and-drop layout editor to Configure page
-- [ ] Real-time preview of layout changes
-- [ ] Export/import layout templates
-- [ ] Component palette for quick plugin addition
-- [ ] Visual grid overlay for alignment
-- [ ] Layout validation and conflict detection
+**Mobile Optimization**
+- Responsive panel system in `UserInterfaceMobile_.js`
+- Touch-optimized interactions and swipeable navigation
+- Mobile-specific panel presets
 
-### Phase 8: Mobile Optimization
-- [ ] Refactor `UserInterfaceMobile_.js` with responsive panel system
-- [ ] Implement swipeable panel navigation
-- [ ] Optimize plugin UI for touch interactions
-- [ ] Add mobile-specific panel presets
-- [ ] Test multi-panel scenarios on mobile devices
+**Advanced Theming**
+- Dynamic theme generation from mission configuration
+- High-contrast accessibility modes
+- Community theme gallery and preview system
 
-### Phase 9: Advanced Theming
-- [ ] Dynamic theme generation from mission config
-- [ ] High-contrast accessibility mode
-- [ ] Theme gallery for user-contributed themes
-- [ ] Theme preview in Configure page
-
-### Phase 10: Plugin Marketplace Integration
-- [ ] Sandboxed iframe layout for marketplace plugins
-- [ ] Theme API for third-party plugins
-- [ ] Layout validation and security checks
+**Plugin Marketplace Integration**
+- Sandboxed layout environments for third-party plugins
+- Theme API for external plugin compatibility
+- Security validation and layout checks
