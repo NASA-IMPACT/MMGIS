@@ -86,7 +86,7 @@ interface IMapEngine {
   // === LIFECYCLE ===
   init(containerId: string, options: MapInitOptions): void
   destroy(): void
-  getNativeMap(): unknown  // Escape hatch for advanced use
+  getNativeMap(): unknown  
   
   // === VIEW CONTROL ===
   setView(lat: number, lng: number, zoom: number): void
@@ -133,13 +133,13 @@ interface MapInitOptions {
   minZoom?: number
   maxZoom?: number
   projection?: ProjectionOptions
-  radius?: number  // Planet radius for Mars/Moon
+  radius?: number 
 }
 
 interface ProjectionOptions {
   custom?: boolean
   epsg?: string
-  proj?: string  // Proj4 definition
+  proj?: string  
   origin?: [number, number]
   resolutions?: number[]
   bounds?: [[number, number], [number, number]]
@@ -178,7 +178,6 @@ class LeafletAdapter implements IMapEngine {
   private layers: Map
   
   init(containerId, options) {
-    // Handle custom CRS for planetary missions
     let crs = L.CRS.EPSG3857
     if (options.projection?.custom) {
       crs = new L.Proj.CRS(
@@ -288,7 +287,6 @@ class DeckGLAdapter implements IMapEngine {
   }
   
   _updateLayers() {
-    // deck.gl requires full layer array rebuild
     this.deck.setProps({
       layers: Array.from(this.deckLayers.values())
     })
@@ -318,7 +316,6 @@ class MapboxAdapter implements IMapEngine {
   }
   
   addGeoJSONLayer(id, geojson, options) {
-    // Mapbox requires source + multiple layers
     this.map.addSource(id, {
       type: 'geojson',
       data: geojson
@@ -360,7 +357,6 @@ class MapEngineRegistry {
   private activeEngineName: string
   
   constructor() {
-    // Register built-in engines
     this.register('leaflet', LeafletAdapter)
     this.register('deckgl', DeckGLAdapter)
     this.register('mapbox', MapboxAdapter)
@@ -375,12 +371,10 @@ class MapEngineRegistry {
   }
   
   initializeEngine(name: string, containerId: string, options: MapInitOptions): IMapEngine {
-    // Destroy previous engine if exists
     if (this.activeEngine) {
       this.activeEngine.destroy()
     }
     
-    // Create and initialize new engine
     const EngineClass = this.engines.get(name)
     if (!EngineClass) {
       throw new Error(`Unknown engine: ${name}`)
@@ -410,18 +404,14 @@ export const mapEngineRegistry = new MapEngineRegistry()
 
 ```javascript
 const Map_ = {
-  // Backward compatible reference
   map: null,
   
-  // New engine abstraction
   _engine: null,
   _engineName: 'leaflet',
   
   init(essenceFinal, config) {
-    // Determine engine from config (NOT runtime switching)
     const engineName = config.look?.mapEngine || 'leaflet'
     
-    // Build initialization options
     const options = {
       center: [config.msv.view[0], config.msv.view[1]],
       zoom: config.msv.view[2],
@@ -429,23 +419,18 @@ const Map_ = {
       radius: config.msv.radius
     }
     
-    // Initialize engine
     this._engine = mapEngineRegistry.initializeEngine(
       engineName,
       'map',
       options
     )
     this._engineName = engineName
-    
-    // CRITICAL: Maintain backward compatibility
-    // Map_.map still works for existing code
+
     this.map = this._engine.getNativeMap()
     
-    // Continue with rest of initialization
     this.makeLayers(config.layers)
   },
   
-  // Delegate methods to engine
   resetView(latlngzoom) {
     const lat = parseFloat(latlngzoom[0])
     const lng = parseFloat(latlngzoom[1])
