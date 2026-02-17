@@ -1,3 +1,5 @@
+import type { IMapEngine } from '../IMapEngine'
+
 /**
  * Map engine identifiers. Each mission is configured with one engine
  * and that engine cannot be changed after mission creation.
@@ -60,6 +62,12 @@ export function engineSupportsLayer(
 ): boolean {
     return ENGINE_LAYER_SUPPORT[engine].includes(layerType)
 }
+
+/**
+ * Constructor signature for a class that implements IMapEngine.
+ * Used by the MapEngineRegistry to instantiate adapters.
+ */
+export type MapEngineAdapterClass = new (...args: unknown[]) => IMapEngine
 
 /**
  * Metadata a tool declares so the configuration UI can show

@@ -40,6 +40,7 @@ export type {
 
 export type {
     MapEngineType,
+    MapEngineAdapterClass,
     RenderableLayerType,
     StructuralLayerType,
     LayerType,
@@ -53,3 +54,5 @@ export {
 
 export type { IMapEngine } from './IMapEngine'
 export type { IMapEngineMarkers } from './IMapEngineMarkers'
+
+export { default as MapEngineRegistry, mapEngineRegistry } from './MapEngineRegistry'
