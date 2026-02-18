@@ -48,6 +48,7 @@ export type {
 } from './types/engine'
 
 export {
+    MAP_ENGINE,
     ENGINE_LAYER_SUPPORT,
     engineSupportsLayer,
 } from './types/engine'

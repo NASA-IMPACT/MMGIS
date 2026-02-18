@@ -4,7 +4,12 @@ import type { IMapEngine } from '../IMapEngine'
  * Map engine identifiers. Each mission is configured with one engine
  * and that engine cannot be changed after mission creation.
  */
-export type MapEngineType = 'leaflet' | 'deckgl'
+export const MAP_ENGINE = {
+    LEAFLET: 'leaflet',
+    DECKGL: 'deckgl',
+} as const
+
+export type MapEngineType = (typeof MAP_ENGINE)[keyof typeof MAP_ENGINE]
 
 /**
  * Renderable layer types that an engine can actually draw.
@@ -49,8 +54,8 @@ export type LayerType = RenderableLayerType | StructuralLayerType
  *   of the deck.gl adapter and not exposed as a separate engine.
  */
 export const ENGINE_LAYER_SUPPORT: Record<MapEngineType, RenderableLayerType[]> = {
-    leaflet: ['vector', 'tile', 'vectortile', 'data', 'image', 'video', 'velocity'],
-    deckgl: ['vector', 'tile', 'pointcloud'],
+    [MAP_ENGINE.LEAFLET]: ['vector', 'tile', 'vectortile', 'data', 'image', 'video', 'velocity'],
+    [MAP_ENGINE.DECKGL]: ['vector', 'tile', 'pointcloud'],
 }
 
 /**
