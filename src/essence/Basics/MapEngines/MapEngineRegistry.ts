@@ -1,21 +1,21 @@
 import type { IMapEngine } from './IMapEngine'
 import type { MapInitOptions } from './types/view'
-import type { MapEngineAdapterClass } from './types/engine'
+import type { MapEngineAdapterClass, MapEngineType } from './types/engine'
 
 /**
  * Registry for map engine adapters. Tracks available engine types,
  * instantiates their adapters, and manages their lifecycle.
  */
 class MapEngineRegistry {
-    private adapters = new Map<string, MapEngineAdapterClass>()
+    private adapters = new Map<MapEngineType, MapEngineAdapterClass>()
     private activeEngine: IMapEngine | null = null
-    private engines = new Map<string, IMapEngine>()
+    private engines = new Map<MapEngineType, IMapEngine>()
 
     /**
      * Register a new engine adapter class under the given name.
      * @throws {Error} If name is not a non-empty string or adapterClass is not a constructor.
      */
-    register(name: string, adapterClass: MapEngineAdapterClass): void {
+    register(name: MapEngineType, adapterClass: MapEngineAdapterClass): void {
         if (typeof name !== 'string' || name.length === 0) {
             throw new Error('Engine name must be a non-empty string')
         }
@@ -29,7 +29,7 @@ class MapEngineRegistry {
      * Instantiate an adapter for a registered engine name.
      * @throws {Error} If no adapter is registered under the given name.
      */
-    createEngine(name: string, options?: MapInitOptions): IMapEngine {
+    createEngine(name: MapEngineType, options?: MapInitOptions): IMapEngine {
         const AdapterClass = this.adapters.get(name)
         if (!AdapterClass) {
             throw new Error(`No adapter registered for engine "${name}"`)
@@ -68,15 +68,15 @@ class MapEngineRegistry {
         this.activeEngine = engine
     }
 
-    hasEngine(name: string): boolean {
+    hasEngine(name: MapEngineType): boolean {
         return this.adapters.has(name)
     }
 
-    getRegisteredEngines(): string[] {
+    getRegisteredEngines(): MapEngineType[] {
         return Array.from(this.adapters.keys())
     }
 
-    getEngine(name: string): IMapEngine | undefined {
+    getEngine(name: MapEngineType): IMapEngine | undefined {
         return this.engines.get(name)
     }
 }
