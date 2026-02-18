@@ -233,7 +233,7 @@ src/essence/Tools/<ToolName>/
 - Strong documentation and active community
 
 **Cons**:
-- May not be a perfect visual fit for all projects
+- May not be a perfect visual fit for all projects, particularly those outside NASA or those not yet using USWDS/Horizon.
 
 ---
 
@@ -253,9 +253,9 @@ src/essence/Tools/<ToolName>/
 
 #### Decision
 
-Adopt **USWDS / Horizon** as the default design system to ensure accessibility, consistency, and faster delivery.
-In parallel, structure the codebase to support theming so that USWDS becomes one of several themes in a future theme gallery, enabling customization as needs evolve.
-
+Adopt **USWDS / Horizon** as the default design system to ensure accessibility, consistency, and faster delivery. 
+In parallel, structure the codebase to support theming so that USWDS becomes the core design system with theming capabilities that will enable customization of the system as needs evolve.
+Customization will be limited to a small, well-defined set of overridable CSS properties — specifically colors, typography, and spacing. This allows different NASA teams or deployments to apply mission-specific branding.
 ---
 
 ## Implementation Details
@@ -357,6 +357,7 @@ PanelManager_ = {
       instance: toolInstance,  // Reference to tool object
       containerId: 'toolContent_Draw',
       panelType: 'left',       // 'left' | 'bottom' | 'floating'
+      priority: 1,             // Lower number = higher priority within same panelType
       zIndex: 1005
     },
     'MeasureTool': {
@@ -364,6 +365,7 @@ PanelManager_ = {
       instance: toolInstance,
       containerId: 'toolContentSeparated_Measure',
       panelType: 'floating',
+      priority: 1,
       zIndex: 1006
     },
     'LayersTool': {
@@ -371,11 +373,16 @@ PanelManager_ = {
       instance: toolInstance,
       containerId: 'toolContent_Layers',
       panelType: 'bottom',
+      priority: 2,
       zIndex: null
     }
   },
 }
 ```
+
+**Position conflicts**: When multiple tools are configured with the same `panelType` (e.g., two tools both set to `"left"`), their rendering order is determined by a `priority` value — lower numbers take precedence. This mirrors the existing priority mechanism MMGIS already uses for plugin ordering. In the current implementation, conflicts are resolved at runtime by `PanelManager_` based on this value. If two tools share the same `priority`, order falls back to the order in which they were registered.
+
+> **Future work**: A formal validation step will be added when the tool builder UI is developed, allowing administrators to detect and resolve priority conflicts at configuration time rather than at runtime ensuring tools to be placed in expected position.
 
 ### Panel Header UI
 
