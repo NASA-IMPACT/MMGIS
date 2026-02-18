@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test'
 import MapEngineRegistry from '../../src/essence/Basics/MapEngines/MapEngineRegistry.ts'
+import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/index.ts'
 
-function createMockAdapterClass(engineType = 'leaflet') {
+function createMockAdapterClass(engineType = MAP_ENGINE.LEAFLET) {
     return class MockAdapter {
         engineType = engineType
         initialized = false
@@ -22,7 +23,7 @@ function createMockAdapterClass(engineType = 'leaflet') {
     }
 }
 
-function createAsyncMockAdapterClass(engineType = 'deckgl') {
+function createAsyncMockAdapterClass(engineType = MAP_ENGINE.DECKGL) {
     return class AsyncMockAdapter {
         engineType = engineType
         initialized = false
@@ -53,19 +54,19 @@ test.describe('MapEngineRegistry', () => {
     test.describe('register', () => {
         test('registers an adapter class under a name', () => {
             const MockAdapter = createMockAdapterClass()
-            registry.register('leaflet', MockAdapter)
+            registry.register(MAP_ENGINE.LEAFLET, MockAdapter)
 
-            expect(registry.hasEngine('leaflet')).toBe(true)
+            expect(registry.hasEngine(MAP_ENGINE.LEAFLET)).toBe(true)
         })
 
         test('overwrites a previously registered adapter', () => {
-            const First = createMockAdapterClass('leaflet')
-            const Second = createMockAdapterClass('leaflet')
+            const First = createMockAdapterClass(MAP_ENGINE.LEAFLET)
+            const Second = createMockAdapterClass(MAP_ENGINE.LEAFLET)
 
-            registry.register('leaflet', First)
-            registry.register('leaflet', Second)
+            registry.register(MAP_ENGINE.LEAFLET, First)
+            registry.register(MAP_ENGINE.LEAFLET, Second)
 
-            const engine = registry.createEngine('leaflet')
+            const engine = registry.createEngine(MAP_ENGINE.LEAFLET)
             expect(engine).toBeInstanceOf(Second)
         })
 
@@ -82,7 +83,7 @@ test.describe('MapEngineRegistry', () => {
         })
 
         test('throws when adapterClass is not a constructor', () => {
-            expect(() => registry.register('leaflet', {})).toThrow(
+            expect(() => registry.register(MAP_ENGINE.LEAFLET, {})).toThrow(
                 'Adapter class must be a constructor'
             )
         })
@@ -91,18 +92,18 @@ test.describe('MapEngineRegistry', () => {
     test.describe('createEngine', () => {
         test('creates an instance of the registered adapter', () => {
             const MockAdapter = createMockAdapterClass()
-            registry.register('leaflet', MockAdapter)
+            registry.register(MAP_ENGINE.LEAFLET, MockAdapter)
 
-            const engine = registry.createEngine('leaflet')
+            const engine = registry.createEngine(MAP_ENGINE.LEAFLET)
             expect(engine).toBeInstanceOf(MockAdapter)
-            expect(engine.engineType).toBe('leaflet')
+            expect(engine.engineType).toBe(MAP_ENGINE.LEAFLET)
         })
 
         test('tracks created engine for later retrieval', () => {
-            registry.register('leaflet', createMockAdapterClass())
-            const engine = registry.createEngine('leaflet')
+            registry.register(MAP_ENGINE.LEAFLET, createMockAdapterClass())
+            const engine = registry.createEngine(MAP_ENGINE.LEAFLET)
 
-            expect(registry.getEngine('leaflet')).toBe(engine)
+            expect(registry.getEngine(MAP_ENGINE.LEAFLET)).toBe(engine)
         })
 
         test('throws for unregistered engine name', () => {
@@ -114,8 +115,8 @@ test.describe('MapEngineRegistry', () => {
 
     test.describe('initializeEngine', () => {
         test('calls init on the engine with options', () => {
-            registry.register('leaflet', createMockAdapterClass())
-            const engine = registry.createEngine('leaflet')
+            registry.register(MAP_ENGINE.LEAFLET, createMockAdapterClass())
+            const engine = registry.createEngine(MAP_ENGINE.LEAFLET)
             const options = { containerId: 'map' }
 
             registry.initializeEngine(engine, options)
@@ -125,8 +126,8 @@ test.describe('MapEngineRegistry', () => {
         })
 
         test('supports async init', async () => {
-            registry.register('deckgl', createAsyncMockAdapterClass())
-            const engine = registry.createEngine('deckgl')
+            registry.register(MAP_ENGINE.DECKGL, createAsyncMockAdapterClass())
+            const engine = registry.createEngine(MAP_ENGINE.DECKGL)
             const options = { containerId: 'map' }
 
             await registry.initializeEngine(engine, options)
@@ -137,8 +138,8 @@ test.describe('MapEngineRegistry', () => {
 
     test.describe('destroyEngine', () => {
         test('calls destroy on the engine', () => {
-            registry.register('leaflet', createMockAdapterClass())
-            const engine = registry.createEngine('leaflet')
+            registry.register(MAP_ENGINE.LEAFLET, createMockAdapterClass())
+            const engine = registry.createEngine(MAP_ENGINE.LEAFLET)
 
             registry.destroyEngine(engine)
 
@@ -146,17 +147,17 @@ test.describe('MapEngineRegistry', () => {
         })
 
         test('removes the engine from tracked engines', () => {
-            registry.register('leaflet', createMockAdapterClass())
-            const engine = registry.createEngine('leaflet')
+            registry.register(MAP_ENGINE.LEAFLET, createMockAdapterClass())
+            const engine = registry.createEngine(MAP_ENGINE.LEAFLET)
 
             registry.destroyEngine(engine)
 
-            expect(registry.getEngine('leaflet')).toBeUndefined()
+            expect(registry.getEngine(MAP_ENGINE.LEAFLET)).toBeUndefined()
         })
 
         test('clears activeEngine if the destroyed engine was active', () => {
-            registry.register('leaflet', createMockAdapterClass())
-            const engine = registry.createEngine('leaflet')
+            registry.register(MAP_ENGINE.LEAFLET, createMockAdapterClass())
+            const engine = registry.createEngine(MAP_ENGINE.LEAFLET)
             registry.setActiveEngine(engine)
 
             registry.destroyEngine(engine)
@@ -165,8 +166,8 @@ test.describe('MapEngineRegistry', () => {
         })
 
         test('supports async destroy', async () => {
-            registry.register('deckgl', createAsyncMockAdapterClass())
-            const engine = registry.createEngine('deckgl')
+            registry.register(MAP_ENGINE.DECKGL, createAsyncMockAdapterClass())
+            const engine = registry.createEngine(MAP_ENGINE.DECKGL)
 
             await registry.destroyEngine(engine)
 
@@ -180,8 +181,8 @@ test.describe('MapEngineRegistry', () => {
         })
 
         test('setActiveEngine stores the engine', () => {
-            registry.register('leaflet', createMockAdapterClass())
-            const engine = registry.createEngine('leaflet')
+            registry.register(MAP_ENGINE.LEAFLET, createMockAdapterClass())
+            const engine = registry.createEngine(MAP_ENGINE.LEAFLET)
 
             registry.setActiveEngine(engine)
 
@@ -191,12 +192,12 @@ test.describe('MapEngineRegistry', () => {
 
     test.describe('hasEngine', () => {
         test('returns false for unregistered name', () => {
-            expect(registry.hasEngine('leaflet')).toBe(false)
+            expect(registry.hasEngine(MAP_ENGINE.LEAFLET)).toBe(false)
         })
 
         test('returns true for registered name', () => {
-            registry.register('leaflet', createMockAdapterClass())
-            expect(registry.hasEngine('leaflet')).toBe(true)
+            registry.register(MAP_ENGINE.LEAFLET, createMockAdapterClass())
+            expect(registry.hasEngine(MAP_ENGINE.LEAFLET)).toBe(true)
         })
     })
 
@@ -206,26 +207,26 @@ test.describe('MapEngineRegistry', () => {
         })
 
         test('returns all registered engine names', () => {
-            registry.register('leaflet', createMockAdapterClass())
-            registry.register('deckgl', createAsyncMockAdapterClass())
+            registry.register(MAP_ENGINE.LEAFLET, createMockAdapterClass())
+            registry.register(MAP_ENGINE.DECKGL, createAsyncMockAdapterClass())
 
             const names = registry.getRegisteredEngines()
-            expect(names).toContain('leaflet')
-            expect(names).toContain('deckgl')
+            expect(names).toContain(MAP_ENGINE.LEAFLET)
+            expect(names).toContain(MAP_ENGINE.DECKGL)
             expect(names.length).toBe(2)
         })
     })
 
     test.describe('getEngine', () => {
         test('returns undefined for uncreated engine', () => {
-            expect(registry.getEngine('leaflet')).toBeUndefined()
+            expect(registry.getEngine(MAP_ENGINE.LEAFLET)).toBeUndefined()
         })
 
         test('returns the created engine instance', () => {
-            registry.register('leaflet', createMockAdapterClass())
-            const engine = registry.createEngine('leaflet')
+            registry.register(MAP_ENGINE.LEAFLET, createMockAdapterClass())
+            const engine = registry.createEngine(MAP_ENGINE.LEAFLET)
 
-            expect(registry.getEngine('leaflet')).toBe(engine)
+            expect(registry.getEngine(MAP_ENGINE.LEAFLET)).toBe(engine)
         })
     })
 })
