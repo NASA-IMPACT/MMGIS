@@ -78,4 +78,12 @@ export interface ProjectionOptions {
     bounds?: BoundsLike
     resolutions?: number[]
     radius?: number
+
+    //all other keys from MMGIS config.json file
+    custom?: boolean
+    proj?: string
+    globeproj?: string
+    xmlpath?: string
+    reszoomlevel?: string | number
+    resunitsperpixel?: string | number
 }
