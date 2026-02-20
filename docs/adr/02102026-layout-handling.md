@@ -1,25 +1,23 @@
-# Layout and Styling Architecture for MMGIS
+# Layout Handling Architecture for MMGIS
 
-- **Status**: PROPOSED
+- **Status**: Approved
 - **Date**: 2026-02-10
 - **Deciders**: MMGIS Core Team
-- **Tags**: layout, styling, ui, panel-system, multi-panel, theming
+- **Tags**: layout, ui, panel-system, multi-panel
 
 ---
 
 ## Executive Summary
 
-Modernize MMGIS's layout and styling architecture to support a flexible, themable plugin framework that aligns with USWDS/Horizon design systems.
+Modernize MMGIS’s layout handling architecture to support a flexible, extensible plugin framework.
 
 **Key Changes**:
 - **Layout**: Enhance current panel system with multi-panel support, minimize/close controls, and modern spacing
-- **Styling**: Migrate from hard-coded dark theme to flexible, design system-aligned theming
-- **Configuration**: Extend mission/tool configs to support panel configuration and theme customization
+- **Configuration**: Extend mission/tool configs to support panel configuration
 
 **Benefits**:
 - **Multi-Panel Support**: Multiple plugins can be open simultaneously with independent controls
 - **Usability**: Covers our core use cases with incremental enhancement path
-- **Consistency**: Align with existing design standards (USWDS/Horizon)
 - **Future-proof**: Foundation for grid-based layout system in later development cycle
 
 ---
@@ -39,7 +37,7 @@ To avoid confusion, we use internal terms that differ from MMGIS framework conve
 
 ## Context and Problem Statement
 
-### Current State: Layout
+### Current State
 
 MMGIS uses a **fixed panel system** where plugins attach to pre-defined containers. Panels interact with the map in two ways:
 
@@ -102,54 +100,15 @@ const InfoTool = {
 | **Basic Visual Design** | Panels lack modern styling, spacing, and visual hierarchy |
 | **No Multi-Panel Management** | Cannot manage multiple open panels simultaneously |
 
-### Current State: Styling
-
-MMGIS uses a **centralized CSS architecture** with a dark geospatial theme.
-
-```
-src/css/
-├── mmgis.css           # Core styles, :root variables, animations
-├── mmgisUI.css         # UI components (buttons, sliders, checkboxes)
-├── external/           # Third-party library overrides
-│   ├── leaflet.css
-│   └── tempus-dominus.css
-└── tools.css           # Built-in tool-specific styles
-
-src/essence/Tools/<ToolName>/
-└── <ToolName>Tool.css  # Component-specific styles
-```
-
-**Current Theming via CSS Variables**:
-```css
-/* mmgis.css */
-:root {
-    --color-a: #1c1c1c;  /* Dark background */
-    --color-b: #2e2e2e;  /* Panel background */
-    --color-k: #000000;  /* Pure black */
-    --main-color: #00d8ff;  /* Accent color */
-}
-```
-
-### Problems with Current Styling
-
-| Problem | Impact |
-|---------|--------|
-| **Hard-coded Dark Theme** | No light mode or alternative themes |
-| **Dynamic Inline Styles** | JavaScript frequently injects styles; hard to override |
-| **High-Specificity Overrides** | Third-party library overrides require `!important` chains |
-| **No Design System Integration** | Doesn't align with USWDS/Horizon standards |
-
 ---
 
 ## Decision Drivers
 
 1. **Multi-Panel Support**: Enable multiple active plugins simultaneously (e.g., Draw + Measure + Layers)
-2. **Modern Visual Design**: Improve panel styling with proper spacing, and visual hierarchy
-3. **Floating Panel Management**: Better z-index and stacking management for overlapping panels
-4. **Design System Alignment**: Match USWDS or Horizon for overall consistency with all our instances
-5. **Configuration-Driven**: Panel behavior and theming defined in mission/tool configs, not hard-coded
-6. **Gradual Migration**: Can adopt incrementally without rewriting all 16+ existing tools
-7. **Incremental Enhancement**: Build foundation for future grid-based layout system
+2. **Floating Panel Management**: Better z-index and stacking management for overlapping panels
+3. **Configuration-Driven**: Panel behavior defined in mission/tool configs, not hard-coded
+4. **Gradual Migration**: Can adopt incrementally without rewriting all 16+ existing tools
+5. **Incremental Enhancement**: Build foundation for future grid-based layout system
 
 ---
 
@@ -165,9 +124,7 @@ src/essence/Tools/<ToolName>/
 
 ## Considered Options
 
-### Layout
-
-#### Option 1: Enhanced Panel System (Selected)
+### Option 1: Enhanced Panel System (Selected)
 
 **Description**: Extend current panel system with multi-panel support, modern controls, and improved visual design.
 
@@ -196,7 +153,7 @@ src/essence/Tools/<ToolName>/
 
 ---
 
-#### Option 2: Gridstack.js Grid System (Deferred to Future)
+### Option 2: Gridstack.js Grid System (Deferred to Future)
 
 **Description**: Full grid-based layout with drag-and-drop positioning.
 
@@ -207,7 +164,7 @@ src/essence/Tools/<ToolName>/
 
 ---
 
-#### Option 3: Complete UI Rewrite with React
+### Option 3: Complete UI Rewrite with React
 
 **Description**: Modernize entire frontend with React framework.
 
@@ -219,38 +176,7 @@ src/essence/Tools/<ToolName>/
 
 ---
 
-### Styling
-
-#### Option 1: USWDS / Horizon (Selected)
-
-**Description**: A government-standard design system with built-in accessibility and a mature component ecosystem.
-
-**Pros**:
-- WCAG 2.1 AA compliant out of the box
-- Comprehensive component library (50+ components)
-- Built-in light and dark theme support
-- Strong documentation and active community
-
-**Cons**:
-- May not be a perfect visual fit for all projects, particularly those outside NASA or those not yet using USWDS/Horizon.
-
----
-
-#### Option 2: Custom Theme System (CSS Variables) (Deferred)
-
-**Description**: A flexible, custom theming approach built on top of CSS variables.
-
-**Pros**:
-- Highly customizable to meet individual project needs
-- Enables future creation of custom themes for different deployments
-
-**Cons**:
-- Significant upfront effort to design and maintain a theme architecture
-- Requires defining and maintaining themes for each project
-
----
-
-#### Decision
+## Decision
 
 Adopt **USWDS / Horizon** as the default design system to ensure accessibility, consistency, and faster delivery. 
 
@@ -273,17 +199,7 @@ Customization will be limited to a small, well-defined set of overridable CSS pr
 - Support for multiple simultaneously active tools
 - Updated `make()` / `destroy()` lifecycle for multi-panel scenarios
 - Plugin API for panel controls and state management
-
-**Theme System (`Theme_.js`)**
-- USWDS design token integration
-- Default geospatial-dark theme preserving current aesthetics
-- Theme configuration by extracting css properties to a single file
-
-**Panel UI Components**
-- Standardized panel header with minimize, maximize, close controls
-- State transition animations and accessibility (keyboard shortcuts)
-- USWDS-based styling replacing legacy `mmgisUI.css` components
-
+- 
 ---
 
 ## Proposed Configuration Schema
@@ -385,33 +301,6 @@ PanelManager_ = {
 **Position conflicts**: When multiple tools are configured with the same `panelType` (e.g., two tools both set to `"left"`), their rendering order is determined by a `priority` value — lower numbers take precedence. This mirrors the existing priority mechanism MMGIS already uses for plugin ordering. In the current implementation, conflicts are resolved at runtime by `PanelManager_` based on this value. If two tools share the same `priority`, order falls back to the order in which they were registered.
 
 > **Future work**: A formal validation step will be added when the tool builder UI is developed, allowing administrators to detect and resolve priority conflicts at configuration time rather than at runtime ensuring tools to be placed in expected position.
-
-### Panel Header UI
-
-Each panel will have a standardized header with controls:
-
-```html
-<!-- Panel Header Structure -->
-<div class="mmgis-panel-header">
-  <div class="mmgis-panel-title">
-    <i class="mdi mdi-vector-square"></i>
-    <span>Draw Tool</span>
-  </div>
-  <div class="mmgis-panel-controls">
-    <button class="mmgis-panel-minimize" aria-label="Minimize" title="Minimize">
-      <i class="mdi mdi-window-minimize"></i>
-    </button>
-    <button class="mmgis-panel-close" aria-label="Close" title="Close">
-      <i class="mdi mdi-close"></i>
-    </button>
-  </div>
-</div>
-<div class="mmgis-panel-content">
-  <!-- Tool content here -->
-</div>
-```
-
-*We need to work on ui/ux later to determine how/where to show these panel controls*
 
 ---
 
@@ -636,12 +525,6 @@ toolButton.on('click', function() {
 - Touch-optimized interactions and swipeable navigation
 - Mobile-specific panel presets
 
-**Advanced Theming**
-- Dynamic theme generation from mission configuration
-- High-contrast accessibility modes
-- Community theme gallery and preview system
-
 **Plugin Marketplace Integration**
 - Sandboxed layout environments for third-party plugins
-- Theme API for external plugin compatibility
 - Security validation and layout checks
