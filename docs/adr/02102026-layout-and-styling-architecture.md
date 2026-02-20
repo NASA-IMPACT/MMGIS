@@ -176,7 +176,6 @@ src/essence/Tools/<ToolName>/
 - **Multi-Panel Support**: Multiple tools can be open simultaneously
 - **Panel Controls**: Minimize, maximize, close buttons on panel header
 - **Modern Styling**: Box shadows, border radius, proper spacing, visual hierarchy
-- **State Persistence**: Remember panel states across sessions
 
 **Pros**:
 - Minimal refactoring of existing architecture
@@ -254,8 +253,11 @@ src/essence/Tools/<ToolName>/
 #### Decision
 
 Adopt **USWDS / Horizon** as the default design system to ensure accessibility, consistency, and faster delivery. 
+
 In parallel, structure the codebase to support theming so that USWDS becomes the core design system with theming capabilities that will enable customization of the system as needs evolve.
+
 Customization will be limited to a small, well-defined set of overridable CSS properties — specifically colors, typography, and spacing. This allows different NASA teams or deployments to apply mission-specific branding.
+
 ---
 
 ## Implementation Details
