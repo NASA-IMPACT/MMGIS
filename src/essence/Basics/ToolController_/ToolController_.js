@@ -179,6 +179,13 @@ let ToolController_ = {
                                     }
                                 )
                                 document.dispatchEvent(_event)
+                                // Dual-emit to mmgisAPI Event Bus
+                                if (window.mmgisAPI) {
+                                    window.mmgisAPI.emit('tool:toggleSeparated', {
+                                        toggledToolName: ToolController_.tools[i].js,
+                                        visible: tM.made,
+                                    })
+                                }
                             }
                         }
                     })(i)
@@ -276,6 +283,13 @@ let ToolController_ = {
                                     },
                                 })
                                 document.dispatchEvent(_event)
+                                // Dual-emit to mmgisAPI Event Bus
+                                if (window.mmgisAPI) {
+                                    window.mmgisAPI.emit('tool:change', {
+                                        activeTool: ToolController_.activeTool,
+                                        activeToolName: ToolController_.activeToolName,
+                                    })
+                                }
                             }
                         })(i)
                     )

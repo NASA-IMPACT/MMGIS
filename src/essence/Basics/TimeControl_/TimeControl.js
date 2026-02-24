@@ -51,6 +51,26 @@ var TimeControl = {
     fina: function () {
         if ((TimeControl.enabled = true && TimeControl.timeUI != null))
             TimeControl.timeUI.fina()
+
+        // Register time providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime())
+            window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime())
+            window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime())
+            window.mmgisAPI.provide('time:set', (params) => {
+                if (params) {
+                    return TimeControl.setTime(
+                        params.startTime,
+                        params.endTime,
+                        params.isRelative,
+                        params.timeOffset,
+                        params.currentTime,
+                        params.customTimes
+                    )
+                }
+                return false
+            })
+        }
     },
     subscribe: function () {},
     unsubscribe: function () {},

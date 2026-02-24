@@ -102,6 +102,26 @@ var InfoTool = {
     },
     make: function () {
         this.MMGISInterface = new interfaceWithMMGIS()
+
+        // Register InfoTool providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            window.mmgisAPI.provide('plugin:info:showFeature', (params) => {
+                if (params && params.layerName && params.layer) {
+                    InfoTool.use(params.layer, params.layerName)
+                    return true
+                }
+                return false
+            })
+            window.mmgisAPI.provide('plugin:info:getCurrentFeature', () => {
+                if (InfoTool.currentLayer && InfoTool.currentLayer.feature) {
+                    return {
+                        layerName: InfoTool.currentLayerName,
+                        feature: InfoTool.currentLayer.feature,
+                    }
+                }
+                return null
+            })
+        }
     },
     destroy: function () {
         this.MMGISInterface.separateFromMMGIS()

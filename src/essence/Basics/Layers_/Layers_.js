@@ -156,6 +156,24 @@ const L_ = {
         this.UserInterface_ = userinterface_
         this.Coordinates = coordinates
         this.TimeControl_ = timecontrol_
+
+        // Register layers providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            window.mmgisAPI.provide('layers:getAll', () => Object.keys(L_.layers.data))
+            window.mmgisAPI.provide('layers:getVisible', () => L_.layers.on)
+            window.mmgisAPI.provide('layers:getConfig', (layerUUID) => {
+                const uuid = L_.asLayerUUID(layerUUID)
+                return L_.layers.data[uuid] || null
+            })
+            window.mmgisAPI.provide('layers:toggle', async (layerUUID) => {
+                const uuid = L_.asLayerUUID(layerUUID)
+                if (L_.layers.data[uuid]) {
+                    await L_.toggleLayer(L_.layers.data[uuid])
+                    return L_.layers.on[uuid]
+                }
+                return null
+            })
+        }
     },
     fullyLoaded: function () {
         this.selectPoint(this.FUTURES.activePoint)

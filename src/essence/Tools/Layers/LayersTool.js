@@ -1518,6 +1518,14 @@ function interfaceWithMMGIS(fromInit) {
                 },
             })
             document.dispatchEvent(_event)
+            // Dual-emit to mmgisAPI Event Bus
+            if (window.mmgisAPI) {
+                window.mmgisAPI.emit('layer:visibilityChange', {
+                    layer: L_.layers.data[layerName],
+                    layerName,
+                    visible: L_.layers.on[layerName],
+                })
+            }
         }
     }
     //Add event functions and whatnot

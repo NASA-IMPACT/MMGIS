@@ -243,6 +243,25 @@ let Map_ = {
         //Remove attribution
         $('.leaflet-control-attribution').remove()
 
+        // Register map providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            window.mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter())
+            window.mmgisAPI.provide('map:getBounds', () => Map_.map.getBounds())
+            window.mmgisAPI.provide('map:getZoom', () => Map_.map.getZoom())
+            window.mmgisAPI.provide('map:setView', ({ center, zoom }) => {
+                if (center && zoom != null) {
+                    Map_.map.setView(center, zoom)
+                } else if (center) {
+                    Map_.map.setView(center)
+                }
+                return true
+            })
+            window.mmgisAPI.provide('map:fitBounds', (bounds) => {
+                Map_.map.fitBounds(bounds)
+                return true
+            })
+        }
+
         //Make our layers
         makeLayers(L_.layers.dataFlat)
 
@@ -884,6 +903,12 @@ function featureDefaultClick(feature, layer, e) {
             },
         })
         document.dispatchEvent(_event)
+        // Dual-emit to mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('feature:active', {
+                activeFeature: L_.activeFeature,
+            })
+        }
     })
 }
 
@@ -2040,6 +2065,10 @@ function clearOnMapClick(event) {
             },
         })
         document.dispatchEvent(_event)
+        // Dual-emit to mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('feature:active', { activeFeature: null })
+        }
         return
     }
     // Skip if there is no actively selected feature
@@ -2052,6 +2081,10 @@ function clearOnMapClick(event) {
             },
         })
         document.dispatchEvent(_event)
+        // Dual-emit to mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('feature:active', { activeFeature: null })
+        }
         return
     }
 

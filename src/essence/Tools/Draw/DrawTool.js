@@ -655,6 +655,16 @@ var DrawTool = {
 
         this.MMGISInterface = new interfaceWithMMGIS()
 
+        // Register DrawTool providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            window.mmgisAPI.provide('plugin:draw:getActiveFeature', () => {
+                return DrawTool.contextMenuLayer?.feature || null
+            })
+            window.mmgisAPI.provide('plugin:draw:getFilesOn', () => {
+                return [...DrawTool.filesOn]
+            })
+        }
+
         // Load dynamicExtent config from tool variables
         // Default to enabled unless explicitly disabled
         if (this.vars.dynamicExtent) {
