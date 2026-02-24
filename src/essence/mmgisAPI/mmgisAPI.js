@@ -5,12 +5,24 @@ import QueryURL from '../Ancillary/QueryURL'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import Login from '../Ancillary/Login/Login'
 import LegendTool from '../Tools/Legend/LegendTool.js'
+import mitt from 'mitt'
 
 import $ from 'jquery'
 
 let L = window.L
 
+// ============ EVENT BUS INFRASTRUCTURE ============
+// Using mitt for pub/sub events (200 bytes, battle-tested)
+const events = mitt()
+
+// Request/Response handler registry for async data retrieval
+const handlers = new Map()
+
 var mmgisAPI_ = {
+    // Internal event bus access for core modules
+    _events: events,
+    _handlers: handlers,
+
     // Exposes Leaflet map object
     map: null,
     // Initialize the map variable
@@ -742,6 +754,88 @@ var mmgisAPI = {
      * @param {array} - legends - an array of objects, where each object must contain the following keys: legend, layerUUID, display_name, opacity. The value for the legend key should be in the same format as what is stored in the layers data under the `_legend` key (i.e. `L_.layers.data[layerName]._legend`). layerUUID and display_name should be strings and opacity should be a number between 0 and 1.
      */
     overwriteLegends: LegendTool.overwriteLegends,
+
+    // ============ EVENT BUS API ============
+
+    /**
+     * Subscribe to an event
+     * @param {string} event - Event name (e.g., 'layer:toggle', 'time:change', 'tool:change')
+     * @param {function} callback - Handler function that receives event data
+     * @returns {function} - Unsubscribe function to remove the listener
+     * @example
+     * const unsubscribe = mmgisAPI.on('layer:toggle', (data) => console.log(data));
+     * // Later: unsubscribe();
+     */
+    on: (event, callback) => {
+        events.on(event, callback)
+        return () => events.off(event, callback)
+    },
+
+    /**
+     * Unsubscribe from an event
+     * @param {string} event - Event name
+     * @param {function} callback - Handler function to remove
+     * @example
+     * mmgisAPI.off('layer:toggle', myHandler);
+     */
+    off: events.off,
+
+    /**
+     * Emit an event to all subscribers
+     * @param {string} event - Event name
+     * @param {*} data - Event data to pass to subscribers
+     * @example
+     * mmgisAPI.emit('layer:toggle', { layerName: 'Terrain', visible: true });
+     */
+    emit: events.emit,
+
+    // ============ REQUEST/RESPONSE API ============
+
+    /**
+     * Register a request handler (data provider)
+     * @param {string} name - Request name (e.g., 'map:getCenter', 'plugin:info:showFeature')
+     * @param {function} handler - Async handler function that returns data
+     * @returns {function} - Cleanup function to remove the handler
+     * @example
+     * const cleanup = mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter());
+     * // Later: cleanup();
+     */
+    provide(name, handler) {
+        if (handlers.has(name)) {
+            console.warn(`[mmgisAPI] Handler "${name}" is being replaced`)
+        }
+        handlers.set(name, handler)
+        return () => handlers.delete(name)
+    },
+
+    /**
+     * Make a request to a registered handler
+     * @param {string} name - Request name
+     * @param {*} data - Request data to pass to the handler
+     * @returns {Promise<*>} - Promise that resolves to handler's response
+     * @throws {Error} - If no handler is registered for the request name
+     * @example
+     * const center = await mmgisAPI.request('map:getCenter');
+     * const layers = await mmgisAPI.request('layers:getVisible');
+     */
+    async request(name, data) {
+        const handler = handlers.get(name)
+        if (!handler) {
+            throw new Error(`[mmgisAPI] No handler for: "${name}"`)
+        }
+        return await handler(data)
+    },
+
+    /**
+     * Check if a handler is registered for a request name
+     * @param {string} name - Request name to check
+     * @returns {boolean} - True if handler exists
+     * @example
+     * if (mmgisAPI.hasHandler('map:getCenter')) { ... }
+     */
+    hasHandler(name) {
+        return handlers.has(name)
+    },
 
     // Formulae_
     utils: { ...F_ },
