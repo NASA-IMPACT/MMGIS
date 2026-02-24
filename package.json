@@ -117,6 +117,7 @@
     "mark.js": "^8.11.1",
     "materialize-css": "^1.0.0",
     "memorystore": "^1.6.2",
+    "mitt": "^3.0.1",
     "nipplejs": "^0.8.5",
     "node-fetch": "^2.6.1",
     "node-schedule": "^2.1.1",
