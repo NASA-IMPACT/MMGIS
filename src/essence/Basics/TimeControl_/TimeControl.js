@@ -9,6 +9,9 @@ import TimeUI from './TimeUI'
 
 import './TimeControl.css'
 
+// Provider cleanup functions for re-initialization
+let _providerCleanups = []
+
 // Can be either hh:mm:ss or just seconds
 const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
@@ -54,22 +57,26 @@ var TimeControl = {
 
         // Register time providers for mmgisAPI Event Bus
         if (window.mmgisAPI) {
-            window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime())
-            window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime())
-            window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime())
-            window.mmgisAPI.provide('time:set', (params) => {
-                if (params) {
-                    return TimeControl.setTime(
-                        params.startTime,
-                        params.endTime,
-                        params.isRelative,
-                        params.timeOffset,
-                        params.currentTime,
-                        params.customTimes
-                    )
-                }
-                return false
-            })
+            // Clean up previous providers if re-initializing
+            _providerCleanups.forEach((cleanup) => cleanup())
+            _providerCleanups = [
+                window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
+                window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
+                window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
+                window.mmgisAPI.provide('time:set', (params) => {
+                    if (params) {
+                        return TimeControl.setTime(
+                            params.startTime,
+                            params.endTime,
+                            params.isRelative,
+                            params.timeOffset,
+                            params.currentTime,
+                            params.customTimes
+                        )
+                    }
+                    return false
+                }),
+            ]
         }
     },
     subscribe: function () {},

@@ -35,6 +35,9 @@ import georaster from 'georaster'
 // The default color ramp used for image layer types
 const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
 
+// Provider cleanup functions for re-initialization
+let _providerCleanups = []
+
 let Map_ = {
     //Our main leaflet map variable
     map: null,
@@ -245,21 +248,25 @@ let Map_ = {
 
         // Register map providers for mmgisAPI Event Bus
         if (window.mmgisAPI) {
-            window.mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter())
-            window.mmgisAPI.provide('map:getBounds', () => Map_.map.getBounds())
-            window.mmgisAPI.provide('map:getZoom', () => Map_.map.getZoom())
-            window.mmgisAPI.provide('map:setView', ({ center, zoom }) => {
-                if (center && zoom != null) {
-                    Map_.map.setView(center, zoom)
-                } else if (center) {
-                    Map_.map.setView(center)
-                }
-                return true
-            })
-            window.mmgisAPI.provide('map:fitBounds', (bounds) => {
-                Map_.map.fitBounds(bounds)
-                return true
-            })
+            // Clean up previous providers if re-initializing
+            _providerCleanups.forEach((cleanup) => cleanup())
+            _providerCleanups = [
+                window.mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter()),
+                window.mmgisAPI.provide('map:getBounds', () => Map_.map.getBounds()),
+                window.mmgisAPI.provide('map:getZoom', () => Map_.map.getZoom()),
+                window.mmgisAPI.provide('map:setView', ({ center, zoom }) => {
+                    if (center && zoom != null) {
+                        Map_.map.setView(center, zoom)
+                    } else if (center) {
+                        Map_.map.setView(center)
+                    }
+                    return true
+                }),
+                window.mmgisAPI.provide('map:fitBounds', (bounds) => {
+                    Map_.map.fitBounds(bounds)
+                    return true
+                }),
+            ]
         }
 
         //Make our layers
