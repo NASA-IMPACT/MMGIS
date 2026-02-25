@@ -1,0 +1,496 @@
+/* LayerManagerTool Styles */
+
+#layerManagerTool {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    color: var(--color-l);
+    font-family: 'lato-light', sans-serif;
+}
+
+/* Header */
+.lm-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: var(--color-i);
+    border-bottom: 1px solid var(--color-a);
+}
+
+.lm-title {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.lm-actions button {
+    background: transparent;
+    border: none;
+    color: var(--color-l);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 3px;
+    transition: background 0.2s, color 0.2s;
+}
+
+.lm-actions button:hover {
+    color: var(--color-mw);
+    background: var(--color-a);
+}
+
+/* Search */
+.lm-search {
+    display: flex;
+    align-items: center;
+    padding: 8px 15px;
+    background: var(--color-a);
+    border-bottom: 1px solid var(--color-i);
+    position: relative;
+}
+
+.lm-search i {
+    color: var(--color-f);
+    margin-right: 8px;
+}
+
+.lm-search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--color-l);
+    font-size: 13px;
+    outline: none;
+}
+
+.lm-search-input::placeholder {
+    color: var(--color-f);
+}
+
+.lm-search-clear {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--color-f);
+    cursor: pointer;
+    padding: 2px;
+}
+
+.lm-search-clear.shown {
+    display: block;
+}
+
+.lm-search-clear:hover {
+    color: var(--color-l);
+}
+
+/* Content area */
+.lm-content {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.lm-layer-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* Layer item */
+.lm-layer-item {
+    border-bottom: 1px solid var(--color-a);
+    padding: 10px 15px;
+    transition: background 0.2s;
+    border-left: 3px solid transparent;
+}
+
+.lm-layer-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.lm-layer-item.visible {
+    border-left-color: var(--color-p1);
+}
+
+/* Layer header row */
+.lm-layer-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.lm-visibility-checkbox {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: var(--color-p1);
+}
+
+.lm-layer-name {
+    flex: 1;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.lm-layer-type {
+    font-size: 10px;
+    color: var(--color-f);
+    text-transform: uppercase;
+    padding: 2px 6px;
+    background: var(--color-a);
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.lm-expand-cog {
+    cursor: pointer;
+    color: var(--color-f);
+    padding: 2px;
+    border-radius: 3px;
+    transition: color 0.2s, background 0.2s;
+}
+
+.lm-expand-cog:hover {
+    color: var(--color-l);
+    background: var(--color-a);
+}
+
+/* Opacity control */
+.lm-opacity-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    padding-left: 26px;
+}
+
+.lm-opacity-control label {
+    font-size: 11px;
+    color: var(--color-f);
+    min-width: 45px;
+}
+
+.lm-opacity-slider {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--color-a);
+    border-radius: 2px;
+    cursor: pointer;
+    outline: none;
+}
+
+.lm-opacity-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--color-p1);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.lm-opacity-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}
+
+.lm-opacity-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--color-p1);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+.lm-opacity-value {
+    font-size: 11px;
+    color: var(--color-f);
+    min-width: 35px;
+    text-align: right;
+}
+
+/* Always-visible colormap bar */
+.lm-colormap-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    margin-left: 26px;
+    padding: 8px 10px;
+    background: var(--color-a);
+    border: 1px solid var(--color-i);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+}
+
+.lm-colormap-bar:hover {
+    border-color: var(--color-p1);
+    background: var(--color-i);
+}
+
+.lm-colormap-preview-bar {
+    flex: 1;
+    height: 18px;
+    border-radius: 3px;
+    min-width: 80px;
+}
+
+.lm-colormap-bar-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 90px;
+}
+
+.lm-colormap-bar-name {
+    font-size: 11px;
+    color: var(--color-l);
+    font-weight: 500;
+}
+
+.lm-colormap-bar-range {
+    font-size: 10px;
+    color: var(--color-f);
+}
+
+.lm-colormap-bar-chevron {
+    color: var(--color-f);
+    transition: transform 0.2s;
+}
+
+.lm-colormap-bar:hover .lm-colormap-bar-chevron {
+    color: var(--color-l);
+}
+
+/* COG Controls (Colormap & Rescale) - expanded panel */
+.lm-cog-controls {
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 0;
+    padding: 12px;
+    margin-left: 26px;
+    background: var(--color-a);
+    border: 1px solid var(--color-i);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+}
+
+/* Colormap Section */
+.lm-cog-section {
+    position: relative;
+}
+
+.lm-cog-section > label {
+    display: block;
+    font-size: 11px;
+    color: var(--color-f);
+    margin-bottom: 6px;
+}
+
+/* Colormap dropdown - always visible in expanded state */
+.lm-colormap-dropdown {
+    display: block;
+    background: var(--color-k);
+    border: 1px solid var(--color-i);
+    border-radius: 4px;
+    max-height: 200px;
+    overflow: hidden;
+}
+
+.lm-colormap-search {
+    padding: 8px;
+    border-bottom: 1px solid var(--color-i);
+}
+
+.lm-colormap-search-input {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--color-a);
+    border: 1px solid var(--color-i);
+    border-radius: 3px;
+    color: var(--color-l);
+    font-size: 12px;
+    outline: none;
+}
+
+.lm-colormap-search-input:focus {
+    border-color: var(--color-p1);
+}
+
+.lm-colormap-search-input::placeholder {
+    color: var(--color-f);
+}
+
+.lm-colormap-list {
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+/* Individual colormap option */
+.lm-colormap-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.lm-colormap-option:hover {
+    background: var(--color-a);
+}
+
+.lm-colormap-option.selected {
+    background: var(--color-i);
+}
+
+.lm-colormap-option .lm-colormap-preview {
+    width: 80px;
+    height: 14px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    border: 1px solid var(--color-i);
+}
+
+.lm-colormap-option .lm-colormap-name {
+    font-size: 11px;
+    color: var(--color-l);
+}
+
+.lm-colormap-option.selected .lm-colormap-name {
+    font-weight: 500;
+}
+
+/* Rescale row */
+.lm-rescale-row {
+    display: flex;
+    gap: 12px;
+}
+
+.lm-rescale-field {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.lm-rescale-field label {
+    font-size: 11px;
+    color: var(--color-f);
+}
+
+.lm-cog-controls.expanded {
+    display: flex;
+}
+
+.lm-cog-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.lm-cog-row label {
+    font-size: 11px;
+    color: var(--color-f);
+    min-width: 70px;
+}
+
+.lm-rescale-min,
+.lm-rescale-max {
+    flex: 1;
+    background: var(--color-k);
+    border: 1px solid var(--color-i);
+    color: var(--color-l);
+    padding: 6px 8px;
+    font-size: 12px;
+    border-radius: 3px;
+    outline: none;
+}
+
+.lm-rescale-min:focus,
+.lm-rescale-max:focus {
+    border-color: var(--color-p1);
+}
+
+/* Remove number input spinners for cleaner look */
+.lm-rescale-min::-webkit-outer-spin-button,
+.lm-rescale-min::-webkit-inner-spin-button,
+.lm-rescale-max::-webkit-outer-spin-button,
+.lm-rescale-max::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.lm-rescale-min,
+.lm-rescale-max {
+    -moz-appearance: textfield;
+}
+
+/* COG action buttons */
+.lm-cog-actions {
+    justify-content: flex-end;
+    margin-top: 5px;
+    gap: 8px;
+}
+
+.lm-apply-cog,
+.lm-reset-cog {
+    background: var(--color-p1);
+    border: none;
+    color: white;
+    padding: 6px 14px;
+    font-size: 11px;
+    border-radius: 3px;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-weight: 500;
+    transition: background 0.2s, opacity 0.2s;
+}
+
+.lm-apply-cog:hover {
+    background: var(--color-p1-dark, #1565c0);
+}
+
+.lm-apply-cog:disabled,
+.lm-reset-cog:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.lm-reset-cog {
+    background: var(--color-i);
+    color: var(--color-l);
+}
+
+.lm-reset-cog:hover {
+    background: var(--color-a);
+}
+
+/* Error state */
+.lm-error {
+    padding: 20px;
+    text-align: center;
+    color: var(--color-red, #e74c3c);
+    font-size: 12px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 400px) {
+    .lm-cog-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .lm-cog-row label {
+        margin-bottom: 4px;
+    }
+}
