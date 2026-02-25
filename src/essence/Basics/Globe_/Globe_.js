@@ -5,6 +5,9 @@ import $ from 'jquery'
 import TimeControl from '../TimeControl_/TimeControl'
 import GlobeRenderer from './GlobeRenderer'
 
+// Provider cleanup functions for re-initialization
+let _providerCleanups = []
+
 let Globe_ = {
     litho: null,
     id: 'globe',
@@ -252,6 +255,29 @@ let Globe_ = {
                 }px !important; left: 7px;`
             }
         )
+
+        // Register globe providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            // Clean up previous providers if re-initializing
+            _providerCleanups.forEach((cleanup) => cleanup())
+            _providerCleanups = [
+                window.mmgisAPI.provide('globe:getMouse', () => {
+                    if (Globe_.litho && Globe_.litho.mouse) {
+                        return {
+                            lng: Globe_.litho.mouse.lng,
+                            lat: Globe_.litho.mouse.lat,
+                        }
+                    }
+                    return null
+                }),
+                window.mmgisAPI.provide('globe:getZoom', () => {
+                    if (Globe_.litho) {
+                        return Globe_.litho.zoom
+                    }
+                    return null
+                }),
+            ]
+        }
     },
     getMockLitho: function () {
         return {

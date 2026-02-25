@@ -266,6 +266,10 @@ let Map_ = {
                     Map_.map.fitBounds(bounds)
                     return true
                 }),
+                window.mmgisAPI.provide('map:panTo', (latlng) => {
+                    Map_.map.panTo(latlng)
+                    return true
+                }),
             ]
         }
 

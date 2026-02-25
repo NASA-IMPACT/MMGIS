@@ -126,6 +126,9 @@ const TILE_DEFAULT_COLOR_RAMP = 'viridis'
 // The default color ramp used for velocity layer types
 const VELOCITY_DEFAULT_COLOR_RAMP = 'rdylbu_r'
 
+// Provider cleanup functions for re-initialization
+let _providerCleanups = []
+
 var LayersTool = {
     height: 0,
     width: 350,
@@ -176,6 +179,21 @@ var LayersTool = {
     },
     make: function (t, fromInit) {
         this.MMGISInterface = new interfaceWithMMGIS(fromInit)
+
+        // Register LayersTool providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            // Clean up previous providers if re-initializing
+            _providerCleanups.forEach((cleanup) => cleanup())
+            _providerCleanups = [
+                window.mmgisAPI.provide(
+                    'plugin:layers:populateCogScale',
+                    (layerName) => {
+                        LayersTool.populateCogScale(layerName)
+                        return true
+                    }
+                ),
+            ]
+        }
     },
     destroy: function () {
         this.MMGISInterface.separateFromMMGIS()

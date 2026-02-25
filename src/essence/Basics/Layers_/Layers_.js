@@ -179,6 +179,7 @@ const L_ = {
                     }
                     return null
                 }),
+                window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
             ]
         }
     },
