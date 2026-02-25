@@ -292,15 +292,8 @@ test.describe('mmgisAPI Core Providers - Browser Integration', () => {
 test.describe('mmgisAPI Events - Dual Emission Integration', () => {
     test('can subscribe to tool:change events', async ({ page }) => {
         const result = await page.evaluate(() => {
-            let eventReceived = false
-
-            // Subscribe to tool change events
-            window.mmgisAPI.on('tool:change', () => {
-                eventReceived = true
-            })
-
-            // Return that subscription was successful
-            return { subscribed: true }
+            const unsubscribe = window.mmgisAPI.on('tool:change', () => {})
+            return { subscribed: typeof unsubscribe === 'function' }
         })
 
         expect(result.subscribed).toBe(true)
@@ -308,13 +301,8 @@ test.describe('mmgisAPI Events - Dual Emission Integration', () => {
 
     test('can subscribe to layer:visibilityChange events', async ({ page }) => {
         const result = await page.evaluate(() => {
-            let eventReceived = false
-
-            window.mmgisAPI.on('layer:visibilityChange', () => {
-                eventReceived = true
-            })
-
-            return { subscribed: true }
+            const unsubscribe = window.mmgisAPI.on('layer:visibilityChange', () => {})
+            return { subscribed: typeof unsubscribe === 'function' }
         })
 
         expect(result.subscribed).toBe(true)
@@ -322,13 +310,8 @@ test.describe('mmgisAPI Events - Dual Emission Integration', () => {
 
     test('can subscribe to feature:active events', async ({ page }) => {
         const result = await page.evaluate(() => {
-            let eventReceived = false
-
-            window.mmgisAPI.on('feature:active', () => {
-                eventReceived = true
-            })
-
-            return { subscribed: true }
+            const unsubscribe = window.mmgisAPI.on('feature:active', () => {})
+            return { subscribed: typeof unsubscribe === 'function' }
         })
 
         expect(result.subscribed).toBe(true)
@@ -336,13 +319,8 @@ test.describe('mmgisAPI Events - Dual Emission Integration', () => {
 
     test('can subscribe to websocket:change events', async ({ page }) => {
         const result = await page.evaluate(() => {
-            let eventReceived = false
-
-            window.mmgisAPI.on('websocket:change', () => {
-                eventReceived = true
-            })
-
-            return { subscribed: true }
+            const unsubscribe = window.mmgisAPI.on('websocket:change', () => {})
+            return { subscribed: typeof unsubscribe === 'function' }
         })
 
         expect(result.subscribed).toBe(true)
@@ -350,13 +328,8 @@ test.describe('mmgisAPI Events - Dual Emission Integration', () => {
 
     test('can subscribe to legend:made events', async ({ page }) => {
         const result = await page.evaluate(() => {
-            let eventReceived = false
-
-            window.mmgisAPI.on('legend:made', () => {
-                eventReceived = true
-            })
-
-            return { subscribed: true }
+            const unsubscribe = window.mmgisAPI.on('legend:made', () => {})
+            return { subscribed: typeof unsubscribe === 'function' }
         })
 
         expect(result.subscribed).toBe(true)
