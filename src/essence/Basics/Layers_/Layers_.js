@@ -6,6 +6,51 @@ import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import $ from 'jquery'
+import {
+    evaluate_cmap,
+    data as colormapData,
+} from '../../../external/js-colormaps/js-colormaps.js'
+
+// Default color ramps for different layer types
+const IMAGE_DEFAULT_COLOR_RAMP = 'viridis'
+const TILE_DEFAULT_COLOR_RAMP = 'viridis'
+const VELOCITY_DEFAULT_COLOR_RAMP = 'viridis'
+
+/**
+ * Find and normalize a JS colormap name
+ * @param {Object} layer - Layer data object
+ * @param {string} layerColormap - Colormap name from layer config
+ * @returns {{colormap: string, reverse: boolean}}
+ */
+function findJSColormap(layer, layerColormap) {
+    if (!['image', 'tile', 'velocity'].includes(layer.type)) return {}
+
+    let colormap
+    // Default to predefined values if the layer's colormap value is invalid
+    if (layer.type === 'image') {
+        colormap = layerColormap || IMAGE_DEFAULT_COLOR_RAMP
+    } else if (layer.type === 'tile') {
+        colormap = layerColormap || TILE_DEFAULT_COLOR_RAMP
+    } else if (layer.type === 'velocity') {
+        colormap = layerColormap || VELOCITY_DEFAULT_COLOR_RAMP
+    }
+
+    // js-colormaps data object only contains the non reversed color so we need to track if the color is reversed
+    let reverse = false
+    if (colormap.toLowerCase().endsWith('_r')) {
+        colormap = colormap.substring(0, colormap.length - 2)
+        reverse = true
+    }
+
+    let index = Object.keys(colormapData).findIndex((v) => {
+        return v.toLowerCase() === colormap.toLowerCase()
+    })
+
+    if (index > -1) {
+        colormap = Object.keys(colormapData)[index]
+    }
+    return { reverse, colormap }
+}
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
@@ -180,6 +225,199 @@ const L_ = {
                     return null
                 }),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
+                // Layer Manager Tool providers
+                window.mmgisAPI.provide('layers:setOpacity', (params) => {
+                    const { layerUUID, opacity } = params
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    if (L_.layers.data[uuid]) {
+                        L_.setLayerOpacity(uuid, opacity)
+                        L_.layers.opacity[uuid] = opacity
+                        window.mmgisAPI.emit('layer:opacityChange', {
+                            layerUUID: uuid,
+                            opacity: opacity,
+                        })
+                        return true
+                    }
+                    return false
+                }),
+                window.mmgisAPI.provide('layers:getOpacity', (layerUUID) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    return L_.layers.opacity[uuid] ?? 1
+                }),
+                window.mmgisAPI.provide('layers:getCogSettings', (layerUUID) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    const layer = L_.layers.data[uuid]
+                    if (!layer) return null
+                    return {
+                        cogTransform: layer.cogTransform || false,
+                        cogColormap: layer.cogColormap || null,
+                        cogMin: layer.cogMin,
+                        cogMax: layer.cogMax,
+                        currentCogMin: layer.currentCogMin ?? layer.cogMin,
+                        currentCogMax: layer.currentCogMax ?? layer.cogMax,
+                        cogUnits: layer.cogUnits || '',
+                        type: layer.type,
+                    }
+                }),
+                window.mmgisAPI.provide(
+                    'layers:setColormap',
+                    async (params) => {
+                        const { layerUUID, colormap } = params
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        const layer = L_.layers.data[uuid]
+                        if (!layer) return false
+
+                        layer.cogColormap = colormap
+
+                        window.mmgisAPI.emit('layer:colormapChange', {
+                            layerUUID: uuid,
+                            colormap: colormap,
+                        })
+
+                        // Trigger layer refresh
+                        await window.mmgisAPI.request('layers:refreshLayer', {
+                            layerUUID: uuid,
+                            updateOptions: { cogColormap: colormap },
+                        })
+
+                        return true
+                    }
+                ),
+                window.mmgisAPI.provide('layers:setRescale', async (params) => {
+                    const { layerUUID, min, max } = params
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    const layer = L_.layers.data[uuid]
+                    if (!layer) return false
+
+                    if (min !== undefined) layer.currentCogMin = min
+                    if (max !== undefined) layer.currentCogMax = max
+
+                    window.mmgisAPI.emit('layer:rescaleChange', {
+                        layerUUID: uuid,
+                        currentCogMin: layer.currentCogMin,
+                        currentCogMax: layer.currentCogMax,
+                    })
+
+                    await window.mmgisAPI.request('layers:refreshLayer', {
+                        layerUUID: uuid,
+                        updateOptions: {
+                            currentCogMin: layer.currentCogMin,
+                            currentCogMax: layer.currentCogMax,
+                        },
+                    })
+
+                    return true
+                }),
+                window.mmgisAPI.provide(
+                    'layers:refreshLayer',
+                    async (params) => {
+                        const { layerUUID, updateOptions } = params
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        const layerData = L_.layers.data[uuid]
+                        const leafletLayer = L_.layers.layer[uuid]
+
+                        if (!layerData || !leafletLayer) return false
+
+                        if (layerData.type === 'tile') {
+                            leafletLayer.refresh(null, true, updateOptions || {})
+                        } else if (layerData.type === 'image') {
+                            // Update image layer colors directly
+                            const vMin = layerData.currentCogMin
+                            const vMax = layerData.currentCogMax
+                            if (vMin == null || vMax == null) return false
+
+                            const imageInfo = F_.getIn(
+                                layerData,
+                                'variables.image'
+                            )
+                            const range = vMax - vMin
+
+                            const { colormap, reverse } = findJSColormap(
+                                layerData,
+                                layerData.cogColormap
+                            )
+
+                            const hideNoDataValue = F_.getIn(
+                                layerData,
+                                'variables.hideNoDataValue'
+                            )
+
+                            const pixelValuesToColorFn = (values) => {
+                                const georaster = leafletLayer.options.georaster
+                                const pixelValue = values[0] // single band
+
+                                // don't return a color for noDataValue
+                                if (
+                                    georaster.noDataValue != null &&
+                                    georaster.noDataValue === pixelValue
+                                ) {
+                                    if (hideNoDataValue) {
+                                        return null
+                                    }
+                                    return [0, 0, 0]
+                                }
+
+                                // scale from 0 - 1
+                                let scaledPixelValue = (pixelValue - vMin) / range
+                                if (
+                                    !(
+                                        scaledPixelValue >= 0 &&
+                                        scaledPixelValue <= 1
+                                    )
+                                ) {
+                                    if (imageInfo && imageInfo.fillMinMax) {
+                                        if (scaledPixelValue <= 0) {
+                                            scaledPixelValue = 0
+                                        } else if (scaledPixelValue >= 1.0) {
+                                            scaledPixelValue = 1
+                                        }
+                                    } else {
+                                        return null
+                                    }
+                                }
+
+                                return evaluate_cmap(
+                                    scaledPixelValue,
+                                    colormap || IMAGE_DEFAULT_COLOR_RAMP,
+                                    reverse
+                                )
+                            }
+
+                            // Clear the cache and update colors
+                            leafletLayer.clearCache()
+                            leafletLayer.updateColors(pixelValuesToColorFn)
+
+                            // Store current values on the layer object
+                            leafletLayer.currentCogMin = vMin
+                            leafletLayer.currentCogMax = vMax
+                        } else if (layerData.type === 'velocity') {
+                            // Update velocity layer by removing and re-adding
+                            const vMin = layerData.currentCogMin
+                            const vMax = layerData.currentCogMax
+                            if (vMin == null || vMax == null) return false
+
+                            leafletLayer.options.minVelocity = vMin
+                            leafletLayer.options.maxVelocity = vMax
+                            // Need to remove and re-add layer to refresh colors
+                            L_.Map_.map.removeLayer(leafletLayer)
+                            leafletLayer.addTo(L_.Map_.map)
+                        }
+
+                        // Request COG scale population if handler exists
+                        if (
+                            window.mmgisAPI.hasHandler(
+                                'plugin:layers:populateCogScale'
+                            )
+                        ) {
+                            await window.mmgisAPI.request(
+                                'plugin:layers:populateCogScale',
+                                uuid
+                            )
+                        }
+
+                        return true
+                    }
+                ),
             ]
         }
     },
