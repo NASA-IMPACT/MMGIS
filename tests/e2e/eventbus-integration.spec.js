@@ -5,18 +5,20 @@ import { test, expect } from '@playwright/test'
  * Tests the event bus functionality in a real browser context
  */
 
-test.describe('mmgisAPI Event Bus - Browser Integration', () => {
-    test.beforeEach(async ({ page }) => {
-        // Navigate to the application and wait for it to fully load
-        await page.goto('/')
-        await page.waitForLoadState('networkidle', { timeout: 30000 })
+// Shared setup for all event bus tests
+test.beforeEach(async ({ page }) => {
+    // Navigate to the application and wait for it to fully load
+    await page.goto('/')
+    await page.waitForLoadState('networkidle', { timeout: 30000 })
 
-        // Wait for mmgisAPI to be available on window
-        await page.waitForFunction(
-            () => typeof window.mmgisAPI !== 'undefined',
-            { timeout: 10000 }
-        )
-    })
+    // Wait for mmgisAPI to be available on window
+    await page.waitForFunction(
+        () => typeof window.mmgisAPI !== 'undefined',
+        { timeout: 10000 }
+    )
+})
+
+test.describe('mmgisAPI Event Bus - Browser Integration', () => {
 
     test('mmgisAPI is available on window', async ({ page }) => {
         const hasAPI = await page.evaluate(() => {
@@ -229,15 +231,6 @@ test.describe('mmgisAPI Event Bus - Browser Integration', () => {
 
 test.describe('mmgisAPI Core Providers - Browser Integration', () => {
     test.beforeEach(async ({ page }) => {
-        await page.goto('/')
-        await page.waitForLoadState('networkidle', { timeout: 30000 })
-
-        // Wait for mmgisAPI to be available
-        await page.waitForFunction(
-            () => typeof window.mmgisAPI !== 'undefined',
-            { timeout: 10000 }
-        )
-
         // Wait a bit more for providers to be registered during app init
         await page.waitForTimeout(1000)
     })
@@ -297,16 +290,6 @@ test.describe('mmgisAPI Core Providers - Browser Integration', () => {
 })
 
 test.describe('mmgisAPI Events - Dual Emission Integration', () => {
-    test.beforeEach(async ({ page }) => {
-        await page.goto('/')
-        await page.waitForLoadState('networkidle', { timeout: 30000 })
-
-        await page.waitForFunction(
-            () => typeof window.mmgisAPI !== 'undefined',
-            { timeout: 10000 }
-        )
-    })
-
     test('can subscribe to tool:change events', async ({ page }) => {
         const result = await page.evaluate(() => {
             let eventReceived = false
