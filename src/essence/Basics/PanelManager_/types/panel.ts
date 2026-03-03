@@ -7,7 +7,6 @@ import { PanelPosition, PanelState, PanelLayoutType } from './layout';
  */
 export type PanelSize =
     | number                                    // Fixed pixels (e.g., 300)
-    | 'full'                                    // Full viewport dimension
     | 'content'                                 // Size based on content (grows to fit)
     | { min?: number; max?: number };           // Content-based with constraints
 
@@ -240,14 +239,14 @@ export interface PanelManager {
     focusTool(panelId: string, toolId: string): void;
 
     /**
-     * Toggle a panel's visibility.
+     * Toggle a panel's collapsed state.
      * Behavior depends on current state and constraints:
      * - collapsed -> last non-collapsed state (or expanded)
      * - iconified/focused/expanded -> collapsed
      *
      * @param panelId Panel identifier
      */
-    toggle(panelId: string): void;
+    togglePanelCollapsed(panelId: string): void;
 
     /**
      * Get all panels for a specific position, ordered by priority.
