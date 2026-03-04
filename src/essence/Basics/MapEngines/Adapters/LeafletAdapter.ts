@@ -97,7 +97,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
 
         // Handle custom projection for planetary missions (Mars, Moon, etc.)
         if (options.projection && (options.projection as any).custom) {
-            const crs = this._createCustomCRS(options.projection)
+            const crs = this._createCustomCRS(options.projection, options.maxZoom)
             leafletOptions.crs = crs
             leafletOptions.zoomDelta = options.zoomDelta || 0.05
             leafletOptions.zoomSnap = options.zoomSnap || 0
@@ -160,34 +160,29 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
     /**
      * Create a custom CRS for planetary projections
      */
-    private _createCustomCRS(projection: ProjectionOptions): any {
-        // Calculate resolutions array from zoom level and units per pixel
+    private _createCustomCRS(projection: ProjectionOptions, maxZoom?: number): any {
         const resolutions: number[] = []
         const baseResolution = parseFloat(projection.resunitsperpixel as string || '1')
         const zoomLevel = parseInt(projection.reszoomlevel as string) || 0
+        const levels = projection.maxResolutionLevels ?? maxZoom ?? 20
 
-        // Generate resolutions for zoom levels, hardcoded to 20
-        for (let i = 0; i <= 20; i++) {
+        for (let i = 0; i <= levels; i++) {
             const zoomDiff = i - zoomLevel
-            const resolution = baseResolution / Math.pow(2, zoomDiff)
-            resolutions.push(resolution)
+            resolutions.push(baseResolution / Math.pow(2, zoomDiff))
         }
 
-        // Determine EPSG code
         const epsgCode = Number.isFinite(parseInt((projection as any).epsg?.[0]))
             ? `EPSG:${(projection as any).epsg}`
             : (projection as any).epsg
 
-        // Build CRS options
         const crsOptions: any = {
             origin: [
                 parseFloat((projection.origin as any)?.[0] || 0),
                 parseFloat((projection.origin as any)?.[1] || 0),
             ],
-            resolutions: resolutions,
+            resolutions,
         }
 
-        // Add bounds if provided
         if (projection.bounds) {
             const bounds = projection.bounds as any
             crsOptions.bounds = L.bounds(
@@ -196,7 +191,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
             )
         }
 
-        // Create the CRS
         const crs = new L.Proj.CRS(
             epsgCode,
             projection.proj4 || (projection as any).proj,
@@ -204,7 +198,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
             parseFloat(projection.radius?.toString() || '6371000')
         )
 
-        // Store proj string for reference
         crs.projString = projection.proj4 || (projection as any).proj
 
         return crs
@@ -311,7 +304,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         }
 
         this._map.setView([normalizedCenter.lat, normalizedCenter.lng], currentZoom, leafletOptions)
-        this._map.invalidateSize()
     }
 
     /**
@@ -663,19 +655,16 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
             originalEvent: e.originalEvent,
         }
 
-        // Add lat/lng if available
         if (e.latlng) {
             normalized.lat = e.latlng.lat
             normalized.lng = e.latlng.lng
             normalized.latlng = { lat: e.latlng.lat, lng: e.latlng.lng }
         }
 
-        // Add container point if available
         if (e.containerPoint) {
             normalized.containerPoint = { x: e.containerPoint.x, y: e.containerPoint.y }
         }
 
-        // Add layer point if available
         if (e.layerPoint) {
             normalized.layerPoint = { x: e.layerPoint.x, y: e.layerPoint.y }
         }
