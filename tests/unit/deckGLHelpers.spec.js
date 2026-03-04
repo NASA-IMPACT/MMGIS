@@ -114,5 +114,10 @@ test.describe('DeckGLHelpers', () => {
                 'buildDeckLayer: unsupported layer type "unsupported"'
             )
         })
+
+        test('creates a PointCloudLayer for pointcloud type', () => {
+            const layer = buildDeckLayer('pc-1', { type: 'pointcloud', url: '/data/cloud.las' })
+            expect(layer.id).toBe('pc-1')
+        })
     })
 })

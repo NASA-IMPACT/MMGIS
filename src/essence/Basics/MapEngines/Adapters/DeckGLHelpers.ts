@@ -9,11 +9,11 @@ import {
     type PickingInfo,
     type TransitionInterpolator,
 } from '@deck.gl/core'
-import { GeoJsonLayer, BitmapLayer } from '@deck.gl/layers'
+import { GeoJsonLayer, BitmapLayer, PointCloudLayer } from '@deck.gl/layers'
 import { TileLayer } from '@deck.gl/geo-layers'
 
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
-import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions } from '../types/layers'
+import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions, PointCloudLayerOptions } from '../types/layers'
 import type { FeaturePickResult } from '../types/events'
 
 /**
@@ -116,7 +116,8 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
 
 /**
  * Construct a deck.gl layer from a {@link LayerOptions} spec.
- * Supports `'tile'` (TileLayer + BitmapLayer) and `'vector'` (GeoJsonLayer).
+ * Supports `'tile'` (TileLayer + BitmapLayer), `'vector'` (GeoJsonLayer),
+ * and `'pointcloud'` (PointCloudLayer).
  * Use `nativeOptions` on the layer options for deck.gl-specific props.
  *
  * @throws {Error} If `options.type` is not a supported layer type.
@@ -168,10 +169,26 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             }) as unknown as Layer
         }
 
+        case 'pointcloud': {
+            const o = options as PointCloudLayerOptions
+            return new PointCloudLayer({
+                id,
+                data: o.data ?? o.url,
+                pointSize: o.pointSize ?? 2,
+                sizeUnits: o.sizeUnits ?? 'pixels',
+                opacity: o.opacity ?? 1,
+                pickable: o.interactive ?? true,
+                loaders: o.loaders,
+                ...(o.coordinateOrigin !== undefined ? { coordinateOrigin: o.coordinateOrigin } : {}),
+                ...(o.material !== undefined ? { material: o.material } : {}),
+                ...(o.nativeOptions ?? {}),
+            }) as unknown as Layer
+        }
+
         default:
             throw new Error(
                 `buildDeckLayer: unsupported layer type "${options.type}". ` +
-                    `Supported types: 'tile', 'vector'.`
+                    `Supported types: 'tile', 'vector', 'pointcloud'.`
             )
     }
 }
