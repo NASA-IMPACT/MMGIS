@@ -74,18 +74,15 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         // Store options for reference
         this._initOptions = options
 
-        // Destroy existing map if present before re-fetching the container
         if (this._map) {
             this.destroy()
         }
 
-        // Get the container element
         this._container = document.getElementById(options.containerId)
         if (!this._container) {
             throw new Error(`Container element with id "${options.containerId}" not found`)
         }
 
-        // Build Leaflet map options
         const leafletOptions: any = {
             zoomControl: options.zoomControl !== false,
             editable: options.editable !== false,
@@ -95,19 +92,15 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
             maxBounds: this._normalizeMaxBounds(options.maxBounds),
         }
 
-        // Handle custom projection for planetary missions (Mars, Moon, etc.)
         if (options.projection && (options.projection as any).custom) {
             const crs = this._createCustomCRS(options.projection, options.maxZoom)
             leafletOptions.crs = crs
             leafletOptions.zoomDelta = options.zoomDelta || 0.05
             leafletOptions.zoomSnap = options.zoomSnap || 0
 
-                // Store custom CRS globally for MMGIS compatibility
                 ; (window as any).mmgisglobal = (window as any).mmgisglobal || {}
                 ; (window as any).mmgisglobal.customCRS = crs
         } else {
-            // Default projection (Web Mercator)
-            // Create custom CRS for planetary radius if provided
             if (options.projection && options.projection.radius) {
                 const projString = `+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +a=${options.projection.radius} +b=${options.projection.radius} +towgs84=0,0,0,0,0,0,0 +units=m +no_defs`
                 const crs = new L.Proj.CRS('EPSG:3857', projString, null, options.projection.radius)
@@ -118,7 +111,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
             }
         }
 
-        // Handle zoom delta and snap if provided
         if (options.zoomDelta !== undefined) {
             leafletOptions.zoomDelta = options.zoomDelta
         }
@@ -129,20 +121,16 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
             leafletOptions.wheelPxPerZoomLevel = options.wheelPxPerZoomLevel
         }
 
-        // Create the Leaflet map
         this._map = L.map(options.containerId, leafletOptions)
 
-        // Set initial view if provided
         const center = this._normalizeLatLng(options.center || { lat: 0, lng: 0 })
         const zoom = options.zoom !== undefined ? options.zoom : 2
         this._map.setView([center.lat, center.lng], zoom)
 
-        // Position zoom control if enabled
         if (this._map.zoomControl) {
             this._map.zoomControl.setPosition('topright')
         }
 
-        // Set min/max zoom if provided
         if (options.minZoom !== undefined) {
             this._map.setMinZoom(options.minZoom)
         }
@@ -150,7 +138,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
             this._map.setMaxZoom(options.maxZoom)
         }
 
-        // Remove Leaflet attribution (MMGIS handles this separately)
         const attributionControl = this._container.querySelector('.leaflet-control-attribution')
         if (attributionControl) {
             attributionControl.remove()
@@ -209,12 +196,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
     private _normalizeMaxBounds(bounds: BoundsLike | null | undefined): any {
         if (!bounds) return null
 
-        // Handle array format [[lat, lng], [lat, lng]]
         if (Array.isArray(bounds)) {
             return bounds
         }
 
-        // Handle object format { southWest: {...}, northEast: {...} }
         if ((bounds as any).southWest && (bounds as any).northEast) {
             const sw = this._normalizeLatLng((bounds as any).southWest)
             const ne = this._normalizeLatLng((bounds as any).northEast)
@@ -229,7 +214,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
      */
     private _normalizeLatLng(latLng: LatLngLike): LatLng {
         if (Array.isArray(latLng)) {
-            // Assume Leaflet order [lat, lng]
             return { lat: latLng[0], lng: latLng[1] }
         }
         return latLng as LatLng
@@ -251,16 +235,13 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
     destroy(): void {
         if (!this._map) return
 
-        // Remove all event handlers
         this._eventHandlers.forEach((handler, eventName) => {
             this._map.off(eventName, handler)
         })
         this._eventHandlers.clear()
 
-        // Clear layers
         this._layers.clear()
 
-        // Remove the map
         this._map.remove()
         this._map = null
         this._container = null
@@ -375,8 +356,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         return {
             center: center,
             zoom: this.getZoom(),
-            bearing: 0, // Leaflet doesn't support bearing
-            pitch: 0    // Leaflet doesn't support pitch
+            bearing: 0,
+            pitch: 0
         }
     }
 
@@ -384,7 +365,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
      * Set the view state
      */
     setViewState(state: ViewState, options: ViewOptions = {}): void {
-        // Leaflet ignores bearing and pitch
         this.setView(state.center, state.zoom, options)
     }
 
@@ -403,10 +383,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         let leafletBounds: any
 
         if (Array.isArray(bounds)) {
-            // [[lat, lng], [lat, lng]] format
             leafletBounds = bounds
         } else if ((bounds as any).southWest && (bounds as any).northEast) {
-            // Object format
             const sw = this._normalizeLatLng((bounds as any).southWest)
             const ne = this._normalizeLatLng((bounds as any).northEast)
             leafletBounds = [[sw.lat, sw.lng], [ne.lat, ne.lng]]
@@ -434,7 +412,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
             return [padding, padding]
         }
         if (Array.isArray(padding)) {
-            // [top, right, bottom, left] -> Leaflet uses [top/bottom, left/right]
             return [padding[0], padding[3]]
         }
         return padding
@@ -556,7 +533,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
     }
 
     createLayer(options: LayerOptions): any {
-        // To be implemented in layer management tickets
         throw new Error('createLayer not yet implemented')
     }
 
@@ -573,7 +549,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
     }
 
     updateLayer(layer: any | string, options: Partial<LayerOptions>): any {
-        // To be implemented in layer management tickets
         throw new Error('updateLayer not yet implemented')
     }
 
@@ -618,7 +593,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
 
         this._map.on(eventName, wrappedHandler)
 
-        // Store for cleanup
         const key = `${eventName}_${handler.toString()}`
         this._eventHandlers.set(key, wrappedHandler)
     }
@@ -626,7 +600,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
     off(eventName: string, handler?: MapEventHandler<any>): void {
         if (!handler) {
             this._map.off(eventName)
-            // Remove all handlers for this event
             this._eventHandlers.forEach((wrappedHandler, key) => {
                 if (key.startsWith(eventName + '_')) {
                     this._eventHandlers.delete(key)
@@ -673,12 +646,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
     }
 
     onFeatureClick(handler: FeatureInteractionHandler): void {
-        // To be implemented in event management tickets
         throw new Error('onFeatureClick not yet implemented')
     }
 
     onFeatureHover(handler: FeatureInteractionHandler): void {
-        // To be implemented in event management tickets
         throw new Error('onFeatureHover not yet implemented')
     }
 
@@ -686,7 +657,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         geometry: PointLike | [PointLike, PointLike],
         options: QueryFeaturesOptions = {}
     ): FeaturePickResult[] {
-        // To be implemented in feature query tickets
         throw new Error('queryRenderedFeatures not yet implemented')
     }
 }
