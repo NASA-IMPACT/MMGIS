@@ -68,14 +68,35 @@ export interface MapInitOptions {
 }
 
 /**
- * Projection and CRS options. Used primarily by Leaflet for custom
- * planetary projections.
+ * Raw keys sourced directly from MMGIS config.json.
+ * A future translation layer should convert these into normalized
+ * ProjectionOptions fields before handing them to an adapter.
  */
-export interface ProjectionOptions {
+export interface RawMMGISProjectionConfig {
+    globeproj?: string
+    xmlpath?: string
+    reszoomlevel?: string | number
+    resunitsperpixel?: string | number
+}
+
+/**
+ * Normalized projection and CRS options consumed by map engine adapters.
+ * Extends RawMMGISProjectionConfig so adapters can read raw config fields
+ * directly today. TODO: introduce a translation layer that converts
+ * RawMMGISProjectionConfig → ProjectionOptions before calling the adapter,
+ * then remove the extends here.
+ */
+export interface ProjectionOptions extends RawMMGISProjectionConfig {
     epsg?: string
     proj4?: string
     origin?: PointLike
     bounds?: BoundsLike
+    /** Pre-computed resolution ladder. When absent, derived from RawMMGISProjectionConfig. */
     resolutions?: number[]
     radius?: number
+    custom?: boolean
+    /** Fallback proj4 string sourced from the raw MMGIS config. */
+    proj?: string
+    /** Maximum number of resolution levels to generate (defaults to maxZoom or 20). */
+    maxResolutionLevels?: number
 }
