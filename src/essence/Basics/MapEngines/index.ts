@@ -57,3 +57,5 @@ export type { IMapEngine } from './IMapEngine'
 export type { IMapEngineMarkers } from './IMapEngineMarkers'
 
 export { default as MapEngineRegistry, mapEngineRegistry } from './MapEngineRegistry'
+
+export { DeckGLAdapter } from './Adapters/DeckGLAdapter'
