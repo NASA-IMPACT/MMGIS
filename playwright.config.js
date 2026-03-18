@@ -66,14 +66,13 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_TEST_UNIT_ONLY
     ? undefined
     : {
-        command: "npm run start:test",
-        url: `${
-          process.env.TEST_BASE_URL || "http://localhost:8888"
+      command: "npm run start:test",
+      url: `${process.env.TEST_BASE_URL || "http://localhost:8888"
         }/api/utils/healthcheck`,
-        timeout: 120 * 1000,
-        reuseExistingServer: !process.env.CI,
-        stdout: "pipe",
-        stderr: "pipe",
-        ignoreHTTPSErrors: true,
-      },
+      timeout: 120 * 1000,
+      reuseExistingServer: !process.env.CI,
+      stdout: "pipe",
+      stderr: "pipe",
+      ignoreHTTPSErrors: true,
+    },
 });

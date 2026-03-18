@@ -23,7 +23,8 @@ import {
     MapInitOptions,
     ProjectionOptions,
 } from '../types/view'
-import { LayerOptions } from '../types/layers'
+import { LayerOptions, TileLayerOptions } from '../types/layers'
+import { buildLeafletLayer, resolveLeafletLayerId } from './LeafletHelpers'
 import {
     MapEventHandler,
     MapEventOptions,
@@ -513,8 +514,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
     }
 
     // ========================================
-    // LAYER MANAGEMENT METHODS (Stubs for now)
-    // These will be implemented in subsequent tickets
+    // LAYER MANAGEMENT METHODS
     // ========================================
 
     getLayers(): any[] {
@@ -528,12 +528,74 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         return this._map.hasLayer(layer)
     }
 
+    /**
+     * Backward-compatible addLayer.
+     *
+     * If a raw Leaflet layer object is passed (has _leaflet_id), it is forwarded
+     * directly to the native map — preserving all existing Map_.js / Layers_.js call sites.
+     *
+     * If a LayerOptions spec is passed, createLayer() is called so the layer is
+     * also registered in the internal registry for later lookup by ID.
+     */
     addLayer(layer: any): void {
+        if (
+            layer !== null &&
+            typeof layer === 'object' &&
+            typeof layer.type === 'string' &&
+            layer._leaflet_id === undefined
+        ) {
+            this.createLayer(layer as LayerOptions)
+            return
+        }
         this._map.addLayer(layer)
     }
 
+    /**
+     * Create a Leaflet layer from a LayerOptions spec, register it by ID, and
+     * add it to the map (unless visible === false).
+     *
+     * Delegates construction to {@link buildLeafletLayer}.
+     *
+     * @throws {Error} If `options.type` is not a supported layer type.
+     */
     createLayer(options: LayerOptions): any {
-        throw new Error('createLayer not yet implemented')
+        if (!options.id) {
+            throw new Error('createLayer: options.id is required')
+        }
+
+        const leafletLayer = buildLeafletLayer(options.id, options)
+
+        this._layers.set(options.id, leafletLayer)
+
+        if (typeof options.opacity === 'number' && typeof leafletLayer.setOpacity === 'function') {
+            leafletLayer.setOpacity(options.opacity)
+        }
+        if (typeof options.zIndex === 'number' && typeof leafletLayer.setZIndex === 'function') {
+            leafletLayer.setZIndex(options.zIndex)
+        }
+
+        if (options.visible !== false) {
+            this._map.addLayer(leafletLayer)
+        }
+
+        return leafletLayer
+    }
+
+    /**
+     * Build a Leaflet tileLayer from TileLayerOptions.
+     * TMS origin (bottom-left) is the default — matching existing MMGIS tile behaviour.
+     * Pass tms: false for standard XYZ / WMS slippy tiles.
+     */
+    private _createTileLayer(options: any): any {
+        return buildLeafletLayer(options.id ?? '', options)
+    }
+
+    /**
+     * Build a Leaflet geoJSON layer from GeoJSONLayerOptions.
+     * Callback props (style, onEachFeature, pointToLayer, filter) are forwarded as-is.
+     */
+    private _createGeoJSONLayer(options: any): any {
+        return buildLeafletLayer(options.id ?? '', options)
     }
 
     removeLayer(layer: any | string): void {
@@ -548,8 +610,55 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         }
     }
 
-    updateLayer(layer: any | string, options: Partial<LayerOptions>): any {
-        throw new Error('updateLayer not yet implemented')
+    /**
+     * Mutate properties on an existing registered layer without recreating it.
+     * `layer` can be the string ID used at `createLayer` time, or the native
+     * Leaflet layer object (identified via its `_mmgisId` property set by
+     * {@link buildLeafletLayer}).
+     *
+     * Supported mutations:
+     *   opacity  → setOpacity()            (tile + GeoJSON)
+     *   visible  → addLayer / removeLayer  (toggle without destroying)
+     *   zIndex   → setZIndex()             (tile layers)
+     *   style    → setStyle()              (GeoJSON layers)
+     *   url      → setUrl()               (tile layers)
+     */
+    updateLayer(layer: any | string, updates: Partial<LayerOptions>): any {
+        const id = resolveLeafletLayerId(layer)
+        const leafletLayer = this._layers.get(id)
+        if (!leafletLayer) {
+            throw new Error(
+                `updateLayer: no layer found with id "${id}". ` +
+                `Ensure the layer was created with createLayer().`
+            )
+        }
+
+        if (typeof updates.opacity === 'number' && typeof leafletLayer.setOpacity === 'function') {
+            leafletLayer.setOpacity(updates.opacity)
+        }
+
+        if (typeof updates.visible === 'boolean') {
+            const onMap = this._map.hasLayer(leafletLayer)
+            if (updates.visible && !onMap) {
+                this._map.addLayer(leafletLayer)
+            } else if (!updates.visible && onMap) {
+                this._map.removeLayer(leafletLayer)
+            }
+        }
+
+        if (typeof updates.zIndex === 'number' && typeof leafletLayer.setZIndex === 'function') {
+            leafletLayer.setZIndex(updates.zIndex)
+        }
+
+        if (updates.style !== undefined && typeof leafletLayer.setStyle === 'function') {
+            leafletLayer.setStyle(updates.style)
+        }
+
+        if ((updates as TileLayerOptions).url !== undefined && typeof leafletLayer.setUrl === 'function') {
+            leafletLayer.setUrl((updates as TileLayerOptions).url!)
+        }
+
+        return leafletLayer
     }
 
     setLayerZIndex(layer: any | string, zIndex: number): void {
