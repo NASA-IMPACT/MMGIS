@@ -556,3 +556,277 @@ test.describe('LeafletAdapter - updateLayer', () => {
         expect(returned).toBe(mockTile)
     })
 })
+
+// ─── Marker helpers ───────────────────────────────────────────────────────────
+
+function makeMockCircleMarker() {
+    return {
+        _type: 'circleMarker',
+        _latlng: null,
+        _zIndexOffset: 0,
+        _dragging: false,
+        setLatLng: function (ll) { this._latlng = ll },
+        setZIndexOffset: function (v) { this._zIndexOffset = v },
+        dragging: {
+            enable: function () { },
+            disable: function () { },
+        },
+    }
+}
+
+function makeMockIconMarker() {
+    return {
+        _type: 'marker',
+        _latlng: null,
+        _icon: null,
+        setLatLng: function (ll) { this._latlng = ll },
+        setIcon: function (icon) { this._icon = icon },
+        setZIndexOffset: function (v) { this._zIndexOffset = v },
+        dragging: {
+            enable: function () { },
+            disable: function () { },
+        },
+    }
+}
+
+function setupWithMarkerMocks() {
+    const base = setupWithLayerMocks()
+    const mockCircle = makeMockCircleMarker()
+    const mockIcon = makeMockIconMarker()
+
+    global.L.circleMarker = (latlng) => { mockCircle._latlng = latlng; return mockCircle }
+    global.L.marker = (latlng) => { mockIcon._latlng = latlng; return mockIcon }
+    global.L.icon = (opts) => ({ _iconUrl: opts.iconUrl })
+
+    return { ...base, mockCircle, mockIcon }
+}
+
+// ─── addMarker ────────────────────────────────────────────────────────────────
+
+test.describe('LeafletAdapter - addMarker', () => {
+
+    test('creates a circleMarker by default and adds it to the map', () => {
+        const { mockCircle, addedLayers } = setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const marker = adapter.addMarker({ id: 'cm', position: { lat: 10, lng: 20 } })
+
+        expect(marker).toBe(mockCircle)
+        expect(addedLayers).toContain(mockCircle)
+    })
+
+    test('creates an icon marker when icon.url is provided', () => {
+        const { mockIcon, addedLayers } = setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const marker = adapter.addMarker({
+            id: 'im',
+            position: { lat: 10, lng: 20 },
+            icon: { url: 'https://example.com/icon.png' },
+        })
+
+        expect(marker).toBe(mockIcon)
+        expect(addedLayers).toContain(mockIcon)
+    })
+
+    test('addMarker throws when id is missing', () => {
+        setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        expect(() =>
+            adapter.addMarker({ position: { lat: 0, lng: 0 } })
+        ).toThrow('options.id is required')
+    })
+
+    test('addMarker throws when position is missing', () => {
+        setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        expect(() =>
+            adapter.addMarker({ id: 'no-pos' })
+        ).toThrow('options.position is required')
+    })
+})
+
+// ─── removeMarker ─────────────────────────────────────────────────────────────
+
+test.describe('LeafletAdapter - removeMarker', () => {
+
+    test('removes a marker by string ID and cleans up registry', () => {
+        const { removedLayers } = setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        adapter.addMarker({ id: 'rm', position: { lat: 0, lng: 0 } })
+        adapter.removeMarker('rm')
+
+        expect(removedLayers.length).toBeGreaterThan(0)
+    })
+
+    test('removing a non-existent id is a no-op', () => {
+        setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        expect(() => adapter.removeMarker('ghost')).not.toThrow()
+    })
+})
+
+// ─── updateMarker ─────────────────────────────────────────────────────────────
+
+test.describe('LeafletAdapter - updateMarker', () => {
+
+    test('updates marker position', () => {
+        const { mockCircle } = setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        adapter.addMarker({ id: 'mv', position: { lat: 0, lng: 0 } })
+        adapter.updateMarker('mv', { position: { lat: 5, lng: 10 } })
+
+        expect(mockCircle._latlng).toEqual([5, 10])
+    })
+
+    test('updates zIndexOffset', () => {
+        const { mockCircle } = setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        adapter.addMarker({ id: 'zi', position: { lat: 0, lng: 0 } })
+        adapter.updateMarker('zi', { zIndexOffset: 999 })
+
+        expect(mockCircle._zIndexOffset).toBe(999)
+    })
+
+    test('updateMarker throws when id is not found', () => {
+        setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        expect(() =>
+            adapter.updateMarker('ghost', { position: { lat: 0, lng: 0 } })
+        ).toThrow('no marker found with id "ghost"')
+    })
+
+    test('updateMarker returns the native Leaflet marker', () => {
+        const { mockCircle } = setupWithMarkerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        adapter.addMarker({ id: 'ret', position: { lat: 0, lng: 0 } })
+        const returned = adapter.updateMarker('ret', { zIndexOffset: 1 })
+
+        expect(returned).toBe(mockCircle)
+    })
+})
+
+// ─── onFeatureClick ───────────────────────────────────────────────────────────
+
+test.describe('LeafletAdapter - onFeatureClick', () => {
+
+    test('registers a click handler on the map', () => {
+        const { mockMap } = setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        let clickHandlerRegistered = false
+        mockMap.on = (event) => { if (event === 'click') clickHandlerRegistered = true }
+
+        adapter.onFeatureClick(() => { })
+
+        expect(clickHandlerRegistered).toBe(true)
+    })
+
+    test('calls handler with feature: null when no vector layers match', () => {
+        const { mockMap } = setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        let capturedResult = null
+        let clickCallback = null
+        mockMap.on = (event, cb) => { if (event === 'click') clickCallback = cb }
+
+        adapter.onFeatureClick((result) => { capturedResult = result })
+        clickCallback({ latlng: { lat: 0, lng: 0 }, containerPoint: { x: 0, y: 0 } })
+
+        expect(capturedResult.feature).toBeNull()
+    })
+})
+
+// ─── onFeatureHover ───────────────────────────────────────────────────────────
+
+test.describe('LeafletAdapter - onFeatureHover', () => {
+
+    test('registers mousemove and mouseout handlers on the map', () => {
+        const { mockMap } = setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const registeredEvents = []
+        mockMap.on = (event) => registeredEvents.push(event)
+
+        adapter.onFeatureHover(() => { })
+
+        expect(registeredEvents).toContain('mousemove')
+        expect(registeredEvents).toContain('mouseout')
+    })
+
+    test('calls handler with feature: null on mouseout', () => {
+        const { mockMap } = setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        let capturedResult = null
+        let mouseoutCallback = null
+        mockMap.on = (event, cb) => { if (event === 'mouseout') mouseoutCallback = cb }
+
+        adapter.onFeatureHover((result) => { capturedResult = result })
+        mouseoutCallback()
+
+        expect(capturedResult.feature).toBeNull()
+    })
+})
+
+// ─── queryRenderedFeatures ────────────────────────────────────────────────────
+
+test.describe('LeafletAdapter - queryRenderedFeatures', () => {
+
+    test('returns empty array when no layers are registered', () => {
+        setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const results = adapter.queryRenderedFeatures({ x: 0, y: 0 })
+
+        expect(results).toEqual([])
+    })
+
+    test('returns empty array when layer has no getBounds', () => {
+        setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const results = adapter.queryRenderedFeatures({ x: 0, y: 0 }, { layers: ['tile-no-bounds'] })
+
+        expect(results).toEqual([])
+    })
+
+    test('skips layers not in options.layers filter', () => {
+        const { mockGeoJSON } = setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        mockGeoJSON.getBounds = () => ({ contains: () => true })
+        global.L.geoJSON = () => mockGeoJSON
+
+        adapter.createLayer({ id: 'included', type: 'vector', geojson: { type: 'FeatureCollection', features: [] } })
+
+        const results = adapter.queryRenderedFeatures({ x: 0, y: 0 }, { layers: ['other-id'] })
+
+        expect(results).toEqual([])
+    })
+})

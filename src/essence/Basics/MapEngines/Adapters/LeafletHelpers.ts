@@ -3,7 +3,7 @@
  * Nothing here depends on class state — mirrors DeckGLHelpers.ts.
  */
 
-import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions } from '../types/layers'
+import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions, MarkerOptions, IconOptions } from '../types/layers'
 
 declare const L: any
 
@@ -14,6 +14,15 @@ declare const L: any
  */
 export function resolveLeafletLayerId(layer: any | string): string {
     return typeof layer === 'string' ? layer : layer._mmgisId
+}
+
+/**
+ * Resolve a marker reference (native Leaflet marker object or string id) to
+ * its string id. Markers expose their id via a `_mmgisId` property set by
+ * the adapter at creation time.
+ */
+export function resolveLeafletMarkerId(marker: any | string): string {
+    return typeof marker === 'string' ? marker : marker._mmgisId
 }
 
 /**
@@ -36,6 +45,48 @@ export function buildLeafletLayer(id: string, options: LayerOptions): any {
             )
     }
 }
+
+/**
+ * Construct a native Leaflet marker from a {@link MarkerOptions} spec.
+ *
+ * Defaults to `L.circleMarker` (the dominant MMGIS pattern used by
+ * MeasureTool, DrawTool, Coordinates, etc.) when no `icon.url` is provided.
+ * Falls back to `L.marker` + `L.icon` when an image icon URL is given.
+ *
+ * @throws {Error} If `options.position` is missing.
+ */
+export function buildLeafletMarker(id: string, options: MarkerOptions): any {
+    if (!options.position) {
+        throw new Error('buildLeafletMarker: options.position is required')
+    }
+
+    const pos = _normalizePosition(options.position)
+
+    let marker: any
+
+    if (options.icon?.url) {
+        const leafletIcon = _buildLeafletIcon(options.icon)
+        const markerOptions: Record<string, any> = {
+            icon: leafletIcon,
+            draggable: options.draggable ?? false,
+            interactive: options.interactive ?? true,
+            ...(options.zIndexOffset !== undefined ? { zIndexOffset: options.zIndexOffset } : {}),
+        }
+        marker = L.marker([pos.lat, pos.lng], markerOptions)
+    } else {
+        const circleOptions: Record<string, any> = {
+            interactive: options.interactive ?? true,
+            draggable: options.draggable ?? false,
+            ...(options.zIndexOffset !== undefined ? { zIndexOffset: options.zIndexOffset } : {}),
+        }
+        marker = L.circleMarker([pos.lat, pos.lng], circleOptions)
+    }
+
+    marker._mmgisId = id
+    return marker
+}
+
+// ─── Private helpers ──────────────────────────────────────────────────────────
 
 /**
  * Build an L.tileLayer from {@link TileLayerOptions}.
@@ -91,4 +142,27 @@ function _buildGeoJSONLayer(id: string, options: GeoJSONLayerOptions): any {
     const layer = L.geoJSON(options.geojson, leafletOptions)
     layer._mmgisId = id
     return layer
+}
+
+/**
+ * Build an L.Icon from {@link IconOptions}.
+ */
+function _buildLeafletIcon(icon: IconOptions): any {
+    const iconOptions: Record<string, any> = {
+        iconUrl: icon.url,
+    }
+    if (icon.size) iconOptions.iconSize = icon.size
+    if (icon.anchor) iconOptions.iconAnchor = icon.anchor
+    if (icon.className) iconOptions.className = icon.className
+    return L.icon(iconOptions)
+}
+
+/**
+ * Normalize a LatLngLike value to a { lat, lng } object.
+ */
+function _normalizePosition(position: any): { lat: number; lng: number } {
+    if (Array.isArray(position)) {
+        return { lat: position[0], lng: position[1] }
+    }
+    return position
 }
