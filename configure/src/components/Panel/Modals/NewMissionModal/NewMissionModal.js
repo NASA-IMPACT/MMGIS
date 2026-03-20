@@ -110,6 +110,12 @@ const PLANET_RADII = {
   "The Moon": { major: 1737400, minor: 1737400 },
 };
 
+/** Map engines available at mission creation. Cannot be changed after the mission is created. */
+const MAP_ENGINES = [
+  { value: "leaflet", label: "Leaflet (2D slippy map)" },
+  { value: "deckgl", label: "deck.gl (WebGL 2D/3D)" },
+];
+
 const MODAL_NAME = "newMission";
 const NewMissionModal = (props) => {
   const {} = props;
@@ -125,6 +131,7 @@ const NewMissionModal = (props) => {
   const [missionName, setMissionName] = useState("");
   const [createDir, setCreateDir] = useState(true);
   const [selectedPlanet, setSelectedPlanet] = useState("Earth");
+  const [selectedEngine, setSelectedEngine] = useState("leaflet");
 
   const handleClose = () => {
     // close modal
@@ -142,14 +149,14 @@ const NewMissionModal = (props) => {
     }
 
     const planetRadius = PLANET_RADII[selectedPlanet];
-    
-    // Build the config with just the radius values
+
     const config = {
       msv: {
         radius: {
           major: planetRadius.major,
           minor: planetRadius.minor,
         },
+        mapEngine: selectedEngine,
       },
     };
 
@@ -179,6 +186,7 @@ const NewMissionModal = (props) => {
             setMissionName("");
             setCreateDir(true);
             setSelectedPlanet("Earth");
+            setSelectedEngine("leaflet");
 
             // and then close
             handleClose();
@@ -195,6 +203,7 @@ const NewMissionModal = (props) => {
             setMissionName("");
             setCreateDir(true);
             setSelectedPlanet("Earth");
+            setSelectedEngine("leaflet");
 
             // and then close
             handleClose();
@@ -269,6 +278,23 @@ const NewMissionModal = (props) => {
         </FormControl>
         <Typography className={c.subtitle2}>
           {`Select the planet to set the default radius values for this mission. You can always change this later.`}
+        </Typography>
+        <FormControl className={c.planetDropdown} variant="filled">
+          <InputLabel>Map Engine</InputLabel>
+          <Select
+            value={selectedEngine}
+            onChange={(e) => setSelectedEngine(e.target.value)}
+            label="Map Engine"
+          >
+            {MAP_ENGINES.map((eng) => (
+              <MenuItem key={eng.value} value={eng.value}>
+                {eng.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Typography className={c.subtitle2}>
+          {`Choose the rendering engine for this mission's 2D map. This cannot be changed after the mission is created.`}
         </Typography>
         <FormGroup>
           <FormControlLabel
