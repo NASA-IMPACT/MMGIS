@@ -198,8 +198,6 @@ class PanelManager implements PanelManagerInterface {
     recalculateLayout(): void {
         const allPanels = this.getAllPanelsByPriority();
         // Fire custom event for any listeners hooked into the DOM.
-        // The actual DOM layout manipulation would likely be handled by a LayoutEngine 
-        // that listens to these changes or is called directly here.
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('mmgis-panel-layout-changed', {
                 detail: { panels: allPanels }
