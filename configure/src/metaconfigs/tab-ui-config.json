@@ -71,6 +71,34 @@
       ]
     },
     {
+      "name": "Basemap",
+      "components": [
+        {
+          "field": "msv.basemap.provider",
+          "name": "Provider",
+          "description": "Renders a vector-tile basemap beneath deck.gl layers using MapboxOverlay. Has no effect on Leaflet-engine missions. 'maplibre' is open-source and requires no token. 'mapbox' requires an access token.",
+          "type": "dropdown",
+          "options": ["none", "maplibre", "mapbox"],
+          "default": "none",
+          "width": 3
+        },
+        {
+          "field": "msv.basemap.style",
+          "name": "Style URL",
+          "description": "MapLibre or Mapbox style URL. Example: https://demotiles.maplibre.org/style.json or mapbox://styles/mapbox/streets-v12",
+          "type": "text",
+          "width": 6
+        },
+        {
+          "field": "msv.basemap.accessToken",
+          "name": "Access Token",
+          "description": "Mapbox GL access token. Required only when provider is set to 'mapbox'.",
+          "type": "text",
+          "width": 3
+        }
+      ]
+    },
+    {
       "subname": "Max Bounds",
       "components": [
         {

@@ -132,6 +132,9 @@ const NewMissionModal = (props) => {
   const [createDir, setCreateDir] = useState(true);
   const [selectedPlanet, setSelectedPlanet] = useState("Earth");
   const [selectedEngine, setSelectedEngine] = useState("leaflet");
+  const [basemapProvider, setBasemapProvider] = useState("none");
+  const [basemapStyle, setBasemapStyle] = useState("");
+  const [basemapToken, setBasemapToken] = useState("");
 
   const handleClose = () => {
     // close modal
@@ -160,6 +163,14 @@ const NewMissionModal = (props) => {
       },
     };
 
+    if (selectedEngine === "deckgl" && basemapProvider !== "none" && basemapStyle) {
+      config.msv.basemap = {
+        provider: basemapProvider,
+        style: basemapStyle,
+        ...(basemapProvider === "mapbox" && basemapToken ? { accessToken: basemapToken } : {}),
+      };
+    }
+
     calls.api(
       "add",
       {
@@ -187,6 +198,9 @@ const NewMissionModal = (props) => {
             setCreateDir(true);
             setSelectedPlanet("Earth");
             setSelectedEngine("leaflet");
+            setBasemapProvider("none");
+            setBasemapStyle("");
+            setBasemapToken("");
 
             // and then close
             handleClose();
@@ -204,6 +218,9 @@ const NewMissionModal = (props) => {
             setCreateDir(true);
             setSelectedPlanet("Earth");
             setSelectedEngine("leaflet");
+            setBasemapProvider("none");
+            setBasemapStyle("");
+            setBasemapToken("");
 
             // and then close
             handleClose();
@@ -296,6 +313,55 @@ const NewMissionModal = (props) => {
         <Typography className={c.subtitle2}>
           {`Choose the rendering engine for this mission's 2D map. This cannot be changed after the mission is created.`}
         </Typography>
+        {selectedEngine === "deckgl" && (
+          <>
+            <FormControl className={c.planetDropdown} variant="filled">
+              <InputLabel>Basemap</InputLabel>
+              <Select
+                value={basemapProvider}
+                onChange={(e) => setBasemapProvider(e.target.value)}
+                label="Basemap"
+              >
+                <MenuItem value="none">None (transparent background)</MenuItem>
+                <MenuItem value="maplibre">MapLibre GL (open-source)</MenuItem>
+                <MenuItem value="mapbox">Mapbox GL (requires access token)</MenuItem>
+              </Select>
+            </FormControl>
+            <Typography className={c.subtitle2}>
+              {`Optional vector-tile basemap rendered beneath deck.gl layers. Can be changed later.`}
+            </Typography>
+            {basemapProvider !== "none" && (
+              <>
+                <TextField
+                  className={c.missionNameInput}
+                  label="Style URL"
+                  variant="filled"
+                  value={basemapStyle}
+                  onChange={(e) => setBasemapStyle(e.target.value)}
+                />
+                <Typography className={c.subtitle2}>
+                  {basemapProvider === "maplibre"
+                    ? `MapLibre style URL. Example: https://demotiles.maplibre.org/style.json`
+                    : `Mapbox style URL. Example: mapbox://styles/mapbox/streets-v12`}
+                </Typography>
+              </>
+            )}
+            {basemapProvider === "mapbox" && (
+              <>
+                <TextField
+                  className={c.missionNameInput}
+                  label="Mapbox Access Token"
+                  variant="filled"
+                  value={basemapToken}
+                  onChange={(e) => setBasemapToken(e.target.value)}
+                />
+                <Typography className={c.subtitle2}>
+                  {`Mapbox public token (starts with pk.ey...). Required for Mapbox styles.`}
+                </Typography>
+              </>
+            )}
+          </>
+        )}
         <FormGroup>
           <FormControlLabel
             control={
