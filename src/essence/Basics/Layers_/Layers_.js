@@ -3892,6 +3892,11 @@ async function parseConfig(configData, urlOnLayers) {
         L_.hasViewer = L_.configData.panels.viewer === true
         L_.hasGlobe = L_.configData.panels.globe === true
     }
+
+    const _basemapProvider = L_.configData.msv?.basemap?.provider
+    if (_basemapProvider && _basemapProvider !== 'none') {
+        L_.hasGlobe = false
+    }
     //We only care about the layers now
     const layers = L_.configData.layers
 

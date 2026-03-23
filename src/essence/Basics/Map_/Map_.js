@@ -126,6 +126,7 @@ let Map_ = {
             worldCopyJump: L_.configData.msv.worldCopyJump || false,
             maxBounds,
             projection: null,
+            basemap: L_.configData.msv.basemap || null,
         }
 
         if (
@@ -154,7 +155,7 @@ let Map_ = {
         mapEngineRegistry.initializeEngine(engine, initOptions)
         this.engine = engine
         mapEngineRegistry.setActiveEngine(engine)
-        this.map = engine.getNativeMap()
+        this.map = engine.getNativeMap() ?? {}
 
         if (engineType === MAP_ENGINE.DECKGL) {
             this.map.on = (event, handler) => engine.on(event, handler)
