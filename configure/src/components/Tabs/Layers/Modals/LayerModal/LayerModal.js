@@ -225,7 +225,7 @@ const LayerModal = (props) => {
   config = inject(config);
 
   const mapEngine = configuration?.msv?.mapEngine || "leaflet";
-  if (mapEngine !== "leaflet" && ENGINE_LAYER_SUPPORT[mapEngine]) {
+  if (mapEngine !== "leaflet" && ENGINE_LAYER_SUPPORT[mapEngine] && config.tabs) {
     const allowedTypes = [
       ...ENGINE_LAYER_SUPPORT[mapEngine],
       ...STRUCTURAL_LAYER_TYPES,
