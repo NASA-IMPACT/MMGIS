@@ -45,6 +45,42 @@ export interface FitBoundsOptions extends ViewOptions {
 }
 
 /**
+ * Supported basemap providers for deck.gl overlay mode.
+ *
+ * `'maplibre'` uses MapLibre GL JS (open-source, no access token required).
+ * `'mapbox'` uses Mapbox GL JS (requires a valid {@link BasemapOptions.accessToken}).
+ */
+export type BasemapProvider = 'mapbox' | 'maplibre'
+
+/**
+ * Configuration for an optional vector-tile basemap rendered beneath deck.gl layers
+ * via `@deck.gl/mapbox`'s `MapboxOverlay`. When present, the adapter runs in overlay
+ * mode; when absent it falls back to a standalone `Deck` instance with a transparent
+ * background.
+ *
+ * The chosen provider's stylesheet must be imported in the application entry point:
+ * `import 'maplibre-gl/dist/maplibre-gl.css'` or `import 'mapbox-gl/dist/mapbox-gl.css'`.
+ *
+ * `mapbox-gl` is an optional peer dependency; install it separately (`npm install mapbox-gl`)
+ * when `provider` is set to `'mapbox'`. `maplibre-gl` is a regular dependency and always available.
+ */
+export interface BasemapOptions {
+    /** The map library to use as the basemap. */
+    provider: BasemapProvider
+    /**
+     * Map style URL or a Mapbox/MapLibre style JSON object URL.
+     * @example 'https://demotiles.maplibre.org/style.json'
+     * @example 'mapbox://styles/mapbox/streets-v12'
+     */
+    style: string
+    /**
+     * Mapbox GL access token. Required when {@link provider} is `'mapbox'`.
+     * Ignored for `'maplibre'`.
+     */
+    accessToken?: string
+}
+
+/**
  * Options passed when initializing a map engine.
  */
 export interface MapInitOptions {
@@ -65,6 +101,12 @@ export interface MapInitOptions {
     wheelPxPerZoomLevel?: number
     editable?: boolean
     projection?: ProjectionOptions
+    /**
+     * Optional vector-tile basemap to render beneath deck.gl layers via `MapboxOverlay`.
+     * When absent the DeckGL adapter operates in standalone mode with a transparent background.
+     * Has no effect on the Leaflet adapter.
+     */
+    basemap?: BasemapOptions
 }
 
 /**
