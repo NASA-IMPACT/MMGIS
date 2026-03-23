@@ -25,9 +25,20 @@ import {
     data as colormapData,
 } from '../../../external/js-colormaps/js-colormaps.js'
 
+import {
+    mapEngineRegistry,
+    MAP_ENGINE,
+    LeafletAdapter,
+    DeckGLAdapter,
+} from '../MapEngines/index'
+import { buildDeckLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+
 let L = window.L
 
 let essenceFina = function () {}
+
+mapEngineRegistry.register(MAP_ENGINE.LEAFLET, LeafletAdapter)
+mapEngineRegistry.register(MAP_ENGINE.DECKGL, DeckGLAdapter)
 
 import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
 import georaster from 'georaster'
@@ -39,53 +50,36 @@ const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
 let _providerCleanups = []
 
 let Map_ = {
-    //Our main leaflet map variable
+    /** The native map object (L.Map for Leaflet, Deck for deck.gl). Kept for backward compatibility with existing callers. */
     map: null,
+    /** The active IMapEngine adapter. Use this for engine-agnostic operations. */
+    engine: null,
     toolbar: null,
     tempOverlayImage: null,
     activeLayer: null,
     allLayersLoadedPassed: false,
     player: { arrow: null, lookat: null },
-    //Initialize a map based on a config file
+    /**
+     * Return the native layer object expected by the active engine.
+     * For deck.gl, extracts `._deckLayer` if present; otherwise returns the layer as-is.
+     * For Leaflet, returns the layer unchanged.
+     * @param {object} layer - A Leaflet layer, deck.gl Layer, or wrapper object.
+     * @returns {object} The native layer for the active engine.
+     */
+    nativeLayer: function (layer) {
+        if (layer && layer._deckLayer != null) return layer._deckLayer
+        return layer
+    },
+    /**
+     * Initialize the map using the engine specified in `msv.mapEngine`.
+     * Registers both adapters, creates the configured engine, and wires
+     * all view/event/layer behaviour through the IMapEngine facade.
+     * `Map_.map` is kept pointing to the native map for backward-compatible callers.
+     */
     init: function (essenceFinal) {
         essenceFina = essenceFinal
 
-        //Repair Leaflet and plugin incongruities
-        L.DomEvent._fakeStop = L.DomEvent.fakeStop
-
-        //var fakeStop = L.DomEvent.fakeStop || L.DomEvent._fakeStop || stop;?
-        /*
-            var xhr = new XMLHttpRequest();
-            try {
-              xhr.open("GET", 'Missions/MTTT/Layers/TEMP/M2020_EDL_bufpoints_3m_geo/12/2929/1834.pbf');
-              xhr.responseType = "arraybuffer";
-              xhr.onerror = function() {
-                console.log("Network error")
-              };
-              xhr.onload = function() {
-                if (xhr.status === 200) {
-                    var data = new Pbf(new Uint8Array(xhr.response)).readFields(readData, {});
-
-                    console.log( data )
-
-                    function readData(tag, data, pbf) {
-                        if (tag === 1) data.name = pbf.readString();
-                        else if (tag === 2) data.version = pbf.readVarint();
-                        //else if (tag === 3) data.layer = pbf.readMessage(readLayer, {});
-                    }
-                    function readLayer(tag, layer, pbf) {
-                        if (tag === 1) layer.name = pbf.readString();
-                        else if (tag === 3) layer.size = pbf.readVarint();
-                    }
-                }
-                else console.log(xhr.statusText);
-                
-              };
-              xhr.send();
-            } catch (err) {
-              console.log(err.message)
-            }
-            */
+        if (window.L) L.DomEvent._fakeStop = L.DomEvent.fakeStop
 
         var hasZoomControl = false
         if (L_.configData.look && L_.configData.look.zoomcontrol)
@@ -93,9 +87,11 @@ let Map_ = {
 
         Map_.mapScaleZoom = L_.configData.msv.mapscale || null
 
-        if (this.map != null) this.map.remove()
-
-        let shouldFade = true
+        if (this.engine != null) {
+            mapEngineRegistry.destroyEngine(this.engine)
+            this.engine = null
+            this.map = null
+        }
 
         let maxBounds = null
         if (
@@ -122,88 +118,67 @@ let Map_ = {
             ]
         }
 
+        const engineType = L_.configData.msv.mapEngine || MAP_ENGINE.LEAFLET
+
+        const initOptions = {
+            containerId: 'map',
+            zoomControl: hasZoomControl,
+            editable: true,
+            keyboard: false,
+            fadeAnimation: true,
+            worldCopyJump: L_.configData.msv.worldCopyJump || false,
+            maxBounds,
+            projection: null,
+            basemap: L_.configData.msv.basemap || null,
+        }
+
         if (
             L_.configData.projection &&
             L_.configData.projection.custom === true
         ) {
-            var cp = L_.configData.projection
-            //console.log(cp)
-
-            // Calculate resolutions array from zoom level and units per pixel
-            var resolutions = []
-            var baseResolution = parseFloat(cp.resunitsperpixel)
-            var zoomLevel = parseInt(cp.reszoomlevel) || 0
-
-            // Generate resolutions for zoom levels (typically 0-20)
-            for (var i = 0; i <= 20; i++) {
-                var zoomDiff = i - zoomLevel
-                var resolution = baseResolution / Math.pow(2, zoomDiff)
-                resolutions.push(resolution)
+            const cp = L_.configData.projection
+            initOptions.projection = {
+                custom: true,
+                epsg: cp.epsg,
+                proj4: cp.proj,
+                origin: cp.origin,
+                bounds: cp.bounds,
+                resunitsperpixel: cp.resunitsperpixel,
+                reszoomlevel: cp.reszoomlevel,
+                radius: parseFloat(L_.configData.msv.radius.major),
             }
-
-            var crs = new L.Proj.CRS(
-                Number.isFinite(parseInt(cp.epsg[0]))
-                    ? `EPSG:${cp.epsg}`
-                    : cp.epsg,
-                cp.proj,
-                {
-                    origin: [
-                        parseFloat(cp.origin[0]),
-                        parseFloat(cp.origin[1]),
-                    ],
-                    resolutions: resolutions,
-                    bounds: L.bounds(
-                        [parseFloat(cp.bounds[0]), parseFloat(cp.bounds[1])],
-                        [parseFloat(cp.bounds[2]), parseFloat(cp.bounds[3])]
-                    ),
-                },
-                parseFloat(L_.configData.msv.radius.major)
-            )
-            crs.projString = cp.proj
-
-            this.map = L.map('map', {
-                zoomControl: hasZoomControl,
-                editable: true,
-                keyboard: false,
-                crs: crs,
-                zoomDelta: 0.05,
-                zoomSnap: 0,
-                fadeAnimation: shouldFade,
-                //wheelPxPerZoomLevel: 500,
-                worldCopyJump: L_.configData.msv.worldCopyJump || false,
-                maxBounds,
-            })
-
-            window.mmgisglobal.customCRS = crs
         } else {
-            //Make the empty map and turn off zoom controls
-            this.map = L.map('map', {
-                zoomControl: hasZoomControl,
-                editable: true,
-                keyboard: false,
-                fadeAnimation: shouldFade,
-                //crs: crs,
-                //zoomDelta: 0.05,
-                //zoomSnap: 0,
-                //wheelPxPerZoomLevel: 500,
-                worldCopyJump: L_.configData.msv.worldCopyJump || false,
-                maxBounds,
-            })
-            // Default CRS
-
-            const projString = `+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +a=${F_.radiusOfPlanetMajor} +b=${F_.radiusOfPlanetMinor} +towgs84=0,0,0,0,0,0,0 +units=m +no_defs`
-            window.mmgisglobal.customCRS = new L.Proj.CRS(
-                'EPSG:3857',
-                projString,
-                null,
-                F_.radiusOfPlanetMajor
-            )
-            window.mmgisglobal.customCRS.projString = projString
+            initOptions.projection = {
+                custom: false,
+                radius: parseFloat(F_.radiusOfPlanetMajor),
+            }
         }
 
-        if (this.map.zoomControl) this.map.zoomControl.setPosition('topright')
+        const engine = mapEngineRegistry.createEngine(engineType)
+        mapEngineRegistry.initializeEngine(engine, initOptions)
+        this.engine = engine
+        mapEngineRegistry.setActiveEngine(engine)
+        this.map = engine.getNativeMap() ?? {}
 
-        if (Map_.mapScaleZoom) {
+        if (engineType === MAP_ENGINE.DECKGL) {
+            this.map.on = (event, handler) => engine.on(event, handler)
+            this.map.off = (event, handler) => engine.off(event, handler)
+            this.map.addEventListener = (event, handler) => engine.on(event, handler)
+            this.map.removeEventListener = (event, handler) => engine.off(event, handler)
+            this.map.invalidateSize = () => engine.invalidateSize()
+            this.map.getZoom = () => engine.getZoom()
+            this.map.getCenter = () => engine.getCenter()
+            this.map.getBounds = () => engine.getBounds()
+            this.map.setZoom = (zoom) => engine.setZoom(zoom)
+            this.map.setView = (latlng, zoom) => engine.setView(latlng, zoom)
+            this.map.fitBounds = (bounds, opts) => engine.fitBounds(bounds, opts)
+            this.map.panTo = (latlng) => engine.panTo(latlng)
+            this.map.addLayer = (layer) => engine.addLayer(layer)
+            this.map.removeLayer = (layer) => engine.removeLayer(layer)
+            this.map.hasLayer = (layer) => engine.hasLayer(layer)
+        }
+
+        if (engineType === MAP_ENGINE.LEAFLET && Map_.mapScaleZoom) {
             L.control
                 .scalefactor({
                     radius: parseInt(L_.configData.msv.radius.major),
@@ -212,10 +187,9 @@ let Map_ = {
                 .addTo(this.map)
         }
 
-        //Initialize the view to that set in config
         if (L_.FUTURES.mapView != null) {
             this.resetView(L_.FUTURES.mapView)
-            if (L_.FUTURES.centerPin != null) {
+            if (engineType === MAP_ENGINE.LEAFLET && L_.FUTURES.centerPin != null) {
                 this._centerPin = new L.circleMarker(
                     [L_.FUTURES.mapView[0], L_.FUTURES.mapView[1]],
                     {
@@ -243,7 +217,6 @@ let Map_ = {
             this.resetView(L_.view)
         }
 
-        //Remove attribution
         $('.leaflet-control-attribution').remove()
 
         // Register map providers for mmgisAPI Event Bus
@@ -276,27 +249,50 @@ let Map_ = {
         //Make our layers
         makeLayers(L_.layers.dataFlat)
 
-        //Just in case we have no layers
         allLayersLoaded()
 
-        //Add a graticule
-        if (L_.configData.look && L_.configData.look.graticule == true) {
+        if (engineType === MAP_ENGINE.LEAFLET && L_.configData.look && L_.configData.look.graticule == true) {
             this.toggleGraticule(true)
         }
 
-        //When done zooming, hide the things you're too far out to see/reveal the things you're close enough to see
-        this.map.on('zoomend', function () {
-            L_.enforceVisibilityCutoffs()
+        if (engineType === MAP_ENGINE.LEAFLET) {
+            this.map.on('zoomend', function () {
+                L_.enforceVisibilityCutoffs()
+                $('.map-autoset-zoom').text(Map_.map.getZoom())
+            })
 
-            // Set all zoom elements
-            $('.map-autoset-zoom').text(Map_.map.getZoom())
-        })
+            this.map.on('movestart', fadeOutCertainLayers)
+            this.map.on('zoomstart', fadeOutCertainLayers)
 
-        this.map.on('movestart', fadeOutCertainLayers)
-        this.map.on('zoomstart', fadeOutCertainLayers)
+            if (Globe_.controls.link) {
+                this.map.on('move', (e) => {
+                    const c = this.map.getCenter()
+                    Globe_.controls.link.linkMove(c.lng, c.lat)
+                })
+                this.map.on('mousemove', (e) => {
+                    Globe_.controls.link.linkMouseMove(e.latlng.lng, e.latlng.lat)
+                })
+                this.map.on('mouseout', (e) => {
+                    Globe_.controls.link.linkMouseOut()
+                })
+            }
+
+            Map_.map.addEventListener('click', clearOnMapClick)
+        } else {
+            this.engine.on('moveend', function () {
+                L_.enforceVisibilityCutoffs()
+                $('.map-autoset-zoom').text(Map_.engine.getZoom())
+            })
+
+            if (Globe_.controls.link) {
+                this.engine.on('moveend', () => {
+                    const c = Map_.engine.getCenter()
+                    Globe_.controls.link.linkMove(c.lng, c.lat)
+                })
+            }
+        }
 
         function fadeOutCertainLayers() {
-            // Fade out Velocity layer Streamlines to prevent rendering jumps
             Object.keys(L_.layers.data).forEach((layerUUID) => {
                 const layerData = L_.layers.data[layerUUID]
                 if (
@@ -308,29 +304,17 @@ let Map_ = {
             })
         }
 
-        if (Globe_.controls.link) {
-            this.map.on('move', (e) => {
-                const c = this.map.getCenter()
-                Globe_.controls.link.linkMove(c.lng, c.lat)
-            })
-            this.map.on('mousemove', (e) => {
-                Globe_.controls.link.linkMouseMove(e.latlng.lng, e.latlng.lat)
-            })
-            this.map.on('mouseout', (e) => {
-                Globe_.controls.link.linkMouseOut()
-            })
-        }
-
-        // Clear the selected feature if clicking on the map where there are no features
-        Map_.map.addEventListener('click', clearOnMapClick)
-
-        //Build the toolbar
         buildToolBar()
 
-        //Set the time for any time enabled layers
         TimeControl.updateLayersTime()
     },
+    /**
+     * Toggle the Leaflet graticule overlay. No-op when running under deck.gl
+     * since the graticule plugin is Leaflet-specific.
+     * @param {boolean} on
+     */
     toggleGraticule: function (on) {
+        if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return
         if (on)
             this.graticule = L.latlngGraticule({
                 showLabel: true,
@@ -355,10 +339,19 @@ let Map_ = {
             this.graticule = null
         }
     },
+    /**
+     * Remove all layers from the active engine and reset transient state.
+     */
     clear: function () {
-        this.map.eachLayer(function (layer) {
-            Map_.map.removeLayer(layer)
-        })
+        if (this.engine) {
+            this.engine.getLayers().forEach((layer) => {
+                this.engine.removeLayer(layer)
+            })
+        } else if (this.map && typeof this.map.eachLayer === 'function') {
+            this.map.eachLayer(function (layer) {
+                Map_.map.removeLayer(layer)
+            })
+        }
 
         this.toolbar = null
         this.tempOverlayImage = null
@@ -366,12 +359,15 @@ let Map_ = {
         this.allLayersLoadedPassed = false
         this.player = { arrow: null, lookat: null }
     },
+    /** @param {number} zoom */
     setZoomToMapScale() {
-        this.map.setZoom(this.mapScaleZoom)
+        this.engine.setZoom(this.mapScaleZoom)
     },
-    //Focuses the map on [lat, lon, zoom]
-    resetView: function (latlonzoom, stopNextMove) {
-        //Uses Leaflet's setView
+    /**
+     * Fly the 2D map to the given [lat, lon, zoom] triple.
+     * @param {Array} latlonzoom - `[lat, lon, zoom]` array from config.
+     */
+    resetView: function (latlonzoom) {
         var lat = parseFloat(latlonzoom[0])
         if (isNaN(lat)) lat = 0
         var lon = parseFloat(latlonzoom[1])
@@ -379,28 +375,38 @@ let Map_ = {
         var zoom = parseInt(latlonzoom[2])
         if (zoom == null || isNaN(zoom))
             zoom =
-                this.map.getZoom() ||
+                this.engine.getZoom() ||
                 L_.configData.msv.mapscale ||
                 L_.configData.msv.view[2]
-        this.map.setView([lat, lon], zoom)
-        this.map.invalidateSize()
+        this.engine.setView({ lat, lng: lon }, zoom)
+        this.engine.invalidateSize()
     },
-    //returns true if the map has the layer
+    /**
+     * @param {string} layername
+     * @returns {boolean} Whether the layer is currently on the map.
+     */
     hasLayer: function (layername) {
         if (L_.layers.layer[layername]) {
-            return Map_.map.hasLayer(L_.layers.layer[layername])
+            return this.engine.hasLayer(
+                this.nativeLayer(L_.layers.layer[layername])
+            )
         }
         return false
     },
-    //adds a temp tile layer to the map
     tempTileLayer: null,
+    /**
+     * Swap the background tile layer to the given URL.
+     * Only supported under Leaflet; no-op for deck.gl.
+     * @param {string} url
+     */
     changeTempTileLayer: function (url) {
+        if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return
         this.removeTempTileLayer()
         this.tempTileLayer = L.tileLayer(url, {
             minZoom: 0,
             maxZoom: 25,
             maxNativeZoom: 25,
-            tms: true, //!!!
+            tms: true,
             noWrap: true,
             continuousWorld: true,
             reuseTiles: true,
@@ -410,15 +416,25 @@ let Map_ = {
     removeTempTileLayer: function () {
         this.rmNotNull(this.tempTileLayer)
     },
-    //Removes the map layer if it isn't null
+    /**
+     * Remove a layer from the active engine if it is non-null.
+     * Routes through `IMapEngine.removeLayer` so both Leaflet and deck.gl layers
+     * are handled correctly.
+     * @param {object} layer
+     */
     rmNotNull: function (layer) {
         if (layer != null) {
-            this.map.removeLayer(layer)
+            this.engine.removeLayer(this.nativeLayer(layer))
             layer = null
         }
     },
-    //Redraws all layers, starting with the bottom one
+    /**
+     * Re-order all visible layers so they match the configured layer stack order.
+     * For deck.gl, z-order is managed via the layer array in the adapter; this
+     * method is a no-op for that engine.
+     */
     orderedBringToFront: function () {
+        if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return
         let hasIndex = []
         let hasIndexRaster = []
 
@@ -588,7 +604,16 @@ let Map_ = {
             }
         }
     },
+    /**
+     * Draw the player arrow marker on the map at the given position.
+     * Only supported under Leaflet; no-op for deck.gl.
+     * @param {number} lng
+     * @param {number} lat
+     * @param {number} rot - Rotation angle in degrees.
+     */
     setPlayerArrow(lng, lat, rot) {
+        if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return
+
         var playerMapArrowOffsets = [
             [0.06, 0],
             [-0.04, 0.04],
@@ -622,7 +647,15 @@ let Map_ = {
             weight: 2,
         }).addTo(Map_.map)
     },
+    /**
+     * Place the player look-at marker on the map.
+     * Only supported under Leaflet; no-op for deck.gl.
+     * @param {number} lng
+     * @param {number} lat
+     */
     setPlayerLookat(lng, lat) {
+        if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return
+
         if (Map_.map.hasLayer(Map_.player.lookat))
             Map_.map.removeLayer(Map_.player.lookat)
         if (lat && lng) {
@@ -637,13 +670,26 @@ let Map_ = {
                 .addTo(Map_.map)
         }
     },
+    /**
+     * Hide the player arrow and/or look-at markers.
+     * No-op for deck.gl since those markers are Leaflet-specific.
+     * @param {boolean} [hideArrow]
+     * @param {boolean} [hideLookat]
+     */
     hidePlayer(hideArrow, hideLookat) {
+        if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return
+
         if (hideArrow !== false && Map_.map.hasLayer(Map_.player.arrow))
             Map_.map.removeLayer(Map_.player.arrow)
         if (hideLookat !== false && Map_.map.hasLayer(Map_.player.lookat))
             Map_.map.removeLayer(Map_.player.lookat)
     },
+    /**
+     * @returns {number} The diagonal of the visible map in metres, or 0 for deck.gl.
+     */
     getScreenDiagonalInMeters() {
+        if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return 0
+
         let bb = document.getElementById('map').getBoundingClientRect()
         let nwLatLng = Map_.map.containerPointToLatLng([0, 0])
         let seLatLng = Map_.map.containerPointToLatLng([bb.width, bb.height])
@@ -654,7 +700,13 @@ let Map_ = {
             seLatLng.lat
         )
     },
+    /**
+     * @returns {Array} List of tile XYZ coordinates covering the current viewport, or [] for deck.gl.
+     */
     getCurrentTileXYZs() {
+        if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET)
+            return []
+
         const bounds = Map_.map.getBounds()
         const zoom = Map_.map.getZoom()
 
@@ -947,7 +999,7 @@ async function makeVectorLayer(
                 { evenIfOff: evenIfOff, useEmptyGeoJSON: useEmptyGeoJSON },
                 add,
                 (f) => {
-                    Map_.map.on('moveend', f)
+                    Map_.engine.on('moveend', f)
                     if (
                         layerObj.time?.enabled === true &&
                         layerObj.controlled !== true
@@ -1034,6 +1086,25 @@ async function makeVectorLayer(
                 ctx.layerRegistry.opacity[layerObj.name] || 1
             //layerObj.style.fillOpacity = ctx.layerRegistry.opacity[layerObj.name]
 
+            if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+                ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
+                    layerObj.name,
+                    {
+                        type: 'vector',
+                        geojson: data,
+                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        style: layerObj.style || {},
+                        interactive: true,
+                    }
+                )
+                L_._layersLoaded[
+                    L_._layersOrdered.indexOf(layerObj.name)
+                ] = true
+                allLayersLoaded()
+                resolve()
+                return
+            }
+
             const vl = constructVectorLayer(
                 data,
                 layerObj,
@@ -1116,7 +1187,7 @@ async function makeVelocityLayer(
                 { evenIfOff: evenIfOff, useEmptyGeoJSON: useEmptyGeoJSON },
                 add,
                 (f) => {
-                    Map_.map.on('moveend', f)
+                    Map_.engine.on('moveend', f)
                     if (
                         layerObj.time?.enabled === true &&
                         layerObj.controlled !== true
@@ -1368,6 +1439,20 @@ async function makeTileLayer(layerObj, mapContext = null) {
         tileFormat = typeof layerObj.tms === 'undefined' ? true : layerObj.tms
         tileFormat = tileFormat ? 'tms' : 'wmts'
     } else tileFormat = layerObj.tileformat
+
+    if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+        ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
+            type: 'tile',
+            url: layerUrl,
+            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            minZoom: parseInt(layerObj.minZoom),
+            maxNativeZoom: parseInt(layerObj.maxNativeZoom),
+            maxZoom: parseInt(layerObj.maxZoom),
+        })
+        L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+        allLayersLoaded()
+        return
+    }
 
     ctx.layerRegistry.layer[layerObj.name] = L.tileLayer.colorFilter(layerUrl, {
         minZoom: parseInt(layerObj.minZoom),

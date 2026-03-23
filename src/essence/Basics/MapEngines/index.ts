@@ -40,6 +40,7 @@ export type {
 
 export type {
     MapEngineType,
+    MapEngineAdapterClass,
     RenderableLayerType,
     StructuralLayerType,
     LayerType,
@@ -47,9 +48,15 @@ export type {
 } from './types/engine'
 
 export {
+    MAP_ENGINE,
     ENGINE_LAYER_SUPPORT,
     engineSupportsLayer,
 } from './types/engine'
 
 export type { IMapEngine } from './IMapEngine'
 export type { IMapEngineMarkers } from './IMapEngineMarkers'
+
+export { default as MapEngineRegistry, mapEngineRegistry } from './MapEngineRegistry'
+
+export { DeckGLAdapter } from './Adapters/DeckGLAdapter'
+export { default as LeafletAdapter } from './Adapters/LeafletAdapter'

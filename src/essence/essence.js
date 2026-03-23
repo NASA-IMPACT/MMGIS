@@ -392,17 +392,19 @@ var essence = {
         Coordinates.init()
         ContextMenu.init()
 
+        const isLeaflet = Map_.engine?.engineType === 'leaflet'
+
         if (!swapping) {
             Description.init(L_.mission, L_.site, Map_, L_)
-            ScaleBar.init(ScaleBox)
+            if (isLeaflet) ScaleBar.init(ScaleBox)
             MapLogo.init(L_.configData.look)
-            Compass.init()
+            if (isLeaflet) Compass.init()
             Attributions.init()
         } else {
             Coordinates.refresh()
-            ScaleBar.refresh()
+            if (isLeaflet) ScaleBar.refresh()
             MapLogo.refresh()
-            Compass.refresh()
+            if (isLeaflet) Compass.refresh()
             Attributions.refresh()
         }
 
