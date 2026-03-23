@@ -366,3 +366,98 @@ test.describe('mmgisAPI Events - Dual Emission Integration', () => {
         expect(result.allCalled).toBe(true)
     })
 })
+
+test.describe('Plugin Scoped API (this.api)', () => {
+
+    test('scoped API has emit and provide methods', async ({ page }) => {
+        const result = await page.evaluate(() => {
+            const api = window.mmgisAPI.forPlugin('testPlugin')
+            return {
+                hasEmit: typeof api.emit === 'function',
+                hasProvide: typeof api.provide === 'function',
+                hasPluginId: api.pluginId === 'testPlugin',
+                hasPrefix: api.prefix === 'plugin:testPlugin:',
+            }
+        })
+
+        expect(result.hasEmit).toBe(true)
+        expect(result.hasProvide).toBe(true)
+        expect(result.hasPluginId).toBe(true)
+        expect(result.hasPrefix).toBe(true)
+    })
+
+    test('emit auto-prefixes event names', async ({ page }) => {
+        const result = await page.evaluate(() => {
+            return new Promise((resolve) => {
+                let receivedData = null
+
+                // Subscribe using global API with full path
+                window.mmgisAPI.on('plugin:myPlugin:dataUpdated', (data) => {
+                    receivedData = data
+                })
+
+                // Emit using scoped API - auto-prefixed
+                const api = window.mmgisAPI.forPlugin('myPlugin')
+                api.emit('dataUpdated', { value: 123 })
+
+                setTimeout(() => {
+                    resolve({
+                        received: receivedData !== null,
+                        valueMatches: receivedData?.value === 123,
+                    })
+                }, 10)
+            })
+        })
+
+        expect(result.received).toBe(true)
+        expect(result.valueMatches).toBe(true)
+    })
+
+    test('provide auto-prefixes handler names', async ({ page }) => {
+        const result = await page.evaluate(async () => {
+            const api = window.mmgisAPI.forPlugin('dataPlugin')
+
+            // Provide using scoped API - auto-prefixed
+            api.provide('getData', (params) => {
+                return { result: params.input * 3 }
+            })
+
+            // Request using global API with full path
+            const response = await window.mmgisAPI.request(
+                'plugin:dataPlugin:getData',
+                { input: 14 }
+            )
+
+            return { result: response?.result }
+        })
+
+        expect(result.result).toBe(42)
+    })
+
+    test('cleanup function from scoped provide() removes handler', async ({
+        page,
+    }) => {
+        const result = await page.evaluate(() => {
+            const api = window.mmgisAPI.forPlugin('cleanupPlugin')
+
+            // Provide and get cleanup function
+            const cleanup = api.provide('tempHandler', () => 'temp')
+
+            const existsBefore = window.mmgisAPI.hasHandler(
+                'plugin:cleanupPlugin:tempHandler'
+            )
+
+            // Cleanup
+            cleanup()
+
+            const existsAfter = window.mmgisAPI.hasHandler(
+                'plugin:cleanupPlugin:tempHandler'
+            )
+
+            return { existsBefore, existsAfter }
+        })
+
+        expect(result.existsBefore).toBe(true)
+        expect(result.existsAfter).toBe(false)
+    })
+})
