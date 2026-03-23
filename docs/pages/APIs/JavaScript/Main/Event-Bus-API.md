@@ -145,6 +145,116 @@ if (window.mmgisAPI.hasHandler('map:getCenter')) {
 
 ---
 
+## Plugin Scoped API
+
+MMGIS automatically injects a scoped API into each tool as `this.api`. This API automatically prefixes event and provider names with `plugin:{pluginId}:`, where `pluginId` is derived from the tool's module name (e.g., `DrawTool` → `draw`).
+
+> **Note:** Each plugin must have a unique ID. Multiple instances of the same plugin in a mission are not currently supported. If two plugins share the same ID, their events and providers will collide. This constraint is not currently enforced at runtime but may be in a future version.
+
+The scoped API is available on `this.api` in your tool's `initialize()` and `make()` functions:
+
+```javascript
+const MyTool = {
+    initialize() {
+        // this.api is automatically available
+        this.api.provide('getData', () => this.data)
+    },
+
+    make() {
+        this.api.emit('ready', { timestamp: Date.now() })
+    }
+}
+```
+
+### Scoped `emit(event, data)`
+
+Emit an event with auto-prefixed name.
+
+```javascript
+const api = window.mmgisAPI.forPlugin('myPlugin')
+
+// This emits 'plugin:myPlugin:dataUpdated'
+api.emit('dataUpdated', { value: 42 })
+
+// Subscribers listen using the full path
+window.mmgisAPI.on('plugin:myPlugin:dataUpdated', (data) => {
+    console.log(data.value) // 42
+})
+```
+
+### Scoped `provide(name, handler)`
+
+Register a provider with auto-prefixed name.
+
+**Returns:** Cleanup function
+
+```javascript
+const api = window.mmgisAPI.forPlugin('myPlugin')
+
+// This registers 'plugin:myPlugin:getData'
+const cleanup = api.provide('getData', (params) => {
+    return { result: params.input * 2 }
+})
+
+// Callers request using the full path
+const data = await window.mmgisAPI.request('plugin:myPlugin:getData', { input: 21 })
+console.log(data.result) // 42
+
+// Later, remove the provider
+cleanup()
+```
+
+### Metadata Properties
+
+The scoped API also exposes metadata:
+
+```javascript
+const api = window.mmgisAPI.forPlugin('myPlugin')
+
+console.log(api.pluginId) // 'myPlugin'
+console.log(api.prefix)   // 'plugin:myPlugin:'
+```
+
+### Complete Plugin Example
+
+```javascript
+// MyPluginTool.js - this.api is automatically injected by ToolController
+const MyPluginTool = {
+    _cleanups: [],
+
+    initialize() {
+        // this.api is available here (auto-injected)
+        // Register providers (auto-prefixed to 'plugin:myplugin:getData')
+        this._cleanups.push(
+            this.api.provide('getData', () => this.data),
+            this.api.provide('setData', (newData) => { this.data = newData })
+        )
+
+        // Subscribe to events (use full paths via mmgisAPI)
+        this._cleanups.push(
+            window.mmgisAPI.on('layer:visibilityChange', this.handleLayerChange.bind(this))
+        )
+    },
+
+    make() {
+        // this.api also available here
+        this.api.emit('ready', { timestamp: Date.now() })
+    },
+
+    destroy() {
+        this._cleanups.forEach(fn => fn())
+        this._cleanups = []
+    },
+
+    notifyUpdate() {
+        // Emit events (auto-prefixed to 'plugin:myplugin:updated')
+        this.api.emit('updated', { timestamp: Date.now() })
+    }
+}
+```
+
+---
+
 ## Available Events
 
 ### Layer Events
@@ -399,17 +509,21 @@ function initProviders() {
 }
 ```
 
-### 4. Use Namespaced Events for Plugins
+### 4. Use `this.api` for Auto-Namespacing
 
-Prefix custom events with your plugin name:
+Tools have a scoped API automatically injected as `this.api`. Use it for emitting events and providing handlers:
 
 ```javascript
-// Good
-window.mmgisAPI.emit('plugin:myPlugin:updated', data)
+// In your tool - this.api is auto-injected by ToolController
+this.api.emit('updated', data)           // -> 'plugin:mytool:updated'
+this.api.provide('getData', () => myData) // -> 'plugin:mytool:getData'
 
-// Bad - may conflict with other plugins
-window.mmgisAPI.emit('updated', data)
+// For subscribing/requesting, use mmgisAPI directly with full paths
+window.mmgisAPI.on('layer:visibilityChange', handler)
+window.mmgisAPI.request('plugin:draw:getData')
 ```
+
+See [Plugin Scoped API](#plugin-scoped-api) for full details.
 
 ### 5. Graceful Degradation
 
