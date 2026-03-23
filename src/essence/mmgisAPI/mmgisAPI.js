@@ -837,6 +837,38 @@ var mmgisAPI = {
         return handlers.has(name)
     },
 
+    // ============ PLUGIN-SCOPED API ============
+
+    /**
+     * Get a plugin-scoped API for emitting events and providing handlers.
+     * Automatically prefixes names with 'plugin:{pluginId}:'.
+     *
+     * For subscribing (on) or requesting (request), use mmgisAPI directly with full paths.
+     *
+     * @param {string} pluginId - Unique plugin identifier (e.g., 'draw', 'info', 'layerManager')
+     * @returns {Object} Scoped API with emit and provide methods
+     * @example
+     * const api = mmgisAPI.forPlugin('draw');
+     *
+     * // Emitting/providing (auto-prefixed)
+     * api.provide('getActiveFeature', () => data);  // -> 'plugin:draw:getActiveFeature'
+     * api.emit('featureUpdated', data);             // -> 'plugin:draw:featureUpdated'
+     *
+     * // Subscribing/requesting (use mmgisAPI directly)
+     * mmgisAPI.on('layer:visibilityChange', handler);
+     * mmgisAPI.request('plugin:info:getData');
+     */
+    forPlugin(pluginId) {
+        const prefix = `plugin:${pluginId}:`
+
+        return {
+            emit: (event, data) => mmgisAPI.emit(prefix + event, data),
+            provide: (name, handler) => mmgisAPI.provide(prefix + name, handler),
+            pluginId,
+            prefix,
+        }
+    },
+
     // Formulae_
     utils: { ...F_ },
 }
