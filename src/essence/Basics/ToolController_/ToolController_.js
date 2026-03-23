@@ -179,6 +179,13 @@ let ToolController_ = {
                                     }
                                 )
                                 document.dispatchEvent(_event)
+                                // Dual-emit to mmgisAPI Event Bus
+                                if (window.mmgisAPI) {
+                                    window.mmgisAPI.emit('tool:toggleSeparated', {
+                                        toggledToolName: ToolController_.tools[i].js,
+                                        visible: tM.made,
+                                    })
+                                }
                             }
                         }
                     })(i)
@@ -276,6 +283,13 @@ let ToolController_ = {
                                     },
                                 })
                                 document.dispatchEvent(_event)
+                                // Dual-emit to mmgisAPI Event Bus
+                                if (window.mmgisAPI) {
+                                    window.mmgisAPI.emit('tool:change', {
+                                        activeTool: ToolController_.activeTool,
+                                        activeToolName: ToolController_.activeToolName,
+                                    })
+                                }
                             }
                         })(i)
                     )
@@ -467,11 +481,17 @@ let ToolController_ = {
             .css('opacity', '1')
 
         ToolController_.toolModuleNames.forEach((t) => {
-            if (
-                ToolController_.toolModules[t] &&
-                typeof ToolController_.toolModules[t].initialize === 'function'
-            )
-                ToolController_.toolModules[t].initialize()
+            const tool = ToolController_.toolModules[t]
+            if (tool) {
+                // Inject scoped API based on tool name (e.g., "DrawTool" -> "draw")
+                if (window.mmgisAPI && !tool.api) {
+                    const pluginId = t.replace(/Tool$/, '').toLowerCase()
+                    tool.api = window.mmgisAPI.forPlugin(pluginId)
+                }
+                if (typeof tool.initialize === 'function') {
+                    tool.initialize()
+                }
+            }
         })
 
         ToolController_.loaded = true
