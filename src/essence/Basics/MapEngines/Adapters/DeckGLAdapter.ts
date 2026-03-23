@@ -4,9 +4,17 @@
  * Translates the imperative IMapEngine interface into deck.gl's declarative
  * layer-array and controlled-viewState patterns.
  *
- * Coordinate convention: IMapEngine uses {lat, lng} objects (or [lat, lng] tuples
- * in Leaflet order). deck.gl uses {longitude, latitude} and [lng, lat] GeoJSON order.
- * All conversion is internal to this adapter.
+ * **Modes**
+ *
+ * - *Standalone* (default) — a bare `Deck` instance renders on a transparent
+ *   canvas. No basemap library is loaded.
+ * - *Overlay* — a mapbox-gl or maplibre-gl `Map` provides the basemap; a
+ *   `MapboxOverlay` from `@deck.gl/mapbox` attaches deck.gl layers on top.
+ *   Pass {@link BasemapOptions} via `MapInitOptions.basemap` to activate this mode.
+ *
+ * **Coordinate convention**: IMapEngine uses `{lat, lng}` objects (or `[lat, lng]`
+ * tuples in Leaflet order). deck.gl uses `{longitude, latitude}` and `[lng, lat]`
+ * GeoJSON order. All conversion is internal to this adapter.
  */
 
 import {
@@ -16,6 +24,10 @@ import {
     type PickingInfo,
     type Layer,
 } from '@deck.gl/core'
+
+import { MapboxOverlay } from '@deck.gl/mapbox'
+import { Map as MaplibreGLMap } from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
 
 import type { IMapEngine } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
@@ -27,6 +39,7 @@ import type {
     FlyToOptions,
     FitBoundsOptions,
     MapInitOptions,
+    BasemapOptions,
 } from '../types/view'
 import type { LayerOptions } from '../types/layers'
 import type {
@@ -50,27 +63,116 @@ import {
 } from './DeckGLHelpers'
 
 /**
+ * Minimal API surface that is identical between mapbox-gl and maplibre-gl `Map` instances.
+ * Defined as a local interface so neither library is a hard compile-time dependency.
+ */
+interface BasemapInstance {
+    /** Attach a deck.gl `MapboxOverlay` (or any IControl) to the map. */
+    addControl(control: object): void
+    /** Detach a previously added control from the map. */
+    removeControl(control: object): void
+    /** Destroy the map and release all resources. */
+    remove(): void
+    /** Move the map centre without animation. `center` is `[longitude, latitude]`. */
+    setCenter(center: [number, number]): unknown
+    /** Set the zoom level without animation. */
+    setZoom(zoom: number): unknown
+    /** Return the current map centre as `{lat, lng}`. */
+    getCenter(): { lat: number; lng: number }
+    /** Return the current zoom level. */
+    getZoom(): number
+    /** Return the current visible bounds. */
+    getBounds(): {
+        getSouthWest(): { lat: number; lng: number }
+        getNorthEast(): { lat: number; lng: number }
+    }
+    /** Animate the camera to a new position using a fly-to curve. */
+    flyTo(options: {
+        center?: [number, number]
+        zoom?: number
+        bearing?: number
+        pitch?: number
+        speed?: number
+        curve?: number
+        duration?: number
+        essential?: boolean
+    }): unknown
+    /** Animate the viewport to contain the given bounds. */
+    fitBounds(
+        bounds: [[number, number], [number, number]],
+        options?: {
+            padding?: number | { top: number; right: number; bottom: number; left: number }
+            maxZoom?: number
+        }
+    ): unknown
+    /** Restrict panning to the given bounding box. Pass `null` to remove the constraint. */
+    setMaxBounds(bounds: [[number, number], [number, number]] | null): unknown
+    /** Register a map event listener. */
+    on(type: string, handler: (...args: unknown[]) => void): unknown
+    /** Remove a previously registered map event listener. */
+    off(type: string, handler: (...args: unknown[]) => void): unknown
+    /** Recalculate the map size from its container element. */
+    resize(): void
+}
+
+/**
  * DeckGL map engine adapter.
  *
- * Wraps a `Deck` instance in controlled viewState mode. All layer mutations
- * rebuild the declarative layers array and call `deck.setProps({ layers })`
+ * **Standalone mode** wraps a `Deck` instance in controlled viewState mode. All layer
+ * mutations rebuild the declarative layers array and call `deck.setProps({ layers })`
  * so deck.gl diffs and re-renders only what changed.
  *
- * @example
- * ```ts
- * import { DeckGLAdapter } from './Adapters/DeckGLAdapter'
- * import { mapEngineRegistry, MAP_ENGINE } from '../MapEngines'
+ * **Overlay mode** creates a mapbox-gl or maplibre-gl base map, then attaches a
+ * `MapboxOverlay` to it so deck.gl layers render on top of vector-tile styles.
  *
- * mapEngineRegistry.register(MAP_ENGINE.DECKGL, DeckGLAdapter)
- * const engine = mapEngineRegistry.createEngine(MAP_ENGINE.DECKGL)
+ * @example Standalone mode
+ * ```ts
+ * const engine = new DeckGLAdapter()
  * await engine.init({ containerId: 'map', zoom: 4, center: { lat: 0, lng: 0 } })
+ * ```
+ *
+ * @example Overlay mode with MapLibre
+ * ```ts
+ * const engine = new DeckGLAdapter()
+ * await engine.init({
+ *   containerId: 'map',
+ *   zoom: 4,
+ *   center: { lat: 0, lng: 0 },
+ *   basemap: { provider: 'maplibre', style: 'https://demotiles.maplibre.org/style.json' },
+ * })
+ * ```
+ *
+ * @example Overlay mode with Mapbox
+ * ```ts
+ * const engine = new DeckGLAdapter()
+ * await engine.init({
+ *   containerId: 'map',
+ *   zoom: 4,
+ *   center: { lat: 0, lng: 0 },
+ *   basemap: {
+ *     provider: 'mapbox',
+ *     style: 'mapbox://styles/mapbox/streets-v12',
+ *     accessToken: 'pk.ey...',
+ *   },
+ * })
  * ```
  */
 export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     readonly engineType: MapEngineType = MAP_ENGINE.DECKGL
 
     private _container!: HTMLElement
+
+    /** Active in standalone mode only. Null in overlay mode. */
     private _deck: Deck | null = null
+
+    /** Active in overlay mode only. Null in standalone mode. */
+    private _basemap: BasemapInstance | null = null
+
+    /** Active in overlay mode only. Null in standalone mode. */
+    private _overlay: MapboxOverlay | null = null
+
+    /** True when the adapter was initialised with a {@link BasemapOptions} configuration. */
+    private _isOverlayMode = false
 
     private _viewState: DeckViewState = {
         longitude: 0,
@@ -93,12 +195,48 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _featureHoverHandler: FeatureInteractionHandler | null = null
 
     /**
-     * Create and mount the Deck instance inside the element identified by
-     * `options.containerId`.
+     * Bound handler kept as a class field so it can be removed cleanly in {@link destroy}.
+     * Syncs `_viewState` from the basemap and emits the engine-level `'moveend'` event.
+     */
+    private _onBasemapMoveEnd = (): void => {
+        const center = this._basemap!.getCenter()
+        this._viewState = {
+            ...this._viewState,
+            longitude: center.lng,
+            latitude: center.lat,
+            zoom: this._basemap!.getZoom(),
+        }
+        this._emitEvent('moveend', this._viewState)
+    }
+
+    /**
+     * Bound handler kept as a class field for clean removal.
+     * Silently keeps `_viewState` in sync during animations so that
+     * {@link projectCoordinates} and {@link unprojectCoordinates} remain
+     * accurate while the camera is moving.
+     */
+    private _onBasemapMove = (): void => {
+        const center = this._basemap!.getCenter()
+        this._viewState = {
+            ...this._viewState,
+            longitude: center.lng,
+            latitude: center.lat,
+            zoom: this._basemap!.getZoom(),
+        }
+    }
+
+    /**
+     * Create and mount the map inside the element identified by `options.containerId`.
+     *
+     * Returns `void` (synchronous) for standalone mode and MapLibre overlay mode.
+     * Returns `Promise<void>` for Mapbox overlay mode because `mapbox-gl` must be
+     * loaded via a dynamic import. Callers that pass `basemap.provider: 'mapbox'`
+     * must await the returned Promise before interacting with the engine.
      *
      * @throws {Error} If the container element is not found in the DOM.
+     * @throws {Error} If `provider` is `'mapbox'` and `mapbox-gl` is not installed.
      */
-    async init(options: MapInitOptions): Promise<void> {
+    init(options: MapInitOptions): void | Promise<void> {
         const container = document.getElementById(options.containerId)
         if (!container) {
             throw new Error(`DeckGLAdapter: container element #${options.containerId} not found`)
@@ -119,45 +257,71 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             maxZoom: this._maxZoom,
         }
 
-        // DeckProps generics don't accept our plain DeckViewState shape directly.
-        this._deck = new Deck({
-            parent: this._container,
-            width: '100%',
-            height: '100%',
-            controller: true,
-            layers: [],
-            viewState: this._viewState,
-            onViewStateChange: ({ viewState }: { viewState: DeckViewState }) => {
-                const clamped = this._clampToMaxBounds(viewState)
-                this._viewState = clamped
-                this._deckSetProps({ viewState: clamped })
-                this._emitEvent('moveend', clamped)
-            },
-            onClick: (info: PickingInfo) => {
-                this._featureClickHandler?.(pickInfoToResult(info))
-            },
-            onHover: (info: PickingInfo) => {
-                this._featureHoverHandler?.(pickInfoToResult(info))
-            },
-        } as any)
+        if (options.basemap?.provider === 'mapbox') {
+            return this._initOverlayModeMapbox(options.basemap)
+        }
+        if (options.basemap?.provider === 'maplibre') {
+            this._setupOverlay(
+                MaplibreGLMap as unknown as new (o: Record<string, unknown>) => BasemapInstance,
+                options.basemap
+            )
+            return
+        }
+        this._initStandaloneMode()
     }
 
     /**
-     * Tear down the Deck instance, remove all layers, and clear all listeners.
+     * Tear down the map, release all resources, and clear all listeners.
      * The adapter must not be used again after this call.
      */
     destroy(): void {
-        this._deck?.finalize()
-        this._deck = null
+        if (this._isOverlayMode) {
+            if (this._basemap) {
+                this._basemap.off('move', this._onBasemapMove)
+                this._basemap.off('moveend', this._onBasemapMoveEnd)
+                if (this._overlay) {
+                    this._overlay.finalize()
+                    this._basemap.removeControl(this._overlay as unknown as object)
+                    this._overlay = null
+                }
+                this._basemap.remove()
+                this._basemap = null
+            }
+        } else {
+            this._deck?.finalize()
+            this._deck = null
+        }
+
         this._layers.clear()
         this._layerZIndices.clear()
         this._eventListeners.clear()
         this._featureClickHandler = null
         this._featureHoverHandler = null
+        this._isOverlayMode = false
     }
 
+    /**
+     * Returns the internal `Deck` instance.
+     *
+     * - Standalone mode: the top-level `Deck` object.
+     * - Overlay mode: the `Deck` instance embedded inside the `MapboxOverlay`.
+     *
+     * To access the underlying mapbox-gl / maplibre-gl `Map` in overlay mode,
+     * use {@link getBasemap} instead.
+     */
     getNativeMap(): Deck {
+        if (this._isOverlayMode) {
+            return this._overlay?.deck as Deck
+        }
         return this._deck as Deck
+    }
+
+    /**
+     * Returns the mapbox-gl or maplibre-gl `Map` instance when running in overlay mode.
+     * Returns `null` in standalone mode.
+     */
+    getBasemap(): BasemapInstance | null {
+        return this._basemap
     }
 
     getContainer(): HTMLElement {
@@ -166,6 +330,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     setView(center: LatLngLike, zoom?: number, options?: ViewOptions): void {
         const { lat, lng } = resolveLatLng(center)
+        if (this._isOverlayMode) {
+            this._basemap!.setCenter([lng, lat])
+            if (zoom !== undefined) this._basemap!.setZoom(zoom)
+            return
+        }
         this._applyViewState(
             {
                 ...this._viewState,
@@ -178,15 +347,26 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     setZoom(zoom: number, options?: ViewOptions): void {
+        if (this._isOverlayMode) {
+            this._basemap!.setZoom(zoom)
+            return
+        }
         this._applyViewState({ ...this._viewState, zoom }, options)
     }
 
     setCenter(center: LatLngLike, options?: ViewOptions): void {
         const { lat, lng } = resolveLatLng(center)
+        if (this._isOverlayMode) {
+            this._basemap!.setCenter([lng, lat])
+            return
+        }
         this._applyViewState({ ...this._viewState, longitude: lng, latitude: lat }, options)
     }
 
     getZoom(): number {
+        if (this._isOverlayMode) {
+            return this._basemap!.getZoom()
+        }
         return this._viewState.zoom
     }
 
@@ -199,14 +379,29 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     getCenter(): LatLng {
+        if (this._isOverlayMode) {
+            const c = this._basemap!.getCenter()
+            return { lat: c.lat, lng: c.lng }
+        }
         return { lat: this._viewState.latitude, lng: this._viewState.longitude }
     }
 
     /**
-     * Derive visible geographic bounds by unprojecting the container corners
-     * via WebMercatorViewport.
+     * Returns the current visible geographic bounds.
+     *
+     * - Overlay mode: delegated directly to the basemap's `getBounds()`.
+     * - Standalone mode: derived by unprojecting the container corners via `WebMercatorViewport`.
      */
     getBounds(): BoundsLike {
+        if (this._isOverlayMode) {
+            const b = this._basemap!.getBounds()
+            const sw = b.getSouthWest()
+            const ne = b.getNorthEast()
+            return {
+                southWest: { lat: sw.lat, lng: sw.lng },
+                northEast: { lat: ne.lat, lng: ne.lng },
+            }
+        }
         const vp = makeViewport(this._viewState, this._container)
         const { offsetWidth: w, offsetHeight: h } = this._container
         const [west, south] = vp.unproject([0, h]) as [number, number]
@@ -218,6 +413,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     getViewState(): ViewState {
+        if (this._isOverlayMode) {
+            const c = this._basemap!.getCenter()
+            return {
+                center: { lat: c.lat, lng: c.lng },
+                zoom: this._basemap!.getZoom(),
+                bearing: this._viewState.bearing,
+                pitch: this._viewState.pitch,
+            }
+        }
         return {
             center: { lat: this._viewState.latitude, lng: this._viewState.longitude },
             zoom: this._viewState.zoom,
@@ -228,6 +432,22 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     setViewState(state: ViewState, options?: ViewOptions): void {
         const { lat, lng } = resolveLatLng(state.center)
+        if (this._isOverlayMode) {
+            if (options?.animate) {
+                this._basemap!.flyTo({
+                    center: [lng, lat],
+                    zoom: state.zoom,
+                    bearing: state.bearing,
+                    pitch: state.pitch,
+                    duration: options.duration,
+                    essential: true,
+                })
+            } else {
+                this._basemap!.setCenter([lng, lat])
+                this._basemap!.setZoom(state.zoom)
+            }
+            return
+        }
         this._applyViewState(
             {
                 ...this._viewState,
@@ -243,14 +463,33 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     setMaxBounds(bounds: BoundsLike | null): void {
         this._maxBounds = bounds
+        if (this._isOverlayMode && this._basemap) {
+            const resolved = bounds ? resolveBounds(bounds) : null
+            this._basemap.setMaxBounds(resolved)
+        }
     }
 
     /**
-     * Compute the target view state for the given bounds using
-     * WebMercatorViewport.fitBounds, then apply it.
+     * Fit the viewport to the given bounds.
+     *
+     * - Overlay mode: delegates to the basemap's `fitBounds`.
+     * - Standalone mode: computes the target view via `WebMercatorViewport.fitBounds`
+     *   and applies it with the appropriate transition.
      */
     fitBounds(bounds: BoundsLike, options?: FitBoundsOptions): void {
         const [[west, south], [east, north]] = resolveBounds(bounds)
+        if (this._isOverlayMode) {
+            this._basemap!.fitBounds(
+                [[west, south], [east, north]],
+                {
+                    padding: resolvePadding(options?.padding) as
+                        | number
+                        | { top: number; right: number; bottom: number; left: number },
+                    ...(options?.maxZoom !== undefined ? { maxZoom: options.maxZoom } : {}),
+                }
+            )
+            return
+        }
         const fitted = makeViewport(this._viewState, this._container).fitBounds(
             [[west, south], [east, north]],
             {
@@ -259,16 +498,37 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             }
         )
         this._applyViewState(
-            { ...this._viewState, longitude: fitted.longitude, latitude: fitted.latitude, zoom: fitted.zoom },
+            {
+                ...this._viewState,
+                longitude: fitted.longitude,
+                latitude: fitted.latitude,
+                zoom: fitted.zoom,
+            },
             options
         )
     }
 
     /**
-     * Animate to the target using FlyToInterpolator for a curved flight path.
+     * Animate the camera along a fly-to curve.
+     *
+     * - Overlay mode: delegates to the basemap's `flyTo`.
+     * - Standalone mode: uses deck.gl's `FlyToInterpolator`.
      */
     flyTo(options: FlyToOptions): void {
         const { lat, lng } = resolveLatLng(options.center)
+        if (this._isOverlayMode) {
+            this._basemap!.flyTo({
+                center: [lng, lat],
+                ...(options.zoom !== undefined ? { zoom: options.zoom } : {}),
+                ...(options.bearing !== undefined ? { bearing: options.bearing } : {}),
+                ...(options.pitch !== undefined ? { pitch: options.pitch } : {}),
+                speed: options.speed ?? 1.2,
+                curve: options.curve ?? 1.414,
+                ...(options.duration !== undefined ? { duration: options.duration } : {}),
+                essential: true,
+            })
+            return
+        }
         const transitionDuration = options.duration ?? 1000
         this._applyViewState(
             {
@@ -289,11 +549,22 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Smoothly pan to a new center using LinearInterpolator.
+     * Smoothly pan the camera to a new centre.
+     *
+     * - Overlay mode: delegates to the basemap's `flyTo` with no zoom change.
+     * - Standalone mode: uses deck.gl's `LinearInterpolator` over longitude/latitude.
      */
     panTo(center: LatLngLike, options?: ViewOptions): void {
         const { lat, lng } = resolveLatLng(center)
         const duration = options?.duration ?? 300
+        if (this._isOverlayMode) {
+            this._basemap!.flyTo({
+                center: [lng, lat],
+                duration,
+                essential: false,
+            })
+            return
+        }
         this._applyViewState(
             {
                 ...this._viewState,
@@ -307,11 +578,17 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Force a full redraw. deck.gl auto-handles container resize via
-     * ResizeObserver; call this only when that detection does not fire (e.g.
-     * inside a panel that becomes visible after being hidden).
+     * Force a full redraw / container resize.
+     *
+     * - Overlay mode: calls `basemap.resize()` which triggers MapLibre/Mapbox to
+     *   recalculate its canvas dimensions; the `MapboxOverlay` inherits the new size.
+     * - Standalone mode: calls `deck.redraw('invalidateSize')`.
      */
     invalidateSize(): void {
+        if (this._isOverlayMode) {
+            this._basemap?.resize()
+            return
+        }
         this._deck?.redraw('invalidateSize')
     }
 
@@ -376,8 +653,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Assign a logical z-index. Because deck.gl renders layers by array order
-     * (index 0 = bottom), this re-sorts the internal map by ascending z-index.
+     * Assign a logical z-index. deck.gl renders layers in array order (index 0 = bottom),
+     * so this re-sorts the internal map by ascending z-index.
      */
     setLayerZIndex(layer: Layer | string, zIndex: number): void {
         const id = resolveLayerId(layer)
@@ -399,8 +676,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Move a layer to the start of the layers array so deck.gl renders it below
-     * all others.
+     * Move a layer to the start of the layers array so deck.gl renders it below all others.
      */
     bringToBack(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -461,22 +737,26 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      *
      * - Point form: calls `deck.pickObject` with radius 1.
      * - Box form `[topLeft, bottomRight]`: calls `deck.pickMultipleObjects`.
+     *
+     * In overlay mode, the internal `Deck` instance is accessed via `_overlay.deck`.
      */
     queryRenderedFeatures(
         geometry: PointLike | [PointLike, PointLike],
         options?: QueryFeaturesOptions
     ): FeaturePickResult[] {
-        if (!this._deck) return []
+        const deck = this._isOverlayMode ? this._overlay?.deck : this._deck
+        if (!deck) return []
 
         const isBox =
             Array.isArray(geometry) &&
-            (Array.isArray((geometry as unknown[])[0]) || typeof (geometry as unknown[])[0] === 'object')
+            (Array.isArray((geometry as unknown[])[0]) ||
+                typeof (geometry as unknown[])[0] === 'object')
 
         if (isBox) {
             const [p1, p2] = geometry as [PointLike, PointLike]
             const { x: x1, y: y1 } = resolvePoint(p1)
             const { x: x2, y: y2 } = resolvePoint(p2)
-            return this._deck
+            return deck
                 .pickMultipleObjects({
                     x: Math.min(x1, x2),
                     y: Math.min(y1, y2),
@@ -487,7 +767,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
 
         const { x, y } = resolvePoint(geometry as PointLike)
-        const pick = this._deck.pickObject({ x, y, radius: 1, layerIds: options?.layers })
+        const pick = deck.pickObject({ x, y, radius: 1, layerIds: options?.layers })
         return pick ? [pickInfoToResult(pick)] : []
     }
 
@@ -497,13 +777,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     projectCoordinates(latLng: LatLngLike, zoom?: number): PointLike {
         const { lat, lng } = resolveLatLng(latLng)
-        const [x, y] = makeViewport(this._viewState, this._container, zoom).project([lng, lat]) as [number, number]
+        const [x, y] = makeViewport(this._viewState, this._container, zoom).project([
+            lng,
+            lat,
+        ]) as [number, number]
         return { x, y }
     }
 
     unprojectCoordinates(point: PointLike, zoom?: number): LatLngLike {
         const { x, y } = resolvePoint(point)
-        const [lng, lat] = makeViewport(this._viewState, this._container, zoom).unproject([x, y]) as [number, number]
+        const [lng, lat] = makeViewport(this._viewState, this._container, zoom).unproject([
+            x,
+            y,
+        ]) as [number, number]
         return { lat, lng }
     }
 
@@ -516,12 +802,114 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Apply a new view state to the Deck instance.
+     * Initialise a standalone `Deck` instance (no basemap).
+     * Called by {@link init} when `options.basemap` is absent.
+     */
+    private _initStandaloneMode(): void {
+        this._deck = new Deck({
+            parent: this._container,
+            width: '100%',
+            height: '100%',
+            controller: true,
+            layers: [],
+            viewState: this._viewState,
+            onViewStateChange: ({ viewState }: { viewState: DeckViewState }) => {
+                const clamped = this._clampToMaxBounds(viewState)
+                this._viewState = clamped
+                this._deckSetProps({ viewState: clamped })
+                this._emitEvent('moveend', clamped)
+            },
+            onClick: (info: PickingInfo) => {
+                this._featureClickHandler?.(pickInfoToResult(info))
+            },
+            onHover: (info: PickingInfo) => {
+                this._featureHoverHandler?.(pickInfoToResult(info))
+            },
+        } as any)
+    }
+
+    /**
+     * Initialise Mapbox overlay mode. Loads `mapbox-gl` via a dynamic import so
+     * the library is only bundled when this code path is actually reached.
      *
-     * When `options.animate` is absent or false, transition props are cleared
-     * so the camera jumps immediately. Callers that want animation attach the
-     * appropriate `transitionInterpolator` and `transitionDuration` to `state`
-     * before calling this method.
+     * @throws {Error} If `mapbox-gl` is not installed.
+     */
+    private async _initOverlayModeMapbox(basemap: BasemapOptions): Promise<void> {
+        let MapboxGLMap: new (options: Record<string, unknown>) => BasemapInstance
+
+        try {
+            const lib = (await import('mapbox-gl')) as unknown as {
+                default?: { Map: new (options: Record<string, unknown>) => BasemapInstance }
+                Map?: new (options: Record<string, unknown>) => BasemapInstance
+            }
+            const MapClass = (lib.default ?? lib).Map
+            if (!MapClass) throw new Error('Map not found in mapbox-gl module')
+            MapboxGLMap = MapClass
+        } catch {
+            throw new Error(
+                'DeckGLAdapter: mapbox-gl is not installed. ' +
+                    "Run `npm install mapbox-gl` or use provider: 'maplibre' instead."
+            )
+        }
+
+        this._setupOverlay(MapboxGLMap, basemap)
+    }
+
+    /**
+     * Shared synchronous setup for both MapLibre and Mapbox overlay modes.
+     * Creates the base map, attaches the `MapboxOverlay`, registers event listeners,
+     * and applies `maxBounds` if configured.
+     */
+    private _setupOverlay(
+        MapClass: new (options: Record<string, unknown>) => BasemapInstance,
+        basemap: BasemapOptions
+    ): void {
+        const mapOptions: Record<string, unknown> = {
+            container: this._container,
+            style: basemap.style,
+            center: [this._viewState.longitude, this._viewState.latitude] as [number, number],
+            zoom: this._viewState.zoom,
+            bearing: this._viewState.bearing,
+            pitch: this._viewState.pitch,
+            minZoom: this._minZoom,
+            maxZoom: this._maxZoom,
+            projection: 'mercator',
+        }
+
+        if (basemap.provider === 'mapbox' && basemap.accessToken) {
+            mapOptions['accessToken'] = basemap.accessToken
+        }
+
+        this._basemap = new MapClass(mapOptions)
+        this._isOverlayMode = true
+
+        this._overlay = new MapboxOverlay({
+            interleaved: false,
+            layers: [],
+            onClick: (info: PickingInfo) => {
+                this._featureClickHandler?.(pickInfoToResult(info))
+            },
+            onHover: (info: PickingInfo) => {
+                this._featureHoverHandler?.(pickInfoToResult(info))
+            },
+        })
+
+        this._basemap.addControl(this._overlay as unknown as object)
+
+        if (this._maxBounds) {
+            this._basemap.setMaxBounds(resolveBounds(this._maxBounds))
+        }
+
+        this._basemap.on('move', this._onBasemapMove)
+        this._basemap.on('moveend', this._onBasemapMoveEnd)
+    }
+
+    /**
+     * Apply a new view state to the `Deck` instance.
+     * Only used in standalone mode; overlay mode drives the camera through the basemap.
+     *
+     * When `options.animate` is absent or false, transition props are cleared so the
+     * camera jumps immediately.
      */
     private _applyViewState(state: DeckViewState, options?: ViewOptions): void {
         const nextState: DeckViewState = {
@@ -537,8 +925,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Clamp longitude and latitude to `_maxBounds` if set. Applied inside
-     * `onViewStateChange` to constrain user-driven pan gestures.
+     * Clamp longitude and latitude to `_maxBounds` if set.
+     * Applied inside `onViewStateChange` to constrain user-driven pan gestures in standalone mode.
      */
     private _clampToMaxBounds(viewState: DeckViewState): DeckViewState {
         if (!this._maxBounds) return viewState
@@ -551,27 +939,35 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Push the current layer registry to deck.gl. Called after any mutation
-     * to `_layers` so the GPU render state stays in sync.
+     * Push the current layer registry to the active rendering target.
+     *
+     * - Overlay mode: `_overlay.setProps({ layers })` — the `MapboxOverlay` diffs and re-renders.
+     * - Standalone mode: `_deck.setProps({ layers })` — direct deck.gl update.
      */
     private _syncLayers(): void {
-        this._deckSetProps({ layers: [...this._layers.values()] })
+        const layers = [...this._layers.values()]
+        if (this._isOverlayMode) {
+            this._overlay?.setProps({ layers })
+        } else {
+            this._deckSetProps({ layers })
+        }
     }
 
     /**
-     * Re-order the layer Map by ascending z-index so `_syncLayers` sends them
-     * in the correct draw order (lower z-index = rendered first = behind).
+     * Re-order the layer Map by ascending z-index so `_syncLayers` sends them in the
+     * correct draw order (lower z-index = rendered first = behind).
      */
     private _sortLayersByZIndex(): void {
         const entries = [...this._layers.entries()].sort(
-            ([aId], [bId]) => (this._layerZIndices.get(aId) ?? 0) - (this._layerZIndices.get(bId) ?? 0)
+            ([aId], [bId]) =>
+                (this._layerZIndices.get(aId) ?? 0) - (this._layerZIndices.get(bId) ?? 0)
         )
         this._layers = new Map(entries)
     }
 
     /**
-     * Call `deck.setProps` with a partial props object. The cast is scoped
-     * here so the rest of the adapter works with concrete types.
+     * Call `deck.setProps` with a partial props object.
+     * Only valid in standalone mode; does nothing if `_deck` is null.
      */
     private _deckSetProps(props: { layers?: Layer[]; viewState?: DeckViewState }): void {
         this._deck?.setProps(props as any)
