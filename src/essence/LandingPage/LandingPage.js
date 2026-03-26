@@ -1,4 +1,5 @@
 import s from '../essence'
+import modern from '../modern'
 import $ from 'jquery'
 import QueryURL from '../Ancillary/QueryURL'
 import calls from '../../pre/calls'
@@ -6,6 +7,23 @@ import { mmgisAPI_ } from '../mmgisAPI/mmgisAPI'
 import attributions from '../../external/attributions'
 
 import './LandingPage.css'
+
+/**
+ * Helper function to initialize the appropriate layout based on config mode
+ * @param {Object} config - Mission configuration
+ * @param {Array} missions - List of missions
+ */
+function initializeLayout(config, missions) {
+    // Check for mode in dashboard config (modern or classic)
+    // Default to 'classic' if not specified
+    const mode = config?.msv?.mode || 'classic'
+
+    if (mode === 'modern') {
+        modern.init(config, missions)
+    } else {
+        s.init(config, missions)
+    }
+}
 
 export default {
     init: function (missions, forceError, forceConfig) {
@@ -167,7 +185,7 @@ export default {
                                             if (response.mission) {
                                                 config._dbMissionName = response.mission
                                             }
-                                            s.init(config, missions)
+                                            initializeLayout(config, missions)
                                         },
                                         function (e) {
                                             console.log(
@@ -188,7 +206,7 @@ export default {
                                             new Date().getTime(),
                                         function (data) {
                                             //Initialize
-                                            s.init(data, missions)
+                                            initializeLayout(data, missions)
                                         }
                                     ).fail(function () {
                                         console.log(
@@ -330,7 +348,7 @@ export default {
                     jsonUrl + '?nocache=' + new Date().getTime(),
                     function (data) {
                         //Initialize
-                        s.init(data, missions)
+                        initializeLayout(data, missions)
                     }
                 ).fail(function () {
                     console.error(
@@ -352,7 +370,7 @@ export default {
                             if (response.mission) {
                                 config._dbMissionName = response.mission
                             }
-                            s.init(config, missions)
+                            initializeLayout(config, missions)
                         },
                         function (e) {
                             console.error(
@@ -368,7 +386,7 @@ export default {
                         jsonUrl + '?nocache=' + new Date().getTime(),
                         function (data) {
                             //Initialize
-                            s.init(data, missions)
+                            initializeLayout(data, missions)
                         }
                     ).fail(function () {
                         console.warn("Warning: Couldn't load: " + jsonUrl)

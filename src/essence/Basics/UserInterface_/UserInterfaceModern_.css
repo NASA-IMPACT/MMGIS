@@ -1,0 +1,152 @@
+/* 
+ * UserInterfaceModern_.css
+ * Implements USWDS / Horizon design aesthetics for the modern dashboard.
+ */
+
+/* USWDS Color Palette (Horizon-inspired subset) */
+:root {
+    --uswds-primary: #005ea2; /* primary blue */
+    --uswds-primary-dark: #1a4480;
+    --uswds-primary-light: #73b3e7;
+    --uswds-base-darker: #171c1e;
+    --uswds-base-dark: #3d4551;
+    --uswds-base-light: #f0f0f0;
+    --uswds-white: #ffffff;
+    --uswds-shadow: rgba(0, 0, 0, 0.15);
+    
+    --modern-bg: #f8f9fa;
+    --modern-panel-bg: rgba(255, 255, 255, 0.95);
+    --modern-border: 1px solid rgba(0, 0, 0, 0.1);
+    --modern-radius: 8px;
+    --modern-glass-blur: blur(12px);
+}
+
+/* Full screen grid layout */
+.ui-modern-grid {
+    display: grid;
+    width: 100%;
+    height: 100vh;
+    grid-template-areas:
+        "top top top"
+        "left center right"
+        "bottom bottom bottom";
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto 1fr auto;
+    background-color: var(--modern-bg);
+    overflow: hidden;
+    position: relative;
+    pointer-events: none; /* Let clicks pass through to map if needed */
+}
+
+.ui-modern-grid > * {
+    pointer-events: auto; /* Re-enable pointer events for panels */
+}
+
+/* Regions */
+.ui-region-top { grid-area: top; display: flex; flex-direction: column; width: 100%; }
+.ui-region-left { grid-area: left; display: flex; flex-direction: row; height: 100%; }
+.ui-region-right { grid-area: right; display: flex; flex-direction: row; height: 100%; }
+.ui-region-bottom { grid-area: bottom; display: flex; flex-direction: column; width: 100%; }
+.ui-region-center { 
+    grid-area: center;
+    position: relative;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* Base Panel Styling */
+.ui-panel {
+    background: var(--modern-panel-bg);
+    backdrop-filter: var(--modern-glass-blur);
+    -webkit-backdrop-filter: var(--modern-glass-blur);
+    border: var(--modern-border);
+    box-shadow: 0 4px 6px var(--uswds-shadow);
+    display: flex;
+    flex-direction: column;
+    margin: 8px;
+    border-radius: var(--modern-radius);
+    overflow: hidden;
+    color: var(--uswds-base-darker);
+    font-family: "Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.ui-panel-header {
+    background-color: var(--uswds-primary);
+    color: var(--uswds-white);
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: capitalize;
+}
+
+.ui-panel-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.ui-panel-body {
+    padding: 1rem;
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+/* Tool Cards */
+.ui-tool-card {
+    background-color: var(--uswds-white);
+    border: var(--modern-border);
+    border-radius: 4px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+    flex: 1 1 120px;
+}
+
+.ui-tool-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px var(--uswds-shadow);
+    border-color: var(--uswds-primary-light);
+}
+
+.ui-tool-icon {
+    font-size: 1.2rem;
+    color: var(--uswds-primary);
+}
+
+.ui-tool-title {
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--uswds-base-dark);
+}
+
+.ui-empty-text {
+    color: #888;
+    font-style: italic;
+    font-size: 0.9rem;
+    margin: auto;
+}
+
+/* Specific region adjustments */
+.ui-region-top .ui-panel, .ui-region-bottom .ui-panel {
+    flex-direction: row;
+    flex: 1;
+}
+
+.ui-region-top .ui-panel-header, .ui-region-bottom .ui-panel-header {
+    writing-mode: horizontal-tb;
+    display: flex;
+    align-items: center;
+}
+
+.ui-region-left .ui-panel, .ui-region-right .ui-panel {
+    flex-direction: column;
+    min-width: 300px;
+    max-width: 400px;
+}
