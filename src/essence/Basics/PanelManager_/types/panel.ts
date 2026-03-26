@@ -135,6 +135,12 @@ export interface PanelConfig {
     capabilities?: PanelCapabilities;
 
     /**
+     * Whether the panel should have a visible header with title and control buttons.
+     * Default: false
+     */
+    hasHeader?: boolean;
+
+    /**
      * Whether the panel should overlay the map when visible.
      * If false, map adjusts to make room for the panel.
      * Default: true (panels overlay map content)

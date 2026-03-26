@@ -66,6 +66,7 @@
     margin: 8px;
     border-radius: var(--modern-radius);
     overflow: hidden;
+    position: relative;
     color: var(--uswds-base-darker);
     font-family: "Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -73,16 +74,45 @@
 .ui-panel-header {
     background-color: var(--uswds-primary);
     color: var(--uswds-white);
-    padding: 0.75rem 1rem;
+    padding: 0.5rem 0.75rem;
     font-size: 1rem;
     font-weight: 600;
     letter-spacing: 0.5px;
     text-transform: capitalize;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
-.ui-panel-header h3 {
+.ui-panel-title {
     margin: 0;
     font-size: 1.1rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ui-panel-header-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.ui-panel-btn {
+    background: transparent;
+    border: none;
+    color: var(--uswds-white);
+    opacity: 0.8;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s, opacity 0.2s;
+}
+
+.ui-panel-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    opacity: 1;
 }
 
 .ui-panel-body {
@@ -131,6 +161,50 @@
     font-style: italic;
     font-size: 0.9rem;
     margin: auto;
+}
+
+/* Drag Handles */
+.ui-panel-drag-handle {
+    position: absolute;
+    background: transparent;
+    z-index: 10;
+}
+
+.ui-panel-drag-handle:hover,
+.ui-panel-drag-handle:active {
+    background: rgba(0, 94, 162, 0.2);
+}
+
+.ui-panel-drag-handle-left {
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+}
+
+.ui-panel-drag-handle-right {
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+}
+
+.ui-panel-drag-handle-top {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: row-resize;
+}
+
+.ui-panel-drag-handle-bottom {
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: row-resize;
 }
 
 /* Specific region adjustments */
