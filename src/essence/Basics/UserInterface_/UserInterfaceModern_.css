@@ -123,23 +123,91 @@
 }
 
 /* Tool Cards */
+/* Tool Cards - Base Styles (shared by stacked and tabbed) */
 .ui-tool-card {
     background-color: var(--uswds-white);
     border: var(--modern-border);
     border-radius: 4px;
     padding: 0.75rem 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+/* Stacked Tool Cards (default clickable cards in panel body) */
+.ui-tool-card-stacked {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
     cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.ui-tool-card:hover {
+.ui-tool-card-stacked:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 8px var(--uswds-shadow);
     border-color: var(--uswds-primary-light);
+}
+
+/* Tabs */
+.ui-panel-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--modern-border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+    width: 100%;
+    flex: 0 0 auto;
+}
+
+.ui-panel-tab {
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    opacity: 0.6;
+    font-size: 0.95rem;
+    font-weight: 500;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: opacity 0.2s, border-bottom-color 0.2s;
+}
+
+.ui-panel-tab:hover {
+    opacity: 0.9;
+}
+
+.ui-panel-tab.active {
+    border-bottom-color: var(--uswds-primary);
+    color: var(--uswds-primary-dark);
+    opacity: 1;
+    font-weight: 600;
+}
+
+.ui-panel-tab-content-area {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Tabbed Content Area (overrides for tool cards used as tab content) */
+.ui-tool-tab-content {
+    display: none;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    cursor: default;
+    padding: 1rem;
+    flex-direction: column;
+}
+
+.ui-tool-tab-content.active {
+    display: flex;
 }
 
 .ui-tool-icon {
@@ -224,8 +292,8 @@
     overflow-y: auto;
 }
 
-.ui-region-left .ui-tool-card,
-.ui-region-right .ui-tool-card {
+.ui-region-left .ui-tool-card-stacked,
+.ui-region-right .ui-tool-card-stacked {
     flex: 0 0 auto;
     width: 100%; /* Prevent tool cards from shrinking */
 }
@@ -253,8 +321,21 @@
     overflow-y: hidden;
 }
 
-.ui-region-top .ui-tool-card,
-.ui-region-bottom .ui-tool-card {
+.ui-region-top .ui-tool-card-stacked,
+.ui-region-bottom .ui-tool-card-stacked {
     flex: 0 0 auto;
     min-width: 140px; /* Ensure horizontal tools don't collapse */
+}
+
+/* ============================================
+   Tabbed Layout Overrides
+   Higher specificity to override region-specific panel-body rules
+   ============================================ */
+.ui-region-left .ui-panel-body-tabbed,
+.ui-region-right .ui-panel-body-tabbed,
+.ui-region-top .ui-panel-body-tabbed,
+.ui-region-bottom .ui-panel-body-tabbed {
+    flex-direction: column;
+    align-items: stretch;
+    overflow: hidden;
 }

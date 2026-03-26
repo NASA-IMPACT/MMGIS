@@ -18,10 +18,82 @@ const UserInterfaceModern_ = {
     },
 
     /**
+     * Creates a single tool card for stacked layout
+     * @param {string} toolName - Name of the tool
+     * @returns {jQuery} Tool card element
+     */
+    createToolCard: function (toolName) {
+        return $('<div class="ui-tool-card ui-tool-card-stacked"></div>')
+            .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
+            .append($('<span class="ui-tool-title"></span>').text(toolName))
+    },
+
+    /**
+     * Renders a tabbed layout for panel tools
+     * @param {Object} panel - Panel configuration object
+     * @param {jQuery} body - Panel body element
+     */
+    renderTabbedLayout: function (panel, body) {
+        body.addClass('ui-panel-body-tabbed')
+
+        const tabBar = $('<div class="ui-panel-tabs"></div>')
+        const tabContentArea = $('<div class="ui-panel-tab-content-area"></div>')
+
+        panel.tools.forEach((toolName, idx) => {
+            const isActive = idx === 0 ? 'active' : ''
+
+            // Create tab
+            const tab = $(`<div class="ui-panel-tab ${isActive}"></div>`)
+                .attr('data-tool', toolName)
+                .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
+                .append($('<span></span>').text(toolName))
+            tabBar.append(tab)
+
+            // Create tab content placeholder
+            const toolCard = $(`<div class="ui-tool-card ui-tool-tab-content ${isActive}"></div>`)
+                .attr('data-tool', toolName)
+            const cardContent = $('<div style="margin: auto; text-align: center;"></div>')
+                .append('<span class="ui-tool-icon mdi mdi-view-dashboard" style="font-size: 2rem; display: block;"></span>')
+                .append($('<span class="ui-tool-title"></span>').text(`${toolName} Content Placeholder`))
+            toolCard.append(cardContent)
+            tabContentArea.append(toolCard)
+        })
+
+        // Bind tab click events
+        tabBar.on('click', '.ui-panel-tab', function () {
+            const $this = $(this)
+            const targetTool = $this.data('tool')
+
+            // Update active tabs
+            tabBar.find('.ui-panel-tab').removeClass('active')
+            $this.addClass('active')
+
+            // Update active content
+            tabContentArea.find('.ui-tool-tab-content').removeClass('active')
+            tabContentArea.find(`.ui-tool-tab-content[data-tool="${targetTool}"]`).addClass('active')
+        })
+
+        body.append(tabBar).append(tabContentArea)
+    },
+
+    /**
+     * Renders a stacked layout for panel tools
+     * @param {Object} panel - Panel configuration object
+     * @param {jQuery} body - Panel body element
+     */
+    renderStackedLayout: function (panel, body) {
+        panel.tools.forEach(toolName => {
+            body.append(this.createToolCard(toolName))
+        })
+    },
+
+    /**
      * Renders the layout into the #modern-content element
      */
     render: function () {
-        console.log("panels", this.panels)
+        if (window.mmgisglobal?.debug) {
+            console.log("panels", this.panels)
+        }
         const container = $('#modern-content')
         container.empty()
 
@@ -54,16 +126,16 @@ const UserInterfaceModern_ = {
                 const body = $('<div class="ui-panel-body"></div>')
 
                 if (panel.config.hasHeader) {
-                    const header = $(`
-                        <div class="ui-panel-header">
-                            <h3 class="ui-panel-title">${panel.config.title || panel.id}</h3>
-                            <div class="ui-panel-header-buttons">
-                                <button class="ui-panel-btn ui-panel-btn-minimize" title="Minimize"><span class="mdi mdi-window-minimize"></span></button>
-                                <button class="ui-panel-btn ui-panel-btn-maximize" title="Maximize"><span class="mdi mdi-window-maximize"></span></button>
-                                <button class="ui-panel-btn ui-panel-btn-close" title="Close"><span class="mdi mdi-close"></span></button>
-                            </div>
+                    const header = $('<div class="ui-panel-header"></div>')
+                    const title = $('<h3 class="ui-panel-title"></h3>').text(panel.config.title || panel.id)
+                    const headerButtons = $(`
+                        <div class="ui-panel-header-buttons">
+                            <button class="ui-panel-btn ui-panel-btn-minimize" title="Minimize"><span class="mdi mdi-window-minimize"></span></button>
+                            <button class="ui-panel-btn ui-panel-btn-maximize" title="Maximize"><span class="mdi mdi-window-maximize"></span></button>
+                            <button class="ui-panel-btn ui-panel-btn-close" title="Close"><span class="mdi mdi-close"></span></button>
                         </div>
                     `)
+                    header.append(title).append(headerButtons)
                     panelDiv.append(header)
                 }
 
@@ -71,17 +143,13 @@ const UserInterfaceModern_ = {
                     panelDiv.append(`<div class="ui-panel-drag-handle ui-panel-drag-handle-${regionName}"></div>`)
                 }
 
-                // Render placeholder cards for tools
+                // Render placeholders for tools based on layoutType
                 if (panel.tools && panel.tools.length > 0) {
-                    panel.tools.forEach(toolName => {
-                        const toolCard = $(`
-                            <div class="ui-tool-card">
-                                <span class="ui-tool-icon mdi mdi-view-dashboard"></span>
-                                <span class="ui-tool-title">${toolName}</span>
-                            </div>
-                        `)
-                        body.append(toolCard)
-                    })
+                    if (panel.config.layoutType === 'tabbed') {
+                        this.renderTabbedLayout(panel, body)
+                    } else {
+                        this.renderStackedLayout(panel, body)
+                    }
                 } else {
                     body.append('<p class="ui-empty-text">No tools configured</p>')
                 }
@@ -113,7 +181,11 @@ const UserInterfaceModern_ = {
      * Attaches mouse event listeners for panel resizing.
      */
     attachResizeEvents: function () {
+        // Clean up ALL previous event handlers
         $(document).off('.uiModernResize')
+        $('.ui-panel-drag-handle').off('mousedown.uiModernResize')
+
+        const self = this // Store reference to preserve context
         let isResizing = false
         let startX, startY
         let startWidth, startHeight
@@ -121,7 +193,7 @@ const UserInterfaceModern_ = {
         let currentConfig = null
         let currentRegion = null
 
-        $('.ui-panel-drag-handle').on('mousedown', (e) => {
+        $('.ui-panel-drag-handle').on('mousedown.uiModernResize', function (e) {
             e.preventDefault()
             isResizing = true
 
@@ -134,7 +206,7 @@ const UserInterfaceModern_ = {
             else if ($handle.hasClass('ui-panel-drag-handle-bottom')) currentRegion = 'bottom'
 
             const panelId = $currentPanel.attr('id')
-            const panelState = this.panels.find(p => p.containerId === panelId)
+            const panelState = self.panels.find(p => p.containerId === panelId)
             currentConfig = panelState ? panelState.config : null
 
             startX = e.clientX
@@ -145,39 +217,59 @@ const UserInterfaceModern_ = {
             $('body').css('user-select', 'none')
         })
 
+        // Define resize strategies for each region to eliminate duplication
+        const resizeStrategies = {
+            left: {
+                dimension: 'width',
+                getDelta: (e) => e.clientX - startX,
+                getStartSize: () => startWidth
+            },
+            right: {
+                dimension: 'width',
+                getDelta: (e) => startX - e.clientX,
+                getStartSize: () => startWidth
+            },
+            top: {
+                dimension: 'height',
+                getDelta: (e) => e.clientY - startY,
+                getStartSize: () => startHeight
+            },
+            bottom: {
+                dimension: 'height',
+                getDelta: (e) => startY - e.clientY,
+                getStartSize: () => startHeight
+            }
+        }
+
         $(document).on('mousemove.uiModernResize', (e) => {
-            if (!isResizing || !$currentPanel) return
+            if (!isResizing || !$currentPanel || !currentRegion) return
 
             const caps = currentConfig?.capabilities || {}
             const minSize = caps.minSize !== undefined ? caps.minSize : 50
             const maxSize = caps.maxSize !== undefined ? caps.maxSize : 9999
 
-            let newSize
+            const strategy = resizeStrategies[currentRegion]
+            if (!strategy) return
 
-            if (currentRegion === 'left') {
-                const delta = e.clientX - startX
-                newSize = Math.max(minSize, Math.min(startWidth + delta, maxSize))
-                $currentPanel.css({ 'width': newSize + 'px', 'min-width': 'auto', 'max-width': 'none', 'flex': 'none' })
-            } else if (currentRegion === 'right') {
-                const delta = startX - e.clientX
-                newSize = Math.max(minSize, Math.min(startWidth + delta, maxSize))
-                $currentPanel.css({ 'width': newSize + 'px', 'min-width': 'auto', 'max-width': 'none', 'flex': 'none' })
-            } else if (currentRegion === 'top') {
-                const delta = e.clientY - startY
-                newSize = Math.max(minSize, Math.min(startHeight + delta, maxSize))
-                $currentPanel.css({ 'height': newSize + 'px', 'min-height': 'auto', 'max-height': 'none', 'flex': 'none' })
-            } else if (currentRegion === 'bottom') {
-                const delta = startY - e.clientY
-                newSize = Math.max(minSize, Math.min(startHeight + delta, maxSize))
-                $currentPanel.css({ 'height': newSize + 'px', 'min-height': 'auto', 'max-height': 'none', 'flex': 'none' })
+            const delta = strategy.getDelta(e)
+            const startSize = strategy.getStartSize()
+            const newSize = Math.max(minSize, Math.min(startSize + delta, maxSize))
+
+            const cssUpdates = {
+                [strategy.dimension]: newSize + 'px',
+                [`min-${strategy.dimension}`]: 'auto',
+                [`max-${strategy.dimension}`]: 'none',
+                'flex': 'none'
             }
+            $currentPanel.css(cssUpdates)
         })
 
-        $(document).on('mouseup.uiModernResize', (e) => {
+        $(document).on('mouseup.uiModernResize', () => {
             if (isResizing) {
                 isResizing = false
                 $currentPanel = null
                 currentConfig = null
+                currentRegion = null
                 $('body').css('user-select', '')
             }
         })
