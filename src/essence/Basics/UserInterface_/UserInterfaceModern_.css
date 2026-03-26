@@ -118,9 +118,7 @@
 .ui-panel-body {
     padding: 1rem;
     flex: 1;
-    overflow-y: auto;
     display: flex;
-    flex-wrap: wrap;
     gap: 0.75rem;
 }
 
@@ -136,7 +134,6 @@
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     cursor: pointer;
-    flex: 1 1 120px;
 }
 
 .ui-tool-card:hover {
@@ -207,20 +204,57 @@
     cursor: row-resize;
 }
 
-/* Specific region adjustments */
-.ui-region-top .ui-panel, .ui-region-bottom .ui-panel {
+/* ============================================
+   Region-Specific Layout Adjustments
+   ============================================ */
+
+/* LEFT & RIGHT REGIONS: Vertical stacking */
+.ui-region-left .ui-panel,
+.ui-region-right .ui-panel {
+    flex-direction: column;
+    min-width: 300px;
+    max-width: 400px;
+}
+
+.ui-region-left .ui-panel-body,
+.ui-region-right .ui-panel-body {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.ui-region-left .ui-tool-card,
+.ui-region-right .ui-tool-card {
+    flex: 0 0 auto;
+    width: 100%; /* Prevent tool cards from shrinking */
+}
+
+/* TOP & BOTTOM REGIONS: Horizontal stacking */
+.ui-region-top .ui-panel,
+.ui-region-bottom .ui-panel {
     flex-direction: row;
     flex: 1;
 }
 
-.ui-region-top .ui-panel-header, .ui-region-bottom .ui-panel-header {
+.ui-region-top .ui-panel-header,
+.ui-region-bottom .ui-panel-header {
     writing-mode: horizontal-tb;
     display: flex;
     align-items: center;
 }
 
-.ui-region-left .ui-panel, .ui-region-right .ui-panel {
-    flex-direction: column;
-    min-width: 300px;
-    max-width: 400px;
+.ui-region-top .ui-panel-body,
+.ui-region-bottom .ui-panel-body {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.ui-region-top .ui-tool-card,
+.ui-region-bottom .ui-tool-card {
+    flex: 0 0 auto;
+    min-width: 140px; /* Ensure horizontal tools don't collapse */
 }
