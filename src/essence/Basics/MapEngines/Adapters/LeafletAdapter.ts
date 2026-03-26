@@ -23,7 +23,14 @@ import {
     MapInitOptions,
     ProjectionOptions,
 } from '../types/view'
-import { LayerOptions } from '../types/layers'
+import { LayerOptions, TileLayerOptions, MarkerOptions } from '../types/layers'
+import { IMapEngineMarkers } from '../IMapEngineMarkers'
+import {
+    buildLeafletLayer,
+    buildLeafletMarker,
+    resolveLeafletLayerId,
+    resolveLeafletMarkerId,
+} from './LeafletHelpers'
 import {
     MapEventHandler,
     MapEventOptions,
@@ -36,7 +43,7 @@ import { MapEngineType } from '../types/engine'
 // Leaflet is loaded globally via window.L
 declare const L: any
 
-export default class LeafletAdapter implements IMapEngine<any, any, any> {
+export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEngineMarkers {
     /**
      * Engine type identifier
      */
@@ -56,6 +63,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
      * Registry of layers by ID
      */
     private _layers: Map<string, any> = new Map()
+
+    /**
+     * Registry of markers by ID
+     */
+    private _markers: Map<string, any> = new Map()
 
     /**
      * Registry of event handlers for cleanup
@@ -241,6 +253,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         this._eventHandlers.clear()
 
         this._layers.clear()
+        this._markers.clear()
 
         this._map.remove()
         this._map = null
@@ -513,8 +526,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
     }
 
     // ========================================
-    // LAYER MANAGEMENT METHODS (Stubs for now)
-    // These will be implemented in subsequent tickets
+    // LAYER MANAGEMENT METHODS
     // ========================================
 
     getLayers(): any[] {
@@ -528,12 +540,57 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         return this._map.hasLayer(layer)
     }
 
+    /**
+     * Backward-compatible addLayer.
+     *
+     * If a raw Leaflet layer object is passed (has _leaflet_id), it is forwarded
+     * directly to the native map — preserving all existing Map_.js / Layers_.js call sites.
+     *
+     * If a LayerOptions spec is passed, createLayer() is called so the layer is
+     * also registered in the internal registry for later lookup by ID.
+     */
     addLayer(layer: any): void {
+        if (
+            layer !== null &&
+            typeof layer === 'object' &&
+            typeof layer.type === 'string' &&
+            layer._leaflet_id === undefined
+        ) {
+            this.createLayer(layer as LayerOptions)
+            return
+        }
         this._map.addLayer(layer)
     }
 
+    /**
+     * Create a Leaflet layer from a LayerOptions spec, register it by ID, and
+     * add it to the map (unless visible === false).
+     *
+     * Delegates construction to {@link buildLeafletLayer}.
+     *
+     * @throws {Error} If `options.type` is not a supported layer type.
+     */
     createLayer(options: LayerOptions): any {
-        throw new Error('createLayer not yet implemented')
+        if (!options.id) {
+            throw new Error('createLayer: options.id is required')
+        }
+
+        const leafletLayer = buildLeafletLayer(options.id, options)
+
+        this._layers.set(options.id, leafletLayer)
+
+        if (typeof options.opacity === 'number' && typeof leafletLayer.setOpacity === 'function') {
+            leafletLayer.setOpacity(options.opacity)
+        }
+        if (typeof options.zIndex === 'number' && typeof leafletLayer.setZIndex === 'function') {
+            leafletLayer.setZIndex(options.zIndex)
+        }
+
+        if (options.visible !== false) {
+            this._map.addLayer(leafletLayer)
+        }
+
+        return leafletLayer
     }
 
     removeLayer(layer: any | string): void {
@@ -548,8 +605,55 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         }
     }
 
-    updateLayer(layer: any | string, options: Partial<LayerOptions>): any {
-        throw new Error('updateLayer not yet implemented')
+    /**
+     * Mutate properties on an existing registered layer without recreating it.
+     * `layer` can be the string ID used at `createLayer` time, or the native
+     * Leaflet layer object (identified via its `_mmgisId` property set by
+     * {@link buildLeafletLayer}).
+     *
+     * Supported mutations:
+     *   opacity  → setOpacity()            (tile + GeoJSON)
+     *   visible  → addLayer / removeLayer  (toggle without destroying)
+     *   zIndex   → setZIndex()             (tile layers)
+     *   style    → setStyle()              (GeoJSON layers)
+     *   url      → setUrl()               (tile layers)
+     */
+    updateLayer(layer: any | string, updates: Partial<LayerOptions>): any {
+        const id = resolveLeafletLayerId(layer)
+        const leafletLayer = this._layers.get(id)
+        if (!leafletLayer) {
+            throw new Error(
+                `updateLayer: no layer found with id "${id}". ` +
+                `Ensure the layer was created with createLayer().`
+            )
+        }
+
+        if (typeof updates.opacity === 'number' && typeof leafletLayer.setOpacity === 'function') {
+            leafletLayer.setOpacity(updates.opacity)
+        }
+
+        if (typeof updates.visible === 'boolean') {
+            const onMap = this._map.hasLayer(leafletLayer)
+            if (updates.visible && !onMap) {
+                this._map.addLayer(leafletLayer)
+            } else if (!updates.visible && onMap) {
+                this._map.removeLayer(leafletLayer)
+            }
+        }
+
+        if (typeof updates.zIndex === 'number' && typeof leafletLayer.setZIndex === 'function') {
+            leafletLayer.setZIndex(updates.zIndex)
+        }
+
+        if (updates.style !== undefined && typeof leafletLayer.setStyle === 'function') {
+            leafletLayer.setStyle(updates.style)
+        }
+
+        if ((updates as TileLayerOptions).url !== undefined && typeof leafletLayer.setUrl === 'function') {
+            leafletLayer.setUrl((updates as TileLayerOptions).url!)
+        }
+
+        return leafletLayer
     }
 
     setLayerZIndex(layer: any | string, zIndex: number): void {
@@ -645,18 +749,194 @@ export default class LeafletAdapter implements IMapEngine<any, any, any> {
         return normalized
     }
 
+    /**
+     * Register a handler called when the user clicks a rendered feature.
+     * Attaches a map-level click listener; on each click iterates registered
+     * vector layers to find the topmost feature under the cursor.
+     */
     onFeatureClick(handler: FeatureInteractionHandler): void {
-        throw new Error('onFeatureClick not yet implemented')
+        this._map.on('click', (e: any) => {
+            const result = this._pickFeatureAtLatLng(e.latlng)
+            handler({
+                feature: result?.feature ?? null,
+                layerId: result?.layerId,
+                latlng: { lat: e.latlng.lat, lng: e.latlng.lng },
+                pixel: e.containerPoint
+                    ? { x: e.containerPoint.x, y: e.containerPoint.y }
+                    : undefined,
+            })
+        })
     }
 
+    /**
+     * Register a handler called when the user moves over a rendered feature.
+     * Uses mousemove to track the hovered feature and mouseout to clear it.
+     * Returns feature: null when the cursor leaves the map.
+     */
     onFeatureHover(handler: FeatureInteractionHandler): void {
-        throw new Error('onFeatureHover not yet implemented')
+        this._map.on('mousemove', (e: any) => {
+            const result = this._pickFeatureAtLatLng(e.latlng)
+            handler({
+                feature: result?.feature ?? null,
+                layerId: result?.layerId,
+                latlng: { lat: e.latlng.lat, lng: e.latlng.lng },
+                pixel: e.containerPoint
+                    ? { x: e.containerPoint.x, y: e.containerPoint.y }
+                    : undefined,
+            })
+        })
+        this._map.on('mouseout', () => {
+            handler({ feature: null })
+        })
     }
 
+    /**
+     * Query registered vector layers for features near a point or within a box.
+     * Filters by `options.layers` (array of layer ids) when provided.
+     * Leaflet has no GPU picking — this uses bounding-box intersection as a
+     * fast approximation. Callers needing precise picking should use
+     * onFeatureClick / onFeatureHover instead.
+     */
     queryRenderedFeatures(
         geometry: PointLike | [PointLike, PointLike],
         options: QueryFeaturesOptions = {}
     ): FeaturePickResult[] {
-        throw new Error('queryRenderedFeatures not yet implemented')
+        const results: FeaturePickResult[] = []
+
+        this._layers.forEach((leafletLayer, id) => {
+            if (options.layers && !options.layers.includes(id)) return
+            if (typeof leafletLayer.getBounds !== 'function') return
+
+            try {
+                const bounds = leafletLayer.getBounds()
+                const queryPoint = Array.isArray(geometry)
+                    ? (geometry as [PointLike, PointLike])[0]
+                    : geometry as PointLike
+                const latlng = this._map.containerPointToLatLng(
+                    Array.isArray(queryPoint)
+                        ? queryPoint
+                        : [queryPoint.x, queryPoint.y]
+                )
+                if (bounds.contains(latlng)) {
+                    results.push({ feature: null, layerId: id, latlng })
+                }
+            } catch {
+                // layer may not have valid bounds yet — skip silently
+            }
+        })
+
+        return results
+    }
+
+    // ========================================
+    // MARKER METHODS (IMapEngineMarkers)
+    // ========================================
+
+    /**
+     * Add a marker to the map and register it by ID.
+     * Defaults to L.circleMarker (dominant MMGIS pattern).
+     * Uses L.marker + L.icon when options.icon.url is provided.
+     *
+     * @throws {Error} If options.id or options.position is missing.
+     */
+    addMarker(options: MarkerOptions): any {
+        if (!options.id) {
+            throw new Error('addMarker: options.id is required')
+        }
+
+        const leafletMarker = buildLeafletMarker(options.id, options)
+        this._markers.set(options.id, leafletMarker)
+        this._map.addLayer(leafletMarker)
+        return leafletMarker
+    }
+
+    /**
+     * Remove a marker from the map by string ID or native marker object.
+     * No-op for unknown IDs.
+     */
+    removeMarker(marker: any | string): void {
+        const id = resolveLeafletMarkerId(marker)
+        const leafletMarker = this._markers.get(id)
+        if (leafletMarker) {
+            this._map.removeLayer(leafletMarker)
+            this._markers.delete(id)
+        }
+    }
+
+    /**
+     * Mutate properties of an existing registered marker without recreating it.
+     * `marker` can be the string ID or the native Leaflet marker object.
+     *
+     * Supported mutations:
+     *   position      → setLatLng()
+     *   icon          → setIcon()        (L.marker only)
+     *   zIndexOffset  → setZIndexOffset()
+     *   draggable     → dragging.enable() / .disable()
+     *
+     * @throws {Error} If the marker ID is not found in the registry.
+     */
+    updateMarker(marker: any | string, updates: Partial<MarkerOptions>): any {
+        const id = resolveLeafletMarkerId(marker)
+        const leafletMarker = this._markers.get(id)
+        if (!leafletMarker) {
+            throw new Error(
+                `updateMarker: no marker found with id "${id}". ` +
+                `Ensure the marker was created with addMarker().`
+            )
+        }
+
+        if (updates.position !== undefined) {
+            const pos = Array.isArray(updates.position)
+                ? updates.position
+                : [updates.position.lat, updates.position.lng]
+            leafletMarker.setLatLng(pos)
+        }
+
+        if (updates.icon?.url !== undefined && typeof leafletMarker.setIcon === 'function') {
+            const leafletIcon = (window as any).L.icon({
+                iconUrl: updates.icon.url,
+                ...(updates.icon.size ? { iconSize: updates.icon.size } : {}),
+                ...(updates.icon.anchor ? { iconAnchor: updates.icon.anchor } : {}),
+                ...(updates.icon.className ? { className: updates.icon.className } : {}),
+            })
+            leafletMarker.setIcon(leafletIcon)
+        }
+
+        if (typeof updates.zIndexOffset === 'number' &&
+            typeof leafletMarker.setZIndexOffset === 'function') {
+            leafletMarker.setZIndexOffset(updates.zIndexOffset)
+        }
+
+        if (typeof updates.draggable === 'boolean' && leafletMarker.dragging) {
+            updates.draggable
+                ? leafletMarker.dragging.enable()
+                : leafletMarker.dragging.disable()
+        }
+
+        return leafletMarker
+    }
+
+    // ========================================
+    // PRIVATE HELPERS
+    // ========================================
+
+    /**
+     * Walk registered vector layers and return the first feature whose bounds
+     * contain the given latlng. Used by onFeatureClick and onFeatureHover.
+     */
+    private _pickFeatureAtLatLng(
+        latlng: any
+    ): { feature: Record<string, unknown>; layerId: string } | null {
+        for (const [id, leafletLayer] of this._layers) {
+            if (typeof leafletLayer.getBounds !== 'function') continue
+            try {
+                if (leafletLayer.getBounds().contains(latlng)) {
+                    return { feature: leafletLayer.toGeoJSON?.() ?? {}, layerId: id }
+                }
+            } catch {
+                // layer bounds not yet available
+            }
+        }
+        return null
     }
 }
