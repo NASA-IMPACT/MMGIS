@@ -69,6 +69,7 @@
     position: relative;
     color: var(--uswds-base-darker);
     font-family: "Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    transition: width 0.3s cubic-bezier(0.2, 0, 0, 1), height 0.3s cubic-bezier(0.2, 0, 0, 1), flex 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .ui-panel-header {
@@ -338,4 +339,36 @@
     flex-direction: column;
     align-items: stretch;
     overflow: hidden;
+}
+
+/* ============================================
+   State Handling Overrides
+   CSS clamping based on data-panel-state
+   ============================================ */
+
+.ui-panel[data-panel-state="collapsed"] {
+    display: none !important;
+}
+
+body.ui-is-dragging .ui-panel {
+    transition: none !important;
+}
+
+.ui-panel[data-panel-state="iconified"] {
+    /* Collapse down to header/tabs only, discarding layout padding */
+    width: auto !important;
+    height: auto !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    max-height: none !important;
+}
+
+.ui-panel[data-panel-state="iconified"] .ui-panel-body {
+    display: none !important; /* Hide content block */
+}
+
+.ui-panel[data-panel-state="iconified"] .ui-panel-drag-handle,
+.ui-panel[data-panel-state="collapsed"] .ui-panel-drag-handle {
+    display: none !important;
 }

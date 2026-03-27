@@ -1,4 +1,5 @@
 import $ from 'jquery'
+import PanelManager_ from '../PanelManager_/PanelManager_'
 import './UserInterfaceModern_.css'
 
 /**
@@ -15,6 +16,11 @@ const UserInterfaceModern_ = {
     init: function (panels) {
         this.panels = panels
         this.render()
+
+        if (!this._hasBoundLayoutEvent) {
+            window.addEventListener('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+            this._hasBoundLayoutEvent = true
+        }
     },
 
     /**
@@ -125,19 +131,43 @@ const UserInterfaceModern_ = {
                 const panelDiv = $(`<div class="ui-panel" id="${panel.containerId}"></div>`)
                 const body = $('<div class="ui-panel-body"></div>')
 
+                const allowed = panel.config.stateConstraints?.allowedStates || []
+
                 if (panel.config.hasHeader) {
                     const header = $('<div class="ui-panel-header"></div>')
                     const title = $('<h3 class="ui-panel-title"></h3>').text(panel.config.title || panel.id)
-                    const headerButtons = $(`
-                        <div class="ui-panel-header-buttons">
-                            <button class="ui-panel-btn ui-panel-btn-minimize" title="Minimize"><span class="mdi mdi-window-minimize"></span></button>
-                            <button class="ui-panel-btn ui-panel-btn-maximize" title="Maximize"><span class="mdi mdi-window-maximize"></span></button>
-                            <button class="ui-panel-btn ui-panel-btn-close" title="Close"><span class="mdi mdi-close"></span></button>
-                        </div>
-                    `)
+                    const headerButtons = $('<div class="ui-panel-header-buttons"></div>')
+
+                    if (allowed.includes('iconified') || allowed.includes('collapsed')) {
+                        const minBtn = $('<button class="ui-panel-btn ui-panel-btn-minimize" title="Minimize"><span class="mdi mdi-window-minimize"></span></button>')
+                        minBtn.on('click', () => {
+                            const target = allowed.includes('iconified') ? 'iconified' : 'collapsed'
+                            PanelManager_.setPanelState(panel.id, target)
+                        })
+                        headerButtons.append(minBtn)
+                    }
+
+                    if (allowed.includes('expanded')) {
+                        const maxBtn = $('<button class="ui-panel-btn ui-panel-btn-maximize" title="Maximize"><span class="mdi mdi-window-maximize"></span></button>')
+                        maxBtn.on('click', () => {
+                            PanelManager_.setPanelState(panel.id, 'expanded')
+                        })
+                        headerButtons.append(maxBtn)
+                    }
+
+                    if (allowed.includes('collapsed')) {
+                        const closeBtn = $('<button class="ui-panel-btn ui-panel-btn-close" title="Close"><span class="mdi mdi-close"></span></button>')
+                        closeBtn.on('click', () => {
+                            PanelManager_.setPanelState(panel.id, 'collapsed')
+                        })
+                        headerButtons.append(closeBtn)
+                    }
+
                     header.append(title).append(headerButtons)
                     panelDiv.append(header)
                 }
+
+                panelDiv.attr('data-panel-state', panel.state)
 
                 if (panel.config.capabilities && panel.config.capabilities.resizable) {
                     panelDiv.append(`<div class="ui-panel-drag-handle ui-panel-drag-handle-${regionName}"></div>`)
@@ -178,6 +208,39 @@ const UserInterfaceModern_ = {
     },
 
     /**
+     * Passively synchronize DOM based on event payload without destroying nodes.
+     * @param {CustomEvent} e Custom layout changed event fired from PanelManager
+     */
+    syncDOMState: function (e) {
+        if (!e.detail || !e.detail.panels) return
+        this.panels = e.detail.panels
+
+        this.panels.forEach(panel => {
+            const $panel = $('#' + panel.containerId)
+            if ($panel.length === 0) return
+
+            $panel.attr('data-panel-state', panel.state)
+
+            if (panel.state === 'iconified') {
+                $panel.css({ width: '', height: '', flex: 'none' })
+            } else if (panel.state === 'expanded' || panel.state === 'focused') {
+                const targetSize = panel.currentSize || panel.config.dimensions?.expandedSize
+
+                if (targetSize) {
+                    const region = panel.config.position
+                    if (region === 'left' || region === 'right') {
+                        $panel.css({ width: targetSize + 'px', flex: 'none' })
+                    } else if (region === 'top' || region === 'bottom') {
+                        $panel.css({ height: targetSize + 'px', flex: 'none' })
+                    }
+                } else {
+                    $panel.css({ width: '', height: '', flex: '' })
+                }
+            }
+        })
+    },
+
+    /**
      * Attaches mouse event listeners for panel resizing.
      */
     attachResizeEvents: function () {
@@ -214,7 +277,7 @@ const UserInterfaceModern_ = {
             startWidth = $currentPanel.outerWidth()
             startHeight = $currentPanel.outerHeight()
 
-            $('body').css('user-select', 'none')
+            $('body').css('user-select', 'none').addClass('ui-is-dragging')
         })
 
         // Define resize strategies for each region to eliminate duplication
@@ -270,7 +333,7 @@ const UserInterfaceModern_ = {
                 $currentPanel = null
                 currentConfig = null
                 currentRegion = null
-                $('body').css('user-select', '')
+                $('body').css('user-select', '').removeClass('ui-is-dragging')
             }
         })
     }
