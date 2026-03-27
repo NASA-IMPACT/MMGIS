@@ -12,6 +12,18 @@ import UserInterfaceModern_ from './Basics/UserInterface_/UserInterfaceModern_'
 import { TOOL_ORIENTATION } from './Basics/PanelManager_/types/tool'
 import { PANEL_POSITION } from './Basics/PanelManager_/types/layout'
 
+import F_ from './Basics/Formulae_/Formulae_'
+import L_ from './Basics/Layers_/Layers_'
+import Viewer_ from './Basics/Viewer_/Viewer_'
+import Map_ from './Basics/Map_/Map_'
+import Globe_ from './Basics/Globe_/Globe_'
+
+import CursorInfo from './Ancillary/CursorInfo'
+import ContextMenu from './Ancillary/ContextMenu'
+import Coordinates from './Ancillary/Coordinates'
+import QueryURL from './Ancillary/QueryURL'
+import TimeControl from './Basics/TimeControl_/TimeControl'
+
 const modern = {
     configData: null,
 
@@ -46,7 +58,24 @@ const modern = {
                 '?mission=' +
                 missionForUrl
             window.history.replaceState('', '', url)
+            L_.url = window.location.href
         }
+
+        // Try querying the urlSite for layers
+        var urlOnLayers = null
+        if (!swapping) urlOnLayers = QueryURL.queryURL()
+
+        // Initialize layers map engine dependencies
+        await L_.init(modern.configData, missionsList, urlOnLayers)
+
+        F_.setRadius('major', L_.radius.major)
+        F_.setRadius('minor', L_.radius.minor)
+
+        if (!swapping) CursorInfo.init()
+        if (!swapping) Globe_.init()
+        if (!swapping) Viewer_.init()
+
+        if (swapping) Map_.clear()
 
         // Update document title
         document.title =
@@ -263,9 +292,14 @@ const modern = {
         // set blur to 0 in case it was left on from a previous mission
         $('#main-container').css('filter', 'blur(0px)')
 
+        // Setup Map Container underneath
+        const mapContainer = $('<div id="map"></div>')
+        mapContainer.css({ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', 'z-index': 0 })
+        $('#main-container').append(mapContainer)
+
         // Setup Panel Container
         const modernContent = $('<div id="modern-content"></div>')
-        modernContent.css({ width: '100%', height: '100%' })
+        modernContent.css({ width: '100%', height: '100%', position: 'relative', 'z-index': 10, 'pointer-events': 'none' })
         $('#main-container').append(modernContent)
 
         // Fade in the main container
@@ -304,6 +338,23 @@ const modern = {
         // Initialize the User Interface with the sorted panels from PanelManager
         UserInterfaceModern_.init(activePanels)
 
+        // Initialize Map
+        Map_.init(function() {
+            Globe_.fina(Coordinates)
+            L_.fina(
+                Viewer_,
+                Map_,
+                Globe_,
+                UserInterfaceModern_,
+                Coordinates,
+                TimeControl
+            )
+            Viewer_.fina(Map_)
+            // TimeControl.fina() // Disabled for modern layout; relies on classic DOM
+        })
+        Coordinates.init()
+        ContextMenu.init()
+
         if (window.mmgisglobal?.debug) {
             console.log('[Modern Layout] Initialized successfully')
             console.log('[Modern Layout] Config:', modern.configData)
@@ -316,6 +367,7 @@ const modern = {
      */
     clear: function () {
         $('#modern-content').empty()
+        $('#map').remove()
 
         if (window.mmgisglobal?.debug) {
             console.log('[Modern Layout] Cleared')
