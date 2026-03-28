@@ -59,7 +59,6 @@
     background: var(--modern-panel-bg);
     backdrop-filter: var(--modern-glass-blur);
     -webkit-backdrop-filter: var(--modern-glass-blur);
-    border: var(--modern-border);
     box-shadow: 0 4px 6px var(--uswds-shadow);
     display: flex;
     flex-direction: column;
@@ -341,6 +340,112 @@
     overflow: hidden;
 }
 
+.ui-panel-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    background: var(--uswds-white);
+}
+
+/* Sidebar Icons */
+.ui-panel-icons {
+    display: none;
+    background: transparent;
+    color: var(--uswds-white);
+    padding: 4px;
+    gap: 4px;
+    z-index: 2;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.ui-panel-icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--uswds-primary);
+    opacity: 1;
+    cursor: pointer;
+    font-size: 1.5rem;
+    padding: 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, opacity 0.2s;
+}
+
+.ui-panel-icon-btn:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.ui-panel-icon-btn.active {
+    opacity: 1;
+    background: var(--uswds-primary);
+    color: var(--uswds-white);
+}
+
+/* Iconified & Focused States visibility */
+.ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-panel[data-panel-state="focused"] .ui-panel-icons {
+    display: flex;
+}
+
+.ui-panel[data-panel-state="iconified"] .ui-panel-content {
+    display: none !important;
+}
+
+/* Vertical grid for left/right, horizontal for top/bottom */
+.ui-region-left .ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-region-right .ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-region-left .ui-panel[data-panel-state="focused"] .ui-panel-icons,
+.ui-region-right .ui-panel[data-panel-state="focused"] .ui-panel-icons {
+    flex-direction: column;
+}
+
+.ui-region-top .ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-region-bottom .ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-region-top .ui-panel[data-panel-state="focused"] .ui-panel-icons,
+.ui-region-bottom .ui-panel[data-panel-state="focused"] .ui-panel-icons {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* Focused Panel Flex Direction */
+.ui-region-left .ui-panel[data-panel-state="focused"] {
+    flex-direction: row;
+}
+
+.ui-region-right .ui-panel[data-panel-state="focused"] {
+    flex-direction: row-reverse;
+}
+
+.ui-region-top .ui-panel[data-panel-state="focused"] {
+    flex-direction: column;
+}
+
+.ui-region-bottom .ui-panel[data-panel-state="focused"] {
+    flex-direction: column-reverse;
+}
+
+/* Display corresponding panel body only with active tool */
+.ui-panel[data-panel-state="focused"] .ui-tool-card {
+    display: none !important; /* Hide all tool cards by default in focused state */
+}
+
+/* For focused stacked layouts or tabbed */
+.ui-panel[data-panel-state="focused"] .ui-tool-card.active {
+    display: flex !important;
+    height: 100%;
+}
+
+/* Hide tabs in focused because the icon bar acts as the tabs */
+.ui-panel[data-panel-state="focused"] .ui-panel-tabs {
+    display: none !important;
+}
+
 /* ============================================
    State Handling Overrides
    CSS clamping based on data-panel-state
@@ -362,10 +467,6 @@ body.ui-is-dragging .ui-panel {
     min-height: 0 !important;
     max-width: none !important;
     max-height: none !important;
-}
-
-.ui-panel[data-panel-state="iconified"] .ui-panel-body {
-    display: none !important; /* Hide content block */
 }
 
 .ui-panel[data-panel-state="iconified"] .ui-panel-drag-handle,

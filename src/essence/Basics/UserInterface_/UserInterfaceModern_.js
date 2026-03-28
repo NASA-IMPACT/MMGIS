@@ -29,7 +29,7 @@ const UserInterfaceModern_ = {
      * @returns {jQuery} Tool card element
      */
     createToolCard: function (toolName) {
-        return $('<div class="ui-tool-card ui-tool-card-stacked"></div>')
+        return $(`<div class="ui-tool-card ui-tool-card-stacked" data-tool="${toolName}"></div>`)
             .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
             .append($('<span class="ui-tool-title"></span>').text(toolName))
     },
@@ -49,15 +49,13 @@ const UserInterfaceModern_ = {
             const isActive = idx === 0 ? 'active' : ''
 
             // Create tab
-            const tab = $(`<div class="ui-panel-tab ${isActive}"></div>`)
-                .attr('data-tool', toolName)
+            const tab = $(`<div class="ui-panel-tab ${isActive}" data-tool="${toolName}"></div>`)
                 .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
                 .append($('<span></span>').text(toolName))
             tabBar.append(tab)
 
             // Create tab content placeholder
-            const toolCard = $(`<div class="ui-tool-card ui-tool-tab-content ${isActive}"></div>`)
-                .attr('data-tool', toolName)
+            const toolCard = $(`<div class="ui-tool-card ui-tool-tab-content ${isActive}" data-tool="${toolName}"></div>`)
             const cardContent = $('<div style="margin: auto; text-align: center;"></div>')
                 .append('<span class="ui-tool-icon mdi mdi-view-dashboard" style="font-size: 2rem; display: block;"></span>')
                 .append($('<span class="ui-tool-title"></span>').text(`${toolName} Content Placeholder`))
@@ -129,9 +127,27 @@ const UserInterfaceModern_ = {
             
             regionPanels.forEach(panel => {
                 const panelDiv = $(`<div class="ui-panel" id="${panel.containerId}"></div>`)
+                const contentWrapper = $('<div class="ui-panel-content"></div>')
                 const body = $('<div class="ui-panel-body"></div>')
 
                 const allowed = panel.config.stateConstraints?.allowedStates || []
+
+                // Create the icons bar for iconified/focused state
+                const iconsContainer = $('<div class="ui-panel-icons"></div>')
+                if (panel.tools && panel.tools.length > 0) {
+                    panel.tools.forEach(toolName => {
+                        const iconBtn = $(`<button class="ui-panel-icon-btn" title="${toolName}" data-tool="${toolName}"><span class="mdi mdi-view-dashboard"></span></button>`)
+                        iconBtn.on('click', () => {
+                            if (panel.state === 'expanded' && panel.config.layoutType === 'tabbed') {
+                                // If already expanded tabbed, maybe just switch tab instead
+                                // Currently doing focusTool forces it into focused state. But maybe that's fine.
+                            }
+                            PanelManager_.focusTool(panel.id, toolName)
+                        })
+                        iconsContainer.append(iconBtn)
+                    })
+                }
+                panelDiv.append(iconsContainer)
 
                 if (panel.config.hasHeader) {
                     const header = $('<div class="ui-panel-header"></div>')
@@ -164,7 +180,7 @@ const UserInterfaceModern_ = {
                     }
 
                     header.append(title).append(headerButtons)
-                    panelDiv.append(header)
+                    contentWrapper.append(header)
                 }
 
                 panelDiv.attr('data-panel-state', panel.state)
@@ -184,7 +200,8 @@ const UserInterfaceModern_ = {
                     body.append('<p class="ui-empty-text">No tools configured</p>')
                 }
 
-                panelDiv.append(body)
+                contentWrapper.append(body)
+                panelDiv.append(contentWrapper)
                 regionDiv.append(panelDiv)
             })
             
@@ -204,6 +221,17 @@ const UserInterfaceModern_ = {
 
         container.append(gridWrapper)
 
+        // Initialize active tools correctly
+        this.panels.forEach(panel => {
+            if (panel.activeToolId) {
+                const $panel = $('#' + panel.containerId)
+                $panel.find('.ui-panel-icon-btn').removeClass('active')
+                $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
+                $panel.find('.ui-tool-card').removeClass('active')
+                $panel.find(`.ui-tool-card[data-tool="${panel.activeToolId}"]`).addClass('active')
+            }
+        })
+
         this.attachResizeEvents()
     },
 
@@ -220,6 +248,16 @@ const UserInterfaceModern_ = {
             if ($panel.length === 0) return
 
             $panel.attr('data-panel-state', panel.state)
+
+            if (panel.activeToolId) {
+                // Update active state on icons
+                $panel.find('.ui-panel-icon-btn').removeClass('active')
+                $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
+                
+                // Update active state on tool cards (especially for focused state and tabbed)
+                $panel.find('.ui-tool-card').removeClass('active')
+                $panel.find(`.ui-tool-card[data-tool="${panel.activeToolId}"]`).addClass('active')
+            }
 
             if (panel.state === 'iconified') {
                 $panel.css({ width: '', height: '', flex: 'none' })
