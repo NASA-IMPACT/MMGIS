@@ -49,6 +49,77 @@
       ]
     },
     {
+      "name": "Dashboard Config",
+      "components": [
+        {
+          "field": "msv.mode",
+          "name": "Dashboard Mode",
+          "description": "Select the layout mode for the dashboard. This is set during mission creation and cannot be changed.",
+          "type": "dropdown",
+          "options": ["classic", "modern"],
+          "default": "classic",
+          "width": 6,
+          "disabled": true,
+          "disabledMessage": "Dashboard mode is set during mission creation and cannot be changed."
+        },
+        {
+          "field": "panelSettings.layoutStyle",
+          "name": "Panel Layout Style",
+          "description": "Determines how panels interact with the map in modern mode.",
+          "type": "dropdown",
+          "options": ["overlay", "compact"],
+          "default": "overlay",
+          "width": 6
+        },
+        {
+          "field": "panelSettings.panels",
+          "name": "Modern Panels",
+          "description": "Configure the panels for the modern dashboard mode.",
+          "type": "objectarray",
+          "width": 24,
+          "object": [
+            {
+              "field": "id",
+              "name": "ID",
+              "description": "Unique identifier for this panel.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "position",
+              "name": "Position",
+              "description": "Position of the panel.",
+              "type": "dropdown",
+              "options": ["top", "left", "right", "bottom"],
+              "width": 6
+            },
+            {
+              "field": "priority",
+              "name": "Priority",
+              "description": "Layout priority (lower claims space first).",
+              "type": "number",
+              "width": 6
+            },
+            {
+              "field": "layoutType",
+              "name": "Layout Type",
+              "description": "How tools are arranged in expanded state.",
+              "type": "dropdown",
+              "options": ["stacked", "tabbed"],
+              "width": 6
+            },
+            {
+              "field": "tools",
+              "name": "Tools",
+              "description": "Comma-separated list of tools to display in this panel.",
+              "type": "textarray",
+              "width": 24
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Map Panel",
       "components": [
         {

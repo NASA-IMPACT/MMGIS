@@ -132,6 +132,7 @@ const NewMissionModal = (props) => {
   const [createDir, setCreateDir] = useState(true);
   const [selectedPlanet, setSelectedPlanet] = useState("Earth");
   const [selectedEngine, setSelectedEngine] = useState("leaflet");
+  const [selectedMode, setSelectedMode] = useState("classic");
   const [basemapProvider, setBasemapProvider] = useState("none");
   const [basemapStyle, setBasemapStyle] = useState("");
   const [basemapToken, setBasemapToken] = useState("");
@@ -160,6 +161,7 @@ const NewMissionModal = (props) => {
           minor: planetRadius.minor,
         },
         mapEngine: selectedEngine,
+        mode: selectedMode,
       },
     };
 
@@ -198,6 +200,7 @@ const NewMissionModal = (props) => {
             setCreateDir(true);
             setSelectedPlanet("Earth");
             setSelectedEngine("leaflet");
+            setSelectedMode("classic");
             setBasemapProvider("none");
             setBasemapStyle("");
             setBasemapToken("");
@@ -218,6 +221,7 @@ const NewMissionModal = (props) => {
             setCreateDir(true);
             setSelectedPlanet("Earth");
             setSelectedEngine("leaflet");
+            setSelectedMode("classic");
             setBasemapProvider("none");
             setBasemapStyle("");
             setBasemapToken("");
@@ -312,6 +316,20 @@ const NewMissionModal = (props) => {
         </FormControl>
         <Typography className={c.subtitle2}>
           {`Choose the rendering engine for this mission's 2D map. This cannot be changed after the mission is created.`}
+        </Typography>
+        <FormControl className={c.planetDropdown} variant="filled">
+          <InputLabel>Dashboard Mode</InputLabel>
+          <Select
+            value={selectedMode}
+            onChange={(e) => setSelectedMode(e.target.value)}
+            label="Dashboard Mode"
+          >
+            <MenuItem value="classic">Classic</MenuItem>
+            <MenuItem value="modern">Modern</MenuItem>
+          </Select>
+        </FormControl>
+        <Typography className={c.subtitle2}>
+          {`Choose the layout mode for the dashboard.`}
         </Typography>
         {selectedEngine === "deckgl" && (
           <>

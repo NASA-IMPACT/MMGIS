@@ -10,7 +10,6 @@ import $ from 'jquery'
 import PanelManager_ from './Basics/PanelManager_/PanelManager_'
 import UserInterfaceModern_ from './Basics/UserInterface_/UserInterfaceModern_'
 import ToolControllerModern_ from './Basics/ToolController_/ToolControllerModern_'
-import { PANEL_POSITION } from './Basics/PanelManager_/types/layout'
 
 import F_ from './Basics/Formulae_/Formulae_'
 import L_ from './Basics/Layers_/Layers_'
