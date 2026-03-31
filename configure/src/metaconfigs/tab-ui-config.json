@@ -107,13 +107,6 @@
               "type": "dropdown",
               "options": ["stacked", "tabbed"],
               "width": 6
-            },
-            {
-              "field": "tools",
-              "name": "Tools",
-              "description": "Comma-separated list of tools to display in this panel.",
-              "type": "textarray",
-              "width": 24
             }
           ]
         }

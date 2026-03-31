@@ -789,7 +789,7 @@ const getComponent = (
         </div>
       );
     case "textarray":
-      let text_array_f = value != null ? value : getIn(directConf, com.field, []);
+      let text_array_f = getIn(directConf, com.field, []);
       if (text_array_f != null && typeof text_array_f.join === "function")
         text_array_f = text_array_f.join(",");
 
@@ -818,7 +818,7 @@ const getComponent = (
             if (e.target.value == null || e.target.value == "") newValue = null;
             else newValue = e.target.value.split(",");
 
-            updateConfiguration(forceField || com.field, newValue, layer);
+            updateConfiguration(com.field, newValue, layer);
           }}
         />
       );
