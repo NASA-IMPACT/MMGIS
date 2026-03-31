@@ -92,6 +92,30 @@ const UserInterfaceModern_ = {
     },
 
     /**
+     * Algorithmically generates CSS Grid template based on panel priorities.
+     * Higher priority (lower number) claims the overlapping corners.
+     *
+     * @param {Object} priorities - Map of positions to their priorities
+     * @returns {Object} Grid template configuration with areas, columns, and rows
+     */
+    generateGridTemplate: function (priorities) {
+        const { top, bottom, left, right } = priorities
+
+        // Corner contest resolution based on priorities
+        // Lower number = higher priority. In case of a tie, horizontal (top/bottom) wins
+        const tl = top <= left ? 'top' : 'left'
+        const tr = top <= right ? 'top' : 'right'
+        const bl = bottom <= left ? 'bottom' : 'left'
+        const br = bottom <= right ? 'bottom' : 'right'
+
+        return {
+            areas: `"${tl} top ${tr}" "left center right" "${bl} bottom ${br}"`,
+            columns: 'auto 1fr auto',
+            rows: 'auto 1fr auto'
+        }
+    },
+
+    /**
      * Renders the layout into the #modern-content element
      */
     render: function () {
@@ -117,6 +141,33 @@ const UserInterfaceModern_ = {
             if (layoutRegions[pos]) {
                 layoutRegions[pos].push(p)
             }
+        })
+
+        // Determine layout based on panel priorities
+        // this.panels is already sorted by priority (lowest number = highest priority)
+        // We need to consider all four priorities to generate the correct grid layout
+
+        const hasLeft = layoutRegions.left.length > 0
+        const hasRight = layoutRegions.right.length > 0
+        const hasTop = layoutRegions.top.length > 0
+        const hasBottom = layoutRegions.bottom.length > 0
+
+        // Find the priority for each type of panel (Infinity if not present)
+        const priorities = {
+            left: hasLeft ? layoutRegions.left[0].config.priority : Infinity,
+            right: hasRight ? layoutRegions.right[0].config.priority : Infinity,
+            top: hasTop ? layoutRegions.top[0].config.priority : Infinity,
+            bottom: hasBottom ? layoutRegions.bottom[0].config.priority : Infinity
+        }
+
+        // Generate grid template algorithmically based on priorities
+        const gridTemplate = this.generateGridTemplate(priorities)
+
+        // Apply dynamic grid template
+        gridWrapper.css({
+            'grid-template-areas': gridTemplate.areas,
+            'grid-template-columns': gridTemplate.columns,
+            'grid-template-rows': gridTemplate.rows
         })
 
         // Render each region
