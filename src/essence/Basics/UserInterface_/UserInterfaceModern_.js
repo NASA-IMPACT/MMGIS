@@ -12,9 +12,11 @@ const UserInterfaceModern_ = {
     /**
      * Initializes the modern layout.
      * @param {Array} panels - Array of panel objects (parsed from config & PanelManager)
+     * @param {string} layoutStyle - The layout style ('overlay' | 'compact')
      */
-    init: function (panels) {
+    init: function (panels, layoutStyle = 'overlay') {
         this.panels = panels
+        this.layoutStyle = layoutStyle
         this.render()
 
         if (!this._hasBoundLayoutEvent) {
@@ -127,6 +129,9 @@ const UserInterfaceModern_ = {
 
         // Create the main grid wrapper
         const gridWrapper = $('<div class="ui-modern-grid"></div>')
+        if (this.layoutStyle === 'compact') {
+            gridWrapper.addClass('ui-layout-compact')
+        }
 
         // Group panels by position
         const layoutRegions = {
@@ -266,6 +271,13 @@ const UserInterfaceModern_ = {
         const centralArea = $('<div class="ui-region-center" id="ui-modern-center"></div>')
         gridWrapper.append(centralArea)
 
+        if (this.layoutStyle === 'compact') {
+            const mapEl = $('#map')
+            if (mapEl.length) {
+                centralArea.append(mapEl)
+            }
+        }
+
         gridWrapper.append(renderRegion('left', layoutRegions.left))
         gridWrapper.append(renderRegion('right', layoutRegions.right))
         gridWrapper.append(renderRegion('bottom', layoutRegions.bottom))
@@ -327,6 +339,13 @@ const UserInterfaceModern_ = {
                 }
             }
         })
+
+        if (this.layoutStyle === 'compact') {
+            window.dispatchEvent(new Event('resize'))
+            setTimeout(() => {
+                window.dispatchEvent(new Event('resize'))
+            }, 300)
+        }
     },
 
     /**
@@ -414,6 +433,10 @@ const UserInterfaceModern_ = {
                 'flex': 'none'
             }
             $currentPanel.css(cssUpdates)
+
+            if (self.layoutStyle === 'compact') {
+                window.dispatchEvent(new Event('resize'))
+            }
         })
 
         $(document).on('mouseup.uiModernResize', () => {
@@ -423,6 +446,10 @@ const UserInterfaceModern_ = {
                 currentConfig = null
                 currentRegion = null
                 $('body').css('user-select', '').removeClass('ui-is-dragging')
+
+                if (self.layoutStyle === 'compact') {
+                    window.dispatchEvent(new Event('resize'))
+                }
             }
         })
     }

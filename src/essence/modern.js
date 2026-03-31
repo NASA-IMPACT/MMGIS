@@ -335,8 +335,10 @@ const modern = {
         // Get all panels from PanelManager, already sorted by priority
         const activePanels = PanelManager_.getAllPanelsByPriority()
 
+        const layoutStyle = modern.configData.panelSettings?.layoutStyle || 'overlay'
+
         // Initialize the User Interface with the sorted panels from PanelManager
-        UserInterfaceModern_.init(activePanels)
+        UserInterfaceModern_.init(activePanels, layoutStyle)
 
         // Initialize Map
         Map_.init(function() {
@@ -350,10 +352,13 @@ const modern = {
                 TimeControl
             )
             Viewer_.fina(Map_)
-            // TimeControl.fina() // Disabled for modern layout; relies on classic DOM
+            TimeControl.fina() // Disabled for modern layout; relies on classic DOM
         })
-        Coordinates.init()
+        // Coordinates.init()
         ContextMenu.init()
+
+        //Make the time control
+        TimeControl.init()
 
         if (window.mmgisglobal?.debug) {
             console.log('[Modern Layout] Initialized successfully')

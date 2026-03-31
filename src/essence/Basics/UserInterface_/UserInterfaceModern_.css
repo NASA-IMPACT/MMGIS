@@ -473,3 +473,24 @@ body.ui-is-dragging .ui-panel {
 .ui-panel[data-panel-state="collapsed"] .ui-panel-drag-handle {
     display: none !important;
 }
+
+/* ============================================
+   Compact Layout Support
+   ============================================ */
+
+.ui-modern-grid.ui-layout-compact .ui-region-center {
+    pointer-events: auto;
+    z-index: 10;
+    overflow: hidden;
+}
+
+.ui-modern-grid.ui-layout-compact .ui-region-center > #map {
+    position: relative !important;
+    z-index: 0 !important;
+}
+
+.ui-modern-grid.ui-layout-compact .ui-panel {
+    margin: 0 !important;
+    border-radius: 0 !important;
+    border: none !important;
+}
