@@ -194,11 +194,11 @@ const UserInterfaceModern_ = {
                     panel.tools.forEach(toolName => {
                         const iconBtn = $(`<button class="ui-panel-icon-btn" title="${toolName}" data-tool="${toolName}"><span class="mdi mdi-view-dashboard"></span></button>`)
                         iconBtn.on('click', () => {
-                            if (panel.state === 'expanded' && panel.config.layoutType === 'tabbed') {
-                                // If already expanded tabbed, maybe just switch tab instead
-                                // Currently doing focusTool forces it into focused state. But maybe that's fine.
+                            if (panel.state === 'focused' && panel.activeToolId === toolName) {
+                                PanelManager_.setPanelState(panel.id, 'iconified')
+                            } else {
+                                PanelManager_.focusTool(panel.id, toolName)
                             }
-                            PanelManager_.focusTool(panel.id, toolName)
                         })
                         iconsContainer.append(iconBtn)
                     })
