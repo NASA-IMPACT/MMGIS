@@ -296,6 +296,9 @@ const UserInterfaceModern_ = {
         })
 
         this.attachResizeEvents()
+        
+        // Ensure panels get their explicit dimensions applied on mount
+        this.syncDOMState()
     },
 
     /**
@@ -303,8 +306,9 @@ const UserInterfaceModern_ = {
      * @param {CustomEvent} e Custom layout changed event fired from PanelManager
      */
     syncDOMState: function (e) {
-        if (!e.detail || !e.detail.panels) return
-        this.panels = e.detail.panels
+        if (e && e.detail && e.detail.panels) {
+            this.panels = e.detail.panels
+        }
 
         this.panels.forEach(panel => {
             const $panel = $('#' + panel.containerId)
@@ -325,7 +329,11 @@ const UserInterfaceModern_ = {
             if (panel.state === 'iconified') {
                 $panel.css({ width: '', height: '', flex: 'none' })
             } else if (panel.state === 'expanded' || panel.state === 'focused') {
-                const targetSize = panel.currentSize || panel.config.dimensions?.expandedSize
+                let targetSize = panel.currentSize;
+
+                if (!targetSize) {
+                    targetSize = panel.config.dimensions?.expandedSize;
+                }
 
                 if (targetSize) {
                     const region = panel.config.position
@@ -441,6 +449,14 @@ const UserInterfaceModern_ = {
 
         $(document).on('mouseup.uiModernResize', () => {
             if (isResizing) {
+                if ($currentPanel && currentConfig && currentRegion) {
+                    const strategy = resizeStrategies[currentRegion]
+                    if (strategy) {
+                        const newSize = strategy.dimension === 'width' ? $currentPanel.outerWidth() : $currentPanel.outerHeight()
+                        PanelManager_.resizePanel(currentConfig.id, newSize)
+                    }
+                }
+
                 isResizing = false
                 $currentPanel = null
                 currentConfig = null
