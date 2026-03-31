@@ -49,23 +49,23 @@
       ]
     },
     {
-      "name": "Dashboard Config",
+      "name": "Modern Interface Config",
       "components": [
         {
           "field": "msv.mode",
-          "name": "Dashboard Mode",
-          "description": "Select the layout mode for the dashboard. This is set during mission creation and cannot be changed.",
+          "name": "Interface Mode",
+          "description": "Interface mode for the mission. This is set during mission creation and cannot be changed.",
           "type": "dropdown",
           "options": ["classic", "modern"],
           "default": "classic",
           "width": 6,
           "disabled": true,
-          "disabledMessage": "Dashboard mode is set during mission creation and cannot be changed."
+          "disabledMessage": "Interface mode is set during mission creation and cannot be changed."
         },
         {
           "field": "panelSettings.layoutStyle",
           "name": "Panel Layout Style",
-          "description": "Determines how panels interact with the map in modern mode.",
+          "description": "Determines if the panels are overlaid on top of the map or if they push the map to resize.",
           "type": "dropdown",
           "options": ["overlay", "compact"],
           "default": "overlay",
@@ -73,8 +73,8 @@
         },
         {
           "field": "panelSettings.panels",
-          "name": "Modern Panels",
-          "description": "Configure the panels for the modern dashboard mode.",
+          "name": "Panels",
+          "description": "Configuration for the panels in the modern interface mode.",
           "type": "objectarray",
           "width": 24,
           "object": [

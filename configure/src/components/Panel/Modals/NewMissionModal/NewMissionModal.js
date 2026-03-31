@@ -318,18 +318,19 @@ const NewMissionModal = (props) => {
           {`Choose the rendering engine for this mission's 2D map. This cannot be changed after the mission is created.`}
         </Typography>
         <FormControl className={c.planetDropdown} variant="filled">
-          <InputLabel>Dashboard Mode</InputLabel>
+          <InputLabel>Interface Mode</InputLabel>
           <Select
             value={selectedMode}
             onChange={(e) => setSelectedMode(e.target.value)}
-            label="Dashboard Mode"
+            label="Interface Mode"
           >
             <MenuItem value="classic">Classic</MenuItem>
             <MenuItem value="modern">Modern</MenuItem>
           </Select>
         </FormControl>
         <Typography className={c.subtitle2}>
-          {`Choose the layout mode for the dashboard.`}
+          {`Choose a interface style for the mission. This cannot be changed after the mission is created. 
+          The classic mode is the original MMGIS layout whereas the modern mode has more flexible panel arrangements and modern look and feel.`}
         </Typography>
         {selectedEngine === "deckgl" && (
           <>

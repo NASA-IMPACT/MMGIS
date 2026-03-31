@@ -1,6 +1,6 @@
-# Dashboard Configuration Reference
+# Mission Configuration Reference
 
-Complete reference for configuring the modern dashboard mode in MMGIS.
+Complete reference for configuring the modern interface in MMGIS.
 
 ## Table of Contents
 
@@ -16,7 +16,7 @@ Complete reference for configuring the modern dashboard mode in MMGIS.
 
 ## Overview
 
-The dashboard configuration controls the layout and behavior of panels in modern mode. It defines:
+The mission configuration controls the layout and behavior of panels in modern interface mode. It defines:
 - Which panels exist and where they're positioned
 - How panels behave (collapsible, resizable, etc.)
 - Which tools go in which panels
@@ -28,7 +28,7 @@ The dashboard configuration controls the layout and behavior of panels in modern
 {
   "msv": {
     "mission": "MissionName",
-    "mode": "modern"  // Required for modern layout
+    "mode": "modern"  // Required for modern interface
   },
   "panelSettings": {
     // Panel configuration goes here
@@ -96,7 +96,7 @@ Each panel in the `panels` array must include these fields:
 | `id` | String | Yes | Unique identifier for this panel (e.g., "left-panel") |
 | `title` | String | No | Display title for the panel |
 | `position` | String | Yes | Panel position: `"top"`, `"left"`, `"right"`, `"bottom"` |
-| `priority` | Number | Yes | Layout priority (lower = claims space first). Typically: top=0, left/right=1-2, bottom=3 |
+| `priority` | Number | Yes | Panel priority (lower = claims space first). Typically: top=0, left/right=1-2, bottom=3 |
 | `layoutType` | String | Yes | How tools are arranged: `"stacked"` or `"tabbed"` |
 | `stateConstraints` | Object | Yes | Defines allowed states and default state |
 | `capabilities` | Object | No | Panel capabilities (orientation, resizing, max tools) |
@@ -353,7 +353,7 @@ Unassigned tools are automatically placed in a compatible panel (prefers left po
 
 ## Complete Example
 
-Full dashboard configuration with four panels:
+Full mission configuration with four panels:
 
 ```json
 {

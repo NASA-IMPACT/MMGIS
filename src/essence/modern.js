@@ -1,7 +1,7 @@
 /*
-  Modern Layout Initialization
+  Modern Interface Initialization
 
-  This file handles initialization for the "modern" dashboard mode.
+  This file handles initialization for the "modern" interface mode.
   It parses the configuration, registers panels with the PanelManager, 
   and instantiates the layout via UserInterfaceModern.
 */
@@ -27,7 +27,7 @@ const modern = {
     configData: null,
 
     /**
-     * Initialize the modern layout
+     * Initialize the modern interface
      * @param {Object} config - Mission configuration data
      * @param {Array} missionsList - List of available missions
      * @param {boolean} swapping - Whether this is a mission swap
@@ -37,7 +37,7 @@ const modern = {
         modern.configData = config
 
         if (window.mmgisglobal?.debug) {
-            console.log('[Modern Layout] Config:', config)
+            console.log('[Modern Interface] Config:', config)
         }
 
         // Update URL to match mission
@@ -78,16 +78,16 @@ const modern = {
 
         // Update document title
         document.title =
-            (window.mmgisglobal.name || 'MMGIS') + ' - ' + (config.msv?.mission || 'Modern Layout')
+            (window.mmgisglobal.name || 'MMGIS') + ' - ' + (config.msv?.mission || 'Modern Interface')
 
-        // Clear the loading page and render the modern layout
+        // Clear the loading page and render the modern interface
         modern.render()
     },
 
 
 
     /**
-     * Render the modern layout HTML
+     * Render the modern interface HTML
      */
     render: function () {
         // Remove loading page
@@ -124,13 +124,13 @@ const modern = {
                 PanelManager_.registerPanel(panelConfig)
             } catch (error) {
                 const panelId = panelConfig?.id || 'unknown'
-                console.error(`[Modern Layout] Failed to register panel "${panelId}":`, error.message || error)
+                console.error(`[Modern Interface] Failed to register panel "${panelId}":`, error.message || error)
                 failedPanels.push({ id: panelId, error: error.message || String(error) })
             }
         })
 
         if (failedPanels.length > 0 && window.mmgisglobal?.debug) {
-            console.warn('[Modern Layout] Panel registration summary:', {
+            console.warn('[Modern Interface] Panel registration summary:', {
                 total: panelsConfig.length,
                 failed: failedPanels.length,
                 failures: failedPanels
@@ -170,9 +170,9 @@ const modern = {
         TimeControl.init()
 
         if (window.mmgisglobal?.debug) {
-            console.log('[Modern Layout] Initialized successfully')
-            console.log('[Modern Layout] Config:', modern.configData)
-            console.log('[Modern Layout] Active Panels:', activePanels)
+            console.log('[Modern Interface] Initialized successfully')
+            console.log('[Modern Interface] Config:', modern.configData)
+            console.log('[Modern Interface] Active Panels:', activePanels)
         }
     },
 
@@ -184,7 +184,7 @@ const modern = {
         $('#map').remove()
 
         if (window.mmgisglobal?.debug) {
-            console.log('[Modern Layout] Cleared')
+            console.log('[Modern Interface] Cleared')
         }
     },
 }
