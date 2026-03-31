@@ -1,4 +1,4 @@
-import { ToolOrientation, ToolMetadata } from './tool';
+import { ToolOrientation, ToolMetadata } from '../../ToolController_/types/tool';
 import { PanelPosition, PanelState, PanelLayoutType } from './layout';
 
 /**

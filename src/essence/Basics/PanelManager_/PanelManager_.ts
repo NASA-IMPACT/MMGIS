@@ -1,4 +1,4 @@
-import { ToolOrientation, ToolMetadata } from './types/tool';
+import { ToolOrientation, ToolMetadata } from '../ToolController_/types/tool';
 import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE } from './types/layout';
 import { PanelConfig, PanelStateObject, PanelManager as PanelManagerInterface } from './types/panel';
 
