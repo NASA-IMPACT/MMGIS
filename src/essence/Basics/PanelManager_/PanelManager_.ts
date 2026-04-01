@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { ToolOrientation, ToolMetadata } from '../ToolController_/types/tool';
+=======
+import { ToolOrientation, ToolMetadata } from './types/tool';
+>>>>>>> feat/panel-manager
 import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE } from './types/layout';
 import { PanelConfig, PanelStateObject, PanelManager as PanelManagerInterface } from './types/panel';
 
