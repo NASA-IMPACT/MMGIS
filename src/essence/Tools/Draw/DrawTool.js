@@ -304,6 +304,9 @@ var markup = [
     "</div>"
   ].join('\n');
 
+// Provider cleanup functions for re-initialization
+let _providerCleanups = []
+
 var DrawTool = {
     height: 0,
     width: 260,
@@ -654,6 +657,20 @@ var DrawTool = {
         }
 
         this.MMGISInterface = new interfaceWithMMGIS()
+
+        // Register DrawTool providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            // Clean up previous providers if re-initializing
+            _providerCleanups.forEach((cleanup) => cleanup())
+            _providerCleanups = [
+                window.mmgisAPI.provide('plugin:draw:getActiveFeature', () => {
+                    return DrawTool.contextMenuLayer?.feature || null
+                }),
+                window.mmgisAPI.provide('plugin:draw:getFilesOn', () => {
+                    return [...DrawTool.filesOn]
+                }),
+            ]
+        }
 
         // Load dynamicExtent config from tool variables
         // Default to enabled unless explicitly disabled

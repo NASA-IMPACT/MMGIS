@@ -15,6 +15,9 @@ import './InfoTool.css'
 
 const helpKey = 'InfoTool'
 
+// Provider cleanup functions for re-initialization
+let _providerCleanups = []
+
 //Add the tool markup if you want to do it this way
 // prettier-ignore
 var markup = [
@@ -102,6 +105,30 @@ var InfoTool = {
     },
     make: function () {
         this.MMGISInterface = new interfaceWithMMGIS()
+
+        // Register InfoTool providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            // Clean up previous providers if re-initializing
+            _providerCleanups.forEach((cleanup) => cleanup())
+            _providerCleanups = [
+                window.mmgisAPI.provide('plugin:info:showFeature', (params) => {
+                    if (params && params.layerName && params.layer) {
+                        InfoTool.use(params.layer, params.layerName)
+                        return true
+                    }
+                    return false
+                }),
+                window.mmgisAPI.provide('plugin:info:getCurrentFeature', () => {
+                    if (InfoTool.currentLayer && InfoTool.currentLayer.feature) {
+                        return {
+                            layerName: InfoTool.currentLayerName,
+                            feature: InfoTool.currentLayer.feature,
+                        }
+                    }
+                    return null
+                }),
+            ]
+        }
     },
     destroy: function () {
         this.MMGISInterface.separateFromMMGIS()
