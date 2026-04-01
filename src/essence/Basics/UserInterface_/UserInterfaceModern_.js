@@ -19,13 +19,14 @@ const UserInterfaceModern_ = {
         this.layoutStyle = layoutStyle
         this.render()
 
-        if (!this._hasBoundLayoutEvent) {
+        if (!this._layoutEventListenerAdded) {
             window.addEventListener('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
-            this._hasBoundLayoutEvent = true
+            this._layoutEventListenerAdded = true
         }
     },
 
     /**
+     * TODO: Use tool metadata to render actual tools and not just placeholders
      * Creates a single tool card for stacked layout
      * @param {string} toolName - Name of the tool
      * @returns {jQuery} Tool card element
@@ -57,6 +58,7 @@ const UserInterfaceModern_ = {
             tabBar.append(tab)
 
             // Create tab content placeholder
+            // TODO: Use actual tool metadata to render real content instead of placeholders
             const toolCard = $(`<div class="ui-tool-card ui-tool-tab-content ${isActive}" data-tool="${toolName}"></div>`)
             const cardContent = $('<div style="margin: auto; text-align: center;"></div>')
                 .append('<span class="ui-tool-icon mdi mdi-view-dashboard" style="font-size: 2rem; display: block;"></span>')
@@ -121,9 +123,6 @@ const UserInterfaceModern_ = {
      * Renders the layout into the #modern-content element
      */
     render: function () {
-        if (window.mmgisglobal?.debug) {
-            console.log("panels", this.panels)
-        }
         const container = $('#modern-content')
         container.empty()
 
