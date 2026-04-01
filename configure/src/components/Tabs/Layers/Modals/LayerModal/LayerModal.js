@@ -149,6 +149,18 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 
+/**
+ * Layer types each engine supports for the Layer Type dropdown.
+ * Mirrors ENGINE_LAYER_SUPPORT in src/essence/Basics/MapEngines/types/engine.ts.
+ * Structural types (header, query, model) are always available regardless of engine.
+ */
+const ENGINE_LAYER_SUPPORT = {
+  leaflet: ["vector", "tile", "vectortile", "data", "image", "video", "velocity"],
+  deckgl: ["vector", "tile", "pointcloud"],
+};
+
+const STRUCTURAL_LAYER_TYPES = ["header", "query", "model"];
+
 const MODAL_NAME = "layer";
 const LayerModal = (props) => {
   const c = useStyles();
@@ -211,6 +223,30 @@ const LayerModal = (props) => {
   }
 
   config = inject(config);
+
+  const mapEngine = configuration?.msv?.mapEngine || "leaflet";
+  if (mapEngine !== "leaflet" && ENGINE_LAYER_SUPPORT[mapEngine] && config.tabs) {
+    const allowedTypes = [
+      ...ENGINE_LAYER_SUPPORT[mapEngine],
+      ...STRUCTURAL_LAYER_TYPES,
+    ];
+    config = JSON.parse(JSON.stringify(config));
+    config.tabs.forEach((tab) => {
+      tab.rows.forEach((row) => {
+        row.components.forEach((comp) => {
+          if (comp.field === "type" && comp.type === "dropdown") {
+            const filtered = comp.options.filter((opt) =>
+              allowedTypes.includes(opt)
+            );
+            ENGINE_LAYER_SUPPORT[mapEngine].forEach((t) => {
+              if (!filtered.includes(t)) filtered.push(t);
+            });
+            comp.options = filtered;
+          }
+        });
+      });
+    });
+  }
 
   const handleClose = (skipSetConfiguration) => {
     if (skipSetConfiguration !== true) {
