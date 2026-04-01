@@ -1,19 +1,18 @@
-// Function to load the appropriate UserInterface based on config
-async function loadUserInterface(config = null) {
-    // Check useragent for now (FIXME use a better way to determine if mobile or not)
-    // https://gist.github.com/dalethedeveloper/1503252
-    let isMobile = window.navigator.userAgent.match(
-        /Mobi|iP(hone|od|ad)|Android|BlackBerry/
-    )
-
-    if (isMobile) {
-        const module = await import('./UserInterfaceMobile_')
-        module.default.isMobile = true
-        return module.default
-    } else {
-        const module = await import('./UserInterfaceDefault_')
-        return module.default
-    }
+let UserInterface = null
+// Check useragent for now (FIXME use a better way to determine if mobile or not)
+// https://gist.github.com/dalethedeveloper/1503252
+let isMobile = window.navigator.userAgent.match(
+    /Mobi|iP(hone|od|ad)|Android|BlackBerry/
+)
+if (isMobile) {
+    UserInterface = () =>
+        import('./UserInterfaceMobile_').then((module) => {
+            module.default.isMobile = true
+            return module.default
+        })
+} else {
+    UserInterface = () =>
+        import('./UserInterfaceDefault_').then((module) => module.default)
 }
 
-export default loadUserInterface
+export default await UserInterface
