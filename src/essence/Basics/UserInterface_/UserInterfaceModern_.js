@@ -294,7 +294,6 @@ const UserInterfaceModern_ = {
             } else {
                 // Remove active highlighting when not focused
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
-                $panel.find('.ui-tool-card').removeClass('active')
             }
         })
 
@@ -330,7 +329,6 @@ const UserInterfaceModern_ = {
             } else {
                 // Remove active highlighting when not focused
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
-                $panel.find('.ui-tool-card').removeClass('active')
             }
 
             if (panel.state === 'iconified') {
