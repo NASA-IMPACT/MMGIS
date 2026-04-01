@@ -285,12 +285,16 @@ const UserInterfaceModern_ = {
 
         // Initialize active tools correctly
         this.panels.forEach(panel => {
-            if (panel.activeToolId) {
-                const $panel = $('#' + panel.containerId)
+            const $panel = $('#' + panel.containerId)
+            if (panel.activeToolId && panel.state === 'focused') {
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
                 $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
                 $panel.find('.ui-tool-card').removeClass('active')
                 $panel.find(`.ui-tool-card[data-tool="${panel.activeToolId}"]`).addClass('active')
+            } else {
+                // Remove active highlighting when not focused
+                $panel.find('.ui-panel-icon-btn').removeClass('active')
+                $panel.find('.ui-tool-card').removeClass('active')
             }
         })
 
@@ -315,14 +319,18 @@ const UserInterfaceModern_ = {
 
             $panel.attr('data-panel-state', panel.state)
 
-            if (panel.activeToolId) {
+            if (panel.activeToolId && panel.state === 'focused') {
                 // Update active state on icons
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
                 $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
-                
+
                 // Update active state on tool cards (especially for focused state and tabbed)
                 $panel.find('.ui-tool-card').removeClass('active')
                 $panel.find(`.ui-tool-card[data-tool="${panel.activeToolId}"]`).addClass('active')
+            } else {
+                // Remove active highlighting when not focused
+                $panel.find('.ui-panel-icon-btn').removeClass('active')
+                $panel.find('.ui-tool-card').removeClass('active')
             }
 
             if (panel.state === 'iconified') {
