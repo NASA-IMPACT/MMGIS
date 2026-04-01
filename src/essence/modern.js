@@ -36,10 +36,6 @@ const modern = {
         // Save the config data
         modern.configData = config
 
-        if (window.mmgisglobal?.debug) {
-            console.log('[Modern Interface] Config:', config)
-        }
-
         // Update URL to match mission
         var urlSplit = window.location.href.split('?')
         var url = urlSplit[0]
@@ -129,7 +125,7 @@ const modern = {
             }
         })
 
-        if (failedPanels.length > 0 && window.mmgisglobal?.debug) {
+        if (failedPanels.length > 0) {
             console.warn('[Modern Interface] Panel registration summary:', {
                 total: panelsConfig.length,
                 failed: failedPanels.length,
@@ -168,12 +164,6 @@ const modern = {
 
         //Make the time control
         TimeControl.init()
-
-        if (window.mmgisglobal?.debug) {
-            console.log('[Modern Interface] Initialized successfully')
-            console.log('[Modern Interface] Config:', modern.configData)
-            console.log('[Modern Interface] Active Panels:', activePanels)
-        }
     },
 
     /**
@@ -182,10 +172,6 @@ const modern = {
     clear: function () {
         $('#modern-content').empty()
         $('#map').remove()
-
-        if (window.mmgisglobal?.debug) {
-            console.log('[Modern Interface] Cleared')
-        }
     },
 }
 

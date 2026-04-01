@@ -96,11 +96,6 @@ const ToolControllerModern_ = {
                     // Add tool to panel
                     PanelManager_.addToolToPanel(panelConfig.id, metadata)
                     assignedToolIds.add(metadata.id)
-
-                    if (window.mmgisglobal?.debug) {
-                        console.log(`[Modern Layout] Added tool "${metadata.name}" to panel "${panelConfig.id}"`)
-                    }
-
                 } catch (error) {
                     console.error(`[Modern Layout] Failed to add tool "${toolName}" to panel "${panelConfig.id}":`, error)
                 }
@@ -131,9 +126,6 @@ const ToolControllerModern_ = {
 
             // Skip tools that are explicitly turned off
             if (config.on === false) {
-                if (window.mmgisglobal?.debug) {
-                    console.log(`[Modern Layout] Skipping tool "${metadata.name}" (on=false)`)
-                }
                 return
             }
 
@@ -154,11 +146,6 @@ const ToolControllerModern_ = {
 
                 PanelManager_.addToolToPanel(targetPanelId, metadata)
                 assignedToolIds.add(metadata.id)
-
-                if (window.mmgisglobal?.debug) {
-                    console.log(`[Modern Layout] Added unassigned tool "${metadata.name}" to panel "${targetPanelId}" (fallback)`)
-                }
-
             } catch (error) {
                 console.error(`[Modern Layout] Failed to add unassigned tool "${metadata.name}":`, error)
             }
@@ -189,10 +176,6 @@ const ToolControllerModern_ = {
 
         // Second pass: Assign remaining tools to compatible panels (fallback)
         ToolControllerModern_.assignFallbackTools(registeredPanels, toolConfigMap, assignedToolIds)
-
-        if (window.mmgisglobal?.debug) {
-            console.log(`[Modern Layout] Tool assignment complete. ${assignedToolIds.size} tools assigned`)
-        }
     }
 }
 
