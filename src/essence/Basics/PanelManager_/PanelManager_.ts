@@ -99,6 +99,11 @@ class PanelManager implements PanelManagerInterface {
             throw new Error(`State transition to ${newState} is not allowed for panel ${panelId}`);
         }
 
+        // Track last visible state when collapsing
+        if (newState === PANEL_STATE.COLLAPSED && panel.state !== PANEL_STATE.COLLAPSED) {
+            panel.lastVisibleState = panel.state;
+        }
+
         panel.state = newState;
         this.recalculateLayout();
     }
@@ -139,32 +144,49 @@ class PanelManager implements PanelManagerInterface {
     /**
      * Toggle a panel's visibility.
      * Behavior depends on current state and constraints:
-     * - collapsed -> last non-collapsed state (or expanded)
+     * - collapsed -> last visible state (or default state, or first available visible state)
      * - iconified/focused/expanded -> collapsed
      *
      * @param panelId Panel identifier
+     * @throws Error if panel not found
+     * @throws Error if toggle cannot be performed due to state constraints
      */
     togglePanelCollapsed(panelId: string): void {
         const panel = this.panels.get(panelId);
-        if (!panel) return;
+        if (!panel) {
+            throw new Error(`Panel with ID ${panelId} not found`);
+        }
+
+        const allowed = panel.config.stateConstraints.allowedStates;
 
         if (panel.state === PANEL_STATE.COLLAPSED) {
-            const allowed = panel.config.stateConstraints.allowedStates;
-            let targetState: PanelState = panel.config.stateConstraints.defaultState;
-            
-            // If default is collapsed, try to find a visible state
-            if (targetState === PANEL_STATE.COLLAPSED) {
-                targetState = allowed.includes(PANEL_STATE.EXPANDED) ? PANEL_STATE.EXPANDED : 
-                            allowed.includes(PANEL_STATE.ICONIFIED) ? PANEL_STATE.ICONIFIED : 
+            // Try to restore last visible state first
+            let targetState: PanelState = panel.lastVisibleState || panel.config.stateConstraints.defaultState;
+
+            // If target is collapsed or not allowed, try to find a visible state
+            if (targetState === PANEL_STATE.COLLAPSED || !allowed.includes(targetState)) {
+                targetState = allowed.includes(PANEL_STATE.EXPANDED) ? PANEL_STATE.EXPANDED :
+                            allowed.includes(PANEL_STATE.ICONIFIED) ? PANEL_STATE.ICONIFIED :
                             allowed.includes(PANEL_STATE.FOCUSED) ? PANEL_STATE.FOCUSED : PANEL_STATE.COLLAPSED;
             }
-            if (targetState !== PANEL_STATE.COLLAPSED) {
-                this.setPanelState(panelId, targetState);
+
+            if (targetState === PANEL_STATE.COLLAPSED) {
+                throw new Error(
+                    `Cannot uncollapse panel ${panelId}: no visible states available in constraints`
+                );
             }
+
+            this.setPanelState(panelId, targetState);
         } else {
-            if (panel.config.stateConstraints.allowedStates.includes(PANEL_STATE.COLLAPSED)) {
-                this.setPanelState(panelId, PANEL_STATE.COLLAPSED);
+            // Check if we can collapse
+            if (!allowed.includes(PANEL_STATE.COLLAPSED)) {
+                throw new Error(
+                    `Cannot collapse panel ${panelId}: collapsed state not allowed in constraints`
+                );
             }
+
+            // setPanelState will automatically track lastVisibleState
+            this.setPanelState(panelId, PANEL_STATE.COLLAPSED);
         }
     }
 

@@ -180,6 +180,11 @@ export interface PanelStateObject {
      * Useful for animations, transitions, and layout calculations.
      */
     currentSize?: number;
+
+    /**
+     * The last non-collapsed state the panel was in.
+     */
+    lastVisibleState?: PanelState;
 }
 
 /**
@@ -228,12 +233,12 @@ export interface PanelManager {
     setPanelState(panelId: string, newState: PanelState): void;
 
     /**
-     * When in iconified state, focus on a specific tool.
-     * Transitions panel to 'focused' state and displays only the specified tool.
+     * When in iconified or focused state, focus on a specific tool.
+     * Transitions panel from iconified to 'focused' state and displays only the specified tool.
      *
      * @param panelId Panel identifier
      * @param toolId Tool to focus on
-     * @throws Error if panel is not in iconified state
+     * @throws Error if panel is not in iconified or focused state
      * @throws Error if tool not found in panel
      */
     focusTool(panelId: string, toolId: string): void;
@@ -241,10 +246,12 @@ export interface PanelManager {
     /**
      * Toggle a panel's collapsed state.
      * Behavior depends on current state and constraints:
-     * - collapsed -> last non-collapsed state (or expanded)
+     * - collapsed -> last visible state (or default state, or first available visible state)
      * - iconified/focused/expanded -> collapsed
-     *
+     * 
      * @param panelId Panel identifier
+     * @throws Error if panel not found
+     * @throws Error if toggle cannot be performed due to state constraints
      */
     togglePanelCollapsed(panelId: string): void;
 
