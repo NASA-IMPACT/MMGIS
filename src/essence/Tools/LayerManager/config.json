@@ -1,0 +1,42 @@
+{
+    "defaultIcon": "layers-triple-outline",
+    "description": "Manage layer visibility, opacity, colormaps, and rescaling with event bus architecture.",
+    "descriptionFull": {
+        "title": "A unified layer management tool that shows all layers with their visibility state, opacity controls, and for COG-enabled layers, colormap selection and rescale controls. This tool uses the event bus architecture exclusively for communication with core modules.",
+        "example": {
+            "displayOnStart": false,
+            "showOnlyVisible": false
+        }
+    },
+    "hasVars": true,
+    "name": "LayerManager",
+    "toolbarPriority": 2,
+    "paths": {
+        "LayerManagerTool": "essence/Tools/LayerManager/LayerManagerTool"
+    },
+    "expandable": true,
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.displayOnStart",
+                        "name": "Display on Start",
+                        "description": "Whether the tool should be displayed when the mission loads.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": false
+                    },
+                    {
+                        "field": "variables.showOnlyVisible",
+                        "name": "Show Only Visible",
+                        "description": "Only show layers that are currently visible.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": false
+                    }
+                ]
+            }
+        ]
+    }
+}
