@@ -365,13 +365,12 @@ test.describe('PanelManager', () => {
             expect(state.activeToolId).toBe('tool-2')
         })
 
-        test('sets active tool when in expanded state', () => {
+        test('throws when panel is in expanded state', () => {
             panelManager.setPanelState('test-panel', PANEL_STATE.EXPANDED)
 
-            panelManager.focusTool('test-panel', 'test-tool')
-
-            const state = panelManager.getPanelState('test-panel')
-            expect(state.activeToolId).toBe('test-tool')
+            expect(() => panelManager.focusTool('test-panel', 'test-tool')).toThrow(
+                'Cannot focus tool when panel is expanded. Panel must be in iconified or focused state.'
+            )
         })
 
         test('throws when panel not found', () => {
@@ -461,11 +460,13 @@ test.describe('PanelManager', () => {
             expect(state.state).toBe(PANEL_STATE.EXPANDED)
         })
 
-        test('does nothing when panel not found', () => {
-            expect(() => panelManager.togglePanelCollapsed('nonexistent')).not.toThrow()
+        test('throws when panel not found', () => {
+            expect(() => panelManager.togglePanelCollapsed('nonexistent')).toThrow(
+                'Panel with ID nonexistent not found'
+            )
         })
 
-        test('does nothing when collapse not allowed', () => {
+        test('throws when collapse not allowed', () => {
             const config = createMockPanelConfig({
                 stateConstraints: {
                     allowedStates: [PANEL_STATE.EXPANDED],
@@ -474,10 +475,9 @@ test.describe('PanelManager', () => {
             })
             panelManager.registerPanel(config)
 
-            panelManager.togglePanelCollapsed('test-panel')
-
-            const state = panelManager.getPanelState('test-panel')
-            expect(state.state).toBe(PANEL_STATE.EXPANDED)
+            expect(() => panelManager.togglePanelCollapsed('test-panel')).toThrow(
+                'Cannot collapse panel test-panel: collapsed state not allowed in constraints'
+            )
         })
 
         test('collapses from iconified state', () => {
@@ -493,6 +493,57 @@ test.describe('PanelManager', () => {
 
             const state = panelManager.getPanelState('test-panel')
             expect(state.state).toBe(PANEL_STATE.COLLAPSED)
+        })
+
+        test('tracks lastVisibleState when collapsing', () => {
+            const config = createMockPanelConfig({
+                stateConstraints: {
+                    allowedStates: [PANEL_STATE.COLLAPSED, PANEL_STATE.ICONIFIED, PANEL_STATE.FOCUSED],
+                    defaultState: PANEL_STATE.ICONIFIED,
+                },
+            })
+            panelManager.registerPanel(config)
+            panelManager.setPanelState('test-panel', PANEL_STATE.FOCUSED)
+
+            panelManager.togglePanelCollapsed('test-panel')
+
+            const state = panelManager.getPanelState('test-panel')
+            expect(state.state).toBe(PANEL_STATE.COLLAPSED)
+            expect(state.lastVisibleState).toBe(PANEL_STATE.FOCUSED)
+        })
+
+        test('restores lastVisibleState when expanding from collapsed', () => {
+            const config = createMockPanelConfig({
+                stateConstraints: {
+                    allowedStates: [PANEL_STATE.COLLAPSED, PANEL_STATE.ICONIFIED, PANEL_STATE.FOCUSED, PANEL_STATE.EXPANDED],
+                    defaultState: PANEL_STATE.EXPANDED,
+                },
+            })
+            panelManager.registerPanel(config)
+
+            // Change to iconified, then collapse
+            panelManager.setPanelState('test-panel', PANEL_STATE.ICONIFIED)
+            panelManager.togglePanelCollapsed('test-panel')
+
+            // Should restore to iconified, not default expanded
+            panelManager.togglePanelCollapsed('test-panel')
+
+            const state = panelManager.getPanelState('test-panel')
+            expect(state.state).toBe(PANEL_STATE.ICONIFIED)
+        })
+
+        test('throws when no visible states available to uncollapse', () => {
+            const config = createMockPanelConfig({
+                stateConstraints: {
+                    allowedStates: [PANEL_STATE.COLLAPSED],
+                    defaultState: PANEL_STATE.COLLAPSED,
+                },
+            })
+            panelManager.registerPanel(config)
+
+            expect(() => panelManager.togglePanelCollapsed('test-panel')).toThrow(
+                'Cannot uncollapse panel test-panel: no visible states available in constraints'
+            )
         })
     })
 
