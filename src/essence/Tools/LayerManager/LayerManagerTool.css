@@ -1,0 +1,83 @@
+/* LayerManagerTool - Tool-level styles */
+
+.layer-manager-tool {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background: var(--color-k);
+    color: var(--color-l);
+    font-family: 'Lato', sans-serif;
+}
+
+/* Header */
+.layer-manager-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--color-i);
+    border-bottom: 1px solid var(--color-h);
+    min-height: 40px;
+    flex-shrink: 0;
+}
+
+.layer-manager-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-f);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.layer-manager-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.layer-manager-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: var(--color-e);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.layer-manager-action:hover {
+    background: var(--color-j);
+    color: var(--color-f);
+}
+
+/* Content area */
+.layer-manager-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Loading state */
+.layer-manager-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100px;
+    color: var(--color-e);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .layer-manager-header {
+        padding: 12px 16px;
+    }
+
+    .layer-manager-title {
+        font-size: 16px;
+    }
+}
