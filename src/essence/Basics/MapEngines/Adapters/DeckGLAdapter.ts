@@ -311,7 +311,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     getNativeMap(): Deck {
         if (this._isOverlayMode) {
-            return this._overlay?.deck as Deck
+            return (this._overlay as unknown as { deck: Deck })?.deck
         }
         return this._deck as Deck
     }
@@ -744,7 +744,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         geometry: PointLike | [PointLike, PointLike],
         options?: QueryFeaturesOptions
     ): FeaturePickResult[] {
-        const deck = this._isOverlayMode ? this._overlay?.deck : this._deck
+        const deck = this._isOverlayMode
+            ? (this._overlay as unknown as { deck: Deck })?.deck
+            : this._deck
         if (!deck) return []
 
         const isBox =
