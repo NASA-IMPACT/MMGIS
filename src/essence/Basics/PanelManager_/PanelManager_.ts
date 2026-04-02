@@ -224,6 +224,7 @@ class PanelManager implements PanelManagerInterface {
     notifyLayoutChanged(): void {
         const allPanels = this.getAllPanelsByPriority();
         // Fire custom event for any listeners hooked into the DOM.
+        // TODO: Use eventbus for dispatching event. 
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('mmgis-panel-layout-changed', {
                 detail: { panels: allPanels }
