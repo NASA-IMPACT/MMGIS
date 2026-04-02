@@ -272,14 +272,12 @@ export interface PanelManager {
     getAllPanelsByPriority(): PanelStateObject[];
 
     /**
-     * Calculate and apply layout based on panel priorities and states.
-     * Allocates viewport space to panels in priority order.
+     * Notify UI layer that panel state has changed and layout needs updating.
      * Should be called whenever:
      * - Panel state changes
-     * - Viewport resizes
      * - Panel is added/removed
      */
-    recalculateLayout(): void;
+    notifyLayoutChanged(): void;
 
     /**
      * Validate if a tool is compatible with a panel.

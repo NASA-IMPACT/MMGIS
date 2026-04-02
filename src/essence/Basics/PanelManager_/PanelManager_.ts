@@ -28,7 +28,7 @@ class PanelManager implements PanelManagerInterface {
         };
 
         this.panels.set(config.id, stateObj);
-        this.recalculateLayout();
+        this.notifyLayoutChanged();
     }
 
     /**
@@ -105,7 +105,7 @@ class PanelManager implements PanelManagerInterface {
         }
 
         panel.state = newState;
-        this.recalculateLayout();
+        this.notifyLayoutChanged();
     }
 
     /**
@@ -140,7 +140,7 @@ class PanelManager implements PanelManagerInterface {
         }
 
         panel.activeToolId = toolId;
-        this.recalculateLayout();
+        this.notifyLayoutChanged();
     }
 
     /**
@@ -216,10 +216,12 @@ class PanelManager implements PanelManagerInterface {
     }
 
     /**
-     * Calculate and apply layout based on panel priorities and states.
-     * Allocates viewport space to panels in priority order.
+     * Notify UI layer that panel state has changed and layout needs updating.
+     * Should be called whenever:
+     * - Panel state changes
+     * - Panel is added/removed
      */
-    recalculateLayout(): void {
+    notifyLayoutChanged(): void {
         const allPanels = this.getAllPanelsByPriority();
         // Fire custom event for any listeners hooked into the DOM.
         if (typeof window !== 'undefined') {
@@ -281,7 +283,7 @@ class PanelManager implements PanelManagerInterface {
         const boundedSize = Math.max(minSize, Math.min(newSize, maxSize));
 
         panel.currentSize = boundedSize;
-        this.recalculateLayout();
+        this.notifyLayoutChanged();
     }
 }
 
