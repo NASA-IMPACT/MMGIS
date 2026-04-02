@@ -109,12 +109,12 @@ class PanelManager implements PanelManagerInterface {
     }
 
     /**
-     * When in iconified state, focus on a specific tool.
-     * Transitions panel to 'focused' state and displays only the specified tool.
+     * When in iconified or focused state, focus on a specific tool.
+     * Transitions panel from iconified to 'focused' state and displays only the specified tool.
      *
      * @param panelId Panel identifier
      * @param toolId Tool to focus on
-     * @throws Error if panel is not in iconified state
+     * @throws Error if panel is not in iconified or focused state
      * @throws Error if tool not found in panel
      */
     focusTool(panelId: string, toolId: string): void {
@@ -123,10 +123,12 @@ class PanelManager implements PanelManagerInterface {
             throw new Error(`Panel with ID ${panelId} not found`);
         }
 
-        if (panel.state !== PANEL_STATE.ICONIFIED && panel.state !== PANEL_STATE.FOCUSED && panel.state !== PANEL_STATE.EXPANDED) {
-            if (panel.state === PANEL_STATE.COLLAPSED) {
-                throw new Error(`Cannot focus tool when panel is collapsed`);
-            }
+        // Only allow from iconified or focused states
+        if (panel.state !== PANEL_STATE.ICONIFIED && panel.state !== PANEL_STATE.FOCUSED) {
+            throw new Error(
+                `Cannot focus tool when panel is ${panel.state}. ` +
+                `Panel must be in iconified or focused state.`
+            );
         }
 
         if (!panel.tools.includes(toolId)) {
