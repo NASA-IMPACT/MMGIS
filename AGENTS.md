@@ -148,8 +148,10 @@ MMGIS/
 ├── package.json                  # Root package.json (build scripts)
 ├── configuration/                # Project configurations
 │   └── webpack.config.js         # Webpack configuration
-└── docker-compose.sample.yml     # Sample Docker services definition
-└── Dockerfile                    # Dockerfile definition
+├── docker-compose.yml            # Production Docker services
+├── docker-compose.dev.yml        # Development with hot-reloading
+├── docker-compose.db.yml         # Database-only for local npm start
+├── Dockerfile                    # Container image definition
 └── auxiliary                     # Useful scripts for data processing, etc.
 ```
 
