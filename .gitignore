@@ -47,8 +47,6 @@ sessions
 .terraform/
 .terraform.lock.hcl
 
-docker-compose.yml
-docker-compose.env.yml
 
 .mcp.json
 .serena
