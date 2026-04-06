@@ -47,6 +47,10 @@ var LegendTool = {
             },
         })
         document.dispatchEvent(_event)
+        // Dual-emit to mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('legend:made', { made: true })
+        }
     },
     destroy: function () {
         this.MMWebGISInterface.separateFromMMWebGIS()

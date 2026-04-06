@@ -12,6 +12,7 @@ The `src/essence/mmgisAPI/mmgisAPI.js` file exposes functions that can be called
 
 #### _Contents_
 
+- [Event Bus API](#event-bus-api)
 - [Layer Control](#layer-control)
   - [addLayer(layerObj, placement)](#addlayerlayerobj-placement)
   - [removeLayer(layerUUID)](#removelayerlayeruuid)
@@ -58,6 +59,33 @@ The `src/essence/mmgisAPI/mmgisAPI.js` file exposes functions that can be called
   - [setLoginToken(username, token)](#setlogintoken)
   - [project(lnglat)](#projectlnglat)
   - [unproject(xy)](#unprojectxy)
+
+---
+
+## Event Bus API
+
+The Event Bus provides a modern pub/sub and request/response system for plugin communication. It enables decoupled communication between tools, modules, and external integrations.
+
+**[View full Event Bus API documentation →](./Event-Bus-API)**
+
+Quick example:
+
+```javascript
+// Subscribe to events
+const unsubscribe = window.mmgisAPI.on('layer:visibilityChange', ({ layerName, on }) => {
+    console.log(`${layerName} is now ${on ? 'visible' : 'hidden'}`)
+})
+
+// Request data from providers
+const center = await window.mmgisAPI.request('map:getCenter')
+const zoom = await window.mmgisAPI.request('map:getZoom')
+
+// Emit custom events
+window.mmgisAPI.emit('plugin:myPlugin:updated', { value: 42 })
+
+// Unsubscribe when done
+unsubscribe()
+```
 
 ---
 

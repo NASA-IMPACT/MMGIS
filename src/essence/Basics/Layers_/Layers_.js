@@ -7,6 +7,9 @@ import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import $ from 'jquery'
 
+// Provider cleanup functions for re-initialization
+let _providerCleanups = []
+
 const L_ = {
     url: window.location.href,
     mission: null,
@@ -156,6 +159,29 @@ const L_ = {
         this.UserInterface_ = userinterface_
         this.Coordinates = coordinates
         this.TimeControl_ = timecontrol_
+
+        // Register layers providers for mmgisAPI Event Bus
+        if (window.mmgisAPI) {
+            // Clean up previous providers if re-initializing
+            _providerCleanups.forEach((cleanup) => cleanup())
+            _providerCleanups = [
+                window.mmgisAPI.provide('layers:getAll', () => Object.keys(L_.layers.data)),
+                window.mmgisAPI.provide('layers:getVisible', () => L_.layers.on),
+                window.mmgisAPI.provide('layers:getConfig', (layerUUID) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    return L_.layers.data[uuid] || null
+                }),
+                window.mmgisAPI.provide('layers:toggle', async (layerUUID) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    if (L_.layers.data[uuid]) {
+                        await L_.toggleLayer(L_.layers.data[uuid])
+                        return L_.layers.on[uuid]
+                    }
+                    return null
+                }),
+                window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
+            ]
+        }
     },
     fullyLoaded: function () {
         this.selectPoint(this.FUTURES.activePoint)

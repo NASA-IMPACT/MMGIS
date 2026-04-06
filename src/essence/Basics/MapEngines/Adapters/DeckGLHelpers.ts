@@ -135,12 +135,13 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 opacity: o.opacity ?? 1,
                 renderSubLayers: (props: Record<string, unknown>) => {
                     const bbox = (props.tile as { bbox: { west: number; south: number; east: number; north: number } }).bbox
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     return new BitmapLayer({
                         ...(props as object),
                         data: undefined,
                         image: props.data as string,
                         bounds: [bbox.west, bbox.south, bbox.east, bbox.north] as [number, number, number, number],
-                    })
+                    } as any)
                 },
                 ...(o.nativeOptions ?? {}),
             }) as unknown as Layer
@@ -171,6 +172,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
 
         case 'pointcloud': {
             const o = options as PointCloudLayerOptions
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return new PointCloudLayer({
                 id,
                 data: o.data ?? o.url,
@@ -182,7 +184,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 ...(o.coordinateOrigin !== undefined ? { coordinateOrigin: o.coordinateOrigin } : {}),
                 ...(o.material !== undefined ? { material: o.material } : {}),
                 ...(o.nativeOptions ?? {}),
-            }) as unknown as Layer
+            } as any) as unknown as Layer
         }
 
         default:

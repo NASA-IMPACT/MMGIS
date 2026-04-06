@@ -894,6 +894,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                     results.push({ feature: null, layerId: id, latlng })
                 }
             } catch {
+                // layer may not have valid bounds yet — skip silently
             }
         })
 
@@ -1006,6 +1007,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                     return { feature: leafletLayer.toGeoJSON?.() ?? {}, layerId: id }
                 }
             } catch {
+                // layer bounds not yet available
             }
         }
         return null

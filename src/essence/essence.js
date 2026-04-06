@@ -301,6 +301,14 @@ var essence = {
                         },
                     })
                     document.dispatchEvent(_event)
+                    // Dual-emit to mmgisAPI Event Bus
+                    if (mmgisAPI) {
+                        mmgisAPI.emit('websocket:change', {
+                            layer: typeof layerName !== 'undefined' ? layerName : null,
+                            type: typeof type !== 'undefined' ? type : null,
+                            data: parsed,
+                        })
+                    }
                 } catch (e) {
                     console.warn(
                         `Error parsing data from MMGIS websocket: ${e}`
