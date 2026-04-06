@@ -288,6 +288,9 @@ module.exports = function (webpackEnv) {
         }),
         ...(modules.webpackAliases || {}),
         markjs: "mark.js/dist/jquery.mark.js",
+        // Redirect any require('leaflet') — including from @maplibre/maplibre-gl-leaflet —
+        // to MMGIS's custom build so the plugin patches the same instance as window.L.
+        leaflet: path.resolve(__dirname, "../src/external/Leaflet/leaflet1.5.1.js"),
       },
       plugins: [
         // Prevents users from importing files from outside of src/ (or node_modules/).
@@ -637,27 +640,19 @@ module.exports = function (webpackEnv) {
       // TypeScript type checking
       useTypeScript &&
         new ForkTsCheckerWebpackPlugin({
-          typescript: resolve.sync("typescript", {
-            basedir: paths.appNodeModules,
-          }),
           async: isEnvDevelopment,
-          useTypescriptIncrementalApi: true,
-          checkSyntacticErrors: true,
-          resolveModuleNameModule: process.versions.pnp
-            ? `${__dirname}/pnpTs.js`
-            : undefined,
-          resolveTypeReferenceDirectiveModule: process.versions.pnp
-            ? `${__dirname}/pnpTs.js`
-            : undefined,
-          tsconfig: paths.appTsConfig,
-          reportFiles: [
-            "**",
-            "!**/__tests__/**",
-            "!**/?(*.)(spec|test).*",
-            "!**/src/setupProxy.*",
-            "!**/src/setupTests.*",
-          ],
-          silent: true,
+          typescript: {
+            typescriptPath: resolve.sync("typescript", {
+              basedir: paths.appNodeModules,
+            }),
+            configFile: paths.appTsConfig,
+            diagnosticOptions: {
+              syntactic: true,
+            },
+          },
+          logger: {
+            infrastructure: "silent",
+          },
         }),
       isEnvDevAnalyze && new BundleAnalyzerPlugin(),
     ].filter(Boolean),
