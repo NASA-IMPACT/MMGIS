@@ -261,10 +261,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             return this._initOverlayModeMapbox(options.basemap)
         }
         if (options.basemap?.provider === 'maplibre') {
-            return this._setupOverlay(
+            this._setupOverlay(
                 MaplibreGLMap as unknown as new (o: Record<string, unknown>) => BasemapInstance,
                 options.basemap
             )
+            return
         }
         this._initStandaloneMode()
     }
@@ -837,8 +838,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         let MapboxGLMap: new (options: Record<string, unknown>) => BasemapInstance
 
         try {
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore — mapbox-gl is an optional peer dependency
             const lib = (await import('mapbox-gl')) as unknown as {
                 default?: { Map: new (options: Record<string, unknown>) => BasemapInstance }
                 Map?: new (options: Record<string, unknown>) => BasemapInstance
@@ -853,18 +852,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             )
         }
 
-        await this._setupOverlay(MapboxGLMap, basemap)
+        this._setupOverlay(MapboxGLMap, basemap)
     }
 
     /**
-     * Shared setup for both MapLibre and Mapbox overlay modes.
-     * Creates the base map, attaches the `MapboxOverlay`, registers event
-     * listeners, and applies `maxBounds` if configured.
+     * Shared synchronous setup for both MapLibre and Mapbox overlay modes.
+     * Creates the base map, attaches the `MapboxOverlay`, registers event listeners,
+     * and applies `maxBounds` if configured.
      */
-    private async _setupOverlay(
+    private _setupOverlay(
         MapClass: new (options: Record<string, unknown>) => BasemapInstance,
         basemap: BasemapOptions
-    ): Promise<void> {
+    ): void {
         const mapOptions: Record<string, unknown> = {
             container: this._container,
             style: basemap.style,
