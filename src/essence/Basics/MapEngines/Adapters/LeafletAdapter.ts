@@ -39,8 +39,10 @@ import {
     QueryFeaturesOptions,
 } from '../types/events'
 import { MapEngineType } from '../types/engine'
+import 'maplibre-gl/dist/maplibre-gl.css'
+import '@maplibre/maplibre-gl-leaflet'
 
-// Leaflet is loaded globally via window.L
+// Leaflet is loaded globally via window.L; @maplibre/maplibre-gl-leaflet extends it with L.maplibreGL()
 declare const L: any
 
 export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEngineMarkers {
@@ -80,10 +82,14 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _initOptions: MapInitOptions | null = null
 
     /**
+     * MapLibre GL map used as a basemap, if configured.
+     */
+    private _glBasemap: any = null
+
+    /**
      * Initialize the Leaflet map instance
      */
     init(options: MapInitOptions): void {
-        // Store options for reference
         this._initOptions = options
 
         if (this._map) {
@@ -113,7 +119,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                 ; (window as any).mmgisglobal = (window as any).mmgisglobal || {}
                 ; (window as any).mmgisglobal.customCRS = crs
         } else {
-            if (options.projection && options.projection.radius) {
+            if (options.projection && options.projection.radius && L.Proj?.CRS) {
                 const projString = `+proj=merc +lon_0=0 +k=1 +x_0=0 +y_0=0 +a=${options.projection.radius} +b=${options.projection.radius} +towgs84=0,0,0,0,0,0,0 +units=m +no_defs`
                 const crs = new L.Proj.CRS('EPSG:3857', projString, null, options.projection.radius)
                 crs.projString = projString
@@ -153,6 +159,68 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         const attributionControl = this._container.querySelector('.leaflet-control-attribution')
         if (attributionControl) {
             attributionControl.remove()
+        }
+
+        if (
+            (options.basemap?.provider === 'maplibre' || options.basemap?.provider === 'mapbox') &&
+            options.basemap.style
+        ) {
+            let styleUrl = options.basemap.style
+            const token = options.basemap.accessToken
+
+            if (options.basemap.provider === 'mapbox' && token) {
+                if (styleUrl.startsWith('mapbox://styles/')) {
+                    styleUrl =
+                        `https://api.mapbox.com/styles/v1/${styleUrl.slice('mapbox://styles/'.length)}?access_token=${token}`
+                }
+            }
+
+            const glLayerOptions: any = {
+                style: styleUrl,
+                interactive: false,
+                attributionControl: false,
+                validateStyle: false,
+            }
+
+            // For Mapbox styles, inject the access token into every tile/asset request
+            // so MapLibre (which has no native Mapbox auth) can reach the APIs.
+            if (options.basemap.provider === 'mapbox' && token) {
+                glLayerOptions.transformRequest = (url: string) => {
+                    if (url.startsWith('mapbox://')) {
+                        let newUrl: string
+                        if (url.startsWith('mapbox://sprites/')) {
+                            const path = url.slice('mapbox://sprites/'.length)
+                            const dot = path.lastIndexOf('.')
+                            const base = dot >= 0 ? path.slice(0, dot) : path
+                            const ext = dot >= 0 ? path.slice(dot) : ''
+                            newUrl = `https://api.mapbox.com/styles/v1/${base}/sprite${ext}?access_token=${token}`
+                        } else if (url.startsWith('mapbox://fonts/')) {
+                            newUrl = `https://api.mapbox.com/fonts/v1/${url.slice('mapbox://fonts/'.length)}?access_token=${token}`
+                        } else if (url.startsWith('mapbox://styles/')) {
+                            newUrl = `https://api.mapbox.com/styles/v1/${url.slice('mapbox://styles/'.length)}?access_token=${token}`
+                        } else {
+                            newUrl = `https://api.mapbox.com/v4/${url.slice('mapbox://'.length)}.json?access_token=${token}`
+                        }
+                        return { url: newUrl }
+                    }
+                    if (url.includes('.mapbox.com')) {
+                        let newUrl = url.startsWith('http://') ? 'https://' + url.slice(7) : url
+                        if (!newUrl.includes('access_token=')) {
+                            newUrl = `${newUrl}${newUrl.includes('?') ? '&' : '?'}access_token=${token}`
+                        }
+                        return { url: newUrl }
+                    }
+                }
+            }
+
+            // L.maplibreGL is a proper Leaflet layer (registered by the
+            // @maplibre/maplibre-gl-leaflet plugin) that renders a MapLibre GL
+            // map inside Leaflet's tile pane.  It owns the viewport sync
+            // internally — zoom-1 offset, zoom-animation CSS transform, and
+            // throttled pan updates — so no manual event wiring is needed here.
+            const glLayer = L.maplibreGL(glLayerOptions)
+            this._glBasemap = glLayer
+            glLayer.addTo(this._map)
         }
     }
 
@@ -254,6 +322,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
         this._layers.clear()
         this._markers.clear()
+
+        if (this._glBasemap) {
+            this._glBasemap.remove()
+            this._glBasemap = null
+        }
 
         this._map.remove()
         this._map = null
@@ -821,7 +894,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                     results.push({ feature: null, layerId: id, latlng })
                 }
             } catch {
-                // layer may not have valid bounds yet — skip silently
             }
         })
 
@@ -934,7 +1006,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                     return { feature: leafletLayer.toGeoJSON?.() ?? {}, layerId: id }
                 }
             } catch {
-                // layer bounds not yet available
             }
         }
         return null
