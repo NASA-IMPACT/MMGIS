@@ -1,0 +1,27 @@
+# Database-only Docker Compose for local development
+#
+# Run just the database, then use npm start for MMGIS:
+#   docker-compose -f docker-compose.db.yml up -d
+#   npm start
+
+services:
+  db:
+    image: postgis/postgis:16-3.4-alpine
+    environment:
+      - POSTGRES_USER=${DB_USER:-mmgis}
+      - POSTGRES_PASSWORD=${DB_PASS:-mmgis}
+      - POSTGRES_DB=${DB_NAME:-mmgis}
+    ports:
+      - 5432:5432
+    shm_size: '1g'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-mmgis}"]
+      interval: 10s
+      retries: 10
+      start_period: 10s
+      timeout: 8s
+    volumes:
+      - mmgis-local-db:/var/lib/postgresql/data
+
+volumes:
+  mmgis-local-db:
