@@ -1,77 +1,87 @@
-FROM oraclelinux:8.9
+FROM node:20-slim
 
-RUN dnf -y update
-RUN dnf -y install ca-certificates
-RUN update-ca-trust enable
-RUN update-ca-trust extract
-RUN dnf clean all
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    bzip2 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 ARG PUBLIC_URL_ARG=
 ENV PUBLIC_URL=$PUBLIC_URL_ARG
 
-# Create app directory
-WORKDIR /usr/src/app
-
-# Bundle app source
-COPY . .
-
-#############################
-# Python
-#############################
-
-# Use build arguments to detect target platform (default to amd64 if not provided)
+# Use build arguments to detect target platform
 ARG TARGETPLATFORM
 ARG TARGETARCH
 
-# micromamba - Platform-specific download
-RUN dnf install -y bzip2 curl
-RUN mkdir -p /opt/micromamba/bin
-
-# Download correct micromamba binary based on architecture
-RUN MICROMAMBA_URL="https://micro.mamba.pm/api/micromamba/linux-64/latest" && \
-    if [ "${TARGETARCH}" = "arm64" ]; then \
-        MICROMAMBA_URL="https://micro.mamba.pm/api/micromamba/linux-aarch64/latest"; \
-    elif [ -z "${TARGETARCH}" ]; then \
-        echo "TARGETARCH is empty, defaulting to amd64"; \
-    fi && \
-    echo "Downloading micromamba for ${TARGETARCH} from: ${MICROMAMBA_URL}" && \
-    curl -Ls "${MICROMAMBA_URL}" | tar -C /opt/micromamba -xvj bin/micromamba
-
-RUN MAMBA_ROOT_PREFIX="/opt/micromamba"; /opt/micromamba/bin/micromamba shell init -s bash
-RUN echo 'export PATH="/opt/micromamba/bin:$PATH"' >> /root/.bashrc && echo 'export MAMBA_ROOT_PREFIX="/opt/micromamba"' >> /root/.bashrc
-
-RUN source ~/.bashrc && micromamba env create -y --name mmgis --file=python-environment.yml
+# Set to "false" to skip Python/STAC services (faster builds)
+ARG WITH_STAC=true
+ENV WITH_STAC=$WITH_STAC
 
 #############################
-# Node
+# Micromamba (for Python)
 #############################
 
-RUN dnf module install nodejs:20
+RUN if [ "$WITH_STAC" = "true" ]; then \
+        mkdir -p /opt/micromamba/bin && \
+        MICROMAMBA_URL="https://micro.mamba.pm/api/micromamba/linux-64/latest" && \
+        if [ "${TARGETARCH}" = "arm64" ]; then \
+            MICROMAMBA_URL="https://micro.mamba.pm/api/micromamba/linux-aarch64/latest"; \
+        elif [ -z "${TARGETARCH}" ]; then \
+            echo "TARGETARCH is empty, defaulting to amd64"; \
+        fi && \
+        echo "Downloading micromamba for ${TARGETARCH} from: ${MICROMAMBA_URL}" && \
+        curl -Ls "${MICROMAMBA_URL}" | tar -C /opt/micromamba -xvj bin/micromamba && \
+        MAMBA_ROOT_PREFIX="/opt/micromamba" /opt/micromamba/bin/micromamba shell init -s bash && \
+        echo 'export PATH="/opt/micromamba/bin:$PATH"' >> /root/.bashrc && \
+        echo 'export MAMBA_ROOT_PREFIX="/opt/micromamba"' >> /root/.bashrc; \
+    else \
+        echo "Skipping Python/STAC installation (WITH_STAC=false)"; \
+    fi
 
 #############################
-# MMGIS
+# Python environment
 #############################
 
+WORKDIR /usr/src/app
+
+# Copy only python env file first (cached unless this file changes)
+COPY python-environment.yml ./
+RUN if [ "$WITH_STAC" = "true" ]; then \
+        . /root/.bashrc && micromamba env create -y --name mmgis --file=python-environment.yml; \
+    else \
+        echo "Skipping Python environment creation (WITH_STAC=false)"; \
+    fi
+
+#############################
+# MMGIS Dependencies
+#############################
+
+# Copy only package files first (cached unless these change)
+COPY package*.json ./
 RUN npm install
 
-# build
-RUN npm run build
-
 #############################
-# MMGIS Configure
+# MMGIS Configure Dependencies
 #############################
 
-WORKDIR /usr/src/app/configure
+# Copy configure package files separately
+COPY configure/package*.json ./configure/
+RUN cd configure && npm install
 
-# Clean out configure build folder
-RUN rm -rf /usr/src/app/configure/build/*
+#############################
+# Source Code & Build
+#############################
 
-RUN npm install
+# NOW copy all source code (changes here won't invalidate npm install cache above)
+COPY . .
 
-# Build Configure Site
+# Build main app
 RUN npm run build
 
-WORKDIR /usr/src/app/
+# Build configure
+RUN cd configure && rm -rf build/* && npm run build
 
 RUN chmod 755 _docker-entrypoint.sh
 

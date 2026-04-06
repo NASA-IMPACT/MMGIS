@@ -9,3 +9,7 @@ Missions_dev
 data
 *DS_Store
 *__pycache__
+
+# Build artifacts (will be regenerated in container)
+build
+configure/build

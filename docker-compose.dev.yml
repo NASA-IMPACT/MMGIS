@@ -1,0 +1,189 @@
+# Development Docker Compose with hot-reloading
+#
+# Usage:
+#   docker-compose -f docker-compose.dev.yml up --build
+#
+# With STAC services:
+#   docker-compose -f docker-compose.dev.yml --profile stac up --build
+
+services:
+  mmgis:
+    build:
+      context: .
+      args:
+        - WITH_STAC=${WITH_STAC:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      - NODE_ENV=development
+      - WITH_STAC=${WITH_STAC:-true}
+      - DB_HOST=db
+    # Hot-reloading: run npm start instead of production build
+    command: >
+      bash -c "source ~/.bashrc &&
+      if [ \"$$WITH_STAC\" = 'true' ]; then micromamba activate mmgis; fi &&
+      npm start"
+    ports:
+      - 8888:8888
+      - 8889:8889
+    healthcheck:
+      test: ["CMD", "curl", "-XGET", "-k", "http://mmgis:8888/api/utils/healthcheck"]
+      interval: 20s
+      retries: 5
+      start_period: 30s
+      timeout: 8s
+    volumes:
+      # Mount source for hot-reloading
+      - .:/usr/src/app
+      # Exclude node_modules to prevent native module conflicts
+      - /usr/src/app/node_modules
+      # Preserve configure/build from image
+      - /usr/src/app/configure/build
+
+  stac-fastapi:
+    profiles: ["stac"]
+    image: ghcr.io/stac-utils/stac-fastapi-pgstac:5.0.2
+    ports:
+      - 8881
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASS=${DB_PASS}
+      - POSTGRES_DBNAME=mmgis-stac
+      - POSTGRES_HOST_READER=db
+      - POSTGRES_HOST_WRITER=db
+      - POSTGRES_PORT=5432
+      - DB_MIN_CONN_SIZE=1
+      - DB_MAX_CONN_SIZE=1
+    depends_on:
+      mmgis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    command: bash -c "uvicorn stac_fastapi.pgstac.app:app --host 0.0.0.0 --port 8881"
+    volumes:
+      - ./Missions:/Missions
+
+  tipg:
+    profiles: ["stac"]
+    image: ghcr.io/developmentseed/tipg:1.1.0
+    ports:
+      - 8882
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8882
+      - WEB_CONCURRENCY=10
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASS=${DB_PASS}
+      - POSTGRES_DBNAME=mmgis-stac
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - DB_MIN_CONN_SIZE=1
+      - DB_MAX_CONN_SIZE=10
+    command: bash -c "uvicorn tipg.main:app --host 0.0.0.0 --port 8882"
+    depends_on:
+      mmgis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    volumes:
+      - ./Missions:/Missions
+
+  titiler:
+    profiles: ["stac"]
+    platform: linux/amd64
+    image: ghcr.io/developmentseed/titiler:0.22.2
+    ports:
+      - 8883
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8883
+      - WEB_CONCURRENCY=1
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - GDAL_INGESTED_BYTES_AT_OPEN=32768
+      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+      - PYTHONWARNINGS=ignore
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - TILEMATRIXSET_DIRECTORY=/adjacent-servers/resources/tilematrixsets/planetcantile_v4
+    volumes:
+      - ./Missions:/Missions
+      - ./adjacent-servers/resources:/adjacent-servers/resources
+
+  titiler-pgstac:
+    profiles: ["stac"]
+    platform: linux/amd64
+    image: ghcr.io/stac-utils/titiler-pgstac:1.8.0
+    ports:
+      - 8884
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8884
+      - WEB_CONCURRENCY=1
+      - WORKERS_PER_CORE=1
+      - MAX_WORKERS=10
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASS=${DB_PASS}
+      - POSTGRES_DBNAME=mmgis-stac
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - DB_MIN_CONN_SIZE=1
+      - DB_MAX_CONN_SIZE=10
+      - CPL_TMPDIR=/tmp
+      - GDAL_CACHEMAX=75%
+      - GDAL_INGESTED_BYTES_AT_OPEN=32768
+      - GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR
+      - GDAL_HTTP_MERGE_CONSECUTIVE_RANGES=YES
+      - GDAL_HTTP_MULTIPLEX=YES
+      - GDAL_HTTP_VERSION=2
+      - VSI_CACHE=TRUE
+      - VSI_CACHE_SIZE=536870912
+      - MOSAIC_CONCURRENCY=1
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - TITILER_PGSTAC_SEARCH_EXITWHENFULL=FALSE
+      - TITILER_PGSTAC_SEARCH_SKIPCOVERED=FALSE
+      - TILEMATRIXSET_DIRECTORY=/adjacent-servers/resources/tilematrixsets/planetcantile_v4
+    depends_on:
+      mmgis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    command: bash -c "uvicorn titiler.pgstac.main:app --host 0.0.0.0 --port 8884"
+    volumes:
+      - ./Missions:/Missions
+      - ./adjacent-servers/resources:/adjacent-servers/resources
+
+  veloserver:
+    profiles: ["veloserver"]
+    image: ghcr.io/nasa-ammos/veloserver:development
+    ports:
+      - 8104
+    restart: on-failure
+
+  db:
+    image: postgis/postgis:16-3.4-alpine
+    env_file: .env
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
+    ports:
+      - 5432:5432
+    shm_size: '1g'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d postgres -U ${DB_USER}"]
+      interval: 10s
+      retries: 10
+      start_period: 10s
+      timeout: 8s
+    restart: on-failure
+    volumes:
+      - mmgis-dev-db:/var/lib/postgresql/data
+
+volumes:
+  mmgis-dev-db:
