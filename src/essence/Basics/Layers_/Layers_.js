@@ -354,7 +354,7 @@ const L_ = {
             nextUrl = nextUrl.slice(4)
             wasCOG = true
         }
-        if (!F_.isUrlAbsolute(nextUrl)) {
+        if (!F_.isUrlAbsolute(nextUrl) && !(nextUrl != null && nextUrl.startsWith('/'))) {
             nextUrl = L_.missionPath + nextUrl
         }
         if (
@@ -372,6 +372,17 @@ const L_ = {
                 window.mmgisglobal.IS_DOCKER === 'true'
             ) {
                 nextUrl = `/${nextUrl}`
+            }
+        }
+        // Route cross-origin absolute URLs through the generic CORS proxy
+        if (F_.isUrlAbsolute(nextUrl)) {
+            try {
+                if (new URL(nextUrl).origin !== window.location.origin) {
+                    const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
+                    nextUrl = `${rootPath}/corsproxy/${nextUrl}`
+                }
+            } catch (e) {
+                // Invalid URL, leave unchanged
             }
         }
         return nextUrl
@@ -457,6 +468,12 @@ const L_ = {
                         } catch (err) {}
                     }
                     L_.Map_.rmNotNull(L_.layers.layer[s.name])
+                    if (
+                        L_.Map_.engine &&
+                        L_.Map_.engine.engineType !== 'leaflet'
+                    ) {
+                        L_.layers.layer[s.name] = false
+                    }
                     if (L_.layers.attachments[s.name]) {
                         for (let sub in L_.layers.attachments[s.name]) {
                             switch (L_.layers.attachments[s.name][sub].type) {
