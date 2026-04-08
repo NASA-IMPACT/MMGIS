@@ -42,6 +42,7 @@ export type {
     MapEngineType,
     MapEngineAdapterClass,
     RenderableLayerType,
+    DeckGLLayerType,
     StructuralLayerType,
     LayerType,
     ToolEngineSupport,

@@ -12,6 +12,24 @@ export const MAP_ENGINE = {
 export type MapEngineType = (typeof MAP_ENGINE)[keyof typeof MAP_ENGINE]
 
 /**
+ * Deck.gl native layer type identifiers matching the class names exported by
+ * `@deck.gl/layers` and `@deck.gl/geo-layers`. Used in the configure UI and
+ * forwarded to {@link buildDeckLayer} to construct the correct deck.gl layer.
+ */
+export type DeckGLLayerType =
+    | 'GeoJsonLayer'
+    | 'TileLayer'
+    | 'Tile3DLayer'
+    | 'PointCloudLayer'
+    | 'MVTLayer'
+    | 'ScatterplotLayer'
+    | 'PathLayer'
+    | 'PolygonLayer'
+    | 'IconLayer'
+    | 'TextLayer'
+    | 'BitmapLayer'
+
+/**
  * Renderable layer types that an engine can actually draw.
  * Not every engine supports every type.
  */
@@ -25,6 +43,7 @@ export type RenderableLayerType =
     | 'video'
     | 'velocity'
     | 'pointcloud'
+    | DeckGLLayerType
 
 /**
  * Structural layer types used by MMGIS for UI and data fetching.
@@ -55,7 +74,19 @@ export type LayerType = RenderableLayerType | StructuralLayerType
  */
 export const ENGINE_LAYER_SUPPORT: Record<MapEngineType, RenderableLayerType[]> = {
     [MAP_ENGINE.LEAFLET]: ['vector', 'tile', 'vectortile', 'data', 'image', 'video', 'velocity'],
-    [MAP_ENGINE.DECKGL]: ['vector', 'tile', 'pointcloud'],
+    [MAP_ENGINE.DECKGL]: [
+        'GeoJsonLayer',
+        'TileLayer',
+        'Tile3DLayer',
+        'PointCloudLayer',
+        'MVTLayer',
+        'ScatterplotLayer',
+        'PathLayer',
+        'PolygonLayer',
+        'IconLayer',
+        'TextLayer',
+        'BitmapLayer',
+    ],
 }
 
 /**

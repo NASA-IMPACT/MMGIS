@@ -39,6 +39,7 @@ export interface TileLayerOptions extends LayerOptions {
     time?: string
     maxNativeZoom?: number
     tileSize?: number
+    tileElevation?: number
     nativeOptions?: Record<string, unknown>
 }
 
@@ -46,9 +47,11 @@ export interface TileLayerOptions extends LayerOptions {
  * Options for GeoJSON vector layers.
  *
  * Leaflet: creates L.GeoJSON using the callback props directly.
- * deck.gl: creates a GeoJsonLayer. The adapter maps style properties
- *   to deck.gl accessors (fillColor = getFillColor, strokeColor = getLineColor,
- *   strokeWidth = getLineWidth, radius = getRadius, elevation = getElevation).
+ * deck.gl: creates a GeoJsonLayer. The adapter maps vectorConfig style fields:
+ *   style.fillColor (hex) + style.fillOpacity → getFillColor [r,g,b,a]
+ *   style.color (hex) + style.opacity → getLineColor [r,g,b,a]
+ *   style.weight → getLineWidth (pixels)
+ *   style.radius → getPointRadius (pixels)
  *
  * deck.gl GeoJsonLayer specific props like pointType, lineWidthUnits,
  * lineJointRounded, elevationScale, extruded, material etc. are passed
@@ -65,6 +68,14 @@ export interface GeoJSONLayerOptions<TLayer = unknown> extends Omit<LayerOptions
     extruded?: boolean
     pointType?: string
     lineWidthUnits?: 'pixels' | 'meters' | 'common'
+    variables?: {
+        markerIcon?: {
+            iconUrl?: string
+            iconSize?: [number, number]
+            iconAnchor?: [number, number]
+        }
+        [key: string]: unknown
+    }
     nativeOptions?: Record<string, unknown>
 }
 
@@ -85,6 +96,7 @@ export interface VectorTileLayerOptions extends LayerOptions {
     vectorTileLayerStyles?: Record<string, unknown>
     maxNativeZoom?: number
     attribution?: string
+    nativeOptions?: Record<string, unknown>
 }
 
 /**
