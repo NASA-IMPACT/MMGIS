@@ -11,11 +11,21 @@ import LayerLegend from './LayerLegend'
  * @param {Array} props.layers - Array of layer legend data objects
  * @param {React.ReactNode} [props.children] - Optional child elements (alternative to layers prop)
  * @param {string} [props.emptyMessage] - Message to show when no layers are present
+ * @param {function} [props.onVisibilityChange] - Callback when layer visibility is toggled
+ * @param {function} [props.onOpacityChange] - Callback when layer opacity is changed
+ * @param {function} [props.onColormapChange] - Callback for COG colormap changes
+ * @param {function} [props.onRescaleChange] - Callback for COG rescale changes
+ * @param {function} [props.onCogReset] - Callback to reset COG settings
  */
 const LayerLegendContainer = ({
     layers = [],
     children,
     emptyMessage = 'No layers with legends are currently visible.',
+    onVisibilityChange,
+    onOpacityChange,
+    onColormapChange,
+    onRescaleChange,
+    onCogReset,
 }) => {
     // If children are provided, render them directly
     if (children) {
@@ -46,6 +56,13 @@ const LayerLegendContainer = ({
                     max={layer.max}
                     unit={layer.unit}
                     opacity={layer.opacity}
+                    visible={layer.visible !== false}
+                    cog={layer.cog}
+                    onVisibilityChange={onVisibilityChange}
+                    onOpacityChange={onOpacityChange}
+                    onColormapChange={onColormapChange}
+                    onRescaleChange={onRescaleChange}
+                    onCogReset={onCogReset}
                 />
             ))}
         </div>
