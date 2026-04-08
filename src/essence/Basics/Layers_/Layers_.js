@@ -179,6 +179,45 @@ const L_ = {
                     }
                     return null
                 }),
+                window.mmgisAPI.provide('layers:getOpacity', (layerUUID) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    return L_.layers.opacity[uuid] ?? 1
+                }),
+                window.mmgisAPI.provide('layers:setOpacity', ({ layerUUID, opacity }) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    if (L_.layers.data[uuid]) {
+                        L_.layers.opacity[uuid] = opacity
+                        L_.setLayerOpacity(uuid, opacity)
+                        return true
+                    }
+                    return false
+                }),
+                window.mmgisAPI.provide('layers:refresh', ({ layerUUID, options }) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    const tileLayer = L_.layers.layer[uuid]
+                    if (tileLayer && typeof tileLayer.refresh === 'function') {
+                        tileLayer.refresh(null, false, options || {})
+                        return true
+                    }
+                    return false
+                }),
+                window.mmgisAPI.provide('layers:updateConfig', ({ layerUUID, updates }) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    const layerConfig = L_.layers.data[uuid]
+                    if (layerConfig) {
+                        Object.assign(layerConfig, updates)
+                        return true
+                    }
+                    return false
+                }),
+                window.mmgisAPI.provide('layers:getAllConfigs', () => L_.layers.data),
+                window.mmgisAPI.provide('layers:getAllOpacities', () => L_.layers.opacity),
+                window.mmgisAPI.provide('layers:isVisible', (layerUUID) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    return L_.layers.on?.[uuid] === true
+                }),
+                window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
+                window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
             ]
         }
