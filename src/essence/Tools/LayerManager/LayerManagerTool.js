@@ -2,17 +2,27 @@ import $ from 'jquery'
 import ReactDOM from 'react-dom'
 import React, { useState, useEffect } from 'react'
 
-import L_ from '../../Basics/Layers_/Layers_'
-import ToolController_ from '../../Basics/ToolController_/ToolController_'
-
 import LayerLegendContainer from './components/LayerLegendContainer'
 import './components/LayerLegend.css'
 import './LayerManagerTool.css'
 
+/**
+ * Helper to safely call event bus request
+ * @param {string} name - Request name
+ * @param {*} params - Request parameters
+ * @returns {Promise<*>} - Response or null if unavailable
+ */
+const request = async (name, params) => {
+    if (window.mmgisAPI?.request) {
+        return window.mmgisAPI.request(name, params)
+    }
+    return null
+}
+
 // Expose state setters externally for the tool module to update React state
 const state = {
-    setLayers: () => {},
-    setLoading: () => {},
+    setLayers: null,
+    setLoading: null,
 }
 
 /**
@@ -27,6 +37,12 @@ const LayerManager = () => {
         // Expose setters to the tool module
         state.setLayers = setLayers
         state.setLoading = setLoading
+
+        // Trigger initial data load now that setters are available
+        // Use setTimeout to ensure the state setters are registered before updateLayers runs
+        setTimeout(() => {
+            LayerManagerTool.updateLayers()
+        }, 0)
     }, [])
 
     if (loading) {
@@ -61,7 +77,12 @@ const LayerManager = () => {
             <div className="layer-manager-content">
                 <LayerLegendContainer
                     layers={layers}
-                    emptyMessage="No layers with legends are currently visible. Turn on layers in the Layers tool to see their legends here."
+                    emptyMessage="No visible layers. Turn on layers in the Layers tool to manage them here."
+                    onVisibilityChange={LayerManagerTool.handleVisibilityChange}
+                    onOpacityChange={LayerManagerTool.handleOpacityChange}
+                    onColormapChange={LayerManagerTool.handleColormapChange}
+                    onRescaleChange={LayerManagerTool.handleRescaleChange}
+                    onCogReset={LayerManagerTool.handleCogReset}
                 />
             </div>
         </div>
@@ -84,9 +105,9 @@ const LayerManagerTool = {
     /**
      * Initialize the tool - called once at application startup
      */
-    initialize: function () {
-        // Get tool variables from configuration
-        this.vars = L_.getToolVars('layermanager') || {}
+    initialize: async function () {
+        // Get tool variables from configuration via event bus
+        this.vars = (await request('tool:getVars', 'layermanager')) || {}
 
         // Set custom width if configured
         if (this.vars.width) {
@@ -94,7 +115,8 @@ const LayerManagerTool = {
         }
 
         // Handle mobile layout
-        if (L_.UserInterface_.isMobile === true) {
+        const isMobile = await request('app:isMobile')
+        if (isMobile) {
             this.width = 'full'
             this.height = 500
         }
@@ -117,14 +139,16 @@ const LayerManagerTool = {
                     }
                 })
             )
-        }
 
-        // Also subscribe via legacy L_ method for compatibility
-        L_.subscribeOnLayerToggle('LayerManagerTool', () => {
-            if (this._mounted) {
-                this.updateLayers()
-            }
-        })
+            // Subscribe to opacity change events
+            this._cleanups.push(
+                window.mmgisAPI.on('layer:opacityChange', () => {
+                    if (this._mounted) {
+                        this.updateLayers()
+                    }
+                })
+            )
+        }
     },
 
     /**
@@ -141,11 +165,10 @@ const LayerManagerTool = {
         $(container).css('background', 'var(--color-k)')
 
         // Render React component
+        // Note: Initial data load is triggered in the React component's useEffect
+        // to ensure state setters are available before updateLayers is called
         ReactDOM.render(<LayerManager />, container)
         this._mounted = true
-
-        // Initial data load
-        this.updateLayers()
 
         // Register providers via event bus
         if (window.mmgisAPI) {
@@ -189,9 +212,6 @@ const LayerManagerTool = {
             }
         })
         this._cleanups = []
-
-        // Unsubscribe from legacy layer toggle
-        L_.unsubscribeOnLayerToggle('LayerManagerTool')
     },
 
     /**
@@ -204,35 +224,56 @@ const LayerManagerTool = {
     /**
      * Update the layers list in the React component
      */
-    updateLayers: function () {
-        const layerData = this.getVisibleLayersWithLegends()
-        state.setLayers(layerData)
-        state.setLoading(false)
+    updateLayers: async function () {
+        // Ensure state setters are available (React useEffect has run)
+        if (!state.setLayers || !state.setLoading) {
+            return
+        }
+        try {
+            const layerData = await this.getVisibleLayersWithLegends()
+            state.setLayers(layerData)
+            state.setLoading(false)
+        } catch (err) {
+            console.error('LayerManagerTool: Error updating layers', err)
+            state.setLayers([])
+            state.setLoading(false)
+        }
     },
 
     /**
-     * Get all visible layers that have legend data
-     * @returns {Array} Array of layer legend data objects
+     * Get layers for display (all layers or only visible, based on config)
+     * @returns {Promise<Array>} Array of layer legend data objects
      */
-    getVisibleLayersWithLegends: function () {
+    getVisibleLayersWithLegends: async function () {
         const layers = []
+        const showOnlyVisible = this.vars.showOnlyVisible === true
 
-        // Iterate through all layers
-        Object.keys(L_.layers.on || {}).forEach((layerName) => {
-            // Only process visible layers
-            if (!L_.layers.on[layerName]) return
+        // Get layer data via event bus
+        const layerConfigs = await request('layers:getAllConfigs')
+        const visibleLayers = await request('layers:getVisible')
+        const opacities = await request('layers:getAllOpacities')
 
-            const layerConfig = L_.layers.data[layerName]
+        if (!layerConfigs) {
+            return layers
+        }
+
+        // Iterate through all layers in data (not just 'on' layers)
+        Object.keys(layerConfigs).forEach((layerName) => {
+            const layerConfig = layerConfigs[layerName]
             if (!layerConfig) return
 
             // Skip header layers
             if (layerConfig.type === 'header') return
 
-            // Build legend data from layer config
-            const legendData = this.buildLayerLegendData(layerName, layerConfig)
-            if (legendData) {
-                layers.push(legendData)
-            }
+            // If showOnlyVisible is true, skip layers that are off
+            const isVisible = visibleLayers?.[layerName] === true
+            if (showOnlyVisible && !isVisible) return
+
+            // Build legend data from layer config (returns data even without legend)
+            const legendData = this.buildLayerLegendData(layerName, layerConfig, opacities)
+            // Add visibility state to the legend data
+            legendData.visible = isVisible
+            layers.push(legendData)
         })
 
         return layers
@@ -242,27 +283,58 @@ const LayerManagerTool = {
      * Build legend data object from MMGIS layer configuration
      * @param {string} layerName - Layer name/UUID
      * @param {object} layerConfig - Layer configuration object
-     * @returns {object|null} Legend data object or null if no legend
+     * @param {object} opacities - Opacity map for all layers
+     * @returns {object} Legend data object (always returns, even without legend)
      */
-    buildLayerLegendData: function (layerName, layerConfig) {
+    buildLayerLegendData: function (layerName, layerConfig, opacities) {
         const legend = layerConfig._legend
-        const opacity = L_.layers.opacity[layerName] ?? 1
+        const opacity = opacities?.[layerName] ?? 1
 
-        // Check for legend data
-        if (!legend || (Array.isArray(legend) && legend.length === 0)) {
-            return null
-        }
+        // Check if this layer supports colormap/rescale controls
+        // This applies only to tile/image layers with cogTransform enabled (TiTiler + COG translate)
+        const supportedTypes = ['tile', 'image']
+        const hasColormapSupport =
+            supportedTypes.includes(layerConfig.type) &&
+            layerConfig.cogTransform === true
 
-        // Determine legend type and build appropriate data structure
-        const legendType = this.detectLegendType(legend)
+        const cogData = hasColormapSupport
+            ? {
+                  isCog: true,
+                  colormap: layerConfig.currentCogColormap || layerConfig.cogColormap || 'viridis',
+                  min: layerConfig.currentCogMin ?? layerConfig.cogMin ?? 0,
+                  max: layerConfig.currentCogMax ?? layerConfig.cogMax ?? 255,
+                  defaultMin: layerConfig.cogMin ?? 0,
+                  defaultMax: layerConfig.cogMax ?? 255,
+                  defaultColormap: layerConfig.cogColormap || 'viridis',
+                  units: layerConfig.cogUnits || null,
+              }
+            : null
 
         const baseData = {
             id: layerName,
             title: layerConfig.display_name || layerName,
             description: layerConfig.description || null,
             opacity: opacity,
-            type: legendType,
+            type: 'none',
+            cog: cogData,
         }
+
+        // Check for legend data
+        if (!legend || (Array.isArray(legend) && legend.length === 0)) {
+            // For COG layers without legend, create a gradient legend from COG settings
+            if (hasColormapSupport && cogData) {
+                baseData.type = 'gradient'
+                baseData.min = cogData.min
+                baseData.max = cogData.max
+                baseData.stops = null // Will use colormap image instead
+                baseData.unit = cogData.units ? { label: cogData.units } : null
+            }
+            return baseData
+        }
+
+        // Determine legend type and build appropriate data structure
+        const legendType = this.detectLegendType(legend)
+        baseData.type = legendType
 
         switch (legendType) {
             case 'gradient':
@@ -272,7 +344,7 @@ const LayerManagerTool = {
             case 'text':
                 return baseData
             default:
-                return null
+                return baseData
         }
     },
 
@@ -365,6 +437,153 @@ const LayerManagerTool = {
             ...baseData,
             type: 'categorical',
             stops: stops,
+        }
+    },
+
+    /**
+     * Handle visibility change for a layer
+     * @param {string} layerName - Layer name/UUID
+     */
+    handleVisibilityChange: async function (layerName) {
+        // Toggle the layer via event bus
+        const newVisibility = await request('layers:toggle', layerName)
+
+        if (newVisibility !== null) {
+            // Emit event for other tools
+            if (window.mmgisAPI) {
+                window.mmgisAPI.emit('layer:visibilityChange', {
+                    layerName,
+                    visible: newVisibility,
+                })
+            }
+        }
+    },
+
+    /**
+     * Handle opacity change for a layer
+     * @param {string} layerName - Layer name/UUID
+     * @param {number} opacity - New opacity value (0-1)
+     */
+    handleOpacityChange: async function (layerName, opacity) {
+        // Set opacity via event bus
+        const success = await request('layers:setOpacity', { layerUUID: layerName, opacity })
+
+        if (success) {
+            // Emit event for other tools
+            if (window.mmgisAPI) {
+                window.mmgisAPI.emit('layer:opacityChange', {
+                    layerName,
+                    opacity,
+                })
+            }
+        }
+    },
+
+    /**
+     * Handle colormap change for a COG layer
+     * @param {string} layerName - Layer name/UUID
+     * @param {string} colormap - New colormap name
+     */
+    handleColormapChange: async function (layerName, colormap) {
+        // Get layer config to check if it's a COG layer
+        const layerConfig = await request('layers:getConfig', layerName)
+        if (!layerConfig || !layerConfig.cogTransform) return
+
+        // Update the layer config via event bus
+        await request('layers:updateConfig', {
+            layerUUID: layerName,
+            updates: { currentCogColormap: colormap },
+        })
+
+        // Refresh the tile layer with updated options
+        await request('layers:refresh', {
+            layerUUID: layerName,
+            options: { cogColormap: colormap },
+        })
+
+        // Update our display
+        LayerManagerTool.updateLayers()
+
+        // Emit event for other tools
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('layer:cogColormapChange', {
+                layerName,
+                colormap,
+            })
+        }
+    },
+
+    /**
+     * Handle rescale change for a COG layer
+     * @param {string} layerName - Layer name/UUID
+     * @param {number} min - New min value
+     * @param {number} max - New max value
+     */
+    handleRescaleChange: async function (layerName, min, max) {
+        // Get layer config to check if it's a COG layer
+        const layerConfig = await request('layers:getConfig', layerName)
+        if (!layerConfig || !layerConfig.cogTransform) return
+
+        // Update the layer config via event bus
+        await request('layers:updateConfig', {
+            layerUUID: layerName,
+            updates: { currentCogMin: min, currentCogMax: max },
+        })
+
+        // Refresh the tile layer with updated options
+        await request('layers:refresh', {
+            layerUUID: layerName,
+            options: { currentCogMin: min, currentCogMax: max },
+        })
+
+        // Update our display
+        LayerManagerTool.updateLayers()
+
+        // Emit event for other tools
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('layer:cogRescaleChange', {
+                layerName,
+                min,
+                max,
+            })
+        }
+    },
+
+    /**
+     * Reset COG layer to default colormap and rescale values
+     * @param {string} layerName - Layer name/UUID
+     */
+    handleCogReset: async function (layerName) {
+        // Get layer config to check if it's a COG layer and get defaults
+        const layerConfig = await request('layers:getConfig', layerName)
+        if (!layerConfig || !layerConfig.cogTransform) return
+
+        // Reset to defaults via event bus
+        await request('layers:updateConfig', {
+            layerUUID: layerName,
+            updates: {
+                currentCogColormap: layerConfig.cogColormap,
+                currentCogMin: layerConfig.cogMin,
+                currentCogMax: layerConfig.cogMax,
+            },
+        })
+
+        // Refresh the tile layer with default options
+        await request('layers:refresh', {
+            layerUUID: layerName,
+            options: {
+                cogColormap: layerConfig.cogColormap,
+                currentCogMin: layerConfig.cogMin,
+                currentCogMax: layerConfig.cogMax,
+            },
+        })
+
+        // Update our display
+        LayerManagerTool.updateLayers()
+
+        // Emit event for other tools
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('layer:cogReset', { layerName })
         }
     },
 }
