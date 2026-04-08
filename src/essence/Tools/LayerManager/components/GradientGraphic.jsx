@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react'
 import { scaleLinear } from 'd3'
+import ColormapControl from './ColormapControl'
+import { useColormapGradient, useClickOutside } from '../hooks'
 
 /**
  * Creates a CSS linear gradient string from an array of color stops
@@ -62,11 +64,45 @@ const formatTooltipValue = (rawVal, unit) => {
  * @param {number|string} props.max - Maximum value
  * @param {object} [props.unit] - Unit object with label property
  * @param {number} [props.opacity=1] - Opacity of the gradient
+ * @param {object} [props.cog] - COG settings object
+ * @param {string} props.layerId - Layer ID for COG controls
+ * @param {function} [props.onColormapChange] - Callback for colormap changes
+ * @param {function} [props.onRescaleChange] - Callback for rescale changes
+ * @param {function} [props.onCogReset] - Callback to reset COG settings
  */
-const GradientGraphic = ({ stops, min, max, unit, opacity = 1 }) => {
+const GradientGraphic = ({
+    stops,
+    min,
+    max,
+    unit,
+    opacity = 1,
+    cog,
+    layerId,
+    onColormapChange,
+    onRescaleChange,
+    onCogReset,
+}) => {
     const [hoverVal, setHoverVal] = useState(null)
     const [tooltipPos, setTooltipPos] = useState({ x: 0 })
+    const [isCogExpanded, setIsCogExpanded] = useState(false)
     const barRef = useRef(null)
+    const cogBtnRef = useRef(null)
+    const cogPopoverRef = useRef(null)
+
+    const hasCogSettings = cog?.isCog === true
+
+    // Use shared hook to fetch colormap colors
+    const { colors: colormapColors } = useColormapGradient(
+        cog?.colormap,
+        hasCogSettings
+    )
+
+    // Use shared hook for click-outside detection
+    useClickOutside(
+        [cogPopoverRef, cogBtnRef],
+        () => setIsCogExpanded(false),
+        isCogExpanded
+    )
 
     const handleMouseMove = useCallback(
         (e) => {
@@ -97,41 +133,74 @@ const GradientGraphic = ({ stops, min, max, unit, opacity = 1 }) => {
     }, [])
 
     const hasNumericLegend = !isNaN(Number(min) + Number(max))
+
+    // For COG layers with fetched colors, use those; otherwise use provided stops
+    const gradientStops = (hasCogSettings && colormapColors) ? colormapColors : stops
     const gradientStyle = {
-        background: makeGradient(stops),
+        background: makeGradient(gradientStops),
         opacity: opacity,
     }
 
     return (
         <div className="gradient-graphic">
-            <div
-                className="gradient-bar-container"
-                onMouseMove={handleMouseMove}
-                onMouseLeave={handleMouseLeave}
-            >
+            <div className="gradient-bar-row">
                 <div
-                    ref={barRef}
-                    className="gradient-bar"
-                    style={gradientStyle}
-                />
-                {hoverVal !== null && hasNumericLegend && (
+                    className="gradient-bar-container"
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                >
                     <div
-                        className="gradient-tooltip visible"
-                        style={{ left: tooltipPos.x }}
-                    >
-                        {formatTooltipValue(hoverVal, unit)}
-                    </div>
-                )}
+                        ref={barRef}
+                        className="gradient-bar"
+                        style={gradientStyle}
+                    />
+                    {hoverVal !== null && hasNumericLegend && (
+                        <div
+                            className="gradient-tooltip visible"
+                            style={{ left: tooltipPos.x }}
+                        >
+                            {formatTooltipValue(hoverVal, unit)}
+                        </div>
+                    )}
+                </div>
+                {/* Always reserve space for COG button to keep colorbar width consistent */}
+                <div className="gradient-cog-wrapper">
+                    {hasCogSettings && (
+                        <>
+                            <button
+                                ref={cogBtnRef}
+                                className={`gradient-expand-btn ${isCogExpanded ? 'active' : ''}`}
+                                onClick={() => setIsCogExpanded(!isCogExpanded)}
+                                title={isCogExpanded ? 'Hide COG settings' : 'Show COG settings'}
+                            >
+                                <i className={`mdi mdi-chevron-${isCogExpanded ? 'up' : 'down'} mdi-18px`} />
+                            </button>
+                            {isCogExpanded && (
+                                <div ref={cogPopoverRef} className="gradient-cog-popover">
+                                    <ColormapControl
+                                        layerName={layerId}
+                                        colormap={cog.colormap}
+                                        min={cog.min}
+                                        max={cog.max}
+                                        units={cog.units}
+                                        onColormapChange={onColormapChange}
+                                        onRescaleChange={onRescaleChange}
+                                        onReset={onCogReset}
+                                    />
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
             </div>
             <div className="gradient-labels">
                 <span className="gradient-label min">
-                    {formatLegendValue(min)}
+                    {formatLegendValue(hasCogSettings ? cog.min : min)}
                 </span>
                 <span className="gradient-label max">
-                    {formatLegendValue(max)}
+                    {formatLegendValue(hasCogSettings ? cog.max : max)}
                 </span>
             </div>
-            {unit?.label && <div className="gradient-unit">{unit.label}</div>}
         </div>
     )
 }
