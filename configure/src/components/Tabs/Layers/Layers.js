@@ -366,6 +366,17 @@ export default function Layers() {
                       color = "#c43541";
                       break;
                     case "vector":
+                    case "GeoJsonLayer":
+                    case "ScatterplotLayer":
+                    case "PathLayer":
+                    case "PolygonLayer":
+                    case "IconLayer":
+                    case "TextLayer":
+                    case "TileLayer":
+                    case "BitmapLayer":
+                    case "Tile3DLayer":
+                    case "PointCloudLayer":
+                    case "MVTLayer":
                       iconType = <PolylineIcon fontSize="small" />;
                       color = "#245980";
                       break;

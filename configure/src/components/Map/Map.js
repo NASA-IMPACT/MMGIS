@@ -1,5 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as L from "leaflet";
+import { Deck } from "@deck.gl/core";
+import { BitmapLayer } from "@deck.gl/layers";
+import { MVTLayer, Tile3DLayer, TileLayer } from "@deck.gl/geo-layers";
+import { Tiles3DLoader } from "@loaders.gl/3d-tiles";
 
 import ReactJson from "react-json-view";
 
@@ -35,15 +39,27 @@ const useStyles = makeStyles((theme) => ({
 const Map = ({ configuration, layer, vector, clickableFeatures }) => {
   const [map, setMap] = useState(null);
   const [feature, setFeature] = useState(null);
+  const mapRef = useRef(null);
+  const deckRef = useRef(null);
 
   const c = useStyles();
 
+  const isDeckGL = configuration?.msv?.mapEngine === "deckgl";
+
   const InitMap = () => {
+    if (deckRef.current && deckRef.current.finalize) {
+      deckRef.current.finalize();
+      deckRef.current = null;
+    }
+
     if (map && map.remove) {
       map.off();
       map.remove();
     }
-    const m = L.map("map", { attributionControl: false }).setView(
+
+    if (!mapRef.current) return;
+
+    const m = L.map(mapRef.current, { attributionControl: false }).setView(
       [
         parseFloat(configuration?.msv?.view?.[0] || 0),
         parseFloat(configuration?.msv?.view?.[1] || 0),
@@ -85,15 +101,124 @@ const Map = ({ configuration, layer, vector, clickableFeatures }) => {
 
     setMap(m);
   };
+
+  const InitDeckGL = () => {
+    if (map && map.remove) {
+      map.off();
+      map.remove();
+      setMap(null);
+    }
+
+    if (deckRef.current && deckRef.current.finalize) {
+      deckRef.current.finalize();
+      deckRef.current = null;
+    }
+
+    if (!mapRef.current) return;
+
+    const layerType = layer?.type;
+    const opacity =
+      layer?.initialOpacity != null ? parseFloat(layer.initialOpacity) : 1;
+    const layers = [];
+    let viewState = {
+      latitude: parseFloat(configuration?.msv?.view?.[0] || 0),
+      longitude: parseFloat(configuration?.msv?.view?.[1] || 0),
+      zoom: parseFloat(configuration?.msv?.view?.[2] || 4),
+      pitch: layerType === "Tile3DLayer" ? 60 : 0,
+      bearing: 0,
+    };
+
+    const setDeckViewState = (nextViewState) => {
+      viewState = { ...viewState, ...nextViewState };
+      if (deckRef.current) deckRef.current.setProps({ viewState });
+    };
+
+    if (layer?.url) {
+      if (layerType === "Tile3DLayer") {
+        layers.push(
+          new Tile3DLayer({
+            id: "configure-preview-tile-3d",
+            data: layer.url,
+            loader: Tiles3DLoader,
+            opacity,
+            pickable: true,
+            pointSize: Number(layer?.pointSize) || 2,
+            onTilesetLoad: (tileset) => {
+              if (Array.isArray(tileset?.cartographicCenter)) {
+                setDeckViewState({
+                  longitude: tileset.cartographicCenter[0],
+                  latitude: tileset.cartographicCenter[1],
+                  zoom: Number.isFinite(tileset.zoom)
+                    ? tileset.zoom
+                    : viewState.zoom,
+                  pitch: 60,
+                });
+              }
+            },
+          })
+        );
+      } else if (layerType === "MVTLayer") {
+        layers.push(
+          new MVTLayer({
+            id: "configure-preview-mvt",
+            data: layer.url,
+            minZoom: layer?.minZoom,
+            maxZoom: layer?.maxNativeZoom || layer?.maxZoom,
+            opacity,
+            pickable: true,
+          })
+        );
+      } else {
+        layers.push(
+          new TileLayer({
+            id: "configure-preview-tile",
+            data: layer.url,
+            minZoom: layer?.minZoom,
+            maxZoom: layer?.maxNativeZoom || layer?.maxZoom,
+            opacity,
+            tileSize: 256,
+            renderSubLayers: (props) => {
+              const bbox = props.tile.bbox;
+              return new BitmapLayer({
+                ...props,
+                data: undefined,
+                image: props.data,
+                bounds: [bbox.west, bbox.south, bbox.east, bbox.north],
+              });
+            },
+          })
+        );
+      }
+    }
+
+    deckRef.current = new Deck({
+      parent: mapRef.current,
+      viewState,
+      onViewStateChange: ({ viewState: nextViewState }) => {
+        setDeckViewState(nextViewState);
+      },
+      controller: true,
+      layers,
+    });
+  };
+
   // Make viewer
   useEffect(() => {
-    InitMap();
-  }, [vector]);
+    if (isDeckGL) InitDeckGL();
+    else InitMap();
+
+    return () => {
+      if (deckRef.current && deckRef.current.finalize) {
+        deckRef.current.finalize();
+        deckRef.current = null;
+      }
+    };
+  }, [isDeckGL, vector, layer?.type, layer?.url]);
 
   return (
     <div className={c.Map}>
       <div className={c.left}>
-        <div id="map" className={c.mapContainer}></div>
+        <div ref={mapRef} className={c.mapContainer}></div>
       </div>
       <div
         className={c.right}
