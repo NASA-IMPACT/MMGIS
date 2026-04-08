@@ -354,6 +354,9 @@ const L_ = {
             nextUrl = nextUrl.slice(4)
             wasCOG = true
         }
+        if (nextUrl != null && nextUrl.startsWith('titiler-url:')) {
+            nextUrl = nextUrl.slice(12)
+        }
         if (!F_.isUrlAbsolute(nextUrl)) {
             nextUrl = L_.missionPath + nextUrl
         }

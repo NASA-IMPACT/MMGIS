@@ -1414,7 +1414,17 @@ async function makeTileLayer(layerObj, mapContext = null) {
                 ).replace(/\/$/g, '')}/titiler/cog/tiles/${
                     layerObj.tileMatrixSet || 'WebMercatorQuad'
                 }/{z}/{x}/{y}.webp?url=${layerUrl}${bandsParam}${resamplingParam}`
-
+                break
+            case 'titiler-url':
+                // Pre-existing TiTiler endpoint URL - just strip the prefix and use as-is
+                // COG parameters will be appended dynamically in getTileUrl middleware
+                splitColonType = splitColonLayerUrl[0]
+                layerUrl = splitColonLayerUrl.slice(1).join(':')
+                // Make URL absolute if needed
+                if (!F_.isUrlAbsolute(layerUrl)) {
+                    layerUrl = L_.missionPath + layerUrl
+                }
+                break
             default:
                 break
         }
