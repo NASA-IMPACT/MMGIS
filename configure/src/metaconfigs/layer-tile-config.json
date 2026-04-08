@@ -181,6 +181,47 @@
       "name": "COG",
       "rows": [
         {
+          "name": "External Service URLs",
+          "subdescription": "Override the default local proxy URLs with external service endpoints. Leave empty to use the local MMGIS proxy.",
+          "components": [
+            {
+              "field": "titilerUrl",
+              "name": "TiTiler URL",
+              "description": "External TiTiler endpoint URL (e.g., https://titiler.example.com). Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "titilerPgStacUrl",
+              "name": "TiTiler-pgSTAC URL",
+              "description": "External TiTiler-pgSTAC endpoint URL for STAC mosaics. Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "stacUrl",
+              "name": "STAC API URL",
+              "description": "External STAC API endpoint URL. Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "tipgUrl",
+              "name": "TiPG URL",
+              "description": "External TiPG (OGC Features/Tiles API) endpoint URL. Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "veloserverUrl",
+              "name": "Veloserver URL",
+              "description": "External Veloserver endpoint URL for wind/velocity data. Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            }
+          ]
+        },
+        {
           "name": "TiTiler Configuration",
           "components": [
             {
