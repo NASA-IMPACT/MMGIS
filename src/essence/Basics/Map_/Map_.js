@@ -424,6 +424,7 @@ let Map_ = {
      */
     rmNotNull: function (layer) {
         if (layer != null) {
+            CursorInfo.hide(true)
             this.engine.removeLayer(this.nativeLayer(layer))
             layer = null
         }
@@ -826,6 +827,32 @@ async function makeLayer(
                 case 'video':
                     makeVideoLayer(layerObj, mapContext)
                     break
+                case 'GeoJsonLayer':
+                case 'ScatterplotLayer':
+                case 'PathLayer':
+                case 'PolygonLayer':
+                case 'IconLayer':
+                case 'TextLayer':
+                    await makeVectorLayer(
+                        layerObj,
+                        evenIfOff,
+                        null,
+                        forceGeoJSON,
+                        isRefresh,
+                        mapContext
+                    )
+                    break
+                case 'TileLayer':
+                case 'BitmapLayer':
+                    makeTileLayer(layerObj, mapContext)
+                    break
+                case 'MVTLayer':
+                    makeVectorTileLayer(layerObj, mapContext)
+                    break
+                case 'PointCloudLayer':
+                case 'Tile3DLayer':
+                    makeTileLayer(layerObj, mapContext)
+                    break
                 default:
                     console.warn('Unknown layer type: ' + layerObj.type)
             }
@@ -1017,6 +1044,44 @@ async function makeVectorLayer(
             )
 
         function add(data, allowInvalid) {
+            if (
+                Map_.engine &&
+                Map_.engine.engineType === MAP_ENGINE.DECKGL &&
+                layerObj.type === 'ScatterplotLayer'
+            ) {
+                if (data == null || data === 'off') {
+                    L_._layersLoaded[
+                        L_._layersOrdered.indexOf(layerObj.name)
+                    ] = true
+                    ctx.layerRegistry.layer[layerObj.name] =
+                        data == null ? null : false
+                    allLayersLoaded()
+                    resolve()
+                    return
+                }
+
+                layerObj.style = layerObj.style || {}
+                layerObj.style.opacity =
+                    ctx.layerRegistry.opacity[layerObj.name] || 1
+                ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
+                    layerObj.name,
+                    {
+                        type: layerObj.type,
+                        data,
+                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        style: layerObj.style || {},
+                        variables: layerObj.variables || {},
+                        interactive: true,
+                    }
+                )
+                L_._layersLoaded[
+                    L_._layersOrdered.indexOf(layerObj.name)
+                ] = true
+                allLayersLoaded()
+                resolve()
+                return
+            }
+
             data = F_.parseIntoGeoJSON(data)
 
             let invalidGeoJSONTrace = gjv.valid(data, true)
@@ -1090,10 +1155,11 @@ async function makeVectorLayer(
                 ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
-                        type: 'vector',
+                        type: layerObj.type || 'vector',
                         geojson: data,
                         opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
                         style: layerObj.style || {},
+                        variables: layerObj.variables || {},
                         interactive: true,
                     }
                 )
@@ -1369,10 +1435,14 @@ async function makeTileLayer(layerObj, mapContext = null) {
         return expression.replace(/(?<!\w)([bB])(\d+)/g, 'asset_$1$2')
     }
 
-    let layerUrl = L_.getUrl(layerObj.type, layerObj.url, layerObj)
+    const tileLevel = getActiveTileLevel(layerObj)
+    const tileLevelUrl = getTileLevelUrl(tileLevel)
+    const tileElevation = getTileLevelElevation(tileLevel)
+    const sourceUrl = tileLevelUrl || layerObj.url
+    let layerUrl = L_.getUrl(layerObj.type, sourceUrl, layerObj)
 
     let splitColonType
-    const splitColonLayerUrl = layerObj.url.split(':')
+    const splitColonLayerUrl = sourceUrl.split(':')
     if (splitColonLayerUrl[1] != null) {
         let bandsParam = ''
         let b
@@ -1442,12 +1512,13 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
-            type: 'tile',
+            type: layerObj.type || 'tile',
             url: layerUrl,
             opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
+            tileElevation,
         })
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
@@ -1549,6 +1620,39 @@ async function makeTileLayer(layerObj, mapContext = null) {
     allLayersLoaded()
 }
 
+function getActiveTileLevel(layerObj) {
+    const levels = layerObj.variables?.tileLevels
+    if (!Array.isArray(levels) || levels.length === 0) return null
+
+    const selected =
+        layerObj.currentTileLevel ??
+        layerObj.variables?.defaultTileLevel ??
+        getTileLevelKey(levels[0], 0)
+
+    return (
+        levels.find((level, index) => getTileLevelKey(level, index) == selected) ||
+        levels[0]
+    )
+}
+
+function getTileLevelKey(level, index) {
+    if (level == null || typeof level !== 'object') return String(level ?? index)
+    return String(level.value ?? level.id ?? level.name ?? level.label ?? index)
+}
+
+function getTileLevelUrl(level) {
+    if (level == null || typeof level !== 'object') return null
+    return typeof level.url === 'string' && level.url.length > 0
+        ? level.url
+        : null
+}
+
+function getTileLevelElevation(level) {
+    if (level == null || typeof level !== 'object') return undefined
+    const elevation = Number(level.height ?? level.elevation ?? level.z)
+    return Number.isFinite(elevation) ? elevation : undefined
+}
+
 function makeVectorTileLayer(layerObj, mapContext = null) {
     // Default to main map context for backward compatibility
     const ctx = mapContext || {
@@ -1564,6 +1668,40 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             `${window.mmgisglobal.ROOT_PATH || ''}/api/geodatasets/get?layer=${
                 urlSplit[1]
             }` + '&type=mvt&x={x}&y={y}&z={z}'
+    }
+
+    if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+        ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
+            type: layerObj.type || 'vectortile',
+            url: layerUrl,
+            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            minZoom: parseInt(layerObj.minZoom),
+            maxNativeZoom: parseInt(layerObj.maxNativeZoom),
+            maxZoom: parseInt(layerObj.maxZoom),
+            style: layerObj.style || {},
+            interactive: true,
+            nativeOptions: {
+                autoHighlight: layerObj.style?.hoverHighlight === true,
+                onHover: (info) => {
+                    const properties = info?.object?.properties
+                    const vtKey = layerObj.style?.vtKey
+
+                    if (properties == null || vtKey == null || properties[vtKey] == null) {
+                        CursorInfo.hide(true)
+                        return
+                    }
+
+                    CursorInfo.update(
+                        vtKey + ': ' + properties[vtKey],
+                        null,
+                        false
+                    )
+                },
+            },
+        })
+        L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+        allLayersLoaded()
+        return
     }
 
     var bb = null
