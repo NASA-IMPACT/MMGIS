@@ -10,7 +10,7 @@ module.exports = {
       minor: "3396190",
     },
     mapscale: "",
-    mapEngine: "leaflet",
+    mapEngine: "deckgl",
   },
   projection: {
     custom: false,
