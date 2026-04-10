@@ -1,0 +1,16 @@
+{
+    "defaultIcon": "information-variant",
+    "description": "Display mission icon and title from the mission config file.",
+    "descriptionFull": {
+        "title": "Title Tool",
+        "example": {
+            "sortAlphabetically": true
+        }
+    },
+    "hasVars": true,
+    "name": "Title",
+    "toolbarPriority": 3,
+    "paths": {
+        "TitleTool": "essence/Tools/Title/TitleTool"
+    }
+}
