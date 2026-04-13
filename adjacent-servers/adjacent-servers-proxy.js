@@ -101,33 +101,32 @@ function initAdjacentServersProxy(app, isDocker, ensureAdmin) {
 
   //// Generic CORS Proxy
   // Routes any external https:// URL through the server to bypass browser CORS restrictions.
-  // Primarily needed for local dev. In production behind HTTPS, most public APIs allow CORS.
-  // To remove: add a NODE_ENV=development guard here and revert the getUrl rewrite in Layers_.js.
-  app.use(
-    `${process.env.ROOT_PATH || ""}/corsproxy`,
-    ensureAdmin(false, false, true), // allow all GETs
-    createProxyMiddleware({
-      changeOrigin: true,
-      router: (req) => {
-        try {
-          const targetUrl = req.url.replace(/^\//, "");
-          return new URL(targetUrl).origin;
-        } catch {
-          return "http://localhost";
-        }
-      },
-      pathRewrite: (path) => {
-        try {
-          const targetUrl = path.replace(/^\//, "");
-          const parsed = new URL(targetUrl);
-          return parsed.pathname + parsed.search;
-        } catch {
-          return path;
-        }
-      },
-    })
-  );
-
+  if (process.env.NODE_ENV === "development") {
+    app.use(
+      `${process.env.ROOT_PATH || ""}/corsproxy`,
+      ensureAdmin(false, false, true), // allow all GETs
+      createProxyMiddleware({
+        changeOrigin: true,
+        router: (req) => {
+          try {
+            const targetUrl = req.url.replace(/^\//, "");
+            return new URL(targetUrl).origin;
+          } catch {
+            return "http://localhost";
+          }
+        },
+        pathRewrite: (path) => {
+          try {
+            const targetUrl = path.replace(/^\//, "");
+            const parsed = new URL(targetUrl);
+            return parsed.pathname + parsed.search;
+          } catch {
+            return path;
+          }
+        },
+      })
+    );
+  }
 
   // Veloserver
   if (process.env.WITH_VELOSERVER === "true") {
