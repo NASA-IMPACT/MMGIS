@@ -81,7 +81,6 @@ const modern = {
     },
 
 
-
     /**
      * Render the modern interface HTML
      */
@@ -142,6 +141,10 @@ const modern = {
 
         const layoutStyle = modern.configData.panelSettings?.layoutStyle || 'overlay'
 
+        L_.Coordinates = Coordinates
+        L_.UserInterface_ = UserInterfaceModern_
+        L_.TimeControl = TimeControl
+
         // Initialize the User Interface with the sorted panels from PanelManager
         UserInterfaceModern_.init(activePanels, layoutStyle)
 
@@ -159,7 +162,7 @@ const modern = {
             Viewer_.fina(Map_)
             TimeControl.fina() // Disabled for modern layout; relies on classic DOM
         })
-        // Coordinates.init()
+        Coordinates.init()
         ContextMenu.init()
 
         //Make the time control
