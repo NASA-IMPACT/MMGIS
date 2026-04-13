@@ -8,8 +8,8 @@ function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
     return adapter
 }
 
-function makeLayer(id) {
-    return { id, clone: () => makeLayer(id) }
+function makeLayer(id, props = {}) {
+    return { id, ...props, clone: (overrides = {}) => makeLayer(id, { ...props, ...overrides }) }
 }
 
 test.describe('DeckGLAdapter', () => {
@@ -141,6 +141,36 @@ test.describe('DeckGLAdapter', () => {
             adapter.bringToBack('c')
             const ids = adapter.getLayers().map((l) => l.id)
             expect(ids[0]).toBe('c')
+        })
+
+        test('updateLayer with visible:false keeps layer in registry', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('toggle-layer'))
+            adapter.updateLayer('toggle-layer', { visible: false })
+            expect(adapter.hasLayer('toggle-layer')).toBe(true)
+        })
+
+        test('updateLayer with visible:false sets visible prop on the stored layer', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('toggle-layer'))
+            adapter.updateLayer('toggle-layer', { visible: false })
+            const stored = adapter.getLayers().find((l) => l.id === 'toggle-layer')
+            expect(stored.visible).toBe(false)
+        })
+
+        test('addLayer after updateLayer visible:false restores original layer', () => {
+            const adapter = makeAdapter()
+            const original = makeLayer('toggle-layer')
+            adapter.addLayer(original)
+            adapter.updateLayer('toggle-layer', { visible: false })
+            adapter.addLayer(original)
+            const stored = adapter.getLayers().find((l) => l.id === 'toggle-layer')
+            expect(stored.visible).toBeUndefined()
+        })
+
+        test('updateLayer on unknown id returns undefined without throwing', () => {
+            const adapter = makeAdapter()
+            expect(adapter.updateLayer('nonexistent', { visible: false })).toBeUndefined()
         })
     })
 
