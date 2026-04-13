@@ -1,5 +1,5 @@
-import { ToolOrientation, ToolMetadata } from '../ToolController_/types/tool';
-import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE } from './types/layout';
+import { ToolMetadata } from '../ToolController_/types/tool';
+import { PanelPosition, PanelState, PANEL_STATE } from './types/layout';
 import { PanelConfig, PanelStateObject, PanelManager as PanelManagerInterface } from './types/panel';
 
 class PanelManager implements PanelManagerInterface {
@@ -24,6 +24,7 @@ class PanelManager implements PanelManagerInterface {
             config: config,
             containerId: `panel-${config.id}`,
             tools: [],
+            toolsMetadata: [],
             toolInstances: {},
         };
 
@@ -58,6 +59,10 @@ class PanelManager implements PanelManagerInterface {
         }
 
         panel.tools.push(toolMetadata.id);
+
+        // Store tool metadata for rendering (toolsMetadata is always initialized in registerPanel)
+        panel.toolsMetadata.push(toolMetadata);
+
         if (toolInstance) {
             if (!panel.toolInstances) {
                 panel.toolInstances = {};
@@ -79,6 +84,17 @@ class PanelManager implements PanelManagerInterface {
      */
     getPanelState(panelId: string): PanelStateObject | undefined {
         return this.panels.get(panelId);
+    }
+
+    /**
+     * Get tool metadata for all tools in a panel.
+     *
+     * @param panelId Panel identifier
+     * @returns Array of tool metadata or empty array if panel not found
+     */
+    getToolsForPanel(panelId: string): ToolMetadata[] {
+        const panel = this.panels.get(panelId);
+        return panel?.toolsMetadata || [];
     }
 
     /**

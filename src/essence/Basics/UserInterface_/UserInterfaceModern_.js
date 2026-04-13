@@ -1,5 +1,6 @@
 import $ from 'jquery'
 import PanelManager_ from '../PanelManager_/PanelManager_'
+import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import './UserInterfaceModern_.css'
 
 /**
@@ -9,6 +10,16 @@ import './UserInterfaceModern_.css'
  * the structured array of active panels.
  */
 const UserInterfaceModern_ = {
+    /**
+     * Queue of tool loading functions to be called after DOM is fully rendered
+     */
+    _toolLoadQueue: [],
+
+    /**
+     * Bound event listener function for proper cleanup
+     */
+    _boundSyncDOMState: null,
+
     /**
      * Initializes the modern layout.
      * @param {Array} panels - Array of panel objects (parsed from config & PanelManager)
@@ -20,21 +31,148 @@ const UserInterfaceModern_ = {
         this.render()
 
         if (!this._layoutEventListenerAdded) {
-            window.addEventListener('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+            this._boundSyncDOMState = this.syncDOMState.bind(this)
+            window.addEventListener('mmgis-panel-layout-changed', this._boundSyncDOMState)
             this._layoutEventListenerAdded = true
         }
     },
 
     /**
-     * TODO: Use tool metadata to render actual tools and not just placeholders
-     * Creates a single tool card for stacked layout
-     * @param {string} toolName - Name of the tool
-     * @returns {jQuery} Tool card element
+     * Destroy the modern UI and clean up all loaded tools
      */
-    createToolCard: function (toolName) {
-        return $(`<div class="ui-tool-card ui-tool-card-stacked" data-tool="${toolName}"></div>`)
-            .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
-            .append($('<span class="ui-tool-title"></span>').text(toolName))
+    destroy: function () {
+        ToolControllerModern_.destroyAllTools()
+        this._toolLoadQueue = [] // Clear any pending loads
+        if (this._layoutEventListenerAdded && this._boundSyncDOMState) {
+            window.removeEventListener('mmgis-panel-layout-changed', this._boundSyncDOMState)
+            this._boundSyncDOMState = null
+            this._layoutEventListenerAdded = false
+        }
+        $('#modern-content').empty()
+        this.panels = []
+    },
+
+    /**
+     * Validates tool metadata has required fields
+     * @param {Object} toolMetadata - Tool metadata object to validate
+     * @throws {Error} If required fields are missing
+     */
+    validateToolMetadata: function (toolMetadata) {
+        if (!toolMetadata) {
+            throw new Error('[UserInterfaceModern] Tool metadata is null or undefined')
+        }
+        if (!toolMetadata.id) {
+            throw new Error('[UserInterfaceModern] Tool metadata missing required field: id')
+        }
+        if (!toolMetadata.name) {
+            throw new Error(`[UserInterfaceModern] Tool metadata missing required field: name (id: ${toolMetadata.id})`)
+        }
+    },
+
+    /**
+     * Validates and sanitizes tool icon class name
+     * Automatically adds "mdi mdi-" prefix if user only provides icon name
+     *
+     * Examples:
+     *   "layers" -> "mdi mdi-layers"
+     *   "format-list-bulleted-type" -> "mdi mdi-format-list-bulleted-type"
+     *   "mdi mdi-map" -> "mdi mdi-map" (already formatted)
+     *   "fas fa-home" -> "fas fa-home" (other icon library)
+     *
+     * @param {string} iconClass - Icon class name or just icon name
+     * @param {string} toolId - Tool ID for logging purposes
+     * @returns {string} Valid icon class name
+     */
+    getValidIconClass: function (iconClass, toolId) {
+        const defaultIcon = 'mdi mdi-view-dashboard'
+
+        // Check if iconClass is a non-empty string
+        if (!iconClass || typeof iconClass !== 'string' || iconClass.trim() === '') {
+            if (window.mmgisglobal?.debug) {
+                console.warn(`[UserInterfaceModern] Invalid icon class for tool "${toolId}", using default`)
+            }
+            return defaultIcon
+        }
+
+        const trimmed = iconClass.trim()
+
+        // Basic validation: should contain only valid CSS class characters
+        if (!/^[\w\s-]+$/.test(trimmed)) {
+            console.warn(`[UserInterfaceModern] Invalid icon class format for tool "${toolId}": "${iconClass}", using default`)
+            return defaultIcon
+        }
+
+        // If it's already a full MDI class (starts with "mdi mdi-"), pass it through
+        if (trimmed.startsWith('mdi mdi-')) {
+            return trimmed
+        }
+
+        // If it's another icon library (Font Awesome, etc.), pass it through
+        if (/^(fas|far|fal|fab|fa|glyphicon)\s+/.test(trimmed)) {
+            return trimmed
+        }
+
+        // If it's just the icon name (e.g., "layers", "format-list-bulleted-type"), add MDI prefix
+        // Valid icon names: lowercase letters, numbers, and hyphens
+        if (/^[a-z0-9-]+$/.test(trimmed)) {
+            return `mdi mdi-${trimmed}`
+        }
+
+        // Handle legacy formats and fix them
+        // "mdiLayers" -> "mdi mdi-layers"
+        if (/^mdi[A-Z]/.test(trimmed)) {
+            const iconName = trimmed
+                .substring(3)
+                .replace(/([A-Z])/g, '-$1')
+                .toLowerCase()
+                .replace(/^-/, '')
+            console.warn(`[UserInterfaceModern] Auto-fixed icon for tool "${toolId}": "${iconClass}" -> "mdi mdi-${iconName}"`)
+            return `mdi mdi-${iconName}`
+        }
+
+        // "mdi-layers" -> "mdi mdi-layers"
+        if (/^mdi-[a-z0-9-]+$/.test(trimmed)) {
+            console.warn(`[UserInterfaceModern] Auto-fixed icon for tool "${toolId}": "${iconClass}" -> "mdi ${trimmed}"`)
+            return `mdi ${trimmed}`
+        }
+
+        // Anything else that doesn't match expected patterns - use default
+        console.warn(`[UserInterfaceModern] Unknown icon format for tool "${toolId}": "${iconClass}", using default`)
+        return defaultIcon
+    },
+
+    /**
+     * Creates a single tool card for stacked layout (tool loading happens after DOM append)
+     * @param {Object} toolMetadata - Tool metadata object
+     * @param {string} panelId - Panel ID for generating unique tool container ID
+     * @returns {Object} Object with toolCard element and load function
+     * @throws {Error} If toolMetadata is invalid or panelId is missing
+     */
+    createToolCard: function (toolMetadata, panelId) {
+        this.validateToolMetadata(toolMetadata)
+
+        if (!panelId) {
+            throw new Error('[UserInterfaceModern] panelId is required for createToolCard')
+        }
+
+        const toolId = toolMetadata.id
+        const targetId = `${panelId}-tool-${toolId}`
+
+        const toolCard = $(`<div class="ui-tool-card ui-tool-card-stacked" data-tool="${toolId}" id="${targetId}"></div>`)
+
+        // Return card and a function to load the tool (called after append)
+        // The load function checks if DOM element still exists before loading
+        return {
+            toolCard: toolCard,
+            loadTool: () => {
+                const $target = $(`#${targetId}`)
+                if ($target.length === 0) {
+                    console.warn(`[UserInterfaceModern] Target element "${targetId}" not found in DOM, skipping tool load`)
+                    return
+                }
+                ToolControllerModern_.loadTool(toolMetadata, targetId)
+            }
+        }
     },
 
     /**
@@ -43,29 +181,62 @@ const UserInterfaceModern_ = {
      * @param {jQuery} body - Panel body element
      */
     renderTabbedLayout: function (panel, body) {
+        if (!panel || !panel.id || !panel.containerId) {
+            console.error('[UserInterfaceModern] Invalid panel object in renderTabbedLayout:', panel)
+            return
+        }
+
         body.addClass('ui-panel-body-tabbed')
 
         const tabBar = $('<div class="ui-panel-tabs"></div>')
         const tabContentArea = $('<div class="ui-panel-tab-content-area"></div>')
 
-        panel.tools.forEach((toolName, idx) => {
-            const isActive = idx === 0 ? 'active' : ''
+        // Get tool metadata from PanelManager
+        let toolsMetadata = []
+        try {
+            toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+        } catch (error) {
+            console.error(`[UserInterfaceModern] Failed to get tools for panel "${panel.id}":`, error)
+            return
+        }
 
-            // Create tab
-            const tab = $(`<div class="ui-panel-tab ${isActive}" data-tool="${toolName}"></div>`)
-                .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
-                .append($('<span></span>').text(toolName))
-            tabBar.append(tab)
+        toolsMetadata.forEach((toolMetadata, idx) => {
+            try {
+                this.validateToolMetadata(toolMetadata)
 
-            // Create tab content placeholder
-            // TODO: Use actual tool metadata to render real content instead of placeholders
-            const toolCard = $(`<div class="ui-tool-card ui-tool-tab-content ${isActive}" data-tool="${toolName}"></div>`)
-            const cardContent = $('<div style="margin: auto; text-align: center;"></div>')
-                .append('<span class="ui-tool-icon mdi mdi-view-dashboard" style="font-size: 2rem; display: block;"></span>')
-                .append($('<span class="ui-tool-title"></span>').text(`${toolName} Content Placeholder`))
-            toolCard.append(cardContent)
-            tabContentArea.append(toolCard)
+                const toolName = toolMetadata.name || toolMetadata.id
+                const toolId = toolMetadata.id
+                const isActive = idx === 0 ? 'active' : ''
+                const targetId = `${panel.containerId}-tool-${toolId}`
+
+                // Create tab
+                const iconClass = this.getValidIconClass(toolMetadata.icon, toolId)
+                const tab = $(`<div class="ui-panel-tab ${isActive}" data-tool="${toolId}"></div>`)
+                    .append(`<span class="ui-tool-icon ${iconClass}"></span>`)
+                    .append($('<span></span>').text(toolName))
+                tabBar.append(tab)
+
+                // Create tab content container
+                const toolCard = $(`<div class="ui-tool-card ui-tool-tab-content ${isActive}" data-tool="${toolId}" id="${targetId}"></div>`)
+                tabContentArea.append(toolCard)
+
+                // Queue tool loading for after DOM is fully rendered
+                // Check if DOM element still exists before loading
+                this._toolLoadQueue.push(() => {
+                    const $target = $(`#${targetId}`)
+                    if ($target.length === 0) {
+                        console.warn(`[UserInterfaceModern] Target element "${targetId}" not found in DOM, skipping tool load`)
+                        return
+                    }
+                    ToolControllerModern_.loadTool(toolMetadata, targetId)
+                })
+            } catch (error) {
+                console.error(`[UserInterfaceModern] Failed to render tool in tabbed layout (panel: ${panel.id}):`, error)
+                // Skip this tool and continue with others
+            }
         })
+
+        body.append(tabBar).append(tabContentArea)
 
         // Bind tab click events
         tabBar.on('click', '.ui-panel-tab', function () {
@@ -80,8 +251,6 @@ const UserInterfaceModern_ = {
             tabContentArea.find('.ui-tool-tab-content').removeClass('active')
             tabContentArea.find(`.ui-tool-tab-content[data-tool="${targetTool}"]`).addClass('active')
         })
-
-        body.append(tabBar).append(tabContentArea)
     },
 
     /**
@@ -90,8 +259,30 @@ const UserInterfaceModern_ = {
      * @param {jQuery} body - Panel body element
      */
     renderStackedLayout: function (panel, body) {
-        panel.tools.forEach(toolName => {
-            body.append(this.createToolCard(toolName))
+        if (!panel || !panel.id || !panel.containerId) {
+            console.error('[UserInterfaceModern] Invalid panel object in renderStackedLayout:', panel)
+            return
+        }
+
+        // Get tool metadata from PanelManager
+        let toolsMetadata = []
+        try {
+            toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+        } catch (error) {
+            console.error(`[UserInterfaceModern] Failed to get tools for panel "${panel.id}":`, error)
+            return
+        }
+
+        toolsMetadata.forEach(toolMetadata => {
+            try {
+                const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId)
+                body.append(toolCard)
+                // Queue tool loading for after DOM is fully rendered
+                this._toolLoadQueue.push(loadTool)
+            } catch (error) {
+                console.error(`[UserInterfaceModern] Failed to render tool in stacked layout (panel: ${panel.id}):`, error)
+                // Skip this tool and continue with others
+            }
         })
     },
 
@@ -125,6 +316,9 @@ const UserInterfaceModern_ = {
     render: function () {
         const container = $('#modern-content')
         container.empty()
+
+        // Clear the tool load queue (start fresh)
+        this._toolLoadQueue = []
 
         // Create the main grid wrapper
         const gridWrapper = $('<div class="ui-modern-grid"></div>')
@@ -189,17 +383,29 @@ const UserInterfaceModern_ = {
 
                 // Create the icons bar for iconified/focused state
                 const iconsContainer = $('<div class="ui-panel-icons"></div>')
-                if (panel.tools && panel.tools.length > 0) {
-                    panel.tools.forEach(toolName => {
-                        const iconBtn = $(`<button class="ui-panel-icon-btn" title="${toolName}" data-tool="${toolName}"><span class="mdi mdi-view-dashboard"></span></button>`)
-                        iconBtn.on('click', () => {
-                            if (panel.state === 'focused' && panel.activeToolId === toolName) {
-                                PanelManager_.setPanelState(panel.id, 'iconified')
-                            } else {
-                                PanelManager_.focusTool(panel.id, toolName)
-                            }
-                        })
-                        iconsContainer.append(iconBtn)
+                const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+
+                if (toolsMetadata.length > 0) {
+                    toolsMetadata.forEach(toolMetadata => {
+                        try {
+                            this.validateToolMetadata(toolMetadata)
+
+                            const toolName = toolMetadata.name || toolMetadata.id
+                            const toolId = toolMetadata.id
+                            const iconClass = this.getValidIconClass(toolMetadata.icon, toolId)
+                            const iconBtn = $(`<button class="ui-panel-icon-btn" title="${toolName}" data-tool="${toolId}"><span class="${iconClass}"></span></button>`)
+                            iconBtn.on('click', () => {
+                                if (panel.state === 'focused' && panel.activeToolId === toolId) {
+                                    PanelManager_.setPanelState(panel.id, 'iconified')
+                                } else {
+                                    PanelManager_.focusTool(panel.id, toolId)
+                                }
+                            })
+                            iconsContainer.append(iconBtn)
+                        } catch (error) {
+                            console.error(`[UserInterfaceModern] Failed to create icon button for tool in panel "${panel.id}":`, error)
+                            // Skip this icon and continue with others
+                        }
                     })
                 }
                 panelDiv.append(iconsContainer)
@@ -283,22 +489,27 @@ const UserInterfaceModern_ = {
 
         container.append(gridWrapper)
 
-        // Initialize active tools correctly
-        this.panels.forEach(panel => {
-            const $panel = $('#' + panel.containerId)
-            if (panel.activeToolId && panel.state === 'focused') {
-                $panel.find('.ui-panel-icon-btn').removeClass('active')
-                $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
-                $panel.find('.ui-tool-card').removeClass('active')
-                $panel.find(`.ui-tool-card[data-tool="${panel.activeToolId}"]`).addClass('active')
-            } else {
-                // Remove active highlighting when not focused
-                $panel.find('.ui-panel-icon-btn').removeClass('active')
+        // Now that all DOM is in place, load all queued tools
+        if (this._toolLoadQueue.length > 0) {
+            if (window.mmgisglobal?.debug) {
+                console.log(`[UserInterfaceModern] Loading ${this._toolLoadQueue.length} queued tools`)
             }
-        })
+            const queue = this._toolLoadQueue;
+            this._toolLoadQueue = [] // Clear the queue
+            setTimeout(() => {
+                queue.forEach(loadFn => {
+                    try {
+                        loadFn()
+                    } catch (error) {
+                        console.error('[UserInterfaceModern] Failed to load tool:', error)
+                        // Continue loading other tools even if one fails
+                    }
+                })
+            }, 0)
+        }
 
         this.attachResizeEvents()
-        
+
         // Ensure panels get their explicit dimensions applied on mount
         this.syncDOMState()
     },

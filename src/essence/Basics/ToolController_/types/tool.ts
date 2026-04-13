@@ -1,6 +1,4 @@
-// TODO: Move this file to a separate directory (e.g. closer to ToolController) when refactoring tools.
-
-import { PanelPosition } from './layout';
+import { PanelPosition } from '../../PanelManager_/types/layout';
 
 /**
  * Tool orientation requirements.
@@ -36,9 +34,15 @@ export interface ToolMetadata {
      * Specific positions this tool is compatible with.
      * If undefined, tool can go in any position (subject to orientation).
      * Example: ['left', 'right'] means tool can only go in side panels.
-     * TODO: Determine if it is necessary to have this definition (will confirm when working on tools)
      */
     compatiblePositions?: PanelPosition[];
+
+    /**
+     * Preferred panel position for fallback assignment.
+     * Used when tool is not explicitly assigned to a panel in dashboard config.
+     * Example: 'top' means tool prefers top panel if available and compatible.
+     */
+    preferredPosition?: PanelPosition;
 
     /**
      * Icon URL or class name for tool icon in iconified state.

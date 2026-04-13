@@ -169,6 +169,12 @@ export interface PanelStateObject {
     tools: string[];
 
     /**
+     * Tool metadata for each tool in this panel.
+     * Stored for quick access during rendering.
+     */
+    toolsMetadata?: ToolMetadata[];
+
+    /**
      * Which tool is currently focused or active.
      * - In 'focused' state: tracks which single tool is open.
      * - In 'expanded' state with 'tabbed' layout: tracks the currently active tab.
@@ -222,6 +228,14 @@ export interface PanelManager {
      * @returns Panel state or undefined if not found
      */
     getPanelState(panelId: string): PanelStateObject | undefined;
+
+    /**
+     * Get tool metadata for all tools in a panel.
+     *
+     * @param panelId Panel identifier
+     * @returns Array of tool metadata or empty array if panel not found
+     */
+    getToolsForPanel(panelId: string): ToolMetadata[];
 
     /**
      * Change a panel's visual state.
