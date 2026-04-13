@@ -131,7 +131,7 @@ const NewMissionModal = (props) => {
   const [missionName, setMissionName] = useState("");
   const [createDir, setCreateDir] = useState(true);
   const [selectedPlanet, setSelectedPlanet] = useState("Earth");
-  const [selectedEngine, setSelectedEngine] = useState("deckgl");
+  const [selectedEngine, setSelectedEngine] = useState("leaflet");
   const [basemapProvider, setBasemapProvider] = useState("none");
   const [basemapStyle, setBasemapStyle] = useState("");
   const [basemapToken, setBasemapToken] = useState("");
