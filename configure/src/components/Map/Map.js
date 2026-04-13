@@ -8,6 +8,7 @@ import { Tiles3DLoader } from "@loaders.gl/3d-tiles";
 import ReactJson from "react-json-view";
 
 import { makeStyles } from "@mui/styles";
+import { applyLayerParamsToUrl } from "../../core/utils";
 
 const useStyles = makeStyles((theme) => ({
   Map: {
@@ -172,7 +173,7 @@ const Map = ({ configuration, layer, vector, clickableFeatures }) => {
         layers.push(
           new TileLayer({
             id: "configure-preview-tile",
-            data: layer.url,
+            data: applyLayerParamsToUrl(layer),
             minZoom: layer?.minZoom,
             maxZoom: layer?.maxNativeZoom || layer?.maxZoom,
             opacity,
@@ -213,7 +214,22 @@ const Map = ({ configuration, layer, vector, clickableFeatures }) => {
         deckRef.current = null;
       }
     };
-  }, [isDeckGL, vector, layer?.type, layer?.url]);
+  // Suppressing the exhaustive-deps warning here because InitMap and InitDeckGL
+  // are recreated every render so adding them to deps would fire this effect on
+  // every render. The vars they close over are already listed below so the
+  // re-run timing is correct as-is.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isDeckGL,
+    vector,
+    layer?.type,
+    layer?.url,
+    layer?.cogColormap,
+    layer?.cogMin,
+    layer?.cogMax,
+    layer?.cogResampling,
+    layer?.cogExpression,
+  ]);
 
   return (
     <div className={c.Map}>
