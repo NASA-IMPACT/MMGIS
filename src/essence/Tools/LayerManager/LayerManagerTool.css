@@ -1,31 +1,32 @@
-/* LayerManagerTool - Tool-level styles */
+/* LayerManagerTool - USWDS/Horizon Design System */
 
 .layer-manager-tool {
     display: flex;
     flex-direction: column;
     height: 100%;
     width: 100%;
-    background: var(--color-k);
-    color: var(--color-l);
-    font-family: 'Lato', sans-serif;
+    background: var(--uswds-white, #ffffff);
+    color: var(--uswds-base-darker, #171c1e);
+    font-family: "Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
-/* Header */
+/* Header - Aligned with USWDS primary color scheme */
 .layer-manager-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 8px 12px;
-    background: var(--color-i);
-    border-bottom: 1px solid var(--color-h);
-    min-height: 40px;
+    padding: 0.75rem 1rem;
+    background: var(--uswds-primary, #005ea2);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    min-height: 48px;
     flex-shrink: 0;
+    box-shadow: 0 1px 3px var(--uswds-shadow, rgba(0, 0, 0, 0.15));
 }
 
 .layer-manager-title {
-    font-size: 14px;
-    font-weight: 500;
-    color: var(--color-f);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--uswds-white, #ffffff);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -33,51 +34,81 @@
 .layer-manager-actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
 }
 
 .layer-manager-action {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     background: transparent;
     border: none;
-    border-radius: 3px;
-    color: var(--color-e);
+    border-radius: 4px;
+    color: var(--uswds-white, #ffffff);
+    opacity: 0.85;
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background-color 0.2s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .layer-manager-action:hover {
-    background: var(--color-j);
-    color: var(--color-f);
+    background: rgba(255, 255, 255, 0.2);
+    opacity: 1;
 }
 
-/* Content area */
+.layer-manager-action:active {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Content area - Modern styling with subtle backdrop */
 .layer-manager-content {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
+    background: var(--modern-bg, #f8f9fa);
 }
 
-/* Loading state */
+/* Custom scrollbar styling for modern look */
+.layer-manager-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.layer-manager-content::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.layer-manager-content::-webkit-scrollbar-thumb {
+    background: var(--uswds-base-dark, #3d4551);
+    border-radius: 4px;
+}
+
+.layer-manager-content::-webkit-scrollbar-thumb:hover {
+    background: var(--uswds-primary, #005ea2);
+}
+
+/* Loading state - Horizon inspired */
 .layer-manager-loading {
     display: flex;
     align-items: center;
     justify-content: center;
     height: 100px;
-    color: var(--color-e);
+    color: var(--uswds-primary, #005ea2);
+    font-weight: 500;
 }
 
 /* Mobile responsive */
 @media (max-width: 768px) {
     .layer-manager-header {
-        padding: 12px 16px;
+        padding: 1rem 1.25rem;
     }
 
     .layer-manager-title {
-        font-size: 16px;
+        font-size: 1rem;
+    }
+
+    .layer-manager-action {
+        width: 36px;
+        height: 36px;
     }
 }

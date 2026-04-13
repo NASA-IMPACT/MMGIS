@@ -1,5 +1,5 @@
-/* LayerLegend Component Styles - Standalone and Portable */
-/* Uses MMGIS CSS variables for theme consistency */
+/* LayerLegend Component Styles - USWDS/Horizon Design System */
+/* Uses USWDS color palette for modern, accessible design */
 
 /* Container for all legends */
 .layer-legend-container {
@@ -10,15 +10,15 @@
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-    background: var(--color-k);
+    background: var(--modern-bg, #f8f9fa);
 }
 
 /* Individual Legend Item */
 .layer-legend {
     display: flex;
     flex-direction: column;
-    background: var(--color-k);
-    border-bottom: 1px solid var(--color-i);
+    background: var(--uswds-white, #ffffff);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
     width: 100%;
 }
 
@@ -31,7 +31,7 @@
     display: flex;
     align-items: center;
     padding: 10px 12px;
-    background: var(--color-k);
+    background: var(--uswds-white, #ffffff);
     min-height: 44px;
     gap: 10px;
 }
@@ -49,7 +49,7 @@
     height: 18px;
     margin: 0;
     cursor: pointer;
-    accent-color: var(--color-a);
+    accent-color: var(--uswds-primary, #005ea2);
     border-radius: 3px;
 }
 
@@ -63,8 +63,8 @@
 
 .layer-legend-title {
     font-size: 14px;
-    font-weight: 400;
-    color: var(--color-f);
+    font-weight: 500;
+    color: var(--uswds-base-darker, #171c1e);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -73,7 +73,7 @@
 
 .layer-legend-type {
     font-size: 10px;
-    color: var(--color-e);
+    color: var(--uswds-base-dark, #3d4551);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -93,26 +93,27 @@
     height: 28px;
     background: transparent;
     border: none;
-    border-radius: 3px;
-    color: var(--color-e);
+    border-radius: 4px;
+    color: var(--uswds-base-dark, #3d4551);
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition: background-color 0.2s cubic-bezier(0.2, 0, 0, 1), color 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .layer-legend-action-btn:hover {
-    background: var(--color-i);
-    color: var(--color-f);
+    background: rgba(0, 94, 162, 0.1);
+    color: var(--uswds-primary, #005ea2);
 }
 
 .layer-legend-action-btn.active {
-    color: var(--color-a);
+    color: var(--uswds-primary, #005ea2);
+    background: rgba(0, 94, 162, 0.15);
 }
 
 /* Legend Body (expandable description) */
 .layer-legend-body {
     padding: 8px 12px 8px 40px;
-    background: var(--color-k);
-    color: var(--color-l);
+    background: var(--uswds-white, #ffffff);
+    color: var(--uswds-base-darker, #171c1e);
     font-size: 12px;
     line-height: 1.5;
     max-height: 120px;
@@ -131,34 +132,35 @@
     padding: 4px 8px;
     margin: 0 12px 8px 40px;
     background: transparent;
-    border: 1px solid var(--color-h);
-    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
     cursor: pointer;
     width: fit-content;
-    color: var(--color-f);
+    color: var(--uswds-base-darker, #171c1e);
     font-size: 13px;
+    transition: border-color 0.2s, background-color 0.2s;
 }
 
 .layer-legend-unit-selector:hover {
-    border-color: var(--color-g);
-    background: var(--color-i);
+    border-color: var(--uswds-primary, #005ea2);
+    background: rgba(0, 94, 162, 0.05);
 }
 
 .layer-legend-unit-value {
-    font-weight: 400;
+    font-weight: 500;
 }
 
 /* Unit label shown below the legend */
 .layer-legend-unit-label {
     padding: 4px 12px 8px 40px;
     font-size: 12px;
-    color: var(--color-e);
+    color: var(--uswds-base-dark, #3d4551);
 }
 
 /* Legend Content (graphics area) */
 .layer-legend-content {
     padding: 0 12px 12px 40px;
-    background: var(--color-k);
+    background: var(--uswds-white, #ffffff);
 }
 
 /* Gradient Graphic Styles */
@@ -203,20 +205,21 @@
     height: 28px;
     background: transparent;
     border: none;
-    border-radius: 3px;
-    color: var(--color-e);
+    border-radius: 4px;
+    color: var(--uswds-base-dark, #3d4551);
     cursor: pointer;
     flex-shrink: 0;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition: background-color 0.2s cubic-bezier(0.2, 0, 0, 1), color 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .gradient-expand-btn:hover {
-    background: var(--color-i);
-    color: var(--color-f);
+    background: rgba(0, 94, 162, 0.1);
+    color: var(--uswds-primary, #005ea2);
 }
 
 .gradient-expand-btn.active {
-    color: var(--color-a);
+    color: var(--uswds-primary, #005ea2);
+    background: rgba(0, 94, 162, 0.15);
 }
 
 .gradient-cog-popover {
@@ -224,10 +227,10 @@
     top: 100%;
     right: 0;
     margin-top: 8px;
-    background: var(--color-j);
-    border: 1px solid var(--color-h);
+    background: var(--uswds-white, #ffffff);
+    border: 1px solid rgba(0, 0, 0, 0.15);
     border-radius: 6px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 4px 16px var(--uswds-shadow, rgba(0, 0, 0, 0.15));
     z-index: 1000;
     min-width: 260px;
 }
@@ -239,9 +242,9 @@
     right: 10px;
     width: 10px;
     height: 10px;
-    background: var(--color-j);
-    border-left: 1px solid var(--color-h);
-    border-top: 1px solid var(--color-h);
+    background: var(--uswds-white, #ffffff);
+    border-left: 1px solid rgba(0, 0, 0, 0.15);
+    border-top: 1px solid rgba(0, 0, 0, 0.15);
     transform: rotate(45deg);
 }
 
@@ -259,8 +262,9 @@
 
 .gradient-label {
     font-size: 12px;
-    color: var(--color-l);
+    color: var(--uswds-base-darker, #171c1e);
     line-height: 1.2;
+    font-weight: 500;
 }
 
 .gradient-label.min {
@@ -273,7 +277,7 @@
 
 .gradient-unit {
     font-size: 11px;
-    color: var(--color-e);
+    color: var(--uswds-base-dark, #3d4551);
     text-align: left;
     width: 100%;
     margin-top: 2px;
@@ -382,7 +386,7 @@
 
 .categorical-label {
     font-size: 12px;
-    color: var(--color-l);
+    color: var(--uswds-base-darker, #171c1e);
     line-height: 1.4;
     word-break: break-word;
 }
@@ -394,19 +398,20 @@
     justify-content: center;
     padding: 4px 0;
     cursor: pointer;
-    color: var(--color-e);
+    color: var(--uswds-base-dark, #3d4551);
     font-size: 11px;
     gap: 4px;
+    transition: color 0.2s;
 }
 
 .categorical-toggle:hover {
-    color: var(--color-f);
+    color: var(--uswds-primary, #005ea2);
 }
 
 /* Text legend (minimal) */
 .text-legend {
     font-size: 12px;
-    color: var(--color-l);
+    color: var(--uswds-base-dark, #3d4551);
     font-style: italic;
 }
 
@@ -414,7 +419,7 @@
 .layer-legend-empty {
     padding: 20px;
     text-align: center;
-    color: var(--color-e);
+    color: var(--uswds-base-dark, #3d4551);
     font-size: 13px;
 }
 
@@ -434,14 +439,14 @@
 .layer-legend-container::-webkit-scrollbar-thumb,
 .layer-legend-body::-webkit-scrollbar-thumb,
 .categorical-list::-webkit-scrollbar-thumb {
-    background: var(--color-h);
-    border-radius: 3px;
+    background: var(--uswds-base-dark, #3d4551);
+    border-radius: 4px;
 }
 
 .layer-legend-container::-webkit-scrollbar-thumb:hover,
 .layer-legend-body::-webkit-scrollbar-thumb:hover,
 .categorical-list::-webkit-scrollbar-thumb:hover {
-    background: var(--color-g);
+    background: var(--uswds-primary, #005ea2);
 }
 
 /* COG Settings Toggle */
@@ -450,22 +455,23 @@
     align-items: center;
     gap: 4px;
     padding: 6px 12px 6px 40px;
-    background: var(--color-j);
-    color: var(--color-e);
+    background: rgba(0, 94, 162, 0.05);
+    color: var(--uswds-base-dark, #3d4551);
     font-size: 11px;
     cursor: pointer;
-    border-top: 1px solid var(--color-i);
+    border-top: 1px solid rgba(0, 0, 0, 0.1);
     user-select: none;
+    transition: background-color 0.2s, color 0.2s;
 }
 
 .layer-legend-cog-toggle:hover {
-    background: var(--color-i);
-    color: var(--color-f);
+    background: rgba(0, 94, 162, 0.1);
+    color: var(--uswds-primary, #005ea2);
 }
 
 .layer-legend-cog-content {
     padding: 0;
-    background: var(--color-k);
+    background: var(--uswds-white, #ffffff);
 }
 
 /* Colormap Control Styles */
@@ -488,15 +494,15 @@
     height: 22px;
     background: transparent;
     border: none;
-    border-radius: 3px;
-    color: var(--color-l);
+    border-radius: 4px;
+    color: var(--uswds-base-dark, #3d4551);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .colormap-control-reset:hover {
-    background: var(--color-h);
-    color: var(--color-f);
+    background: rgba(0, 94, 162, 0.1);
+    color: var(--uswds-primary, #005ea2);
 }
 
 .colormap-control-row {
@@ -508,8 +514,9 @@
 
 .colormap-control-label {
     font-size: 12px;
-    color: var(--color-l);
+    color: var(--uswds-base-darker, #171c1e);
     min-width: 60px;
+    font-weight: 500;
 }
 
 .colormap-control-input-group {
@@ -523,49 +530,51 @@
 .colormap-control-select {
     flex: 1;
     max-width: 150px;
-    height: 26px;
+    height: 32px;
     padding: 0 8px;
     font-size: 12px;
-    color: var(--color-f);
-    background: var(--color-i);
-    border: 1px solid var(--color-h);
-    border-radius: 3px;
+    color: var(--uswds-base-darker, #171c1e);
+    background: var(--uswds-white, #ffffff);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
     cursor: pointer;
     outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .colormap-control-select:hover {
-    border-color: var(--color-g);
+    border-color: var(--uswds-primary, #005ea2);
 }
 
 .colormap-control-select:focus {
-    border-color: var(--color-a);
+    border-color: var(--uswds-primary, #005ea2);
+    box-shadow: 0 0 0 2px rgba(0, 94, 162, 0.2);
 }
 
 .colormap-control-reverse {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
-    background: var(--color-i);
-    border: 1px solid var(--color-h);
-    border-radius: 3px;
-    color: var(--color-l);
+    width: 32px;
+    height: 32px;
+    background: var(--uswds-white, #ffffff);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    color: var(--uswds-base-dark, #3d4551);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .colormap-control-reverse:hover {
-    border-color: var(--color-g);
-    color: var(--color-f);
-    background: var(--color-h);
+    border-color: var(--uswds-primary, #005ea2);
+    color: var(--uswds-primary, #005ea2);
+    background: rgba(0, 94, 162, 0.05);
 }
 
 .colormap-control-reverse.active {
-    background: var(--color-a);
-    border-color: var(--color-a);
-    color: white;
+    background: var(--uswds-primary, #005ea2);
+    border-color: var(--uswds-primary, #005ea2);
+    color: var(--uswds-white, #ffffff);
 }
 
 .colormap-control-preview {
@@ -577,28 +586,30 @@
 
 .colormap-control-number {
     width: 80px;
-    height: 26px;
+    height: 32px;
     padding: 0 8px;
     font-size: 12px;
-    color: var(--color-f);
-    background: var(--color-i);
-    border: 1px solid var(--color-h);
-    border-radius: 3px;
+    color: var(--uswds-base-darker, #171c1e);
+    background: var(--uswds-white, #ffffff);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
     outline: none;
     text-align: right;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .colormap-control-number:hover {
-    border-color: var(--color-g);
+    border-color: var(--uswds-primary, #005ea2);
 }
 
 .colormap-control-number:focus {
-    border-color: var(--color-a);
+    border-color: var(--uswds-primary, #005ea2);
+    box-shadow: 0 0 0 2px rgba(0, 94, 162, 0.2);
 }
 
 .colormap-control-units {
     font-size: 11px;
-    color: var(--color-e);
+    color: var(--uswds-base-dark, #3d4551);
     min-width: 30px;
 }
 
@@ -616,10 +627,10 @@
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
-    background: var(--color-j);
-    border: 1px solid var(--color-h);
-    border-radius: 4px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    background: var(--uswds-white, #ffffff);
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px var(--uswds-shadow, rgba(0, 0, 0, 0.15));
     z-index: 1000;
     white-space: nowrap;
 }
@@ -631,9 +642,9 @@
     right: 10px;
     width: 10px;
     height: 10px;
-    background: var(--color-j);
-    border-left: 1px solid var(--color-h);
-    border-top: 1px solid var(--color-h);
+    background: var(--uswds-white, #ffffff);
+    border-left: 1px solid rgba(0, 0, 0, 0.15);
+    border-top: 1px solid rgba(0, 0, 0, 0.15);
     transform: rotate(45deg);
 }
 
@@ -642,7 +653,7 @@
     height: 4px;
     -webkit-appearance: none;
     appearance: none;
-    background: var(--color-h);
+    background: var(--uswds-base-light, #f0f0f0);
     border-radius: 2px;
     outline: none;
     cursor: pointer;
@@ -651,30 +662,34 @@
 .layer-legend-opacity-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 14px;
-    height: 14px;
-    background: var(--color-a);
+    width: 16px;
+    height: 16px;
+    background: var(--uswds-primary, #005ea2);
     border-radius: 50%;
     cursor: pointer;
-    transition: transform 0.1s ease;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .layer-legend-opacity-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.1);
+    transform: scale(1.15);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
 .layer-legend-opacity-slider::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-    background: var(--color-a);
+    width: 16px;
+    height: 16px;
+    background: var(--uswds-primary, #005ea2);
     border-radius: 50%;
     cursor: pointer;
     border: none;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .layer-legend-opacity-value {
     font-size: 12px;
-    color: var(--color-l);
+    color: var(--uswds-base-darker, #171c1e);
     min-width: 32px;
     text-align: right;
+    font-weight: 500;
 }
