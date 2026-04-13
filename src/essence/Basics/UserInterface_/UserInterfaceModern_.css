@@ -116,7 +116,6 @@
 }
 
 .ui-panel-body {
-    padding: 1rem;
     flex: 1;
     display: flex;
     gap: 0.75rem;
@@ -126,10 +125,6 @@
 /* Tool Cards - Base Styles (shared by stacked and tabbed) */
 .ui-tool-card {
     background-color: var(--uswds-white);
-    border: var(--modern-border);
-    border-radius: 4px;
-    padding: 0.75rem 1rem;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
 /* Stacked Tool Cards (default clickable cards in panel body) */
