@@ -374,8 +374,7 @@ const L_ = {
                 nextUrl = `/${nextUrl}`
             }
         }
-        // Route cross-origin absolute URLs through the generic CORS proxy
-        if (F_.isUrlAbsolute(nextUrl)) {
+        if (process.env.NODE_ENV === 'development' && F_.isUrlAbsolute(nextUrl)) {
             try {
                 if (new URL(nextUrl).origin !== window.location.origin) {
                     const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
@@ -467,12 +466,16 @@ const L_ = {
                             $('.drawToolContextMenuHeaderClose').click()
                         } catch (err) {}
                     }
-                    L_.Map_.rmNotNull(L_.layers.layer[s.name])
                     if (
                         L_.Map_.engine &&
                         L_.Map_.engine.engineType !== 'leaflet'
                     ) {
-                        L_.layers.layer[s.name] = false
+                        L_.Map_.engine.updateLayer(
+                            L_.Map_.nativeLayer(L_.layers.layer[s.name]),
+                            { visible: false }
+                        )
+                    } else {
+                        L_.Map_.rmNotNull(L_.layers.layer[s.name])
                     }
                     if (L_.layers.attachments[s.name]) {
                         for (let sub in L_.layers.attachments[s.name]) {

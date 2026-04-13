@@ -14,6 +14,7 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
+import { appendCogDynamicParams, applyCogFieldsToUrl } from '../Layers_/cogUrlUtils'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -829,10 +830,6 @@ async function makeLayer(
                     break
                 case 'GeoJsonLayer':
                 case 'ScatterplotLayer':
-                case 'PathLayer':
-                case 'PolygonLayer':
-                case 'IconLayer':
-                case 'TextLayer':
                     await makeVectorLayer(
                         layerObj,
                         evenIfOff,
@@ -1002,7 +999,15 @@ function featureDefaultClick(feature, layer, e) {
     })
 }
 
-//Pretty much like makePointLayer but without the pointToLayer stuff
+/**
+ * Fetches GeoJSON for a vector layer and registers it with the active map engine.
+ * @param {object} layerObj - Layer config from the mission JSON.
+ * @param {boolean} evenIfOff - Build the layer even if it is toggled off.
+ * @param {object|null} useEmptyGeoJSON - Seed with this GeoJSON instead of fetching.
+ * @param {object|null} forceGeoJSON - Skip fetch and use this GeoJSON directly.
+ * @param {boolean} isRefresh - Suppress side-effects that should only run on first load.
+ * @param {object|null} mapContext - Override map/registry context; defaults to main map.
+ */
 async function makeVectorLayer(
     layerObj,
     evenIfOff,
@@ -1043,6 +1048,11 @@ async function makeVectorLayer(
                 }
             )
 
+        /**
+         * Constructs and registers the map layer from fetched GeoJSON data.
+         * @param {object|string} data - GeoJSON feature collection, or 'off' to mark layer as disabled.
+         * @param {boolean} allowInvalid - Skip GeoJSON validation and render as-is.
+         */
         function add(data, allowInvalid) {
             if (
                 Map_.engine &&
@@ -1270,6 +1280,11 @@ async function makeVelocityLayer(
                 }
             )
 
+        /**
+         * Constructs and registers the map layer from fetched GeoJSON data.
+         * @param {object|string} data - GeoJSON feature collection, or 'off' to mark layer as disabled.
+         * @param {boolean} allowInvalid - Skip GeoJSON validation and render as-is.
+         */
         function add(data, allowInvalid) {
             if (layerObj.type == 'velocity') {
                 if (
@@ -1419,20 +1434,17 @@ async function makeVelocityLayer(
     })
 }
 
+/**
+ * Builds a raster tile layer (TMS, WMTS, COG via TiTiler, STAC) and registers it with the active map engine.
+ * @param {object} layerObj - Layer config from the mission JSON.
+ * @param {object|null} mapContext - Override map/registry context; defaults to main map.
+ */
 async function makeTileLayer(layerObj, mapContext = null) {
     // Default to main map context for backward compatibility
     const ctx = mapContext || {
         map: Map_.map,
         layerRegistry: L_.layers,
         default: true,
-    }
-
-    // Helper function to add default 'asset_' prefix to bands in expressions if not already prefixed
-    const processExpression = (expression) => {
-        if (!expression || expression.trim() === '') return expression
-        // Replace bX or BX (where X is a number) with asset_bX or asset_BX
-        // Only replace if not already prefixed with an asset name (word_bX pattern)
-        return expression.replace(/(?<!\w)([bB])(\d+)/g, 'asset_$1$2')
     }
 
     const tileLevel = getActiveTileLevel(layerObj)
@@ -1511,6 +1523,14 @@ async function makeTileLayer(layerObj, mapContext = null) {
     } else tileFormat = layerObj.tileformat
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+        // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
+        // would normally add per-tile in getTileUrl.
+        if (splitColonType === 'COG') {
+            layerUrl = appendCogDynamicParams(layerUrl, layerObj)
+        } else {
+            layerUrl = applyCogFieldsToUrl(layerUrl, layerObj)
+        }
+
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'tile',
             url: layerUrl,
