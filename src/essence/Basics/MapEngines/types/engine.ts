@@ -23,11 +23,6 @@ export type DeckGLLayerType =
     | 'PointCloudLayer'
     | 'MVTLayer'
     | 'ScatterplotLayer'
-    | 'PathLayer'
-    | 'PolygonLayer'
-    | 'IconLayer'
-    | 'TextLayer'
-    | 'BitmapLayer'
 
 /**
  * Renderable layer types that an engine can actually draw.
@@ -81,11 +76,6 @@ export const ENGINE_LAYER_SUPPORT: Record<MapEngineType, RenderableLayerType[]> 
         'PointCloudLayer',
         'MVTLayer',
         'ScatterplotLayer',
-        'PathLayer',
-        'PolygonLayer',
-        'IconLayer',
-        'TextLayer',
-        'BitmapLayer',
     ],
 }
 

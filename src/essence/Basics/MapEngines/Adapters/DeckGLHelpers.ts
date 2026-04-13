@@ -12,6 +12,7 @@ import {
 import { GeoJsonLayer, BitmapLayer, PointCloudLayer, ScatterplotLayer } from '@deck.gl/layers'
 import { TileLayer, Tile3DLayer, MVTLayer } from '@deck.gl/geo-layers'
 import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
+import { color as parseColor } from 'd3'
 
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
 import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions, VectorTileLayerOptions, PointCloudLayerOptions } from '../types/layers'
@@ -92,10 +93,11 @@ export function makeViewport(
 }
 
 /**
- * Parse a CSS hex color string (`#RGB`, `#RRGGBB`, `#RRGGBBAA`) and an
- * optional separate opacity (0–1) into a deck.gl RGBA tuple [r, g, b, a].
- * `opacity` overrides any alpha embedded in the hex string.
+ * Parse any CSS color string (hex `#RGB`, `#RRGGBB`, `#RRGGBBAA`, named colors,
+ * `rgb(...)`, etc.) and an optional opacity (0-1) into a deck.gl RGBA tuple [r, g, b, a].
+ * `opacity` overrides any alpha embedded in the color string.
  * Falls back to `defaultColor` on any parse failure.
+ * Uses d3-color for parsing so all CSS Color Level 4 formats are supported.
  */
 export function hexToRgba(
     hex: string | undefined | null,
@@ -103,30 +105,12 @@ export function hexToRgba(
     defaultColor: [number, number, number, number] = [255, 255, 255, 255]
 ): [number, number, number, number] {
     if (!hex || typeof hex !== 'string') return applyOpacity(defaultColor, opacity)
-    const clean = hex.replace('#', '')
-    let r: number, g: number, b: number, a: number
-
-    if (clean.length === 3) {
-        r = parseInt(clean[0] + clean[0], 16)
-        g = parseInt(clean[1] + clean[1], 16)
-        b = parseInt(clean[2] + clean[2], 16)
-        a = 255
-    } else if (clean.length === 6) {
-        r = parseInt(clean.slice(0, 2), 16)
-        g = parseInt(clean.slice(2, 4), 16)
-        b = parseInt(clean.slice(4, 6), 16)
-        a = 255
-    } else if (clean.length === 8) {
-        r = parseInt(clean.slice(0, 2), 16)
-        g = parseInt(clean.slice(2, 4), 16)
-        b = parseInt(clean.slice(4, 6), 16)
-        a = parseInt(clean.slice(6, 8), 16)
-    } else {
-        return applyOpacity(defaultColor, opacity)
-    }
-
-    if (isNaN(r) || isNaN(g) || isNaN(b) || isNaN(a)) return applyOpacity(defaultColor, opacity)
-    return applyOpacity([r, g, b, a], opacity)
+    const parsed = parseColor(hex)
+    if (!parsed) return applyOpacity(defaultColor, opacity)
+    const { r, g, b, opacity: a } = parsed.rgb()
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return applyOpacity(defaultColor, opacity)
+    const alpha = Math.round((a ?? 1) * 255)
+    return applyOpacity([Math.round(r), Math.round(g), Math.round(b), alpha], opacity)
 }
 
 function applyOpacity(
@@ -162,21 +146,40 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
 }
 
 /**
- * Maps DeckGL class names (as stored in legacy layer configs) to the
- * canonical MMGIS type string used by buildDeckLayer's switch.
+ * Maps DeckGL class names (as stored in layer configs) to the canonical type
+ * string used by buildDeckLayer's switch.
  * Add entries here when new DeckGL layer types are introduced.
  */
 export const DECKGL_TYPE_ALIAS: Record<string, string> = {
     GeoJsonLayer: 'vector',
-    ScatterplotLayer: 'ScatterplotLayer',
-    PathLayer: 'vector',
-    PolygonLayer: 'vector',
-    IconLayer: 'vector',
-    TextLayer: 'vector',
+    ScatterplotLayer: 'scatterplot',
     TileLayer: 'tile',
     BitmapLayer: 'tile',
+    Tile3DLayer: 'tile3d',
+    PointCloudLayer: 'pointcloud',
     MVTLayer: 'vectortile',
-    pointcloud: 'PointCloudLayer',
+}
+
+/**
+ * Reads a nested value from a GeoJSON feature or plain object by dot-notation path.
+ * Checks `.properties` first, then the object itself.
+ * @param object - GeoJSON feature or plain data record.
+ * @param path - Dot-notation key path, e.g. `"meta.score"`.
+ */
+function getPropValue(object: unknown, path: string | undefined): unknown {
+    if (!path || object == null || typeof object !== 'object') return undefined
+    const source =
+        (object as { properties?: Record<string, unknown> }).properties ??
+        (object as Record<string, unknown>)
+    return path
+        .split('.')
+        .reduce(
+            (obj: unknown, key) =>
+                obj != null && typeof obj === 'object'
+                    ? (obj as Record<string, unknown>)[key]
+                    : undefined,
+            source
+        )
 }
 
 /**
@@ -249,28 +252,14 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             const weightProp = style.weightProp as string | undefined
             const radiusProp = style.radiusProp as string | undefined
 
-            const getProp = (feature: Record<string, unknown>, path: string): unknown => {
-                const props =
-                    (feature as { properties?: Record<string, unknown> }).properties ?? {}
-                return path
-                    .split('.')
-                    .reduce(
-                        (obj: unknown, key) =>
-                            obj != null && typeof obj === 'object'
-                                ? (obj as Record<string, unknown>)[key]
-                                : undefined,
-                        props
-                    )
-            }
-
             const getFillColor =
                 fillColorProp || fillOpacityProp
                     ? (feature: Record<string, unknown>) => {
                           const hexVal = fillColorProp
-                              ? (getProp(feature, fillColorProp) as string | undefined)
+                              ? (getPropValue(feature, fillColorProp) as string | undefined)
                               : undefined
                           const alphaVal = fillOpacityProp
-                              ? getProp(feature, fillOpacityProp)
+                              ? getPropValue(feature, fillOpacityProp)
                               : undefined
                           if (hexVal === undefined && alphaVal === undefined) return staticFillColor
                           return hexToRgba(
@@ -289,10 +278,10 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 colorProp || opacityProp
                     ? (feature: Record<string, unknown>) => {
                           const hexVal = colorProp
-                              ? (getProp(feature, colorProp) as string | undefined)
+                              ? (getPropValue(feature, colorProp) as string | undefined)
                               : undefined
                           const alphaVal = opacityProp
-                              ? getProp(feature, opacityProp)
+                              ? getPropValue(feature, opacityProp)
                               : undefined
                           if (hexVal === undefined && alphaVal === undefined) return staticLineColor
                           return hexToRgba(
@@ -309,14 +298,14 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
 
             const getLineWidth = weightProp
                 ? (feature: Record<string, unknown>) => {
-                      const v = getProp(feature, weightProp)
+                      const v = getPropValue(feature, weightProp)
                       return v !== undefined ? Number(v) : staticLineWidth
                   }
                 : staticLineWidth
 
             const getPointRadius = radiusProp
                 ? (feature: Record<string, unknown>) => {
-                      const v = getProp(feature, radiusProp)
+                      const v = getPropValue(feature, radiusProp)
                       return v !== undefined ? Number(v) : staticPointRadius
                   }
                 : staticPointRadius
@@ -388,7 +377,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             } as ConstructorParameters<typeof MVTLayer>[0]) as unknown as Layer
         }
 
-        case 'ScatterplotLayer': {
+        case 'scatterplot': {
             const o = options as LayerOptions & {
                 data?: unknown
                 nativeOptions?: Record<string, unknown>
@@ -404,21 +393,6 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 (o.data as { type?: unknown }).type === 'FeatureCollection'
                     ? (o.data as { features?: unknown[] }).features
                     : o.data
-            const getProp = (object: unknown, path: string | undefined): unknown => {
-                if (!path || object == null || typeof object !== 'object') return undefined
-                const source =
-                    (object as { properties?: Record<string, unknown> }).properties ??
-                    (object as Record<string, unknown>)
-                return path
-                    .split('.')
-                    .reduce(
-                        (obj: unknown, key) =>
-                            obj != null && typeof obj === 'object'
-                                ? (obj as Record<string, unknown>)[key]
-                                : undefined,
-                        source
-                    )
-            }
             const getPosition = (object: unknown): [number, number] | [number, number, number] => {
                 if (object == null || typeof object !== 'object') return [0, 0]
                 const record = object as {
@@ -446,7 +420,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 getPosition,
                 getRadius: radiusProp
                     ? (object: unknown) => {
-                          const value = getProp(object, radiusProp)
+                          const value = getPropValue(object, radiusProp)
                           return value !== undefined ? Number(value) : staticRadius
                       }
                     : staticRadius,
@@ -467,7 +441,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             } as ConstructorParameters<typeof ScatterplotLayer>[0]) as unknown as Layer
         }
 
-        case 'Tile3DLayer': {
+        case 'tile3d': {
             const o = options as PointCloudLayerOptions
             return new Tile3DLayer({
                 id,
@@ -480,7 +454,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             } as ConstructorParameters<typeof Tile3DLayer>[0]) as unknown as Layer
         }
 
-        case 'PointCloudLayer': {
+        case 'pointcloud': {
             const o = options as PointCloudLayerOptions
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             return new PointCloudLayer({
@@ -501,7 +475,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             throw new Error(
                 `buildDeckLayer: unsupported layer type "${options.type}"` +
                     (resolvedType !== options.type ? ` (resolved to "${resolvedType}")` : '') +
-                    `. Supported types: 'tile', 'vector', 'pointcloud'.`
+                    `. Supported types: 'tile', 'vector', 'vectortile', 'scatterplot', 'tile3d', 'pointcloud'.`
             )
     }
 }
