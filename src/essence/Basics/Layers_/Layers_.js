@@ -5,6 +5,7 @@ import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
+import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
@@ -352,14 +353,13 @@ const L_ = {
             resamplingParam = `&resampling=${layerData.cogResampling}`
         }
 
-        // Build the base URL
-        const origin = window.location.origin
-        const pathname = (window.location.pathname || '').replace(/\/$/g, '')
+        // Build the base URL using ServiceUrls (supports external endpoints)
+        const baseUrl = ServiceUrls.getTiTilerPgStacUrl(layerData)
 
         // Generate different endpoints based on type
         if (type === 'tile') {
             // Tile endpoint for raster tiles
-            return `${origin}${pathname}/titilerpgstac/collections/${collectionName}/tiles/${
+            return `${baseUrl}/collections/${collectionName}/tiles/${
                 (layerData && layerData.tileMatrixSet) || 'WebMercatorQuad'
             }/{z}/{x}/{y}?assets=asset${bandsParam}${resamplingParam}`
         } else {
@@ -372,7 +372,7 @@ const L_ = {
                         `Attempting to use preview endpoint.`
                 )
             }
-            return `${origin}${pathname}/titilerpgstac/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
+            return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
         }
     },
     getUrl: function (type, url, layerData) {
