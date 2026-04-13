@@ -2954,6 +2954,10 @@ function interfaceWithMMGIS(fromInit) {
     }
 
     // Sublayer things
+    /**
+     * Returns the HTML markup for the tile level selector, or an empty string if the layer has no tile levels.
+     * @param {object} layer - Layer config object with optional `variables.tileLevels`.
+     */
     function getTileLevelSettings(layer) {
         const levels = layer.variables?.tileLevels
         if (!Array.isArray(levels) || levels.length === 0) return ''
@@ -2987,12 +2991,22 @@ function interfaceWithMMGIS(fromInit) {
         ].join('\n')
     }
 
+    /**
+     * Returns a stable string key for a tile level entry, falling back through common field names to the array index.
+     * @param {object|*} level - Tile level entry from `variables.tileLevels`.
+     * @param {number} index - Position in the tile levels array, used as last-resort key.
+     */
     function getTileLevelKey(level, index) {
         if (level == null || typeof level !== 'object')
             return String(level ?? index)
         return String(level.value ?? level.id ?? level.name ?? level.label ?? index)
     }
 
+    /**
+     * Returns the display label for a tile level entry, falling back through common field names to the array index.
+     * @param {object|*} level - Tile level entry from `variables.tileLevels`.
+     * @param {number} index - Position in the tile levels array, used as last-resort label.
+     */
     function getTileLevelLabel(level, index) {
         if (level == null || typeof level !== 'object')
             return String(level ?? index)

@@ -368,12 +368,7 @@ export default function Layers() {
                     case "vector":
                     case "GeoJsonLayer":
                     case "ScatterplotLayer":
-                    case "PathLayer":
-                    case "PolygonLayer":
-                    case "IconLayer":
-                    case "TextLayer":
                     case "TileLayer":
-                    case "BitmapLayer":
                     case "Tile3DLayer":
                     case "PointCloudLayer":
                     case "MVTLayer":

@@ -103,10 +103,6 @@ const validateLayers = (config) => {
         break;
       case "GeoJsonLayer":
       case "ScatterplotLayer":
-      case "PathLayer":
-      case "PolygonLayer":
-      case "IconLayer":
-      case "TextLayer":
         if (layer.controlled !== true) errs = errs.concat(isValidUrl(layer));
         break;
       case "TileLayer":
