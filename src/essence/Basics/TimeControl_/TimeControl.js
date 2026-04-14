@@ -5,7 +5,6 @@ import $ from 'jquery'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
-import TimeUI from './TimeUI'
 
 import './TimeControl.css'
 
@@ -44,15 +43,13 @@ var TimeControl = {
             return
         }
 
-        TimeControl.timeUI = TimeUI.init(timeInputChange, TimeControl.enabled)
-
         //updateTime()
 
         initLayerTimes()
         initLayerDataTimes()
     },
     fina: function () {
-        if ((TimeControl.enabled = true && TimeControl.timeUI != null))
+        if (TimeControl.enabled === true && TimeControl.timeUI != null)
             TimeControl.timeUI.fina()
 
         // Register time providers for mmgisAPI Event Bus
@@ -78,6 +75,33 @@ var TimeControl = {
                 }),
             ]
         }
+    },
+    handleTimeChange: function (startTime, endTime, currentTime, skipUpdate) {
+        TimeControl.startTime = startTime
+        TimeControl.currentTime = currentTime == null ? endTime : currentTime
+        TimeControl.endTime = endTime
+
+        if (L_?._timeChangeSubscriptions)
+            Object.keys(L_._timeChangeSubscriptions).forEach((k) => {
+                L_._timeChangeSubscriptions[k]({ startTime, currentTime, endTime })
+            })
+
+        Object.keys(TimeControl._subscriptions).forEach((k) => {
+            TimeControl._subscriptions[k]({
+                startTime: TimeControl.startTime,
+                endTime: TimeControl.endTime,
+                currentTime: TimeControl.currentTime,
+            })
+        })
+
+        if (skipUpdate !== true) {
+            // Update layer times and reload
+            TimeControl.updateLayersTime()
+            TimeControl.reloadTimeLayers()
+        }
+    },
+    registerUI: function (uiInstance) {
+        TimeControl.timeUI = uiInstance
     },
     subscribe: function () {},
     unsubscribe: function () {},
@@ -154,11 +178,14 @@ var TimeControl = {
                     .split('.')[0] + 'Z'
         }
 
-        return TimeControl.timeUI.updateTimes(
-            TimeControl.startTime,
-            TimeControl.endTime,
-            TimeControl.currentTime
-        )
+        if (TimeControl.timeUI) {
+            TimeControl.timeUI.updateTimes(
+                TimeControl.startTime,
+                TimeControl.endTime,
+                TimeControl.currentTime
+            )
+        }
+        return true
     },
     setLayerTime: function (layer, startTime, endTime) {
         if (typeof layer == 'string') {
@@ -516,10 +543,14 @@ var TimeControl = {
         }
 
         // Pan to followed feature after layers reload
-        if (TimeUI.followEnabled && TimeUI.followedFeature) {
+        if (
+            TimeControl.timeUI &&
+            TimeControl.timeUI.followEnabled &&
+            TimeControl.timeUI.followedFeature
+        ) {
             // Add a small delay to ensure layers have finished loading
             setTimeout(() => {
-                TimeUI.panToFollowedFeature()
+                TimeControl.timeUI.panToFollowedFeature()
             }, 500)
         }
 
@@ -628,31 +659,6 @@ function initLayerTimes() {
             // otherwise the first load will not have the WMS parameters
             TimeControl.setLayerWmsParams(layer)
         }
-    }
-}
-
-function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
-    TimeControl.startTime = startTime
-    TimeControl.currentTime = currentTime == null ? endTime : currentTime
-    TimeControl.endTime = endTime
-
-    if (L_?._timeChangeSubscriptions)
-        Object.keys(L_._timeChangeSubscriptions).forEach((k) => {
-            L_._timeChangeSubscriptions[k]({ startTime, currentTime, endTime })
-        })
-
-    Object.keys(TimeControl._subscriptions).forEach((k) => {
-        TimeControl._subscriptions[k]({
-            startTime: TimeControl.startTime,
-            endTime: TimeControl.endTime,
-            currentTime: TimeControl.currentTime,
-        })
-    })
-
-    if (skipUpdate !== true) {
-        // Update layer times and reload
-        TimeControl.updateLayersTime()
-        TimeControl.reloadTimeLayers()
     }
 }
 
