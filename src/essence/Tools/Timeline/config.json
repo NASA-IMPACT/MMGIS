@@ -1,0 +1,18 @@
+{
+    "defaultIcon": "clock-outline",
+    "description": "Simple timeline scrubber for controlling time-enabled layers.",
+    "descriptionFull": {
+        "title": "The Timeline tool provides a simple interface for scrubbing through time-enabled data with play/pause controls and a draggable slider.",
+        "example": {}
+    },
+    "hasVars": false,
+    "name": "Timeline",
+    "toolbarPriority": 5,
+    "paths": {
+        "TimelineTool": "essence/Tools/Timeline/TimelineTool"
+    },
+    "metadata": {
+        "requiredOrientation": "any",
+        "modernLayoutSupport": true
+    }
+}

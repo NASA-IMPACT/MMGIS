@@ -1,0 +1,126 @@
+/* Timeline Tool - Modern USWDS Design */
+.timeline-container {
+    user-select: none;
+    font-family: "Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.timeline-container * {
+    box-sizing: border-box;
+}
+
+.timeline-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.1);
+    outline: none;
+    border-radius: 3px;
+    transition: background 0.2s;
+}
+
+.timeline-slider:hover {
+    background: rgba(0, 0, 0, 0.15);
+}
+
+.timeline-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--uswds-primary, #005ea2);
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid var(--uswds-white, #ffffff);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s;
+}
+
+.timeline-slider::-webkit-slider-thumb:hover {
+    background: var(--uswds-primary-dark, #1a4480);
+    transform: scale(1.1);
+}
+
+.timeline-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--uswds-primary, #005ea2);
+    cursor: pointer;
+    border-radius: 50%;
+    border: 2px solid var(--uswds-white, #ffffff);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    transition: all 0.2s;
+}
+
+.timeline-slider::-moz-range-thumb:hover {
+    background: var(--uswds-primary-dark, #1a4480);
+    transform: scale(1.1);
+}
+
+.timeline-btn {
+    background: transparent;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    color: var(--uswds-base-darker, #171c1e);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.timeline-btn:hover {
+    background: color-mix(in srgb, var(--uswds-primary-light, #73b3e7) 30%, white);
+    border-color: var(--uswds-primary, #005ea2);
+}
+
+.timeline-btn:active {
+    transform: scale(0.95);
+    background: var(--uswds-primary, #005ea2);
+    color: var(--uswds-white, #ffffff);
+}
+
+.timeline-btn i {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Step buttons (prev/next increment) */
+.timeline-step-backward-btn,
+.timeline-step-forward-btn {
+    min-width: 36px;
+}
+
+/* Play button - make it more prominent */
+.timeline-play-btn {
+    min-width: 40px;
+    background: color-mix(in srgb, var(--uswds-primary-light, #73b3e7) 20%, white);
+}
+
+.timeline-play-btn:hover {
+    background: color-mix(in srgb, var(--uswds-primary-light, #73b3e7) 40%, white);
+}
+
+.timeline-quantization-select {
+    outline: none;
+    transition: background 0.2s, border-color 0.2s;
+    font-family: "Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.timeline-quantization-select:hover {
+    background: color-mix(in srgb, var(--uswds-primary-light, #73b3e7) 30%, white);
+    border-color: var(--uswds-primary, #005ea2);
+}
+
+.timeline-quantization-select:focus {
+    border-color: var(--uswds-primary, #005ea2);
+    box-shadow: 0 0 0 2px rgba(0, 94, 162, 0.2);
+}
+
+.timeline-quantization-select option {
+    background: var(--uswds-white, #ffffff);
+    color: var(--uswds-base-darker, #171c1e);
+}
