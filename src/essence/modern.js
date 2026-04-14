@@ -148,6 +148,9 @@ const modern = {
         // Initialize the User Interface with the sorted panels from PanelManager
         UserInterfaceModern_.init(activePanels, layoutStyle)
 
+        //Make the time control
+        TimeControl.init()
+
         // Initialize Map
         Map_.init(function() {
             Globe_.fina(Coordinates)
@@ -162,11 +165,9 @@ const modern = {
             Viewer_.fina(Map_)
             TimeControl.fina() // Disabled for modern layout; relies on classic DOM
         })
+
         Coordinates.init()
         ContextMenu.init()
-
-        //Make the time control
-        TimeControl.init()
     },
 
     /**
