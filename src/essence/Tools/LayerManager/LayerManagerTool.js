@@ -307,6 +307,7 @@ const LayerManagerTool = {
                   defaultMax: layerConfig.cogMax ?? 255,
                   defaultColormap: layerConfig.cogColormap || 'viridis',
                   units: layerConfig.cogUnits || null,
+                  titilerUrl: layerConfig.titilerUrl || null,
               }
             : null
 
