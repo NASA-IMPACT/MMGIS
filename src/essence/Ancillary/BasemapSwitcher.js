@@ -165,8 +165,8 @@ const BasemapSwitcher = {
 
         _container.append(options)
 
-        // Mount into mapToolBar (bottom of map area)
-        $('#mapToolBar').append(_container)
+        // Mount into mapScreen (the map's parent container)
+        $('#mapScreen').append(_container)
 
         // Close on outside click
         $(document).on('click.basemapSwitcher', function () {
