@@ -22,6 +22,7 @@ import {
     FitBoundsOptions,
     MapInitOptions,
     ProjectionOptions,
+    BasemapOptions,
 } from '../types/view'
 import { LayerOptions, TileLayerOptions, MarkerOptions } from '../types/layers'
 import { IMapEngineMarkers } from '../IMapEngineMarkers'
@@ -39,6 +40,9 @@ import {
     QueryFeaturesOptions,
 } from '../types/events'
 import { MapEngineType } from '../types/engine'
+
+import { Map as MaplibreGLMap } from 'maplibre-gl'
+import 'maplibre-gl/dist/maplibre-gl.css'
 
 // Leaflet is loaded globally via window.L
 declare const L: any
@@ -78,6 +82,27 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Stored initialization options
      */
     private _initOptions: MapInitOptions | null = null
+
+    /**
+     * The MapLibre/Mapbox GL basemap instance (when basemap overlay is active).
+     * Renders behind the transparent Leaflet canvas.
+     */
+    private _basemapMap: any = null
+
+    /**
+     * The DOM element hosting the basemap map (sibling of the Leaflet #map div).
+     */
+    private _basemapContainer: HTMLDivElement | null = null
+
+    /**
+     * The basemap configuration passed at init time.
+     */
+    private _basemapOptions: BasemapOptions | null = null
+
+    /**
+     * Bound handler for synchronising Leaflet camera → basemap camera.
+     */
+    private _syncHandler: (() => void) | null = null
 
     /**
      * Initialize the Leaflet map instance
@@ -153,6 +178,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         const attributionControl = this._container.querySelector('.leaflet-control-attribution')
         if (attributionControl) {
             attributionControl.remove()
+        }
+
+        // --- Basemap overlay setup ---
+        if (options.basemap && options.basemap.provider && options.basemap.provider !== 'none' as any) {
+            this._initBasemapOverlay(options.basemap, center, zoom)
         }
     }
 
@@ -247,6 +277,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     destroy(): void {
         if (!this._map) return
 
+        // Clean up basemap overlay first
+        this._destroyBasemapOverlay()
+
         this._eventHandlers.forEach((handler, eventName) => {
             this._map.off(eventName, handler)
         })
@@ -266,6 +299,14 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      */
     getNativeMap(): any {
         return this._map
+    }
+
+    /**
+     * Get the underlying MapLibre/Mapbox GL basemap instance.
+     * Returns null if no basemap is configured.
+     */
+    getBasemap(): any {
+        return this._basemapMap
     }
 
     /**
@@ -473,6 +514,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      */
     invalidateSize(): void {
         this._map.invalidateSize()
+        this._basemapMap?.resize()
     }
 
     /**
@@ -938,5 +980,170 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             }
         }
         return null
+    }
+
+    // ========================================
+    // BASEMAP OVERLAY METHODS
+    // ========================================
+
+    /**
+     * Initialise a MapLibre/Mapbox GL basemap behind the Leaflet canvas.
+     *
+     * Creates a sibling div before the Leaflet container, instantiates a
+     * MapLibre (or Mapbox) GL map inside it, makes the Leaflet container
+     * background transparent, and wires up pan/zoom sync events.
+     */
+    private _initBasemapOverlay(
+        basemap: BasemapOptions,
+        center: LatLng,
+        zoom: number
+    ): void {
+        this._basemapOptions = basemap
+
+        this._basemapContainer = document.createElement('div')
+        this._basemapContainer.id = 'mmgis-basemap'
+        this._basemapContainer.className = 'mmgis-basemap-container'
+        this._basemapContainer.style.position = 'absolute'
+        this._basemapContainer.style.top = '0'
+        this._basemapContainer.style.left = '0'
+        this._basemapContainer.style.width = '100%'
+        this._basemapContainer.style.height = '100%'
+        this._basemapContainer.style.zIndex = '0'
+
+        // Insert before the Leaflet container so it renders behind
+        this._container!.parentNode!.insertBefore(
+            this._basemapContainer,
+            this._container
+        )
+
+        // Make the Leaflet container transparent so the basemap shows through
+        this._container!.style.background = 'transparent'
+        this._container!.classList.add('mmgis-has-basemap')
+
+        // Ensure leaflet panes have transparent background
+        const tilePane = this._container!.querySelector('.leaflet-tile-pane') as HTMLElement
+        if (tilePane) {
+            tilePane.style.background = 'transparent'
+        }
+
+        // Create the basemap map instance
+        if (basemap.provider === 'mapbox') {
+            this._initBasemapMapbox(basemap, center, zoom)
+        } else {
+            // MapLibre (default)
+            this._initBasemapMaplibre(basemap, center, zoom)
+        }
+
+        // Wire up Leaflet → basemap sync
+        this._syncHandler = () => this._syncBasemap()
+        this._map.on('move', this._syncHandler)
+        this._map.on('zoomend', this._syncHandler)
+        this._map.on('resize', () => this._basemapMap?.resize())
+    }
+
+    /**
+     * Initialise a MapLibre GL basemap.
+     */
+    private _initBasemapMaplibre(
+        basemap: BasemapOptions,
+        center: LatLng,
+        zoom: number
+    ): void {
+        this._basemapMap = new MaplibreGLMap({
+            container: this._basemapContainer!,
+            style: basemap.style,
+            center: [center.lng, center.lat],
+            zoom: zoom,
+            attributionControl: false,
+            interactive: false, // Leaflet handles all interaction
+        })
+    }
+
+    /**
+     * Initialise a Mapbox GL basemap via dynamic import.
+     */
+    private async _initBasemapMapbox(
+        basemap: BasemapOptions,
+        center: LatLng,
+        zoom: number
+    ): Promise<void> {
+        try {
+            const lib = (await import('mapbox-gl')) as any
+            const MapboxMap = (lib.default ?? lib).Map
+            if (!MapboxMap) {
+                throw new Error('Map not found in mapbox-gl module')
+            }
+
+            this._basemapMap = new MapboxMap({
+                container: this._basemapContainer!,
+                style: basemap.style,
+                center: [center.lng, center.lat],
+                zoom: zoom,
+                accessToken: basemap.accessToken,
+                attributionControl: false,
+                interactive: false,
+            })
+        } catch {
+            console.error(
+                'LeafletAdapter: mapbox-gl is not installed. ' +
+                "Run `npm install mapbox-gl` or use provider: 'maplibre' instead."
+            )
+        }
+    }
+
+    /**
+     * Synchronise the basemap camera to match the current Leaflet view.
+     * Called on Leaflet `move` and `zoomend` events.
+     */
+    private _syncBasemap(): void {
+        if (!this._basemapMap) return
+
+        const center = this._map.getCenter()
+        const zoom = this._map.getZoom()
+
+        this._basemapMap.jumpTo({
+            center: [center.lng, center.lat],
+            zoom: zoom,
+        })
+    }
+
+    /**
+     * Switch the basemap to a different style at runtime.
+     * This is used by the BasemapSwitcher UI control.
+     *
+     * @param styleUrl - A MapLibre/Mapbox style URL.
+     */
+    setBasemapStyle(styleUrl: string): void {
+        if (!this._basemapMap) return
+        this._basemapMap.setStyle(styleUrl)
+    }
+
+    /**
+     * Clean up the basemap overlay: remove the GL map, its container,
+     * and restore the Leaflet container's opaque background.
+     */
+    private _destroyBasemapOverlay(): void {
+        if (this._syncHandler && this._map) {
+            this._map.off('move', this._syncHandler)
+            this._map.off('zoomend', this._syncHandler)
+            this._syncHandler = null
+        }
+
+        if (this._basemapMap) {
+            this._basemapMap.remove()
+            this._basemapMap = null
+        }
+
+        if (this._basemapContainer) {
+            this._basemapContainer.remove()
+            this._basemapContainer = null
+        }
+
+        if (this._container) {
+            this._container.style.background = ''
+            this._container.classList.remove('mmgis-has-basemap')
+        }
+
+        this._basemapOptions = null
     }
 }

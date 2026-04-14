@@ -18,6 +18,7 @@ import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
 import TimeControl from '../TimeControl_/TimeControl'
+import BasemapSwitcher from '../../Ancillary/BasemapSwitcher'
 
 import gjv from 'geojson-validation'
 import {
@@ -305,6 +306,9 @@ let Map_ = {
         }
 
         buildToolBar()
+
+        // Mount basemap style switcher if styles are configured
+        BasemapSwitcher.init(Map_)
 
         TimeControl.updateLayersTime()
     },
