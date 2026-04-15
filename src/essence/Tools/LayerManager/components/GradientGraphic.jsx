@@ -92,9 +92,11 @@ const GradientGraphic = ({
     const hasCogSettings = cog?.isCog === true
 
     // Use shared hook to fetch colormap colors
+    // Pass cog object as layerConfig to support external TiTiler URLs
     const { colors: colormapColors } = useColormapGradient(
         cog?.colormap,
-        hasCogSettings
+        hasCogSettings,
+        cog
     )
 
     // Use shared hook for click-outside detection
@@ -183,6 +185,7 @@ const GradientGraphic = ({
                                         min={cog.min}
                                         max={cog.max}
                                         units={cog.units}
+                                        titilerUrl={cog.titilerUrl}
                                         onColormapChange={onColormapChange}
                                         onRescaleChange={onRescaleChange}
                                         onReset={onCogReset}

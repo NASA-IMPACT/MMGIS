@@ -101,7 +101,6 @@ const LayerManagerTool = {
     vars: {},
     _cleanups: [],
     _mounted: false,
-    _targetId: null,
 
     /**
      * Initialize the tool - called once at application startup
@@ -154,15 +153,11 @@ const LayerManagerTool = {
 
     /**
      * Make the tool - called when user selects this tool
-     * @param {string} targetId - DOM element ID where tool should render
      */
-    make: function (targetId) {
-        // Store targetId, using 'toolPanel' as fallback for classic UI
-        this._targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
-
-        const container = document.getElementById(this._targetId)
+    make: function () {
+        const container = document.getElementById('toolPanel')
         if (!container) {
-            console.error(`LayerManagerTool: container "${this._targetId}" not found`)
+            console.error('LayerManagerTool: toolPanel not found')
             return
         }
 
@@ -203,15 +198,12 @@ const LayerManagerTool = {
      * Destroy the tool - called when user switches to different tool
      */
     destroy: function () {
-        if (this._targetId) {
-            const container = document.getElementById(this._targetId)
-            if (container) {
-                ReactDOM.unmountComponentAtNode(container)
-            }
+        const container = document.getElementById('toolPanel')
+        if (container) {
+            ReactDOM.unmountComponentAtNode(container)
         }
 
         this._mounted = false
-        this._targetId = null
 
         // Clean up event subscriptions
         this._cleanups.forEach((cleanup) => {
@@ -315,6 +307,7 @@ const LayerManagerTool = {
                   defaultMax: layerConfig.cogMax ?? 255,
                   defaultColormap: layerConfig.cogColormap || 'viridis',
                   units: layerConfig.cogUnits || null,
+                  titilerUrl: layerConfig.titilerUrl || null,
               }
             : null
 

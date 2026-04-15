@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react'
-import { getTiTilerUrl } from '../utils/titiler'
+import ServiceUrls from '../../../Basics/ServiceUrls/ServiceUrls'
 
 /**
  * Custom hook for fetching colormap colors and building CSS gradient
  *
  * @param {string} colormapName - Name of the colormap (e.g., 'viridis', 'rdbu_r')
  * @param {boolean} enabled - Whether to fetch the colormap (default: true)
+ * @param {object} layerConfig - Optional layer configuration for external TiTiler URL
  * @returns {{ gradient: string|null, colors: string[]|null, loading: boolean, error: Error|null }}
  */
-const useColormapGradient = (colormapName, enabled = true) => {
+const useColormapGradient = (colormapName, enabled = true, layerConfig = null) => {
     const [gradient, setGradient] = useState(null)
     const [colors, setColors] = useState(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
+
+    // Extract titilerUrl as a primitive to avoid object reference changes triggering re-fetches
+    const titilerUrl = layerConfig?.titilerUrl || null
 
     useEffect(() => {
         if (!enabled || !colormapName) {
@@ -30,7 +34,10 @@ const useColormapGradient = (colormapName, enabled = true) => {
             setError(null)
 
             try {
-                const url = getTiTilerUrl(`/colorMaps/${colormapName}`)
+                // Use ServiceUrls to get the correct TiTiler URL (supports external URLs)
+                // Pass an object with just titilerUrl to avoid unnecessary dependencies
+                const baseUrl = ServiceUrls.getTiTilerUrl(titilerUrl ? { titilerUrl } : null)
+                const url = `${baseUrl}/colorMaps/${colormapName}`
                 const response = await fetch(url)
 
                 if (!response.ok) {
@@ -77,7 +84,7 @@ const useColormapGradient = (colormapName, enabled = true) => {
         return () => {
             cancelled = true
         }
-    }, [colormapName, enabled])
+    }, [colormapName, enabled, titilerUrl])
 
     return { gradient, colors, loading, error }
 }

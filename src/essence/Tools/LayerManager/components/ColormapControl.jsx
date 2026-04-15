@@ -1,5 +1,28 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { COLORMAP_OPTIONS, findColormapName } from '../utils/constants'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { useAvailableColormaps } from '../hooks'
+
+/**
+ * Get the base colormap name (without _r suffix) preserving case
+ * @param {string} colormapName - Full colormap name
+ * @returns {string} Base colormap name
+ */
+const getBaseColormapName = (colormapName) => {
+    if (!colormapName) return 'viridis'
+    return colormapName.replace(/_r$/i, '')
+}
+
+/**
+ * Format colormap name for display (capitalize first letter, replace underscores)
+ * @param {string} name - Colormap name
+ * @returns {string} Formatted display name
+ */
+const formatColormapLabel = (name) => {
+    if (!name) return ''
+    // Remove _r suffix for display
+    const baseName = name.replace(/_r$/i, '')
+    // Capitalize first letter and replace underscores with spaces
+    return baseName.charAt(0).toUpperCase() + baseName.slice(1).replace(/_/g, ' ')
+}
 
 /**
  * ColormapControl - Controls for TiTiler COG layer colormap and rescale
@@ -10,6 +33,7 @@ import { COLORMAP_OPTIONS, findColormapName } from '../utils/constants'
  * @param {number} props.min - Current rescale min value
  * @param {number} props.max - Current rescale max value
  * @param {string} [props.units] - Units label
+ * @param {string} [props.titilerUrl] - External TiTiler URL for fetching available colormaps
  * @param {function} props.onColormapChange - Callback when colormap changes
  * @param {function} props.onRescaleChange - Callback when rescale values change
  * @param {function} [props.onReset] - Callback to reset to defaults
@@ -20,6 +44,7 @@ const ColormapControl = ({
     min,
     max,
     units,
+    titilerUrl,
     onColormapChange,
     onRescaleChange,
     onReset,
@@ -27,14 +52,29 @@ const ColormapControl = ({
     const [localMin, setLocalMin] = useState(min)
     const [localMax, setLocalMax] = useState(max)
     const [reversed, setReversed] = useState(colormap?.endsWith('_r') || false)
-    const [baseColormap, setBaseColormap] = useState(() => findColormapName(colormap))
+    const [baseColormap, setBaseColormap] = useState(() => getBaseColormapName(colormap))
+
+    // Fetch available colormaps from TiTiler
+    const { colormaps: availableColormaps, loading: colormapsLoading } = useAvailableColormaps(
+        titilerUrl ? { titilerUrl } : null
+    )
+
+    // Filter to only non-reversed colormaps for the dropdown (we handle reversal with toggle)
+    const colormapOptions = useMemo(() => {
+        if (!availableColormaps) {
+            // Fallback to common colormaps if fetch failed
+            return ['viridis', 'plasma', 'inferno', 'magma', 'cividis', 'greys', 'blues', 'greens', 'reds', 'rdbu', 'spectral', 'jet', 'turbo']
+        }
+        // Filter out reversed colormaps (we add reversal via toggle button)
+        return availableColormaps.filter(cm => !cm.endsWith('_r'))
+    }, [availableColormaps])
 
     // Update local state when props change
     useEffect(() => {
         setLocalMin(min)
         setLocalMax(max)
         setReversed(colormap?.endsWith('_r') || false)
-        setBaseColormap(findColormapName(colormap))
+        setBaseColormap(getBaseColormapName(colormap))
     }, [colormap, min, max])
 
     const handleColormapSelect = useCallback(
@@ -120,10 +160,11 @@ const ColormapControl = ({
                         className="colormap-control-select"
                         value={baseColormap}
                         onChange={handleColormapSelect}
+                        disabled={colormapsLoading}
                     >
-                        {COLORMAP_OPTIONS.map((cm) => (
-                            <option key={cm.name} value={cm.name}>
-                                {cm.label}
+                        {colormapOptions.map((cm) => (
+                            <option key={cm} value={cm}>
+                                {formatColormapLabel(cm)}
                             </option>
                         ))}
                     </select>
