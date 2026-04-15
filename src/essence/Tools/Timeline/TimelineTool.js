@@ -125,8 +125,8 @@ const TimelineTool = {
 
         const currentTimeDisplay = $(`#${this.targetId} .timeline-current-time`)
         const slider = $(`#${this.targetId} .timeline-slider`)
-        const startTimeLabel = $(`#${this.targetId} .timeline-start-time`)
-        const endTimeLabel = $(`#${this.targetId} .timeline-end-time`)
+        const startTimeInput = $(`#${this.targetId} .timeline-start-time-input`)
+        const endTimeInput = $(`#${this.targetId} .timeline-end-time-input`)
         const container = $(`#${this.targetId} .timeline-container`)
         const noTimeMsg = $(`#${this.targetId} .timeline-no-time-msg`)
 
@@ -139,9 +139,9 @@ const TimelineTool = {
             const formattedTime = this.formatTime(this.currentTime)
             currentTimeDisplay.text(formattedTime)
 
-            // Update time range labels
-            startTimeLabel.text(this.formatTime(this.startTime))
-            endTimeLabel.text(this.formatTime(this.endTime))
+            // Update time range inputs
+            startTimeInput.val(this.isoToDatetimeLocal(this.startTime))
+            endTimeInput.val(this.isoToDatetimeLocal(this.endTime))
 
             // Update slider position
             const totalDuration = new Date(this.endTime) - new Date(this.startTime)
@@ -169,6 +169,86 @@ const TimelineTool = {
         if (!isoString) return '--:--:--'
         const date = new Date(isoString)
         return date.toISOString().replace('T', ' ').split('.')[0] + 'Z'
+    },
+
+    // Convert ISO string to datetime-local input format (YYYY-MM-DDTHH:mm:ss)
+    isoToDatetimeLocal: function (isoString) {
+        if (!isoString) return ''
+        // Remove the 'Z' and milliseconds if present
+        return isoString.split('.')[0].replace('Z', '')
+    },
+
+    // Convert datetime-local input format to ISO string
+    datetimeLocalToIso: function (datetimeLocal) {
+        if (!datetimeLocal) return null
+        // Add 'Z' to indicate UTC
+        return datetimeLocal + 'Z'
+    },
+
+    onStartTimeChange: function (newStartTime) {
+        if (!newStartTime || !this.endTime) return
+
+        const newStart = this.datetimeLocalToIso(newStartTime)
+        const end = new Date(this.endTime)
+        const start = new Date(newStart)
+
+        // Validate: start time must be before end time
+        if (start >= end) {
+            console.warn('[Timeline] Start time must be before end time')
+            // Reset the input to current value
+            const input = $(`#${this.targetId} .timeline-start-time-input`)
+            input.val(this.isoToDatetimeLocal(this.startTime))
+            return
+        }
+
+        console.log('[Timeline] Start time changed:', newStart)
+
+        // Update TimeControl with new start time
+        TimeControl.handleTimeChange(
+            newStart,
+            this.endTime,
+            this.currentTime
+        )
+    },
+
+    onEndTimeChange: function (newEndTime) {
+        if (!newEndTime || !this.startTime) return
+
+        const newEnd = this.datetimeLocalToIso(newEndTime)
+        const start = new Date(this.startTime)
+        const end = new Date(newEnd)
+
+        // Validate: end time must be after start time
+        if (end <= start) {
+            console.warn('[Timeline] End time must be after start time')
+            // Reset the input to current value
+            const input = $(`#${this.targetId} .timeline-end-time-input`)
+            input.val(this.isoToDatetimeLocal(this.endTime))
+            return
+        }
+
+        console.log('[Timeline] End time changed:', newEnd)
+
+        // Update TimeControl with new end time
+        TimeControl.handleTimeChange(
+            this.startTime,
+            newEnd,
+            this.currentTime
+        )
+    },
+
+    updateSliderTooltip: function (percentage) {
+        if (!this.startTime || !this.endTime) return
+
+        const totalDuration = new Date(this.endTime) - new Date(this.startTime)
+        const timeOffset = (percentage / 100) * totalDuration
+        const tooltipTime = new Date(new Date(this.startTime).getTime() + timeOffset)
+
+        const tooltip = $(`#${this.targetId} .timeline-slider-tooltip`)
+        tooltip.text(this.formatTime(tooltipTime.toISOString()))
+
+        // Position tooltip at the percentage
+        tooltip.css('left', `${percentage}%`)
     },
 
     onSliderChange: function (percentage) {
@@ -481,6 +561,38 @@ function interfaceWithMMGIS() {
 
     quantizationContainer.append(quantizationLabel, quantizationSelect)
 
+    // Slider container
+    const sliderContainer = $('<div>')
+        .attr('class', 'timeline-slider-container')
+        .css({
+            'position': 'relative',
+            'width': '100%',
+            'margin': '8px 0'
+        })
+
+    // Tooltip for showing time on hover
+    const sliderTooltip = $('<div>')
+        .attr('class', 'timeline-slider-tooltip')
+        .css({
+            'position': 'absolute',
+            'bottom': '100%',
+            'left': '50%',
+            'transform': 'translateX(-50%)',
+            'background': 'var(--uswds-base-darker, #171c1e)',
+            'color': 'white',
+            'padding': '4px 8px',
+            'border-radius': '4px',
+            'font-size': '10px',
+            'font-family': 'monospace',
+            'white-space': 'nowrap',
+            'pointer-events': 'none',
+            'opacity': '0',
+            'transition': 'opacity 0.2s',
+            'z-index': '1000',
+            'margin-bottom': '8px'
+        })
+        .text('--:--:--')
+
     // Slider
     const slider = $('<input>')
         .attr({
@@ -495,8 +607,23 @@ function interfaceWithMMGIS() {
             'cursor': 'pointer'
         })
         .on('input', function() {
-            TimelineTool.onSliderChange(parseFloat($(this).val()))
+            const percentage = parseFloat($(this).val())
+            TimelineTool.onSliderChange(percentage)
+            TimelineTool.updateSliderTooltip(percentage)
         })
+        .on('mouseenter', function() {
+            sliderTooltip.css('opacity', '1')
+        })
+        .on('mouseleave', function() {
+            sliderTooltip.css('opacity', '0')
+        })
+        .on('mousemove', function(e) {
+            const rect = this.getBoundingClientRect()
+            const percentage = ((e.clientX - rect.left) / rect.width) * 100
+            TimelineTool.updateSliderTooltip(Math.max(0, Math.min(100, percentage)))
+        })
+
+    sliderContainer.append(sliderTooltip, slider)
 
     // Control buttons
     const controls = $('<div>')
@@ -540,30 +667,98 @@ function interfaceWithMMGIS() {
 
     controls.append(skipStartBtn, stepBackwardBtn, playBtn, stepForwardBtn, skipEndBtn)
 
-    // Time range labels
+    // Time range inputs
     const timeRangeContainer = $('<div>')
         .css({
             'display': 'flex',
             'justify-content': 'space-between',
-            'font-size': '11px',
-            'color': 'var(--uswds-base-dark, #3d4551)',
-            'font-family': 'monospace',
+            'gap': '8px',
             'margin-top': '5px',
-            'opacity': '0.8'
+            'flex-direction': 'column'
         })
 
-    const startTimeLabel = $('<span>')
-        .attr('class', 'timeline-start-time')
-        .text(TimelineTool.formatTime(TimelineTool.startTime))
+    const startTimeContainer = $('<div>')
+        .css({
+            'display': 'flex',
+            'flex-direction': 'column',
+            'gap': '2px'
+        })
 
-    const endTimeLabel = $('<span>')
-        .attr('class', 'timeline-end-time')
-        .text(TimelineTool.formatTime(TimelineTool.endTime))
+    const startTimeLabel = $('<label>')
+        .text('Start:')
+        .css({
+            'font-size': '10px',
+            'color': 'var(--uswds-base-dark, #3d4551)',
+            'font-weight': '500'
+        })
 
-    timeRangeContainer.append(startTimeLabel, endTimeLabel)
+    const startTimeInput = $('<input>')
+        .attr({
+            'type': 'datetime-local',
+            'class': 'timeline-start-time-input',
+            'step': '1'
+        })
+        .css({
+            'background': 'transparent',
+            'border': '1px solid rgba(0, 0, 0, 0.2)',
+            'color': 'var(--uswds-base-darker, #171c1e)',
+            'padding': '4px 6px',
+            'border-radius': '4px',
+            'font-size': '11px',
+            'font-family': 'monospace',
+            'width': '100%',
+            'cursor': 'pointer'
+        })
+        .val(TimelineTool.isoToDatetimeLocal(TimelineTool.startTime))
+        .on('change', function() {
+            TimelineTool.onStartTimeChange($(this).val())
+        })
+
+    startTimeContainer.append(startTimeLabel, startTimeInput)
+
+    const endTimeContainer = $('<div>')
+        .css({
+            'display': 'flex',
+            'flex-direction': 'column',
+            'gap': '2px'
+        })
+
+    const endTimeLabel = $('<label>')
+        .text('End:')
+        .css({
+            'font-size': '10px',
+            'color': 'var(--uswds-base-dark, #3d4551)',
+            'font-weight': '500'
+        })
+
+    const endTimeInput = $('<input>')
+        .attr({
+            'type': 'datetime-local',
+            'class': 'timeline-end-time-input',
+            'step': '1'
+        })
+        .css({
+            'background': 'transparent',
+            'border': '1px solid rgba(0, 0, 0, 0.2)',
+            'color': 'var(--uswds-base-darker, #171c1e)',
+            'padding': '4px 6px',
+            'border-radius': '4px',
+            'font-size': '11px',
+            'font-family': 'monospace',
+            'width': '100%',
+            'cursor': 'pointer'
+        })
+        .val(TimelineTool.isoToDatetimeLocal(TimelineTool.endTime))
+        .on('change', function() {
+            TimelineTool.onEndTimeChange($(this).val())
+        })
+
+    endTimeContainer.append(endTimeLabel, endTimeInput)
+
+    timeRangeContainer.append(startTimeContainer, endTimeContainer)
 
     // Assemble UI
-    container.append(timeDisplay, quantizationContainer, slider, controls, timeRangeContainer)
+    container.append(timeDisplay, quantizationContainer, sliderContainer, controls, timeRangeContainer)
     tools.append(container)
 
     // Check if TimeControl is enabled
