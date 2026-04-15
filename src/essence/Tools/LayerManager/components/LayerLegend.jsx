@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
+import ReactDOM from 'react-dom'
 import GradientGraphic from './GradientGraphic'
 import CategoricalGraphic from './CategoricalGraphic'
 import { useClickOutside } from '../hooks'
@@ -56,6 +57,7 @@ const LayerLegend = ({
     const [isInfoExpanded, setIsInfoExpanded] = useState(defaultInfoExpanded)
     const [isOpacityExpanded, setIsOpacityExpanded] = useState(false)
     const [localOpacity, setLocalOpacity] = useState(opacity)
+    const [opacityPopoverPosition, setOpacityPopoverPosition] = useState({ top: 0, left: 0, arrowRight: 10 })
     const opacityBtnRef = useRef(null)
     const opacityPopoverRef = useRef(null)
 
@@ -75,6 +77,39 @@ const LayerLegend = ({
         isOpacityExpanded
     )
 
+    // Update opacity popover position when expanded
+    useEffect(() => {
+        if (isOpacityExpanded && opacityBtnRef.current) {
+            const updatePosition = () => {
+                const btnRect = opacityBtnRef.current.getBoundingClientRect()
+                console.log('Button rect:', btnRect)
+                const popoverWidth = 165 // approximate popover width
+                const popoverLeft = btnRect.right - popoverWidth
+                console.log('Calculated popover left:', popoverLeft)
+
+                // Calculate arrow position: distance from popover's right edge to button's center
+                const btnCenterX = btnRect.left + btnRect.width / 2
+                const arrowRight = popoverWidth - (btnCenterX - popoverLeft)
+                console.log('Calculated arrow right:', arrowRight)
+
+                setOpacityPopoverPosition({
+                    top: btnRect.bottom + 10,
+                    left: popoverLeft,
+                    arrowRight: arrowRight,
+                })
+            }
+            updatePosition()
+
+            // Update on scroll/resize
+            window.addEventListener('scroll', updatePosition, true)
+            window.addEventListener('resize', updatePosition)
+            return () => {
+                window.removeEventListener('scroll', updatePosition, true)
+                window.removeEventListener('resize', updatePosition)
+            }
+        }
+    }, [isOpacityExpanded])
+
     const handleVisibilityToggle = () => {
         const newState = !isVisible
         setIsVisible(newState)
@@ -84,6 +119,7 @@ const LayerLegend = ({
     }
 
     const handleInfoToggle = () => {
+        if (!description) return // Don't toggle if no description
         const newState = !isInfoExpanded
         setIsInfoExpanded(newState)
         if (onInfoToggle) {
@@ -173,9 +209,18 @@ const LayerLegend = ({
                         >
                             <i className="mdi mdi-circle-half-full mdi-18px" />
                         </button>
-                        {/* Opacity popover */}
-                        {isOpacityExpanded && (
-                            <div ref={opacityPopoverRef} className="layer-legend-opacity-popover">
+                        {/* Opacity popover - rendered as portal to avoid clipping */}
+                        {isOpacityExpanded && ReactDOM.createPortal(
+                            <div
+                                ref={opacityPopoverRef}
+                                className="layer-legend-opacity-popover"
+                                style={{
+                                    position: 'fixed',
+                                    top: `${opacityPopoverPosition.top}px`,
+                                    left: `${opacityPopoverPosition.left}px`,
+                                    '--arrow-right': `${opacityPopoverPosition.arrowRight}px`,
+                                }}
+                            >
                                 <input
                                     type="range"
                                     className="layer-legend-opacity-slider"
@@ -188,13 +233,15 @@ const LayerLegend = ({
                                 <span className="layer-legend-opacity-value">
                                     {Math.round(localOpacity * 100)}%
                                 </span>
-                            </div>
+                            </div>,
+                            document.body
                         )}
                     </div>
                     <button
                         className={`layer-legend-action-btn ${isInfoExpanded ? 'active' : ''}`}
                         onClick={handleInfoToggle}
-                        title={isInfoExpanded ? 'Hide info' : 'Show info'}
+                        title={description ? (isInfoExpanded ? 'Hide info' : 'Show info') : 'No description available'}
+                        disabled={!description}
                     >
                         <i className="mdi mdi-information-outline mdi-18px" />
                     </button>

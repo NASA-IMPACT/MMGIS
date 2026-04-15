@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
+import ReactDOM from 'react-dom'
 import { scaleLinear } from 'd3'
 import ColormapControl from './ColormapControl'
 import { useColormapGradient, useClickOutside } from '../hooks'
@@ -63,7 +64,6 @@ const formatTooltipValue = (rawVal, unit) => {
  * @param {number|string} props.min - Minimum value
  * @param {number|string} props.max - Maximum value
  * @param {object} [props.unit] - Unit object with label property
- * @param {number} [props.opacity=1] - Opacity of the gradient
  * @param {object} [props.cog] - COG settings object
  * @param {string} props.layerId - Layer ID for COG controls
  * @param {function} [props.onColormapChange] - Callback for colormap changes
@@ -75,7 +75,6 @@ const GradientGraphic = ({
     min,
     max,
     unit,
-    opacity = 1,
     cog,
     layerId,
     onColormapChange,
@@ -85,6 +84,7 @@ const GradientGraphic = ({
     const [hoverVal, setHoverVal] = useState(null)
     const [tooltipPos, setTooltipPos] = useState({ x: 0 })
     const [isCogExpanded, setIsCogExpanded] = useState(false)
+    const [popoverPosition, setPopoverPosition] = useState({ top: 0, left: 0, arrowRight: 30 })
     const barRef = useRef(null)
     const cogBtnRef = useRef(null)
     const cogPopoverRef = useRef(null)
@@ -105,6 +105,36 @@ const GradientGraphic = ({
         () => setIsCogExpanded(false),
         isCogExpanded
     )
+
+    // Update popover position when expanded
+    useEffect(() => {
+        if (isCogExpanded && cogBtnRef.current) {
+            const updatePosition = () => {
+                const btnRect = cogBtnRef.current.getBoundingClientRect()
+                const popoverWidth = 260 // popover width
+                const popoverLeft = btnRect.right - popoverWidth
+
+                // Calculate arrow position: distance from popover's right edge to button's center
+                const btnCenterX = btnRect.left + btnRect.width / 2
+                const arrowRight = popoverWidth - (btnCenterX - popoverLeft)
+
+                setPopoverPosition({
+                    top: btnRect.bottom + 8,
+                    left: popoverLeft,
+                    arrowRight: arrowRight,
+                })
+            }
+            updatePosition()
+
+            // Update on scroll/resize
+            window.addEventListener('scroll', updatePosition, true)
+            window.addEventListener('resize', updatePosition)
+            return () => {
+                window.removeEventListener('scroll', updatePosition, true)
+                window.removeEventListener('resize', updatePosition)
+            }
+        }
+    }, [isCogExpanded])
 
     const handleMouseMove = useCallback(
         (e) => {
@@ -140,7 +170,6 @@ const GradientGraphic = ({
     const gradientStops = (hasCogSettings && colormapColors) ? colormapColors : stops
     const gradientStyle = {
         background: makeGradient(gradientStops),
-        opacity: opacity,
     }
 
     return (
@@ -177,8 +206,17 @@ const GradientGraphic = ({
                             >
                                 <i className={`mdi mdi-chevron-${isCogExpanded ? 'up' : 'down'} mdi-18px`} />
                             </button>
-                            {isCogExpanded && (
-                                <div ref={cogPopoverRef} className="gradient-cog-popover">
+                            {isCogExpanded && ReactDOM.createPortal(
+                                <div
+                                    ref={cogPopoverRef}
+                                    className="gradient-cog-popover"
+                                    style={{
+                                        position: 'fixed',
+                                        top: `${popoverPosition.top}px`,
+                                        left: `${popoverPosition.left}px`,
+                                        '--arrow-right': `${popoverPosition.arrowRight}px`,
+                                    }}
+                                >
                                     <ColormapControl
                                         layerName={layerId}
                                         colormap={cog.colormap}
@@ -190,7 +228,8 @@ const GradientGraphic = ({
                                         onRescaleChange={onRescaleChange}
                                         onReset={onCogReset}
                                     />
-                                </div>
+                                </div>,
+                                document.body
                             )}
                         </>
                     )}

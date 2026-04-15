@@ -99,7 +99,7 @@
     transition: background-color 0.2s cubic-bezier(0.2, 0, 0, 1), color 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
-.layer-legend-action-btn:hover {
+.layer-legend-action-btn:hover:not(:disabled) {
     background: rgba(0, 94, 162, 0.1);
     color: var(--uswds-primary, #005ea2);
 }
@@ -107,6 +107,11 @@
 .layer-legend-action-btn.active {
     color: var(--uswds-primary, #005ea2);
     background: rgba(0, 94, 162, 0.15);
+}
+
+.layer-legend-action-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
 }
 
 /* Legend Body (expandable description) */
@@ -223,15 +228,12 @@
 }
 
 .gradient-cog-popover {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 8px;
+    /* Position will be set via inline styles (fixed positioning) */
     background: var(--uswds-white, #ffffff);
     border: 1px solid rgba(0, 0, 0, 0.15);
     border-radius: 6px;
     box-shadow: 0 4px 16px var(--uswds-shadow, rgba(0, 0, 0, 0.15));
-    z-index: 1000;
+    z-index: 10000;
     min-width: 260px;
 }
 
@@ -239,7 +241,7 @@
     content: '';
     position: absolute;
     top: -6px;
-    right: 10px;
+    right: var(--arrow-right, 10px);
     width: 10px;
     height: 10px;
     background: var(--uswds-white, #ffffff);
@@ -619,10 +621,7 @@
 }
 
 .layer-legend-opacity-popover {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 4px;
+    /* Position will be set via inline styles (fixed positioning) */
     display: flex;
     align-items: center;
     gap: 8px;
@@ -631,7 +630,7 @@
     border: 1px solid rgba(0, 0, 0, 0.15);
     border-radius: 6px;
     box-shadow: 0 4px 12px var(--uswds-shadow, rgba(0, 0, 0, 0.15));
-    z-index: 1000;
+    z-index: 10000;
     white-space: nowrap;
 }
 
@@ -639,7 +638,7 @@
     content: '';
     position: absolute;
     top: -6px;
-    right: 10px;
+    right: var(--arrow-right, 10px);
     width: 10px;
     height: 10px;
     background: var(--uswds-white, #ffffff);
