@@ -41,6 +41,7 @@ import Attributions from './Ancillary/Attributions'
 //import Swap from './Ancillary/Swap'
 import QueryURL from './Ancillary/QueryURL'
 import TimeControl from './Basics/TimeControl_/TimeControl'
+import TimeUI from './Basics/TimeControl_/TimeUI'
 import calls from '../pre/calls'
 import { mmgisAPI_, mmgisAPI } from './mmgisAPI/mmgisAPI'
 import { makeMissionNotFoundDiv } from './LandingPage/LandingPage'
@@ -385,6 +386,10 @@ var essence = {
 
         //Make the time control
         TimeControl.init()
+        if (TimeControl.enabled) {
+            const uiInstance = TimeUI.init(TimeControl.handleTimeChange, TimeControl.enabled)
+            TimeControl.registerUI(uiInstance)
+        }
 
         Map_.init(essence.fina)
 
