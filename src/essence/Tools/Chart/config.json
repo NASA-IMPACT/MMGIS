@@ -1,0 +1,19 @@
+{
+    "defaultIcon": "chart-line",
+    "description": "Display timeseries charts for clicked features by fetching data from a configured API.",
+    "descriptionFull": {
+        "title": "A generic chart tool that fetches timeseries data when a vector layer feature is clicked. Configure the timeseries URL and axis mappings on each layer's variables.chart section. Supports multiple series via groupBy and dual Y-axes.",
+        "example": {
+            "chart": {
+                "timeseriesUrl": "https://api.example.com/items?id={station_code}",
+                "idProp": "station_code"
+            }
+        }
+    },
+    "hasVars": false,
+    "name": "Chart",
+    "toolbarPriority": 5,
+    "paths": {
+        "ChartTool": "essence/Tools/Chart/ChartTool"
+    }
+}

@@ -45,6 +45,7 @@
                 "waypoint",
                 "chemistry_tool",
                 "draw_tool",
+                "chart_tool",
                 "edl_wedge",
                 "viewer_open"
               ]
@@ -1912,6 +1913,101 @@
               "type": "checkbox",
               "width": 3,
               "defaultChecked": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Chart",
+      "rows": [
+        {
+          "name": "Chart Tool Configuration",
+          "description": "Configure the Chart tool for this layer. Set the layer's Kind to 'chart_tool' to enable chart rendering on feature click.",
+          "components": [
+            {
+              "field": "variables.chart.timeseriesUrl",
+              "name": "Timeseries URL",
+              "description": "URL template to fetch timeseries data for a clicked feature. Use {property_name} placeholders to interpolate feature properties into the URL. Example: https://api.example.com/timeseries?id={station_code}&f=geojson",
+              "type": "text",
+              "width": 12
+            },
+            {
+              "field": "variables.chart.idProp",
+              "name": "ID Property",
+              "description": "The feature property to use as the chart title identifier. Example: 'station_code', 'site_id'.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.chart.groupBy",
+              "name": "Group By Property",
+              "description": "Optional. A feature property to group timeseries data into separate colored series. Example: 'parameter' to create one line per measurement type.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.chart.title",
+              "name": "Chart Title Template",
+              "description": "Optional. A title template for the chart. Use {id} for the ID property value, or {property_name} for other feature properties. Default: '{id}'.",
+              "type": "text",
+              "width": 4
+            }
+          ]
+        },
+        {
+          "subname": "X Axis",
+          "components": [
+            {
+              "field": "variables.chart.xAxis.prop",
+              "name": "X Axis Property",
+              "description": "The feature property to use for the X axis. Default: 'datetime'.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.chart.xAxis.type",
+              "name": "X Axis Type",
+              "description": "The data type of the X axis. 'time' for datetime values, 'number' for numeric values.",
+              "type": "dropdown",
+              "width": 4,
+              "options": [
+                "time",
+                "number"
+              ]
+            },
+            {
+              "field": "variables.chart.xAxis.label",
+              "name": "X Axis Label",
+              "description": "Display label for the X axis. Default: 'Date'.",
+              "type": "text",
+              "width": 4
+            }
+          ]
+        },
+        {
+          "subname": "Y Axis",
+          "components": [
+            {
+              "field": "variables.chart.yAxis.0.prop",
+              "name": "Y Axis Property",
+              "description": "The feature property to use for the Y axis values. Default: 'value'.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.chart.yAxis.0.label",
+              "name": "Y Axis Label",
+              "description": "Display label for the Y axis. If empty, auto-detected from 'units_of_measure' property.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.chart.yAxis.0.units",
+              "name": "Y Axis Units",
+              "description": "Units of measurement for the Y axis (e.g., 'ppm', '°C', 'μg/m³').",
+              "type": "text",
+              "width": 4
             }
           ]
         }

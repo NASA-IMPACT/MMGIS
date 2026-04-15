@@ -1,0 +1,104 @@
+#chartTool {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+#chartToolHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--color-i);
+    min-height: 34px;
+}
+#chartToolHeader #title {
+    font-size: 14px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+#chartToolHeader #chartToolName {
+    font-size: 13px;
+    color: var(--color-f);
+    margin-left: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+
+#chartToolSelectors {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+    align-items: center;
+}
+.chartSelectorLabel {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    color: var(--color-f);
+}
+.chartSelectorLabel select {
+    background: var(--color-j, #333);
+    color: var(--color-a, #fff);
+    border: 1px solid var(--color-i, #555);
+    border-radius: 3px;
+    padding: 2px 4px;
+    font-size: 11px;
+    max-width: 160px;
+    cursor: pointer;
+}
+
+#chartToolContent {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    padding: 8px;
+    overflow: hidden;
+}
+
+#chartToolCanvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+#chartToolLoading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--color-f);
+    font-size: 13px;
+}
+#chartToolLoading .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--color-i);
+    border-top: 3px solid var(--color-a);
+    border-radius: 50%;
+    animation: chartSpinner 0.8s linear infinite;
+}
+@keyframes chartSpinner {
+    to { transform: rotate(360deg); }
+}
+
+#chartToolError {
+    color: var(--color-red, #e74c3c);
+    font-size: 13px;
+    text-align: center;
+    padding: 16px;
+}
+
+#chartToolEmpty {
+    color: var(--color-f);
+    font-size: 13px;
+    text-align: center;
+    padding: 16px;
+}

@@ -4,7 +4,7 @@
     "descriptionFull": {},
     "hasVars": false,
     "name": "Kinds",
-    "kinds": ["info", "waypoint", "chemistry_tool", "draw_tool"],
+    "kinds": ["info", "waypoint", "chemistry_tool", "draw_tool", "chart_tool"],
     "paths": {
         "Kinds": "essence/Tools/Kinds/Kinds"
     }
