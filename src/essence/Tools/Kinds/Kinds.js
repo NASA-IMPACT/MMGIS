@@ -16,7 +16,7 @@ var Kinds = {
         preFeatures,
         lastFeatureLayers
     ) {
-        L_.setActiveFeature(layer)
+        try { L_.setActiveFeature(layer) } catch (e) { console.warn('Kinds: setActiveFeature error:', e) }
 
         if (typeof kind !== 'string') return
 
@@ -158,7 +158,7 @@ var Kinds = {
                                 { opacity: 1, clip: anchors }
                             )
                             Map_.tempOverlayImage.addTo(Map_.map).bringToBack()
-                        } catch (err) {}
+                        } catch (err) { }
                     }
                 }
 
@@ -266,26 +266,26 @@ var Kinds = {
                                 typeof modelSettings.yawProp === 'number'
                                     ? modelSettings.yawProp
                                     : F_.getIn(
-                                          layer.feature.properties,
-                                          modelSettings.yawProp,
-                                          0
-                                      ),
+                                        layer.feature.properties,
+                                        modelSettings.yawProp,
+                                        0
+                                    ),
                             x:
                                 typeof modelSettings.pitchProp === 'number'
                                     ? modelSettings.pitchProp
                                     : F_.getIn(
-                                          layer.feature.properties,
-                                          modelSettings.pitchProp,
-                                          0
-                                      ),
+                                        layer.feature.properties,
+                                        modelSettings.pitchProp,
+                                        0
+                                    ),
                             z:
                                 typeof modelSettings.rollProp === 'number'
                                     ? modelSettings.rollProp
                                     : F_.getIn(
-                                          layer.feature.properties,
-                                          modelSettings.rollProp,
-                                          0
-                                      ),
+                                        layer.feature.properties,
+                                        modelSettings.rollProp,
+                                        0
+                                    ),
                         }
                         if (modelSettings.yawUnit === 'deg')
                             rotation.y *= Math.PI / 180
@@ -309,22 +309,22 @@ var Kinds = {
                                 latitude: layer._latlng.lat || 0,
                                 elevation:
                                     typeof modelSettings.elevationProp ===
-                                    'number'
+                                        'number'
                                         ? modelSettings.elevationProp
                                         : F_.getIn(
-                                              layer.feature.properties,
-                                              modelSettings.elevationProp,
-                                              0
-                                          ),
+                                            layer.feature.properties,
+                                            modelSettings.elevationProp,
+                                            0
+                                        ),
                             },
                             scale:
                                 typeof modelSettings.scaleProp === 'number'
                                     ? modelSettings.scaleProp
                                     : F_.getIn(
-                                          layer.feature.properties,
-                                          modelSettings.scaleProp,
-                                          1
-                                      ),
+                                        layer.feature.properties,
+                                        modelSettings.scaleProp,
+                                        1
+                                    ),
                             rotation: rotation,
                         })
                     }
@@ -334,6 +334,11 @@ var Kinds = {
                 break
             case 'chemistry_tool':
                 TC_.getTool('ChemistryTool').use(layer)
+
+                useInfo(false)
+                break
+            case 'chart_tool':
+                TC_.getTool('ChartTool').use(layer)
 
                 useInfo(false)
                 break
@@ -440,7 +445,7 @@ var Kinds = {
                 if (e.latlng && e.latlng.lng != null && e.latlng.lat != null) {
                     if (
                         typeof L_.layers.layer[layerName].eachLayer !==
-                            'function' &&
+                        'function' &&
                         layerName.indexOf('DrawTool_') != 0
                     ) {
                         L_.layers.layer[layerName].eachLayer = function (cb) {
