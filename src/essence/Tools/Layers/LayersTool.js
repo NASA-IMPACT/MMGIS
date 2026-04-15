@@ -30,6 +30,15 @@ import './LayersTool.css'
 const helpKey = 'LayersTool'
 
 /**
+ * Check if TiTiler is available for a layer (either locally or via external URL)
+ * @param {object} layerConfig - The layer configuration object
+ * @returns {boolean} True if TiTiler is available
+ */
+const hasTiTilerAccess = (layerConfig) => {
+    return window.mmgisglobal.WITH_TITILER === 'true' || layerConfig?.titilerUrl != null
+}
+
+/**
  * Generate the tool markup dynamically based on available layer types
  * @returns {string} HTML markup for the LayersTool
  */
@@ -860,7 +869,7 @@ function interfaceWithMMGIS(fromInit) {
                             node[i].cogColormap
                         )
 
-                        if (window.mmgisglobal.WITH_TITILER === 'true') {
+                        if (hasTiTilerAccess(node[i])) {
                             // Use resolved colormap (has default fallback) for the URL
                             const colormapUrl = ServiceUrls.buildColormapImageUrl(node[i].cogColormap || colormap, node[i])
                             // prettier-ignore
@@ -1052,7 +1061,7 @@ function interfaceWithMMGIS(fromInit) {
                             node[i].variables?.streamlines?.colorScale
                         )
 
-                        if (window.mmgisglobal.WITH_TITILER === 'true') {
+                        if (hasTiTilerAccess(node[i])) {
                             // prettier-ignore
                             additionalSettings = [
                                 `<img id="titlerCogColormapImage_${node[i].name}" src="${ServiceUrls.buildColormapImageUrl(node[i].variables?.streamlines?.colorScale?.toLowerCase() || VELOCITY_DEFAULT_COLOR_RAMP, node[i])}"
@@ -1140,7 +1149,7 @@ function interfaceWithMMGIS(fromInit) {
                             node[i].cogColormap
                         )
 
-                        if (window.mmgisglobal.WITH_TITILER === 'true') {
+                        if (hasTiTilerAccess(node[i])) {
                             // Use resolved colormap (has default fallback) for the URL
                             const colormapUrl = ServiceUrls.buildColormapImageUrl(node[i].cogColormap || colormap, node[i])
                             // prettier-ignore
@@ -1449,7 +1458,7 @@ function interfaceWithMMGIS(fromInit) {
                     break
             }
 
-            if (window.mmgisglobal.WITH_TITILER === 'true') {
+            if (hasTiTilerAccess(node[i])) {
                 // Check if TiTiler images loaded
                 if ($(`#titlerCogColormapImage_${node[i].name}`).length) {
                     $(`#titlerCogColormapImage_${node[i].name}`).on(
