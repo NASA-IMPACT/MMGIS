@@ -6,6 +6,14 @@
     box-sizing: border-box;
 }
 
+/* Allow selection of time display */
+.timeline-current-time {
+    user-select: text;
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+}
+
 .timeline-container * {
     box-sizing: border-box;
 }

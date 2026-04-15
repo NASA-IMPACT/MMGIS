@@ -16,7 +16,7 @@ const TimelineTool = {
     isPlaying: false,
     playInterval: null,
     playSpeed: 1000, // milliseconds per step
-    quantization: 'hourly', // 'hourly' or 'daily'
+    quantization: 'hourly', // 'hourly' or 'daily' or 'monthly'
 
     initialize: function () {
         // Tool initialization
@@ -171,17 +171,21 @@ const TimelineTool = {
         return date.toISOString().replace('T', ' ').split('.')[0] + 'Z'
     },
 
-    // Convert ISO string to datetime-local input format (YYYY-MM-DDTHH:mm:ss)
+    // Convert ISO string (UTC) to datetime-local input format (keeping UTC, no timezone conversion)
     isoToDatetimeLocal: function (isoString) {
         if (!isoString) return ''
-        // Remove the 'Z' and milliseconds if present
-        return isoString.split('.')[0].replace('Z', '')
+
+        // Remove 'Z' and milliseconds to get YYYY-MM-DDTHH:mm:ss format
+        // This treats the datetime-local input as UTC (no timezone conversion)
+        return isoString.replace(/\.\d{3}Z$/, '').replace(/Z$/, '')
     },
 
-    // Convert datetime-local input format to ISO string
+    // Convert datetime-local input format to ISO string (UTC, no timezone conversion)
     datetimeLocalToIso: function (datetimeLocal) {
         if (!datetimeLocal) return null
-        // Add 'Z' to indicate UTC
+
+        // Add 'Z' suffix to indicate UTC
+        // Treats the input value as UTC (no timezone conversion)
         return datetimeLocal + 'Z'
     },
 
@@ -200,8 +204,6 @@ const TimelineTool = {
             input.val(this.isoToDatetimeLocal(this.startTime))
             return
         }
-
-        console.log('[Timeline] Start time changed:', newStart)
 
         // Update TimeControl with new start time
         TimeControl.handleTimeChange(
@@ -226,8 +228,6 @@ const TimelineTool = {
             input.val(this.isoToDatetimeLocal(this.endTime))
             return
         }
-
-        console.log('[Timeline] End time changed:', newEnd)
 
         // Update TimeControl with new end time
         TimeControl.handleTimeChange(
@@ -256,12 +256,6 @@ const TimelineTool = {
 
         const totalDuration = new Date(this.endTime) - new Date(this.startTime)
 
-        console.log('[Timeline] Slider changed:', {
-            percentage,
-            startTime: this.startTime,
-            endTime: this.endTime,
-            totalDuration
-        })
 
         // If start and end are the same, can't scrub
         if (totalDuration === 0) {
@@ -311,10 +305,8 @@ const TimelineTool = {
             const current = new Date(this.currentTime)
             const end = new Date(this.endTime)
 
-            // Use quantized step (hourly or daily)
-            const step = this.getQuantizedStep()
-
-            const newTime = new Date(current.getTime() + step)
+            // Use quantized step (monthly or hourly or daily)
+            const newTime = this.stepDate(current, 1)
 
             // Stop if we've reached the end
             if (newTime >= end) {
@@ -371,10 +363,9 @@ const TimelineTool = {
 
         const current = new Date(this.currentTime)
         const start = new Date(this.startTime)
-        const step = this.getQuantizedStep()
 
         // Calculate new time
-        const newTime = new Date(current.getTime() - step)
+        const newTime = this.stepDate(current, -1)
 
         // Don't go before start time
         if (newTime < start) {
@@ -400,10 +391,9 @@ const TimelineTool = {
 
         const current = new Date(this.currentTime)
         const end = new Date(this.endTime)
-        const step = this.getQuantizedStep()
 
         // Calculate new time
-        const newTime = new Date(current.getTime() + step)
+        const newTime = this.stepDate(current, 1)
 
         // Don't go past end time
         if (newTime > end) {
@@ -424,6 +414,20 @@ const TimelineTool = {
         )
     },
 
+    stepDate: function (date, direction = 1) {
+        const newDate = new Date(date)
+
+        if (this.quantization === 'hourly') {
+            newDate.setHours(newDate.getHours() + direction)
+        } else if (this.quantization === 'daily') {
+            newDate.setDate(newDate.getDate() + direction)
+        } else if (this.quantization === 'monthly') {
+            newDate.setMonth(newDate.getMonth() + direction)
+        }
+
+        return newDate
+    },
+
     quantizeTime: function (isoString) {
         if (!isoString) return isoString
 
@@ -435,19 +439,15 @@ const TimelineTool = {
         } else if (this.quantization === 'daily') {
             // Round to start of day, set time to 00:00:00
             date.setHours(0, 0, 0, 0)
+        } else if (this.quantization === 'monthly') {
+            // Round to start of month, set to first day at 00:00:00
+            date.setDate(1)
+            date.setHours(0, 0, 0, 0)
         }
 
         return date.toISOString().split('.')[0] + 'Z'
     },
 
-    getQuantizedStep: function () {
-        if (this.quantization === 'hourly') {
-            return 3600000 // 1 hour in milliseconds
-        } else if (this.quantization === 'daily') {
-            return 86400000 // 1 day in milliseconds
-        }
-        return 3600000 // default to hourly
-    },
 
     setQuantization: function (value) {
         this.quantization = value
@@ -513,8 +513,13 @@ function interfaceWithMMGIS() {
             'text-align': 'center',
             'font-size': '14px',
             'color': 'var(--uswds-base-darker, #171c1e)',
-            'font-family': 'monospace',
-            'font-weight': '600'
+            'font-family': '"Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+            'font-weight': '600',
+            'user-select': 'text',
+            '-webkit-user-select': 'text',
+            '-moz-user-select': 'text',
+            '-ms-user-select': 'text',
+            'cursor': 'text'
         })
         .text('--:--:--')
 
@@ -552,7 +557,9 @@ function interfaceWithMMGIS() {
         })
         .append(
             $('<option>').val('hourly').text('Hourly'),
-            $('<option>').val('daily').text('Daily')
+            $('<option>').val('daily').text('Daily'),
+            $('<option>').val('monthly').text('Monthly')
+
         )
         .val(TimelineTool.quantization)
         .on('change', function() {
@@ -583,7 +590,7 @@ function interfaceWithMMGIS() {
             'padding': '4px 8px',
             'border-radius': '4px',
             'font-size': '10px',
-            'font-family': 'monospace',
+            'font-family': '"Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
             'white-space': 'nowrap',
             'pointer-events': 'none',
             'opacity': '0',
@@ -705,7 +712,7 @@ function interfaceWithMMGIS() {
             'padding': '4px 6px',
             'border-radius': '4px',
             'font-size': '11px',
-            'font-family': 'monospace',
+            'font-family': '"Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
             'width': '100%',
             'cursor': 'pointer'
         })
@@ -744,7 +751,7 @@ function interfaceWithMMGIS() {
             'padding': '4px 6px',
             'border-radius': '4px',
             'font-size': '11px',
-            'font-family': 'monospace',
+            'font-family': '"Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
             'width': '100%',
             'cursor': 'pointer'
         })
