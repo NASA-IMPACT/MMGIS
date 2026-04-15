@@ -185,6 +185,15 @@ var TimeControl = {
                 TimeControl.currentTime
             )
         }
+
+        // Propagate time changes to layers
+        TimeControl.handleTimeChange(
+            TimeControl.startTime,
+            TimeControl.endTime,
+            TimeControl.currentTime,
+            false // Don't skip update - ensure layers get the new times
+        )
+
         return true
     },
     setLayerTime: function (layer, startTime, endTime) {
