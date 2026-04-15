@@ -132,10 +132,6 @@ const modern = {
             })
         }
 
-        // Load and assign tools to panels based on configuration
-        const tools = modern.configData.tools || []
-        ToolControllerModern_.loadAndAssignTools(tools)
-
         // Get all panels from PanelManager, already sorted by priority
         const activePanels = PanelManager_.getAllPanelsByPriority()
 
@@ -145,11 +141,15 @@ const modern = {
         L_.UserInterface_ = UserInterfaceModern_
         L_.TimeControl = TimeControl
 
+        //Make the time control BEFORE loading tools (so tools can access time values)
+        TimeControl.init()
+
+        // Load and assign tools to panels based on configuration
+        const tools = modern.configData.tools || []
+        ToolControllerModern_.loadAndAssignTools(tools)
+
         // Initialize the User Interface with the sorted panels from PanelManager
         UserInterfaceModern_.init(activePanels, layoutStyle)
-
-        //Make the time control
-        TimeControl.init()
 
         // Initialize Map
         Map_.init(function() {
