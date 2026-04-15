@@ -41,8 +41,12 @@ const ChartTool = {
     on: false,
     using: null,
     MMGISInterface: null,
+    targetId: null,
 
-    make: function () {
+    make: function (targetId) {
+        this.targetId = typeof targetId === 'string'
+            ? targetId
+            : '__ChartTool_missing_targetId'
         this.MMGISInterface = new interfaceWithMMGIS()
         this.on = true
 
@@ -66,6 +70,7 @@ const ChartTool = {
     },
     destroy: function () {
         this.MMGISInterface.separateFromMMGIS()
+        this.targetId = null
         this.on = false
     },
     getUrlString: function () {
@@ -79,14 +84,21 @@ function interfaceWithMMGIS() {
         separateFromMMGIS()
     }
 
-    const toolsContainer = $('#tools')
-    toolsContainer.css('background', 'var(--color-k)')
+    const toolsContainer = $(
+        ChartTool.targetId ? `#${ChartTool.targetId}` : '#toolPanel'
+    )
+    toolsContainer.css('background', 'var(--uswds-white, #ffffff)')
     toolsContainer.empty()
 
     const tools = $('<div>').css('height', '100%').html(markup)
     toolsContainer.append(tools)
 
     function separateFromMMGIS() {
+        const tools = $(
+            ChartTool.targetId ? `#${ChartTool.targetId}` : '#toolPanel'
+        )
+        tools.css('background', 'var(--uswds-white, #ffffff)')
+        tools.empty()
         destroyChart()
     }
 }
@@ -380,9 +392,9 @@ function renderChart(datasets, xLabel, xType, yLabel, yLabelRight) {
     const scales = {
         x: {
             type: 'linear',
-            title: { display: true, text: xLabel, color: '#aaa' },
+            title: { display: true, text: xLabel, color: '#3d4551' },
             ticks: {
-                color: '#999',
+                color: '#565c65',
                 callback: function (value) {
                     if (xType === 'time') {
                         const d = new Date(value)
@@ -391,14 +403,14 @@ function renderChart(datasets, xLabel, xType, yLabel, yLabelRight) {
                     return value
                 },
             },
-            grid: { color: 'rgba(255,255,255,0.07)' },
+            grid: { color: 'rgba(0,0,0,0.1)' },
         },
         y: {
             type: 'linear',
             position: 'left',
-            title: { display: true, text: yLabel, color: '#aaa' },
-            ticks: { color: '#999' },
-            grid: { color: 'rgba(255,255,255,0.07)' },
+            title: { display: true, text: yLabel, color: '#3d4551' },
+            ticks: { color: '#565c65' },
+            grid: { color: 'rgba(0,0,0,0.1)' },
         },
     }
 
@@ -409,9 +421,9 @@ function renderChart(datasets, xLabel, xType, yLabel, yLabelRight) {
             title: {
                 display: true,
                 text: yLabelRight || datasets.find((d) => d.yAxisID === 'y1')?.label || '',
-                color: '#aaa',
+                color: '#3d4551',
             },
-            ticks: { color: '#999' },
+            ticks: { color: '#565c65' },
             grid: { drawOnChartArea: false },
         }
     }
@@ -429,7 +441,7 @@ function renderChart(datasets, xLabel, xType, yLabel, yLabelRight) {
             plugins: {
                 legend: {
                     display: true,
-                    labels: { color: '#ccc', boxWidth: 12 },
+                    labels: { color: '#3d4551', boxWidth: 12 },
                 },
                 tooltip: {
                     backgroundColor: 'rgba(0,0,0,0.8)',

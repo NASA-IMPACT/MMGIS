@@ -1,56 +1,85 @@
+/*
+ * ChartTool.css
+ * Chart tool styling aligned with USWDS / Horizon modern design
+ */
+
 #chartTool {
     display: flex;
     flex-direction: column;
+    width: 100%;
     height: 100%;
     overflow: hidden;
+    font-family: "Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--uswds-white, #ffffff);
 }
 
 #chartToolHeader {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 4px 8px;
-    border-bottom: 1px solid var(--color-i);
-    min-height: 34px;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    min-height: 40px;
+    background-color: var(--uswds-white, #ffffff);
+    flex-shrink: 0;
 }
+
 #chartToolHeader #title {
-    font-size: 14px;
-    font-weight: bold;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: capitalize;
+    color: var(--uswds-base-darker, #171c1e);
 }
+
 #chartToolHeader #chartToolName {
-    font-size: 13px;
-    color: var(--color-f);
-    margin-left: 10px;
+    font-size: 0.85rem;
+    color: var(--uswds-base-dark, #3d4551);
+    margin-left: 0.5rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 200px;
+    max-width: 300px;
+    font-weight: 500;
 }
 
 #chartToolSelectors {
     display: flex;
-    gap: 8px;
+    gap: 0.5rem;
     margin-left: auto;
     align-items: center;
 }
+
 .chartSelectorLabel {
     display: flex;
     align-items: center;
-    gap: 3px;
-    font-size: 11px;
-    color: var(--color-f);
+    gap: 0.3rem;
+    font-size: 0.75rem;
+    color: var(--uswds-base-dark, #3d4551);
+    font-weight: 500;
 }
+
 .chartSelectorLabel select {
-    background: var(--color-j, #333);
-    color: var(--color-a, #fff);
-    border: 1px solid var(--color-i, #555);
-    border-radius: 3px;
-    padding: 2px 4px;
-    font-size: 11px;
-    max-width: 160px;
+    background: var(--uswds-white, #ffffff);
+    color: var(--uswds-base-darker, #171c1e);
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    max-width: 180px;
     cursor: pointer;
+    font-family: inherit;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.chartSelectorLabel select:hover {
+    border-color: var(--uswds-primary, #005ea2);
+}
+
+.chartSelectorLabel select:focus {
+    outline: none;
+    border-color: var(--uswds-primary, #005ea2);
+    box-shadow: 0 0 0 2px rgba(0, 94, 162, 0.2);
 }
 
 #chartToolContent {
@@ -59,13 +88,17 @@
     align-items: center;
     justify-content: center;
     position: relative;
-    padding: 8px;
+    padding: 1rem;
     overflow: hidden;
+    width: 100%;
+    min-height: 0; /* Important for flex children to shrink */
 }
 
 #chartToolCanvas {
     width: 100% !important;
     height: 100% !important;
+    max-width: 100%;
+    max-height: 100%;
 }
 
 #chartToolLoading {
@@ -73,32 +106,38 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    color: var(--color-f);
-    font-size: 13px;
+    gap: 0.75rem;
+    color: var(--uswds-base-dark, #3d4551);
+    font-size: 0.9rem;
 }
+
 #chartToolLoading .spinner {
-    width: 24px;
-    height: 24px;
-    border: 3px solid var(--color-i);
-    border-top: 3px solid var(--color-a);
+    width: 32px;
+    height: 32px;
+    border: 3px solid rgba(0, 94, 162, 0.2);
+    border-top: 3px solid var(--uswds-primary, #005ea2);
     border-radius: 50%;
     animation: chartSpinner 0.8s linear infinite;
 }
+
 @keyframes chartSpinner {
     to { transform: rotate(360deg); }
 }
 
 #chartToolError {
-    color: var(--color-red, #e74c3c);
-    font-size: 13px;
+    color: #b50909;
+    font-size: 0.9rem;
     text-align: center;
-    padding: 16px;
+    padding: 1.5rem;
+    background-color: rgba(181, 9, 9, 0.05);
+    border-radius: 4px;
+    border: 1px solid rgba(181, 9, 9, 0.2);
 }
 
 #chartToolEmpty {
-    color: var(--color-f);
-    font-size: 13px;
+    color: var(--uswds-base-dark, #3d4551);
+    font-size: 0.9rem;
     text-align: center;
-    padding: 16px;
+    padding: 1.5rem;
+    font-style: italic;
 }
