@@ -101,6 +101,7 @@ const LayerManagerTool = {
     vars: {},
     _cleanups: [],
     _mounted: false,
+    targetId: null,
 
     /**
      * Initialize the tool - called once at application startup
@@ -153,11 +154,21 @@ const LayerManagerTool = {
 
     /**
      * Make the tool - called when user selects this tool
+     * @param {string} targetId - The ID of the container element to render into
      */
-    make: function () {
-        const container = document.getElementById('toolPanel')
+    make: function (targetId) {
+        this.targetId =
+            typeof targetId === 'string'
+                ? targetId
+                : '__LayerManagerTool_missing_targetId'
+
+        const container = document.getElementById(
+            this.targetId || 'toolPanel'
+        )
         if (!container) {
-            console.error('LayerManagerTool: toolPanel not found')
+            console.error(
+                `LayerManagerTool: container ${this.targetId || 'toolPanel'} not found`
+            )
             return
         }
 
@@ -198,12 +209,15 @@ const LayerManagerTool = {
      * Destroy the tool - called when user switches to different tool
      */
     destroy: function () {
-        const container = document.getElementById('toolPanel')
+        const container = document.getElementById(
+            this.targetId || 'toolPanel'
+        )
         if (container) {
             ReactDOM.unmountComponentAtNode(container)
         }
 
         this._mounted = false
+        this.targetId = null
 
         // Clean up event subscriptions
         this._cleanups.forEach((cleanup) => {
