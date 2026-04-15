@@ -9,7 +9,7 @@ export default defineConfig({
   testDir: "./tests",
 
   // Test file patterns
-  testMatch: "**/*.spec.js",
+  testMatch: "**/*.spec.{js,ts}",
 
   // Timeout per test
   timeout: 30 * 1000,
