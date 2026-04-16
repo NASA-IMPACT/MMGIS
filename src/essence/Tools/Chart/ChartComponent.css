@@ -1,11 +1,11 @@
-#chartTool {
+.chart-tool {
     display: flex;
     flex-direction: column;
     height: 100%;
     overflow: hidden;
 }
 
-#chartToolHeader {
+.chart-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -13,13 +13,13 @@
     border-bottom: 1px solid var(--color-i);
     min-height: 34px;
 }
-#chartToolHeader #title {
+.chart-header .chart-title {
     font-size: 14px;
     font-weight: bold;
     letter-spacing: 1px;
     text-transform: uppercase;
 }
-#chartToolHeader #chartToolName {
+.chart-header .chart-name {
     font-size: 13px;
     color: var(--color-f);
     margin-left: 10px;
@@ -29,20 +29,20 @@
     max-width: 200px;
 }
 
-#chartToolSelectors {
+.chart-selectors {
     display: flex;
     gap: 8px;
     margin-left: auto;
     align-items: center;
 }
-.chartSelectorLabel {
+.chart-selector-label {
     display: flex;
     align-items: center;
     gap: 3px;
     font-size: 11px;
     color: var(--color-f);
 }
-.chartSelectorLabel select {
+.chart-selector-label select {
     background: var(--color-j, #333);
     color: var(--color-a, #fff);
     border: 1px solid var(--color-i, #555);
@@ -53,7 +53,7 @@
     cursor: pointer;
 }
 
-#chartToolContent {
+.chart-content {
     flex: 1;
     display: flex;
     align-items: center;
@@ -63,12 +63,12 @@
     overflow: hidden;
 }
 
-#chartToolCanvas {
+.chart-canvas {
     width: 100% !important;
     height: 100% !important;
 }
 
-#chartToolLoading {
+.chart-loading {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -77,7 +77,7 @@
     color: var(--color-f);
     font-size: 13px;
 }
-#chartToolLoading .spinner {
+.chart-spinner {
     width: 24px;
     height: 24px;
     border: 3px solid var(--color-i);
@@ -89,14 +89,14 @@
     to { transform: rotate(360deg); }
 }
 
-#chartToolError {
+.chart-error {
     color: var(--color-red, #e74c3c);
     font-size: 13px;
     text-align: center;
     padding: 16px;
 }
 
-#chartToolEmpty {
+.chart-empty {
     color: var(--color-f);
     font-size: 13px;
     text-align: center;
