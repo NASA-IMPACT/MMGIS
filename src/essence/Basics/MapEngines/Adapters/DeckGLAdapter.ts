@@ -113,6 +113,8 @@ interface BasemapInstance {
     off(type: string, handler: (...args: unknown[]) => void): unknown
     /** Recalculate the map size from its container element. */
     resize(): void
+    /** Switch the map to a different style URL at runtime. */
+    setStyle(styleUrl: string): unknown
 }
 
 /**
@@ -322,6 +324,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     getBasemap(): BasemapInstance | null {
         return this._basemap
+    }
+
+    setBasemapStyle(styleUrl: string): void {
+        if (this._basemap) {
+            this._basemap.setStyle(styleUrl)
+        }
     }
 
     getContainer(): HTMLElement {

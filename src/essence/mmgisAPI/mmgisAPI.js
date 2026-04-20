@@ -750,6 +750,24 @@ var mmgisAPI = {
      */
     toggleLayer: mmgisAPI_.toggleLayer,
 
+    /** setBasemap - switches the active basemap style by name.
+     * Style names come from msv.basemap.styles[] in the mission config,
+     * or the provider defaults if no styles are configured.
+     * @param {string} styleName - display name of the style (e.g. 'Streets', 'Liberty')
+     * @returns {Promise<boolean>} - true if found and applied, false if not found
+     */
+    setBasemap: (styleName) => mmgisAPI.request('map:setBasemap', styleName),
+
+    /** getBasemap - returns the currently active basemap style.
+     * @returns {Promise<{name: string, style: string} | null>}
+     */
+    getBasemap: () => mmgisAPI.request('map:getBasemap'),
+
+    /** getBasemapStyles - returns all available basemap style options.
+     * @returns {Promise<Array<{name: string, style: string}>>}
+     */
+    getBasemapStyles: () => mmgisAPI.request('map:getBasemapStyles'),
+
     /** overwriteLegends - overwrite the contents displayed in the LegendTool; useful when used with `toggleSeparatedTool` event listener in mmgisAPI
      * @param {array} - legends - an array of objects, where each object must contain the following keys: legend, layerUUID, display_name, opacity. The value for the legend key should be in the same format as what is stored in the layers data under the `_legend` key (i.e. `L_.layers.data[layerName]._legend`). layerUUID and display_name should be strings and opacity should be a number between 0 and 1.
      */

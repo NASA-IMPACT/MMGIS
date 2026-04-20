@@ -18,8 +18,6 @@ import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
 import TimeControl from '../TimeControl_/TimeControl'
-import BasemapSwitcher from '../../Ancillary/BasemapSwitcher'
-
 import gjv from 'geojson-validation'
 import {
     evaluate_cmap,
@@ -49,6 +47,39 @@ const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
+
+// Basemap state
+let _basemapStyles = []
+let _basemapActiveIndex = 0
+
+function _resolveBasemapStyles(basemapConfig) {
+    const MAPBOX_DEFAULTS = [
+        { name: 'Streets', style: 'mapbox://styles/mapbox/streets-v12' },
+        { name: 'Satellite', style: 'mapbox://styles/mapbox/satellite-streets-v12' },
+        { name: 'Outdoors', style: 'mapbox://styles/mapbox/outdoors-v12' },
+        { name: 'Light', style: 'mapbox://styles/mapbox/light-v11' },
+        { name: 'Dark', style: 'mapbox://styles/mapbox/dark-v11' },
+    ]
+    const MAPLIBRE_DEFAULTS = [
+        { name: 'Liberty', style: 'https://tiles.openfreemap.org/styles/liberty' },
+        { name: 'Bright', style: 'https://tiles.openfreemap.org/styles/bright' },
+        { name: 'Positron', style: 'https://tiles.openfreemap.org/styles/positron' },
+    ]
+
+    let styles =
+        basemapConfig.styles && basemapConfig.styles.length > 0
+            ? [...basemapConfig.styles]
+            : basemapConfig.provider === 'mapbox'
+            ? [...MAPBOX_DEFAULTS]
+            : [...MAPLIBRE_DEFAULTS]
+
+    const currentInList = styles.some((s) => s.style === basemapConfig.style)
+    if (!currentInList && basemapConfig.style) {
+        styles.unshift({ name: 'Current', style: basemapConfig.style })
+    }
+
+    return styles
+}
 
 let Map_ = {
     /** The native map object (L.Map for Leaflet, Deck for deck.gl). Kept for backward compatibility with existing callers. */
@@ -244,6 +275,26 @@ let Map_ = {
                     Map_.map.panTo(latlng)
                     return true
                 }),
+                window.mmgisAPI.provide('map:setBasemap', (styleName) => {
+                    const index = _basemapStyles.findIndex((s) => s.name === styleName)
+                    if (index === -1) {
+                        console.warn(`[map:setBasemap] No basemap style found with name: "${styleName}"`)
+                        return false
+                    }
+                    const selectedStyle = _basemapStyles[index]
+                    if (Map_.engine && typeof Map_.engine.setBasemapStyle === 'function') {
+                        Map_.engine.setBasemapStyle(selectedStyle.style)
+                    }
+                    _basemapActiveIndex = index
+                    return true
+                }),
+                window.mmgisAPI.provide('map:getBasemap', () => {
+                    if (_basemapStyles.length === 0) return null
+                    return { ..._basemapStyles[_basemapActiveIndex] }
+                }),
+                window.mmgisAPI.provide('map:getBasemapStyles', () => {
+                    return [..._basemapStyles]
+                }),
             ]
         }
 
@@ -307,8 +358,14 @@ let Map_ = {
 
         buildToolBar()
 
-        // Mount basemap style switcher if styles are configured
-        BasemapSwitcher.init(Map_)
+        const basemapConfig = L_.configData?.msv?.basemap
+        if (basemapConfig && basemapConfig.provider && basemapConfig.provider !== 'none') {
+            _basemapStyles = _resolveBasemapStyles(basemapConfig)
+            _basemapActiveIndex = 0
+            _basemapStyles.forEach(function (s, i) {
+                if (s.style === basemapConfig.style) _basemapActiveIndex = i
+            })
+        }
 
         TimeControl.updateLayersTime()
     },

@@ -95,14 +95,14 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _basemapContainer: HTMLDivElement | null = null
 
     /**
-     * The basemap configuration passed at init time.
-     */
-    private _basemapOptions: BasemapOptions | null = null
-
-    /**
      * Bound handler for synchronising Leaflet camera → basemap camera.
      */
     private _syncHandler: (() => void) | null = null
+
+    /**
+     * Bound handler for resizing the basemap on map resize events.
+     */
+    private _resizeHandler: (() => void) | null = null
 
     /**
      * Initialize the Leaflet map instance
@@ -181,7 +181,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
 
         // --- Basemap overlay setup ---
-        if (options.basemap && options.basemap.provider && options.basemap.provider !== 'none' as any) {
+        if (options.basemap && options.basemap.provider && options.basemap.provider !== 'none') {
             this._initBasemapOverlay(options.basemap, center, zoom)
         }
     }
@@ -998,17 +998,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         center: LatLng,
         zoom: number
     ): void {
-        this._basemapOptions = basemap
-
         this._basemapContainer = document.createElement('div')
         this._basemapContainer.id = 'mmgis-basemap'
         this._basemapContainer.className = 'mmgis-basemap-container'
-        this._basemapContainer.style.position = 'absolute'
-        this._basemapContainer.style.top = '0'
-        this._basemapContainer.style.left = '0'
-        this._basemapContainer.style.width = '100%'
-        this._basemapContainer.style.height = '100%'
-        this._basemapContainer.style.zIndex = '0'
 
         // Insert before the Leaflet container so it renders behind
         this._container!.parentNode!.insertBefore(
@@ -1026,19 +1018,22 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             tilePane.style.background = 'transparent'
         }
 
-        // Create the basemap map instance
-        if (basemap.provider === 'mapbox') {
-            this._initBasemapMapbox(basemap, center, zoom)
-        } else {
-            // MapLibre (default)
-            this._initBasemapMaplibre(basemap, center, zoom)
-        }
+        this._resizeHandler = () => this._basemapMap?.resize()
 
-        // Wire up Leaflet → basemap sync
-        this._syncHandler = () => this._syncBasemap()
-        this._map.on('move', this._syncHandler)
-        this._map.on('zoomend', this._syncHandler)
-        this._map.on('resize', () => this._basemapMap?.resize())
+        if (basemap.provider === 'mapbox') {
+            this._initBasemapMapbox(basemap, center, zoom).then(() => {
+                this._syncHandler = () => this._syncBasemap()
+                this._map.on('move', this._syncHandler)
+                this._map.on('zoomend', this._syncHandler)
+                this._map.on('resize', this._resizeHandler!)
+            })
+        } else {
+            this._initBasemapMaplibre(basemap, center, zoom)
+            this._syncHandler = () => this._syncBasemap()
+            this._map.on('move', this._syncHandler)
+            this._map.on('zoomend', this._syncHandler)
+            this._map.on('resize', this._resizeHandler)
+        }
     }
 
     /**
@@ -1083,10 +1078,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                 attributionControl: false,
                 interactive: false,
             })
-        } catch {
+        } catch (err) {
             console.error(
                 'LeafletAdapter: mapbox-gl is not installed. ' +
-                "Run `npm install mapbox-gl` or use provider: 'maplibre' instead."
+                "Run `npm install mapbox-gl` or use provider: 'maplibre' instead.",
+                err
             )
         }
     }
@@ -1109,7 +1105,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
     /**
      * Switch the basemap to a different style at runtime.
-     * This is used by the BasemapSwitcher UI control.
      *
      * @param styleUrl - A MapLibre/Mapbox style URL.
      */
@@ -1129,6 +1124,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             this._syncHandler = null
         }
 
+        if (this._resizeHandler && this._map) {
+            this._map.off('resize', this._resizeHandler)
+            this._resizeHandler = null
+        }
+
         if (this._basemapMap) {
             this._basemapMap.remove()
             this._basemapMap = null
@@ -1143,7 +1143,5 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             this._container.style.background = ''
             this._container.classList.remove('mmgis-has-basemap')
         }
-
-        this._basemapOptions = null
     }
 }

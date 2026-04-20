@@ -50,7 +50,7 @@ export interface FitBoundsOptions extends ViewOptions {
  * `'maplibre'` uses MapLibre GL JS (open-source, no access token required).
  * `'mapbox'` uses Mapbox GL JS (requires a valid {@link BasemapOptions.accessToken}).
  */
-export type BasemapProvider = 'mapbox' | 'maplibre'
+export type BasemapProvider = 'mapbox' | 'maplibre' | 'none'
 
 /**
  * A named basemap style preset for the in-map style switcher control.
