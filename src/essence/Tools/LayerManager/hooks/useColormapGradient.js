@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import ServiceUrls from '../../../Basics/ServiceUrls/ServiceUrls'
+import { getTiTilerBaseUrl } from '../utils/titiler'
 
 /**
  * Custom hook for fetching colormap colors and building CSS gradient
@@ -34,9 +34,9 @@ const useColormapGradient = (colormapName, enabled = true, layerConfig = null) =
             setError(null)
 
             try {
-                // Use ServiceUrls to get the correct TiTiler URL (supports external URLs)
-                // Pass an object with just titilerUrl to avoid unnecessary dependencies
-                const baseUrl = ServiceUrls.getTiTilerUrl(titilerUrl ? { titilerUrl } : null)
+                const baseUrl = titilerUrl
+                    ? titilerUrl.replace(/\/$/, '')
+                    : getTiTilerBaseUrl()
                 const url = `${baseUrl}/colorMaps/${colormapName}`
                 const response = await fetch(url)
 
