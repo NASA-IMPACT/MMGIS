@@ -63,7 +63,6 @@ const formatTooltipValue = (rawVal, unit) => {
  * @param {number|string} props.min - Minimum value
  * @param {number|string} props.max - Maximum value
  * @param {object} [props.unit] - Unit object with label property
- * @param {number} [props.opacity=1] - Opacity of the gradient
  * @param {object} [props.cog] - COG settings object
  * @param {string} props.layerId - Layer ID for COG controls
  * @param {function} [props.onColormapChange] - Callback for colormap changes
@@ -75,7 +74,6 @@ const GradientGraphic = ({
     min,
     max,
     unit,
-    opacity = 1,
     cog,
     layerId,
     onColormapChange,
@@ -140,7 +138,6 @@ const GradientGraphic = ({
     const gradientStops = (hasCogSettings && colormapColors) ? colormapColors : stops
     const gradientStyle = {
         background: makeGradient(gradientStops),
-        opacity: opacity,
     }
 
     return (

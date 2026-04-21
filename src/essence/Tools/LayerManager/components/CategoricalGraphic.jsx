@@ -5,10 +5,9 @@ import React, { useState, useCallback, useRef } from 'react'
  *
  * @param {object} props
  * @param {Array<{color: string, label: string}>} props.stops - Array of categorical stops
- * @param {number} [props.opacity=1] - Opacity of the swatches
  * @param {boolean} [props.defaultExpanded=false] - Whether to start expanded
  */
-const CategoricalGraphic = ({ stops, opacity = 1, defaultExpanded = false }) => {
+const CategoricalGraphic = ({ stops, defaultExpanded = false }) => {
     const [isExpanded, setIsExpanded] = useState(defaultExpanded)
     const [hoverLabel, setHoverLabel] = useState(null)
     const [tooltipPos, setTooltipPos] = useState({ x: 0 })
@@ -62,7 +61,6 @@ const CategoricalGraphic = ({ stops, opacity = 1, defaultExpanded = false }) => 
                                 className="categorical-swatch-segment"
                                 style={{
                                     backgroundColor: stop.color,
-                                    opacity: opacity,
                                 }}
                             />
                         ))}
@@ -101,7 +99,6 @@ const CategoricalGraphic = ({ stops, opacity = 1, defaultExpanded = false }) => 
                             className="categorical-swatch"
                             style={{
                                 backgroundColor: stop.color,
-                                opacity: opacity,
                             }}
                         />
                         <span className="categorical-label">{stop.label}</span>
