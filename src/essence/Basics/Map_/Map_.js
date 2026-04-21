@@ -295,6 +295,28 @@ let Map_ = {
                 window.mmgisAPI.provide('map:getBasemapStyles', () => {
                     return [..._basemapStyles]
                 }),
+                window.mmgisAPI.provide('map:zoomIn', () => {
+                    if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
+                    const current = Map_.engine.getZoom()
+                    const max = typeof Map_.engine.getMaxZoom === 'function'
+                        ? Map_.engine.getMaxZoom()
+                        : Infinity
+                    const next = Math.min(current + 1, max)
+                    if (next === current) return false
+                    Map_.engine.setZoom(next)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:zoomOut', () => {
+                    if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
+                    const current = Map_.engine.getZoom()
+                    const min = typeof Map_.engine.getMinZoom === 'function'
+                        ? Map_.engine.getMinZoom()
+                        : -Infinity
+                    const next = Math.max(current - 1, min)
+                    if (next === current) return false
+                    Map_.engine.setZoom(next)
+                    return true
+                }),
             ]
         }
 

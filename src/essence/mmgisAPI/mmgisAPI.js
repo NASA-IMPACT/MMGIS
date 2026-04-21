@@ -768,6 +768,16 @@ var mmgisAPI = {
      */
     getBasemapStyles: () => mmgisAPI.request('map:getBasemapStyles'),
 
+    /** zoomIn - increments the map zoom by 1 level, clamped to the max zoom.
+     * @returns {Promise<boolean>} - true if zoom changed, false if already at max
+     */
+    zoomIn: () => mmgisAPI.request('map:zoomIn'),
+
+    /** zoomOut - decrements the map zoom by 1 level, clamped to the min zoom.
+     * @returns {Promise<boolean>} - true if zoom changed, false if already at min
+     */
+    zoomOut: () => mmgisAPI.request('map:zoomOut'),
+
     /** overwriteLegends - overwrite the contents displayed in the LegendTool; useful when used with `toggleSeparatedTool` event listener in mmgisAPI
      * @param {array} - legends - an array of objects, where each object must contain the following keys: legend, layerUUID, display_name, opacity. The value for the legend key should be in the same format as what is stored in the layers data under the `_legend` key (i.e. `L_.layers.data[layerName]._legend`). layerUUID and display_name should be strings and opacity should be a number between 0 and 1.
      */
