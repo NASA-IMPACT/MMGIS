@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import ServiceUrls from '../../../Basics/ServiceUrls/ServiceUrls'
+import { getTiTilerBaseUrl } from '../utils/titiler'
 
 /**
  * Custom hook for fetching available colormaps from TiTiler
@@ -32,7 +32,9 @@ const useAvailableColormaps = (layerConfig = null) => {
             setError(null)
 
             try {
-                const baseUrl = ServiceUrls.getTiTilerUrl(titilerUrl ? { titilerUrl } : null)
+                const baseUrl = titilerUrl
+                    ? titilerUrl.replace(/\/$/, '')
+                    : getTiTilerBaseUrl()
                 const url = `${baseUrl}/colorMaps`
                 const response = await fetch(url)
 
