@@ -90,37 +90,35 @@ function _resolveBasemapStyles(basemapConfig, engineType) {
         { name: 'Dark', style: 'mapbox://styles/mapbox/dark-v11' },
     ]
 
-    // For DeckGL, MapLibre defaults are vector style.json URLs rendered by
-    // MapLibre GL. For Leaflet, MapLibre styles aren't renderable directly,
-    // so we substitute distinct open raster tile providers — each style
-    // switch resolves to a different URL so switching is meaningful.
+    // Shared "Streets / Light / Dark" names for both engines. URLs differ
+    // because DeckGL renders MapLibre vector style.json via MapLibre GL,
+    // and Leaflet needs raster {z}/{x}/{y} templates. Names match the
+    // MapControl gradient keys so dropdown thumbnails are correct on both
+    // engines with no plugin-side change.
+    //
+    // Leaflet gets an extra "Terrain" (OpenTopoMap) since no free MapLibre
+    // vector terrain style is available to keep strict parity.
     const MAPLIBRE_DEFAULTS_DECKGL = [
-        { name: 'Liberty', style: 'https://tiles.openfreemap.org/styles/liberty' },
-        { name: 'Bright', style: 'https://tiles.openfreemap.org/styles/bright' },
-        { name: 'Positron', style: 'https://tiles.openfreemap.org/styles/positron' },
+        { name: 'Streets', style: 'https://tiles.openfreemap.org/styles/liberty' },
+        { name: 'Light', style: 'https://tiles.openfreemap.org/styles/positron' },
+        { name: 'Dark', style: 'https://tiles.openfreemap.org/styles/dark-matter' },
     ]
     const MAPLIBRE_DEFAULTS_LEAFLET = [
-        { name: 'Standard', style: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' },
-        { name: 'Positron', style: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png' },
-        { name: 'Dark Matter', style: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png' },
-        { name: 'Voyager', style: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png' },
-        { name: 'Topo', style: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png' },
+        { name: 'Streets', style: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' },
+        { name: 'Light', style: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png' },
+        { name: 'Dark', style: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png' },
+        { name: 'Terrain', style: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png' },
     ]
 
     const mapboxDefaults = MAPBOX_DEFAULTS
     const maplibreDefaults = isLeaflet ? MAPLIBRE_DEFAULTS_LEAFLET : MAPLIBRE_DEFAULTS_DECKGL
 
-    let styles =
+    const styles =
         basemapConfig.styles && basemapConfig.styles.length > 0
             ? [...basemapConfig.styles]
             : basemapConfig.provider === 'mapbox'
             ? [...mapboxDefaults]
             : [...maplibreDefaults]
-
-    const currentInList = styles.some((s) => s.style === basemapConfig.style)
-    if (!currentInList && basemapConfig.style) {
-        styles.unshift({ name: 'Current', style: basemapConfig.style })
-    }
 
     return styles
 }
