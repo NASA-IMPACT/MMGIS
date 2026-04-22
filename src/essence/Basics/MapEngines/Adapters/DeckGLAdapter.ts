@@ -1008,15 +1008,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _emitClick(info: PickingInfo): void {
         if (!info?.coordinate) return
-        const normalized = {
-            lat: info.coordinate[1],
-            lng: info.coordinate[0],
-            containerPoint:
-                info.x != null && info.y != null
-                    ? { x: info.x, y: info.y }
-                    : undefined,
-        }
-        this._eventListeners.get('click')?.forEach((h) => h(normalized as unknown as PickingInfo))
+        this._eventListeners.get('click')?.forEach(
+            (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
+        )
     }
 
     /**
@@ -1025,15 +1019,29 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _emitMouseMove(info: PickingInfo): void {
         if (!info?.coordinate) return
-        const normalized = {
-            lat: info.coordinate[1],
-            lng: info.coordinate[0],
+        this._eventListeners.get('mousemove')?.forEach(
+            (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
+        )
+    }
+
+    /**
+     * Build the normalized pointer-event shape shared between click and
+     * mousemove. Matches the LeafletAdapter's `_normalizeEvent` output so
+     * legacy consumers reading `e.latlng.lng` (e.g. Ancillary/Coordinates)
+     * keep working regardless of engine.
+     */
+    private _buildNormalizedPointerEvent(info: PickingInfo): Record<string, unknown> {
+        const lat = info.coordinate![1]
+        const lng = info.coordinate![0]
+        return {
+            lat,
+            lng,
+            latlng: { lat, lng },
             containerPoint:
                 info.x != null && info.y != null
                     ? { x: info.x, y: info.y }
                     : undefined,
         }
-        this._eventListeners.get('mousemove')?.forEach((h) => h(normalized as unknown as PickingInfo))
     }
 }
 
