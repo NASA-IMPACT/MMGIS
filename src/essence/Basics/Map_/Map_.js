@@ -52,6 +52,22 @@ let _providerCleanups = []
 let _basemapStyles = []
 let _basemapActiveIndex = 0
 
+// Ephemeral overlay layers keyed by plugin-provided id
+const _overlays = new Map()
+
+// Whitelisted Leaflet path style options accepted by map:addOverlay
+const _OVERLAY_STYLE_KEYS = [
+    'color', 'weight', 'opacity',
+    'fillColor', 'fillOpacity',
+    'radius', 'dashArray', 'lineCap', 'lineJoin',
+]
+function _pickStyle(style) {
+    if (!style || typeof style !== 'object') return {}
+    const out = {}
+    for (const k of _OVERLAY_STYLE_KEYS) if (style[k] != null) out[k] = style[k]
+    return out
+}
+
 function _resolveBasemapStyles(basemapConfig) {
     const MAPBOX_DEFAULTS = [
         { name: 'Streets', style: 'mapbox://styles/mapbox/streets-v12' },
@@ -317,7 +333,51 @@ let Map_ = {
                     Map_.engine.setZoom(next)
                     return true
                 }),
+                window.mmgisAPI.provide('map:addOverlay', ({ id, geojson, style } = {}) => {
+                    if (!Map_.map || !L || !id || !geojson) return false
+                    const existing = _overlays.get(id)
+                    if (existing) {
+                        Map_.map.removeLayer(existing)
+                        _overlays.delete(id)
+                    }
+                    const pathStyle = _pickStyle(style)
+                    const layer = L.geoJSON(geojson, {
+                        interactive: false,
+                        style: pathStyle,
+                        pointToLayer: (_f, latlng) => L.circleMarker(latlng, {
+                            interactive: false,
+                            ...pathStyle,
+                        }),
+                    })
+                    layer.addTo(Map_.map)
+                    _overlays.set(id, layer)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:removeOverlay', (id) => {
+                    const layer = _overlays.get(id)
+                    if (!layer) return false
+                    if (Map_.map) Map_.map.removeLayer(layer)
+                    _overlays.delete(id)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:clearOverlays', () => {
+                    _overlays.forEach((layer) => {
+                        if (Map_.map) Map_.map.removeLayer(layer)
+                    })
+                    _overlays.clear()
+                    return true
+                }),
             ]
+
+            if (Map_.map && typeof Map_.map.on === 'function') {
+                Map_.map.on('click', (e) => {
+                    if (!e || !e.latlng) return
+                    window.mmgisAPI.emit('map:click', {
+                        lat: e.latlng.lat,
+                        lng: e.latlng.lng,
+                    })
+                })
+            }
         }
 
         //Make our layers
