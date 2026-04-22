@@ -76,7 +76,12 @@ function _pickStyle(style) {
 // Retained so re-init can detach the previous one before re-attaching.
 let _mapClickHandler = null
 
-function _resolveBasemapStyles(basemapConfig) {
+function _resolveBasemapStyles(basemapConfig, engineType) {
+    const isLeaflet = engineType === MAP_ENGINE.LEAFLET
+
+    // Mapbox defaults use mapbox:// style URLs. Both engines accept them —
+    // DeckGL via Mapbox GL's setStyle, Leaflet via the adapter's translation
+    // to the Static Tiles API.
     const MAPBOX_DEFAULTS = [
         { name: 'Streets', style: 'mapbox://styles/mapbox/streets-v12' },
         { name: 'Satellite', style: 'mapbox://styles/mapbox/satellite-streets-v12' },
@@ -84,18 +89,33 @@ function _resolveBasemapStyles(basemapConfig) {
         { name: 'Light', style: 'mapbox://styles/mapbox/light-v11' },
         { name: 'Dark', style: 'mapbox://styles/mapbox/dark-v11' },
     ]
-    const MAPLIBRE_DEFAULTS = [
+
+    // For DeckGL, MapLibre defaults are vector style.json URLs rendered by
+    // MapLibre GL. For Leaflet, MapLibre styles aren't renderable directly,
+    // so we substitute distinct open raster tile providers — each style
+    // switch resolves to a different URL so switching is meaningful.
+    const MAPLIBRE_DEFAULTS_DECKGL = [
         { name: 'Liberty', style: 'https://tiles.openfreemap.org/styles/liberty' },
         { name: 'Bright', style: 'https://tiles.openfreemap.org/styles/bright' },
         { name: 'Positron', style: 'https://tiles.openfreemap.org/styles/positron' },
     ]
+    const MAPLIBRE_DEFAULTS_LEAFLET = [
+        { name: 'Standard', style: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' },
+        { name: 'Positron', style: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png' },
+        { name: 'Dark Matter', style: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png' },
+        { name: 'Voyager', style: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png' },
+        { name: 'Topo', style: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png' },
+    ]
+
+    const mapboxDefaults = MAPBOX_DEFAULTS
+    const maplibreDefaults = isLeaflet ? MAPLIBRE_DEFAULTS_LEAFLET : MAPLIBRE_DEFAULTS_DECKGL
 
     let styles =
         basemapConfig.styles && basemapConfig.styles.length > 0
             ? [...basemapConfig.styles]
             : basemapConfig.provider === 'mapbox'
-            ? [...MAPBOX_DEFAULTS]
-            : [...MAPLIBRE_DEFAULTS]
+            ? [...mapboxDefaults]
+            : [...maplibreDefaults]
 
     const currentInList = styles.some((s) => s.style === basemapConfig.style)
     if (!currentInList && basemapConfig.style) {
@@ -445,7 +465,7 @@ let Map_ = {
 
         const basemapConfig = L_.configData?.msv?.basemap
         if (basemapConfig && basemapConfig.provider && basemapConfig.provider !== 'none') {
-            _basemapStyles = _resolveBasemapStyles(basemapConfig)
+            _basemapStyles = _resolveBasemapStyles(basemapConfig, engineType)
             _basemapActiveIndex = 0
             _basemapStyles.forEach(function (s, i) {
                 if (s.style === basemapConfig.style) _basemapActiveIndex = i
