@@ -831,6 +831,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             },
             onClick: (info: PickingInfo) => {
                 this._featureClickHandler?.(pickInfoToResult(info))
+                this._emitClick(info)
             },
             onHover: (info: PickingInfo) => {
                 this._featureHoverHandler?.(pickInfoToResult(info))
@@ -898,6 +899,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             layers: [],
             onClick: (info: PickingInfo) => {
                 this._featureClickHandler?.(pickInfoToResult(info))
+                this._emitClick(info)
             },
             onHover: (info: PickingInfo) => {
                 this._featureHoverHandler?.(pickInfoToResult(info))
@@ -995,6 +997,24 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _emitEvent(name: string, data?: unknown): void {
         this._eventListeners.get(name)?.forEach((h) => h(data as PickingInfo))
+    }
+
+    /**
+     * Bridge deck.gl's onClick PickingInfo to the normalized {lat, lng}
+     * shape that the LeafletAdapter also emits, so consumers of `on('click', ...)`
+     * see the same event shape regardless of engine.
+     */
+    private _emitClick(info: PickingInfo): void {
+        if (!info?.coordinate) return
+        const normalized = {
+            lat: info.coordinate[1],
+            lng: info.coordinate[0],
+            containerPoint:
+                info.x != null && info.y != null
+                    ? { x: info.x, y: info.y }
+                    : undefined,
+        }
+        this._eventListeners.get('click')?.forEach((h) => h(normalized as unknown as PickingInfo))
     }
 }
 

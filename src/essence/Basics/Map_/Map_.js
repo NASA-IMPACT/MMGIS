@@ -52,10 +52,14 @@ let _providerCleanups = []
 let _basemapStyles = []
 let _basemapActiveIndex = 0
 
-// Ephemeral overlay layers keyed by plugin-provided id
-const _overlays = new Map()
+// Ephemeral overlay ids currently registered with the active engine.
+// The actual layer objects are owned by the adapter (IMapEngine.createLayer),
+// we just track the ids so clearOverlays can iterate them.
+const _overlayIds = new Set()
 
-// Whitelisted Leaflet path style options accepted by map:addOverlay
+// Whitelisted style keys accepted by map:addOverlay. Keeps the surface narrow
+// so marketplace plugins can't pass callbacks or arbitrary engine-internal
+// options. The adapter maps these to native Leaflet / deck.gl style props.
 const _OVERLAY_STYLE_KEYS = [
     'color', 'weight', 'opacity',
     'fillColor', 'fillOpacity',
@@ -67,6 +71,10 @@ function _pickStyle(style) {
     for (const k of _OVERLAY_STYLE_KEYS) if (style[k] != null) out[k] = style[k]
     return out
 }
+
+// Handler reference for the engine-level click → emit('map:click') bridge.
+// Retained so re-init can detach the previous one before re-attaching.
+let _mapClickHandler = null
 
 function _resolveBasemapStyles(basemapConfig) {
     const MAPBOX_DEFAULTS = [
@@ -334,49 +342,44 @@ let Map_ = {
                     return true
                 }),
                 window.mmgisAPI.provide('map:addOverlay', ({ id, geojson, style } = {}) => {
-                    if (!Map_.map || !L || !id || !geojson) return false
-                    const existing = _overlays.get(id)
-                    if (existing) {
-                        Map_.map.removeLayer(existing)
-                        _overlays.delete(id)
+                    if (!Map_.engine || !id || !geojson) return false
+                    if (_overlayIds.has(id)) {
+                        Map_.engine.removeLayer(id)
+                        _overlayIds.delete(id)
                     }
-                    const pathStyle = _pickStyle(style)
-                    const layer = L.geoJSON(geojson, {
+                    Map_.engine.createLayer({
+                        id,
+                        type: 'vector',
+                        geojson,
+                        style: _pickStyle(style),
                         interactive: false,
-                        style: pathStyle,
-                        pointToLayer: (_f, latlng) => L.circleMarker(latlng, {
-                            interactive: false,
-                            ...pathStyle,
-                        }),
                     })
-                    layer.addTo(Map_.map)
-                    _overlays.set(id, layer)
+                    _overlayIds.add(id)
                     return true
                 }),
                 window.mmgisAPI.provide('map:removeOverlay', (id) => {
-                    const layer = _overlays.get(id)
-                    if (!layer) return false
-                    if (Map_.map) Map_.map.removeLayer(layer)
-                    _overlays.delete(id)
+                    if (!Map_.engine || !_overlayIds.has(id)) return false
+                    Map_.engine.removeLayer(id)
+                    _overlayIds.delete(id)
                     return true
                 }),
                 window.mmgisAPI.provide('map:clearOverlays', () => {
-                    _overlays.forEach((layer) => {
-                        if (Map_.map) Map_.map.removeLayer(layer)
-                    })
-                    _overlays.clear()
+                    if (!Map_.engine) return false
+                    _overlayIds.forEach((id) => Map_.engine.removeLayer(id))
+                    _overlayIds.clear()
                     return true
                 }),
             ]
 
-            if (Map_.map && typeof Map_.map.on === 'function') {
-                Map_.map.on('click', (e) => {
-                    if (!e || !e.latlng) return
-                    window.mmgisAPI.emit('map:click', {
-                        lat: e.latlng.lat,
-                        lng: e.latlng.lng,
-                    })
-                })
+            if (Map_.engine && typeof Map_.engine.on === 'function') {
+                if (_mapClickHandler && typeof Map_.engine.off === 'function') {
+                    Map_.engine.off('click', _mapClickHandler)
+                }
+                _mapClickHandler = (e) => {
+                    if (!e || e.lat == null || e.lng == null) return
+                    window.mmgisAPI.emit('map:click', { lat: e.lat, lng: e.lng })
+                }
+                Map_.engine.on('click', _mapClickHandler)
             }
         }
 
