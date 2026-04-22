@@ -41,9 +41,6 @@ import {
 } from '../types/events'
 import { MapEngineType } from '../types/engine'
 
-import { Map as MaplibreGLMap } from 'maplibre-gl'
-import 'maplibre-gl/dist/maplibre-gl.css'
-
 // Leaflet is loaded globally via window.L
 declare const L: any
 
@@ -84,25 +81,17 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _initOptions: MapInitOptions | null = null
 
     /**
-     * The MapLibre/Mapbox GL basemap instance (when basemap overlay is active).
-     * Renders behind the transparent Leaflet canvas.
+     * The Leaflet tile layer used as the basemap (when basemap is configured).
+     * Rendered natively by Leaflet, so it shares the same projection, camera,
+     * and render loop as all other Leaflet layers — no sync required.
      */
-    private _basemapMap: any = null
+    private _basemapLayer: any = null
 
     /**
-     * The DOM element hosting the basemap map (sibling of the Leaflet #map div).
+     * Access token forwarded into URL templates for providers that require one
+     * (e.g. Mapbox Static Tiles). Stored at init, reused on style swaps.
      */
-    private _basemapContainer: HTMLDivElement | null = null
-
-    /**
-     * Bound handler for synchronising Leaflet camera → basemap camera.
-     */
-    private _syncHandler: (() => void) | null = null
-
-    /**
-     * Bound handler for resizing the basemap on map resize events.
-     */
-    private _resizeHandler: (() => void) | null = null
+    private _basemapAccessToken: string | undefined
 
     /**
      * Initialize the Leaflet map instance
@@ -180,9 +169,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             attributionControl.remove()
         }
 
-        // --- Basemap overlay setup ---
+        // --- Basemap tile layer setup ---
         if (options.basemap && options.basemap.provider && options.basemap.provider !== 'none') {
-            this._initBasemapOverlay(options.basemap, center, zoom)
+            this._initBasemapTileLayer(options.basemap)
         }
     }
 
@@ -277,8 +266,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     destroy(): void {
         if (!this._map) return
 
-        // Clean up basemap overlay first
-        this._destroyBasemapOverlay()
+        // Clean up basemap layer first
+        this._removeBasemapLayer()
 
         this._eventHandlers.forEach((handler, eventName) => {
             this._map.off(eventName, handler)
@@ -302,11 +291,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     }
 
     /**
-     * Get the underlying MapLibre/Mapbox GL basemap instance.
+     * Get the Leaflet tile layer used as the basemap.
      * Returns null if no basemap is configured.
      */
     getBasemap(): any {
-        return this._basemapMap
+        return this._basemapLayer
     }
 
     /**
@@ -514,7 +503,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      */
     invalidateSize(): void {
         this._map.invalidateSize()
-        this._basemapMap?.resize()
     }
 
     /**
@@ -983,165 +971,105 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     }
 
     // ========================================
-    // BASEMAP OVERLAY METHODS
+    // BASEMAP TILE LAYER METHODS
     // ========================================
 
     /**
-     * Initialise a MapLibre/Mapbox GL basemap behind the Leaflet canvas.
+     * Add a Leaflet tile layer as the basemap. Uses Leaflet's native rendering
+     * so the basemap shares the same projection, camera, and render loop as
+     * all other Leaflet layers — no sync, no drift, no scale mismatch.
      *
-     * Creates a sibling div before the Leaflet container, instantiates a
-     * MapLibre (or Mapbox) GL map inside it, makes the Leaflet container
-     * background transparent, and wires up pan/zoom sync events.
+     * The GL-specific style URL from the mission config is translated to a
+     * raster tile URL template by {@link _resolveBasemapTileSpec}.
      */
-    private _initBasemapOverlay(
-        basemap: BasemapOptions,
-        center: LatLng,
-        zoom: number
-    ): void {
-        this._basemapContainer = document.createElement('div')
-        this._basemapContainer.id = 'mmgis-basemap'
-        this._basemapContainer.className = 'mmgis-basemap-container'
-
-        // Insert before the Leaflet container so it renders behind
-        this._container!.parentNode!.insertBefore(
-            this._basemapContainer,
-            this._container
-        )
-
-        // Make the Leaflet container transparent so the basemap shows through
-        this._container!.style.background = 'transparent'
-        this._container!.classList.add('mmgis-has-basemap')
-
-        // Ensure leaflet panes have transparent background
-        const tilePane = this._container!.querySelector('.leaflet-tile-pane') as HTMLElement
-        if (tilePane) {
-            tilePane.style.background = 'transparent'
-        }
-
-        this._resizeHandler = () => this._basemapMap?.resize()
-
-        if (basemap.provider === 'mapbox') {
-            this._initBasemapMapbox(basemap, center, zoom).then(() => {
-                this._syncHandler = () => this._syncBasemap()
-                this._map.on('move', this._syncHandler)
-                this._map.on('zoomend', this._syncHandler)
-                this._map.on('resize', this._resizeHandler!)
-            })
-        } else {
-            this._initBasemapMaplibre(basemap, center, zoom)
-            this._syncHandler = () => this._syncBasemap()
-            this._map.on('move', this._syncHandler)
-            this._map.on('zoomend', this._syncHandler)
-            this._map.on('resize', this._resizeHandler)
-        }
+    private _initBasemapTileLayer(basemap: BasemapOptions): void {
+        this._basemapAccessToken = basemap.accessToken
+        const spec = this._resolveBasemapTileSpec(basemap)
+        this._basemapLayer = L.tileLayer(spec.url, spec.options)
+        this._basemapLayer.addTo(this._map)
+        this._basemapLayer.bringToBack()
     }
 
     /**
-     * Initialise a MapLibre GL basemap.
-     */
-    private _initBasemapMaplibre(
-        basemap: BasemapOptions,
-        center: LatLng,
-        zoom: number
-    ): void {
-        this._basemapMap = new MaplibreGLMap({
-            container: this._basemapContainer!,
-            style: basemap.style,
-            center: [center.lng, center.lat],
-            zoom: zoom,
-            attributionControl: false,
-            interactive: false, // Leaflet handles all interaction
-        })
-    }
-
-    /**
-     * Initialise a Mapbox GL basemap via dynamic import.
-     */
-    private async _initBasemapMapbox(
-        basemap: BasemapOptions,
-        center: LatLng,
-        zoom: number
-    ): Promise<void> {
-        try {
-            const lib = (await import('mapbox-gl')) as any
-            const MapboxMap = (lib.default ?? lib).Map
-            if (!MapboxMap) {
-                throw new Error('Map not found in mapbox-gl module')
-            }
-
-            this._basemapMap = new MapboxMap({
-                container: this._basemapContainer!,
-                style: basemap.style,
-                center: [center.lng, center.lat],
-                zoom: zoom,
-                accessToken: basemap.accessToken,
-                attributionControl: false,
-                interactive: false,
-            })
-        } catch (err) {
-            console.error(
-                'LeafletAdapter: mapbox-gl is not installed. ' +
-                "Run `npm install mapbox-gl` or use provider: 'maplibre' instead.",
-                err
-            )
-        }
-    }
-
-    /**
-     * Synchronise the basemap camera to match the current Leaflet view.
-     * Called on Leaflet `move` and `zoomend` events.
-     */
-    private _syncBasemap(): void {
-        if (!this._basemapMap) return
-
-        const center = this._map.getCenter()
-        const zoom = this._map.getZoom()
-
-        this._basemapMap.jumpTo({
-            center: [center.lng, center.lat],
-            zoom: zoom,
-        })
-    }
-
-    /**
-     * Switch the basemap to a different style at runtime.
+     * Swap the basemap to a different style at runtime.
+     * Removes the current tile layer and adds a new one with the resolved URL.
      *
-     * @param styleUrl - A MapLibre/Mapbox style URL.
+     * @param styleUrl - a Mapbox style URL (`mapbox://styles/...`), a raw tile
+     *   URL template containing `{z}/{x}/{y}`, or any other URL (falls back to OSM).
      */
     setBasemapStyle(styleUrl: string): void {
-        if (!this._basemapMap) return
-        this._basemapMap.setStyle(styleUrl)
+        if (!this._map) return
+        const spec = this._resolveBasemapTileSpec({
+            provider: this._inferProvider(styleUrl),
+            style: styleUrl,
+            accessToken: this._basemapAccessToken,
+        })
+        this._removeBasemapLayer()
+        this._basemapLayer = L.tileLayer(spec.url, spec.options)
+        this._basemapLayer.addTo(this._map)
+        this._basemapLayer.bringToBack()
     }
 
     /**
-     * Clean up the basemap overlay: remove the GL map, its container,
-     * and restore the Leaflet container's opaque background.
+     * Remove the basemap tile layer (if any) from the map.
      */
-    private _destroyBasemapOverlay(): void {
-        if (this._syncHandler && this._map) {
-            this._map.off('move', this._syncHandler)
-            this._map.off('zoomend', this._syncHandler)
-            this._syncHandler = null
+    private _removeBasemapLayer(): void {
+        if (this._basemapLayer && this._map) {
+            this._map.removeLayer(this._basemapLayer)
+        }
+        this._basemapLayer = null
+    }
+
+    /**
+     * Translate a mission's basemap config into a raster tile URL template +
+     * L.tileLayer options suitable for Leaflet's native renderer.
+     *
+     * Accepted inputs:
+     *   - `mapbox://styles/{user}/{style}` → Mapbox Static Tiles API (needs token)
+     *   - Any URL containing `{z}`, `{x}`, `{y}` → used as-is
+     *   - Anything else (e.g. MapLibre style.json URLs) → OSM fallback, since
+     *     vector style JSONs can't be rendered by Leaflet natively.
+     */
+    private _resolveBasemapTileSpec(basemap: BasemapOptions): {
+        url: string
+        options: Record<string, unknown>
+    } {
+        const style = basemap.style || ''
+
+        const mapboxMatch = style.match(/^mapbox:\/\/styles\/([^/]+)\/(.+)$/)
+        if (mapboxMatch) {
+            const [, user, styleId] = mapboxMatch
+            const token = basemap.accessToken || this._basemapAccessToken || ''
+            return {
+                url: `https://api.mapbox.com/styles/v1/${user}/${styleId}/tiles/{z}/{x}/{y}?access_token=${token}`,
+                options: {
+                    tileSize: 512,
+                    zoomOffset: -1,
+                    attribution: '© Mapbox © OpenStreetMap',
+                },
+            }
         }
 
-        if (this._resizeHandler && this._map) {
-            this._map.off('resize', this._resizeHandler)
-            this._resizeHandler = null
+        if (style.includes('{z}') && style.includes('{x}') && style.includes('{y}')) {
+            return { url: style, options: {} }
         }
 
-        if (this._basemapMap) {
-            this._basemapMap.remove()
-            this._basemapMap = null
+        return {
+            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            options: {
+                subdomains: 'abc',
+                attribution: '© OpenStreetMap contributors',
+            },
         }
+    }
 
-        if (this._basemapContainer) {
-            this._basemapContainer.remove()
-            this._basemapContainer = null
-        }
-
-        if (this._container) {
-            this._container.style.background = ''
-            this._container.classList.remove('mmgis-has-basemap')
-        }
+    /**
+     * Best-effort inference of the basemap provider from a style URL.
+     * Used only by runtime `setBasemapStyle` calls that receive a bare URL
+     * without an explicit provider field.
+     */
+    private _inferProvider(styleUrl: string): BasemapOptions['provider'] {
+        if (styleUrl.startsWith('mapbox://')) return 'mapbox'
+        return 'maplibre'
     }
 }
