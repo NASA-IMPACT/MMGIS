@@ -800,6 +800,13 @@ var mmgisAPI = {
      */
     clearOverlays: () => mmgisAPI.request('map:clearOverlays'),
 
+    /** latLngToContainerPoint - project a {lat, lng} to pixel coordinates
+     * relative to the map container. Useful for positioning DOM overlays.
+     * @param {{lat: number, lng: number}} latlng
+     * @returns {Promise<{x: number, y: number} | null>}
+     */
+    latLngToContainerPoint: (latlng) => mmgisAPI.request('map:latLngToContainerPoint', latlng),
+
     /** overwriteLegends - overwrite the contents displayed in the LegendTool; useful when used with `toggleSeparatedTool` event listener in mmgisAPI
      * @param {array} - legends - an array of objects, where each object must contain the following keys: legend, layerUUID, display_name, opacity. The value for the legend key should be in the same format as what is stored in the layers data under the `_legend` key (i.e. `L_.layers.data[layerName]._legend`). layerUUID and display_name should be strings and opacity should be a number between 0 and 1.
      */

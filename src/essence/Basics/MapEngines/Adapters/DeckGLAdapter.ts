@@ -835,6 +835,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             },
             onHover: (info: PickingInfo) => {
                 this._featureHoverHandler?.(pickInfoToResult(info))
+                this._emitMouseMove(info)
             },
         } as any)
     }
@@ -903,6 +904,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             },
             onHover: (info: PickingInfo) => {
                 this._featureHoverHandler?.(pickInfoToResult(info))
+                this._emitMouseMove(info)
             },
         })
 
@@ -1015,6 +1017,23 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     : undefined,
         }
         this._eventListeners.get('click')?.forEach((h) => h(normalized as unknown as PickingInfo))
+    }
+
+    /**
+     * Bridge deck.gl's onHover PickingInfo to the normalized {lat, lng}
+     * shape for `on('mousemove', ...)` subscribers, mirroring LeafletAdapter.
+     */
+    private _emitMouseMove(info: PickingInfo): void {
+        if (!info?.coordinate) return
+        const normalized = {
+            lat: info.coordinate[1],
+            lng: info.coordinate[0],
+            containerPoint:
+                info.x != null && info.y != null
+                    ? { x: info.x, y: info.y }
+                    : undefined,
+        }
+        this._eventListeners.get('mousemove')?.forEach((h) => h(normalized as unknown as PickingInfo))
     }
 }
 

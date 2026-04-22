@@ -72,9 +72,10 @@ function _pickStyle(style) {
     return out
 }
 
-// Handler reference for the engine-level click → emit('map:click') bridge.
+// Handler references for engine-level event bridges to the plugin bus.
 // Retained so re-init can detach the previous one before re-attaching.
 let _mapClickHandler = null
+let _mapMouseMoveHandler = null
 
 function _resolveBasemapStyles(basemapConfig, engineType) {
     const isLeaflet = engineType === MAP_ENGINE.LEAFLET
@@ -387,6 +388,14 @@ let Map_ = {
                     _overlayIds.clear()
                     return true
                 }),
+                window.mmgisAPI.provide('map:latLngToContainerPoint', (latlng) => {
+                    if (!Map_.engine || typeof Map_.engine.latLngToContainerPoint !== 'function') {
+                        return null
+                    }
+                    if (!latlng || latlng.lat == null || latlng.lng == null) return null
+                    const p = Map_.engine.latLngToContainerPoint(latlng)
+                    return p ? { x: p.x, y: p.y } : null
+                }),
             ]
 
             if (Map_.engine && typeof Map_.engine.on === 'function') {
@@ -398,6 +407,15 @@ let Map_ = {
                     window.mmgisAPI.emit('map:click', { lat: e.lat, lng: e.lng })
                 }
                 Map_.engine.on('click', _mapClickHandler)
+
+                if (_mapMouseMoveHandler && typeof Map_.engine.off === 'function') {
+                    Map_.engine.off('mousemove', _mapMouseMoveHandler)
+                }
+                _mapMouseMoveHandler = (e) => {
+                    if (!e || e.lat == null || e.lng == null) return
+                    window.mmgisAPI.emit('map:mousemove', { lat: e.lat, lng: e.lng })
+                }
+                Map_.engine.on('mousemove', _mapMouseMoveHandler)
             }
         }
 
