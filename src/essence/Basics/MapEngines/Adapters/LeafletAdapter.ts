@@ -988,6 +988,14 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._basemapLayer = L.tileLayer(spec.url, spec.options)
         this._basemapLayer.addTo(this._map)
         this._basemapLayer.bringToBack()
+
+        // If the provider has a natural floor (e.g. Mapbox 512 tiles at
+        // Leaflet zoom 1+), raise the map's minZoom so the user can never
+        // pan/zoom to a level where the basemap renders blank.
+        const specMinZoom = (spec.options as { minZoom?: number }).minZoom
+        if (typeof specMinZoom === 'number' && specMinZoom > this._map.getMinZoom()) {
+            this._map.setMinZoom(specMinZoom)
+        }
     }
 
     /**
@@ -1045,6 +1053,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                 options: {
                     tileSize: 512,
                     zoomOffset: -1,
+                    // Mapbox Static Tiles API serves 512-sized tiles indexed at
+                    // standard Web Mercator zoom. Paired with zoomOffset -1, that
+                    // means Leaflet zoom 0 resolves to URL zoom -1, which Mapbox
+                    // doesn't serve. Floor the tile layer at Leaflet zoom 1.
+                    minZoom: 1,
                     attribution: '© Mapbox © OpenStreetMap',
                 },
             }
