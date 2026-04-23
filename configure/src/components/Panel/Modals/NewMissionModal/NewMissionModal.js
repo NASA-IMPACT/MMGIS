@@ -118,7 +118,7 @@ const MAP_ENGINES = [
 
 const MODAL_NAME = "newMission";
 const NewMissionModal = (props) => {
-  const {} = props;
+  const { } = props;
   const c = useStyles();
 
   const modal = useSelector((state) => state.core.modal[MODAL_NAME]);
@@ -155,6 +155,7 @@ const NewMissionModal = (props) => {
 
     const config = {
       msv: {
+        view: [39, -98, 4],
         radius: {
           major: planetRadius.major,
           minor: planetRadius.minor,
@@ -163,7 +164,7 @@ const NewMissionModal = (props) => {
       },
     };
 
-    if (selectedEngine === "deckgl" && basemapProvider !== "none" && basemapStyle) {
+    if (basemapProvider !== "none" && basemapStyle) {
       config.msv.basemap = {
         provider: basemapProvider,
         style: basemapStyle,
@@ -313,7 +314,7 @@ const NewMissionModal = (props) => {
         <Typography className={c.subtitle2}>
           {`Choose the rendering engine for this mission's 2D map. This cannot be changed after the mission is created.`}
         </Typography>
-        {selectedEngine === "deckgl" && (
+        {selectedEngine !== "" && (
           <>
             <FormControl className={c.planetDropdown} variant="filled">
               <InputLabel>Basemap</InputLabel>
@@ -322,13 +323,13 @@ const NewMissionModal = (props) => {
                 onChange={(e) => setBasemapProvider(e.target.value)}
                 label="Basemap"
               >
-                <MenuItem value="none">None (transparent background)</MenuItem>
+                <MenuItem value="none">None (no basemap)</MenuItem>
                 <MenuItem value="maplibre">MapLibre GL (open-source)</MenuItem>
                 <MenuItem value="mapbox">Mapbox GL (requires access token)</MenuItem>
               </Select>
             </FormControl>
             <Typography className={c.subtitle2}>
-              {`Optional vector-tile basemap rendered beneath deck.gl layers. Can be changed later.`}
+              {`Optional vector-tile basemap rendered beneath map layers. Can be changed later.`}
             </Typography>
             {basemapProvider !== "none" && (
               <>

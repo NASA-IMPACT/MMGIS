@@ -76,7 +76,7 @@
         {
           "field": "msv.basemap.provider",
           "name": "Provider",
-          "description": "Renders a vector-tile basemap beneath deck.gl layers using MapboxOverlay. Has no effect on Leaflet-engine missions. 'maplibre' is open-source and requires no token. 'mapbox' requires an access token.",
+          "description": "Renders a vector-tile basemap beneath map layers using MapLibre or Mapbox GL. Works with both Leaflet and deck.gl engine missions. 'maplibre' is open-source and requires no token. 'mapbox' requires an access token.",
           "type": "dropdown",
           "options": ["none", "maplibre", "mapbox"],
           "default": "none",

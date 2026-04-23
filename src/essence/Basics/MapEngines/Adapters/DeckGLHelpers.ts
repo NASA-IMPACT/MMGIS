@@ -122,6 +122,29 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
  *
  * @throws {Error} If `options.type` is not a supported layer type.
  */
+function _toRgba(
+    input: unknown,
+    fallback: [number, number, number, number]
+): [number, number, number, number] {
+    if (Array.isArray(input) && input.length >= 3) {
+        const [r, g, b, a] = input as number[]
+        return [r, g, b, a ?? 255]
+    }
+    if (typeof input === 'string') {
+        let s = input.trim()
+        if (s.startsWith('#')) s = s.slice(1)
+        if (s.length === 3) s = s.split('').map((c) => c + c).join('')
+        if (s.length === 6 || s.length === 8) {
+            const r = parseInt(s.slice(0, 2), 16)
+            const g = parseInt(s.slice(2, 4), 16)
+            const b = parseInt(s.slice(4, 6), 16)
+            const a = s.length === 8 ? parseInt(s.slice(6, 8), 16) : 255
+            if (!isNaN(r) && !isNaN(g) && !isNaN(b)) return [r, g, b, a]
+        }
+    }
+    return fallback
+}
+
 export function buildDeckLayer(id: string, options: LayerOptions): Layer {
     switch (options.type) {
         case 'tile': {
@@ -153,6 +176,19 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 o.style && typeof o.style === 'object' && !Array.isArray(o.style)
                     ? (o.style as Record<string, unknown>)
                     : {}
+
+            const lineColor = _toRgba(style.strokeColor ?? style.color, [0, 0, 0, 255])
+            const lineWidth = (style.strokeWidth as number) ?? (style.weight as number) ?? 1
+
+            const baseFill = _toRgba(style.fillColor, [0, 0, 255, 128])
+            const fillAlpha =
+                typeof style.fillOpacity === 'number'
+                    ? Math.round(Math.max(0, Math.min(1, style.fillOpacity as number)) * 255)
+                    : baseFill[3]
+            const fillColor: [number, number, number, number] = [
+                baseFill[0], baseFill[1], baseFill[2], fillAlpha,
+            ]
+
             return new GeoJsonLayer({
                 id,
                 data: o.geojson as unknown as ConstructorParameters<typeof GeoJsonLayer>[0]['data'],
@@ -160,9 +196,11 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 filled: o.filled ?? true,
                 stroked: o.stroked ?? true,
                 extruded: o.extruded ?? false,
-                getFillColor: (style.fillColor ?? [0, 0, 255, 128]) as [number, number, number, number],
-                getLineColor: (style.strokeColor ?? [0, 0, 0, 255]) as [number, number, number, number],
-                getLineWidth: (style.strokeWidth ?? 1) as number,
+                getFillColor: fillColor,
+                getLineColor: lineColor,
+                getLineWidth: lineWidth,
+                getPointRadius: (style.radius as number) ?? 5,
+                pointRadiusUnits: 'pixels',
                 pointType: o.pointType ?? 'circle',
                 lineWidthUnits: o.lineWidthUnits ?? 'pixels',
                 pickable: o.interactive ?? true,
