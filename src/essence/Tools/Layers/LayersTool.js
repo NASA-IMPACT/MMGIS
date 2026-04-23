@@ -2260,6 +2260,9 @@ function interfaceWithMMGIS(fromInit) {
 
         L_.Map_.rmNotNull(L_.layers.layer[layerData.name])
         await L_.Map_.makeLayer(layerData, true, null, null, true, null, true)
+        if (L_.layers.on[layerData.name]) {
+            L_.addVisible(L_.Map_, [layerData.name])
+        }
         LegendTool.refreshLegends()
     })
 

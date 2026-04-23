@@ -18,9 +18,13 @@ export function processExpression(expression) {
 }
 
 /**
- * Merges COG layer field values into a URL as query params.
- * Params already present in the URL always win; fields only fill in what's missing.
- * Used for DeckGL layers with direct TiTiler URLs (not COG:-prefixed).
+ * Merges COG/TiTiler query params into a tile URL.
+ * Params already present in the URL always win; layer config only fills in what's missing.
+ *
+ *
+ * Works for both the Leaflet per-tile middleware (getTileUrl) and the DeckGL
+ * static URL builder, so the same params are applied regardless of which engine
+ * is active.
  *
  * @param {string} url - The tile URL (may already have query params)
  * @param {object} layerObj - Layer config object
@@ -34,60 +38,23 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
 
     const expression = (layerObj.currentCogExpression || layerObj.cogExpression) as string | undefined
     if (expression && expression.trim() !== '') {
-        // Expression takes precedence over bidx; remove band params and set expression.
         params.delete('bidx')
         params.set('expression', processExpression(expression))
     }
 
-    if (layerObj.cogColormap && !params.has('colormap_name'))
-        params.set('colormap_name', layerObj.cogColormap as string)
+    if (layerObj.cogTransform === true) {
+        if (layerObj.cogColormap && !params.has('colormap_name'))
+            params.set('colormap_name', layerObj.cogColormap as string)
 
-    const cogMin = layerObj.currentCogMin ?? layerObj.cogMin
-    const cogMax = layerObj.currentCogMax ?? layerObj.cogMax
-    if (cogMin != null && cogMax != null && !params.has('rescale'))
-        params.set('rescale', `${cogMin},${cogMax}`)
+        const cogMin = layerObj.currentCogMin ?? layerObj.cogMin
+        const cogMax = layerObj.currentCogMax ?? layerObj.cogMax
+        if (cogMin != null && cogMax != null && !params.has('rescale'))
+            params.set('rescale', `${cogMin},${cogMax}`)
+    }
 
     if (layerObj.cogResampling && !params.has('resampling'))
         params.set('resampling', layerObj.cogResampling as string)
 
     const qs = params.toString()
     return qs ? `${path}?${qs}` : path
-}
-
-/**
- * Appends dynamic COG query params to a TiTiler tile URL:
- *   - `rescale=[min,max]` when cogTransform is true and min/max are set
- *   - `colormap_name=...` when cogColormap is set (requires cogTransform)
- *   - `expression=...` when an expression is configured (takes precedence over bands)
- *
- * Reads runtime overrides (`currentCog*`) first, falling back to the configured
- * (`cog*`) values. The `layerObj` argument can be either a layer config object
- * or a Leaflet tile layer's `options` object; both use the same key names.
- *
- * @param {string} url - Base tile URL (already has `?` query string started)
- * @param {object} layerObj - Layer config or Leaflet tile layer options
- * @returns {string} URL with COG params appended
- */
-export function appendCogDynamicParams(url, layerObj) {
-    const sep = () => (url.includes('?') ? '&' : '?')
-
-    const cogMin =
-        layerObj.currentCogMin != null ? layerObj.currentCogMin : layerObj.cogMin
-    const cogMax =
-        layerObj.currentCogMax != null ? layerObj.currentCogMax : layerObj.cogMax
-
-    if (layerObj.cogTransform === true && cogMin != null && cogMax != null) {
-        url += `${sep()}rescale=[${cogMin},${cogMax}]`
-        if (layerObj.cogColormap != null) {
-            url += `${sep()}colormap_name=${layerObj.cogColormap}`
-        }
-    }
-
-    const expression =
-        layerObj.currentCogExpression || layerObj.cogExpression
-    if (expression && expression.trim() !== '') {
-        url += `${sep()}expression=${encodeURIComponent(processExpression(expression))}`
-    }
-
-    return url
 }

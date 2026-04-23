@@ -12,7 +12,7 @@
 */
 
 import F_ from '../../Basics/Formulae_/Formulae_'
-import { appendCogDynamicParams } from './cogUrlUtils'
+import { applyCogFieldsToUrl } from './cogUrlUtils'
 
 var colorFilterExtension = {
     intialize: function (url, options) {
@@ -44,7 +44,7 @@ var colorFilterExtension = {
                 }exitwhenfull=false&skipcovered=false`
             }
 
-            url = appendCogDynamicParams(url, this.options)
+            url = applyCogFieldsToUrl(url, this.options)
 
             if (mmgisglobal.options?.stac?.mosaicItemLimit != null) {
                 url += `${url.indexOf('?') === -1 ? '?' : '&'}items_limit=${

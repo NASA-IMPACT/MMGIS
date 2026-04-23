@@ -14,7 +14,7 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
-import { appendCogDynamicParams, applyCogFieldsToUrl } from '../Layers_/cogUrlUtils'
+import { applyCogFieldsToUrl } from '../Layers_/cogUrlUtils'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -1525,9 +1525,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
         // would normally add per-tile in getTileUrl.
-        if (splitColonType === 'COG') {
-            layerUrl = appendCogDynamicParams(layerUrl, layerObj)
-        } else {
+        if (splitColonType === 'COG' || splitColonType === 'stac-collection' || layerObj.cogTransform === true) {
             layerUrl = applyCogFieldsToUrl(layerUrl, layerObj)
         }
 

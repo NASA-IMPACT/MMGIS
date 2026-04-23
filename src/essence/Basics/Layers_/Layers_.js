@@ -608,9 +608,14 @@ const L_ = {
                         }
                     }
 
-                    L_.Map_.engine.addLayer(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                    )
+                    const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
+                    if (L_.Map_.engine.engineType !== 'leaflet') {
+                        if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
+                            L_.Map_.engine.addLayer(nativeLayer)
+                        }
+                    } else {
+                        L_.Map_.engine.addLayer(nativeLayer)
+                    }
                     L_.Map_.engine.setLayerZIndex(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                         L_._layersOrdered.length +
@@ -719,9 +724,14 @@ const L_ = {
                                         }
                                     })
                             }
-                            L_.Map_.engine.addLayer(
-                                L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                            )
+                            const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
+                            if (L_.Map_.engine.engineType !== 'leaflet') {
+                                if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
+                                    L_.Map_.engine.addLayer(nativeLayer)
+                                }
+                            } else {
+                                L_.Map_.engine.addLayer(nativeLayer)
+                            }
                             L_.Map_.engine.setLayerZIndex(
                                 L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                                 L_._layersOrdered.length +
