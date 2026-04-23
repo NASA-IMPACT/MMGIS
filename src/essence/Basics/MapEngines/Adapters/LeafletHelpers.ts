@@ -131,22 +131,10 @@ function _buildGeoJSONLayer(id: string, options: GeoJSONLayerOptions): any {
         throw new Error('buildLeafletLayer (vector): options.geojson is required')
     }
 
-    const style = (options.style as Record<string, any>) || {}
-    const defaultPointToLayer = (_feature: any, latlng: any) =>
-        L.circleMarker(latlng, {
-            radius: style.radius ?? 5,
-            color: style.color ?? '#3388ff',
-            weight: style.weight ?? 2,
-            opacity: style.opacity ?? 1,
-            fillColor: style.fillColor ?? style.color ?? '#3388ff',
-            fillOpacity: style.fillOpacity ?? 0.6,
-            interactive: options.interactive ?? true,
-        })
-
     const leafletOptions: Record<string, any> = {
         ...(options.style !== undefined ? { style: options.style } : {}),
         ...(options.onEachFeature ? { onEachFeature: options.onEachFeature } : {}),
-        pointToLayer: options.pointToLayer ?? defaultPointToLayer,
+        ...(options.pointToLayer ? { pointToLayer: options.pointToLayer } : {}),
         ...(options.filter ? { filter: options.filter } : {}),
         ...(options.nativeOptions ?? {}),
     }
