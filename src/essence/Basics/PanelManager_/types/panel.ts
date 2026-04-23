@@ -159,9 +159,6 @@ export interface PanelStateObject {
     /** ID of the DOM container element for this panel */
     containerId: string;
 
-    /** List of tool names assigned to this panel region */
-    tools: string[];
-
     /**
      * Which tool is currently focused or active.
      * - In 'focused' state: tracks which single tool is open.
@@ -170,10 +167,11 @@ export interface PanelStateObject {
     activeToolId?: string;
 
     /**
-     * Reference to tool instances for this panel.
-     * Key: tool name, Value: tool instance object
+     * Tool metadata for tools in this panel.
+     * Map maintains insertion order (ES2015+).
+     * Key: tool id, Value: tool metadata
      */
-    toolInstances?: Record<string, any>;
+    tools: Map<string, ToolMetadata>;
 
     /**
      * Current actual size in pixels (dynamically updated).
@@ -202,17 +200,36 @@ export interface PanelManager {
     registerPanel(config: PanelConfig): void;
 
     /**
+     * Unregister a panel and remove it from the layout.
+     * Should be called when a panel is being removed from the dashboard.
+     *
+     * @param panelId Panel identifier to unregister
+     * @throws Error if panel not found
+     */
+    unregisterPanel(panelId: string): void;
+
+    /**
      * Add a tool to a panel region.
      * Tools are assigned at dashboard creation time.
      * Validates tool compatibility against panel capabilities.
      *
      * @param panelId ID of the panel to add tool to
      * @param toolMetadata Tool metadata (orientation, compatibility, etc.)
-     * @param toolInstance The tool instance object
      * @throws Error if tool is incompatible with panel
      * @throws Error if panel is at max capacity
      */
-    addToolToPanel(panelId: string, toolMetadata: ToolMetadata, toolInstance?: any): void;
+    addToolToPanel(panelId: string, toolMetadata: ToolMetadata): void;
+
+    /**
+     * Remove a tool from a panel.
+     * Cleans up tool metadata and adjusts active tool if necessary.
+     *
+     * @param panelId ID of the panel to remove tool from
+     * @param toolId Tool identifier to remove
+     * @throws Error if panel not found
+     * @throws Error if tool not found in panel
+     */
+    removeToolFromPanel(panelId: string, toolId: string): void;
 
     /**
      * Get the current state object for a panel.
@@ -221,6 +238,14 @@ export interface PanelManager {
      * @returns Panel state or undefined if not found
      */
     getPanelState(panelId: string): PanelStateObject | undefined;
+
+    /**
+     * Get tool metadata for all tools in a panel.
+     *
+     * @param panelId Panel identifier
+     * @returns Array of tool metadata or empty array if panel not found
+     */
+    getToolsForPanel(panelId: string): ToolMetadata[];
 
     /**
      * Change a panel's visual state.

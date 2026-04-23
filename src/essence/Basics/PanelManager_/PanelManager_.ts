@@ -17,17 +17,40 @@ class PanelManager implements PanelManagerInterface {
             throw new Error(`Panel with ID ${config.id} already exists`);
         }
 
+        // Validate that defaultState is in allowedStates
+        const { defaultState, allowedStates } = config.stateConstraints;
+        if (!allowedStates.includes(defaultState)) {
+            throw new Error(
+                `Invalid configuration for panel ${config.id}: defaultState '${defaultState}' is not in allowedStates [${allowedStates.join(', ')}]`
+            );
+        }
+
         // Initialize state object
         const stateObj: PanelStateObject = {
             id: config.id,
             state: config.stateConstraints.defaultState,
             config: config,
             containerId: `panel-${config.id}`,
-            tools: [],
-            toolInstances: {},
+            tools: new Map(),
         };
 
         this.panels.set(config.id, stateObj);
+        this.notifyLayoutChanged();
+    }
+
+    /**
+     * Unregister a panel and remove it from the layout.
+     * Should be called when a panel is being removed from the dashboard.
+     *
+     * @param panelId Panel identifier to unregister
+     * @throws Error if panel not found
+     */
+    unregisterPanel(panelId: string): void {
+        if (!this.panels.has(panelId)) {
+            throw new Error(`Panel with ID ${panelId} not found`);
+        }
+
+        this.panels.delete(panelId);
         this.notifyLayoutChanged();
     }
 
@@ -38,11 +61,10 @@ class PanelManager implements PanelManagerInterface {
      *
      * @param panelId ID of the panel to add tool to
      * @param toolMetadata Tool metadata (orientation, compatibility, etc.)
-     * @param toolInstance The tool instance object
      * @throws Error if tool is incompatible with panel
      * @throws Error if panel is at max capacity
      */
-    addToolToPanel(panelId: string, toolMetadata: ToolMetadata, toolInstance?: any): void {
+    addToolToPanel(panelId: string, toolMetadata: ToolMetadata): void {
         const panel = this.panels.get(panelId);
         if (!panel) {
             throw new Error(`Panel with ID ${panelId} not found`);
@@ -53,22 +75,48 @@ class PanelManager implements PanelManagerInterface {
         }
 
         const maxTools = panel.config.capabilities?.maxTools;
-        if (maxTools !== undefined && panel.tools.length >= maxTools) {
+        if (maxTools !== undefined && panel.tools.size >= maxTools) {
             throw new Error(`Panel ${panelId} is at maximum capacity (${maxTools})`);
         }
 
-        panel.tools.push(toolMetadata.id);
-        if (toolInstance) {
-            if (!panel.toolInstances) {
-                panel.toolInstances = {};
-            }
-            panel.toolInstances[toolMetadata.id] = toolInstance;
-        }
+        panel.tools.set(toolMetadata.id, toolMetadata);
 
         // Automatically set active tool if in focused state and this is the first tool
-        if (panel.state === PANEL_STATE.FOCUSED && panel.tools.length === 1) {
+        if (panel.state === PANEL_STATE.FOCUSED && panel.tools.size === 1) {
             panel.activeToolId = toolMetadata.id;
         }
+    }
+
+    /**
+     * Remove a tool from a panel.
+     * Cleans up tool metadata and adjusts active tool if necessary.
+     *
+     * @param panelId ID of the panel to remove tool from
+     * @param toolId Tool identifier to remove
+     * @throws Error if panel not found
+     * @throws Error if tool not found in panel
+     */
+    removeToolFromPanel(panelId: string, toolId: string): void {
+        const panel = this.panels.get(panelId);
+        if (!panel) {
+            throw new Error(`Panel with ID ${panelId} not found`);
+        }
+
+        if (!panel.tools.has(toolId)) {
+            throw new Error(`Tool ${toolId} not found in panel ${panelId}`);
+        }
+
+        // Remove tool from map
+        panel.tools.delete(toolId);
+
+        // Handle active tool adjustment
+        if (panel.activeToolId === toolId) {
+            // Set active tool to the first available tool, or undefined if no tools left
+            const firstToolId = panel.tools.keys().next().value;
+            panel.activeToolId = firstToolId;
+        }
+
+        this.notifyLayoutChanged();
     }
 
     /**
@@ -79,6 +127,19 @@ class PanelManager implements PanelManagerInterface {
      */
     getPanelState(panelId: string): PanelStateObject | undefined {
         return this.panels.get(panelId);
+    }
+
+    /**
+     * Get tool metadata for all tools in a panel.
+     *
+     * @param panelId Panel identifier
+     * @returns Array of tool metadata or empty array if panel not found
+     */
+    getToolsForPanel(panelId: string): ToolMetadata[] {
+        const panel = this.panels.get(panelId);
+        if (!panel) return [];
+
+        return Array.from(panel.tools.values());
     }
 
     /**
@@ -131,7 +192,7 @@ class PanelManager implements PanelManagerInterface {
             );
         }
 
-        if (!panel.tools.includes(toolId)) {
+        if (!panel.tools.has(toolId)) {
             throw new Error(`Tool ${toolId} not found in panel ${panelId}`);
         }
 
@@ -268,13 +329,16 @@ class PanelManager implements PanelManagerInterface {
 
     /**
      * Update a panel's size after a user drag resize event
-     * 
+     *
      * @param panelId Panel identifier
      * @param newSize New size in pixels
+     * @throws Error if panel not found
      */
     resizePanel(panelId: string, newSize: number): void {
         const panel = this.panels.get(panelId);
-        if (!panel) return;
+        if (!panel) {
+            throw new Error(`Panel with ID ${panelId} not found`);
+        }
 
         if (!panel.config.capabilities?.resizable) {
             return;
