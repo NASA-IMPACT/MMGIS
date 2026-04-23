@@ -80,17 +80,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      */
     private _initOptions: MapInitOptions | null = null
 
-    /**
-     * The Leaflet tile layer used as the basemap (when basemap is configured).
-     * Rendered natively by Leaflet, so it shares the same projection, camera,
-     * and render loop as all other Leaflet layers — no sync required.
-     */
     private _basemapLayer: any = null
-
-    /**
-     * Access token forwarded into URL templates for providers that require one
-     * (e.g. Mapbox Static Tiles). Stored at init, reused on style swaps.
-     */
     private _basemapAccessToken: string | undefined
 
     /**
@@ -169,7 +159,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             attributionControl.remove()
         }
 
-        // --- Basemap tile layer setup ---
         if (options.basemap && options.basemap.provider && options.basemap.provider !== 'none') {
             this._initBasemapTileLayer(options.basemap)
         }
@@ -266,7 +255,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     destroy(): void {
         if (!this._map) return
 
-        // Clean up basemap layer first
         this._removeBasemapLayer()
 
         this._eventHandlers.forEach((handler, eventName) => {
@@ -290,10 +278,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return this._map
     }
 
-    /**
-     * Get the Leaflet tile layer used as the basemap.
-     * Returns null if no basemap is configured.
-     */
     getBasemap(): any {
         return this._basemapLayer
     }
@@ -974,14 +958,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     // BASEMAP TILE LAYER METHODS
     // ========================================
 
-    /**
-     * Add a Leaflet tile layer as the basemap. Uses Leaflet's native rendering
-     * so the basemap shares the same projection, camera, and render loop as
-     * all other Leaflet layers — no sync, no drift, no scale mismatch.
-     *
-     * The GL-specific style URL from the mission config is translated to a
-     * raster tile URL template by {@link _resolveBasemapTileSpec}.
-     */
     private _initBasemapTileLayer(basemap: BasemapOptions): void {
         this._basemapAccessToken = basemap.accessToken
         const spec = this._resolveBasemapTileSpec(basemap)
@@ -989,22 +965,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._basemapLayer.addTo(this._map)
         this._basemapLayer.bringToBack()
 
-        // If the provider has a natural floor (e.g. Mapbox 512 tiles at
-        // Leaflet zoom 1+), raise the map's minZoom so the user can never
-        // pan/zoom to a level where the basemap renders blank.
         const specMinZoom = (spec.options as { minZoom?: number }).minZoom
         if (typeof specMinZoom === 'number' && specMinZoom > this._map.getMinZoom()) {
             this._map.setMinZoom(specMinZoom)
         }
     }
 
-    /**
-     * Swap the basemap to a different style at runtime.
-     * Removes the current tile layer and adds a new one with the resolved URL.
-     *
-     * @param styleUrl - a Mapbox style URL (`mapbox://styles/...`), a raw tile
-     *   URL template containing `{z}/{x}/{y}`, or any other URL (falls back to OSM).
-     */
     setBasemapStyle(styleUrl: string): void {
         if (!this._map) return
         const spec = this._resolveBasemapTileSpec({
@@ -1018,9 +984,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._basemapLayer.bringToBack()
     }
 
-    /**
-     * Remove the basemap tile layer (if any) from the map.
-     */
     private _removeBasemapLayer(): void {
         if (this._basemapLayer && this._map) {
             this._map.removeLayer(this._basemapLayer)
@@ -1028,16 +991,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._basemapLayer = null
     }
 
-    /**
-     * Translate a mission's basemap config into a raster tile URL template +
-     * L.tileLayer options suitable for Leaflet's native renderer.
-     *
-     * Accepted inputs:
-     *   - `mapbox://styles/{user}/{style}` → Mapbox Static Tiles API (needs token)
-     *   - Any URL containing `{z}`, `{x}`, `{y}` → used as-is
-     *   - Anything else (e.g. MapLibre style.json URLs) → OSM fallback, since
-     *     vector style JSONs can't be rendered by Leaflet natively.
-     */
     private _resolveBasemapTileSpec(basemap: BasemapOptions): {
         url: string
         options: Record<string, unknown>
@@ -1053,10 +1006,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                 options: {
                     tileSize: 512,
                     zoomOffset: -1,
-                    // Mapbox Static Tiles API serves 512-sized tiles indexed at
-                    // standard Web Mercator zoom. Paired with zoomOffset -1, that
-                    // means Leaflet zoom 0 resolves to URL zoom -1, which Mapbox
-                    // doesn't serve. Floor the tile layer at Leaflet zoom 1.
                     minZoom: 1,
                     attribution: '© Mapbox © OpenStreetMap',
                 },
@@ -1076,11 +1025,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
     }
 
-    /**
-     * Best-effort inference of the basemap provider from a style URL.
-     * Used only by runtime `setBasemapStyle` calls that receive a bare URL
-     * without an explicit provider field.
-     */
     private _inferProvider(styleUrl: string): BasemapOptions['provider'] {
         if (styleUrl.startsWith('mapbox://')) return 'mapbox'
         return 'maplibre'

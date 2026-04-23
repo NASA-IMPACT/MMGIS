@@ -125,11 +125,6 @@ function _buildTileLayer(id: string, options: TileLayerOptions): any {
 /**
  * Build an L.geoJSON layer from {@link GeoJSONLayerOptions}.
  * Callback props (style, onEachFeature, pointToLayer, filter) are forwarded as-is.
- *
- * When no `pointToLayer` is supplied, Point features are rendered as
- * `L.circleMarker` using the `style` options (radius, color, weight, fillColor,
- * fillOpacity). This avoids Leaflet's default `L.marker` fallback — which loads
- * the default marker PNG + shadow — for callers that just want styled dots.
  */
 function _buildGeoJSONLayer(id: string, options: GeoJSONLayerOptions): any {
     if (!options.geojson) {

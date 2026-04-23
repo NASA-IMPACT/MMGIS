@@ -1001,11 +1001,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._eventListeners.get(name)?.forEach((h) => h(data as PickingInfo))
     }
 
-    /**
-     * Bridge deck.gl's onClick PickingInfo to the normalized {lat, lng}
-     * shape that the LeafletAdapter also emits, so consumers of `on('click', ...)`
-     * see the same event shape regardless of engine.
-     */
     private _emitClick(info: PickingInfo): void {
         if (!info?.coordinate) return
         this._eventListeners.get('click')?.forEach(
@@ -1013,10 +1008,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         )
     }
 
-    /**
-     * Bridge deck.gl's onHover PickingInfo to the normalized {lat, lng}
-     * shape for `on('mousemove', ...)` subscribers, mirroring LeafletAdapter.
-     */
     private _emitMouseMove(info: PickingInfo): void {
         if (!info?.coordinate) return
         this._eventListeners.get('mousemove')?.forEach(
@@ -1024,12 +1015,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         )
     }
 
-    /**
-     * Build the normalized pointer-event shape shared between click and
-     * mousemove. Matches the LeafletAdapter's `_normalizeEvent` output so
-     * legacy consumers reading `e.latlng.lng` (e.g. Ancillary/Coordinates)
-     * keep working regardless of engine.
-     */
     private _buildNormalizedPointerEvent(info: PickingInfo): Record<string, unknown> {
         const lat = info.coordinate![1]
         const lng = info.coordinate![0]

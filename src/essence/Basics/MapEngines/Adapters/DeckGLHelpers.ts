@@ -122,17 +122,6 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
  *
  * @throws {Error} If `options.type` is not a supported layer type.
  */
-/**
- * Coerce a color input into deck.gl's [r, g, b, a] (0–255) format.
- *
- * Accepts:
- *   - already-RGBA arrays like [26, 115, 232, 255] — passed through, alpha defaults to 255
- *   - CSS hex strings: `#rgb`, `#rrggbb`, `#rrggbbaa`
- *   - anything else → `fallback`
- *
- * This lets callers pass Leaflet-flavoured style (`color: '#1a73e8'`) without
- * having to know deck.gl's native RGBA expectation.
- */
 function _toRgba(
     input: unknown,
     fallback: [number, number, number, number]
@@ -188,10 +177,6 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     ? (o.style as Record<string, unknown>)
                     : {}
 
-            // Accept either deck.gl-native style keys (strokeColor, strokeWidth)
-            // or Leaflet-style keys (color, weight, fillColor, fillOpacity,
-            // radius). Deck.gl-native wins when both are provided so existing
-            // callers aren't broken.
             const lineColor = _toRgba(style.strokeColor ?? style.color, [0, 0, 0, 255])
             const lineWidth = (style.strokeWidth as number) ?? (style.weight as number) ?? 1
 
@@ -214,9 +199,6 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 getFillColor: fillColor,
                 getLineColor: lineColor,
                 getLineWidth: lineWidth,
-                // Point features need an explicit radius accessor. Without it,
-                // deck.gl's default renders circles in meters (sub-pixel at most
-                // real-world zooms — effectively invisible).
                 getPointRadius: (style.radius as number) ?? 5,
                 pointRadiusUnits: 'pixels',
                 pointType: o.pointType ?? 'circle',

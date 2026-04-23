@@ -48,18 +48,11 @@ const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
 
-// Basemap state
 let _basemapStyles = []
 let _basemapActiveIndex = 0
 
-// Ephemeral overlay ids currently registered with the active engine.
-// The actual layer objects are owned by the adapter (IMapEngine.createLayer),
-// we just track the ids so clearOverlays can iterate them.
 const _overlayIds = new Set()
 
-// Whitelisted style keys accepted by map:addOverlay. Keeps the surface narrow
-// so marketplace plugins can't pass callbacks or arbitrary engine-internal
-// options. The adapter maps these to native Leaflet / deck.gl style props.
 const _OVERLAY_STYLE_KEYS = [
     'color', 'weight', 'opacity',
     'fillColor', 'fillOpacity',
@@ -72,17 +65,12 @@ function _pickStyle(style) {
     return out
 }
 
-// Handler references for engine-level event bridges to the plugin bus.
-// Retained so re-init can detach the previous one before re-attaching.
 let _mapClickHandler = null
 let _mapMouseMoveHandler = null
 
 function _resolveBasemapStyles(basemapConfig, engineType) {
     const isLeaflet = engineType === MAP_ENGINE.LEAFLET
 
-    // Mapbox defaults use mapbox:// style URLs. Both engines accept them —
-    // DeckGL via Mapbox GL's setStyle, Leaflet via the adapter's translation
-    // to the Static Tiles API.
     const MAPBOX_DEFAULTS = [
         { name: 'Streets', style: 'mapbox://styles/mapbox/streets-v12' },
         { name: 'Satellite', style: 'mapbox://styles/mapbox/satellite-streets-v12' },
@@ -91,14 +79,6 @@ function _resolveBasemapStyles(basemapConfig, engineType) {
         { name: 'Dark', style: 'mapbox://styles/mapbox/dark-v11' },
     ]
 
-    // Shared "Streets / Light / Dark" names for both engines. URLs differ
-    // because DeckGL renders MapLibre vector style.json via MapLibre GL,
-    // and Leaflet needs raster {z}/{x}/{y} templates. Names match the
-    // MapControl gradient keys so dropdown thumbnails are correct on both
-    // engines with no plugin-side change.
-    //
-    // Leaflet gets an extra "Terrain" (OpenTopoMap) since no free MapLibre
-    // vector terrain style is available to keep strict parity.
     const MAPLIBRE_DEFAULTS_DECKGL = [
         { name: 'Streets', style: 'https://tiles.openfreemap.org/styles/liberty' },
         { name: 'Light', style: 'https://tiles.openfreemap.org/styles/positron' },

@@ -398,27 +398,6 @@ body {
 .leaflet-container {
     background: black;
 }
-/* When a basemap overlay is active, the Leaflet container must be transparent
-   so the MapLibre/Mapbox GL map behind it is visible. */
-.mmgis-has-basemap.leaflet-container,
-.mmgis-has-basemap .leaflet-container {
-    background: transparent !important;
-}
-/* Basemap underlay container — sits behind the Leaflet #map div */
-.mmgis-basemap-container {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 0;
-}
-/* Ensure the Leaflet map div sits above the basemap container */
-#map.mmgis-has-basemap,
-.mmgis-has-basemap #map {
-    position: relative;
-    z-index: 1;
-}
 .leaflet-popup-content-wrapper {
     background: var(--color-a);
     color: #e1e1e1;
