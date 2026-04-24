@@ -197,7 +197,7 @@ const NewMissionModal = (props) => {
             setMissionName("");
             setCreateDir(true);
             setSelectedPlanet("Earth");
-            setSelectedEngine("leaflet");
+            setSelectedEngine("deckgl");
             setBasemapProvider("none");
             setBasemapStyle("");
             setBasemapToken("");
@@ -217,7 +217,7 @@ const NewMissionModal = (props) => {
             setMissionName("");
             setCreateDir(true);
             setSelectedPlanet("Earth");
-            setSelectedEngine("leaflet");
+            setSelectedEngine("deckgl");
             setBasemapProvider("none");
             setBasemapStyle("");
             setBasemapToken("");
