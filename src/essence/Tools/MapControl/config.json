@@ -1,0 +1,14 @@
+{
+    "defaultIcon": "layers",
+    "description": "Map controls: basemap style, zoom in, zoom out.",
+    "descriptionFull": {
+        "title": "A horizontal map overlay control for switching between basemap styles and zooming in/out. Add this tool to a mission to show a floating map control bar."
+    },
+    "hasVars": false,
+    "name": "MapControl",
+    "toolbarPriority": 5,
+    "separatedTool": true,
+    "paths": {
+        "MapControlTool": "essence/Tools/MapControl/MapControlTool"
+    }
+}
