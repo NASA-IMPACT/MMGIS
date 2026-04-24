@@ -17,18 +17,41 @@ class PanelManager implements PanelManagerInterface {
             throw new Error(`Panel with ID ${config.id} already exists`);
         }
 
+        // Validate that defaultState is in allowedStates
+        const { defaultState, allowedStates } = config.stateConstraints;
+        if (!allowedStates.includes(defaultState)) {
+            throw new Error(
+                `Invalid configuration for panel ${config.id}: defaultState '${defaultState}' is not in allowedStates [${allowedStates.join(', ')}]`
+            );
+        }
+
         // Initialize state object
         const stateObj: PanelStateObject = {
             id: config.id,
             state: config.stateConstraints.defaultState,
             config: config,
             containerId: `panel-${config.id}`,
-            tools: [],
-            toolInstances: {},
+            tools: new Map(),
         };
 
         this.panels.set(config.id, stateObj);
-        this.recalculateLayout();
+        this.notifyLayoutChanged();
+    }
+
+    /**
+     * Unregister a panel and remove it from the layout.
+     * Should be called when a panel is being removed from the dashboard.
+     *
+     * @param panelId Panel identifier to unregister
+     * @throws Error if panel not found
+     */
+    unregisterPanel(panelId: string): void {
+        if (!this.panels.has(panelId)) {
+            throw new Error(`Panel with ID ${panelId} not found`);
+        }
+
+        this.panels.delete(panelId);
+        this.notifyLayoutChanged();
     }
 
     /**
@@ -38,11 +61,10 @@ class PanelManager implements PanelManagerInterface {
      *
      * @param panelId ID of the panel to add tool to
      * @param toolMetadata Tool metadata (orientation, compatibility, etc.)
-     * @param toolInstance The tool instance object
      * @throws Error if tool is incompatible with panel
      * @throws Error if panel is at max capacity
      */
-    addToolToPanel(panelId: string, toolMetadata: ToolMetadata, toolInstance?: any): void {
+    addToolToPanel(panelId: string, toolMetadata: ToolMetadata): void {
         const panel = this.panels.get(panelId);
         if (!panel) {
             throw new Error(`Panel with ID ${panelId} not found`);
@@ -53,22 +75,48 @@ class PanelManager implements PanelManagerInterface {
         }
 
         const maxTools = panel.config.capabilities?.maxTools;
-        if (maxTools !== undefined && panel.tools.length >= maxTools) {
+        if (maxTools !== undefined && panel.tools.size >= maxTools) {
             throw new Error(`Panel ${panelId} is at maximum capacity (${maxTools})`);
         }
 
-        panel.tools.push(toolMetadata.id);
-        if (toolInstance) {
-            if (!panel.toolInstances) {
-                panel.toolInstances = {};
-            }
-            panel.toolInstances[toolMetadata.id] = toolInstance;
-        }
+        panel.tools.set(toolMetadata.id, toolMetadata);
 
         // Automatically set active tool if in focused state and this is the first tool
-        if (panel.state === PANEL_STATE.FOCUSED && panel.tools.length === 1) {
+        if (panel.state === PANEL_STATE.FOCUSED && panel.tools.size === 1) {
             panel.activeToolId = toolMetadata.id;
         }
+    }
+
+    /**
+     * Remove a tool from a panel.
+     * Cleans up tool metadata and adjusts active tool if necessary.
+     *
+     * @param panelId ID of the panel to remove tool from
+     * @param toolId Tool identifier to remove
+     * @throws Error if panel not found
+     * @throws Error if tool not found in panel
+     */
+    removeToolFromPanel(panelId: string, toolId: string): void {
+        const panel = this.panels.get(panelId);
+        if (!panel) {
+            throw new Error(`Panel with ID ${panelId} not found`);
+        }
+
+        if (!panel.tools.has(toolId)) {
+            throw new Error(`Tool ${toolId} not found in panel ${panelId}`);
+        }
+
+        // Remove tool from map
+        panel.tools.delete(toolId);
+
+        // Handle active tool adjustment
+        if (panel.activeToolId === toolId) {
+            // Set active tool to the first available tool, or undefined if no tools left
+            const firstToolId = panel.tools.keys().next().value;
+            panel.activeToolId = firstToolId;
+        }
+
+        this.notifyLayoutChanged();
     }
 
     /**
@@ -79,6 +127,19 @@ class PanelManager implements PanelManagerInterface {
      */
     getPanelState(panelId: string): PanelStateObject | undefined {
         return this.panels.get(panelId);
+    }
+
+    /**
+     * Get tool metadata for all tools in a panel.
+     *
+     * @param panelId Panel identifier
+     * @returns Array of tool metadata or empty array if panel not found
+     */
+    getToolsForPanel(panelId: string): ToolMetadata[] {
+        const panel = this.panels.get(panelId);
+        if (!panel) return [];
+
+        return Array.from(panel.tools.values());
     }
 
     /**
@@ -99,17 +160,22 @@ class PanelManager implements PanelManagerInterface {
             throw new Error(`State transition to ${newState} is not allowed for panel ${panelId}`);
         }
 
+        // Track last visible state when collapsing
+        if (newState === PANEL_STATE.COLLAPSED && panel.state !== PANEL_STATE.COLLAPSED) {
+            panel.lastVisibleState = panel.state;
+        }
+
         panel.state = newState;
-        this.recalculateLayout();
+        this.notifyLayoutChanged();
     }
 
     /**
-     * When in iconified state, focus on a specific tool.
-     * Transitions panel to 'focused' state and displays only the specified tool.
+     * When in iconified or focused state, focus on a specific tool.
+     * Transitions panel from iconified to 'focused' state and displays only the specified tool.
      *
      * @param panelId Panel identifier
      * @param toolId Tool to focus on
-     * @throws Error if panel is not in iconified state
+     * @throws Error if panel is not in iconified or focused state
      * @throws Error if tool not found in panel
      */
     focusTool(panelId: string, toolId: string): void {
@@ -118,13 +184,15 @@ class PanelManager implements PanelManagerInterface {
             throw new Error(`Panel with ID ${panelId} not found`);
         }
 
-        if (panel.state !== PANEL_STATE.ICONIFIED && panel.state !== PANEL_STATE.FOCUSED && panel.state !== PANEL_STATE.EXPANDED) {
-            if (panel.state === PANEL_STATE.COLLAPSED) {
-                throw new Error(`Cannot focus tool when panel is collapsed`);
-            }
+        // Only allow from iconified or focused states
+        if (panel.state !== PANEL_STATE.ICONIFIED && panel.state !== PANEL_STATE.FOCUSED) {
+            throw new Error(
+                `Cannot focus tool when panel is ${panel.state}. ` +
+                `Panel must be in iconified or focused state.`
+            );
         }
 
-        if (!panel.tools.includes(toolId)) {
+        if (!panel.tools.has(toolId)) {
             throw new Error(`Tool ${toolId} not found in panel ${panelId}`);
         }
 
@@ -133,38 +201,55 @@ class PanelManager implements PanelManagerInterface {
         }
 
         panel.activeToolId = toolId;
-        this.recalculateLayout();
+        this.notifyLayoutChanged();
     }
 
     /**
      * Toggle a panel's visibility.
      * Behavior depends on current state and constraints:
-     * - collapsed -> last non-collapsed state (or expanded)
+     * - collapsed -> last visible state (or default state, or first available visible state)
      * - iconified/focused/expanded -> collapsed
      *
      * @param panelId Panel identifier
+     * @throws Error if panel not found
+     * @throws Error if toggle cannot be performed due to state constraints
      */
     togglePanelCollapsed(panelId: string): void {
         const panel = this.panels.get(panelId);
-        if (!panel) return;
+        if (!panel) {
+            throw new Error(`Panel with ID ${panelId} not found`);
+        }
+
+        const allowed = panel.config.stateConstraints.allowedStates;
 
         if (panel.state === PANEL_STATE.COLLAPSED) {
-            const allowed = panel.config.stateConstraints.allowedStates;
-            let targetState: PanelState = panel.config.stateConstraints.defaultState;
-            
-            // If default is collapsed, try to find a visible state
-            if (targetState === PANEL_STATE.COLLAPSED) {
-                targetState = allowed.includes(PANEL_STATE.EXPANDED) ? PANEL_STATE.EXPANDED : 
-                            allowed.includes(PANEL_STATE.ICONIFIED) ? PANEL_STATE.ICONIFIED : 
+            // Try to restore last visible state first
+            let targetState: PanelState = panel.lastVisibleState || panel.config.stateConstraints.defaultState;
+
+            // If target is collapsed or not allowed, try to find a visible state
+            if (targetState === PANEL_STATE.COLLAPSED || !allowed.includes(targetState)) {
+                targetState = allowed.includes(PANEL_STATE.EXPANDED) ? PANEL_STATE.EXPANDED :
+                            allowed.includes(PANEL_STATE.ICONIFIED) ? PANEL_STATE.ICONIFIED :
                             allowed.includes(PANEL_STATE.FOCUSED) ? PANEL_STATE.FOCUSED : PANEL_STATE.COLLAPSED;
             }
-            if (targetState !== PANEL_STATE.COLLAPSED) {
-                this.setPanelState(panelId, targetState);
+
+            if (targetState === PANEL_STATE.COLLAPSED) {
+                throw new Error(
+                    `Cannot uncollapse panel ${panelId}: no visible states available in constraints`
+                );
             }
+
+            this.setPanelState(panelId, targetState);
         } else {
-            if (panel.config.stateConstraints.allowedStates.includes(PANEL_STATE.COLLAPSED)) {
-                this.setPanelState(panelId, PANEL_STATE.COLLAPSED);
+            // Check if we can collapse
+            if (!allowed.includes(PANEL_STATE.COLLAPSED)) {
+                throw new Error(
+                    `Cannot collapse panel ${panelId}: collapsed state not allowed in constraints`
+                );
             }
+
+            // setPanelState will automatically track lastVisibleState
+            this.setPanelState(panelId, PANEL_STATE.COLLAPSED);
         }
     }
 
@@ -192,12 +277,15 @@ class PanelManager implements PanelManagerInterface {
     }
 
     /**
-     * Calculate and apply layout based on panel priorities and states.
-     * Allocates viewport space to panels in priority order.
+     * Notify UI layer that panel state has changed and layout needs updating.
+     * Should be called whenever:
+     * - Panel state changes
+     * - Panel is added/removed
      */
-    recalculateLayout(): void {
+    notifyLayoutChanged(): void {
         const allPanels = this.getAllPanelsByPriority();
         // Fire custom event for any listeners hooked into the DOM.
+        // TODO: Use eventbus for dispatching event. 
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('mmgis-panel-layout-changed', {
                 detail: { panels: allPanels }
@@ -241,13 +329,16 @@ class PanelManager implements PanelManagerInterface {
 
     /**
      * Update a panel's size after a user drag resize event
-     * 
+     *
      * @param panelId Panel identifier
      * @param newSize New size in pixels
+     * @throws Error if panel not found
      */
     resizePanel(panelId: string, newSize: number): void {
         const panel = this.panels.get(panelId);
-        if (!panel) return;
+        if (!panel) {
+            throw new Error(`Panel with ID ${panelId} not found`);
+        }
 
         if (!panel.config.capabilities?.resizable) {
             return;
@@ -257,7 +348,7 @@ class PanelManager implements PanelManagerInterface {
         const boundedSize = Math.max(minSize, Math.min(newSize, maxSize));
 
         panel.currentSize = boundedSize;
-        this.recalculateLayout();
+        this.notifyLayoutChanged();
     }
 }
 
