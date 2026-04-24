@@ -48,21 +48,22 @@ const UserInterfaceModern_ = {
         const tabBar = $('<div class="ui-panel-tabs"></div>')
         const tabContentArea = $('<div class="ui-panel-tab-content-area"></div>')
 
-        panel.tools.forEach((toolName, idx) => {
+        const toolsArray = PanelManager_.getToolsForPanel(panel.id)
+        toolsArray.forEach((toolMetadata, idx) => {
             const isActive = idx === 0 ? 'active' : ''
 
             // Create tab
-            const tab = $(`<div class="ui-panel-tab ${isActive}" data-tool="${toolName}"></div>`)
+            const tab = $(`<div class="ui-panel-tab ${isActive}" data-tool="${toolMetadata.id}"></div>`)
                 .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
-                .append($('<span></span>').text(toolName))
+                .append($('<span></span>').text(toolMetadata.name))
             tabBar.append(tab)
 
             // Create tab content placeholder
             // TODO: Use actual tool metadata to render real content instead of placeholders
-            const toolCard = $(`<div class="ui-tool-card ui-tool-tab-content ${isActive}" data-tool="${toolName}"></div>`)
+            const toolCard = $(`<div class="ui-tool-card ui-tool-tab-content ${isActive}" data-tool="${toolMetadata.id}"></div>`)
             const cardContent = $('<div style="margin: auto; text-align: center;"></div>')
                 .append('<span class="ui-tool-icon mdi mdi-view-dashboard" style="font-size: 2rem; display: block;"></span>')
-                .append($('<span class="ui-tool-title"></span>').text(`${toolName} Content Placeholder`))
+                .append($('<span class="ui-tool-title"></span>').text(`${toolMetadata.name} Content Placeholder`))
             toolCard.append(cardContent)
             tabContentArea.append(toolCard)
         })
@@ -90,8 +91,9 @@ const UserInterfaceModern_ = {
      * @param {jQuery} body - Panel body element
      */
     renderStackedLayout: function (panel, body) {
-        panel.tools.forEach(toolName => {
-            body.append(this.createToolCard(toolName))
+        const toolsArray = PanelManager_.getToolsForPanel(panel.id)
+        toolsArray.forEach(toolMetadata => {
+            body.append(this.createToolCard(toolMetadata.name))
         })
     },
 
@@ -189,14 +191,15 @@ const UserInterfaceModern_ = {
 
                 // Create the icons bar for iconified/focused state
                 const iconsContainer = $('<div class="ui-panel-icons"></div>')
-                if (panel.tools && panel.tools.length > 0) {
-                    panel.tools.forEach(toolName => {
-                        const iconBtn = $(`<button class="ui-panel-icon-btn" title="${toolName}" data-tool="${toolName}"><span class="mdi mdi-view-dashboard"></span></button>`)
+                if (panel.tools && panel.tools.size > 0) {
+                    const toolsArray = PanelManager_.getToolsForPanel(panel.id)
+                    toolsArray.forEach(toolMetadata => {
+                        const iconBtn = $(`<button class="ui-panel-icon-btn" title="${toolMetadata.name}" data-tool="${toolMetadata.id}"><span class="mdi mdi-view-dashboard"></span></button>`)
                         iconBtn.on('click', () => {
-                            if (panel.state === 'focused' && panel.activeToolId === toolName) {
+                            if (panel.state === 'focused' && panel.activeToolId === toolMetadata.id) {
                                 PanelManager_.setPanelState(panel.id, 'iconified')
                             } else {
-                                PanelManager_.focusTool(panel.id, toolName)
+                                PanelManager_.focusTool(panel.id, toolMetadata.id)
                             }
                         })
                         iconsContainer.append(iconBtn)
@@ -245,7 +248,7 @@ const UserInterfaceModern_ = {
                 }
 
                 // Render placeholders for tools based on layoutType
-                if (panel.tools && panel.tools.length > 0) {
+                if (panel.tools && panel.tools.size > 0) {
                     if (panel.config.layoutType === 'tabbed') {
                         this.renderTabbedLayout(panel, body)
                     } else {
