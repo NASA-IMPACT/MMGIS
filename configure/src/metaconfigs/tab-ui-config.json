@@ -218,7 +218,7 @@
               "width": 6
             },
             {
-              "field": "tools",
+              "field": "toolNames",
               "name": "Tools",
               "description": "Comma-separated list of tool names to assign to this panel. Tool names must match the 'name' field in the mission's tools array. Example: LayersTool,DrawTool,MeasureTool",
               "type": "textarray",

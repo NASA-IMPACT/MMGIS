@@ -169,7 +169,7 @@ const ToolControllerModern_ = {
     assignExplicitTools: function (registeredPanels, getToolData, assignedToolIds) {
         registeredPanels.forEach(panelState => {
             const panelConfig = panelState.config
-            const panelTools = panelConfig.tools || []
+            const panelTools = panelConfig.toolNames || []
 
             panelTools.forEach(toolName => {
                 const toolData = getToolData(toolName)
