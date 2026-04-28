@@ -70,11 +70,11 @@ export interface ToolConfig {
     /** Tool name */
     name: string;
 
-    /** Panel ID to assign tool to */
-    panel?: string;
+    /** Icon identifier (Material Design Icons name) */
+    icon: string;
 
-    /** Tool-specific configuration options */
-    config?: Record<string, any>;
+    /** JavaScript module name for the tool */
+    js: string;
 }
 
 /**
