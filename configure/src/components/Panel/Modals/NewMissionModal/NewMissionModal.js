@@ -118,7 +118,6 @@ const MAP_ENGINES = [
 
 const MODAL_NAME = "newMission";
 const NewMissionModal = (props) => {
-  const { } = props;
   const c = useStyles();
 
   const modal = useSelector((state) => state.core.modal[MODAL_NAME]);
