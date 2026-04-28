@@ -40,6 +40,7 @@ import {
     QueryFeaturesOptions,
 } from '../types/events'
 import { MapEngineType } from '../types/engine'
+import { MAPBOX_STATIC_TILE_OPTIONS, OSM_FALLBACK_TILE } from './LeafletHelpers'
 
 // Leaflet is loaded globally via window.L
 declare const L: any
@@ -1003,12 +1004,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             const token = basemap.accessToken || this._basemapAccessToken || ''
             return {
                 url: `https://api.mapbox.com/styles/v1/${user}/${styleId}/tiles/{z}/{x}/{y}?access_token=${token}`,
-                options: {
-                    tileSize: 512,
-                    zoomOffset: -1,
-                    minZoom: 1,
-                    attribution: '© Mapbox © OpenStreetMap',
-                },
+                options: { ...MAPBOX_STATIC_TILE_OPTIONS },
             }
         }
 
@@ -1017,11 +1013,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
 
         return {
-            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            options: {
-                subdomains: 'abc',
-                attribution: '© OpenStreetMap contributors',
-            },
+            url: OSM_FALLBACK_TILE.url,
+            options: { ...OSM_FALLBACK_TILE.options },
         }
     }
 

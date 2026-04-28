@@ -86,6 +86,28 @@ export function buildLeafletMarker(id: string, options: MarkerOptions): any {
     return marker
 }
 
+/**
+ * Mapbox Static Tiles API returns 512px tiles. `zoomOffset: -1` corrects
+ * Leaflet's 256-px-tile zoom math; `minZoom: 1` follows because Leaflet zoom 0
+ * would request URL zoom -1 (404). These are protocol-level coupling, not
+ * mission-tunable defaults.
+ */
+export const MAPBOX_STATIC_TILE_OPTIONS = {
+    tileSize: 512,
+    zoomOffset: -1,
+    minZoom: 1,
+    attribution: '© Mapbox © OpenStreetMap',
+} as const
+
+/** OSM fallback used when no Mapbox style or {z}/{x}/{y} template is provided. */
+export const OSM_FALLBACK_TILE = {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    options: {
+        subdomains: 'abc',
+        attribution: '© OpenStreetMap contributors',
+    },
+} as const
+
 // ─── Private helpers ──────────────────────────────────────────────────────────
 
 /**
