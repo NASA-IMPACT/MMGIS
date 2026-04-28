@@ -975,7 +975,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     setBasemapStyle(styleUrl: string): void {
         if (!this._map) return
         const spec = this._resolveBasemapTileSpec({
-            provider: this._inferProvider(styleUrl),
             style: styleUrl,
             accessToken: this._basemapAccessToken,
         })
@@ -992,7 +991,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._basemapLayer = null
     }
 
-    private _resolveBasemapTileSpec(basemap: BasemapOptions): {
+    private _resolveBasemapTileSpec(basemap: Omit<BasemapOptions, 'provider'>): {
         url: string
         options: Record<string, unknown>
     } {
@@ -1016,10 +1015,5 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             url: OSM_FALLBACK_TILE.url,
             options: { ...OSM_FALLBACK_TILE.options },
         }
-    }
-
-    private _inferProvider(styleUrl: string): BasemapOptions['provider'] {
-        if (styleUrl.startsWith('mapbox://')) return 'mapbox'
-        return 'maplibre'
     }
 }
