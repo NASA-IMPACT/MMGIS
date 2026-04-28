@@ -19,6 +19,9 @@
     --modern-border: 1px solid rgba(0, 0, 0, 0.1);
     --modern-radius: 8px;
     --modern-glass-blur: blur(12px);
+    --z-index-panel-drag: 10;
+    --z-index-compact-center: 10;
+    --z-index-panel-icons: 2;
 }
 
 /* Full screen grid layout */
@@ -226,7 +229,7 @@
 .ui-panel-drag-handle {
     position: absolute;
     background: transparent;
-    z-index: 10;
+    z-index: var(--z-index-panel-drag);
 }
 
 .ui-panel-drag-handle:hover,
@@ -349,7 +352,7 @@
     color: var(--uswds-white);
     padding: 4px;
     gap: 4px;
-    z-index: 2;
+    z-index: var(--z-index-panel-icons);
     overflow-y: auto;
     overflow-x: hidden;
 }
@@ -370,8 +373,8 @@
 }
 
 .ui-panel-icon-btn:hover {
+    background: #4d8fc3; /* Fallback for color-mix */
     background: color-mix(in srgb, var(--uswds-primary-light) 30%, white);
-
 }
 
 .ui-panel-icon-btn.active {
@@ -386,8 +389,8 @@
     display: flex;
 }
 
-.ui-panel[data-panel-state="iconified"] .ui-panel-content {
-    display: none !important;
+.ui-modern-grid .ui-panel[data-panel-state="iconified"] .ui-panel-content {
+    display: none;
 }
 
 /* Vertical grid for left/right, horizontal for top/bottom */
@@ -425,19 +428,19 @@
 }
 
 /* Display corresponding panel body only with active tool */
-.ui-panel[data-panel-state="focused"] .ui-tool-card {
-    display: none !important; /* Hide all tool cards by default in focused state */
+.ui-modern-grid .ui-panel[data-panel-state="focused"] .ui-tool-card {
+    display: none; /* Hide all tool cards by default in focused state */
 }
 
 /* For focused stacked layouts or tabbed */
-.ui-panel[data-panel-state="focused"] .ui-tool-card.active {
-    display: flex !important;
+.ui-modern-grid .ui-panel[data-panel-state="focused"] .ui-tool-card.active {
+    display: flex;
     height: 100%;
 }
 
 /* Hide tabs in focused because the icon bar acts as the tabs */
-.ui-panel[data-panel-state="focused"] .ui-panel-tabs {
-    display: none !important;
+.ui-modern-grid .ui-panel[data-panel-state="focused"] .ui-panel-tabs {
+    display: none;
 }
 
 /* ============================================
@@ -445,27 +448,27 @@
    CSS clamping based on data-panel-state
    ============================================ */
 
-.ui-panel[data-panel-state="collapsed"] {
-    display: none !important;
+.ui-modern-grid .ui-panel[data-panel-state="collapsed"] {
+    display: none;
 }
 
-body.ui-is-dragging .ui-panel {
-    transition: none !important;
+body.ui-is-dragging .ui-modern-grid .ui-panel {
+    transition: none;
 }
 
-.ui-panel[data-panel-state="iconified"] {
+.ui-modern-grid .ui-panel[data-panel-state="iconified"] {
     /* Collapse down to header/tabs only, discarding layout padding */
-    width: auto !important;
-    height: auto !important;
-    min-width: 0 !important;
-    min-height: 0 !important;
-    max-width: none !important;
-    max-height: none !important;
+    width: auto;
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
 }
 
-.ui-panel[data-panel-state="iconified"] .ui-panel-drag-handle,
-.ui-panel[data-panel-state="collapsed"] .ui-panel-drag-handle {
-    display: none !important;
+.ui-modern-grid .ui-panel[data-panel-state="iconified"] .ui-panel-drag-handle,
+.ui-modern-grid .ui-panel[data-panel-state="collapsed"] .ui-panel-drag-handle {
+    display: none;
 }
 
 /* ============================================
@@ -479,12 +482,12 @@ body.ui-is-dragging .ui-panel {
 }
 
 .ui-modern-grid.ui-layout-compact .ui-region-center > #map {
-    position: relative !important;
+    position: relative !important; /* Kept !important as it overrides Leaflet inline styles often */
     z-index: 0 !important;
 }
 
 .ui-modern-grid.ui-layout-compact .ui-panel {
-    margin: 0 !important;
-    border-radius: 0 !important;
-    border: none !important;
+    margin: 0;
+    border-radius: 0;
+    border: none;
 }

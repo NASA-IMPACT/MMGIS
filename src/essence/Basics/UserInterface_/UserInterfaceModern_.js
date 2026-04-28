@@ -2,11 +2,11 @@ import $ from 'jquery'
 import PanelManager_ from '../PanelManager_/PanelManager_'
 import './UserInterfaceModern_.css'
 
+const DEFAULT_MIN_PANEL_SIZE = 50;
+const DEFAULT_MAX_PANEL_SIZE = 9999;
+
 /**
  * Modern User Interface Module
- * Renders the layout defined by the USWDS/Horizon design system.
- * It is completely decoupled from the PanelManager state logic and only receives
- * the structured array of active panels.
  */
 const UserInterfaceModern_ = {
     /**
@@ -20,7 +20,8 @@ const UserInterfaceModern_ = {
         this.render()
 
         if (!this._layoutEventListenerAdded) {
-            window.addEventListener('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+            this._boundSyncDOMState = this.syncDOMState.bind(this)
+            window.addEventListener('mmgis-panel-layout-changed', this._boundSyncDOMState)
             this._layoutEventListenerAdded = true
         }
     },
@@ -31,8 +32,8 @@ const UserInterfaceModern_ = {
      * @param {string} toolName - Name of the tool
      * @returns {jQuery} Tool card element
      */
-    createToolCard: function (toolName) {
-        return $(`<div class="ui-tool-card ui-tool-card-stacked" data-tool="${toolName}"></div>`)
+    createToolCard: function (toolId, toolName) {
+        return $(`<div class="ui-tool-card ui-tool-card-stacked" data-tool="${toolId}"></div>`)
             .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
             .append($('<span class="ui-tool-title"></span>').text(toolName))
     },
@@ -93,7 +94,7 @@ const UserInterfaceModern_ = {
     renderStackedLayout: function (panel, body) {
         const toolsArray = PanelManager_.getToolsForPanel(panel.id)
         toolsArray.forEach(toolMetadata => {
-            body.append(this.createToolCard(toolMetadata.name))
+            body.append(this.createToolCard(toolMetadata.id, toolMetadata.name))
         })
     },
 
@@ -183,7 +184,7 @@ const UserInterfaceModern_ = {
             const regionDiv = $(`<div class="ui-region ui-region-${regionName}"></div>`)
             
             regionPanels.forEach(panel => {
-                const panelDiv = $(`<div class="ui-panel" id="${panel.containerId}"></div>`)
+                const panelDiv = $('<div class="ui-panel"></div>').attr('id', panel.containerId)
                 const contentWrapper = $('<div class="ui-panel-content"></div>')
                 const body = $('<div class="ui-panel-body"></div>')
 
@@ -244,7 +245,7 @@ const UserInterfaceModern_ = {
                 panelDiv.attr('data-panel-state', panel.state)
 
                 if (panel.config.capabilities && panel.config.capabilities.resizable) {
-                    panelDiv.append(`<div class="ui-panel-drag-handle ui-panel-drag-handle-${regionName}"></div>`)
+                    panelDiv.append($('<div></div>').addClass(`ui-panel-drag-handle ui-panel-drag-handle-${regionName}`))
                 }
 
                 // Render placeholders for tools based on layoutType
@@ -286,9 +287,22 @@ const UserInterfaceModern_ = {
 
         container.append(gridWrapper)
 
+        // Setup ResizeObserver for compact layout resizing
+        if (this._resizeObserver) {
+            this._resizeObserver.disconnect()
+        }
+        this._resizeObserver = new ResizeObserver(() => {
+            if (this.layoutStyle === 'compact') {
+                window.dispatchEvent(new Event('resize'))
+            }
+        })
+        if (gridWrapper.length > 0) {
+            this._resizeObserver.observe(gridWrapper[0])
+        }
+
         // Initialize active tools correctly
         this.panels.forEach(panel => {
-            const $panel = $('#' + panel.containerId)
+            const $panel = $(document.getElementById(panel.containerId))
             if (panel.activeToolId && panel.state === 'focused') {
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
                 $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
@@ -316,7 +330,7 @@ const UserInterfaceModern_ = {
         }
 
         this.panels.forEach(panel => {
-            const $panel = $('#' + panel.containerId)
+            const $panel = $(document.getElementById(panel.containerId))
             if ($panel.length === 0) return
 
             $panel.attr('data-panel-state', panel.state)
@@ -358,9 +372,6 @@ const UserInterfaceModern_ = {
 
         if (this.layoutStyle === 'compact') {
             window.dispatchEvent(new Event('resize'))
-            setTimeout(() => {
-                window.dispatchEvent(new Event('resize'))
-            }, 300)
         }
     },
 
@@ -432,8 +443,8 @@ const UserInterfaceModern_ = {
             if (!isResizing || !$currentPanel || !currentRegion) return
 
             const caps = currentConfig?.capabilities || {}
-            const minSize = caps.minSize !== undefined ? caps.minSize : 50
-            const maxSize = caps.maxSize !== undefined ? caps.maxSize : 9999
+            const minSize = caps.minSize !== undefined ? caps.minSize : DEFAULT_MIN_PANEL_SIZE
+            const maxSize = caps.maxSize !== undefined ? caps.maxSize : DEFAULT_MAX_PANEL_SIZE
 
             const strategy = resizeStrategies[currentRegion]
             if (!strategy) return
