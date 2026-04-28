@@ -1,3 +1,7 @@
+/**
+ * @typedef {import('../../types/dashboard').ToolConfig} ToolConfig
+ */
+
 import PanelManager_ from '../PanelManager_/PanelManager_'
 import { TOOL_ORIENTATION } from './types/tool'
 import { PANEL_POSITION } from '../PanelManager_/types/layout'
@@ -7,10 +11,7 @@ const ToolControllerModern_ = {
      * Generate tool metadata from mission config tool definition
      * This is a mock implementation until proper tool metadata is available
      *
-     * @param {Object} toolConfig - Tool configuration from mission config
-     * @param {string} toolConfig.name - Tool name
-     * @param {string} toolConfig.icon - Tool icon
-     * @param {string} toolConfig.js - Tool JS module name
+     * @param {ToolConfig} toolConfig - Tool configuration from mission config
      * @returns {Object} Tool metadata object
      */
     generateToolMetadata: function (toolConfig) {
@@ -33,7 +34,7 @@ const ToolControllerModern_ = {
 
     /**
      * Build tool configuration maps for efficient lookup
-     * @param {Array} tools - Array of tool configurations
+     * @param {ToolConfig[]} tools - Array of tool configurations
      * @returns {Object} Object containing toolConfigMap and getToolData helper
      */
     buildToolConfigMap: function (tools) {
