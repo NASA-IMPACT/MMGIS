@@ -1,9 +1,11 @@
 /* 
  * UserInterfaceModern_.css
- * Implements USWDS / Horizon design aesthetics for the modern dashboard.
  */
 
-/* USWDS Color Palette (Horizon-inspired subset) */
+/* 
+ USWDS Color Palette 
+ This will later be replaced with themable design tokens
+*/
 :root {
     --uswds-primary: #005ea2; /* primary blue */
     --uswds-primary-dark: #1a4480;
@@ -277,8 +279,6 @@
 .ui-region-left .ui-panel,
 .ui-region-right .ui-panel {
     flex-direction: column;
-    min-width: 300px;
-    max-width: 400px;
 }
 
 .ui-region-left .ui-panel-body,
@@ -482,7 +482,7 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
 }
 
 .ui-modern-grid.ui-layout-compact .ui-region-center > #map {
-    position: relative !important; /* Kept !important as it overrides Leaflet inline styles often */
+    position: relative !important;
     z-index: 0 !important;
 }
 
