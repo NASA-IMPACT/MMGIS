@@ -165,14 +165,14 @@ export interface PanelStateObject {
     /** ID of the DOM container element for this panel */
     containerId: string;
 
-    /** List of tool names assigned to this panel region */
-    tools: string[];
-
     /**
-     * Tool metadata for each tool in this panel.
-     * Stored for quick access during rendering.
+     * Tool metadata for tools in this panel.
+     * Map maintains insertion order (ES2015+).
+     * Key: tool id, Value: tool metadata
+     *
+     * Note: Use PanelManager.getToolsForPanel(panelId) to get tools as an array.
      */
-    toolsMetadata?: ToolMetadata[];
+    tools: Map<string, ToolMetadata>;
 
     /**
      * Which tool is currently focused or active.
@@ -182,16 +182,15 @@ export interface PanelStateObject {
     activeToolId?: string;
 
     /**
-     * Reference to tool instances for this panel.
-     * Key: tool name, Value: tool instance object
-     */
-    toolInstances?: Record<string, any>;
-
-    /**
      * Current actual size in pixels (dynamically updated).
      * Useful for animations, transitions, and layout calculations.
      */
     currentSize?: number;
+
+    /**
+     * The last non-collapsed state the panel was in.
+     */
+    lastVisibleState?: PanelState;
 }
 
 /**
@@ -209,17 +208,36 @@ export interface PanelManager {
     registerPanel(config: PanelConfig): void;
 
     /**
+     * Unregister a panel and remove it from the layout.
+     * Should be called when a panel is being removed from the dashboard.
+     *
+     * @param panelId Panel identifier to unregister
+     * @throws Error if panel not found
+     */
+    unregisterPanel(panelId: string): void;
+
+    /**
      * Add a tool to a panel region.
      * Tools are assigned at dashboard creation time.
      * Validates tool compatibility against panel capabilities.
      *
      * @param panelId ID of the panel to add tool to
      * @param toolMetadata Tool metadata (orientation, compatibility, etc.)
-     * @param toolInstance The tool instance object
      * @throws Error if tool is incompatible with panel
      * @throws Error if panel is at max capacity
      */
-    addToolToPanel(panelId: string, toolMetadata: ToolMetadata, toolInstance?: any): void;
+    addToolToPanel(panelId: string, toolMetadata: ToolMetadata): void;
+
+    /**
+     * Remove a tool from a panel.
+     * Cleans up tool metadata and adjusts active tool if necessary.
+     *
+     * @param panelId ID of the panel to remove tool from
+     * @param toolId Tool identifier to remove
+     * @throws Error if panel not found
+     * @throws Error if tool not found in panel
+     */
+    removeToolFromPanel(panelId: string, toolId: string): void;
 
     /**
      * Get the current state object for a panel.
@@ -248,12 +266,12 @@ export interface PanelManager {
     setPanelState(panelId: string, newState: PanelState): void;
 
     /**
-     * When in iconified state, focus on a specific tool.
-     * Transitions panel to 'focused' state and displays only the specified tool.
+     * When in iconified or focused state, focus on a specific tool.
+     * Transitions panel from iconified to 'focused' state and displays only the specified tool.
      *
      * @param panelId Panel identifier
      * @param toolId Tool to focus on
-     * @throws Error if panel is not in iconified state
+     * @throws Error if panel is not in iconified or focused state
      * @throws Error if tool not found in panel
      */
     focusTool(panelId: string, toolId: string): void;
@@ -261,10 +279,12 @@ export interface PanelManager {
     /**
      * Toggle a panel's collapsed state.
      * Behavior depends on current state and constraints:
-     * - collapsed -> last non-collapsed state (or expanded)
+     * - collapsed -> last visible state (or default state, or first available visible state)
      * - iconified/focused/expanded -> collapsed
-     *
+     * 
      * @param panelId Panel identifier
+     * @throws Error if panel not found
+     * @throws Error if toggle cannot be performed due to state constraints
      */
     togglePanelCollapsed(panelId: string): void;
 
@@ -285,14 +305,12 @@ export interface PanelManager {
     getAllPanelsByPriority(): PanelStateObject[];
 
     /**
-     * Calculate and apply layout based on panel priorities and states.
-     * Allocates viewport space to panels in priority order.
+     * Notify UI layer that panel state has changed and layout needs updating.
      * Should be called whenever:
      * - Panel state changes
-     * - Viewport resizes
      * - Panel is added/removed
      */
-    recalculateLayout(): void;
+    notifyLayoutChanged(): void;
 
     /**
      * Validate if a tool is compatible with a panel.

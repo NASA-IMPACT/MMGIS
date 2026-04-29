@@ -3,11 +3,11 @@ import PanelManager_ from '../PanelManager_/PanelManager_'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import './UserInterfaceModern_.css'
 
+const DEFAULT_MIN_PANEL_SIZE = 50;
+const DEFAULT_MAX_PANEL_SIZE = 9999;
+
 /**
  * Modern User Interface Module
- * Renders the layout defined by the USWDS/Horizon design system.
- * It is completely decoupled from the PanelManager state logic and only receives
- * the structured array of active panels.
  */
 const UserInterfaceModern_ = {
     /**
@@ -30,6 +30,7 @@ const UserInterfaceModern_ = {
         this.layoutStyle = layoutStyle
         this.render()
 
+        // TODO use event bus instead of window events
         if (!this._layoutEventListenerAdded) {
             this._boundSyncDOMState = this.syncDOMState.bind(this)
             window.addEventListener('mmgis-panel-layout-changed', this._boundSyncDOMState)
@@ -375,7 +376,7 @@ const UserInterfaceModern_ = {
             const regionDiv = $(`<div class="ui-region ui-region-${regionName}"></div>`)
             
             regionPanels.forEach(panel => {
-                const panelDiv = $(`<div class="ui-panel" id="${panel.containerId}"></div>`)
+                const panelDiv = $('<div class="ui-panel"></div>').attr('id', panel.containerId)
                 const contentWrapper = $('<div class="ui-panel-content"></div>')
                 const body = $('<div class="ui-panel-body"></div>')
 
@@ -447,11 +448,11 @@ const UserInterfaceModern_ = {
                 panelDiv.attr('data-panel-state', panel.state)
 
                 if (panel.config.capabilities && panel.config.capabilities.resizable) {
-                    panelDiv.append(`<div class="ui-panel-drag-handle ui-panel-drag-handle-${regionName}"></div>`)
+                    panelDiv.append($('<div></div>').addClass(`ui-panel-drag-handle ui-panel-drag-handle-${regionName}`))
                 }
 
                 // Render placeholders for tools based on layoutType
-                if (panel.tools && panel.tools.length > 0) {
+                if (panel.tools && panel.tools.size > 0) {
                     if (panel.config.layoutType === 'tabbed') {
                         this.renderTabbedLayout(panel, body)
                     } else {
@@ -489,6 +490,32 @@ const UserInterfaceModern_ = {
 
         container.append(gridWrapper)
 
+        // Setup ResizeObserver for compact layout resizing
+        if (this._resizeObserver) {
+            this._resizeObserver.disconnect()
+        }
+        this._resizeObserver = new ResizeObserver(() => {
+            if (this.layoutStyle === 'compact') {
+                window.dispatchEvent(new Event('resize'))
+            }
+        })
+        if (gridWrapper.length > 0) {
+            this._resizeObserver.observe(gridWrapper[0])
+        }
+
+        // Initialize active tools correctly
+        this.panels.forEach(panel => {
+            const $panel = $(document.getElementById(panel.containerId))
+            if (panel.activeToolId && panel.state === 'focused') {
+                $panel.find('.ui-panel-icon-btn').removeClass('active')
+                $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
+                $panel.find('.ui-tool-card').removeClass('active')
+                $panel.find(`.ui-tool-card[data-tool="${panel.activeToolId}"]`).addClass('active')
+            } else {
+                // Remove active highlighting when not focused
+                $panel.find('.ui-panel-icon-btn').removeClass('active')
+            }
+        })
         // Now that all DOM is in place, load all queued tools
         if (this._toolLoadQueue.length > 0) {
             if (window.mmgisglobal?.debug) {
@@ -524,7 +551,7 @@ const UserInterfaceModern_ = {
         }
 
         this.panels.forEach(panel => {
-            const $panel = $('#' + panel.containerId)
+            const $panel = $(document.getElementById(panel.containerId))
             if ($panel.length === 0) return
 
             $panel.attr('data-panel-state', panel.state)
@@ -566,9 +593,6 @@ const UserInterfaceModern_ = {
 
         if (this.layoutStyle === 'compact') {
             window.dispatchEvent(new Event('resize'))
-            setTimeout(() => {
-                window.dispatchEvent(new Event('resize'))
-            }, 300)
         }
     },
 
@@ -639,9 +663,9 @@ const UserInterfaceModern_ = {
         $(document).on('mousemove.uiModernResize', (e) => {
             if (!isResizing || !$currentPanel || !currentRegion) return
 
-            const caps = currentConfig?.capabilities || {}
-            const minSize = caps.minSize !== undefined ? caps.minSize : 50
-            const maxSize = caps.maxSize !== undefined ? caps.maxSize : 9999
+            const capabilities = currentConfig?.capabilities || {}
+            const minSize = capabilities.minSize !== undefined ? capabilities.minSize : DEFAULT_MIN_PANEL_SIZE
+            const maxSize = capabilities.maxSize !== undefined ? capabilities.maxSize : DEFAULT_MAX_PANEL_SIZE
 
             const strategy = resizeStrategies[currentRegion]
             if (!strategy) return
