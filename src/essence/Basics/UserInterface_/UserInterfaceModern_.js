@@ -19,6 +19,7 @@ const UserInterfaceModern_ = {
         this.layoutStyle = layoutStyle
         this.render()
 
+        // TODO use event bus instead of window events
         if (!this._layoutEventListenerAdded) {
             this._boundSyncDOMState = this.syncDOMState.bind(this)
             window.addEventListener('mmgis-panel-layout-changed', this._boundSyncDOMState)
@@ -28,12 +29,18 @@ const UserInterfaceModern_ = {
 
     /**
      * TODO: Use tool metadata to render actual tools and not just placeholders
-     * Creates a single tool card for stacked layout
+     * Creates a tool card for either stacked or tabbed layout
+     * @param {string} toolId - Unique identifier for the tool
      * @param {string} toolName - Name of the tool
+     * @param {string} layoutType - Either 'stacked' or 'tabbed' (default: 'stacked')
+     * @param {boolean} isActive - Whether this card should be active (default: false, used for tabbed layout)
      * @returns {jQuery} Tool card element
      */
-    createToolCard: function (toolId, toolName) {
-        return $(`<div class="ui-tool-card ui-tool-card-stacked" data-tool="${toolId}"></div>`)
+    createToolCard: function (toolId, toolName, layoutType = 'stacked', isActive = false) {
+        const activeClass = isActive ? 'active' : ''
+        const layoutClass = layoutType === 'tabbed' ? 'ui-tool-tab-content' : 'ui-tool-card-stacked'
+
+        return $(`<div class="ui-tool-card ${layoutClass} ${activeClass}" data-tool="${toolId}"></div>`)
             .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
             .append($('<span class="ui-tool-title"></span>').text(toolName))
     },
@@ -59,13 +66,8 @@ const UserInterfaceModern_ = {
                 .append($('<span></span>').text(toolMetadata.name))
             tabBar.append(tab)
 
-            // Create tab content placeholder
-            // TODO: Use actual tool metadata to render real content instead of placeholders
-            const toolCard = $(`<div class="ui-tool-card ui-tool-tab-content ${isActive}" data-tool="${toolMetadata.id}"></div>`)
-            const cardContent = $('<div style="margin: auto; text-align: center;"></div>')
-                .append('<span class="ui-tool-icon mdi mdi-view-dashboard" style="font-size: 2rem; display: block;"></span>')
-                .append($('<span class="ui-tool-title"></span>').text(`${toolMetadata.name} Content Placeholder`))
-            toolCard.append(cardContent)
+            // Create tab content placeholder using createToolCard
+            const toolCard = this.createToolCard(toolMetadata.id, toolMetadata.name, 'tabbed', idx === 0)
             tabContentArea.append(toolCard)
         })
 
@@ -442,9 +444,9 @@ const UserInterfaceModern_ = {
         $(document).on('mousemove.uiModernResize', (e) => {
             if (!isResizing || !$currentPanel || !currentRegion) return
 
-            const caps = currentConfig?.capabilities || {}
-            const minSize = caps.minSize !== undefined ? caps.minSize : DEFAULT_MIN_PANEL_SIZE
-            const maxSize = caps.maxSize !== undefined ? caps.maxSize : DEFAULT_MAX_PANEL_SIZE
+            const capabilities = currentConfig?.capabilities || {}
+            const minSize = capabilities.minSize !== undefined ? capabilities.minSize : DEFAULT_MIN_PANEL_SIZE
+            const maxSize = capabilities.maxSize !== undefined ? capabilities.maxSize : DEFAULT_MAX_PANEL_SIZE
 
             const strategy = resizeStrategies[currentRegion]
             if (!strategy) return
