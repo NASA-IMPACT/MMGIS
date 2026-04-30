@@ -30,13 +30,12 @@ export interface ToolMetadata {
      * - 'vertical': Can only go in left/right panels
      * - 'any': Can go in any panel
      */
-    requiredOrientation: ToolOrientation;
+    requiredOrientation?: ToolOrientation;
 
     /**
      * Specific positions this tool is compatible with.
      * If undefined, tool can go in any position (subject to orientation).
      * Example: ['left', 'right'] means tool can only go in side panels.
-     * TODO: Determine if it is necessary to have this definition (will confirm when working on tools)
      */
     compatiblePositions?: PanelPosition[];
 
