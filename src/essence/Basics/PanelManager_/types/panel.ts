@@ -146,6 +146,12 @@ export interface PanelConfig {
      * Default: true (panels overlay map content)
      */
     overlay?: boolean;
+
+    /**
+     * Array of tools assigned to this panel.
+     * Can be tool names (e.g., "Title") or tool IDs (e.g., "Title_instance1") for multiple instances.
+     */
+    panelTools?: string[];
 }
 
 /**
