@@ -166,3 +166,87 @@ function _normalizePosition(position: any): { lat: number; lng: number } {
     }
     return position
 }
+
+const CIRCLE_APPROX_STEPS = 32
+const EARTH_RADIUS_M = 6378137
+
+/**
+ * Convert a finalised L.Draw layer into a GeoJSON Feature in [lng, lat] order.
+ *
+ * Polygon and Rectangle: layer.toGeoJSON() already produces a Feature; return it.
+ * Circle: leaflet-draw produces an L.Circle (no native GeoJSON polygon); we
+ * approximate it with a {@link CIRCLE_APPROX_STEPS}-vertex polygon ring around
+ * the centre at the configured radius using a great-circle destination formula.
+ */
+export function leafletDrawnLayerToFeature(
+    shape: 'polygon' | 'rectangle' | 'circle',
+    layer: any
+): GeoJSON.Feature | null {
+    if (!layer) return null
+
+    if (shape === 'circle') {
+        const center = layer.getLatLng?.()
+        const radius = layer.getRadius?.()
+        if (!center || typeof radius !== 'number') return null
+        const ring = approximateCircleRing(center.lat, center.lng, radius)
+        return {
+            type: 'Feature',
+            properties: { source: 'draw', shape: 'circle', radius },
+            geometry: { type: 'Polygon', coordinates: [ring] },
+        }
+    }
+
+    if (typeof layer.toGeoJSON === 'function') {
+        const f = layer.toGeoJSON() as GeoJSON.Feature
+        if (!f) return null
+        return {
+            ...f,
+            properties: { ...(f.properties ?? {}), source: 'draw', shape },
+        }
+    }
+    return null
+}
+
+/**
+ * Pull the in-progress vertex list out of a leaflet-draw `draw:drawvertex` event.
+ * The event's `layers` is an L.LayerGroup of L.Marker per vertex.
+ */
+export function extractDrawVertices(e: any): { lat: number; lng: number }[] {
+    const out: { lat: number; lng: number }[] = []
+    const lg = e?.layers
+    if (lg && typeof lg.eachLayer === 'function') {
+        lg.eachLayer((m: any) => {
+            const ll = m?.getLatLng?.()
+            if (ll) out.push({ lat: ll.lat, lng: ll.lng })
+        })
+    }
+    return out
+}
+
+function approximateCircleRing(
+    centerLat: number,
+    centerLng: number,
+    radiusMeters: number
+): number[][] {
+    const RAD = Math.PI / 180
+    const DEG = 180 / Math.PI
+    const angularDist = radiusMeters / EARTH_RADIUS_M
+    const φ1 = centerLat * RAD
+    const λ1 = centerLng * RAD
+    const ring: number[][] = []
+    for (let i = 0; i <= CIRCLE_APPROX_STEPS; i++) {
+        const θ = (i / CIRCLE_APPROX_STEPS) * 2 * Math.PI
+        const φ2 = Math.asin(
+            Math.sin(φ1) * Math.cos(angularDist) +
+                Math.cos(φ1) * Math.sin(angularDist) * Math.cos(θ)
+        )
+        const λ2 =
+            λ1 +
+            Math.atan2(
+                Math.sin(θ) * Math.sin(angularDist) * Math.cos(φ1),
+                Math.cos(angularDist) - Math.sin(φ1) * Math.sin(φ2)
+            )
+        ring.push([λ2 * DEG, φ2 * DEG])
+    }
+    return ring
+}

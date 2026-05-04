@@ -30,6 +30,8 @@ import {
     buildLeafletMarker,
     resolveLeafletLayerId,
     resolveLeafletMarkerId,
+    leafletDrawnLayerToFeature,
+    extractDrawVertices,
 } from './LeafletHelpers'
 import {
     MapEventHandler,
@@ -37,6 +39,8 @@ import {
     FeatureInteractionHandler,
     FeaturePickResult,
     QueryFeaturesOptions,
+    DrawShape,
+    DrawingOptions,
 } from '../types/events'
 import { MapEngineType } from '../types/engine'
 
@@ -78,6 +82,13 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Stored initialization options
      */
     private _initOptions: MapInitOptions | null = null
+
+    private _drawer: any = null
+    private _drawingShape: DrawShape | null = null
+    private _drawCreatedHandler: ((e: any) => void) | null = null
+    private _drawVertexHandler: ((e: any) => void) | null = null
+    private _drawEscapeHandler: ((e: KeyboardEvent) => void) | null = null
+    private _drawingFinishing = false
 
     /**
      * Initialize the Leaflet map instance
@@ -788,6 +799,104 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._map.on('mouseout', () => {
             handler({ feature: null })
         })
+    }
+
+    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+        if (this._drawingShape) {
+            this.disableDrawing()
+        }
+
+        const shapeOptions = (options.style as Record<string, unknown>) ?? {}
+        const drawOptions = { shapeOptions }
+
+        let drawer: any
+        if (shape === 'polygon') {
+            drawer = new L.Draw.Polygon(this._map, drawOptions)
+        } else if (shape === 'rectangle') {
+            drawer = new L.Draw.Rectangle(this._map, drawOptions)
+        } else {
+            drawer = new L.Draw.Circle(this._map, drawOptions)
+        }
+
+        this._drawer = drawer
+        this._drawingShape = shape
+
+        this._drawCreatedHandler = (e: any) => {
+            const feature = leafletDrawnLayerToFeature(shape, e.layer)
+            if (!feature) return
+            this._drawingFinishing = true
+            this.disableDrawing()
+            this._drawingFinishing = false
+            this.emit('drawcomplete', { feature })
+        }
+        this._map.on('draw:created', this._drawCreatedHandler)
+
+        this._drawVertexHandler = (e: any) => {
+            const vertices = extractDrawVertices(e)
+            this.emit('drawvertex', { shape, vertices })
+        }
+        this._map.on('draw:drawvertex', this._drawVertexHandler)
+
+        if (options.cancelOnEscape !== false) {
+            this._drawEscapeHandler = (e: KeyboardEvent) => {
+                if (e.key === 'Escape') this.disableDrawing()
+            }
+            document.addEventListener('keydown', this._drawEscapeHandler)
+        }
+
+        drawer.enable()
+        this.emit('drawstart', { shape })
+    }
+
+    disableDrawing(): void {
+        if (!this._drawingShape) return
+
+        const shape = this._drawingShape
+
+        if (this._drawer && typeof this._drawer.disable === 'function') {
+            try {
+                this._drawer.disable()
+            } catch {
+                // Leaflet-draw can throw when disabling mid-vertex; safe to ignore
+            }
+        }
+        this._drawer = null
+
+        if (this._drawCreatedHandler) {
+            this._map.off('draw:created', this._drawCreatedHandler)
+            this._drawCreatedHandler = null
+        }
+        if (this._drawVertexHandler) {
+            this._map.off('draw:drawvertex', this._drawVertexHandler)
+            this._drawVertexHandler = null
+        }
+        if (this._drawEscapeHandler) {
+            document.removeEventListener('keydown', this._drawEscapeHandler)
+            this._drawEscapeHandler = null
+        }
+
+        this._drawingShape = null
+
+        if (!this._drawingFinishing) {
+            this.emit('drawcancel', { shape })
+        }
+    }
+
+    finishDrawing(): void {
+        if (!this._drawingShape || !this._drawer) return
+        if (typeof this._drawer.completeShape === 'function') {
+            try {
+                this._drawer.completeShape()
+                return
+            } catch {
+                // fall through to disableDrawing below if leaflet-draw rejects the shape
+            }
+        }
+        this.disableDrawing()
+    }
+
+    isDrawing(): boolean {
+        return this._drawingShape !== null
     }
 
     /**

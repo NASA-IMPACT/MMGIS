@@ -36,6 +36,12 @@ export type {
     FeaturePickResult,
     FeatureInteractionHandler,
     QueryFeaturesOptions,
+    DrawShape,
+    DrawingOptions,
+    DrawStartEvent,
+    DrawVertexEvent,
+    DrawCompleteEvent,
+    DrawCancelEvent,
 } from './types/events'
 
 export type {

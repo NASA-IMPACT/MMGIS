@@ -48,6 +48,8 @@ import type {
     FeatureInteractionHandler,
     FeaturePickResult,
     QueryFeaturesOptions,
+    DrawShape,
+    DrawingOptions,
 } from '../types/events'
 
 import {
@@ -60,6 +62,8 @@ import {
     resolveLayerId,
     pickInfoToResult,
     buildDeckLayer,
+    buildDrawnFeature,
+    buildPreviewFeature,
 } from './DeckGLHelpers'
 
 /**
@@ -193,6 +197,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _eventListeners = new Map<string, Set<MapEventHandler<PickingInfo>>>()
     private _featureClickHandler: FeatureInteractionHandler | null = null
     private _featureHoverHandler: FeatureInteractionHandler | null = null
+
+    private _drawingShape: DrawShape | null = null
+    private _drawingVertices: { lat: number; lng: number }[] = []
+    private _drawingStyle: Record<string, unknown> = {}
+    private _drawingPreviewLayerId: string | null = null
+    private _drawingEscapeHandler: ((e: KeyboardEvent) => void) | null = null
+    private _drawingFinishing = false
 
     /**
      * Bound handler kept as a class field so it can be removed cleanly in {@link destroy}.
@@ -724,6 +735,123 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._emitEvent(eventName, data)
     }
 
+    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+        if (this._drawingShape) {
+            this.disableDrawing()
+        }
+
+        this._drawingShape = shape
+        this._drawingVertices = []
+        this._drawingStyle = (options.style as Record<string, unknown>) ?? {}
+        this._drawingPreviewLayerId = `__aoi-draw-preview-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`
+
+        if (options.cancelOnEscape !== false) {
+            this._drawingEscapeHandler = (e: KeyboardEvent) => {
+                if (e.key === 'Escape') this.disableDrawing()
+            }
+            document.addEventListener('keydown', this._drawingEscapeHandler)
+        }
+
+        this._emitEvent('drawstart', { shape })
+    }
+
+    disableDrawing(): void {
+        if (!this._drawingShape) return
+
+        const shape = this._drawingShape
+
+        this._removeDrawingPreview()
+        this._drawingShape = null
+        this._drawingVertices = []
+        this._drawingPreviewLayerId = null
+        this._drawingStyle = {}
+
+        if (this._drawingEscapeHandler) {
+            document.removeEventListener('keydown', this._drawingEscapeHandler)
+            this._drawingEscapeHandler = null
+        }
+
+        if (!this._drawingFinishing) {
+            this._emitEvent('drawcancel', { shape })
+        }
+    }
+
+    finishDrawing(): void {
+        if (!this._drawingShape) return
+        const shape = this._drawingShape
+        const vertices = this._drawingVertices.slice()
+
+        const feature = buildDrawnFeature(shape, vertices)
+        if (!feature) {
+            this.disableDrawing()
+            return
+        }
+
+        this._drawingFinishing = true
+        this.disableDrawing()
+        this._drawingFinishing = false
+        this._emitEvent('drawcomplete', { feature })
+    }
+
+    isDrawing(): boolean {
+        return this._drawingShape !== null
+    }
+
+    private _handleDrawClick(info: PickingInfo): void {
+        const c = info.coordinate
+        if (!c || !this._drawingShape) return
+        const vertex = { lat: c[1], lng: c[0] }
+        this._drawingVertices.push(vertex)
+
+        this._renderDrawingPreview()
+        this._emitEvent('drawvertex', {
+            shape: this._drawingShape,
+            vertices: this._drawingVertices.slice(),
+        })
+
+        if (
+            (this._drawingShape === 'rectangle' || this._drawingShape === 'circle') &&
+            this._drawingVertices.length >= 2
+        ) {
+            this.finishDrawing()
+        }
+    }
+
+    private _renderDrawingPreview(): void {
+        if (!this._drawingShape || !this._drawingPreviewLayerId) return
+        const previewFeature = buildPreviewFeature(this._drawingShape, this._drawingVertices)
+        if (!previewFeature) return
+        const id = this._drawingPreviewLayerId
+        const opts: LayerOptions = {
+            id,
+            type: 'vector',
+            style: this._drawingStyle,
+            interactive: false,
+            geojson: { type: 'FeatureCollection', features: [previewFeature] },
+        } as LayerOptions
+        if (this._layers.has(id)) {
+            const next = buildDeckLayer(id, opts)
+            this._layers.set(id, next)
+            this._syncLayers()
+        } else {
+            const next = buildDeckLayer(id, opts)
+            this._layers.set(id, next)
+            this._syncLayers()
+        }
+    }
+
+    private _removeDrawingPreview(): void {
+        const id = this._drawingPreviewLayerId
+        if (!id) return
+        if (this._layers.has(id)) {
+            this._layers.delete(id)
+            this._layerZIndices.delete(id)
+            this._syncLayers()
+        }
+    }
+
     onFeatureClick(handler: FeatureInteractionHandler): void {
         this._featureClickHandler = handler
     }
@@ -822,6 +950,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._emitEvent('moveend', clamped)
             },
             onClick: (info: PickingInfo) => {
+                if (this._drawingShape) {
+                    this._handleDrawClick(info)
+                    return
+                }
                 this._featureClickHandler?.(pickInfoToResult(info))
             },
             onHover: (info: PickingInfo) => {
@@ -889,6 +1021,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             interleaved: false,
             layers: [],
             onClick: (info: PickingInfo) => {
+                if (this._drawingShape) {
+                    this._handleDrawClick(info)
+                    return
+                }
                 this._featureClickHandler?.(pickInfoToResult(info))
             },
             onHover: (info: PickingInfo) => {
