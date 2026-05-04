@@ -81,16 +81,24 @@
             {
               "field": "id",
               "name": "ID",
-              "description": "Unique identifier for this panel.",
+              "description": "Unique identifier for this panel (e.g., 'left-panel', 'top-panel').",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "title",
+              "name": "Title",
+              "description": "Display title for the panel (optional).",
               "type": "text",
               "width": 6
             },
             {
               "field": "position",
               "name": "Position",
-              "description": "Position of the panel.",
+              "description": "Position of the panel: top, left, right, or bottom.",
               "type": "dropdown",
               "options": ["top", "left", "right", "bottom"],
+              "default": "top",
               "width": 6
             },
             {
@@ -98,15 +106,121 @@
               "name": "Priority",
               "description": "Layout priority (lower claims space first).",
               "type": "number",
-              "width": 6
+              "default": 0,
+              "width": 6,
+              "min": 0
             },
             {
               "field": "layoutType",
               "name": "Layout Type",
-              "description": "How tools are arranged in expanded state.",
+              "description": "How tools are arranged in expanded state: stacked (all visible) or tabbed (only active tool visible).",
               "type": "dropdown",
               "options": ["stacked", "tabbed"],
+              "default": "stacked",
               "width": 6
+            },
+            {
+              "field": "hasHeader",
+              "name": "Has Header",
+              "description": "Whether panel has a header with title and control buttons.",
+              "type": "checkbox",
+              "width": 6,
+              "defaultChecked": false
+            },
+            {
+              "field": "stateConstraints.allowedStates",
+              "name": "Allowed States",
+              "description": "Select permitted states for this panel. Options: collapsed (hidden), iconified (icons only), focused (single tool), expanded (all tools).",
+              "type": "multiselect",
+              "options": ["collapsed", "iconified", "focused", "expanded"],
+              "default": ["expanded"],
+              "width": 12
+            },
+            {
+              "field": "stateConstraints.defaultState",
+              "name": "Default State",
+              "description": "Initial state when panel is created. Must be one of the allowed states.",
+              "type": "dropdown",
+              "options": ["collapsed", "iconified", "focused", "expanded"],
+              "default": "expanded",
+              "width": 12
+            },
+            {
+              "field": "capabilities.supportedOrientation",
+              "name": "Supported Orientation",
+              "description": "Tool orientation compatibility: horizontal (top/bottom), vertical (left/right), or any.",
+              "type": "dropdown",
+              "options": ["horizontal", "vertical", "any"],
+              "width": 6
+            },
+            {
+              "field": "capabilities.resizable",
+              "name": "Resizable",
+              "description": "Whether user can drag-resize the panel.",
+              "type": "checkbox",
+              "width": 6,
+              "defaultChecked": false
+            },
+            {
+              "field": "capabilities.maxTools",
+              "name": "Max Tools",
+              "description": "Maximum number of tools allowed in this panel (leave empty for no limit).",
+              "type": "number",
+              "width": 6,
+              "min": 1
+            },
+            {
+              "field": "capabilities.minSize",
+              "name": "Min Size (px)",
+              "description": "Minimum size in pixels when resizing (requires resizable: true).",
+              "type": "number",
+              "width": 6,
+              "min": 0
+            },
+            {
+              "field": "capabilities.maxSize",
+              "name": "Max Size (px)",
+              "description": "Maximum size in pixels when resizing (requires resizable: true).",
+              "type": "number",
+              "width": 6,
+              "min": 0
+            },
+            {
+              "field": "dimensions.iconifiedSize",
+              "name": "Iconified Size (px)",
+              "description": "Size of icon bar when in iconified state (width for left/right, height for top/bottom).",
+              "type": "number",
+              "width": 6,
+              "min": 0
+            },
+            {
+              "field": "dimensions.focusedWidth",
+              "name": "Focused Width (px)",
+              "description": "Width when in focused state (for vertical/left/right panels). Use number or 'content'.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "dimensions.focusedHeight",
+              "name": "Focused Height (px)",
+              "description": "Height when in focused state (for horizontal/top/bottom panels). Use number or 'content'.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "dimensions.expandedSize",
+              "name": "Expanded Size (px)",
+              "description": "Size when in expanded state (width for left/right, height for top/bottom). Use number or 'content'.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "panelTools",
+              "name": "Panel Tools",
+              "description": "Tool identifiers to assign to this panel. Can be tool names (e.g., 'Title') or tool IDs (e.g., 'Title_instance1') for multiple instances. Must match values in the mission's tools array. Example: Title,Layers,Draw",
+              "type": "textarray",
+              "default": [],
+              "width": 24
             }
           ]
         }

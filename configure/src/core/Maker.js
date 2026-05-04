@@ -789,7 +789,7 @@ const getComponent = (
         </div>
       );
     case "textarray":
-      let text_array_f = getIn(directConf, com.field, []);
+      let text_array_f = value != null ? value : getIn(directConf, com.field, []);
       if (text_array_f != null && typeof text_array_f.join === "function")
         text_array_f = text_array_f.join(",");
 
@@ -818,7 +818,7 @@ const getComponent = (
             if (e.target.value == null || e.target.value == "") newValue = null;
             else newValue = e.target.value.split(",");
 
-            updateConfiguration(com.field, newValue, layer);
+            updateConfiguration(forceField || com.field, newValue, layer);
           }}
         />
       );
@@ -951,7 +951,7 @@ const getComponent = (
               <Checkbox
                 disabled={disabled}
                 checked={
-                  value || getIn(directConf, com.field, com.defaultChecked)
+                  value != null ? value : getIn(directConf, com.field, com.defaultChecked)
                 }
                 onChange={(e) => {
                   updateConfiguration(
@@ -1042,7 +1042,7 @@ const getComponent = (
               <Switch
                 disabled={disabled}
                 checked={
-                  value || getIn(directConf, com.field, com.defaultChecked)
+                  value != null ? value : getIn(directConf, com.field, com.defaultChecked)
                 }
                 onChange={(e) => {
                   updateConfiguration(
@@ -1210,6 +1210,81 @@ const getComponent = (
           )}
         </div>
       );
+    case "multiselect":
+      let multiOptions = com.options || [];
+
+      // Support for dynamic injection through mustache (same pattern as searchdropdown)
+      if (typeof multiOptions === "string") {
+        try {
+          multiOptions = JSON.parse(multiOptions);
+        } catch {
+          multiOptions = [multiOptions];
+        }
+      }
+
+      if (!Array.isArray(multiOptions)) {
+        multiOptions = com.options || [];
+      }
+
+      // Handle nested field paths properly (e.g., "stateConstraints.allowedStates")
+      let multiValue = value;
+      if (multiValue == null && forceField) {
+        // When in objectarray, use the full path from configuration
+        multiValue = getIn(configuration, forceField.split("."), []);
+      } else if (multiValue == null) {
+        multiValue = getIn(directConf, com.field.split("."), []);
+      }
+      const normalizedMultiValue = Array.isArray(multiValue) ? multiValue : [];
+
+      inner = (
+        <Autocomplete
+          multiple
+          disabled={disabled}
+          options={multiOptions}
+          value={normalizedMultiValue}
+          onChange={(e, newValue) => {
+            updateConfiguration(forceField || com.field, newValue || [], layer);
+          }}
+          getOptionLabel={(option) => option}
+          isOptionEqualToValue={(option, value) => option === value}
+          renderOption={(props, option, { selected }) => (
+            <li {...props}>
+              <Checkbox
+                checked={selected}
+                style={{ marginRight: 8 }}
+              />
+              {option}
+            </li>
+          )}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label={com.name}
+              variant="filled"
+              size="small"
+              disabled={disabled}
+            />
+          )}
+          disableCloseOnSelect
+          ChipProps={{ size: "small" }}
+        />
+      );
+      return (
+        <div>
+          {inlineHelp ? (
+            <>
+              {inner}
+              <Typography className={c.subtitle2}>
+                {com.description || ""}
+              </Typography>
+            </>
+          ) : (
+            <Tooltip title={com.description || ""} placement="top" arrow>
+              {inner}
+            </Tooltip>
+          )}
+        </div>
+      );
     case "colordropdown":
       let dropdown_value =
         value || getIn(directConf, com.field, com.options?.[0]);
@@ -1356,7 +1431,7 @@ const getComponent = (
                           updateConfiguration,
                           c,
                           inlineHelp,
-                          item[icom.field],
+                          getIn(item, icom.field),
                           `${com.field}.${idx}.${icom.field}`
                         )
                       : getComponent(
@@ -1368,7 +1443,7 @@ const getComponent = (
                           updateConfiguration,
                           c,
                           inlineHelp,
-                          item[icom.field],
+                          getIn(item, icom.field),
                           `${com.field}.${idx}.${icom.field}`
                         )}
                   </Grid>
@@ -1437,7 +1512,18 @@ const getComponent = (
                     if (typeof next.push !== "function") next = [];
                     let nextObj = {};
                     com.object.forEach((obj) => {
-                      nextObj[obj.field] = null;
+                      // Handle dot notation in field names by using setIn to create nested objects
+                      // Use default values from metaconfig if available
+                      let defaultValue = obj.defaultChecked !== undefined ? obj.defaultChecked :
+                                          obj.default !== undefined ? obj.default : null;
+                      // Clone arrays/objects to prevent shared references between panel entries
+                      if (defaultValue !== null && typeof defaultValue === 'object') {
+                        defaultValue = JSON.parse(JSON.stringify(defaultValue));
+                      }
+                      // Only add fields that have non-null defaults to avoid validation errors on optional fields
+                      if (defaultValue !== null) {
+                        setIn(nextObj, obj.field.split("."), defaultValue, true);
+                      }
                     });
                     next.push(nextObj);
 
@@ -1449,7 +1535,18 @@ const getComponent = (
                     if (typeof next.push !== "function") next = [];
                     let nextObj = {};
                     com.object.forEach((obj) => {
-                      nextObj[obj.field] = null;
+                      // Handle dot notation in field names by using setIn to create nested objects
+                      // Use default values from metaconfig if available
+                      let defaultValue = obj.defaultChecked !== undefined ? obj.defaultChecked :
+                                          obj.default !== undefined ? obj.default : null;
+                      // Clone arrays/objects to prevent shared references between panel entries
+                      if (defaultValue !== null && typeof defaultValue === 'object') {
+                        defaultValue = JSON.parse(JSON.stringify(defaultValue));
+                      }
+                      // Only add fields that have non-null defaults to avoid validation errors on optional fields
+                      if (defaultValue !== null) {
+                        setIn(nextObj, obj.field.split("."), defaultValue, true);
+                      }
                     });
                     next.push(nextObj);
 
@@ -1460,7 +1557,18 @@ const getComponent = (
                     if (typeof next.push !== "function") next = [];
                     let nextObj = {};
                     com.object.forEach((obj) => {
-                      nextObj[obj.field] = null;
+                      // Handle dot notation in field names by using setIn to create nested objects
+                      // Use default values from metaconfig if available
+                      let defaultValue = obj.defaultChecked !== undefined ? obj.defaultChecked :
+                                          obj.default !== undefined ? obj.default : null;
+                      // Clone arrays/objects to prevent shared references between panel entries
+                      if (defaultValue !== null && typeof defaultValue === 'object') {
+                        defaultValue = JSON.parse(JSON.stringify(defaultValue));
+                      }
+                      // Only add fields that have non-null defaults to avoid validation errors on optional fields
+                      if (defaultValue !== null) {
+                        setIn(nextObj, obj.field.split("."), defaultValue, true);
+                      }
                     });
                     next.push(nextObj);
 
