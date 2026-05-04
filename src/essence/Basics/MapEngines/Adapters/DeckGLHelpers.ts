@@ -548,34 +548,62 @@ export function buildDrawnFeature(
 
 /**
  * Build the in-progress preview Feature shown to the user during drawing.
- * Polygons render as an open LineString until ≥3 vertices, then as a Polygon.
- * Rectangle and circle render the final shape as soon as 2 vertices exist.
+ *
+ * `cursor` is the live mouse position; when provided the preview includes it
+ * as a "rubber-band" tail so the user sees the shape forming under their
+ * cursor in real time:
+ *
+ *   - Polygon: open LineString through committed vertices + cursor.
+ *               Closes into a Polygon only after committing ≥3 vertices and
+ *               the cursor has not been provided (cursor implies the user is
+ *               still drawing).
+ *   - Rectangle: with one vertex committed and a cursor, render the full
+ *               rectangle from corner-0 to cursor.
+ *   - Circle: same, render the full circle from center to cursor.
  */
 export function buildPreviewFeature(
     shape: 'polygon' | 'rectangle' | 'circle',
-    vertices: { lat: number; lng: number }[]
+    vertices: { lat: number; lng: number }[],
+    cursor?: { lat: number; lng: number }
 ): GeoJSON.Feature | null {
-    if (vertices.length === 0) return null
+    if (vertices.length === 0 && !cursor) return null
+
     if (shape === 'polygon') {
-        if (vertices.length < 3) {
+        const path = cursor ? [...vertices, cursor] : vertices
+        if (path.length === 0) return null
+        if (path.length === 1) {
             return {
                 type: 'Feature',
                 properties: { source: 'draw-preview' },
-                geometry: {
-                    type: 'LineString',
-                    coordinates: vertices.map((v) => [v.lng, v.lat]),
-                },
+                geometry: { type: 'Point', coordinates: [path[0].lng, path[0].lat] },
             }
         }
-        return buildDrawnFeature('polygon', vertices)
+        if (vertices.length >= 3 && !cursor) {
+            return buildDrawnFeature('polygon', vertices)
+        }
+        return {
+            type: 'Feature',
+            properties: { source: 'draw-preview' },
+            geometry: {
+                type: 'LineString',
+                coordinates: path.map((v) => [v.lng, v.lat]),
+            },
+        }
     }
-    if (vertices.length < 2) {
+
+    if (vertices.length === 0) return null
+
+    if (vertices.length === 1) {
+        if (cursor) {
+            return buildDrawnFeature(shape, [vertices[0], cursor])
+        }
         return {
             type: 'Feature',
             properties: { source: 'draw-preview' },
             geometry: { type: 'Point', coordinates: [vertices[0].lng, vertices[0].lat] },
         }
     }
+
     return buildDrawnFeature(shape, vertices)
 }
 

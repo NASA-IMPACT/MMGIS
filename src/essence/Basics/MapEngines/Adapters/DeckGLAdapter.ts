@@ -200,6 +200,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     private _drawingShape: DrawShape | null = null
     private _drawingVertices: { lat: number; lng: number }[] = []
+    private _drawingCursor: { lat: number; lng: number } | null = null
     private _drawingStyle: Record<string, unknown> = {}
     private _drawingPreviewLayerId: string | null = null
     private _drawingEscapeHandler: ((e: KeyboardEvent) => void) | null = null
@@ -765,6 +766,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._removeDrawingPreview()
         this._drawingShape = null
         this._drawingVertices = []
+        this._drawingCursor = null
         this._drawingPreviewLayerId = null
         this._drawingStyle = {}
 
@@ -819,9 +821,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
     }
 
+    private _handleDrawHover(info: PickingInfo): void {
+        const c = info.coordinate
+        if (!c || !this._drawingShape) return
+        if (this._drawingVertices.length === 0) return
+        this._drawingCursor = { lat: c[1], lng: c[0] }
+        this._renderDrawingPreview()
+    }
+
     private _renderDrawingPreview(): void {
         if (!this._drawingShape || !this._drawingPreviewLayerId) return
-        const previewFeature = buildPreviewFeature(this._drawingShape, this._drawingVertices)
+        const previewFeature = buildPreviewFeature(
+            this._drawingShape,
+            this._drawingVertices,
+            this._drawingCursor ?? undefined
+        )
         if (!previewFeature) return
         const id = this._drawingPreviewLayerId
         const opts: LayerOptions = {
@@ -957,6 +971,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._featureClickHandler?.(pickInfoToResult(info))
             },
             onHover: (info: PickingInfo) => {
+                if (this._drawingShape) {
+                    this._handleDrawHover(info)
+                }
                 this._featureHoverHandler?.(pickInfoToResult(info))
             },
         } as any)
@@ -1028,6 +1045,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._featureClickHandler?.(pickInfoToResult(info))
             },
             onHover: (info: PickingInfo) => {
+                if (this._drawingShape) {
+                    this._handleDrawHover(info)
+                }
                 this._featureHoverHandler?.(pickInfoToResult(info))
             },
         })
