@@ -24,11 +24,11 @@ export interface AOIComponentProps {
 
     drawShape: AOIShape | null
     drawDisabled?: boolean
-    canUndo: boolean
-    canRedo: boolean
+    isDrawing: boolean
+    drawVerticesCount: number
     onDrawShapeChange: (shape: AOIShape) => void
-    onDrawUndo: () => void
-    onDrawRedo: () => void
+    onDrawConfirm: () => void
+    onDrawCancel: () => void
 
     uploadStatus: UploadStatus
     uploadError?: string
@@ -161,6 +161,13 @@ function InspectPanel() {
 }
 
 function DrawPanel(props: AOIComponentProps) {
+    if (props.isDrawing && props.drawShape) {
+        return <DrawInProgressPanel {...props} />
+    }
+    return <DrawShapePickerPanel {...props} />
+}
+
+function DrawShapePickerPanel(props: AOIComponentProps) {
     const shapes: Array<{ id: AOIShape; label: string; icon: string }> = [
         { id: 'polygon', label: 'Polygon', icon: 'vector-polygon' },
         { id: 'rectangle', label: 'Rectangle', icon: 'square-outline' },
@@ -191,31 +198,45 @@ function DrawPanel(props: AOIComponentProps) {
                         />
                     </button>
                 ))}
-                <span className="aoi-draw__divider" aria-hidden="true" />
-                <button
-                    type="button"
-                    className="aoi-draw__history"
-                    onClick={props.onDrawUndo}
-                    disabled={!props.canUndo || props.drawDisabled}
-                    aria-label="Undo"
-                >
-                    <i className="mdi mdi-undo aoi-draw__history-icon" aria-hidden="true" />
-                </button>
-                <button
-                    type="button"
-                    className="aoi-draw__history"
-                    onClick={props.onDrawRedo}
-                    disabled={!props.canRedo || props.drawDisabled}
-                    aria-label="Redo"
-                >
-                    <i className="mdi mdi-redo aoi-draw__history-icon" aria-hidden="true" />
-                </button>
             </div>
             <p className="aoi-panel__hint aoi-panel__hint--secondary">
-                {props.drawDisabled
-                    ? 'Drawing is not available on this map engine yet.'
-                    : 'Click anywhere on the map to start drawing a shape'}
+                Click anywhere on the map to start drawing a shape
             </p>
+        </div>
+    )
+}
+
+function DrawInProgressPanel(props: AOIComponentProps) {
+    const shape = props.drawShape!
+    const minVertices = shape === 'polygon' ? 3 : 2
+    const valid = props.drawVerticesCount >= minVertices
+    const hint =
+        shape === 'polygon'
+            ? `Click on the map to add vertices. ${props.drawVerticesCount} placed (need ${minVertices}+).`
+            : shape === 'rectangle'
+                ? 'Click two corners to define the rectangle.'
+                : 'Click the centre, then click the edge to define the circle.'
+
+    return (
+        <div className="aoi-panel aoi-panel--draw">
+            <p className="aoi-panel__hint">{hint}</p>
+            <div className="aoi-draw__actions" role="group" aria-label="Drawing actions">
+                <button
+                    type="button"
+                    className="aoi-draw__confirm"
+                    onClick={props.onDrawConfirm}
+                    disabled={!valid}
+                >
+                    Confirm
+                </button>
+                <button
+                    type="button"
+                    className="aoi-draw__cancel"
+                    onClick={props.onDrawCancel}
+                >
+                    Cancel
+                </button>
+            </div>
         </div>
     )
 }

@@ -61,9 +61,9 @@ const initialState = () => ({
     searchLoading: false,
     searchDisabled: false,
     drawShape: null,
-    drawDisabled: true,
-    canUndo: false,
-    canRedo: false,
+    drawDisabled: false,
+    isDrawing: false,
+    drawVerticesCount: 0,
     uploadStatus: 'idle',
     uploadError: '',
     currentAOI: null,
@@ -80,7 +80,13 @@ const AOITool = {
     _state: initialState(),
     _cleanups: [],
     _api: null,
-    _engineHandlers: { reposition: null },
+    _engineHandlers: {
+        reposition: null,
+        drawstart: null,
+        drawvertex: null,
+        drawcomplete: null,
+        drawcancel: null,
+    },
 
     make(targetId) {
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
@@ -112,10 +118,19 @@ const AOITool = {
         }
 
         this._engineHandlers.reposition = () => this._repositionTooltip()
+        this._engineHandlers.drawstart = (e) => this._onDrawStart(e)
+        this._engineHandlers.drawvertex = (e) => this._onDrawVertex(e)
+        this._engineHandlers.drawcomplete = (e) => this._onDrawComplete(e)
+        this._engineHandlers.drawcancel = () => this._onDrawCancelEvent()
+
         const engine = this._engine()
         if (engine) {
             engine.on('move', this._engineHandlers.reposition)
             engine.on('moveend', this._engineHandlers.reposition)
+            engine.on('drawstart', this._engineHandlers.drawstart)
+            engine.on('drawvertex', this._engineHandlers.drawvertex)
+            engine.on('drawcomplete', this._engineHandlers.drawcomplete)
+            engine.on('drawcancel', this._engineHandlers.drawcancel)
         }
 
         this._render()
@@ -132,11 +147,34 @@ const AOITool = {
         this._cleanups = []
 
         const engine = this._engine()
-        if (engine && this._engineHandlers.reposition) {
-            engine.off('move', this._engineHandlers.reposition)
-            engine.off('moveend', this._engineHandlers.reposition)
+        if (engine) {
+            if (typeof engine.isDrawing === 'function' && engine.isDrawing()) {
+                try {
+                    engine.disableDrawing()
+                } catch {
+                    // intentionally swallow
+                }
+            }
+            if (this._engineHandlers.reposition) {
+                engine.off('move', this._engineHandlers.reposition)
+                engine.off('moveend', this._engineHandlers.reposition)
+            }
+            if (this._engineHandlers.drawstart)
+                engine.off('drawstart', this._engineHandlers.drawstart)
+            if (this._engineHandlers.drawvertex)
+                engine.off('drawvertex', this._engineHandlers.drawvertex)
+            if (this._engineHandlers.drawcomplete)
+                engine.off('drawcomplete', this._engineHandlers.drawcomplete)
+            if (this._engineHandlers.drawcancel)
+                engine.off('drawcancel', this._engineHandlers.drawcancel)
         }
-        this._engineHandlers.reposition = null
+        this._engineHandlers = {
+            reposition: null,
+            drawstart: null,
+            drawvertex: null,
+            drawcomplete: null,
+            drawcancel: null,
+        }
 
         this._removeSelectionLayer()
 
@@ -186,11 +224,11 @@ const AOITool = {
 
                 drawShape: this._state.drawShape,
                 drawDisabled: this._state.drawDisabled,
-                canUndo: this._state.canUndo,
-                canRedo: this._state.canRedo,
-                onDrawShapeChange: (drawShape) => this._setState({ drawShape }),
-                onDrawUndo: () => { },
-                onDrawRedo: () => { },
+                isDrawing: this._state.isDrawing,
+                drawVerticesCount: this._state.drawVerticesCount,
+                onDrawShapeChange: (drawShape) => this._onDrawShapeChange(drawShape),
+                onDrawConfirm: () => this._onDrawConfirm(),
+                onDrawCancel: () => this._onDrawCancel(),
 
                 uploadStatus: this._state.uploadStatus,
                 uploadError: this._state.uploadError,
@@ -232,6 +270,64 @@ const AOITool = {
         const entry = this._state.searchAllEntries.find((e) => e.id === id)
         if (!entry) return
         this._applySelection(entry.feature, 'search', entry.label)
+    },
+
+    _onDrawShapeChange(shape) {
+        const engine = this._engine()
+        if (!engine || typeof engine.enableDrawing !== 'function') {
+            console.warn('[AOI] Drawing not supported on the active engine')
+            return
+        }
+        this._setState({ drawShape: shape, drawVerticesCount: 0 })
+        try {
+            engine.enableDrawing(shape, { style: SELECTION_STYLE })
+        } catch (err) {
+            console.warn('[AOI] enableDrawing failed', err)
+        }
+    },
+
+    _onDrawConfirm() {
+        const engine = this._engine()
+        if (!engine || !engine.isDrawing?.()) return
+        try {
+            engine.finishDrawing()
+        } catch (err) {
+            console.warn('[AOI] finishDrawing failed', err)
+        }
+    },
+
+    _onDrawCancel() {
+        const engine = this._engine()
+        if (!engine || !engine.isDrawing?.()) return
+        try {
+            engine.disableDrawing()
+        } catch (err) {
+            console.warn('[AOI] disableDrawing failed', err)
+        }
+    },
+
+    _onDrawStart() {
+        this._setState({ isDrawing: true, drawVerticesCount: 0 })
+    },
+
+    _onDrawVertex(e) {
+        const count = Array.isArray(e?.vertices) ? e.vertices.length : 0
+        this._setState({ drawVerticesCount: count })
+    },
+
+    _onDrawComplete(e) {
+        this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
+        const feature = e?.feature
+        if (!feature) return
+        const label =
+            (feature.properties && feature.properties.shape
+                ? `Drawn ${feature.properties.shape}`
+                : 'Drawn area')
+        this._applySelection(feature, 'draw', label)
+    },
+
+    _onDrawCancelEvent() {
+        this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
     },
 
     _onUploadFile(file) {

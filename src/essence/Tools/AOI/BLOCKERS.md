@@ -4,12 +4,11 @@ Tracked per [PLUGIN-DEVELOPMENT-GUIDE.md](../../../../PLUGIN-DEVELOPMENT-GUIDE.m
 
 ---
 
-## [BLOCKER] IMapEngine has no drawing primitives
+## [RESOLVED] IMapEngine has no drawing primitives
 
-- **Date**: 2026-05-04
-- **Status**: spec drafted, awaiting core implementation
-- **Tracking**: full proposal in [specs/013-imapengine-drawing/spec.md](../../../../specs/013-imapengine-drawing/spec.md). Core work happens on a separate branch (e.g. `feat/imapengine-drawing`); plugin tasks P1–P7 in §5 of that spec resume on this branch once it merges.
-- **Workaround in this plugin**: Render the Draw tab UI but pass `drawDisabled=true` to the component. The tab body shows "Drawing is not available on this map engine yet." Stays blocked until the core spec lands.
+- **Date opened**: 2026-05-04
+- **Date closed**: 2026-05-04
+- **Resolution**: Core branch `feat/imapengine-drawing` added `enableDrawing` / `disableDrawing` / `finishDrawing` / `isDrawing` plus `drawstart` / `drawvertex` / `drawcomplete` / `drawcancel` events to `IMapEngine`. Both `LeafletAdapter` and `DeckGLAdapter` implement the surface. See [specs/013-imapengine-drawing/spec.md](../../../../specs/013-imapengine-drawing/spec.md). Plugin-side wiring (P1–P7) merged on this branch.
 
 ---
 
