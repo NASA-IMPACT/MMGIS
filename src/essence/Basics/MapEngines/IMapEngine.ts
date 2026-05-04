@@ -13,6 +13,8 @@ import {
     FeatureInteractionHandler,
     FeaturePickResult,
     QueryFeaturesOptions,
+    DrawShape,
+    DrawingOptions,
 } from './types/events'
 import { MapEngineType } from './types/engine'
 
@@ -261,4 +263,50 @@ export interface IMapEngine<
      * Convert geographic coordinates to container pixel position.
      */
     latLngToContainerPoint(latLng: LatLngLike): PointLike
+
+    /**
+     * Begin an interactive drawing session.
+     *
+     * Polygon: click each vertex; double-click (or `enter`) finishes.
+     * Rectangle: two clicks define opposite corners.
+     * Circle: first click sets center, second click sets radius. The
+     *   completed feature is a 32-segment Polygon approximation.
+     *
+     * Calling `enableDrawing` while a session is already active first
+     * disables the prior session (emitting `drawcancel`), then starts a new
+     * one — there is never more than one drawing session at a time on an
+     * engine.
+     *
+     * Engines emit four lifecycle events through the existing `on(name, …)`:
+     *   - `drawstart`    payload: {@link DrawStartEvent}
+     *   - `drawvertex`   payload: {@link DrawVertexEvent} (committed vertices only)
+     *   - `drawcomplete` payload: {@link DrawCompleteEvent}
+     *   - `drawcancel`   payload: {@link DrawCancelEvent}
+     */
+    enableDrawing(shape: DrawShape, options?: DrawingOptions): void
+
+    /**
+     * End the active drawing session, removing any in-progress preview
+     * geometry from the map. If a session was active, emits `drawcancel`.
+     * No-op if no session is active.
+     */
+    disableDrawing(): void
+
+    /**
+     * Commit the current in-progress drawing as a Feature.
+     *
+     * Emits `drawcomplete` when the current vertices form a valid shape and
+     * `drawcancel` when they do not (e.g. polygon with fewer than 3 vertices).
+     * Either way the session ends; isDrawing() returns false afterward.
+     *
+     * This is what plugin "Confirm" buttons should call. Adapters that auto-
+     * finish on a built-in interaction (e.g. polygon double-click) call this
+     * internally too — there is one finalisation path.
+     */
+    finishDrawing(): void
+
+    /**
+     * Whether a drawing session is currently active.
+     */
+    isDrawing(): boolean
 }
