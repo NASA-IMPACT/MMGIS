@@ -152,10 +152,8 @@ function InspectPanel() {
     return (
         <div className="aoi-panel aoi-panel--inspect">
             <p className="aoi-panel__hint">
-                Click on a political boundary or geography on the map to select it
-                for analysis.
+                Click on a boundary on the map to select it for analysis.
             </p>
-            <p className="aoi-panel__empty">Coming soon.</p>
         </div>
     )
 }
@@ -246,7 +244,7 @@ function UploadPanel(props: AOIComponentProps) {
     return (
         <div className="aoi-panel aoi-panel--upload">
             <p className="aoi-panel__hint">
-                Upload a GeoJSON, KML, or Shapefile to define your analysis area.
+                Upload a GeoJSON or KML to define your analysis area.
             </p>
 
             <button
@@ -281,9 +279,6 @@ function UploadPanel(props: AOIComponentProps) {
             <ul className="aoi-upload__formats">
                 <li>GeoJSON (.geojson, .json)</li>
                 <li>KML (.kml)</li>
-                <li className="aoi-upload__formats-disabled">
-                    Shapefile (.shp) – coming soon
-                </li>
             </ul>
         </div>
     )

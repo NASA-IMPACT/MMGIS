@@ -371,10 +371,6 @@
     font-size: var(--aoi-font-size-sm);
 }
 
-.aoi-upload__formats-disabled {
-    color: var(--aoi-fg-muted);
-}
-
 .aoi-tooltip {
     position: absolute;
     transform: translate(-50%, calc(-100% - var(--aoi-space-3)));

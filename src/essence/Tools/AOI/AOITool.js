@@ -45,12 +45,20 @@ import { loadBoundaries } from './aoiBoundaryLoader'
 
 const PLUGIN_ID = 'aoi'
 const SELECTION_LAYER_ID = 'aoi:selection'
+const INSPECT_BOUNDARIES_LAYER_ID = 'aoi:inspect-boundaries'
 
 const SELECTION_STYLE = {
     color: '#005ea2',
     weight: 3,
     fillColor: '#005ea2',
     fillOpacity: 0.25,
+}
+
+const INSPECT_STYLE = {
+    color: '#137480',
+    weight: 1,
+    fillColor: '#137480',
+    fillOpacity: 0.06,
 }
 
 const initialState = () => ({
@@ -106,6 +114,9 @@ const AOITool = {
                     searchAllEntries: buildSearchIndex(boundaries),
                     searchLoading: false,
                 })
+                if (this._state.mode === 'inspect') {
+                    this._showInspectBoundaries()
+                }
             })
             .catch((err) => {
                 console.warn('[AOI] failed to load bundled boundaries', err)
@@ -131,6 +142,9 @@ const AOITool = {
             engine.on('drawvertex', this._engineHandlers.drawvertex)
             engine.on('drawcomplete', this._engineHandlers.drawcomplete)
             engine.on('drawcancel', this._engineHandlers.drawcancel)
+            if (typeof engine.onFeatureClick === 'function') {
+                engine.onFeatureClick((result) => this._onMapFeatureClick(result))
+            }
         }
 
         this._render()
@@ -177,6 +191,7 @@ const AOITool = {
         }
 
         this._removeSelectionLayer()
+        this._hideInspectBoundaries()
 
         if (this._tooltipRoot) {
             unmountComponentAtNode(this._tooltipRoot)
@@ -213,7 +228,7 @@ const AOITool = {
         render(
             React.createElement(AOIComponent, {
                 mode: this._state.mode,
-                onModeChange: (mode) => this._setState({ mode }),
+                onModeChange: (mode) => this._onModeChange(mode),
 
                 searchQuery: this._state.searchQuery,
                 searchResults: this._state.searchResults,
@@ -416,6 +431,80 @@ const AOITool = {
         } catch {
             // intentionally swallow
         }
+    },
+
+    _onModeChange(nextMode) {
+        const prev = this._state.mode
+        if (prev === nextMode) return
+
+        if (prev === 'inspect') {
+            this._hideInspectBoundaries()
+        }
+        if (nextMode === 'inspect') {
+            this._showInspectBoundaries()
+        }
+
+        const engine = this._engine()
+        if (prev === 'draw' && engine?.isDrawing?.()) {
+            try {
+                engine.disableDrawing()
+            } catch {
+                // intentionally swallow
+            }
+        }
+
+        this._setState({ mode: nextMode })
+    },
+
+    _showInspectBoundaries() {
+        const engine = this._engine()
+        if (!engine) return
+        const entries = this._state.searchAllEntries
+        if (!entries.length) return
+        try {
+            if (engine.hasLayer(INSPECT_BOUNDARIES_LAYER_ID)) {
+                engine.removeLayer(INSPECT_BOUNDARIES_LAYER_ID)
+            }
+            engine.createLayer({
+                id: INSPECT_BOUNDARIES_LAYER_ID,
+                type: 'vector',
+                geojson: {
+                    type: 'FeatureCollection',
+                    features: entries.map((e) => e.feature),
+                },
+                style: INSPECT_STYLE,
+                interactive: true,
+            })
+        } catch (err) {
+            console.warn('[AOI] failed to show inspect boundaries', err)
+        }
+    },
+
+    _hideInspectBoundaries() {
+        const engine = this._engine()
+        if (!engine) return
+        try {
+            if (engine.hasLayer(INSPECT_BOUNDARIES_LAYER_ID)) {
+                engine.removeLayer(INSPECT_BOUNDARIES_LAYER_ID)
+            }
+        } catch {
+            // intentionally swallow
+        }
+    },
+
+    _onMapFeatureClick(result) {
+        if (this._state.mode !== 'inspect') return
+        const feature = result?.feature
+        if (!feature || !feature.geometry) return
+        const gtype = feature.geometry.type
+        if (gtype !== 'Polygon' && gtype !== 'MultiPolygon') return
+        const props = feature.properties || {}
+        const label =
+            props.name ||
+            props.NAME ||
+            props.title ||
+            (props._aoiKind ? `Inspected ${props._aoiKind}` : 'Inspected area')
+        this._applySelection(feature, 'inspect', label)
     },
 
     _buildTooltipState(feature, label) {
