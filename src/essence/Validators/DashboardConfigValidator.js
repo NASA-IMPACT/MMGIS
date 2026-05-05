@@ -213,10 +213,16 @@ function validatePanelConfig(panel, index) {
         )
     }
 
-    if (typeof panel.priority !== 'number') {
-        errors.push(`${prefix}: Must have a numeric "priority"`)
-    } else if (panel.priority < 0) {
-        errors.push(`${prefix}: "priority" must be non-negative`)
+    // Validate priority - try to convert if string
+    if (panel.priority === undefined || panel.priority === null) {
+        errors.push(`${prefix}: Must have a "priority"`)
+    } else {
+        const priorityNum = Number(panel.priority)
+        if (isNaN(priorityNum)) {
+            errors.push(`${prefix}: "priority" must be a valid number (got "${panel.priority}")`)
+        } else if (priorityNum < 0) {
+            errors.push(`${prefix}: "priority" must be non-negative`)
+        }
     }
 
     if (!panel.layoutType || !VALID_LAYOUT_TYPES.includes(panel.layoutType)) {
@@ -269,23 +275,36 @@ function validatePanelConfig(panel, index) {
             )
         }
 
-        if (cap.maxTools !== undefined && (typeof cap.maxTools !== 'number' || cap.maxTools < 1)) {
-            errors.push(`${prefix}.capabilities: "maxTools" must be a positive number`)
+        if (cap.maxTools !== undefined) {
+            const maxToolsNum = Number(cap.maxTools)
+            if (isNaN(maxToolsNum)) {
+                errors.push(`${prefix}.capabilities: "maxTools" must be a valid number (got "${cap.maxTools}")`)
+            } else if (maxToolsNum < 1) {
+                errors.push(`${prefix}.capabilities: "maxTools" must be a positive number`)
+            }
         }
 
         if (cap.resizable !== undefined && typeof cap.resizable !== 'boolean') {
             errors.push(`${prefix}.capabilities: "resizable" must be a boolean`)
         }
 
-        if (cap.minSize !== undefined && typeof cap.minSize !== 'number') {
-            errors.push(`${prefix}.capabilities: "minSize" must be a number`)
+        let minSize, maxSize
+
+        if (cap.minSize !== undefined) {
+            minSize = Number(cap.minSize)
+            if (isNaN(minSize)) {
+                errors.push(`${prefix}.capabilities: "minSize" must be a valid number (got "${cap.minSize}")`)
+            }
         }
 
-        if (cap.maxSize !== undefined && typeof cap.maxSize !== 'number') {
-            errors.push(`${prefix}.capabilities: "maxSize" must be a number`)
+        if (cap.maxSize !== undefined) {
+            maxSize = Number(cap.maxSize)
+            if (isNaN(maxSize)) {
+                errors.push(`${prefix}.capabilities: "maxSize" must be a valid number (got "${cap.maxSize}")`)
+            }
         }
 
-        if (cap.minSize !== undefined && cap.maxSize !== undefined && cap.minSize > cap.maxSize) {
+        if (minSize !== undefined && maxSize !== undefined && !isNaN(minSize) && !isNaN(maxSize) && minSize > maxSize) {
             errors.push(`${prefix}.capabilities: "minSize" cannot be greater than "maxSize"`)
         }
     }
@@ -294,20 +313,25 @@ function validatePanelConfig(panel, index) {
     if (panel.dimensions) {
         const dim = panel.dimensions
 
-        if (dim.iconifiedSize !== undefined && typeof dim.iconifiedSize !== 'number') {
-            errors.push(`${prefix}.dimensions: "iconifiedSize" must be a number`)
+        if (dim.iconifiedSize !== undefined) {
+            const iconifiedSize = Number(dim.iconifiedSize)
+            if (isNaN(iconifiedSize)) {
+                errors.push(`${prefix}.dimensions: "iconifiedSize" must be a valid number (got "${dim.iconifiedSize}")`)
+            }
         }
 
         // expandedSize can be number, 'content', or object
         if (dim.expandedSize !== undefined) {
-            if (
-                typeof dim.expandedSize !== 'number' &&
-                dim.expandedSize !== 'content' &&
-                (typeof dim.expandedSize !== 'object' || dim.expandedSize === null)
-            ) {
-                errors.push(
-                    `${prefix}.dimensions: "expandedSize" must be a number, "content", or object with min/max`
-                )
+            if (dim.expandedSize === 'content' || (typeof dim.expandedSize === 'object' && dim.expandedSize !== null)) {
+                // Valid: 'content' or object
+            } else {
+                // Try to convert to number
+                const expandedSizeNum = Number(dim.expandedSize)
+                if (isNaN(expandedSizeNum)) {
+                    errors.push(
+                        `${prefix}.dimensions: "expandedSize" must be a valid number, "content", or object with min/max (got "${dim.expandedSize}")`
+                    )
+                }
             }
         }
     }
