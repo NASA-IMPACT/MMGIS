@@ -55,10 +55,7 @@ const TitleTool = {
     },
 
     make: function (targetId) {
-        this.targetId =
-            typeof targetId === 'string'
-                ? targetId
-                : '__TitleTool_missing_targetId'
+        this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
         this.MMGISInterface = new interfaceWithMMGIS()
         this.made = true
     },
@@ -79,9 +76,7 @@ function interfaceWithMMGIS() {
         separateFromMMGIS()
     }
 
-    const tools = $(
-        TitleTool.targetId ? `#${TitleTool.targetId}` : '#toolPanel'
-    )
+    const tools = $(`#${TitleTool.targetId}`)
     tools.css('background', 'transparent')
     tools.empty()
 
@@ -114,9 +109,7 @@ function interfaceWithMMGIS() {
     }
 
     function separateFromMMGIS() {
-        const tools = $(
-            TitleTool.targetId ? `#${TitleTool.targetId}` : '#toolPanel'
-        )
+        const tools = $(`#${TitleTool.targetId}`)
         tools.css('background', 'var(--color-k)')
         tools.empty()
     }

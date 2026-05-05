@@ -28,14 +28,12 @@ const MyTool = {
 ```
 
 ### 2. Update `make()` to Accept `targetId`
-Modify the `make()` method to accept and store the `targetId` parameter, providing a fallback:
+Modify the `make()` method to accept and store the `targetId` parameter. Default to `'toolPanel'` if invalid:
 
 ```javascript
 make: function (targetId) {
-    this.targetId = typeof targetId === 'string' 
-        ? targetId 
-        : '__MyTool_missing_targetId'
-    
+    this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
+
     this.MMGISInterface = new interfaceWithMMGIS()
     this.made = true
 }
@@ -47,13 +45,12 @@ Replace hardcoded selectors (like `#toolPanel` or `#tools`) with the dynamic `ta
 ```javascript
 function interfaceWithMMGIS() {
     // 1. Target the specific container
-    const containerId = MyTool.targetId ? `#${MyTool.targetId}` : '#toolPanel'
-    const tools = $(containerId)
-    
+    const tools = $(`#${MyTool.targetId}`)
+
     // 2. Render content
     tools.css('background', 'var(--color-k)')
     tools.html('<div style="height: 100%">' + markup + '</div>')
-    
+
     // 3. Scope event handlers using .find() or event delegation on 'tools'
     tools.find('.myTool-button').on('click', function() { ... })
     // OR
@@ -76,9 +73,8 @@ destroy: function () {
 
 // Inside interfaceWithMMGIS:
 function separateFromMMGIS() {
-    const containerId = MyTool.targetId ? `#${MyTool.targetId}` : '#toolPanel'
-    const tools = $(containerId)
-    
+    const tools = $(`#${MyTool.targetId}`)
+
     tools.off()     // Remove event listeners
     tools.empty()   // Clear DOM
 }
