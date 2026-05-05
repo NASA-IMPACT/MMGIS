@@ -102,10 +102,6 @@ export function validateModernConfig(config) {
                 errors.push(`Tool[${index}] must have a string "name"`)
             }
 
-            if (!tool.icon || typeof tool.icon !== 'string') {
-                errors.push(`Tool[${index}] must have a string "icon"`)
-            }
-
             if (!tool.js || typeof tool.js !== 'string') {
                 errors.push(`Tool[${index}] must have a string "js"`)
             }
