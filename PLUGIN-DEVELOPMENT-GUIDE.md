@@ -6,16 +6,23 @@
 
 **Reference plugin**: [src/essence/Tools/Chart/](src/essence/Tools/Chart/) — the canonical layout this guide describes.
 
+**Governing ADRs** (read these if you disagree with a rule below — that's where the rule comes from):
+
+| ADR | Topic | Drives |
+|---|---|---|
+| [docs/adr/20260209-plugin-communication-model.md](docs/adr/20260209-plugin-communication-model.md) | Unified Event Bus + req/resp on `mmgisAPI` | §0.3, §2, §4.1 |
+| [docs/adr/02102026-maps-engine-architecture.md](docs/adr/02102026-maps-engine-architecture.md) | Pluggable `IMapEngine` (Leaflet / deck.gl / Mapbox) | §4.2 |
+| [docs/adr/02102026-styling.md](docs/adr/02102026-styling.md) | USWDS + a small overridable token set | §3 |
+| [docs/adr/02102026-layout-handling.md](docs/adr/02102026-layout-handling.md) | Multi-panel layout (PanelManager_) — *deferred, not yet merged* | not codified yet |
+
 ---
 
 ## 0. TL;DR — the hard rules
 
 1. **Build a standalone React component first.** "Standalone" means *the component*, not an app — a single React component (plus children) that any other React app could `import` and render with plain props. The MMGIS wrapper is a separate file that mounts this component via ReactDOM and adapts it to the MMGIS plugin lifecycle.
-2. **Never modify core.** Anything outside `src/essence/Tools/<YourTool>/` is off-limits. If a needed API or event isn't exposed, write a blocker entry. Missing core events are the *only* legitimate reason to request a core change — and even then, you propose, a human reviewer decides.
-3. **Use only the approved plugin APIs.**
-   - **Communication** — `window.mmgisAPI` event bus (`on / off / emit / provide / request`, scoped via `mmgisAPI.forPlugin(id)`). No `document.dispatchEvent`, no `L_.subscribe*` in new code.
-   - **Map interaction** — the engine-agnostic factory: `mapEngineRegistry.getActiveEngine()` returning `IMapEngine`. Must work for both legacy Leaflet missions and new deck.gl missions. No direct `Map_.map.*`, `L.map`, or `Deck` calls.
-4. **Strict styling segregation, theme-ready.** Match Figma exactly, use USWDS tokens/components where applicable, scope every selector under your tool's root class, and route every color/spacing/radius through a CSS custom property so a future theme file can flip them centrally. No hard-coded hex values.
+2. **Never modify core, and never reach into core.** Anything outside `src/essence/Tools/<YourTool>/` is off-limits to *both* edits and direct reads. No `Map_.map.*`, no `L_.layers.*`, no `import` from `Basics/` or `Ancillary/`, no peeking into another tool's exports. If a needed API or event isn't exposed on the bus, write a blocker entry — that is the *only* legitimate reason to request a core change, and a human reviewer decides.
+3. **The Event Bus is the single plugin↔core surface.** Everything — notifications, data lookups, map control, layer state, time, terrain queries, cross-plugin calls — flows through `window.mmgisAPI` (pub/sub `on / off / emit`, req/resp `provide / request`, scoped via `mmgisAPI.forPlugin(id)`). Authoritative spec: [docs/adr/20260209-plugin-communication-model.md](docs/adr/20260209-plugin-communication-model.md). Forbidden in new code: `document.dispatchEvent`, `L_.subscribe*`, `ToolController_.getTool(...)`, plugin-to-plugin JS imports, direct `Map_.map.*` / `L.map` / `Deck` calls. The engine factory `mapEngineRegistry.getActiveEngine()` is an **escape hatch**, not the default — see §4.2.
+4. **Strict styling segregation, theme-ready.** Match Figma exactly, use USWDS tokens/components where applicable, scope every selector under your tool's root class, and route every color/spacing/radius through a CSS custom property (e.g. `var(--mmgis-surface, #1f2024)`) so a future theme file can flip them centrally. No hard-coded hex / px values outside the root tokens block.
 
 The rest of this document expands these rules and gives the do/don't details.
 
@@ -184,11 +191,13 @@ Anything outside `src/essence/Tools/<YourTool>/`. In particular:
 
 ### The rule
 
-You may **read** core APIs that are already public (e.g. `L_.layers.data[name]`, `Map_.map`, the layer click event). You may **not** edit core to expose new ones, fix a bug you noticed, or "improve" something nearby.
+**No edits and no direct reads.** You may not modify core, and you may not import from / call into core internals (`L_.layers.*`, `Map_.map.*`, `ToolController_.getTool(...)`, `Layers_`, `TimeControl_`, another tool's exports, etc.). The communication ADR makes the bus the **only** plugin↔core surface — `mmgisAPI.on / emit / request / provide` for everything; `mapEngineRegistry.getActiveEngine()` only as the documented escape hatch in §4.2.
 
-If your plugin needs a hook that doesn't exist:
+The single read path is mission JSON, scoped to your tool: `L_.layers.data[name].variables.<yourTool>` is the one legacy read still tolerated for per-mission config (see §5). Everything else goes through the bus.
 
-1. **Stop.** Do not add the hook yourself.
+If your plugin needs a hook (event, request handler, or `IMapEngine` capability) that doesn't exist:
+
+1. **Stop.** Do not add the hook yourself, and do not work around it by reaching into core internals.
 2. **Document the gap** in the plugin's `BLOCKERS.md` (create if missing) using the template below.
 3. **Pivot** to a part of the feature that the existing APIs already support, or report back that you are blocked.
 
@@ -210,28 +219,34 @@ Create `src/essence/Tools/<YourTool>/BLOCKERS.md`:
 
 ### Do
 
-- Treat `L_`, `Map_`, layer config, and the existing event bus as **read-only contracts**.
-- If you need configuration, put it on the layer's `variables.<yourTool>` block in mission JSON — that path is already plugin-extensible (see how [ChartTool.js](src/essence/Tools/Chart/ChartTool.js) reads `layerData.variables.chart`).
+- Treat `mmgisAPI` as the **only** public contract. Anything you can't get from it is, by default, a blocker.
+- If you need configuration, put it on the layer's `variables.<yourTool>` block in mission JSON. Read it in the wrapper via the bus where possible (`request('layers:getConfig', name)`); only fall back to a direct `L_.layers.data[name].variables.<yourTool>` read if that handler doesn't exist yet, and file a blocker proposing it.
 - If a core API misbehaves, file a blocker, don't patch it.
 
 ### Don't
 
 - ❌ Edit any file outside your tool directory, **even for typos or lint fixes**.
-- ❌ Add a new export to `Map_.js` "just for the plugin."
-- ❌ Reach into another tool's internals.
+- ❌ Add a new export to `Map_.js`, `Layers_.js`, etc. "just for the plugin."
+- ❌ Read `Map_.map.*` / `window.map.*` directly (use `request('map:*')` or, only as escape hatch, the engine factory in §4.2).
+- ❌ Subscribe via `L_.subscribeTimeChange / subscribeOnLayerToggle` — use `mmgisAPI.on('time:change' / 'layer:visibilityChange', …)`.
+- ❌ Call `ToolController_.getTool('Foo')` — use `mmgisAPI.request('plugin:foo:…')`.
+- ❌ Reach into another tool's internals via JS `import`.
 - ❌ Add new top-level dependencies in `package.json` without flagging the cost — every dep ships to all users. Prefer a peer dep already in the tree (Chart.js, D3, ECharts, Turf, Proj4 are already there).
 
 ---
 
 ## 3. Strict styling segregation (and theme-ready)
 
+**Canonical reference**: [docs/adr/02102026-styling.md](docs/adr/02102026-styling.md). Decision: USWDS / Horizon is the chosen design system; theming is a small, well-defined set of overridable CSS variables (colors, typography, spacing) handled by core's `Theme_.js`.
+
 ### The rule
 
-1. **Match Figma exactly.** Spacing, color, type scale, radii, iconography. If Figma and USWDS conflict, default to Figma for plugin-internal UI; default to USWDS for any control that appears in shared chrome.
-2. **Use USWDS tokens and components** (`uswds` is available) for buttons, inputs, alerts, and color where Figma doesn't specify — do not hand-roll a button.
+1. **USWDS first.** USWDS is the canonical design system per the styling ADR — use its tokens (colors, type scale, spacing) and components (buttons, inputs, alerts) wherever they apply. **Don't hand-roll** anything USWDS already provides.
+2. **Figma overrides USWDS only when Figma is more specific.** For plugin-internal UI where Figma calls out a value, follow Figma. For shared chrome / standard controls, default to USWDS. If Figma and USWDS disagree on a fundamental value (e.g. accent color), follow Figma — note the diff in the PR.
 3. **CSS lives only with the component.** One file: `<YourTool>Component.css`. Imported only by the component file. Never imported from the wrapper, never added to a global stylesheet, never edited from outside the tool directory.
 4. **Scope every rule.** Every selector starts with a root class unique to your tool, e.g. `.your-tool …`. No bare element selectors, no global `*`, no `#tools` / `#toolPanel` rules. Removing the root element from the DOM must remove 100% of the plugin's visual footprint.
-5. **No core CSS edits.** Do not touch `src/essence/**/*.css` outside your tool. Do not add or redefine CSS variables on `:root`.
+5. **No core CSS edits.** Do not touch `src/essence/**/*.css` outside your tool. Do not add or redefine CSS variables on `:root` — that's `Theme_.js`'s job, not yours.
+6. **Theme overrides are a small, well-defined set.** The styling ADR limits operator/mission-level theme overrides to **colors, typography, and spacing**. Don't expose anything else as overridable. If Figma demands a custom shadow, radius, or layout token, bake it into your component's local tokens with a USWDS-derived default — don't surface a new mission-config knob.
 
 ### Theme-ready: every value goes through a custom property
 
@@ -284,118 +299,200 @@ The two-layer lookup (`var(--mmgis-*, fallback)`) means:
 
 A plugin talks to MMGIS through exactly two surfaces. Anything else (touching `L_` directly, importing internals from `Map_`, dispatching DOM events, etc.) is forbidden in new code.
 
-### 4.1 Communication: the `mmgisAPI` event bus
+### 4.1 Communication: the unified Event Bus (`mmgisAPI`)
 
-Reference: [docs/adr/20260209-plugin-communication-model.md](docs/adr/20260209-plugin-communication-model.md). Implementation: [src/essence/mmgisAPI/mmgisAPI.js](src/essence/mmgisAPI/mmgisAPI.js).
+**Canonical reference**: [docs/adr/20260209-plugin-communication-model.md](docs/adr/20260209-plugin-communication-model.md). When in doubt, that ADR is the source of truth — this section is a working summary.
+**Implementation**: [src/essence/mmgisAPI/mmgisAPI.js](src/essence/mmgisAPI/mmgisAPI.js).
 
-The bus exposes:
+#### What "the event bus" means
 
-| Method | Purpose |
-|---|---|
-| `mmgisAPI.on(event, cb)` → returns `unsubscribe()` | Subscribe to events emitted anywhere (core or other plugins). |
-| `mmgisAPI.off(event, cb)` | Unsubscribe (prefer the returned `unsubscribe()`). |
-| `mmgisAPI.emit(event, data)` | Notify everyone an event happened. |
-| `mmgisAPI.provide(name, handler)` → returns `cleanup()` | Register a request handler that returns data. |
-| `mmgisAPI.request(name, data)` → `Promise` | Ask another module for data (async). |
-| `mmgisAPI.hasHandler(name)` → `boolean` | Capability check. |
-| `mmgisAPI.forPlugin(pluginId)` | Returns `{ emit, provide }` that auto-prefix names with `plugin:<id>:`. |
+There is **one** plugin-facing API: `window.mmgisAPI`. It bundles two communication primitives behind a single import surface, both running through the same global instance:
+
+| Pattern | Library | Use it for |
+|---|---|---|
+| **Pub/Sub** — `on / off / emit` | [`mitt`](https://github.com/developit/mitt) (200 bytes) | Notifications. Many subscribers, no return value, fire-and-forget. "Something happened." |
+| **Request/Response** — `provide / request` | small custom registry of async handlers | Data lookups. Exactly one handler per name, returns a Promise. "What's the answer to X?" |
+
+Both are exposed on `window.mmgisAPI`. There is no separate `EventBus` import. The ADR formalizes this as the "Unified Event Bus with Request/Response."
+
+#### The bus surface
+
+| Method | Pattern | Purpose |
+|---|---|---|
+| `mmgisAPI.on(event, cb)` → returns `unsubscribe()` | pub/sub | Subscribe to a notification (core or any plugin). |
+| `mmgisAPI.off(event, cb)` | pub/sub | Unsubscribe (prefer the returned `unsubscribe()`). |
+| `mmgisAPI.emit(event, data)` | pub/sub | Fire a notification to all listeners. |
+| `mmgisAPI.provide(name, handler)` → returns `cleanup()` | req/resp | Register the (single) handler for a request name. |
+| `mmgisAPI.request(name, data)` → `Promise` | req/resp | Ask the registered handler for data (async). |
+| `mmgisAPI.hasHandler(name)` → `boolean` | req/resp | Existence check before calling. |
+| `mmgisAPI.forPlugin(pluginId)` | scoping | Returns `{ emit, provide, pluginId, prefix }` whose `emit` and `provide` auto-prefix names with `plugin:<id>:`. Does **not** scope `on` or `request` — for those, use full paths so you can listen to / call any module. |
+
+#### Three tiers, one API (per the ADR)
+
+The same bus serves three different kinds of code, all using identical calls:
+
+| Tier | Examples | Trust | Isolation | Namespace |
+|---|---|---|---|---|
+| **Core modules** | `Map_`, `Layers_`, `TimeControl_` | MMGIS itself | None | `map:*`, `layers:*`, `time:*`, `terrain:*`, `app:*` |
+| **Core plugins** | `DrawTool`, `InfoTool`, `MeasureTool`, your `<YourTool>` | Trusted (bundled) | None — direct `window.mmgisAPI` access | `plugin:<id>:*` |
+| **Marketplace plugins** (planned) | community / third-party | Untrusted | Sandboxed iframe with capability allow-list | `plugin:<id>:*` (same) |
+
+The marketplace tier doesn't exist yet, but **plugin code you write today must work in it without modification**. The sandbox bridge translates the same `mmgisAPI.on / emit / request / provide` calls to `postMessage` transparently. This is the central design constraint of the bus and the reason for the rules below.
+
+#### Namespace rules
+
+| Namespace | Owned by | Plugin may | Plugin may not |
+|---|---|---|---|
+| `map:*`, `layers:*`, `time:*`, `terrain:*`, `app:*` | Core modules | `on(...)`, `request(...)` | `provide(...)`, `emit(...)` |
+| `plugin:<id>:*` | The plugin with that id | `provide(...)`, `emit(...)` *for your own id only*; `on(...)`, `request(...)` for any id | `provide(...)` or `emit(...)` under another plugin's id |
+
+`forPlugin(yourId)` is the mechanical guard that keeps you on the right side of the second rule. **Always use it for your own emits / provides.** Never hand-construct a `plugin:<id>:foo` string for your own messages.
 
 #### Required usage pattern
 
 ```js
-// In your wrapper (<YourTool>.js):
-const api = window.mmgisAPI.forPlugin('your-tool')   // pluginId is your tool's slug
+const api = window.mmgisAPI.forPlugin('your-tool')   // matches your Tools/<YourTool>/ slug
 const cleanups = []
 
-// Listen to core events (use full paths, NOT through forPlugin):
-cleanups.push(window.mmgisAPI.on('feature:active', (data) => {
-    this._setState({ activeFeature: data.activeFeature })
+// Subscribe to a CORE-module event (full path, do NOT route through forPlugin):
+cleanups.push(window.mmgisAPI.on('layer:visibilityChange', (data) => {
+    /* … */
 }))
 
-// Provide data other plugins / core may ask for (auto-prefixed):
+// Subscribe to ANOTHER plugin's event (full path, also do NOT route through forPlugin):
+cleanups.push(window.mmgisAPI.on('plugin:aoi:analysisRequested', (data) => {
+    /* … */
+}))
+
+// Provide a request handler that the rest of the system can call (auto-prefixed):
 cleanups.push(api.provide('getCurrentSelection', () => this._state.data))
 //   ^ registers as 'plugin:your-tool:getCurrentSelection'
 
-// Notify others when something happens (auto-prefixed):
-api.emit('selectionChanged', { id })
-//   ^ emits 'plugin:your-tool:selectionChanged'
+// Notify the world about something that happened in your plugin (auto-prefixed):
+api.emit('somethingChanged', { id })
+//   ^ emits 'plugin:your-tool:somethingChanged'
 
-// In destroy(): run every cleanup.
+// Request data from a CORE module (full path):
+const visible = await window.mmgisAPI.request('layers:getVisible')
+
+// Request data from another plugin (full path):
+const aoi = await window.mmgisAPI.request('plugin:aoi:getCurrentSelection')
+
+// In destroy():
 cleanups.forEach(fn => fn())
 ```
 
+#### Choosing the right pattern
+
+| You want to… | Use |
+|---|---|
+| Tell anyone who's interested that something happened | `emit` |
+| Be notified when something happens | `on` |
+| Get a value back (single source of truth) | `request` (caller) + `provide` (owner) |
+| Ask "is this capability available?" | `hasHandler('namespace:name')` |
+
+If you find yourself emitting an event and then immediately listening for a paired "response" event, you want `request/provide` instead. If you find yourself with multiple plugins all wanting to handle the same `request`, you actually want `emit/on` — `provide` is single-handler by design (last registration wins).
+
 #### Do
 
-- **Pick a stable `pluginId`** matching your tool directory (kebab-case). Document it at the top of the wrapper.
-- **Subscribe in `make()`, unsubscribe in `destroy()`** — store every returned `unsubscribe` / `cleanup` and call them all on teardown.
-- **Use namespaced event names**: `domain:verb` for core (`layer:toggle`, `feature:active`, `time:change`), and let `forPlugin()` add the `plugin:<id>:` prefix for your own.
-- **Document every event your plugin emits and consumes** at the top of the wrapper. This is the plugin's public API.
-- **Pass plain serializable data** through the bus. No DOM nodes, no class instances, no Leaflet/deck.gl handles.
+- **Pick a stable `pluginId`** matching your tool directory in kebab-case (`'aoi'`, `'analysis'`, `'measure'`). Document it at the top of the wrapper.
+- **Always wrap your own emits/provides through `forPlugin(yourId)`** — never hand-write `plugin:<id>:foo` for messages you own.
+- **Listen and request through full paths** — `on` and `request` are not auto-scoped, on purpose, so you can talk to anyone.
+- **Subscribe in `make()`, unsubscribe in `destroy()`** — capture every returned `unsubscribe` / `cleanup` in an array and run all of them on teardown.
+- **Document every event your plugin emits and consumes** at the top of the wrapper. That list is your plugin's public API; future readers and marketplace listings depend on it.
+- **Pass only plain serialisable data** through the bus — no DOM nodes, no class instances, no Leaflet/deck.gl handles. The marketplace bridge serialises payloads via `postMessage`; non-serialisable data will silently break in a sandboxed context.
+- **Use `domain:verb` style names**: `layer:toggle`, `feature:active`, `time:change`, `selectionChanged`. Lower-case; nouns/verbs joined by `:`.
 
 #### Don't
 
-- ❌ Use `document.dispatchEvent(new CustomEvent(...))` or attach listeners to `document` for cross-module communication.
-- ❌ Use `L_.subscribeTimeChange` / `L_.subscribeOnLayerToggle` / any other `L_.subscribe*` in new code — these are legacy, route through `mmgisAPI.on('time:change', …)` etc.
-- ❌ Reach into another plugin's internals — call `mmgisAPI.request('plugin:other-tool:something')` instead.
+- ❌ Use `document.dispatchEvent(new CustomEvent(...))` or `document.addEventListener` for cross-module communication. Legacy and incompatible with the marketplace bridge.
+- ❌ Use `L_.subscribeTimeChange` / `L_.subscribeOnLayerToggle` / any other `L_.subscribe*` in new code — these are legacy, route through `mmgisAPI.on('time:change', …)` / `'layer:visibilityChange'` etc.
+- ❌ Reach into another plugin's internals via JS imports — call `mmgisAPI.request('plugin:other-tool:something')` instead.
 - ❌ Bypass `forPlugin()` and emit unprefixed plugin events — collisions with core or other plugins are silent.
+- ❌ `provide(...)` or `emit(...)` under a namespace you don't own (e.g. registering `provide('layers:foo', …)` as a plugin). Reserved namespaces are owned by core modules.
+- ❌ Pass non-serialisable values through `emit` / `request` payloads. Convert to JSON-safe shapes first.
 
 #### Missing-event blocker
 
-If the event you need does not exist on the bus today, **do not add it to core yourself**. File a [blocker entry](#blocker-entry-template) with:
+If the event or request you need does not exist on the bus today, **do not add it to core yourself**. File a [blocker entry](#blocker-entry-template) with:
 
-- The event name you propose (`domain:verb`).
-- Where in core it should be emitted (file + symbol).
-- The payload shape.
+- The name you propose (`domain:verb` for core, `plugin:<id>:verb` for a plugin handler you don't own).
+- Whether it's pub/sub (`emit/on`) or request/response (`provide/request`).
+- Where in core it should be wired (file + symbol).
+- The payload / return-value shape.
 - What your plugin does in the meantime (degraded UX, polling, no-op).
 
-A human reviewer decides whether core gains the event. New core events are the **only** core change a plugin task may propose.
+A human reviewer decides whether core (or the owning plugin) gains the new name. New bus surface is the **only** core change a plugin task may propose.
 
-### 4.2 Map interaction: the engine factory
+### 4.2 Map interaction: bus first, engine factory only as escape hatch
 
-Reference: [docs/adr/02102026-maps-engine-architecture.md](docs/adr/02102026-maps-engine-architecture.md). Implementation: [src/essence/Basics/MapEngines/](src/essence/Basics/MapEngines/).
+**Canonical references**: [docs/adr/20260209-plugin-communication-model.md](docs/adr/20260209-plugin-communication-model.md) (the bus owns map/layers/time as reserved core namespaces) and [docs/adr/02102026-maps-engine-architecture.md](docs/adr/02102026-maps-engine-architecture.md) (the engine factory that core uses internally). Implementation: [src/essence/Basics/MapEngines/](src/essence/Basics/MapEngines/).
 
-Old missions use Leaflet. New missions use deck.gl. Your plugin must work on both, unmodified. The way to achieve this is to talk to the map only through `IMapEngine`, never to a specific engine's API.
+Old missions use Leaflet. New missions use deck.gl. Your plugin must work on both, unmodified — and per the communication ADR the way to achieve that is **the bus**, not direct adapter calls.
 
-#### Required usage pattern
+#### Default path — request/listen on the bus
+
+Map state and map events are core-owned namespaces (`map:*`, `layers:*`, `time:*`, `terrain:*`). Read and listen through the bus. **No imports from `MapEngines/` in this case.**
+
+```js
+// Read: ask core via the bus
+const center = await window.mmgisAPI.request('map:getCenter')
+const bounds = await window.mmgisAPI.request('map:getBounds')
+
+// Listen: subscribe via the bus, capture cleanups
+cleanups.push(window.mmgisAPI.on('map:moveend', this._onMoveEnd))
+cleanups.push(window.mmgisAPI.on('feature:active', this._onFeatureActive))
+
+// Write: control is also a request, not a direct setter
+await window.mmgisAPI.request('map:setView', { lat, lng, zoom })
+await window.mmgisAPI.request('map:fitBounds', { bounds, padding: 120 })
+
+// In destroy():
+cleanups.forEach(fn => fn())
+```
+
+This works identically on Leaflet and deck.gl missions because core's `map:*` handlers delegate to whichever `IMapEngine` adapter is active. It will also work unchanged when this plugin runs in a sandboxed marketplace iframe (the ADR's central design constraint).
+
+#### Escape hatch — `mapEngineRegistry.getActiveEngine()`
+
+Some interactive operations don't yet have a `map:*` handler on the bus (drawing primitives, layer creation with custom styling, custom interaction modes). When that's the case **and only then**, you may import the engine factory and call `IMapEngine` directly:
 
 ```js
 import { mapEngineRegistry } from '../../Basics/MapEngines'
 
-// Inside the wrapper:
 const engine = mapEngineRegistry.getActiveEngine()
-if (!engine) {
-    // No map yet — wait for an init event on the bus, or no-op.
-    return
-}
+if (!engine) return
 
-// Engine-agnostic calls:
-engine.fitBounds(bounds, { padding: [20, 20] })
-engine.on('moveend', this._onMoveEnd)
-engine.onFeatureClick(({ feature, layer }) => { /* ... */ })
-
-// In destroy():
-engine.off('moveend', this._onMoveEnd)
+// Engine-agnostic call into a capability the bus doesn't expose yet:
+engine.enableDrawing({ shape: 'polygon' })
 ```
 
-The full contract is defined in [src/essence/Basics/MapEngines/IMapEngine.ts](src/essence/Basics/MapEngines/IMapEngine.ts). Adapters: [LeafletAdapter.ts](src/essence/Basics/MapEngines/Adapters/LeafletAdapter.ts), [DeckGLAdapter.ts](src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts).
+Every such use is a **[blocker](#blocker-entry-template) candidate**. The proper fix is to add the missing `map:*` handler to core (or extend `IMapEngine` and have core expose a bus handler over it). File the blocker, then keep the workaround narrow.
+
+`engine.getNativeMap()` is a *deeper* escape hatch — only when `IMapEngine` itself is insufficient. Same rule applies, with stronger justification needed.
+
+The full interface contract is defined in [src/essence/Basics/MapEngines/IMapEngine.ts](src/essence/Basics/MapEngines/IMapEngine.ts). Adapters: [LeafletAdapter.ts](src/essence/Basics/MapEngines/Adapters/LeafletAdapter.ts), [DeckGLAdapter.ts](src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts).
 
 #### Do
 
-- **Always go through `mapEngineRegistry.getActiveEngine()`**. Treat the returned object as `IMapEngine` only; ignore which adapter it actually is.
-- **Pass `LatLngLike` objects** (`{ lat, lng }`) — the adapter handles axis-order conversion for deck.gl internally.
-- **Use `engine.getNativeMap()` only as an explicit, justified escape hatch** — and write a comment explaining why `IMapEngine` is insufficient. This counts as a [blocker](#blocker-entry-template) candidate: the missing capability should be added to `IMapEngine`, not to your plugin.
-- **Check `ENGINE_LAYER_SUPPORT` / `engineSupportsLayer(...)`** if your plugin creates a layer type (some types only render on one engine). If your tool can't run on the active engine, render an `empty`/`error` state and emit a `tool:incompatible` notice — don't crash.
+- **Default to `mmgisAPI.on(...)` / `mmgisAPI.request('map:*' / 'layers:*' / 'time:*', ...)`.** Reach for the engine factory only when there is no bus handler yet.
+- **Pass `LatLngLike` objects** (`{ lat, lng }`) when calling either path — the adapter handles axis-order conversion for deck.gl internally.
+- **File a blocker every time you use the engine factory.** Note which `map:*` request handler should exist instead, and what its payload/return shape should be.
+- **Check `ENGINE_LAYER_SUPPORT` / `engineSupportsLayer(...)`** if your plugin creates a layer type (some types only render on one engine). If your tool can't run on the active engine, render an `empty`/`error` state and emit `plugin:<id>:incompatible` — don't crash.
 
 #### Don't
 
 - ❌ Import `leaflet`, `L`, `deck.gl`, or `Cesium` from a plugin.
-- ❌ Read `Map_.map.*` or `window.map.*` directly. That is the legacy path and skips the adapter.
+- ❌ Read `Map_.map.*`, `window.map.*`, or any other direct core handle. That is the legacy path; it skips both the bus and the adapter.
+- ❌ Use `mapEngineRegistry.getActiveEngine()` for things the bus already exposes (`map:getCenter`, `map:fitBounds`, etc.) — use the bus.
 - ❌ Branch on engine type (`if (engine.engineType === 'leaflet') …`). If you find yourself wanting to, the `IMapEngine` contract is missing something — file a blocker.
 - ❌ Hold onto the engine instance across an engine swap. Re-fetch via `mapEngineRegistry.getActiveEngine()` on each operation, or subscribe to the engine-change event on the bus and refresh.
 
 #### Missing-capability blocker
 
-If `IMapEngine` doesn't expose what you need (e.g. a new layer type, a query, a coordinate transform), file a blocker proposing the addition to the **interface** — every adapter must implement it. Do not add it to a single adapter "for now."
+Two flavors:
+- **Missing bus handler** — core exposes `IMapEngine` internally but no `map:*` request handler for plugins. Propose the handler name, payload, and return shape. (More common — most blockers belong here.)
+- **Missing `IMapEngine` capability** — even core can't do it yet. Propose the addition to the **interface**; every adapter must implement it. Do not add it to a single adapter "for now."
 
 ---
 
@@ -483,7 +580,7 @@ Before reporting a plugin task complete, verify each item:
 - [ ] Wrapper calls `ReactDOM.unmountComponentAtNode` in `destroy()` before removing the host node.
 - [ ] **Communication**: every cross-module event goes through `window.mmgisAPI`. No `document.dispatchEvent`, no `L_.subscribe*` in new code. Plugin owns events are emitted via `mmgisAPI.forPlugin('<id>')`.
 - [ ] Every `mmgisAPI.on` / `provide` returns a function stored in a cleanup list, and `destroy()` calls every cleanup.
-- [ ] **Map**: every map call goes through `mapEngineRegistry.getActiveEngine()` / `IMapEngine`. No imports of `leaflet`, `L`, `deck.gl`, or `Cesium`. No reads of `Map_.map` or `window.map`.
+- [ ] **Map**: every map read/listen goes through `mmgisAPI` (`request('map:*' / 'layers:*' / 'time:*')`, `on('map:moveend' / 'feature:active' / …)`). `mapEngineRegistry.getActiveEngine()` is used **only** for capabilities the bus does not yet expose, and each such use has a corresponding blocker entry. No imports of `leaflet`, `L`, `deck.gl`, or `Cesium`. No reads of `Map_.map` / `window.map` / `L_.layers.*` outside the single tolerated `variables.<yourTool>` config read.
 - [ ] Plugin verified mentally (or in browser) on **both** a Leaflet-engine and a deck.gl-engine mission, OR explicitly `engineSupportsLayer`-gated with a clear empty/error state.
 - [ ] `git diff --stat` shows changes **only** under `src/essence/Tools/<YourTool>/` (and possibly a tool-registration entry — flag that one explicitly in your report).
 - [ ] No `package.json` changes, or new deps are explicitly justified in the PR description. No React-version bump.
