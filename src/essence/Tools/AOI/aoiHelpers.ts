@@ -6,6 +6,7 @@
  */
 
 import type { Feature, FeatureCollection, Geometry } from 'geojson'
+import shp from 'shpjs'
 
 export type BoundaryKind = 'state' | 'county' | 'city'
 
@@ -90,6 +91,37 @@ export function parseGeoJSONText(text: string): ParseResult {
         return { feature: f }
     }
     return { feature: null, error: 'Top-level type must be Feature or FeatureCollection.' }
+}
+
+export async function parseShapefileBuffer(buffer: ArrayBuffer): Promise<ParseResult> {
+    try {
+        const result = (await shp(buffer)) as
+            | FeatureCollection
+            | FeatureCollection[]
+        const fcs = Array.isArray(result) ? result : [result]
+        for (const fc of fcs) {
+            if (!fc || !Array.isArray(fc.features)) continue
+            const first = fc.features.find(isPolygonal)
+            if (first) {
+                const props = (first.properties ?? {}) as Record<string, unknown>
+                const name =
+                    (props.name as string) ||
+                    (props.NAME as string) ||
+                    (props.title as string) ||
+                    'Uploaded shapefile'
+                return {
+                    feature: {
+                        ...first,
+                        properties: { ...props, name, source: 'shapefile' },
+                    },
+                }
+            }
+        }
+        return { feature: null, error: 'No polygonal feature in shapefile.' }
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Could not parse shapefile.'
+        return { feature: null, error: msg }
+    }
 }
 
 export function parseKMLText(text: string): ParseResult {

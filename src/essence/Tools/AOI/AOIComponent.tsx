@@ -244,7 +244,7 @@ function UploadPanel(props: AOIComponentProps) {
     return (
         <div className="aoi-panel aoi-panel--upload">
             <p className="aoi-panel__hint">
-                Upload a GeoJSON or KML to define your analysis area.
+                Upload a GeoJSON, KML, or zipped Shapefile to define your analysis area.
             </p>
 
             <button
@@ -258,7 +258,7 @@ function UploadPanel(props: AOIComponentProps) {
             <input
                 ref={inputRef}
                 type="file"
-                accept=".geojson,.json,.kml"
+                accept=".geojson,.json,.kml,.zip,.shp"
                 className="aoi-upload__input"
                 onChange={(e) => {
                     const f = e.target.files?.[0]
@@ -279,6 +279,7 @@ function UploadPanel(props: AOIComponentProps) {
             <ul className="aoi-upload__formats">
                 <li>GeoJSON (.geojson, .json)</li>
                 <li>KML (.kml)</li>
+                <li>Shapefile (.zip — must include .shp, .dbf, and .prj)</li>
             </ul>
         </div>
     )

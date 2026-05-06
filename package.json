@@ -152,6 +152,7 @@
     "sequelize": "^6.33.0",
     "sharp": "^0.31.2",
     "showdown": "^2.1.0",
+    "shpjs": "^6.2.0",
     "snap-bbox": "^0.2.0",
     "sortablejs": "^1.15.0",
     "swagger-ui-express": "^4.1.4",

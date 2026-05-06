@@ -38,6 +38,7 @@ import {
     searchIndex,
     parseGeoJSONText,
     parseKMLText,
+    parseShapefileBuffer,
     featureCentroid,
     featureBounds,
 } from './aoiHelpers'
@@ -348,13 +349,15 @@ const AOITool = {
     _onUploadFile(file) {
         this._setState({ uploadStatus: 'parsing', uploadError: '' })
         const reader = new FileReader()
+        const name = file.name || ''
+        const isShapefile = /\.(zip|shp)$/i.test(name)
+        const isKml = /\.kml$/i.test(name)
+
         reader.onerror = () => {
             this._setState({ uploadStatus: 'error', uploadError: 'Could not read file.' })
         }
-        reader.onload = () => {
-            const text = String(reader.result || '')
-            const isKml = /\.kml$/i.test(file.name)
-            const result = isKml ? parseKMLText(text) : parseGeoJSONText(text)
+
+        const applyResult = (result) => {
             if (!result.feature) {
                 this._setState({
                     uploadStatus: 'error',
@@ -362,15 +365,31 @@ const AOITool = {
                 })
                 return
             }
-            const label =
-                (result.feature.properties &&
-                    (result.feature.properties.name ||
-                        result.feature.properties.NAME)) ||
-                file.name
+            const props = result.feature.properties || {}
+            const label = props.name || props.NAME || props.title || name
             this._setState({ uploadStatus: 'idle', uploadError: '' })
             this._applySelection(result.feature, 'upload', String(label))
         }
-        reader.readAsText(file)
+
+        reader.onload = () => {
+            if (isShapefile) {
+                parseShapefileBuffer(reader.result).then(applyResult).catch((err) => {
+                    this._setState({
+                        uploadStatus: 'error',
+                        uploadError: err?.message || 'Could not parse shapefile.',
+                    })
+                })
+                return
+            }
+            const text = String(reader.result || '')
+            applyResult(isKml ? parseKMLText(text) : parseGeoJSONText(text))
+        }
+
+        if (isShapefile) {
+            reader.readAsArrayBuffer(file)
+        } else {
+            reader.readAsText(file)
+        }
     },
 
     _applySelection(feature, source, label) {
