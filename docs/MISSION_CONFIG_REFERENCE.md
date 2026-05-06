@@ -67,11 +67,6 @@ The mission configuration controls the layout and behavior of panels in modern i
 | `layoutStyle` | String | No | `"overlay"` (default) or `"compact"` layout style |
 | `panels` | Array | Yes | Array of panel configuration objects |
 
-### 
-
-
-**Note**: Tools specified in panel.tools arrays take precedence over .
-
 ## Panel Configuration
 
 Each panel in the `panels` array must include these fields:
