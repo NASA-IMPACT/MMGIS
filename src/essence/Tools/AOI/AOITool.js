@@ -29,8 +29,6 @@
 import React from 'react'
 import { render, unmountComponentAtNode } from 'react-dom'
 
-import { mapEngineRegistry } from '../../Basics/MapEngines'
-
 import AOIComponent from './AOIComponent'
 import AOITooltip from './AOITooltip'
 import {
@@ -76,8 +74,9 @@ const initialState = () => ({
     uploadStatus: 'idle',
     uploadError: '',
     currentAOI: null,
-    tooltip: null,
 })
+
+const TOOLTIP_OVERLAY_ID = 'aoi:tooltip'
 
 const AOITool = {
     // height:0 + width:0 makes ToolController_ collapse the docked side rail to 0px.
@@ -85,17 +84,9 @@ const AOITool = {
     width: 0,
     MMGISInterface: null,
     _root: null,
-    _tooltipRoot: null,
     _state: initialState(),
     _cleanups: [],
     _api: null,
-    _engineHandlers: {
-        reposition: null,
-        drawstart: null,
-        drawvertex: null,
-        drawcomplete: null,
-        drawcancel: null,
-    },
 
     make(targetId) {
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
@@ -124,28 +115,18 @@ const AOITool = {
                 this._setState({ searchLoading: false, searchDisabled: true })
             })
 
-        if (window.mmgisAPI?.on) {
-            const off = window.mmgisAPI.on('tool:change', () => this._clearSelection())
-            this._cleanups.push(typeof off === 'function' ? off : () => { })
-        }
-
-        this._engineHandlers.reposition = () => this._repositionTooltip()
-        this._engineHandlers.drawstart = (e) => this._onDrawStart(e)
-        this._engineHandlers.drawvertex = (e) => this._onDrawVertex(e)
-        this._engineHandlers.drawcomplete = (e) => this._onDrawComplete(e)
-        this._engineHandlers.drawcancel = () => this._onDrawCancelEvent()
-
-        const engine = this._engine()
-        if (engine) {
-            engine.on('move', this._engineHandlers.reposition)
-            engine.on('moveend', this._engineHandlers.reposition)
-            engine.on('drawstart', this._engineHandlers.drawstart)
-            engine.on('drawvertex', this._engineHandlers.drawvertex)
-            engine.on('drawcomplete', this._engineHandlers.drawcomplete)
-            engine.on('drawcancel', this._engineHandlers.drawcancel)
-            if (typeof engine.onFeatureClick === 'function') {
-                engine.onFeatureClick((result) => this._onMapFeatureClick(result))
+        const api = window.mmgisAPI
+        if (api?.on) {
+            const subscribe = (event, handler) => {
+                const off = api.on(event, handler)
+                this._cleanups.push(typeof off === 'function' ? off : () => { })
             }
+            subscribe('tool:change',       () => this._clearSelection())
+            subscribe('map:drawstart',     (e) => this._onDrawStart(e))
+            subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
+            subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
+            subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
+            subscribe('feature:active',    (result) => this._onMapFeatureClick(result))
         }
 
         this._render()
@@ -161,45 +142,13 @@ const AOITool = {
         })
         this._cleanups = []
 
-        const engine = this._engine()
-        if (engine) {
-            if (typeof engine.isDrawing === 'function' && engine.isDrawing()) {
-                try {
-                    engine.disableDrawing()
-                } catch {
-                    // intentionally swallow
-                }
-            }
-            if (this._engineHandlers.reposition) {
-                engine.off('move', this._engineHandlers.reposition)
-                engine.off('moveend', this._engineHandlers.reposition)
-            }
-            if (this._engineHandlers.drawstart)
-                engine.off('drawstart', this._engineHandlers.drawstart)
-            if (this._engineHandlers.drawvertex)
-                engine.off('drawvertex', this._engineHandlers.drawvertex)
-            if (this._engineHandlers.drawcomplete)
-                engine.off('drawcomplete', this._engineHandlers.drawcomplete)
-            if (this._engineHandlers.drawcancel)
-                engine.off('drawcancel', this._engineHandlers.drawcancel)
-        }
-        this._engineHandlers = {
-            reposition: null,
-            drawstart: null,
-            drawvertex: null,
-            drawcomplete: null,
-            drawcancel: null,
-        }
+        // Fire-and-forget: cancel any active drawing session via the bus.
+        window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
 
         this._removeSelectionLayer()
         this._hideInspectBoundaries()
+        this._hideTooltip()
 
-        if (this._tooltipRoot) {
-            unmountComponentAtNode(this._tooltipRoot)
-            if (this._tooltipRoot.parentNode)
-                this._tooltipRoot.parentNode.removeChild(this._tooltipRoot)
-            this._tooltipRoot = null
-        }
         if (this._root) {
             unmountComponentAtNode(this._root)
             this._root = null
@@ -221,7 +170,6 @@ const AOITool = {
     _setState(patch) {
         this._state = { ...this._state, ...patch }
         this._render()
-        this._renderTooltip()
     },
 
     _render() {
@@ -256,23 +204,35 @@ const AOITool = {
         )
     },
 
-    _renderTooltip() {
-        if (!this._tooltipRoot) return
-        const t = this._state.tooltip
-        if (!t) {
-            unmountComponentAtNode(this._tooltipRoot)
-            return
-        }
-        render(
-            React.createElement(AOITooltip, {
-                label: t.label,
-                position: t.position,
-                analyzeEnabled: t.analyzeEnabled,
-                onAnalyze: () => this._onAnalyze(),
-                onCancel: () => this._onCancel(),
-            }),
-            this._tooltipRoot
-        )
+    /**
+     * Show the analyze/cancel tooltip anchored to a feature centroid.
+     * Core's `map:addOverlay` owns the DOM and repositions on view change.
+     */
+    _showTooltip({ label, latlng, analyzeEnabled }) {
+        const api = window.mmgisAPI
+        if (!api?.request) return
+        api.request('map:addOverlay', {
+            id: TOOLTIP_OVERLAY_ID,
+            latlng,
+            mount: (node) => {
+                render(
+                    React.createElement(AOITooltip, {
+                        label,
+                        position: { x: 0, y: 0 },
+                        analyzeEnabled,
+                        onAnalyze: () => this._onAnalyze(),
+                        onCancel: () => this._onCancel(),
+                    }),
+                    node
+                )
+                return () => unmountComponentAtNode(node)
+            },
+        }).catch((err) => console.warn('[AOI] addOverlay failed', err))
+    },
+
+    _hideTooltip() {
+        window.mmgisAPI?.request?.('map:removeOverlay', { id: TOOLTIP_OVERLAY_ID })
+            .catch(() => { })
     },
 
     _onSearchQueryChange(q) {
@@ -289,37 +249,21 @@ const AOITool = {
     },
 
     _onDrawShapeChange(shape) {
-        const engine = this._engine()
-        if (!engine || typeof engine.enableDrawing !== 'function') {
-            console.warn('[AOI] Drawing not supported on the active engine')
-            return
-        }
         this._setState({ drawShape: shape, drawVerticesCount: 0 })
-        try {
-            engine.enableDrawing(shape, { style: SELECTION_STYLE })
-        } catch (err) {
-            console.warn('[AOI] enableDrawing failed', err)
-        }
+        window.mmgisAPI?.request?.('map:enableDrawing', {
+            shape,
+            options: { style: SELECTION_STYLE },
+        }).catch((err) => console.warn('[AOI] enableDrawing failed', err))
     },
 
     _onDrawConfirm() {
-        const engine = this._engine()
-        if (!engine || !engine.isDrawing?.()) return
-        try {
-            engine.finishDrawing()
-        } catch (err) {
-            console.warn('[AOI] finishDrawing failed', err)
-        }
+        window.mmgisAPI?.request?.('map:finishDrawing')
+            .catch((err) => console.warn('[AOI] finishDrawing failed', err))
     },
 
     _onDrawCancel() {
-        const engine = this._engine()
-        if (!engine || !engine.isDrawing?.()) return
-        try {
-            engine.disableDrawing()
-        } catch (err) {
-            console.warn('[AOI] disableDrawing failed', err)
-        }
+        window.mmgisAPI?.request?.('map:disableDrawing')
+            .catch((err) => console.warn('[AOI] disableDrawing failed', err))
     },
 
     _onDrawStart() {
@@ -395,61 +339,53 @@ const AOITool = {
     _applySelection(feature, source, label) {
         this._removeSelectionLayer()
 
-        const engine = this._engine()
-        if (engine) {
-            try {
-                engine.createLayer({
-                    id: SELECTION_LAYER_ID,
-                    type: 'vector',
-                    geojson: { type: 'FeatureCollection', features: [feature] },
-                    style: SELECTION_STYLE,
-                    interactive: false,
-                })
-            } catch (err) {
-                console.warn('[AOI] failed to add selection layer', err)
-            }
-            const bbox = featureBounds(feature)
-            if (bbox) {
-                try {
-                    engine.fitBounds(
-                        [
-                            { lat: bbox[1], lng: bbox[0] },
-                            { lat: bbox[3], lng: bbox[2] },
-                        ],
-                        { padding: 120, maxZoom: 5 }
-                    )
-                } catch (err) {
-                    console.warn('[AOI] fitBounds failed', err)
-                }
-            }
+        const api = window.mmgisAPI
+        api?.request?.('map:createLayer', {
+            id: SELECTION_LAYER_ID,
+            type: 'vector',
+            geojson: { type: 'FeatureCollection', features: [feature] },
+            style: SELECTION_STYLE,
+            interactive: false,
+        }).catch((err) => console.warn('[AOI] failed to add selection layer', err))
+
+        const bbox = featureBounds(feature)
+        if (bbox) {
+            api?.request?.('map:fitBounds', {
+                bounds: [
+                    { lat: bbox[1], lng: bbox[0] },
+                    { lat: bbox[3], lng: bbox[2] },
+                ],
+                options: { padding: 120, maxZoom: 5 },
+            }).catch((err) => console.warn('[AOI] fitBounds failed', err))
         }
 
         const aoi = { feature, source }
         this._state.currentAOI = aoi
         this._api?.emit('selectionChanged', aoi)
 
-        const tooltip = this._buildTooltipState(feature, label)
-        this._setState({ tooltip })
+        const c = featureCentroid(feature)
+        if (c) {
+            this._showTooltip({
+                label,
+                latlng: { lat: c[1], lng: c[0] },
+                analyzeEnabled: true,
+            })
+        }
     },
 
     _clearSelection() {
-        if (!this._state.currentAOI && !this._state.tooltip) return
+        if (!this._state.currentAOI) return
         this._removeSelectionLayer()
+        this._hideTooltip()
         this._state.currentAOI = null
         this._api?.emit('selectionChanged', { feature: null, source: 'inspect' })
-        this._setState({ tooltip: null })
+        this._render()
     },
 
     _removeSelectionLayer() {
-        const engine = this._engine()
-        if (!engine) return
-        try {
-            if (engine.hasLayer(SELECTION_LAYER_ID)) {
-                engine.removeLayer(SELECTION_LAYER_ID)
-            }
-        } catch {
-            // intentionally swallow
-        }
+        // removeLayer is idempotent; no need for a hasLayer pre-check.
+        window.mmgisAPI?.request?.('map:removeLayer', { id: SELECTION_LAYER_ID })
+            .catch(() => { })
     },
 
     _onModeChange(nextMode) {
@@ -463,28 +399,24 @@ const AOITool = {
             this._showInspectBoundaries()
         }
 
-        const engine = this._engine()
-        if (prev === 'draw' && engine?.isDrawing?.()) {
-            try {
-                engine.disableDrawing()
-            } catch {
-                // intentionally swallow
-            }
+        if (prev === 'draw') {
+            // Cancel any in-flight drawing session when leaving Draw mode.
+            // The bus handler is a no-op if no session is active.
+            window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
         }
 
         this._setState({ mode: nextMode })
     },
 
     _showInspectBoundaries() {
-        const engine = this._engine()
-        if (!engine) return
         const entries = this._state.searchAllEntries
         if (!entries.length) return
-        try {
-            if (engine.hasLayer(INSPECT_BOUNDARIES_LAYER_ID)) {
-                engine.removeLayer(INSPECT_BOUNDARIES_LAYER_ID)
-            }
-            engine.createLayer({
+        const api = window.mmgisAPI
+        if (!api?.request) return
+        // Drop any prior layer first; createLayer is not idempotent.
+        api.request('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
+            .catch(() => { })
+            .then(() => api.request('map:createLayer', {
                 id: INSPECT_BOUNDARIES_LAYER_ID,
                 type: 'vector',
                 geojson: {
@@ -493,22 +425,13 @@ const AOITool = {
                 },
                 style: INSPECT_STYLE,
                 interactive: true,
-            })
-        } catch (err) {
-            console.warn('[AOI] failed to show inspect boundaries', err)
-        }
+            }))
+            .catch((err) => console.warn('[AOI] failed to show inspect boundaries', err))
     },
 
     _hideInspectBoundaries() {
-        const engine = this._engine()
-        if (!engine) return
-        try {
-            if (engine.hasLayer(INSPECT_BOUNDARIES_LAYER_ID)) {
-                engine.removeLayer(INSPECT_BOUNDARIES_LAYER_ID)
-            }
-        } catch {
-            // intentionally swallow
-        }
+        window.mmgisAPI?.request?.('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
+            .catch(() => { })
     },
 
     _onMapFeatureClick(result) {
@@ -526,41 +449,6 @@ const AOITool = {
         this._applySelection(feature, 'inspect', label)
     },
 
-    _buildTooltipState(feature, label) {
-        const c = featureCentroid(feature)
-        if (!c) return null
-        const engine = this._engine()
-        if (!engine) return null
-        let position = { x: 0, y: 0 }
-        try {
-            const px = engine.latLngToContainerPoint({ lat: c[1], lng: c[0] })
-            position = pointToXY(px)
-        } catch {
-            return null
-        }
-        return {
-            label,
-            position,
-            analyzeEnabled: true,
-            _latLng: { lat: c[1], lng: c[0] },
-        }
-    },
-
-    _repositionTooltip() {
-        const t = this._state.tooltip
-        if (!t) return
-        const engine = this._engine()
-        if (!engine) return
-        try {
-            const px = engine.latLngToContainerPoint(t._latLng)
-            const next = { ...t, position: pointToXY(px) }
-            this._state.tooltip = next
-            this._renderTooltip()
-        } catch {
-            // intentionally swallow stale projections during init
-        }
-    },
-
     _onAnalyze() {
         const aoi = this._state.currentAOI
         if (!aoi) return
@@ -576,7 +464,7 @@ const AOITool = {
         this._api?.emit('analysisRequested', payload)
         console.log(`[AOI] Emitted: ${eventName}`)
 
-        this._setState({ tooltip: null })
+        this._hideTooltip()
     },
 
     _onCancel() {
@@ -592,20 +480,6 @@ const AOITool = {
         const btn = document.getElementById('toolButtonAOI')
         if (btn) btn.click()
     },
-
-    _engine() {
-        try {
-            return mapEngineRegistry.getActiveEngine()
-        } catch {
-            return null
-        }
-    },
-}
-
-function pointToXY(p) {
-    if (!p) return { x: 0, y: 0 }
-    if (Array.isArray(p)) return { x: p[0], y: p[1] }
-    return { x: p.x ?? 0, y: p.y ?? 0 }
 }
 
 function interfaceWithMMGIS(tool) {
@@ -613,24 +487,6 @@ function interfaceWithMMGIS(tool) {
     root.className = 'aoi-tool-host'
     document.body.appendChild(root)
     tool._root = root
-
-    const engine = tool._engine ? tool._engine() : null
-    if (engine && typeof engine.getContainer === 'function') {
-        const container = engine.getContainer()
-        if (container) {
-            const tooltipHost = document.createElement('div')
-            tooltipHost.setAttribute('data-aoi-tooltip-host', '')
-            tooltipHost.style.position = 'absolute'
-            tooltipHost.style.left = '0'
-            tooltipHost.style.top = '0'
-            tooltipHost.style.right = '0'
-            tooltipHost.style.bottom = '0'
-            tooltipHost.style.pointerEvents = 'none'
-            tooltipHost.style.zIndex = '500'
-            container.appendChild(tooltipHost)
-            tool._tooltipRoot = tooltipHost
-        }
-    }
 
     this.separateFromMMGIS = function () {
         if (tool._root && tool._root.parentNode) {

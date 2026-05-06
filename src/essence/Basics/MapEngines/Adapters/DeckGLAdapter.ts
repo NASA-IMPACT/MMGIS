@@ -41,7 +41,7 @@ import type {
     MapInitOptions,
     BasemapOptions,
 } from '../types/view'
-import type { LayerOptions } from '../types/layers'
+import type { LayerOptions, OverlayOptions } from '../types/layers'
 import type {
     MapEventHandler,
     MapEventOptions,
@@ -206,6 +206,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _drawingEscapeHandler: ((e: KeyboardEvent) => void) | null = null
     private _drawingFinishing = false
 
+    /** Registry of anchored HTML overlays (id -> teardown function). */
+    private _overlays = new Map<string, () => void>()
+
     /**
      * Bound handler kept as a class field so it can be removed cleanly in {@link destroy}.
      * Syncs `_viewState` from the basemap and emits the engine-level `'moveend'` event.
@@ -304,6 +307,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             this._deck = null
         }
 
+        this._overlays.forEach((teardown) => {
+            try {
+                teardown()
+            } catch {
+                // ignore — destroy must remain idempotent
+            }
+        })
+        this._overlays.clear()
+
         this._layers.clear()
         this._layerZIndices.clear()
         this._eventListeners.clear()
@@ -338,6 +350,66 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     getContainer(): HTMLElement {
         return this._container
+    }
+
+    /**
+     * Anchored HTML overlay. deck.gl renders to canvas and has no native
+     * overlay system, so we own the DOM node directly: append to the
+     * container, project lat/lng -> pixel on every view change, reposition.
+     */
+    addOverlay(options: OverlayOptions): void {
+        if (!options?.id) {
+            throw new Error('addOverlay: options.id is required')
+        }
+        if (this._overlays.has(options.id)) {
+            this.removeOverlay(options.id)
+        }
+
+        const container = this._container
+        if (!container) return
+
+        const node = document.createElement('div')
+        node.style.position = 'absolute'
+        node.style.zIndex = '500'
+        container.appendChild(node)
+
+        let userCleanup: (() => void) | void
+        try {
+            userCleanup = options.mount(node)
+        } catch (err) {
+            console.warn('[DeckGLAdapter] addOverlay mount threw:', err)
+        }
+
+        const reposition = (): void => {
+            try {
+                const pt = this.latLngToContainerPoint(options.latlng)
+                node.style.left = pt.x - node.offsetWidth / 2 + 'px'
+                node.style.top = pt.y - node.offsetHeight / 2 + 'px'
+            } catch {
+                // projection not ready yet — try again on next view change
+            }
+        }
+        reposition()
+        this.on('move', reposition)
+        this.on('moveend', reposition)
+
+        this._overlays.set(options.id, () => {
+            this.off('move', reposition)
+            this.off('moveend', reposition)
+            try {
+                if (typeof userCleanup === 'function') userCleanup()
+            } catch (err) {
+                console.warn('[DeckGLAdapter] addOverlay cleanup threw:', err)
+            }
+            if (node.parentNode) node.parentNode.removeChild(node)
+        })
+    }
+
+    removeOverlay(id: string): void {
+        const teardown = this._overlays.get(id)
+        if (!teardown) return
+        teardown()
+        this._overlays.delete(id)
     }
 
     setView(center: LatLngLike, zoom?: number, options?: ViewOptions): void {
