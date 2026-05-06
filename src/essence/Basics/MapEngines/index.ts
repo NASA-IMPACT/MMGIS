@@ -28,6 +28,7 @@ export type {
     PointCloudLayerOptions,
     MarkerOptions,
     IconOptions,
+    OverlayOptions,
 } from './types/layers'
 
 export type {

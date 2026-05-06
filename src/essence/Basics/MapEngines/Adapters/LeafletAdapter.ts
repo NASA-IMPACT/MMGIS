@@ -23,7 +23,12 @@ import {
     MapInitOptions,
     ProjectionOptions,
 } from '../types/view'
-import { LayerOptions, TileLayerOptions, MarkerOptions } from '../types/layers'
+import {
+    LayerOptions,
+    TileLayerOptions,
+    MarkerOptions,
+    OverlayOptions,
+} from '../types/layers'
 import { IMapEngineMarkers } from '../IMapEngineMarkers'
 import {
     buildLeafletLayer,
@@ -68,6 +73,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Registry of markers by ID
      */
     private _markers: Map<string, any> = new Map()
+
+    /**
+     * Registry of anchored HTML overlays (id -> teardown function).
+     */
+    private _overlays: Map<string, () => void> = new Map()
 
     /**
      * Registry of event handlers for cleanup
@@ -251,6 +261,15 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             this._map.off(eventName, handler)
         })
         this._eventHandlers.clear()
+
+        this._overlays.forEach((teardown) => {
+            try {
+                teardown()
+            } catch {
+                // ignore — destroy must remain idempotent
+            }
+        })
+        this._overlays.clear()
 
         this._layers.clear()
         this._markers.clear()
@@ -875,6 +894,59 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      *
      * @throws {Error} If the marker ID is not found in the registry.
      */
+    /**
+     * Anchored HTML overlay backed by L.Marker + L.divIcon. Leaflet handles
+     * repositioning natively across pan/zoom — no manual move listeners.
+     */
+    addOverlay(options: OverlayOptions): void {
+        if (!options?.id) {
+            throw new Error('addOverlay: options.id is required')
+        }
+        if (this._overlays.has(options.id)) {
+            this.removeOverlay(options.id)
+        }
+
+        const ll = this._normalizeLatLng(options.latlng)
+        const L = (window as any).L
+        const icon = L.divIcon({
+            html: '',
+            className: '',
+            iconSize: [0, 0],
+            iconAnchor: [0, 0],
+        })
+        const marker = L.marker([ll.lat, ll.lng], {
+            icon,
+            interactive: false,
+            keyboard: false,
+        }).addTo(this._map)
+
+        const node: HTMLElement | null = marker.getElement?.() ?? null
+        let userCleanup: (() => void) | void
+        if (node) {
+            try {
+                userCleanup = options.mount(node)
+            } catch (err) {
+                console.warn('[LeafletAdapter] addOverlay mount threw:', err)
+            }
+        }
+
+        this._overlays.set(options.id, () => {
+            try {
+                if (typeof userCleanup === 'function') userCleanup()
+            } catch (err) {
+                console.warn('[LeafletAdapter] addOverlay cleanup threw:', err)
+            }
+            this._map.removeLayer(marker)
+        })
+    }
+
+    removeOverlay(id: string): void {
+        const teardown = this._overlays.get(id)
+        if (!teardown) return
+        teardown()
+        this._overlays.delete(id)
+    }
+
     updateMarker(marker: any | string, updates: Partial<MarkerOptions>): any {
         const id = resolveLeafletMarkerId(marker)
         const leafletMarker = this._markers.get(id)

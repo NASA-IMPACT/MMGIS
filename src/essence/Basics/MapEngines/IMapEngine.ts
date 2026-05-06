@@ -6,7 +6,7 @@ import {
     FitBoundsOptions,
     MapInitOptions,
 } from './types/view'
-import { LayerOptions } from './types/layers'
+import { LayerOptions, OverlayOptions } from './types/layers'
 import {
     MapEventHandler,
     MapEventOptions,
@@ -261,4 +261,23 @@ export interface IMapEngine<
      * Convert geographic coordinates to container pixel position.
      */
     latLngToContainerPoint(latLng: LatLngLike): PointLike
+
+    /**
+     * Attach an HTML overlay anchored to a geographic point.
+     *
+     * The engine creates a DOM node, appends it to its container, calls
+     * `mount(node)` to let the caller render content into it, and keeps it
+     * positioned across map view changes. If `mount` returns a function, the
+     * engine calls it on `removeOverlay` / engine destroy.
+     *
+     * Calling `addOverlay` with an `id` that already exists removes the
+     * prior overlay first.
+     */
+    addOverlay(options: OverlayOptions): void
+
+    /**
+     * Remove an overlay by id. Runs the cleanup returned by `mount` and
+     * removes the DOM node from the container. No-op if the id is unknown.
+     */
+    removeOverlay(id: string): void
 }
