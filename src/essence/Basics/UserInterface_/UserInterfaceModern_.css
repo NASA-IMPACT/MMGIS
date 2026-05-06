@@ -6,7 +6,7 @@
  USWDS Color Palette 
  This will later be replaced with themable design tokens
 */
-.mmgis {
+:root {
     /* USWDS color palette */
     --mmgis-uswds-primary: #005ea2; /* primary blue */
     --mmgis-uswds-primary-dark: #1a4480;
