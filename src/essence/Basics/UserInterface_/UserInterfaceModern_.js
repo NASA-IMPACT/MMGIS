@@ -1,5 +1,6 @@
 import $ from 'jquery'
 import PanelManager_ from '../PanelManager_/PanelManager_'
+import { mmgisAPI } from '../../mmgisAPI/mmgisAPI'
 import './UserInterfaceModern_.css'
 
 const DEFAULT_MIN_PANEL_SIZE = 50;
@@ -19,11 +20,8 @@ const UserInterfaceModern_ = {
         this.layoutStyle = layoutStyle
         this.render()
 
-        // TODO use event bus instead of window events
-        if (!this._layoutEventListenerAdded) {
-            this._boundSyncDOMState = this.syncDOMState.bind(this)
-            window.addEventListener('mmgis-panel-layout-changed', this._boundSyncDOMState)
-            this._layoutEventListenerAdded = true
+        if (!this._unsubscribeLayout) {
+            this._unsubscribeLayout = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
         }
     },
 
@@ -324,11 +322,11 @@ const UserInterfaceModern_ = {
 
     /**
      * Passively synchronize DOM based on event payload without destroying nodes.
-     * @param {CustomEvent} e Custom layout changed event fired from PanelManager
+     * @param {Object} e Layout changed event payload
      */
     syncDOMState: function (e) {
-        if (e && e.detail && e.detail.panels) {
-            this.panels = e.detail.panels
+        if (e && e.panels) {
+            this.panels = e.panels
         }
 
         this.panels.forEach(panel => {
