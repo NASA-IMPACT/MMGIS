@@ -1,5 +1,6 @@
 import $ from 'jquery'
 import PanelManager_ from '../PanelManager_/PanelManager_'
+import { mmgisAPI } from '../../mmgisAPI/mmgisAPI'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
@@ -140,10 +141,8 @@ const UserInterfaceModern_ = {
         layoutStyle = style
         this.render()
 
-        if (!layoutEventListenerAdded) {
-            boundSyncDOMState = this.syncDOMState.bind(this)
-            window.addEventListener('mmgis-panel-layout-changed', boundSyncDOMState)
-            layoutEventListenerAdded = true
+        if (!this._unsubscribeLayout) {
+            this._unsubscribeLayout = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
         }
     },
 
@@ -416,11 +415,11 @@ const UserInterfaceModern_ = {
 
     /**
      * Passively synchronize DOM based on event payload without destroying nodes.
-     * @param {CustomEvent} e Custom layout changed event fired from PanelManager
+     * @param {Object} e Layout changed event payload
      */
     syncDOMState: function (e) {
-        if (e && e.detail && e.detail.panels) {
-            panels = e.detail.panels
+        if (e && e.panels) {
+            this.panels = e.panels
         }
 
         panels.forEach(panel => {
