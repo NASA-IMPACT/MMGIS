@@ -1,5 +1,5 @@
 import { PANEL_POSITION, PANEL_STATE, PANEL_LAYOUT_TYPE } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
-import { TOOL_ORIENTATION } from '../../../src/essence/Basics/PanelManager_/types/tool.ts'
+import { TOOL_ORIENTATION } from '../../../src/essence/Basics/ToolController_/types/tool.ts'
 
 /**
  * Create a basic mock panel configuration for testing

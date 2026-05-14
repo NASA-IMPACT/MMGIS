@@ -1,4 +1,4 @@
-import { ToolOrientation, ToolMetadata } from './tool';
+import { ToolOrientation, ToolMetadata } from '../../ToolController_/types/tool';
 import { PanelPosition, PanelState, PanelLayoutType } from './layout';
 
 /**
@@ -133,6 +133,12 @@ export interface PanelConfig {
 
     /** Panel capabilities and constraints */
     capabilities?: PanelCapabilities;
+
+    /**
+     * Whether the panel should have a visible header with title and control buttons.
+     * Default: false
+     */
+    hasHeader?: boolean;
 
     /**
      * Whether the panel should overlay the map when visible.

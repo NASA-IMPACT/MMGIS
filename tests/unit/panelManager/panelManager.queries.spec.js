@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { PanelManager } from '../../../src/essence/Basics/PanelManager_/PanelManager_.ts'
 import { PANEL_POSITION } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
-import { TOOL_ORIENTATION } from '../../../src/essence/Basics/PanelManager_/types/tool.ts'
+import { TOOL_ORIENTATION } from '../../../src/essence/Basics/ToolController_/types/tool.ts'
 import { createMockPanelConfig, createMockToolMetadata, setupWindowEnvironment } from './testHelpers.js'
 
 test.describe('PanelManager - Queries', () => {

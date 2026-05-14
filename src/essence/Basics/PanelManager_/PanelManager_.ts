@@ -1,6 +1,7 @@
-import { ToolOrientation, ToolMetadata } from './types/tool';
+import { ToolOrientation, ToolMetadata } from '../ToolController_/types/tool';
 import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE } from './types/layout';
 import { PanelConfig, PanelStateObject, PanelManager as PanelManagerInterface } from './types/panel';
+import { mmgisAPI } from '../../mmgisAPI/mmgisAPI';
 
 class PanelManager implements PanelManagerInterface {
     private panels: Map<string, PanelStateObject> = new Map();
@@ -285,11 +286,8 @@ class PanelManager implements PanelManagerInterface {
     notifyLayoutChanged(): void {
         const allPanels = this.getAllPanelsByPriority();
         // Fire custom event for any listeners hooked into the DOM.
-        // TODO: Use eventbus for dispatching event. 
         if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('mmgis-panel-layout-changed', {
-                detail: { panels: allPanels }
-            }));
+            mmgisAPI.emit('mmgis-panel-layout-changed', { panels: allPanels });
         }
     }
 

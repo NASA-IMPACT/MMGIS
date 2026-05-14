@@ -1,6 +1,6 @@
 // TODO: Move this file to a separate directory (e.g. closer to ToolController) when refactoring tools.
 
-import { PanelPosition } from './layout';
+import { PanelPosition } from '../../PanelManager_/types/layout';
 
 /**
  * Tool orientation requirements.
