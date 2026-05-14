@@ -1,7 +1,7 @@
 import $ from 'jquery'
 import PanelManager_ from '../PanelManager_/PanelManager_'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
-import { validateToolMetadata } from '../ToolController_/ToolMetadataUtils'
+import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
 import './UserInterfaceModern_.css'
 
@@ -22,28 +22,28 @@ const _createPanelIconTray = (panel) => {
     const iconsContainer = $('<div class="ui-panel-icons"></div>')
     const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
 
-    if (toolsMetadata.length > 0) {
-        toolsMetadata.forEach(toolMetadata => {
-            try {
-                validateToolMetadata(toolMetadata)
-                const toolName = toolMetadata.name || toolMetadata.id
-                const toolId = toolMetadata.id
-                const iconClass = toolMetadata.icon
-                const iconBtn = $(`<button class="ui-panel-icon-btn" title="${toolName}" data-tool="${toolId}"><span class="${iconClass}"></span></button>`)
-                
-                iconBtn.on('click', () => {
-                    if (panel.state === 'focused' && panel.activeToolId === toolId) {
-                        PanelManager_.setPanelState(panel.id, 'iconified')
-                    } else {
-                        PanelManager_.focusTool(panel.id, toolId)
-                    }
-                })
-                iconsContainer.append(iconBtn)
-            } catch (error) {
-                logger.error(`Failed to create icon button for tool in panel "${panel.id}":`, error)
+    toolsMetadata.forEach(toolMetadata => {
+        const toolName = toolMetadata.name || toolMetadata.id
+        const toolId = toolMetadata.id
+        const iconClass = getValidIconClass(toolMetadata.icon, toolId)
+
+        // Use safe jQuery methods to create elements and set attributes
+        const iconSpan = $('<span></span>').addClass(iconClass)
+        const iconBtn = $('<button></button>')
+            .addClass('ui-panel-icon-btn')
+            .attr('title', toolName) // jQuery escapes attribute values
+            .attr('data-tool', toolId)
+            .append(iconSpan)
+
+        iconBtn.on('click', () => {
+            if (panel.state === 'focused' && panel.activeToolId === toolId) {
+                PanelManager_.setPanelState(panel.id, 'iconified')
+            } else {
+                PanelManager_.focusTool(panel.id, toolId)
             }
         })
-    }
+        iconsContainer.append(iconBtn)
+    })
     return iconsContainer
 }
 
@@ -174,26 +174,29 @@ const UserInterfaceModern_ = {
      * @throws {Error} If toolMetadata is invalid or panelId is missing
      */
     createToolCard: function (toolMetadata, panelId, layoutType = 'stacked', isActive = false) {
-        validateToolMetadata(toolMetadata)
-
         if (!panelId) {
             throw new Error('[UserInterfaceModern] panelId is required for createToolCard')
         }
 
         const toolId = toolMetadata.id
         const targetId = `${panelId}-tool-${toolId}`
-        const activeClass = isActive ? 'active' : ''
         const layoutClass = layoutType === 'tabbed' ? 'ui-tool-tab-content' : 'ui-tool-card-stacked'
 
-        const toolCard = $(`<div class="ui-tool-card ${layoutClass} ${activeClass}" data-tool="${toolId}" id="${targetId}"></div>`)
+        const toolCard = $('<div></div>')
+            .addClass('ui-tool-card')
+            .addClass(layoutClass)
+            .addClass(isActive ? 'active' : '')
+            .attr('data-tool', toolId)
+            .attr('id', targetId)
 
         // Return card and a function to load the tool (called after append)
         // The load function checks if DOM element still exists before loading
         return {
             toolCard: toolCard,
             loadTool: () => {
-                const $target = $(`#${targetId}`)
-                if ($target.length === 0) {
+
+                const targetElement = document.getElementById(targetId)
+                if (!targetElement) {
                     logger.warn(`Target element "${targetId}" not found in DOM, skipping tool load`)
                     return
                 }
@@ -218,37 +221,31 @@ const UserInterfaceModern_ = {
         const tabBar = $('<div class="ui-panel-tabs"></div>')
         const tabContentArea = $('<div class="ui-panel-tab-content-area"></div>')
 
-        // Get tool metadata from PanelManager
-        let toolsMetadata = []
-        try {
-            toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
-        } catch (error) {
-            logger.error(`Failed to get tools for panel "${panel.id}":`, error)
-            return
-        }
+        const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
 
         toolsMetadata.forEach((toolMetadata, idx) => {
-            try {
-                validateToolMetadata(toolMetadata)
+            const toolName = toolMetadata.name || toolMetadata.id
+            const toolId = toolMetadata.id
+            const isActive = idx === 0
 
-                const toolName = toolMetadata.name || toolMetadata.id
-                const toolId = toolMetadata.id
-                const isActive = idx === 0
+            // Create tab using safe jQuery methods
+            const iconClass = getValidIconClass(toolMetadata.icon, toolId)
+            const iconSpan = $('<span></span>').addClass('ui-tool-icon').addClass(iconClass)
+            const textSpan = $('<span></span>').text(toolName) // .text() is safe - auto-escapes
 
-                // Create tab
-                const iconClass = toolMetadata.icon
-                const tab = $(`<div class="ui-panel-tab ${isActive ? 'active' : ''}" data-tool="${toolId}"></div>`)
-                    .append(`<span class="ui-tool-icon ${iconClass}"></span>`)
-                    .append($('<span></span>').text(toolName))
-                tabBar.append(tab)
+            const tab = $('<div></div>')
+                .addClass('ui-panel-tab')
+                .addClass(isActive ? 'active' : '')
+                .attr('data-tool', toolId)
+                .append(iconSpan)
+                .append(textSpan)
 
-                // Create tab content container and queue tool loading
-                const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId, 'tabbed', isActive)
-                tabContentArea.append(toolCard)
-                toolLoadQueue.push(loadTool)
-            } catch (error) {
-                logger.error(`Failed to render tool in tabbed layout (panel: ${panel.id}):`, error)
-            }
+            tabBar.append(tab)
+
+            // Create tab content container and queue tool loading
+            const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId, 'tabbed', isActive)
+            tabContentArea.append(toolCard)
+            toolLoadQueue.push(loadTool)
         })
 
         body.append(tabBar).append(tabContentArea)
@@ -264,7 +261,9 @@ const UserInterfaceModern_ = {
 
             // Update active content
             tabContentArea.find('.ui-tool-tab-content').removeClass('active')
-            tabContentArea.find(`.ui-tool-tab-content[data-tool="${targetTool}"]`).addClass('active')
+            tabContentArea.find('.ui-tool-tab-content').filter((_, element) => {
+                return $(element).data('tool') === targetTool
+            }).addClass('active')
         })
     },
 
@@ -279,25 +278,13 @@ const UserInterfaceModern_ = {
             return
         }
 
-        // Get tool metadata from PanelManager
-        let toolsMetadata = []
-        try {
-            toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
-        } catch (error) {
-            logger.error(`Failed to get tools for panel "${panel.id}":`, error)
-            return
-        }
+        const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
 
         toolsMetadata.forEach(toolMetadata => {
-            try {
-                const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId)
-                body.append(toolCard)
-                // Queue tool loading for after DOM is fully rendered
-                toolLoadQueue.push(loadTool)
-            } catch (error) {
-                logger.error(`Failed to render tool in stacked layout (panel: ${panel.id}):`, error)
-                // Skip this tool and continue with others
-            }
+            const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId)
+            body.append(toolCard)
+            // Queue tool loading for after DOM is fully rendered
+            toolLoadQueue.push(loadTool)
         })
     },
 
@@ -444,12 +431,17 @@ const UserInterfaceModern_ = {
 
             if (panel.activeToolId && panel.state === 'focused') {
                 // Update active state on icons
+                const activeToolId = panel.activeToolId
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
-                $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
+                $panel.find('.ui-panel-icon-btn').filter((_, element) => {
+                    return $(element).data('tool') === activeToolId
+                }).addClass('active')
 
                 // Update active state on tool cards (especially for focused state and tabbed)
                 $panel.find('.ui-tool-card').removeClass('active')
-                $panel.find(`.ui-tool-card[data-tool="${panel.activeToolId}"]`).addClass('active')
+                $panel.find('.ui-tool-card').filter((_, element) => {
+                    return $(element).data('tool') === activeToolId
+                }).addClass('active')
             } else {
                 // Remove active highlighting when not focused
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
