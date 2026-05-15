@@ -16,7 +16,7 @@ let panels = []
 let layoutStyle = ''
 let toolLoadQueue = []
 let cleanupLayoutListener = null
-let layoutEventListenerAdded = false
+let _resizeObserver = null
 
 // --- DOM Builder Helpers ---
 const _createPanelIconTray = (panel) => {
@@ -145,6 +145,16 @@ const UserInterfaceModern_ = {
             cleanupLayoutListener = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
         }
 
+        // Set up ResizeObserver to dispatch resize events when the center map area changes size
+        if (_resizeObserver) {
+            _resizeObserver.disconnect()
+        }
+        _resizeObserver = new ResizeObserver(() => {
+            window.dispatchEvent(new Event('resize'))
+        })
+        const centerElement = document.getElementById('ui-modern-center')
+        if (centerElement) {
+            _resizeObserver.observe(centerElement)
         }
     },
 
@@ -158,6 +168,9 @@ const UserInterfaceModern_ = {
             cleanupLayoutListener()
             cleanupLayoutListener = null
         }
+        if (_resizeObserver) {
+            _resizeObserver.disconnect()
+            _resizeObserver = null
         }
         $('#modern-content').empty()
         panels = []
@@ -469,13 +482,6 @@ const UserInterfaceModern_ = {
                 }
             }
         })
-
-        if (layoutStyle === 'compact') {
-            window.dispatchEvent(new Event('resize'))
-            setTimeout(() => {
-                window.dispatchEvent(new Event('resize'))
-            }, 300)
-        }
     },
 
     /**
