@@ -178,14 +178,14 @@ const ToolControllerModern_ = {
     },
 
     /**
-     * Load and assign tools to panels based on dashboard configuration
+     * Assign tools to panels based on dashboard configuration
      * Tools are assigned in two passes:
      * 1. Explicit assignment via panel.tools arrays
      * 2. Fallback assignment for unassigned tools (if tool.on !== false)
      *
      * @param {Array} tools - Array of tool configurations from mission config
      */
-    loadAndAssignTools: function (tools) {
+    assignToolsToPanels: function (tools) {
         if (!tools || tools.length === 0) {
             logger.warn('No tools configured')
             return

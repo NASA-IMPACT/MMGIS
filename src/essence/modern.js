@@ -223,9 +223,9 @@ class ModernInterface {
         // Register panels
         this._registerPanels()
 
-        // Load and assign tools to panels based on configuration
+        // Assign tools to panels based on configuration
         const tools = this.configData?.tools || []
-        ToolControllerModern_.loadAndAssignTools(tools)
+        ToolControllerModern_.assignToolsToPanels(tools)
 
         // Get all panels from PanelManager, already sorted by priority
         const activePanels = PanelManager_.getAllPanelsByPriority()
