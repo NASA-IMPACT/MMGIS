@@ -62,15 +62,17 @@ const ToolControllerModern_ = {
 
             // Store by ID (primary key)
             if (toolConfigMap.has(toolMetadata.id)) {
-                logger.warn(`Duplicate tool ID detected: ${toolMetadata.id}`)
+                logger.warn(`Duplicate tool ID detected: ${toolMetadata.id} - skipping duplicate tool`)
+                return
             }
             toolConfigMap.set(toolMetadata.id, { config: toolConfig, metadata: toolMetadata })
 
             // Map name to ID for lookup
             if (toolNameToId.has(toolMetadata.name)) {
-                logger.warn(`Duplicate tool name detected: ${toolMetadata.name}`)
+                logger.warn(`Duplicate tool name detected: ${toolMetadata.name} - tool can only be referenced by ID`)
+            } else {
+                toolNameToId.set(toolMetadata.name, toolMetadata.id)
             }
-            toolNameToId.set(toolMetadata.name, toolMetadata.id)
         })
 
         // Helper function to get tool data by name or ID
