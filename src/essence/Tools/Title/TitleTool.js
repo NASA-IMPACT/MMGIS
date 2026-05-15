@@ -1,26 +1,11 @@
 // Title Tool
 // Displays a logo and title text from dashboard configuration
 import $ from 'jquery'
-import F_ from '../../Basics/Formulae_/Formulae_'
+import ReactDOM from 'react-dom'
+import React from 'react'
 import L_ from '../../Basics/Layers_/Layers_'
+import TitleToolComponent from './TitleToolComponent'
 import './TitleTool.css'
-
-// Tool markup
-const markup = [
-    `<div id='titleTool'>`,
-    `  <div class='titleTool-container'>`,
-    `    <div class='titleTool-logo'>`,
-    `      <!-- Logo will be inserted here if configured -->`,
-    `    </div>`,
-    `    <div class='titleTool-icon'>`,
-    `      <i class='mdi mdi-earth mdi-24px'></i>`,
-    `    </div>`,
-    `    <div class='titleTool-text'>`,
-    `      <span class='titleTool-title'></span>`,
-    `    </div>`,
-    `  </div>`,
-    `</div>`,
-].join('\n')
 
 const TitleTool = {
     height: 60,
@@ -76,42 +61,33 @@ function interfaceWithMMGIS() {
         separateFromMMGIS()
     }
 
-    const tools = $(`#${TitleTool.targetId}`)
-    tools.css('background', 'transparent')
-    tools.empty()
-
-    // Add the markup to tools
-    tools.html('<div style="height: 100%">' + markup + '</div>')
-
-    // Set the title text
-    $('#titleTool .titleTool-title').text(TitleTool.titleText)
-
-    // Add logo if configured
-    if (TitleTool.logoUrl) {
-        const logoImg = $('<img>')
-            .attr('src', TitleTool.logoUrl)
-            .attr('alt', 'Logo')
-            .addClass('titleTool-logo-img')
-        $('#titleTool .titleTool-logo').empty().append(logoImg)
-        $('#titleTool .titleTool-logo').show()
-        // Hide the icon when logo is present
-        $('#titleTool .titleTool-icon').hide()
-    } else {
-        // Show icon when no logo is configured
-        $('#titleTool .titleTool-logo').hide()
-        $('#titleTool .titleTool-icon').show()
+    const container = document.getElementById(TitleTool.targetId)
+    if (!container) {
+        console.error(
+            `TitleTool: container ${TitleTool.targetId} not found`
+        )
+        return
     }
 
-    // Update icon if configured
-    if (TitleTool.iconClass) {
-        $('#titleTool .titleTool-icon i')
-            .attr('class', TitleTool.iconClass)
-    }
+    // Set panel background to transparent for title tool
+    $(container).css('background', 'transparent')
+
+    // Render React component
+    ReactDOM.render(
+        <TitleToolComponent
+            titleText={TitleTool.titleText}
+            logoUrl={TitleTool.logoUrl}
+            iconClass={TitleTool.iconClass}
+        />,
+        container
+    )
 
     function separateFromMMGIS() {
-        const tools = $(`#${TitleTool.targetId}`)
-        tools.css('background', 'var(--color-k)')
-        tools.empty()
+        const container = document.getElementById(TitleTool.targetId)
+        if (container) {
+            ReactDOM.unmountComponentAtNode(container)
+            $(container).css('background', 'var(--mmgis-panel-bg)')
+        }
     }
 }
 
