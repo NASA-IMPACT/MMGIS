@@ -15,7 +15,7 @@ const DEFAULT_MAX_PANEL_SIZE = 9999;
 let panels = []
 let layoutStyle = ''
 let toolLoadQueue = []
-let boundSyncDOMState = null
+let cleanupLayoutListener = null
 let layoutEventListenerAdded = false
 
 // --- DOM Builder Helpers ---
@@ -141,8 +141,10 @@ const UserInterfaceModern_ = {
         layoutStyle = style
         this.render()
 
-        if (!this._unsubscribeLayout) {
-            this._unsubscribeLayout = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+        if (!cleanupLayoutListener) {
+            cleanupLayoutListener = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+        }
+
         }
     },
 
@@ -152,10 +154,10 @@ const UserInterfaceModern_ = {
     destroy: function () {
         ToolControllerModern_.destroyAllTools()
         toolLoadQueue = [] // Clear any pending loads
-        if (layoutEventListenerAdded && boundSyncDOMState) {
-            window.removeEventListener('mmgis-panel-layout-changed', boundSyncDOMState)
-            boundSyncDOMState = null
-            layoutEventListenerAdded = false
+        if (cleanupLayoutListener) {
+            cleanupLayoutListener()
+            cleanupLayoutListener = null
+        }
         }
         $('#modern-content').empty()
         panels = []
