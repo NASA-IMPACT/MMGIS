@@ -351,7 +351,7 @@ class ModernInterface {
      * Cleanup and prepare for mission swap
      *
      * Performs comprehensive cleanup in the following order:
-     * 1. Clears tools via ToolControllerModern
+     * 1. Cleanup the UserInterfaceModern (tools, event listeners, DOM)
      * 2. Unregisters all panels from PanelManager
      * 3. Clears layers via L_
      * 4. Clears viewer images
@@ -365,9 +365,9 @@ class ModernInterface {
      * TODO: Implement full mission swap support (see essence.js swapMission())
      */
     clear() {
-        // Clean up tools first
-        if (ToolControllerModern_ && typeof ToolControllerModern_.clear === 'function') {
-            ToolControllerModern_.clear()
+        // Clean up the UserInterfaceModern (includes tools cleanup and event listeners)
+        if (UserInterfaceModern_ && typeof UserInterfaceModern_.destroy === 'function') {
+            UserInterfaceModern_.destroy()
         }
 
         // Clean up all registered panels
