@@ -1,0 +1,38 @@
+@use 'uswds-core' as *;
+
+/* Container for all legends */
+.layerLegendList {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--color-k);
+
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: var(--color-h);
+        border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: var(--color-g);
+    }
+}
+
+/* Empty state */
+.layerLegendEmpty {
+    padding: units(2.5);
+    text-align: center;
+    color: var(--color-e);
+    font-size: font-size('body', 'sm');
+}
