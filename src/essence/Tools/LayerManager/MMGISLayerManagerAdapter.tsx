@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState, useCallback, useEffect } from 'react'
 import { LayerManagerPanel } from './lib'
 import type { Layer } from './lib/types'

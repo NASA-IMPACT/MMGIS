@@ -1,3 +1,4 @@
+import React from 'react'
 import { Button } from '@trussworks/react-uswds'
 import type { Layer } from '../types'
 import { LayerLegendList } from '../LayerLegendList/LayerLegendList'

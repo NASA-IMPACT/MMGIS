@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState, useCallback, useRef, type MouseEvent } from 'react'
 import type { CategoricalStop } from '../types'
 import styles from './CategoricalGraphic.module.scss'

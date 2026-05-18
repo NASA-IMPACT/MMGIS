@@ -1,3 +1,4 @@
+import React from 'react'
 import $ from 'jquery'
 import { createRoot, type Root } from 'react-dom/client'
 import { MMGISLayerManagerAdapter } from './MMGISLayerManagerAdapter'

@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState, useCallback, useRef, type MouseEvent } from 'react'
 import { scaleLinear } from 'd3'
 import { ColormapControl } from '../ColormapControl/ColormapControl'
