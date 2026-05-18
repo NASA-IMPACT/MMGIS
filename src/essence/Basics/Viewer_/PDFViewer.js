@@ -1,4 +1,6 @@
-import { render } from 'react-dom'
+// TODO: tighten in follow-up. React 19 removed ReactDOM.render in favor of createRoot.
+// Minimal shim during Task R1 React 16->19 upgrade; revisit alongside Task R3.
+import { createRoot } from 'react-dom/client'
 import React, { useState, useEffect } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { useResizeDetector } from 'react-resize-detector'
@@ -218,11 +220,17 @@ const ReactPDF = (props) => {
 export default function (options) {
     options = options || {}
 
+    let pdfRoot = null
+    let pdfRootContainer = null
+
     async function changePDF(pdfPath, canvasId) {
-        render(
-            <ReactPDF pdfPath={pdfPath} />,
-            document.getElementById('pdfViewerWrapper')
-        )
+        const container = document.getElementById('pdfViewerWrapper')
+        if (!container) return
+        if (!pdfRoot || pdfRootContainer !== container) {
+            pdfRoot = createRoot(container)
+            pdfRootContainer = container
+        }
+        pdfRoot.render(<ReactPDF pdfPath={pdfPath} />)
     }
 
     return {

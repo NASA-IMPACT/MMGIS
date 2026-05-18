@@ -8,8 +8,12 @@ import Globe_ from '../../Basics/Globe_/Globe_'
 import CursorInfo from '../../Ancillary/CursorInfo'
 import calls from '../../../pre/calls'
 
-import ReactDOM from 'react-dom'
+// TODO: tighten in follow-up. React 19 removed ReactDOM.render in favor of createRoot.
+// Minimal shim during Task R1 React 16->19 upgrade; revisit alongside Task R3.
+import { createRoot } from 'react-dom/client'
 import React, { useState, useEffect, useRef } from 'react'
+
+let _curtainRoot = null
 
 import './CurtainTool.css'
 
@@ -270,7 +274,8 @@ let CurtainTool = {
         //Get tool variables
         this.vars = L_.getToolVars('curtain')
 
-        ReactDOM.render(<Curtain />, document.getElementById('tools'))
+        _curtainRoot = createRoot(document.getElementById('tools'))
+        _curtainRoot.render(<Curtain />)
 
         this.osd = OpenSeadragon({
             id: 'curtainViewer',
@@ -293,7 +298,10 @@ let CurtainTool = {
         })
     },
     destroy: function () {
-        ReactDOM.unmountComponentAtNode(document.getElementById('tools'))
+        if (_curtainRoot) {
+            _curtainRoot.unmount()
+            _curtainRoot = null
+        }
         CurtainTool.currentMapLayer = null
         L_.setActiveFeature()
     },

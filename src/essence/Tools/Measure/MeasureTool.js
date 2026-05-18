@@ -10,8 +10,12 @@ import calls from '../../../pre/calls'
 
 import metricsGraphics from '../../../external/MetricsGraphics/metricsgraphics.min'
 
-import { render, unmountComponentAtNode } from 'react-dom'
+// TODO: tighten in follow-up. React 19 removed ReactDOM.render in favor of createRoot.
+// Minimal shim during Task R1 React 16->19 upgrade; revisit alongside Task R3.
+import { createRoot } from 'react-dom/client'
 import React, { useState, useEffect, useRef } from 'react'
+
+let _measureRoot = null
 
 import { Chart } from 'chart.js'
 import { Line } from 'react-chartjs-2'
@@ -799,10 +803,14 @@ let MeasureTool = {
         this.dems = MeasureTool.getDems()
         this.activeDemIdx = 0
 
-        render(<Measure />, document.getElementById('tools'))
+        _measureRoot = createRoot(document.getElementById('tools'))
+        _measureRoot.render(<Measure />)
     },
     destroy: function () {
-        unmountComponentAtNode(document.getElementById('tools'))
+        if (_measureRoot) {
+            _measureRoot.unmount()
+            _measureRoot = null
+        }
 
         Map_.map
             .off('click', MeasureTool.clickMap)

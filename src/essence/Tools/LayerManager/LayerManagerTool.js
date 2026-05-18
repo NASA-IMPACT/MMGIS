@@ -1,6 +1,10 @@
 import $ from 'jquery'
-import ReactDOM from 'react-dom'
+// TODO: tighten in follow-up. React 19 removed ReactDOM.render in favor of createRoot.
+// Minimal shim during Task R1 React 16->19 upgrade; LayerManager is rewritten in Task 20.
+import { createRoot } from 'react-dom/client'
 import React, { useState, useEffect } from 'react'
+
+let _layerManagerRoot = null
 
 import LayerLegendContainer from './components/LayerLegendContainer'
 import './components/LayerLegend.css'
@@ -167,7 +171,8 @@ const LayerManagerTool = {
         // Render React component
         // Note: Initial data load is triggered in the React component's useEffect
         // to ensure state setters are available before updateLayers is called
-        ReactDOM.render(<LayerManager />, container)
+        _layerManagerRoot = createRoot(container)
+        _layerManagerRoot.render(<LayerManager />)
         this._mounted = true
 
         // Register providers via event bus
@@ -198,9 +203,9 @@ const LayerManagerTool = {
      * Destroy the tool - called when user switches to different tool
      */
     destroy: function () {
-        const container = document.getElementById('toolPanel')
-        if (container) {
-            ReactDOM.unmountComponentAtNode(container)
+        if (_layerManagerRoot) {
+            _layerManagerRoot.unmount()
+            _layerManagerRoot = null
         }
 
         this._mounted = false

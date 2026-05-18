@@ -1,5 +1,7 @@
 import React, { StrictMode } from 'react'
-import { render } from 'react-dom'
+// TODO: tighten in follow-up. React 19 removed ReactDOM.render in favor of createRoot.
+// Minimal shim during Task R1 React 16->19 upgrade; revisit alongside Task R3.
+import { createRoot } from 'react-dom/client'
 import './index.css'
 
 import RefreshAuth from './pre/RefreshAuth'
@@ -67,11 +69,10 @@ import 'tippy.js/dist/tippy.css'
 import App from './App'
 import * as serviceWorker from './serviceWorker'
 
-render(
+createRoot(document.getElementById('root')).render(
     <StrictMode>
         <App />
-    </StrictMode>,
-    document.getElementById('root')
+    </StrictMode>
 )
 
 // If you want your app to work offline and load faster, you can change
