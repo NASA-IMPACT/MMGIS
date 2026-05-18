@@ -24,6 +24,7 @@ export interface ChartComponentProps {
     layers?: LayerOption[]
     selectedLayer?: string | null
     errorMessage?: string
+    emptyMessage?: string
     onSelectLayer?: (name: string) => void
     onExit?: () => void
     onClose?: () => void
@@ -104,7 +105,8 @@ export function ChartComponent(props: ChartComponentProps) {
 
                 {props.status === 'empty' && (
                     <div className="chart-tool__placeholder">
-                        No active layer with timeseries analysis support.
+                        {props.emptyMessage ||
+                            'No active layer with timeseries analysis support.'}
                     </div>
                 )}
 

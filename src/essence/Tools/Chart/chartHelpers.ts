@@ -143,15 +143,23 @@ export function buildItemsUrl(input: {
 
 /**
  * Build the per-item statistics URL for a STAC item in a collection.
+ * `assets` is appended as repeated `assets=<name>` query params — titiler-pgstac
+ * needs to know which asset(s) to compute pixel statistics for.
  */
 export function buildStatsUrl(input: {
     baseUrl: string
     collection: string
     itemId: string
+    assets: string[]
 }): string {
+    const params = new URLSearchParams()
+    for (const asset of input.assets) {
+        if (asset) params.append('assets', asset)
+    }
+    const qs = params.toString()
     return `${input.baseUrl}/raster/collections/${encodeURIComponent(
         input.collection
-    )}/items/${encodeURIComponent(input.itemId)}/statistics`
+    )}/items/${encodeURIComponent(input.itemId)}/statistics${qs ? `?${qs}` : ''}`
 }
 
 /**

@@ -91,6 +91,7 @@ const initialState = () => ({
     layers: [],
     selectedLayer: null,
     errorMessage: '',
+    emptyMessage: '',
 })
 
 const ChartTool = {
@@ -173,6 +174,7 @@ const ChartTool = {
                 layers: this._state.layers,
                 selectedLayer: this._state.selectedLayer,
                 errorMessage: this._state.errorMessage,
+                emptyMessage: this._state.emptyMessage,
                 onSelectLayer: (name) => this._onSelectLayer(name),
                 onExit: () => this._onExit(),
                 onClose: () => this._onClose(),
@@ -190,6 +192,8 @@ const ChartTool = {
         if (!layers.length) {
             this._setState({
                 status: 'empty',
+                emptyMessage:
+                    'No active layer with timeseries analysis support.',
                 charts: [],
                 layers: [],
                 selectedLayer: null,
@@ -256,6 +260,7 @@ const ChartTool = {
             if (!items.length) {
                 this._setState({
                     status: 'empty',
+                    emptyMessage: 'No data found for this area.',
                     charts: [],
                     summary: layer.summary || '',
                     errorMessage: '',
@@ -272,12 +277,21 @@ const ChartTool = {
             const headers = { 'Content-Type': 'application/json' }
             const pairs = await Promise.all(
                 items.map(async (item) => {
+                    // titiler-pgstac requires `assets=` on POST /statistics.
+                    // Prefer the layer's config; fall back to the asset keys
+                    // declared on the STAC item itself.
+                    const assetsForRequest =
+                        layer.assets && layer.assets.length
+                            ? layer.assets
+                            : Object.keys(item.assets || {})
+                    if (!assetsForRequest.length) return { item, stats: null }
                     try {
                         const statsUrl = proxyifyForDev(
                             buildStatsUrl({
                                 baseUrl: layer.baseUrl,
                                 collection: layer.collection,
                                 itemId: item.id,
+                                assets: assetsForRequest,
                             })
                         )
                         const resp = await fetch(statsUrl, {
@@ -294,9 +308,23 @@ const ChartTool = {
                 })
             )
 
+            // If every POST failed, surface as an error — don't collapse to
+            // the same "empty" copy the config-missing case uses.
+            const failedCount = pairs.filter((p) => p.stats === null).length
+            if (failedCount === pairs.length) {
+                this._setState({
+                    status: 'error',
+                    errorMessage: `Failed to fetch statistics for this area (${failedCount} of ${pairs.length} requests failed).`,
+                })
+                return
+            }
+
             const charts = buildChartSpecs(pairs, layer.assets, layer.statistic)
             this._setState({
                 status: charts.length ? 'ready' : 'empty',
+                emptyMessage: charts.length
+                    ? ''
+                    : 'No valid statistics found for this area.',
                 charts,
                 summary: layer.summary || '',
                 errorMessage: '',
@@ -346,6 +374,7 @@ const ChartTool = {
             layers: [],
             selectedLayer: null,
             errorMessage: '',
+            emptyMessage: '',
         })
     },
 
