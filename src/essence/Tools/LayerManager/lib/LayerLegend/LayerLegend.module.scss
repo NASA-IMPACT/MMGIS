@@ -1,0 +1,218 @@
+@use 'uswds-core' as *;
+
+/* Individual Legend Item */
+.layerLegend {
+    display: flex;
+    flex-direction: column;
+    background: var(--color-k);
+    border-bottom: 1px solid var(--color-i);
+    width: 100%;
+
+    &:last-child {
+        border-bottom: none;
+    }
+}
+
+/* Legend Header */
+.layerLegendHeader {
+    display: flex;
+    align-items: center;
+    padding: units(1) units(1.5);
+    background: var(--color-k);
+    min-height: 44px;
+    gap: units(1);
+}
+
+/* Checkbox wrapper */
+.layerLegendCheckboxWrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.layerLegendCheckbox {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--color-a);
+    border-radius: 3px;
+}
+
+.layerLegendTitleGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+}
+
+.layerLegendTitle {
+    font-size: font-size('body', 'sm');
+    font-weight: 400;
+    color: var(--color-f);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+}
+
+.layerLegendActions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+
+.layerLegendActionBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: var(--color-e);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+
+    &:hover {
+        background: var(--color-i);
+        color: var(--color-f);
+    }
+
+    &.active {
+        color: var(--color-a);
+    }
+}
+
+/* Legend Body (expandable description) */
+.layerLegendBody {
+    padding: units(1) units(1.5) units(1) units(5);
+    background: var(--color-k);
+    color: var(--color-l);
+    font-size: font-size('body', 'xs');
+    line-height: 1.5;
+    max-height: 120px;
+    overflow-y: auto;
+
+    p {
+        margin: 0;
+    }
+
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: var(--color-h);
+        border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: var(--color-g);
+    }
+}
+
+/* Unit label shown below the legend */
+.layerLegendUnitLabel {
+    padding: units(0.5) units(1.5) units(1) units(5);
+    font-size: font-size('body', 'xs');
+    color: var(--color-e);
+}
+
+/* Legend Content (graphics area) */
+.layerLegendContent {
+    padding: 0 units(1.5) units(1.5) units(5);
+    background: var(--color-k);
+}
+
+/* Text legend (minimal) */
+.textLegend {
+    font-size: font-size('body', 'xs');
+    color: var(--color-l);
+    font-style: italic;
+}
+
+/* Opacity Popover Styles */
+.layerLegendOpacityWrapper {
+    position: relative;
+}
+
+.layerLegendOpacityPopover {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: units(1);
+    padding: units(1) units(1.5);
+    background: var(--color-j);
+    border: 1px solid var(--color-h);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    white-space: nowrap;
+
+    &::before {
+        content: '';
+        position: absolute;
+        top: -6px;
+        right: 10px;
+        width: 10px;
+        height: 10px;
+        background: var(--color-j);
+        border-left: 1px solid var(--color-h);
+        border-top: 1px solid var(--color-h);
+        transform: rotate(45deg);
+    }
+}
+
+.layerLegendOpacitySlider {
+    width: 100px;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--color-h);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+
+    &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        background: var(--color-a);
+        border-radius: 50%;
+        cursor: pointer;
+        transition: transform 0.1s ease;
+    }
+
+    &::-webkit-slider-thumb:hover {
+        transform: scale(1.1);
+    }
+
+    &::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        background: var(--color-a);
+        border-radius: 50%;
+        cursor: pointer;
+        border: none;
+    }
+}
+
+.layerLegendOpacityValue {
+    font-size: font-size('body', 'xs');
+    color: var(--color-l);
+    min-width: 32px;
+    text-align: right;
+}
