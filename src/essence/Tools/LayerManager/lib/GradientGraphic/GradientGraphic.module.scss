@@ -1,3 +1,4 @@
+@use '../styles/theme-tokens';
 @use 'uswds-core' as *;
 
 /* Gradient Graphic Styles */
@@ -43,18 +44,18 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: var(--color-e);
+    color: color('base');
     cursor: pointer;
     flex-shrink: 0;
     transition: background-color 0.15s ease, color 0.15s ease;
 
     &:hover {
-        background: var(--color-i);
-        color: var(--color-f);
+        background: color('base-lighter');
+        color: color('base-darker');
     }
 
     &.active {
-        color: var(--color-a);
+        color: color('primary');
     }
 }
 
@@ -63,8 +64,8 @@
     top: 100%;
     right: 0;
     margin-top: units(1);
-    background: var(--color-j);
-    border: 1px solid var(--color-h);
+    background: color('base-lightest');
+    border: 1px solid color('base-light');
     border-radius: 6px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     z-index: 1000;
@@ -77,9 +78,9 @@
         right: 10px;
         width: 10px;
         height: 10px;
-        background: var(--color-j);
-        border-left: 1px solid var(--color-h);
-        border-top: 1px solid var(--color-h);
+        background: color('base-lightest');
+        border-left: 1px solid color('base-light');
+        border-top: 1px solid color('base-light');
         transform: rotate(45deg);
     }
 }
@@ -94,7 +95,7 @@
 
 .gradientLabel {
     font-size: font-size('body', 'xs');
-    color: var(--color-l);
+    color: color('ink');
     line-height: 1.2;
 
     &.min {

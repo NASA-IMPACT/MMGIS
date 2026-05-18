@@ -1,3 +1,4 @@
+@use '../styles/theme-tokens';
 @use 'uswds-core' as *;
 
 /* Colormap Control Styles */
@@ -23,13 +24,13 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: var(--color-l);
+    color: color('ink');
     cursor: pointer;
     transition: all 0.15s ease;
 
     &:hover {
-        background: var(--color-h);
-        color: var(--color-f);
+        background: color('base-light');
+        color: color('base-darker');
     }
 }
 
@@ -42,7 +43,7 @@
 
 .colormapControlLabel {
     font-size: font-size('body', 'xs');
-    color: var(--color-l);
+    color: color('ink');
     min-width: 60px;
 }
 
@@ -60,19 +61,19 @@
     height: 26px;
     padding: 0 units(1);
     font-size: font-size('body', 'xs');
-    color: var(--color-f);
-    background: var(--color-i);
-    border: 1px solid var(--color-h);
+    color: color('base-darker');
+    background: color('base-lighter');
+    border: 1px solid color('base-light');
     border-radius: 3px;
     cursor: pointer;
     outline: none;
 
     &:hover {
-        border-color: var(--color-g);
+        border-color: color('base-dark');
     }
 
     &:focus {
-        border-color: var(--color-a);
+        border-color: color('primary');
     }
 }
 
@@ -82,22 +83,22 @@
     justify-content: center;
     width: 26px;
     height: 26px;
-    background: var(--color-i);
-    border: 1px solid var(--color-h);
+    background: color('base-lighter');
+    border: 1px solid color('base-light');
     border-radius: 3px;
-    color: var(--color-l);
+    color: color('ink');
     cursor: pointer;
     transition: all 0.15s ease;
 
     &:hover {
-        border-color: var(--color-g);
-        color: var(--color-f);
-        background: var(--color-h);
+        border-color: color('base-dark');
+        color: color('base-darker');
+        background: color('base-light');
     }
 
     &.active {
-        background: var(--color-a);
-        border-color: var(--color-a);
+        background: color('primary');
+        border-color: color('primary');
         color: white;
     }
 }
@@ -114,24 +115,24 @@
     height: 26px;
     padding: 0 units(1);
     font-size: font-size('body', 'xs');
-    color: var(--color-f);
-    background: var(--color-i);
-    border: 1px solid var(--color-h);
+    color: color('base-darker');
+    background: color('base-lighter');
+    border: 1px solid color('base-light');
     border-radius: 3px;
     outline: none;
     text-align: right;
 
     &:hover {
-        border-color: var(--color-g);
+        border-color: color('base-dark');
     }
 
     &:focus {
-        border-color: var(--color-a);
+        border-color: color('primary');
     }
 }
 
 .colormapControlUnits {
     font-size: 11px;
-    color: var(--color-e);
+    color: color('base');
     min-width: 30px;
 }

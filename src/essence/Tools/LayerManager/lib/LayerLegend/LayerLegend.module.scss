@@ -1,11 +1,12 @@
+@use '../styles/theme-tokens';
 @use 'uswds-core' as *;
 
 /* Individual Legend Item */
 .layerLegend {
     display: flex;
     flex-direction: column;
-    background: var(--color-k);
-    border-bottom: 1px solid var(--color-i);
+    background: #ffffff;
+    border-bottom: 1px solid color('base-lighter');
     width: 100%;
 
     &:last-child {
@@ -18,7 +19,7 @@
     display: flex;
     align-items: center;
     padding: units(1) units(1.5);
-    background: var(--color-k);
+    background: #ffffff;
     min-height: 44px;
     gap: units(1);
 }
@@ -36,7 +37,7 @@
     height: 18px;
     margin: 0;
     cursor: pointer;
-    accent-color: var(--color-a);
+    accent-color: color('primary');
     border-radius: 3px;
 }
 
@@ -51,7 +52,7 @@
 .layerLegendTitle {
     font-size: font-size('body', 'sm');
     font-weight: 400;
-    color: var(--color-f);
+    color: color('base-darker');
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -74,25 +75,25 @@
     background: transparent;
     border: none;
     border-radius: 3px;
-    color: var(--color-e);
+    color: color('base');
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease;
 
     &:hover {
-        background: var(--color-i);
-        color: var(--color-f);
+        background: color('base-lighter');
+        color: color('base-darker');
     }
 
     &.active {
-        color: var(--color-a);
+        color: color('primary');
     }
 }
 
 /* Legend Body (expandable description) */
 .layerLegendBody {
     padding: units(1) units(1.5) units(1) units(5);
-    background: var(--color-k);
-    color: var(--color-l);
+    background: #ffffff;
+    color: color('ink');
     font-size: font-size('body', 'xs');
     line-height: 1.5;
     max-height: 120px;
@@ -111,12 +112,12 @@
     }
 
     &::-webkit-scrollbar-thumb {
-        background: var(--color-h);
+        background: color('base-light');
         border-radius: 3px;
     }
 
     &::-webkit-scrollbar-thumb:hover {
-        background: var(--color-g);
+        background: color('base-dark');
     }
 }
 
@@ -124,19 +125,19 @@
 .layerLegendUnitLabel {
     padding: units(0.5) units(1.5) units(1) units(5);
     font-size: font-size('body', 'xs');
-    color: var(--color-e);
+    color: color('base');
 }
 
 /* Legend Content (graphics area) */
 .layerLegendContent {
     padding: 0 units(1.5) units(1.5) units(5);
-    background: var(--color-k);
+    background: #ffffff;
 }
 
 /* Text legend (minimal) */
 .textLegend {
     font-size: font-size('body', 'xs');
-    color: var(--color-l);
+    color: color('ink');
     font-style: italic;
 }
 
@@ -154,8 +155,8 @@
     align-items: center;
     gap: units(1);
     padding: units(1) units(1.5);
-    background: var(--color-j);
-    border: 1px solid var(--color-h);
+    background: color('base-lightest');
+    border: 1px solid color('base-light');
     border-radius: 4px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     z-index: 1000;
@@ -168,9 +169,9 @@
         right: 10px;
         width: 10px;
         height: 10px;
-        background: var(--color-j);
-        border-left: 1px solid var(--color-h);
-        border-top: 1px solid var(--color-h);
+        background: color('base-lightest');
+        border-left: 1px solid color('base-light');
+        border-top: 1px solid color('base-light');
         transform: rotate(45deg);
     }
 }
@@ -180,7 +181,7 @@
     height: 4px;
     -webkit-appearance: none;
     appearance: none;
-    background: var(--color-h);
+    background: color('base-light');
     border-radius: 2px;
     outline: none;
     cursor: pointer;
@@ -190,7 +191,7 @@
         appearance: none;
         width: 14px;
         height: 14px;
-        background: var(--color-a);
+        background: color('primary');
         border-radius: 50%;
         cursor: pointer;
         transition: transform 0.1s ease;
@@ -203,7 +204,7 @@
     &::-moz-range-thumb {
         width: 14px;
         height: 14px;
-        background: var(--color-a);
+        background: color('primary');
         border-radius: 50%;
         cursor: pointer;
         border: none;
@@ -212,7 +213,7 @@
 
 .layerLegendOpacityValue {
     font-size: font-size('body', 'xs');
-    color: var(--color-l);
+    color: color('ink');
     min-width: 32px;
     text-align: right;
 }

@@ -1,3 +1,4 @@
+@use '../styles/theme-tokens';
 @use 'uswds-core' as *;
 
 /* Container for all legends */
@@ -9,7 +10,7 @@
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-    background: var(--color-k);
+    background: #ffffff;
 
     &::-webkit-scrollbar {
         width: 6px;
@@ -20,12 +21,12 @@
     }
 
     &::-webkit-scrollbar-thumb {
-        background: var(--color-h);
+        background: color('base-light');
         border-radius: 3px;
     }
 
     &::-webkit-scrollbar-thumb:hover {
-        background: var(--color-g);
+        background: color('base-dark');
     }
 }
 
@@ -33,6 +34,6 @@
 .layerLegendEmpty {
     padding: units(2.5);
     text-align: center;
-    color: var(--color-e);
+    color: color('base');
     font-size: font-size('body', 'sm');
 }

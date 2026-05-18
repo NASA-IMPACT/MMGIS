@@ -1,3 +1,4 @@
+@use '../styles/theme-tokens';
 @use 'uswds-core' as *;
 
 /* Categorical Graphic Styles */
@@ -74,12 +75,12 @@
     }
 
     &::-webkit-scrollbar-thumb {
-        background: var(--color-h);
+        background: color('base-light');
         border-radius: 3px;
     }
 
     &::-webkit-scrollbar-thumb:hover {
-        background: var(--color-g);
+        background: color('base-dark');
     }
 }
 
@@ -100,7 +101,7 @@
 
 .categoricalLabel {
     font-size: font-size('body', 'xs');
-    color: var(--color-l);
+    color: color('ink');
     line-height: 1.4;
     word-break: break-word;
 }
@@ -112,11 +113,11 @@
     justify-content: center;
     padding: units(0.5) 0;
     cursor: pointer;
-    color: var(--color-e);
+    color: color('base');
     font-size: 11px;
     gap: 4px;
 
     &:hover {
-        color: var(--color-f);
+        color: color('base-darker');
     }
 }
