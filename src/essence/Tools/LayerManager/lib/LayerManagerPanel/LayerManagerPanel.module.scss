@@ -1,0 +1,84 @@
+@use 'uswds-core' as *;
+
+/* Tool root */
+.layerManagerPanel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background: var(--color-k);
+    color: var(--color-l);
+    font-family: 'Lato', sans-serif;
+}
+
+/* Header */
+.layerManagerHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: units(1) units(1.5);
+    background: var(--color-i);
+    border-bottom: 1px solid var(--color-h);
+    min-height: 40px;
+    flex-shrink: 0;
+}
+
+.layerManagerTitle {
+    font-size: font-size('body', 'sm');
+    font-weight: 500;
+    color: var(--color-f);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.layerManagerActions {
+    display: flex;
+    align-items: center;
+    gap: units(0.5);
+}
+
+.layerManagerAction {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    color: var(--color-e);
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &:hover {
+        background: var(--color-j);
+        color: var(--color-f);
+    }
+}
+
+/* Content area */
+.layerManagerContent {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Loading state */
+.layerManagerLoading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100px;
+    color: var(--color-e);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .layerManagerHeader {
+        padding: units(1.5) units(2);
+    }
+
+    .layerManagerTitle {
+        font-size: font-size('body', 'md');
+    }
+}
