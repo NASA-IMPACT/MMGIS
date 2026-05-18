@@ -1,0 +1,122 @@
+@use 'uswds-core' as *;
+
+/* Categorical Graphic Styles */
+.categoricalGraphic {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+.categoricalBarRow {
+    display: flex;
+    align-items: center;
+    gap: units(1);
+    width: 100%;
+}
+
+/* Collapsed swatch line */
+.categoricalSwatchLine {
+    display: flex;
+    flex: 1;
+    height: 14px;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Spacer to match gradient colorbar width */
+.categoricalSpacer {
+    width: 28px;
+    flex-shrink: 0;
+}
+
+.categoricalSwatchSegment {
+    flex: 1;
+    height: 100%;
+}
+
+/* Categorical Tooltip - matches gradient tooltip style */
+.categoricalTooltip {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.85);
+    color: white;
+    padding: units(0.5) units(1);
+    border-radius: 3px;
+    font-size: 11px;
+    pointer-events: none;
+    white-space: nowrap;
+    transform: translate(-50%, -100%);
+    margin-top: -8px;
+    z-index: 100;
+    opacity: 0;
+    transition: opacity 0.1s ease;
+
+    &.visible {
+        opacity: 1;
+    }
+}
+
+/* Expanded categorical list */
+.categoricalList {
+    display: flex;
+    flex-direction: column;
+    gap: units(0.5);
+    max-height: 200px;
+    overflow-y: auto;
+    padding-right: 4px;
+
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: var(--color-h);
+        border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: var(--color-g);
+    }
+}
+
+.categoricalItem {
+    display: flex;
+    align-items: flex-start;
+    gap: units(1);
+}
+
+.categoricalSwatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    flex-shrink: 0;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+    margin-top: 1px;
+}
+
+.categoricalLabel {
+    font-size: font-size('body', 'xs');
+    color: var(--color-l);
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+/* Chevron toggle for categorical expand */
+.categoricalToggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: units(0.5) 0;
+    cursor: pointer;
+    color: var(--color-e);
+    font-size: 11px;
+    gap: 4px;
+
+    &:hover {
+        color: var(--color-f);
+    }
+}
