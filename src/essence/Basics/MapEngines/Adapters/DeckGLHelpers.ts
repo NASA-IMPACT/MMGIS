@@ -547,67 +547,43 @@ export function buildDrawnFeature(
 }
 
 /**
- * Build the in-progress preview Feature shown to the user during drawing.
+ * Map a {@link DrawingOptions.style} record onto the props
+ * {@link EditableGeoJsonLayer} expects (`getFillColor`, `getLineColor`,
+ * `getTentative*`, edit-handle styling). Falls back to a neutral blue if the
+ * caller omitted style.
  *
- * `cursor` is the live mouse position; when provided the preview includes it
- * as a "rubber-band" tail so the user sees the shape forming under their
- * cursor in real time:
- *
- *   - Polygon: open LineString through committed vertices + cursor.
- *               Closes into a Polygon only after committing ≥3 vertices and
- *               the cursor has not been provided (cursor implies the user is
- *               still drawing).
- *   - Rectangle: with one vertex committed and a cursor, render the full
- *               rectangle from corner-0 to cursor.
- *   - Circle: same, render the full circle from center to cursor.
+ * Returned object is passed verbatim into the `EditableGeoJsonLayer` constructor.
  */
-export function buildPreviewFeature(
-    shape: 'polygon' | 'rectangle' | 'circle',
-    vertices: { lat: number; lng: number }[],
-    cursor?: { lat: number; lng: number }
-): GeoJSON.Feature | null {
-    if (vertices.length === 0 && !cursor) return null
+export function buildEditableLayerStyleProps(
+    style: Record<string, unknown> = {}
+): Record<string, unknown> {
+    const fillColor = hexToRgba(
+        style.fillColor as string | undefined,
+        style.fillOpacity !== undefined ? Number(style.fillOpacity) : 0.2,
+        [0, 120, 255, 50]
+    )
+    const lineColor = hexToRgba(
+        style.color as string | undefined,
+        style.opacity !== undefined ? Number(style.opacity) : 1,
+        [0, 120, 255, 255]
+    )
+    const lineWidth = style.weight !== undefined ? Number(style.weight) : 2
 
-    if (shape === 'polygon') {
-        const path = cursor ? [...vertices, cursor] : vertices
-        if (path.length === 0) return null
-        if (path.length === 1) {
-            return {
-                type: 'Feature',
-                properties: { source: 'draw-preview' },
-                geometry: { type: 'Point', coordinates: [path[0].lng, path[0].lat] },
-            }
-        }
-        if (vertices.length >= 3 && !cursor) {
-            return buildDrawnFeature('polygon', vertices)
-        }
-        return {
-            type: 'Feature',
-            properties: { source: 'draw-preview' },
-            geometry: {
-                type: 'LineString',
-                coordinates: path.map((v) => [v.lng, v.lat]),
-            },
-        }
+    return {
+        getFillColor: fillColor,
+        getLineColor: lineColor,
+        getLineWidth: lineWidth,
+        lineWidthUnits: 'pixels',
+        getTentativeFillColor: fillColor,
+        getTentativeLineColor: lineColor,
+        getTentativeLineWidth: lineWidth,
+        getEditHandlePointColor: lineColor,
+        editHandlePointRadius: 4,
+        editHandlePointRadiusUnits: 'pixels',
     }
-
-    if (vertices.length === 0) return null
-
-    if (vertices.length === 1) {
-        if (cursor) {
-            return buildDrawnFeature(shape, [vertices[0], cursor])
-        }
-        return {
-            type: 'Feature',
-            properties: { source: 'draw-preview' },
-            geometry: { type: 'Point', coordinates: [vertices[0].lng, vertices[0].lat] },
-        }
-    }
-
-    return buildDrawnFeature(shape, vertices)
 }
 
-function haversineMeters(
+export function haversineMeters(
     a: { lat: number; lng: number },
     b: { lat: number; lng: number }
 ): number {
