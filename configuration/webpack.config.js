@@ -147,6 +147,13 @@ module.exports = function (webpackEnv) {
           loader: require.resolve(preProcessor),
           options: {
             sourceMap: true,
+            implementation: require("sass"),
+            sassOptions: {
+              includePaths: [
+                path.resolve(__dirname, "../node_modules/@uswds/uswds/packages"),
+                path.resolve(__dirname, "../node_modules"),
+              ],
+            },
           },
         }
       );
