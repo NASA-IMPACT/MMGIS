@@ -17,12 +17,18 @@ import React, { useState, useEffect, useRef } from 'react'
 
 let _measureRoot = null
 
-import { Chart } from 'chart.js'
+import { Chart, registerables } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import zoomPlugin from 'chartjs-plugin-zoom'
 import * as moment from 'moment'
 
 import './MeasureTool.css'
+
+// react-chartjs-2 v5 only auto-registers the controller for the chart type
+// (e.g. <Line/> registers LineController). Scales, elements, plugins, etc.
+// must be registered explicitly. Register all built-ins to preserve prior
+// auto-register behavior from react-chartjs-2 v3.
+Chart.register(...registerables)
 
 // Zoom isn't working nicely. Keep off
 //Chart.register(zoomPlugin)
