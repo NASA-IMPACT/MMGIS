@@ -1,0 +1,70 @@
+import { mmgisRequest, mmgisEmit } from './mmgisAPI'
+
+type Refresh = () => Promise<void> | void
+
+type LayerConfig = {
+    cogTransform?: boolean
+    cogColormap?: string
+    cogMin?: number
+    cogMax?: number
+}
+
+export const toggleVisibility = async (layerId: string): Promise<void> => {
+    const newVisibility = await mmgisRequest<boolean>('layers:toggle', layerId)
+    if (newVisibility !== null) {
+        mmgisEmit('layer:visibilityChange', { layerName: layerId, visible: newVisibility })
+    }
+}
+
+export const setOpacity = async (layerId: string, opacity: number): Promise<void> => {
+    const success = await mmgisRequest<boolean>('layers:setOpacity', { layerUUID: layerId, opacity })
+    if (success) {
+        mmgisEmit('layer:opacityChange', { layerName: layerId, opacity })
+    }
+}
+
+export const setColormap = async (layerId: string, colormap: string, refresh: Refresh): Promise<void> => {
+    const cfg = await mmgisRequest<LayerConfig>('layers:getConfig', layerId)
+    if (!cfg || !cfg.cogTransform) return
+    await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })
+    await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { cogColormap: colormap } })
+    mmgisEmit('layer:cogColormapChange', { layerName: layerId, colormap })
+    await refresh()
+}
+
+export const setRescale = async (
+    layerId: string,
+    min: number,
+    max: number,
+    refresh: Refresh,
+): Promise<void> => {
+    const cfg = await mmgisRequest<LayerConfig>('layers:getConfig', layerId)
+    if (!cfg || !cfg.cogTransform) return
+    await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
+    await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
+    mmgisEmit('layer:cogRescaleChange', { layerName: layerId, min, max })
+    await refresh()
+}
+
+export const resetCog = async (layerId: string, refresh: Refresh): Promise<void> => {
+    const cfg = await mmgisRequest<LayerConfig>('layers:getConfig', layerId)
+    if (!cfg || !cfg.cogTransform) return
+    await mmgisRequest('layers:updateConfig', {
+        layerUUID: layerId,
+        updates: {
+            currentCogColormap: cfg.cogColormap,
+            currentCogMin: cfg.cogMin,
+            currentCogMax: cfg.cogMax,
+        },
+    })
+    await mmgisRequest('layers:refresh', {
+        layerUUID: layerId,
+        options: {
+            cogColormap: cfg.cogColormap,
+            currentCogMin: cfg.cogMin,
+            currentCogMax: cfg.cogMax,
+        },
+    })
+    mmgisEmit('layer:cogReset', { layerName: layerId })
+    await refresh()
+}
