@@ -13,7 +13,15 @@ const CssMinimizerPlugin = require("css-minimizer-webpack-plugin");
 const { WebpackManifestPlugin } = require("webpack-manifest-plugin");
 const InterpolateHtmlPlugin = require("react-dev-utils/InterpolateHtmlPlugin");
 const ModuleScopePlugin = require("react-dev-utils/ModuleScopePlugin");
-const getCSSModuleLocalIdent = require("react-dev-utils/getCSSModuleLocalIdent");
+const _getCSSModuleLocalIdent = require("react-dev-utils/getCSSModuleLocalIdent");
+// react-dev-utils' getCSSModuleLocalIdent generates a base64 hash which can
+// include "/" or "+" — both illegal in a raw CSS class name and rejected by
+// the CSS minimizer. Replace them with "_" so the ident is always safe.
+const getCSSModuleLocalIdent = (context, localIdentName, localName, options) =>
+  _getCSSModuleLocalIdent(context, localIdentName, localName, options).replace(
+    /[\/+]/g,
+    "_"
+  );
 const paths = require("./paths");
 const modules = require("./modules");
 const getClientEnvironment = require("./env");
@@ -63,6 +71,9 @@ const cssRegex = /\.css$/;
 const cssModuleRegex = /\.module\.css$/;
 const sassRegex = /\.(scss|sass)$/;
 const sassModuleRegex = /\.module\.(scss|sass)$/;
+// LayerManager USWDS global stylesheet. Scoped at the post-Sass step via
+// postcss-prefix-selector (Sass @forward cannot be nested inside a selector).
+const layerManagerScopedSassRegex = /src[\\/]essence[\\/]Tools[\\/]LayerManager[\\/]lib[\\/]styles[\\/]index\.scss$/;
 
 // This is the production and development configuration.
 // It is focused on developer experience, fast rebuilds, and a minimal bundle.
@@ -85,7 +96,7 @@ module.exports = function (webpackEnv) {
   const env = getClientEnvironment(paths.publicUrlOrPath.slice(0, -1));
 
   // common function to get style loaders
-  const getStyleLoaders = (cssOptions, preProcessor) => {
+  const getStyleLoaders = (cssOptions, preProcessor, extraPostcssPlugins = []) => {
     // prettier-ignore
     const loaders = [
       isEnvDevelopment && require.resolve("style-loader"),
@@ -130,6 +141,7 @@ module.exports = function (webpackEnv) {
             // so that it honors browserslist config in package.json
             // which in turn let's users customize the target behavior as per their needs.
             postcssNormalize(),
+            ...extraPostcssPlugins,
           ],
           sourceMap: isEnvProduction && shouldUseSourceMap,
         },
@@ -466,12 +478,44 @@ module.exports = function (webpackEnv) {
                 },
               }),
             },
+            // Special case: LayerManager USWDS global SCSS. Compiles at root
+            // scope via Sass, then prefixes every selector with
+            // `.layer-manager-scope` via postcss-prefix-selector so USWDS
+            // rules apply only inside the LayerManager panel.
+            // Must precede the generic sassRegex rule.
+            {
+              test: layerManagerScopedSassRegex,
+              use: getStyleLoaders(
+                {
+                  importLoaders: 3,
+                  sourceMap: isEnvProduction && shouldUseSourceMap,
+                },
+                "sass-loader",
+                [
+                  require("postcss-prefix-selector")({
+                    prefix: ".layer-manager-scope",
+                    transform: function (prefix, selector, prefixedSelector) {
+                      // Don't prefix :root / html / body selectors.
+                      if (
+                        selector.startsWith(":root") ||
+                        selector.startsWith("html") ||
+                        selector.startsWith("body")
+                      ) {
+                        return prefix;
+                      }
+                      return prefixedSelector;
+                    },
+                  }),
+                ]
+              ),
+              sideEffects: true,
+            },
             // Opt-in support for SASS (using .scss or .sass extensions).
             // By default we support SASS Modules with the
             // extensions .module.scss or .module.sass
             {
               test: sassRegex,
-              exclude: sassModuleRegex,
+              exclude: [sassModuleRegex, layerManagerScopedSassRegex],
               use: getStyleLoaders(
                 {
                   importLoaders: 3,

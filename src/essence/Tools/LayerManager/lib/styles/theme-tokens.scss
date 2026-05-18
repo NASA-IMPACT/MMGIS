@@ -1,4 +1,14 @@
 @forward 'uswds-core' with (
   $theme-show-notifications: false,
-  $theme-color-primary: 'blue-60v'
+  $theme-color-primary: 'blue-60v',
+  // Point USWDS image / font references at the pre-built assets shipped in
+  // @uswds/uswds. The `~`-prefix is passed through resolve-url-loader
+  // unchanged and resolved against node_modules by css-loader, so the path
+  // works regardless of which deep partial originated the url(). The subpaths
+  // (`img`, `fonts`) map to USWDS's package `exports` field.
+  $theme-image-path: '~@uswds/uswds/img',
+  $theme-font-path: '~@uswds/uswds/fonts',
+  // $theme-hero-image bakes in $theme-image-path at !default time, so we
+  // must override it explicitly.
+  $theme-hero-image: '~@uswds/uswds/img/hero.jpg'
 );

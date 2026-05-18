@@ -1,4 +1,2 @@
-.layer-manager-scope {
-  @forward 'theme-tokens';
-  @forward 'uswds';
-}
+@forward 'theme-tokens';
+@forward 'uswds';
