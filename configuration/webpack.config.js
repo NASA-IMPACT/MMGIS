@@ -495,12 +495,16 @@ module.exports = function (webpackEnv) {
                   require("postcss-prefix-selector")({
                     prefix: ".blocks-layer-manager-scope",
                     transform: function (prefix, selector, prefixedSelector) {
-                      // Don't prefix :root / html / body selectors.
-                      if (
-                        selector.startsWith(":root") ||
-                        selector.startsWith("html") ||
-                        selector.startsWith("body")
-                      ) {
+                      // Rewrite root-element selectors (`:root`, `html`, `body`)
+                      // to the scope wrapper so USWDS reset rules apply there.
+                      // Match EXACTLY — selectors with attribute / pseudo
+                      // modifiers (e.g. `:root[hidden]`, `html.no-js`) must NOT
+                      // collapse to the bare prefix, since the modifier is
+                      // meaningful and stripping it would apply the rule
+                      // unconditionally (this happened with `:root[hidden]`
+                      // which set position: absolute; left: -999em on the
+                      // wrapper, pushing the panel off-screen).
+                      if (/^(?::root|html|body)$/.test(selector.trim())) {
                         return prefix;
                       }
                       return prefixedSelector;
