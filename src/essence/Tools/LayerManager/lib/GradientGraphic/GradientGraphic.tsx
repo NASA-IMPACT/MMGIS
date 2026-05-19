@@ -5,7 +5,6 @@ import { ColormapControl } from '../ColormapControl/ColormapControl'
 import { useColormapGradient } from '../hooks/useColormapGradient'
 import { useClickOutside } from '../hooks/useClickOutside'
 import type { CogData } from '../types'
-import styles from './GradientGraphic.module.scss'
 
 export type GradientGraphicProps = {
     stops?: string[] | null
@@ -105,36 +104,36 @@ export function GradientGraphic({
     const gradientStyle = { background: makeGradient(gradientStops) }
 
     return (
-        <div className={styles.gradientGraphic}>
-            <div className={styles.gradientBarRow}>
+        <div className="gradient-graphic">
+            <div className="gradient-bar-row">
                 <div
-                    className={styles.gradientBarContainer}
+                    className="gradient-bar-container"
                     onMouseMove={handleMouseMove}
                     onMouseLeave={handleMouseLeave}
                 >
-                    <div ref={barRef} className={styles.gradientBar} style={gradientStyle} />
+                    <div ref={barRef} className="gradient-bar" style={gradientStyle} />
                     {hoverVal !== null && hasNumericLegend && (
                         <div
-                            className={`${styles.gradientTooltip} ${styles.visible}`}
+                            className="gradient-tooltip visible"
                             style={{ left: tooltipPos.x }}
                         >
                             {formatTooltipValue(hoverVal, unit)}
                         </div>
                     )}
                 </div>
-                <div className={styles.gradientCogWrapper}>
+                <div className="gradient-cog-wrapper">
                     {hasCogSettings && cog && (
                         <>
                             <button
                                 ref={cogBtnRef}
-                                className={`${styles.gradientExpandBtn} ${isCogExpanded ? styles.active : ''}`}
+                                className={`gradient-expand-btn ${isCogExpanded ? 'active' : ''}`}
                                 onClick={() => setIsCogExpanded(!isCogExpanded)}
                                 title={isCogExpanded ? 'Hide COG settings' : 'Show COG settings'}
                             >
                                 <i className={`mdi mdi-chevron-${isCogExpanded ? 'up' : 'down'} mdi-18px`} />
                             </button>
                             {isCogExpanded && (
-                                <div ref={cogPopoverRef} className={styles.gradientCogPopover}>
+                                <div ref={cogPopoverRef} className="gradient-cog-popover">
                                     <ColormapControl
                                         layerName={layerId}
                                         colormap={cog.colormap}
@@ -152,11 +151,11 @@ export function GradientGraphic({
                     )}
                 </div>
             </div>
-            <div className={styles.gradientLabels}>
-                <span className={`${styles.gradientLabel} ${styles.min}`}>
+            <div className="gradient-labels">
+                <span className="gradient-label min">
                     {formatLegendValue(hasCogSettings && cog ? cog.min : min)}
                 </span>
-                <span className={`${styles.gradientLabel} ${styles.max}`}>
+                <span className="gradient-label max">
                     {formatLegendValue(hasCogSettings && cog ? cog.max : max)}
                 </span>
             </div>

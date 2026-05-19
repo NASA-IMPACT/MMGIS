@@ -1,14 +1,14 @@
-@use '../styles/theme-tokens';
+@use '../theme-tokens';
 @use 'uswds-core' as *;
 
 /* Categorical Graphic Styles */
-.categoricalGraphic {
+.categorical-graphic {
     display: flex;
     flex-direction: column;
     width: 100%;
 }
 
-.categoricalBarRow {
+.categorical-bar-row {
     display: flex;
     align-items: center;
     gap: units(1);
@@ -16,7 +16,7 @@
 }
 
 /* Collapsed swatch line */
-.categoricalSwatchLine {
+.categorical-swatch-line {
     display: flex;
     flex: 1;
     height: 14px;
@@ -26,18 +26,18 @@
 }
 
 /* Spacer to match gradient colorbar width */
-.categoricalSpacer {
+.categorical-spacer {
     width: 28px;
     flex-shrink: 0;
 }
 
-.categoricalSwatchSegment {
+.categorical-swatch-segment {
     flex: 1;
     height: 100%;
 }
 
 /* Categorical Tooltip - matches gradient tooltip style */
-.categoricalTooltip {
+.categorical-tooltip {
     position: absolute;
     background: rgba(0, 0, 0, 0.85);
     color: white;
@@ -58,7 +58,7 @@
 }
 
 /* Expanded categorical list */
-.categoricalList {
+.categorical-list {
     display: flex;
     flex-direction: column;
     gap: units(0.5);
@@ -84,13 +84,13 @@
     }
 }
 
-.categoricalItem {
+.categorical-item {
     display: flex;
     align-items: flex-start;
     gap: units(1);
 }
 
-.categoricalSwatch {
+.categorical-swatch {
     width: 14px;
     height: 14px;
     border-radius: 2px;
@@ -99,7 +99,7 @@
     margin-top: 1px;
 }
 
-.categoricalLabel {
+.categorical-label {
     font-size: font-size('body', 'xs');
     color: color('ink');
     line-height: 1.4;
@@ -107,7 +107,7 @@
 }
 
 /* Chevron toggle for categorical expand */
-.categoricalToggle {
+.categorical-toggle {
     display: flex;
     align-items: center;
     justify-content: center;

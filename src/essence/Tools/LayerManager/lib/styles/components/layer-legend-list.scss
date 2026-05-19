@@ -1,8 +1,8 @@
-@use '../styles/theme-tokens';
+@use '../theme-tokens';
 @use 'uswds-core' as *;
 
 /* Container for all legends */
-.layerLegendList {
+.layer-legend-list {
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -31,7 +31,7 @@
 }
 
 /* Empty state */
-.layerLegendEmpty {
+.layer-legend-empty {
     padding: units(2.5);
     text-align: center;
     color: color('base');

@@ -1,8 +1,8 @@
-@use '../styles/theme-tokens';
+@use '../theme-tokens';
 @use 'uswds-core' as *;
 
 /* Tool root */
-.layerManagerPanel {
+.layer-manager-panel {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -13,7 +13,7 @@
 }
 
 /* Header */
-.layerManagerHeader {
+.layer-manager-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -24,7 +24,7 @@
     flex-shrink: 0;
 }
 
-.layerManagerTitle {
+.layer-manager-title {
     font-size: font-size('body', 'sm');
     font-weight: 500;
     color: color('base-darker');
@@ -32,13 +32,13 @@
     letter-spacing: 0.5px;
 }
 
-.layerManagerActions {
+.layer-manager-actions {
     display: flex;
     align-items: center;
     gap: units(0.5);
 }
 
-.layerManagerAction {
+.layer-manager-action {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -58,14 +58,14 @@
 }
 
 /* Content area */
-.layerManagerContent {
+.layer-manager-content {
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
 }
 
 /* Loading state */
-.layerManagerLoading {
+.layer-manager-loading {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -75,11 +75,11 @@
 
 /* Mobile responsive */
 @media (max-width: 768px) {
-    .layerManagerHeader {
+    .layer-manager-header {
         padding: units(1.5) units(2);
     }
 
-    .layerManagerTitle {
+    .layer-manager-title {
         font-size: font-size('body', 'md');
     }
 }

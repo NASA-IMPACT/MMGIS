@@ -11,7 +11,6 @@ import { GradientGraphic } from '../GradientGraphic/GradientGraphic'
 import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { useClickOutside } from '../hooks/useClickOutside'
 import type { Layer } from '../types'
-import styles from './LayerLegend.module.scss'
 
 export type LayerLegendProps = {
     layer: Layer
@@ -115,7 +114,7 @@ export function LayerLegend({
                 ) : null
             case 'text':
                 return (
-                    <div className={styles.textLegend}>
+                    <div className="text-legend">
                         {description || 'No legend information available'}
                     </div>
                 )
@@ -128,26 +127,26 @@ export function LayerLegend({
     const hasLegendContent = type && type !== 'none'
 
     return (
-        <div className={styles.layerLegend} data-legend-id={id}>
-            <div className={styles.layerLegendHeader}>
-                <div className={styles.layerLegendCheckboxWrapper}>
+        <div className="layer-legend" data-legend-id={id}>
+            <div className="layer-legend-header">
+                <div className="layer-legend-checkbox-wrapper">
                     <input
                         type="checkbox"
-                        className={styles.layerLegendCheckbox}
+                        className="layer-legend-checkbox"
                         checked={isVisible}
                         onChange={handleVisibilityToggle}
                     />
                 </div>
-                <div className={styles.layerLegendTitleGroup}>
-                    <span className={styles.layerLegendTitle} title={title}>
+                <div className="layer-legend-title-group">
+                    <span className="layer-legend-title" title={title}>
                         {title}
                     </span>
                 </div>
-                <div className={styles.layerLegendActions}>
-                    <div className={styles.layerLegendOpacityWrapper}>
+                <div className="layer-legend-actions">
+                    <div className="layer-legend-opacity-wrapper">
                         <button
                             ref={opacityBtnRef}
-                            className={`${styles.layerLegendActionBtn} ${isOpacityExpanded ? styles.active : ''}`}
+                            className={`layer-legend-action-btn ${isOpacityExpanded ? 'active' : ''}`}
                             onClick={handleOpacityToggle}
                             title={isOpacityExpanded ? 'Hide opacity' : 'Adjust opacity'}
                         >
@@ -156,32 +155,32 @@ export function LayerLegend({
                         {isOpacityExpanded && (
                             <div
                                 ref={opacityPopoverRef}
-                                className={styles.layerLegendOpacityPopover}
+                                className="layer-legend-opacity-popover"
                             >
                                 <input
                                     type="range"
-                                    className={styles.layerLegendOpacitySlider}
+                                    className="layer-legend-opacity-slider"
                                     min={0}
                                     max={1}
                                     step={0.01}
                                     value={localOpacity}
                                     onChange={handleOpacityChange}
                                 />
-                                <span className={styles.layerLegendOpacityValue}>
+                                <span className="layer-legend-opacity-value">
                                     {Math.round(localOpacity * 100)}%
                                 </span>
                             </div>
                         )}
                     </div>
                     <button
-                        className={`${styles.layerLegendActionBtn} ${isInfoExpanded ? styles.active : ''}`}
+                        className={`layer-legend-action-btn ${isInfoExpanded ? 'active' : ''}`}
                         onClick={handleInfoToggle}
                         title={isInfoExpanded ? 'Hide info' : 'Show info'}
                     >
                         <i className="mdi mdi-information-outline mdi-18px" />
                     </button>
                     <button
-                        className={styles.layerLegendActionBtn}
+                        className="layer-legend-action-btn"
                         title="More options"
                     >
                         <i className="mdi mdi-dots-vertical mdi-18px" />
@@ -189,15 +188,15 @@ export function LayerLegend({
                 </div>
             </div>
             {isInfoExpanded && description && (
-                <div className={styles.layerLegendBody}>
+                <div className="layer-legend-body">
                     <p>{description}</p>
                 </div>
             )}
             {unit?.label && (
-                <div className={styles.layerLegendUnitLabel}>{unit.label}</div>
+                <div className="layer-legend-unit-label">{unit.label}</div>
             )}
             {isVisible && hasLegendContent && (
-                <div className={styles.layerLegendContent}>
+                <div className="layer-legend-content">
                     {renderLegendGraphic()}
                 </div>
             )}

@@ -1,8 +1,3 @@
-declare module '*.module.scss' {
-    const classes: Record<string, string>
-    export default classes
-}
-
 // Plain (non-module) .scss imports are side-effect only — webpack handles them at
 // build time. This declaration keeps the TypeScript compiler happy for bare imports
 // like `import './styles/index.scss'` in the lib/index.ts barrel.

@@ -1,7 +1,6 @@
 import React from 'react'
 import { LayerLegend, type LayerLegendProps } from '../LayerLegend/LayerLegend'
 import type { Layer } from '../types'
-import styles from './LayerLegendList.module.scss'
 
 export type LayerLegendListProps = {
     layers: Layer[]
@@ -24,13 +23,13 @@ export function LayerLegendList({
 }: LayerLegendListProps) {
     if (!layers || layers.length === 0) {
         return (
-            <div className={styles.layerLegendList}>
-                <div className={styles.layerLegendEmpty}>{emptyMessage}</div>
+            <div className="layer-legend-list">
+                <div className="layer-legend-empty">{emptyMessage}</div>
             </div>
         )
     }
     return (
-        <div className={styles.layerLegendList}>
+        <div className="layer-legend-list">
             {layers.map((layer) => (
                 <LayerLegend
                     key={layer.id}

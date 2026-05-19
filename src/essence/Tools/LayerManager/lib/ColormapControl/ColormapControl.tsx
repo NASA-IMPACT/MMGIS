@@ -8,7 +8,6 @@ import {
     type KeyboardEvent,
 } from 'react'
 import { useAvailableColormaps } from '../hooks/useAvailableColormaps'
-import styles from './ColormapControl.module.scss'
 
 export type ColormapControlProps = {
     layerName: string
@@ -116,11 +115,11 @@ export function ColormapControl({
     }, [layerName, onReset])
 
     return (
-        <div className={styles.colormapControl}>
+        <div className="colormap-control">
             {onReset && (
-                <div className={styles.colormapControlHeader}>
+                <div className="colormap-control-header">
                     <button
-                        className={styles.colormapControlReset}
+                        className="colormap-control-reset"
                         onClick={handleReset}
                         title="Reset to defaults"
                     >
@@ -128,11 +127,11 @@ export function ColormapControl({
                     </button>
                 </div>
             )}
-            <div className={styles.colormapControlRow}>
-                <label className={styles.colormapControlLabel}>Colormap</label>
-                <div className={styles.colormapControlInputGroup}>
+            <div className="colormap-control-row">
+                <label className="colormap-control-label">Colormap</label>
+                <div className="colormap-control-input-group">
                     <select
-                        className={styles.colormapControlSelect}
+                        className="colormap-control-select"
                         value={baseColormap}
                         onChange={handleColormapSelect}
                         disabled={colormapsLoading}
@@ -142,7 +141,7 @@ export function ColormapControl({
                         ))}
                     </select>
                     <button
-                        className={`${styles.colormapControlReverse} ${reversed ? styles.active : ''}`}
+                        className={`colormap-control-reverse ${reversed ? 'active' : ''}`}
                         onClick={handleReverseToggle}
                         title="Reverse colormap"
                     >
@@ -150,32 +149,32 @@ export function ColormapControl({
                     </button>
                 </div>
             </div>
-            <div className={styles.colormapControlRow}>
-                <label className={styles.colormapControlLabel}>Min</label>
-                <div className={styles.colormapControlInputGroup}>
+            <div className="colormap-control-row">
+                <label className="colormap-control-label">Min</label>
+                <div className="colormap-control-input-group">
                     <input
                         type="number"
-                        className={styles.colormapControlNumber}
+                        className="colormap-control-number"
                         value={localMin}
                         onChange={handleMinChange}
                         onBlur={handleMinBlur}
                         onKeyDown={handleKeyDown}
                     />
-                    {units && <span className={styles.colormapControlUnits}>{units}</span>}
+                    {units && <span className="colormap-control-units">{units}</span>}
                 </div>
             </div>
-            <div className={styles.colormapControlRow}>
-                <label className={styles.colormapControlLabel}>Max</label>
-                <div className={styles.colormapControlInputGroup}>
+            <div className="colormap-control-row">
+                <label className="colormap-control-label">Max</label>
+                <div className="colormap-control-input-group">
                     <input
                         type="number"
-                        className={styles.colormapControlNumber}
+                        className="colormap-control-number"
                         value={localMax}
                         onChange={handleMaxChange}
                         onBlur={handleMaxBlur}
                         onKeyDown={handleKeyDown}
                     />
-                    {units && <span className={styles.colormapControlUnits}>{units}</span>}
+                    {units && <span className="colormap-control-units">{units}</span>}
                 </div>
             </div>
         </div>

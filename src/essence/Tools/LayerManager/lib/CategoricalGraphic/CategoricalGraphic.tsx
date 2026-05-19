@@ -1,7 +1,6 @@
 import React from 'react'
 import { useState, useCallback, useRef, type MouseEvent } from 'react'
 import type { CategoricalStop } from '../types'
-import styles from './CategoricalGraphic.module.scss'
 
 export type CategoricalGraphicProps = {
     stops: CategoricalStop[]
@@ -42,35 +41,35 @@ export function CategoricalGraphic({
 
     if (!isExpanded) {
         return (
-            <div className={styles.categoricalGraphic}>
-                <div className={styles.categoricalBarRow}>
+            <div className="categorical-graphic">
+                <div className="categorical-bar-row">
                     <div
                         ref={barRef}
-                        className={styles.categoricalSwatchLine}
+                        className="categorical-swatch-line"
                         onMouseMove={handleMouseMove}
                         onMouseLeave={handleMouseLeave}
                     >
                         {stops.map((stop, index) => (
                             <div
                                 key={`${stop.color}-${index}`}
-                                className={styles.categoricalSwatchSegment}
+                                className="categorical-swatch-segment"
                                 style={{ backgroundColor: stop.color }}
                             />
                         ))}
                         {hoverLabel !== null && (
                             <div
-                                className={`${styles.categoricalTooltip} ${styles.visible}`}
+                                className="categorical-tooltip visible"
                                 style={{ left: tooltipPos.x }}
                             >
                                 {hoverLabel}
                             </div>
                         )}
                     </div>
-                    <div className={styles.categoricalSpacer} />
+                    <div className="categorical-spacer" />
                 </div>
                 {stops.length > 1 && (
                     <div
-                        className={styles.categoricalToggle}
+                        className="categorical-toggle"
                         onClick={() => setIsExpanded(true)}
                     >
                         <i className="mdi mdi-chevron-down mdi-14px" />
@@ -82,16 +81,16 @@ export function CategoricalGraphic({
     }
 
     return (
-        <div className={styles.categoricalGraphic}>
-            <div className={styles.categoricalList}>
+        <div className="categorical-graphic">
+            <div className="categorical-list">
                 {stops.map((stop, index) => (
-                    <div key={`${stop.color}-${index}`} className={styles.categoricalItem}>
-                        <div className={styles.categoricalSwatch} style={{ backgroundColor: stop.color }} />
-                        <span className={styles.categoricalLabel}>{stop.label}</span>
+                    <div key={`${stop.color}-${index}`} className="categorical-item">
+                        <div className="categorical-swatch" style={{ backgroundColor: stop.color }} />
+                        <span className="categorical-label">{stop.label}</span>
                     </div>
                 ))}
             </div>
-            <div className={styles.categoricalToggle} onClick={() => setIsExpanded(false)}>
+            <div className="categorical-toggle" onClick={() => setIsExpanded(false)}>
                 <i className="mdi mdi-chevron-up mdi-14px" />
                 <span>Collapse</span>
             </div>

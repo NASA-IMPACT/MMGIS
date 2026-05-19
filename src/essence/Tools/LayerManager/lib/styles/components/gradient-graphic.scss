@@ -1,41 +1,41 @@
-@use '../styles/theme-tokens';
+@use '../theme-tokens';
 @use 'uswds-core' as *;
 
 /* Gradient Graphic Styles */
-.gradientGraphic {
+.gradient-graphic {
     display: flex;
     flex-direction: column;
     gap: units(0.5);
     width: 100%;
 }
 
-.gradientBarRow {
+.gradient-bar-row {
     display: flex;
     align-items: center;
     gap: units(1);
     width: 100%;
 }
 
-.gradientBarContainer {
+.gradient-bar-container {
     position: relative;
     flex: 1;
     cursor: help;
 }
 
-.gradientBar {
+.gradient-bar {
     width: 100%;
     height: 14px;
     border-radius: 3px;
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
-.gradientCogWrapper {
+.gradient-cog-wrapper {
     position: relative;
     width: 28px;
     flex-shrink: 0;
 }
 
-.gradientExpandBtn {
+.gradient-expand-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -59,7 +59,7 @@
     }
 }
 
-.gradientCogPopover {
+.gradient-cog-popover {
     position: absolute;
     top: 100%;
     right: 0;
@@ -85,7 +85,7 @@
     }
 }
 
-.gradientLabels {
+.gradient-labels {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
@@ -93,7 +93,7 @@
     margin-top: 2px;
 }
 
-.gradientLabel {
+.gradient-label {
     font-size: font-size('body', 'xs');
     color: color('ink');
     line-height: 1.2;
@@ -108,7 +108,7 @@
 }
 
 /* Gradient Tooltip */
-.gradientTooltip {
+.gradient-tooltip {
     position: absolute;
     background: rgba(0, 0, 0, 0.85);
     color: white;

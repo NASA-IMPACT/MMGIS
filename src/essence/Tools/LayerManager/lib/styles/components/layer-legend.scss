@@ -1,8 +1,8 @@
-@use '../styles/theme-tokens';
+@use '../theme-tokens';
 @use 'uswds-core' as *;
 
 /* Individual Legend Item */
-.layerLegend {
+.layer-legend {
     display: flex;
     flex-direction: column;
     background: #ffffff;
@@ -15,7 +15,7 @@
 }
 
 /* Legend Header */
-.layerLegendHeader {
+.layer-legend-header {
     display: flex;
     align-items: center;
     padding: units(1) units(1.5);
@@ -25,14 +25,14 @@
 }
 
 /* Checkbox wrapper */
-.layerLegendCheckboxWrapper {
+.layer-legend-checkbox-wrapper {
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
 }
 
-.layerLegendCheckbox {
+.layer-legend-checkbox {
     width: 18px;
     height: 18px;
     margin: 0;
@@ -41,7 +41,7 @@
     border-radius: 3px;
 }
 
-.layerLegendTitleGroup {
+.layer-legend-title-group {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -49,7 +49,7 @@
     min-width: 0;
 }
 
-.layerLegendTitle {
+.layer-legend-title {
     font-size: font-size('body', 'sm');
     font-weight: 400;
     color: color('base-darker');
@@ -59,14 +59,14 @@
     line-height: 1.3;
 }
 
-.layerLegendActions {
+.layer-legend-actions {
     display: flex;
     align-items: center;
     gap: 2px;
     flex-shrink: 0;
 }
 
-.layerLegendActionBtn {
+.layer-legend-action-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -90,7 +90,7 @@
 }
 
 /* Legend Body (expandable description) */
-.layerLegendBody {
+.layer-legend-body {
     padding: units(1) units(1.5) units(1) units(5);
     background: #ffffff;
     color: color('ink');
@@ -122,31 +122,31 @@
 }
 
 /* Unit label shown below the legend */
-.layerLegendUnitLabel {
+.layer-legend-unit-label {
     padding: units(0.5) units(1.5) units(1) units(5);
     font-size: font-size('body', 'xs');
     color: color('base');
 }
 
 /* Legend Content (graphics area) */
-.layerLegendContent {
+.layer-legend-content {
     padding: 0 units(1.5) units(1.5) units(5);
     background: #ffffff;
 }
 
 /* Text legend (minimal) */
-.textLegend {
+.text-legend {
     font-size: font-size('body', 'xs');
     color: color('ink');
     font-style: italic;
 }
 
 /* Opacity Popover Styles */
-.layerLegendOpacityWrapper {
+.layer-legend-opacity-wrapper {
     position: relative;
 }
 
-.layerLegendOpacityPopover {
+.layer-legend-opacity-popover {
     position: absolute;
     top: 100%;
     right: 0;
@@ -176,7 +176,7 @@
     }
 }
 
-.layerLegendOpacitySlider {
+.layer-legend-opacity-slider {
     width: 100px;
     height: 4px;
     -webkit-appearance: none;
@@ -211,7 +211,7 @@
     }
 }
 
-.layerLegendOpacityValue {
+.layer-legend-opacity-value {
     font-size: font-size('body', 'xs');
     color: color('ink');
     min-width: 32px;

@@ -2,8 +2,6 @@ import React from 'react'
 import { Button } from '@trussworks/react-uswds'
 import type { Layer } from '../types'
 import { LayerLegendList } from '../LayerLegendList/LayerLegendList'
-import scope from '../styles/scope.module.scss'
-import styles from './LayerManagerPanel.module.scss'
 
 export type LayerManagerPanelProps = {
     layers: Layer[]
@@ -31,27 +29,27 @@ export function LayerManagerPanel({
     onCogReset,
 }: LayerManagerPanelProps) {
     return (
-        <div className={scope.layerManagerScope}>
-            <div className={styles.layerManagerPanel}>
-                <div className={styles.layerManagerHeader}>
-                    <div className={styles.layerManagerTitle}>{title}</div>
+        <div className="layer-manager-scope">
+            <div className="layer-manager-panel">
+                <div className="layer-manager-header">
+                    <div className="layer-manager-title">{title}</div>
                     {onRefresh && (
-                        <div className={styles.layerManagerActions}>
+                        <div className="layer-manager-actions">
                             <Button
                                 type="button"
                                 unstyled
                                 title="Refresh legends"
                                 onClick={onRefresh}
-                                className={styles.layerManagerAction}
+                                className="layer-manager-action"
                             >
                                 <i className="mdi mdi-refresh mdi-18px" />
                             </Button>
                         </div>
                     )}
                 </div>
-                <div className={styles.layerManagerContent}>
+                <div className="layer-manager-content">
                     {loading ? (
-                        <div className={styles.layerManagerLoading}>
+                        <div className="layer-manager-loading">
                             <div className="mmgisLoading" />
                         </div>
                     ) : (
