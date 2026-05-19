@@ -11,10 +11,21 @@
     "hasVars": true,
     "name": "LayerManager",
     "toolbarPriority": 2,
+    "width": 320,
+    "height": 0,
     "paths": {
         "LayerManagerTool": "essence/Tools/LayerManager/LayerManagerTool"
     },
     "expandable": true,
+    "metadata": {
+        "icon": "layers-triple-outline",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": ["left", "right"],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 320,
+        "height": 0
+    },
     "config": {
         "rows": [
             {

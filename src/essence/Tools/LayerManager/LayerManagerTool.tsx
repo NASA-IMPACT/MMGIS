@@ -12,8 +12,9 @@ const LayerManagerTool = {
     height: 0,
     width: 320 as number | 'full',
     vars: {} as ToolVars,
+    targetId: null as string | null,
+    made: false,
     _cleanups: [] as Array<() => void>,
-    _mounted: false,
 
     initialize: async function () {
         this.vars =
@@ -26,16 +27,19 @@ const LayerManagerTool = {
         }
     },
 
-    make: function () {
-        const container = document.getElementById('toolPanel')
+    make: function (targetId?: string) {
+        this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
+        const container = document.getElementById(this.targetId)
         if (!container) {
-            console.error('LayerManagerTool: toolPanel not found')
+            console.error(
+                `LayerManagerTool: container ${this.targetId} not found`,
+            )
             return
         }
         $(container).css('background', 'var(--color-k)')
         _root = createRoot(container)
         _root.render(<MMGISLayerManagerAdapter />)
-        this._mounted = true
+        this.made = true
 
         this._cleanups.push(
             mmgisProvide('plugin:layermanager:refresh', () => {
@@ -54,9 +58,10 @@ const LayerManagerTool = {
             _root.unmount()
             _root = null
         }
-        this._mounted = false
         this._cleanups.forEach((cleanup) => cleanup())
         this._cleanups = []
+        this.targetId = null
+        this.made = false
     },
 
     getUrlString: function () {
