@@ -1,11 +1,13 @@
 // Title Tool
 // Displays a logo and title text from dashboard configuration
 import $ from 'jquery'
-import ReactDOM from 'react-dom'
+import { createRoot } from 'react-dom/client'
 import React from 'react'
 import L_ from '../../Basics/Layers_/Layers_'
 import TitleToolComponent from './TitleToolComponent'
 import './TitleTool.css'
+
+let _root = null
 
 const TitleTool = {
     height: 60,
@@ -73,19 +75,22 @@ function interfaceWithMMGIS() {
     $(container).css('background', 'transparent')
 
     // Render React component
-    ReactDOM.render(
+    _root = createRoot(container)
+    _root.render(
         <TitleToolComponent
             titleText={TitleTool.titleText}
             logoUrl={TitleTool.logoUrl}
             iconClass={TitleTool.iconClass}
-        />,
-        container
+        />
     )
 
     function separateFromMMGIS() {
+        if (_root) {
+            _root.unmount()
+            _root = null
+        }
         const container = document.getElementById(TitleTool.targetId)
         if (container) {
-            ReactDOM.unmountComponentAtNode(container)
             $(container).css('background', 'var(--mmgis-panel-bg)')
         }
     }
