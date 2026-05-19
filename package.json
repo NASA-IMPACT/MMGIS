@@ -79,6 +79,7 @@
     "@turf/turf": "^6.5.0",
     "@uswds/uswds": "^3.13.0",
     "bcryptjs": "^2.4.3",
+    "bluebird": "^3.7.2",
     "busboy": "1.6",
     "camelcase": "^5.3.1",
     "cesium": "^1.121.0",
