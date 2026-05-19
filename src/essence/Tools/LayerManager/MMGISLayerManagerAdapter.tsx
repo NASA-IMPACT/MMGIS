@@ -45,7 +45,6 @@ export function MMGISLayerManagerAdapter() {
         <LayerManagerPanel
             layers={layers}
             loading={loading}
-            onRefresh={refresh}
             onVisibilityChange={(id) => { void toggleVisibility(id) }}
             onOpacityChange={(id, op) => { void setOpacity(id, op) }}
             onColormapChange={(id, cm) => { void setColormap(id, cm, refresh) }}
