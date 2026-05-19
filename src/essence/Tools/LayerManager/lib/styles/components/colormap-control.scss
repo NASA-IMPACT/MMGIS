@@ -8,32 +8,6 @@
     padding: units(1.5);
 }
 
-.colormap-control-header {
-    display: flex;
-    justify-content: flex-end;
-    align-items: center;
-    margin-bottom: units(0.5);
-}
-
-.colormap-control-reset {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    background: transparent;
-    border: none;
-    border-radius: 3px;
-    color: color('ink');
-    cursor: pointer;
-    transition: all 0.15s ease;
-
-    &:hover {
-        background: color('base-light');
-        color: color('base-darker');
-    }
-}
-
 .colormap-control-row {
     display: flex;
     align-items: center;

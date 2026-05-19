@@ -110,23 +110,8 @@ export function ColormapControl({
         [layerName, localMin, localMax, onRescaleChange],
     )
 
-    const handleReset = useCallback(() => {
-        onReset?.(layerName)
-    }, [layerName, onReset])
-
     return (
         <div className="colormap-control">
-            {onReset && (
-                <div className="colormap-control-header">
-                    <button
-                        className="colormap-control-reset"
-                        onClick={handleReset}
-                        title="Reset to defaults"
-                    >
-                        <i className="mdi mdi-restore mdi-14px" />
-                    </button>
-                </div>
-            )}
             <div className="colormap-control-row">
                 <label className="colormap-control-label">Colormap</label>
                 <div className="colormap-control-input-group">
