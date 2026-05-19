@@ -20,7 +20,7 @@ export function LayerManagerPanel({
     layers,
     loading = false,
     emptyMessage = 'No visible layers. Turn on layers in the Layers tool to manage them here.',
-    title = 'Layer Manager',
+    title,
     onRefresh,
     onVisibilityChange,
     onOpacityChange,
@@ -28,25 +28,28 @@ export function LayerManagerPanel({
     onRescaleChange,
     onCogReset,
 }: LayerManagerPanelProps) {
+    const hasHeader = Boolean(title) || Boolean(onRefresh)
     return (
         <div className="layer-manager-scope">
             <div className="layer-manager-panel">
-                <div className="layer-manager-header">
-                    <div className="layer-manager-title">{title}</div>
-                    {onRefresh && (
-                        <div className="layer-manager-actions">
-                            <Button
-                                type="button"
-                                unstyled
-                                title="Refresh legends"
-                                onClick={onRefresh}
-                                className="layer-manager-action"
-                            >
-                                <i className="mdi mdi-refresh mdi-18px" />
-                            </Button>
-                        </div>
-                    )}
-                </div>
+                {hasHeader && (
+                    <div className="layer-manager-header">
+                        {title && <div className="layer-manager-title">{title}</div>}
+                        {onRefresh && (
+                            <div className="layer-manager-actions">
+                                <Button
+                                    type="button"
+                                    unstyled
+                                    title="Refresh legends"
+                                    onClick={onRefresh}
+                                    className="layer-manager-action"
+                                >
+                                    <i className="mdi mdi-refresh mdi-18px" />
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+                )}
                 <div className="layer-manager-content">
                     {loading ? (
                         <div className="layer-manager-loading">

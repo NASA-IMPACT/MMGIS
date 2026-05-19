@@ -45,6 +45,7 @@
     display: flex;
     align-items: center;
     gap: units(0.5);
+    margin-left: auto; /* keeps actions right-aligned even when no title is present */
 }
 
 .layer-manager-action {
