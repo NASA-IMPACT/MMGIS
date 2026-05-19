@@ -10,7 +10,6 @@ import {
     setOpacity,
     setColormap,
     setRescale,
-    resetCog,
 } from './adapters/handlers'
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
@@ -51,7 +50,6 @@ export function MMGISLayerManagerAdapter() {
             onOpacityChange={(id, op) => { void setOpacity(id, op) }}
             onColormapChange={(id, cm) => { void setColormap(id, cm, refresh) }}
             onRescaleChange={(id, mn, mx) => { void setRescale(id, mn, mx, refresh) }}
-            onCogReset={(id) => { void resetCog(id, refresh) }}
         />
     )
 }

@@ -3,8 +3,6 @@
 
 /* Colormap Control Styles */
 .blocks-colormap-control {
-    /* Folds in `.gradient-cog-popover .colormap-control { padding: 12px; }` from
-       legacy LayerLegend.css to avoid cross-component CSS coupling. */
     padding: units(1.5);
 
     &__row {
@@ -74,13 +72,6 @@
             border-color: color('primary');
             color: white;
         }
-    }
-
-    &__preview {
-        margin: units(1) 0;
-        border-radius: 3px;
-        height: 16px;
-        width: 100%;
     }
 
     &__number {

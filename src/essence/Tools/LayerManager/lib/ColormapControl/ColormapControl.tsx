@@ -18,7 +18,6 @@ export type ColormapControlProps = {
     titilerUrl?: string | null
     onColormapChange?: (layerName: string, colormap: string) => void
     onRescaleChange?: (layerName: string, min: number, max: number) => void
-    onReset?: (layerName: string) => void
 }
 
 const getBaseColormapName = (colormapName: string | null | undefined): string => {
@@ -41,7 +40,6 @@ export function ColormapControl({
     titilerUrl,
     onColormapChange,
     onRescaleChange,
-    onReset,
 }: ColormapControlProps) {
     const [localMin, setLocalMin] = useState<number>(min)
     const [localMax, setLocalMax] = useState<number>(max)

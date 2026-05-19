@@ -46,25 +46,3 @@ export const setRescale = async (
     await refresh()
 }
 
-export const resetCog = async (layerId: string, refresh: Refresh): Promise<void> => {
-    const cfg = await mmgisRequest<LayerConfig>('layers:getConfig', layerId)
-    if (!cfg || !cfg.cogTransform) return
-    await mmgisRequest('layers:updateConfig', {
-        layerUUID: layerId,
-        updates: {
-            currentCogColormap: cfg.cogColormap,
-            currentCogMin: cfg.cogMin,
-            currentCogMax: cfg.cogMax,
-        },
-    })
-    await mmgisRequest('layers:refresh', {
-        layerUUID: layerId,
-        options: {
-            cogColormap: cfg.cogColormap,
-            currentCogMin: cfg.cogMin,
-            currentCogMax: cfg.cogMax,
-        },
-    })
-    mmgisEmit('layer:cogReset', { layerName: layerId })
-    await refresh()
-}

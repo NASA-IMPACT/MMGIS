@@ -19,8 +19,6 @@ export type LayerLegendProps = {
     onOpacityChange?: (layerId: string, opacity: number) => void
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
-    onCogReset?: (layerId: string) => void
-    onInfoToggle?: (expanded: boolean) => void
 }
 
 export function LayerLegend({
@@ -30,8 +28,6 @@ export function LayerLegend({
     onOpacityChange,
     onColormapChange,
     onRescaleChange,
-    onCogReset,
-    onInfoToggle,
 }: LayerLegendProps) {
     const {
         id,
@@ -78,7 +74,6 @@ export function LayerLegend({
     const handleInfoToggle = () => {
         const newState = !isInfoExpanded
         setIsInfoExpanded(newState)
-        onInfoToggle?.(newState)
     }
 
     const handleOpacityToggle = () => setIsOpacityExpanded(!isOpacityExpanded)
@@ -102,7 +97,6 @@ export function LayerLegend({
                         layerId={id}
                         onColormapChange={onColormapChange}
                         onRescaleChange={onRescaleChange}
-                        onCogReset={onCogReset}
                     />
                 )
             case 'categorical':

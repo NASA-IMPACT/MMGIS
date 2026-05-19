@@ -15,7 +15,6 @@ export type GradientGraphicProps = {
     layerId: string
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
-    onCogReset?: (layerId: string) => void
 }
 
 const makeGradient = (stops: string[] | null | undefined): string => {
@@ -56,7 +55,6 @@ export function GradientGraphic({
     layerId,
     onColormapChange,
     onRescaleChange,
-    onCogReset,
 }: GradientGraphicProps) {
     const [hoverVal, setHoverVal] = useState<number | null>(null)
     const [tooltipPos, setTooltipPos] = useState({ x: 0 })
@@ -143,7 +141,6 @@ export function GradientGraphic({
                                         titilerUrl={cog.titilerUrl}
                                         onColormapChange={onColormapChange}
                                         onRescaleChange={onRescaleChange}
-                                        onReset={onCogReset}
                                     />
                                 </div>
                             )}

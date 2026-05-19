@@ -13,7 +13,6 @@ export type LayerManagerPanelProps = {
     onOpacityChange?: (layerId: string, opacity: number) => void
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
-    onCogReset?: (layerId: string) => void
 }
 
 export function LayerManagerPanel({
@@ -26,7 +25,6 @@ export function LayerManagerPanel({
     onOpacityChange,
     onColormapChange,
     onRescaleChange,
-    onCogReset,
 }: LayerManagerPanelProps) {
     const hasHeader = Boolean(title) || Boolean(onRefresh)
     return (
@@ -63,7 +61,6 @@ export function LayerManagerPanel({
                             onOpacityChange={onOpacityChange}
                             onColormapChange={onColormapChange}
                             onRescaleChange={onRescaleChange}
-                            onCogReset={onCogReset}
                         />
                     )}
                 </div>
