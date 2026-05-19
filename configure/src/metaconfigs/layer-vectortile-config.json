@@ -274,6 +274,18 @@
             }
           ]
         },
+        {
+          "components": [
+            {
+              "field": "style.hoverHighlight",
+              "name": "DeckGL Hover Highlight",
+              "description": "When enabled, DeckGL vector tile features change color on hover. The hover tooltip still uses Vector Tile Use Key as Name when this is off.",
+              "type": "checkbox",
+              "width": 4,
+              "defaultChecked": false
+            }
+          ]
+        },
 
         {
           "subname": "Vector Tile Stylings",

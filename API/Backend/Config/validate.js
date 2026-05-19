@@ -101,6 +101,20 @@ const validateLayers = (config) => {
         // Check bounding box
         errs = errs.concat(isValidBoundingBox(layer));
         break;
+      case "GeoJsonLayer":
+      case "ScatterplotLayer":
+        if (layer.controlled !== true) errs = errs.concat(isValidUrl(layer));
+        break;
+      case "TileLayer":
+      case "BitmapLayer":
+      case "MVTLayer":
+        errs = errs.concat(isValidUrl(layer));
+        errs = errs.concat(isValidZooms(layer));
+        break;
+      case "PointCloudLayer":
+      case "Tile3DLayer":
+        errs = errs.concat(isValidUrl(layer));
+        break;
       default:
         errs = errs.concat(
           err(`Unknown layer type: '${layer.type}'`, ["layers[layer].type"])

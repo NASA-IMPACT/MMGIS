@@ -226,3 +226,53 @@ export const trimString = (string, length) => {
     ? string.substring(0, length).trimEnd() + "..."
     : string;
 };
+
+/**
+ * Adds `asset_` prefix to bare band references (b1, B2, etc.) in a TiTiler
+ * expression string. No-ops if the expression is empty or already prefixed.
+ * @param {string} expression
+ * @returns {string}
+ */
+export const processExpression = (expression) => {
+  if (!expression || expression.trim() === '') return expression
+  return expression.replace(/(?<!\w)([bB])(\d+)/g, 'asset_$1$2')
+}
+
+/**
+ * Merges COG layer field values into the layer's tile URL as query params so
+ * the configure preview map gets the same colormap, rescale, and resampling
+ * settings the user has configured, without requiring a per-tile middleware.
+ * Params already in the URL win; fields only fill in what's missing.
+ *
+ * This mirrors `applyCogFieldsToUrl` in `src/essence/Basics/Layers_/cogUrlUtils.ts`.
+ * We keep a local copy because configure is a separate app and can't import
+ * from the main src tree without a shared-package setup.
+ * @param {object} layer - Layer config object
+ * @returns {string}
+ */
+export const applyLayerParamsToUrl = (layer) => {
+  const url = layer?.url || ''
+  const qIdx = url.indexOf('?')
+  const path = qIdx === -1 ? url : url.slice(0, qIdx)
+  const params = new URLSearchParams(qIdx === -1 ? '' : url.slice(qIdx + 1))
+
+  const expression = layer.currentCogExpression || layer.cogExpression
+  if (expression && expression.trim() !== '') {
+    params.delete('bidx')
+    params.set('expression', processExpression(expression))
+  }
+
+  if (layer.cogColormap && !params.has('colormap_name'))
+    params.set('colormap_name', layer.cogColormap)
+
+  const cogMin = layer.currentCogMin ?? layer.cogMin
+  const cogMax = layer.currentCogMax ?? layer.cogMax
+  if (cogMin != null && cogMax != null && !params.has('rescale'))
+    params.set('rescale', `${cogMin},${cogMax}`)
+
+  if (layer.cogResampling && !params.has('resampling'))
+    params.set('resampling', layer.cogResampling)
+
+  const qs = params.toString()
+  return qs ? `${path}?${qs}` : path
+}

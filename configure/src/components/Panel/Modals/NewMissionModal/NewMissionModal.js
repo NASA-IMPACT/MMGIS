@@ -199,7 +199,7 @@ const NewMissionModal = (props) => {
             setMissionName("");
             setCreateDir(true);
             setSelectedPlanet("Earth");
-            setSelectedEngine("leaflet");
+            setSelectedEngine("deckgl");
             setSelectedMode("classic");
             setBasemapProvider("none");
             setBasemapStyle("");
@@ -220,7 +220,7 @@ const NewMissionModal = (props) => {
             setMissionName("");
             setCreateDir(true);
             setSelectedPlanet("Earth");
-            setSelectedEngine("leaflet");
+            setSelectedEngine("deckgl");
             setSelectedMode("classic");
             setBasemapProvider("none");
             setBasemapStyle("");

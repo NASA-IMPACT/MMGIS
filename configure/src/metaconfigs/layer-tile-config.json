@@ -548,6 +548,55 @@
               "width": 12
             }
           ]
+        },
+        {
+          "subname": "Tile Levels",
+          "components": [
+            {
+              "field": "variables.defaultTileLevel",
+              "name": "Default Tile Level",
+              "description": "The value, id, name or label of the tile level to select initially.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.tileLevels",
+              "name": "Tile Levels",
+              "description": "Selectable tile levels for this layer. If URL is set, that level uses the URL override. Height raises DeckGL bitmap tiles above the map in meters.",
+              "type": "objectarray",
+              "width": 12,
+              "object": [
+                {
+                  "field": "label",
+                  "name": "Label",
+                  "description": "User-facing label, such as 1000 hPa.",
+                  "type": "text",
+                  "width": 3
+                },
+                {
+                  "field": "value",
+                  "name": "Value",
+                  "description": "Stable level value used by the selector.",
+                  "type": "text",
+                  "width": 2
+                },
+                {
+                  "field": "url",
+                  "name": "URL",
+                  "description": "Optional source URL override for this level.",
+                  "type": "text",
+                  "width": 5
+                },
+                {
+                  "field": "height",
+                  "name": "Height",
+                  "description": "Optional DeckGL height in meters for this level.",
+                  "type": "number",
+                  "width": 2
+                }
+              ]
+            }
+          ]
         }
       ]
     },
