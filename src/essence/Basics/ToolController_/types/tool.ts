@@ -1,6 +1,4 @@
-// TODO: Move this file to a separate directory (e.g. closer to ToolController) when refactoring tools.
-
-import { PanelPosition } from './layout';
+import { PanelPosition } from '../../PanelManager_/types/layout';
 
 /**
  * Tool orientation requirements.
@@ -14,8 +12,11 @@ export const TOOL_ORIENTATION = {
 export type ToolOrientation = (typeof TOOL_ORIENTATION)[keyof typeof TOOL_ORIENTATION]
 
 /**
- * Tool metadata describing its requirements and compatibility.
+ * Tool metadata describing its requirements, compatibility, and UI behavior.
  * Tools declare their needs; panels validate against capabilities.
+ *
+ * This is the nested "metadata" object within config.json files.
+ * Layout and UI-related properties should be defined here.
  */
 export interface ToolMetadata {
     /** Unique identifier for the tool */
@@ -25,23 +26,36 @@ export interface ToolMetadata {
     name: string;
 
     /**
+     * Icon identifier (MDI icon name without 'mdi-' prefix) for tool icon.
+     * Example: 'clock-outline', 'layers', 'pencil'
+     */
+    icon?: string;
+
+    /**
      * Required orientation for this tool.
      * - 'horizontal': Can only go in top/bottom panels
      * - 'vertical': Can only go in left/right panels
      * - 'any': Can go in any panel
      */
-    requiredOrientation: ToolOrientation;
+    requiredOrientation?: ToolOrientation;
 
     /**
      * Specific positions this tool is compatible with.
      * If undefined, tool can go in any position (subject to orientation).
      * Example: ['left', 'right'] means tool can only go in side panels.
-     * TODO: Determine if it is necessary to have this definition (will confirm when working on tools)
      */
     compatiblePositions?: PanelPosition[];
 
     /**
-     * Icon URL or class name for tool icon in iconified state.
+     * Preferred position for the tool.
+     * Suggests where the tool should ideally be placed.
+     * Must be one of the compatible positions if compatiblePositions is defined.
      */
-    icon?: string;
+    preferredPosition?: PanelPosition;
+
+    /**
+     * Indicates if the tool supports the modern layout system.
+     * Tools with this flag can be placed in modern layout panels.
+     */
+    modernLayoutSupport?: boolean;
 }

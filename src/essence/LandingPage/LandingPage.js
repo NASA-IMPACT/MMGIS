@@ -1,4 +1,5 @@
 import s from '../essence'
+import modern from '../modern'
 import $ from 'jquery'
 import QueryURL from '../Ancillary/QueryURL'
 import calls from '../../pre/calls'
@@ -7,10 +8,32 @@ import attributions from '../../external/attributions'
 
 import './LandingPage.css'
 
+/**
+ * Helper function to initialize the appropriate layout based on config mode
+ * @param {Object} config - Mission configuration
+ * @param {Array} missions - List of missions
+ */
+async function initializeLayout(config, missions) {
+    // Check for mode in dashboard config (modern or classic)
+    // Default to 'classic' if not specified
+    const mode = config?.msv?.mode || 'classic'
+
+    try {
+        if (mode === 'modern') {
+            await modern.init(config, missions)
+        } else {
+            await s.init(config, missions)
+        }
+    } catch (err) {
+        console.error("MMGIS Initialization Error:", err)
+        makeErrorScreen('Initialization Error', 'An unexpected error occurred during initialization.')
+    }
+}
+
 export default {
     init: function (missions, forceError, forceConfig) {
         if (forceError) {
-            makeMissionNotFoundDiv()
+            makeErrorScreen('Mission Not Found', 'The requested mission could not be found or failed to load.')
             return
         }
 
@@ -167,7 +190,7 @@ export default {
                                             if (response.mission) {
                                                 config._dbMissionName = response.mission
                                             }
-                                            s.init(config, missions)
+                                            initializeLayout(config, missions)
                                         },
                                         function (e) {
                                             console.log(
@@ -175,7 +198,7 @@ export default {
                                                     missionName +
                                                     ' configuration.'
                                             )
-                                            makeMissionNotFoundDiv()
+                                            makeErrorScreen('Mission Not Found', 'The requested mission could not be found or failed to load.')
                                         }
                                     )
                                 } else {
@@ -188,7 +211,7 @@ export default {
                                             new Date().getTime(),
                                         function (data) {
                                             //Initialize
-                                            s.init(data, missions)
+                                            initializeLayout(data, missions)
                                         }
                                     ).fail(function () {
                                         console.log(
@@ -198,7 +221,7 @@ export default {
                                                 '/' +
                                                 'config.json'
                                         )
-                                        makeMissionNotFoundDiv()
+                                        makeErrorScreen('Mission Not Found', 'The requested mission could not be found or failed to load.')
                                     })
                                 }
                             }
@@ -330,13 +353,13 @@ export default {
                     jsonUrl + '?nocache=' + new Date().getTime(),
                     function (data) {
                         //Initialize
-                        s.init(data, missions)
+                        initializeLayout(data, missions)
                     }
                 ).fail(function () {
                     console.error(
                         "Error: Couldn't load: " + jsonUrl + ' configuration.'
                     )
-                    makeMissionNotFoundDiv()
+                    makeErrorScreen('Mission Not Found', 'The requested mission could not be found or failed to load.')
                 })
             } else {
                 if (window.mmgisglobal.SERVER == 'node') {
@@ -352,7 +375,7 @@ export default {
                             if (response.mission) {
                                 config._dbMissionName = response.mission
                             }
-                            s.init(config, missions)
+                            initializeLayout(config, missions)
                         },
                         function (e) {
                             console.error(
@@ -360,7 +383,7 @@ export default {
                                     missionUrl +
                                     ' configuration.'
                             )
-                            makeMissionNotFoundDiv()
+                            makeErrorScreen('Mission Not Found', 'The requested mission could not be found or failed to load.')
                         }
                     )
                 } else {
@@ -368,11 +391,11 @@ export default {
                         jsonUrl + '?nocache=' + new Date().getTime(),
                         function (data) {
                             //Initialize
-                            s.init(data, missions)
+                            initializeLayout(data, missions)
                         }
                     ).fail(function () {
                         console.warn("Warning: Couldn't load: " + jsonUrl)
-                        makeMissionNotFoundDiv()
+                        makeErrorScreen('Mission Not Found', 'The requested mission could not be found or failed to load.')
                     })
                 }
             }
@@ -380,9 +403,9 @@ export default {
     },
 }
 
-export const makeMissionNotFoundDiv = () => {
-    var notfounddiv = $('<div>')
-        .attr('id', 'notfound')
+export const makeErrorScreen = (title, details) => {
+    var errordiv = $('<div>')
+        .attr('id', 'mmgis-error-screen')
         .css({
             'position': 'absolute',
             'top': '0',
@@ -393,59 +416,66 @@ export const makeMissionNotFoundDiv = () => {
             'color': '#757575',
             'opacity': 0,
             'cursor': 'pointer',
-            'z-index': 1000
+            'z-index': 100000 // Ensure it covers everything including loading spinners
         })
         .on('click', function () {
             document.location.href = window.location.href.split('?')[0]
         })
-    $('body').append(notfounddiv)
+    $('body').append(errordiv)
 
-    notfounddiv
+    errordiv
         .append($('<p>')
-        .attr('id', 'mnfmmgis')
         .css({
             'font-family': 'lato',
             'font-size': '20px',
             'margin': '90px 0',
             'text-align': 'center',
             'position': 'absolute',
-            'top': '50%',
+            'top': '15%',
             'left': '50%',
             'transform': 'translateX(-50%)'
         })
         .text(window.mmgisglobal.name || 'MMGIS'))
 
-    notfounddiv
+    errordiv
         .append($('<p>')
-        .attr('id', 'returnmmgis')
         .css({
             'font-family': 'lato',
             'font-size': '14px',
             'margin': '125px 0 90px 0',
             'text-align': 'center',
             'position': 'absolute',
-            'top': '50%',
+            'top': '15%',
             'left': '50%',
             'transform': 'translateX(-50%)'
         })
         .text('Click anywhere to return home...'))
 
-    notfounddiv
+    const detailsText = details?.stack || details?.message || details || '';
+
+    errordiv
         .append($('<div>')
-        .attr('id', 'nf404')
         .css({
             'font-family': 'monospace',
-            'font-size': '200px',
+            'font-size': '16px',
             'margin-top': '5px',
             'position': 'absolute',
             'top': '50%',
             'left': '50%',
             'transform': 'translateX(-50%) translateY(-50%)',
-            'color': 'var(--color-b)'
+            'color': '#d32f2f',
+            'background': '#ffcdd2',
+            'padding': '20px',
+            'border-radius': '4px',
+            'max-width': '80%',
+            'max-height': '60%',
+            'overflow': 'auto',
+            'white-space': 'pre-wrap',
+            'box-shadow': '0 4px 6px rgba(0,0,0,0.1)'
         })
-        .html('404'))
+        .text(`${title}${detailsText ? ':\n\n' + detailsText : ''}`))
 
-    $('#notfound').animate(
+    errordiv.animate(
         {
             opacity: 1,
         },

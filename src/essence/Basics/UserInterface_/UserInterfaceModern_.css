@@ -1,0 +1,491 @@
+/* 
+ * UserInterfaceModern_.css
+ */
+
+/* 
+ USWDS Color Palette 
+ This will later be replaced with themable design tokens
+*/
+:root {
+    /* USWDS color palette */
+    --mmgis-uswds-primary: #005ea2; /* primary blue */
+    --mmgis-uswds-primary-dark: #1a4480;
+    --mmgis-uswds-primary-light: #73b3e7;
+    --mmgis-uswds-base-darker: #171c1e;
+    --mmgis-uswds-base-dark: #3d4551;
+    --mmgis-uswds-base-light: #f0f0f0;
+    --mmgis-uswds-white: #ffffff;
+    --mmgis-uswds-shadow: rgba(0, 0, 0, 0.15);
+
+    /* Modern interface tokens */
+    --mmgis-modern-bg: #f8f9fa;
+    --mmgis-modern-panel-bg: rgba(255, 255, 255, 0.95);
+    --mmgis-modern-border: 1px solid rgba(0, 0, 0, 0.1);
+    --mmgis-modern-radius: 8px;
+    --mmgis-modern-glass-blur: blur(12px);
+
+    /* Z-index layers */
+    --mmgis-z-index-panel-drag: 10;
+    --mmgis-z-index-compact-center: 10;
+    --mmgis-z-index-panel-icons: 2;
+}
+
+/* Full screen grid layout */
+.ui-modern-grid {
+    display: grid;
+    width: 100%;
+    height: 100vh;
+    grid-template-areas:
+        "top top top"
+        "left center right"
+        "bottom bottom bottom";
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: auto 1fr auto;
+    background-color: transparent;
+    overflow: hidden;
+    position: relative;
+    pointer-events: none; /* Let clicks pass through to map if needed */
+}
+
+.ui-modern-grid > * {
+    pointer-events: auto; /* Re-enable pointer events for panels */
+}
+
+/* Regions */
+.ui-region-top { grid-area: top; display: flex; flex-direction: column; width: 100%; }
+.ui-region-left { grid-area: left; display: flex; flex-direction: row; height: 100%; }
+.ui-region-right { grid-area: right; display: flex; flex-direction: row; height: 100%; }
+.ui-region-bottom { grid-area: bottom; display: flex; flex-direction: column; width: 100%; }
+.ui-region-center { 
+    grid-area: center;
+    position: relative;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* Base Panel Styling */
+.ui-panel {
+    background: var(--mmgis-uswds-white);
+    backdrop-filter: var(--mmgis-modern-glass-blur);
+    -webkit-backdrop-filter: var(--mmgis-modern-glass-blur);
+    box-shadow: 0 4px 6px var(--mmgis-uswds-shadow);
+    display: flex;
+    flex-direction: column;
+    margin: 8px;
+    border-radius: var(--mmgis-modern-radius);
+    overflow: hidden;
+    position: relative;
+    color: var(--mmgis-uswds-base-darker);
+    font-family: "Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    transition: width 0.3s cubic-bezier(0.2, 0, 0, 1), height 0.3s cubic-bezier(0.2, 0, 0, 1), flex 0.3s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.ui-panel-header {
+    background-color: var(--mmgis-uswds-primary);
+    color: var(--mmgis-uswds-white);
+    padding: 0.2rem 0.6rem;
+    font-size: .8rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: capitalize;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.ui-panel-title {
+    margin: 0;
+    font-size: .8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ui-panel-header-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.ui-panel-btn {
+    background: transparent;
+    border: none;
+    color: var(--mmgis-uswds-white);
+    opacity: 0.8;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    border-radius: 4px;
+    transition: background-color 0.2s, opacity 0.2s;
+}
+
+.ui-panel-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    opacity: 1;
+}
+
+.ui-panel-body {
+    flex: 1;
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* Tool Cards */
+/* Tool Cards - Base Styles (shared by stacked and tabbed) */
+.ui-tool-card {
+    background-color: var(--mmgis-uswds-white);
+}
+
+/* Stacked Tool Cards (default clickable cards in panel body) */
+.ui-tool-card-stacked {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Tabs */
+.ui-panel-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--mmgis-modern-border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+    width: 100%;
+    flex: 0 0 auto;
+}
+
+.ui-panel-tab {
+    padding: 0.4rem 0.8rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    opacity: 0.7;
+    font-size: 0.95rem;
+    font-weight: 500;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: opacity 0.2s, border-bottom-color 0.2s;
+}
+
+.ui-panel-tab:hover {
+    opacity: 0.9;
+}
+
+.ui-panel-tab.active {
+    border-bottom-color: var(--mmgis-uswds-primary);
+    color: var(--mmgis-uswds-primary-dark);
+    opacity: 1;
+    font-weight: 600;
+}
+
+.ui-panel-tab-content-area {
+    display: flex;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+
+/* Tabbed Content Area (overrides for tool cards used as tab content) */
+.ui-tool-tab-content {
+    display: none;
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    cursor: default;
+    flex-direction: column;
+}
+
+.ui-tool-tab-content.active {
+    display: flex;
+}
+
+.ui-tool-icon {
+    font-size: 1.2rem;
+    color: var(--mmgis-uswds-primary);
+}
+
+.ui-tool-title {
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--mmgis-uswds-base-dark);
+}
+
+.ui-empty-text {
+    color: #888;
+    font-style: italic;
+    font-size: 0.9rem;
+    margin: auto;
+}
+
+/* Drag Handles */
+.ui-panel-drag-handle {
+    position: absolute;
+    background: transparent;
+    z-index: var(--mmgis-z-index-panel-drag);
+}
+
+.ui-panel-drag-handle:hover,
+.ui-panel-drag-handle:active {
+    background: rgba(0, 94, 162, 0.2);
+}
+
+.ui-panel-drag-handle-left {
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+}
+
+.ui-panel-drag-handle-right {
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+}
+
+.ui-panel-drag-handle-top {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: row-resize;
+}
+
+.ui-panel-drag-handle-bottom {
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 6px;
+    cursor: row-resize;
+}
+
+/* ============================================
+   Region-Specific Layout Adjustments
+   ============================================ */
+
+/* LEFT & RIGHT REGIONS: Vertical stacking */
+.ui-region-left .ui-panel,
+.ui-region-right .ui-panel {
+    flex-direction: column;
+}
+
+.ui-region-left .ui-panel-body,
+.ui-region-right .ui-panel-body {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.ui-region-left .ui-tool-card-stacked,
+.ui-region-right .ui-tool-card-stacked {
+    flex: 0 0 auto;
+    width: 100%; /* Prevent tool cards from shrinking */
+}
+
+/* TOP & BOTTOM REGIONS: Horizontal stacking */
+.ui-region-top .ui-panel,
+.ui-region-bottom .ui-panel {
+    flex-direction: row;
+    flex: 1;
+}
+
+.ui-region-top .ui-panel-header,
+.ui-region-bottom .ui-panel-header {
+    writing-mode: horizontal-tb;
+    display: flex;
+    align-items: center;
+}
+
+.ui-region-top .ui-panel-body,
+.ui-region-bottom .ui-panel-body {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.ui-region-top .ui-tool-card-stacked,
+.ui-region-bottom .ui-tool-card-stacked {
+    flex: 0 0 auto;
+    min-width: 140px; /* Ensure horizontal tools don't collapse */
+}
+
+/* ============================================
+   Tabbed Layout Overrides
+   Higher specificity to override region-specific panel-body rules
+   ============================================ */
+.ui-region-left .ui-panel-body-tabbed,
+.ui-region-right .ui-panel-body-tabbed,
+.ui-region-top .ui-panel-body-tabbed,
+.ui-region-bottom .ui-panel-body-tabbed {
+    flex-direction: column;
+    align-items: stretch;
+    overflow: hidden;
+}
+
+.ui-panel-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    background: var(--mmgis-uswds-white);
+}
+
+/* Sidebar Icons */
+.ui-panel-icons {
+    display: none;
+    background: transparent;
+    color: var(--mmgis-uswds-white);
+    padding: 4px;
+    gap: 4px;
+    z-index: var(--mmgis-z-index-panel-icons);
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.ui-panel-icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--mmgis-uswds-primary);
+    opacity: 1;
+    cursor: pointer;
+    font-size: 1.5rem;
+    padding: 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, opacity 0.2s;
+}
+
+.ui-panel-icon-btn:hover {
+    background: #4d8fc3; /* Fallback for color-mix */
+    background: color-mix(in srgb, var(--mmgis-uswds-primary-light) 30%, white);
+}
+
+.ui-panel-icon-btn.active {
+    opacity: 1;
+    background: var(--mmgis-uswds-primary);
+    color: var(--mmgis-uswds-white);
+}
+
+/* Iconified & Focused States visibility */
+.ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-panel[data-panel-state="focused"] .ui-panel-icons {
+    display: flex;
+}
+
+.ui-modern-grid .ui-panel[data-panel-state="iconified"] .ui-panel-content {
+    display: none;
+}
+
+/* Vertical grid for left/right, horizontal for top/bottom */
+.ui-region-left .ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-region-right .ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-region-left .ui-panel[data-panel-state="focused"] .ui-panel-icons,
+.ui-region-right .ui-panel[data-panel-state="focused"] .ui-panel-icons {
+    flex-direction: column;
+}
+
+.ui-region-top .ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-region-bottom .ui-panel[data-panel-state="iconified"] .ui-panel-icons,
+.ui-region-top .ui-panel[data-panel-state="focused"] .ui-panel-icons,
+.ui-region-bottom .ui-panel[data-panel-state="focused"] .ui-panel-icons {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* Focused Panel Flex Direction */
+.ui-region-left .ui-panel[data-panel-state="focused"] {
+    flex-direction: row;
+}
+
+.ui-region-right .ui-panel[data-panel-state="focused"] {
+    flex-direction: row-reverse;
+}
+
+.ui-region-top .ui-panel[data-panel-state="focused"] {
+    flex-direction: column;
+}
+
+.ui-region-bottom .ui-panel[data-panel-state="focused"] {
+    flex-direction: column-reverse;
+}
+
+/* Display corresponding panel body only with active tool */
+.ui-modern-grid .ui-panel[data-panel-state="focused"] .ui-tool-card {
+    display: none; /* Hide all tool cards by default in focused state */
+}
+
+/* For focused stacked layouts or tabbed */
+.ui-modern-grid .ui-panel[data-panel-state="focused"] .ui-tool-card.active {
+    display: flex;
+    height: 100%;
+}
+
+/* Hide tabs in focused because the icon bar acts as the tabs */
+.ui-modern-grid .ui-panel[data-panel-state="focused"] .ui-panel-tabs {
+    display: none;
+}
+
+/* ============================================
+   State Handling Overrides
+   CSS clamping based on data-panel-state
+   ============================================ */
+
+.ui-modern-grid .ui-panel[data-panel-state="collapsed"] {
+    display: none;
+}
+
+body.ui-is-dragging .ui-modern-grid .ui-panel {
+    transition: none;
+}
+
+.ui-modern-grid .ui-panel[data-panel-state="iconified"] {
+    /* Collapse down to header/tabs only, discarding layout padding */
+    width: auto;
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+}
+
+.ui-modern-grid .ui-panel[data-panel-state="iconified"] .ui-panel-drag-handle,
+.ui-modern-grid .ui-panel[data-panel-state="collapsed"] .ui-panel-drag-handle {
+    display: none;
+}
+
+/* ============================================
+   Compact Layout Support
+   ============================================ */
+
+.ui-modern-grid.ui-layout-compact .ui-region-center {
+    pointer-events: auto;
+    z-index: 10;
+    overflow: hidden;
+}
+
+.ui-modern-grid.ui-layout-compact .ui-region-center > #map {
+    position: relative !important;
+    z-index: 0 !important;
+}
+
+.ui-modern-grid.ui-layout-compact .ui-panel {
+    margin: 0;
+    border-radius: 0;
+    border: none;
+}

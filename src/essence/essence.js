@@ -43,7 +43,7 @@ import QueryURL from './Ancillary/QueryURL'
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import calls from '../pre/calls'
 import { mmgisAPI_, mmgisAPI } from './mmgisAPI/mmgisAPI'
-import { makeMissionNotFoundDiv } from './LandingPage/LandingPage'
+import { makeErrorScreen } from './LandingPage/LandingPage'
 import { stylize } from './Ancillary/Stylize'
 //Requiring UserInterface_ initializes itself
 
@@ -461,10 +461,7 @@ var essence = {
                     essence.makeMission(config)
                 },
                 function (e) {
-                    console.log(
-                        "Warning: Couldn't load: " + to + ' configuration.'
-                    )
-                    makeMissionNotFoundDiv()
+                    makeErrorScreen('Mission Not Found', 'The requested mission could not be found or failed to load.')
                 }
             )
         } else {
@@ -479,14 +476,7 @@ var essence = {
                     await essence.makeMission(data)
                 }
             ).fail(function () {
-                console.log(
-                    "Warning: Couldn't load: " +
-                        'Missions/' +
-                        to +
-                        '/' +
-                        'config.json'
-                )
-                makeMissionNotFoundDiv()
+                makeErrorScreen('Mission Not Found', 'The requested mission could not be found or failed to load.')
             })
         }
     },
