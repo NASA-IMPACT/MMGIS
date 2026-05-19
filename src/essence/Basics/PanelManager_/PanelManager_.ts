@@ -313,13 +313,14 @@ class PanelManager implements PanelManagerInterface {
         }
 
         // Check orientation compatibility
-        const requiredOrientation = toolMetadata.requiredOrientation;
-        const supportedOrientation = capabilities?.supportedOrientation;
+        // Get orientation from tool metadata, default to 'any' if not specified
+        const toolOrientation = toolMetadata.requiredOrientation || 'any';
+        const supportedOrientation = capabilities?.supportedOrientation || 'any';
 
-        if (supportedOrientation && requiredOrientation !== 'any') {
-            if (supportedOrientation !== 'any' && supportedOrientation !== requiredOrientation) {
-                return false;
-            }
+        // If either is 'any', they're compatible
+        // Otherwise, they must match exactly
+        if (toolOrientation !== 'any' && supportedOrientation !== 'any') {
+            return toolOrientation === supportedOrientation;
         }
 
         return true;

@@ -1,10 +1,131 @@
 import $ from 'jquery'
 import PanelManager_ from '../PanelManager_/PanelManager_'
 import { mmgisAPI } from '../../mmgisAPI/mmgisAPI'
+import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
+import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
+import { createLogger } from '../Logger_/Logger_'
 import './UserInterfaceModern_.css'
+
+const logger = createLogger('UserInterfaceModern')
 
 const DEFAULT_MIN_PANEL_SIZE = 50;
 const DEFAULT_MAX_PANEL_SIZE = 9999;
+
+// --- Module-Level State ---
+let panels = []
+let layoutStyle = ''
+let toolLoadQueue = []
+let cleanupLayoutListener = null
+let _resizeObserver = null
+
+// --- DOM Builder Helpers ---
+const _createPanelIconTray = (panel) => {
+    const iconsContainer = $('<div class="ui-panel-icons"></div>')
+    const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+
+    toolsMetadata.forEach(toolMetadata => {
+        const toolName = toolMetadata.name || toolMetadata.id
+        const toolId = toolMetadata.id
+        const iconClass = getValidIconClass(toolMetadata.icon, toolId)
+
+        // Use safe jQuery methods to create elements and set attributes
+        const iconSpan = $('<span></span>').addClass(iconClass)
+        const iconBtn = $('<button></button>')
+            .addClass('ui-panel-icon-btn')
+            .attr('title', toolName) // jQuery escapes attribute values
+            .attr('data-tool', toolId)
+            .append(iconSpan)
+
+        iconBtn.on('click', () => {
+            if (panel.state === 'focused' && panel.activeToolId === toolId) {
+                PanelManager_.setPanelState(panel.id, 'iconified')
+            } else {
+                PanelManager_.focusTool(panel.id, toolId)
+            }
+        })
+        iconsContainer.append(iconBtn)
+    })
+    return iconsContainer
+}
+
+const _createPanelHeader = (panel) => {
+    const allowed = panel.config.stateConstraints?.allowedStates || []
+    const header = $('<div class="ui-panel-header"></div>')
+    const title = $('<h3 class="ui-panel-title"></h3>').text(panel.config.title || panel.id)
+    const headerButtons = $('<div class="ui-panel-header-buttons"></div>')
+
+    if (allowed.includes('iconified') || allowed.includes('collapsed')) {
+        const minBtn = $('<button class="ui-panel-btn ui-panel-btn-minimize" title="Minimize"><span class="mdi mdi-window-minimize"></span></button>')
+        minBtn.on('click', () => {
+            const target = allowed.includes('iconified') ? 'iconified' : 'collapsed'
+            PanelManager_.setPanelState(panel.id, target)
+        })
+        headerButtons.append(minBtn)
+    }
+
+    if (allowed.includes('expanded')) {
+        const maxBtn = $('<button class="ui-panel-btn ui-panel-btn-maximize" title="Maximize"><span class="mdi mdi-window-maximize"></span></button>')
+        maxBtn.on('click', () => {
+            PanelManager_.setPanelState(panel.id, 'expanded')
+        })
+        headerButtons.append(maxBtn)
+    }
+
+    if (allowed.includes('collapsed')) {
+        const closeBtn = $('<button class="ui-panel-btn ui-panel-btn-close" title="Close"><span class="mdi mdi-close"></span></button>')
+        closeBtn.on('click', () => {
+            PanelManager_.setPanelState(panel.id, 'collapsed')
+        })
+        headerButtons.append(closeBtn)
+    }
+
+    header.append(title).append(headerButtons)
+    return header
+}
+
+const _renderRegion = (regionName, regionPanels) => {
+    if (!regionPanels || regionPanels.length === 0) return null
+    
+    const regionDiv = $(`<div class="ui-region ui-region-${regionName}"></div>`)
+    
+    regionPanels.forEach(panel => {
+        const panelDiv = $('<div class="ui-panel"></div>').attr('id', panel.containerId)
+        const contentWrapper = $('<div class="ui-panel-content"></div>')
+        const body = $('<div class="ui-panel-body"></div>')
+
+        // Icon Tray
+        panelDiv.append(_createPanelIconTray(panel))
+
+        // Header
+        if (panel.config.hasHeader) {
+            contentWrapper.append(_createPanelHeader(panel))
+        }
+
+        panelDiv.attr('data-panel-state', panel.state)
+
+        if (panel.config.capabilities && panel.config.capabilities.resizable) {
+            panelDiv.append($('<div></div>').addClass(`ui-panel-drag-handle ui-panel-drag-handle-${regionName}`))
+        }
+
+        // Tools rendering
+        if (panel.tools && panel.tools.size > 0) {
+            if (panel.config.layoutType === 'tabbed') {
+                UserInterfaceModern_.renderTabbedLayout(panel, body)
+            } else {
+                UserInterfaceModern_.renderStackedLayout(panel, body)
+            }
+        } else {
+            body.append('<p class="ui-empty-text">No tools configured</p>')
+        }
+
+        contentWrapper.append(body)
+        panelDiv.append(contentWrapper)
+        regionDiv.append(panelDiv)
+    })
+    
+    return regionDiv
+}
+
 
 /**
  * Modern User Interface Module
@@ -12,35 +133,90 @@ const DEFAULT_MAX_PANEL_SIZE = 9999;
 const UserInterfaceModern_ = {
     /**
      * Initializes the modern layout.
-     * @param {Array} panels - Array of panel objects (parsed from config & PanelManager)
-     * @param {string} layoutStyle - The layout style ('overlay' | 'compact')
+     * @param {Array} panelsArr - Array of panel objects (parsed from config & PanelManager)
+     * @param {string} style - The layout style ('overlay' | 'compact')
      */
-    init: function (panels, layoutStyle = 'overlay') {
-        this.panels = panels
-        this.layoutStyle = layoutStyle
+    init: function (panelsArr, style = 'overlay') {
+        panels = panelsArr
+        layoutStyle = style
         this.render()
 
-        if (!this._unsubscribeLayout) {
-            this._unsubscribeLayout = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+        if (!cleanupLayoutListener) {
+            cleanupLayoutListener = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+        }
+
+        // Set up ResizeObserver to dispatch resize events when the center map area changes size
+        if (_resizeObserver) {
+            _resizeObserver.disconnect()
+        }
+        _resizeObserver = new ResizeObserver(() => {
+            window.dispatchEvent(new Event('resize'))
+        })
+        const centerElement = document.getElementById('ui-modern-center')
+        if (centerElement) {
+            _resizeObserver.observe(centerElement)
         }
     },
 
     /**
-     * TODO: Use tool metadata to render actual tools and not just placeholders
-     * Creates a tool card for either stacked or tabbed layout
-     * @param {string} toolId - Unique identifier for the tool
-     * @param {string} toolName - Name of the tool
+     * Destroy the modern UI and clean up all loaded tools
+     */
+    destroy: function () {
+        ToolControllerModern_.destroyAllTools()
+        toolLoadQueue = [] // Clear any pending loads
+        if (cleanupLayoutListener) {
+            cleanupLayoutListener()
+            cleanupLayoutListener = null
+        }
+        if (_resizeObserver) {
+            _resizeObserver.disconnect()
+            _resizeObserver = null
+        }
+        $('#modern-content').empty()
+        panels = []
+    },
+
+    /**
+     * Creates a tool card container for either stacked or tabbed layout
+     * Tool loading is deferred until after DOM is rendered
+     *
+     * @param {Object} toolMetadata - Tool metadata object
+     * @param {string} panelId - Panel ID for generating unique tool container ID
      * @param {string} layoutType - Either 'stacked' or 'tabbed' (default: 'stacked')
      * @param {boolean} isActive - Whether this card should be active (default: false, used for tabbed layout)
-     * @returns {jQuery} Tool card element
+     * @returns {Object} Object with toolCard element and loadTool function
+     * @throws {Error} If toolMetadata is invalid or panelId is missing
      */
-    createToolCard: function (toolId, toolName, layoutType = 'stacked', isActive = false) {
-        const activeClass = isActive ? 'active' : ''
+    createToolCard: function (toolMetadata, panelId, layoutType = 'stacked', isActive = false) {
+        if (!panelId) {
+            throw new Error('[UserInterfaceModern] panelId is required for createToolCard')
+        }
+
+        const toolId = toolMetadata.id
+        const targetId = `${panelId}-tool-${toolId}`
         const layoutClass = layoutType === 'tabbed' ? 'ui-tool-tab-content' : 'ui-tool-card-stacked'
 
-        return $(`<div class="ui-tool-card ${layoutClass} ${activeClass}" data-tool="${toolId}"></div>`)
-            .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
-            .append($('<span class="ui-tool-title"></span>').text(toolName))
+        const toolCard = $('<div></div>')
+            .addClass('ui-tool-card')
+            .addClass(layoutClass)
+            .addClass(isActive ? 'active' : '')
+            .attr('data-tool', toolId)
+            .attr('id', targetId)
+
+        // Return card and a function to load the tool (called after append)
+        // The load function checks if DOM element still exists before loading
+        return {
+            toolCard: toolCard,
+            loadTool: () => {
+
+                const targetElement = document.getElementById(targetId)
+                if (!targetElement) {
+                    logger.warn(`Target element "${targetId}" not found in DOM, skipping tool load`)
+                    return
+                }
+                ToolControllerModern_.loadTool(toolMetadata, targetId)
+            }
+        }
     },
 
     /**
@@ -49,25 +225,44 @@ const UserInterfaceModern_ = {
      * @param {jQuery} body - Panel body element
      */
     renderTabbedLayout: function (panel, body) {
+        if (!panel || !panel.id || !panel.containerId) {
+            logger.error('Invalid panel object in renderTabbedLayout:', panel)
+            return
+        }
+
         body.addClass('ui-panel-body-tabbed')
 
         const tabBar = $('<div class="ui-panel-tabs"></div>')
         const tabContentArea = $('<div class="ui-panel-tab-content-area"></div>')
 
-        const toolsArray = PanelManager_.getToolsForPanel(panel.id)
-        toolsArray.forEach((toolMetadata, idx) => {
-            const isActive = idx === 0 ? 'active' : ''
+        const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
 
-            // Create tab
-            const tab = $(`<div class="ui-panel-tab ${isActive}" data-tool="${toolMetadata.id}"></div>`)
-                .append('<span class="ui-tool-icon mdi mdi-view-dashboard"></span>')
-                .append($('<span></span>').text(toolMetadata.name))
+        toolsMetadata.forEach((toolMetadata, idx) => {
+            const toolName = toolMetadata.name || toolMetadata.id
+            const toolId = toolMetadata.id
+            const isActive = idx === 0
+
+            // Create tab using safe jQuery methods
+            const iconClass = getValidIconClass(toolMetadata.icon, toolId)
+            const iconSpan = $('<span></span>').addClass('ui-tool-icon').addClass(iconClass)
+            const textSpan = $('<span></span>').text(toolName) // .text() is safe - auto-escapes
+
+            const tab = $('<div></div>')
+                .addClass('ui-panel-tab')
+                .addClass(isActive ? 'active' : '')
+                .attr('data-tool', toolId)
+                .append(iconSpan)
+                .append(textSpan)
+
             tabBar.append(tab)
 
-            // Create tab content placeholder using createToolCard
-            const toolCard = this.createToolCard(toolMetadata.id, toolMetadata.name, 'tabbed', idx === 0)
+            // Create tab content container and queue tool loading
+            const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId, 'tabbed', isActive)
             tabContentArea.append(toolCard)
+            toolLoadQueue.push(loadTool)
         })
+
+        body.append(tabBar).append(tabContentArea)
 
         // Bind tab click events
         tabBar.on('click', '.ui-panel-tab', function () {
@@ -80,10 +275,10 @@ const UserInterfaceModern_ = {
 
             // Update active content
             tabContentArea.find('.ui-tool-tab-content').removeClass('active')
-            tabContentArea.find(`.ui-tool-tab-content[data-tool="${targetTool}"]`).addClass('active')
+            tabContentArea.find('.ui-tool-tab-content').filter((_, element) => {
+                return $(element).data('tool') === targetTool
+            }).addClass('active')
         })
-
-        body.append(tabBar).append(tabContentArea)
     },
 
     /**
@@ -92,9 +287,18 @@ const UserInterfaceModern_ = {
      * @param {jQuery} body - Panel body element
      */
     renderStackedLayout: function (panel, body) {
-        const toolsArray = PanelManager_.getToolsForPanel(panel.id)
-        toolsArray.forEach(toolMetadata => {
-            body.append(this.createToolCard(toolMetadata.id, toolMetadata.name))
+        if (!panel || !panel.id || !panel.containerId) {
+            logger.error('Invalid panel object in renderStackedLayout:', panel)
+            return
+        }
+
+        const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+
+        toolsMetadata.forEach(toolMetadata => {
+            const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId)
+            body.append(toolCard)
+            // Queue tool loading for after DOM is fully rendered
+            toolLoadQueue.push(loadTool)
         })
     },
 
@@ -129,9 +333,12 @@ const UserInterfaceModern_ = {
         const container = $('#modern-content')
         container.empty()
 
+        // Clear the tool load queue (start fresh)
+        toolLoadQueue = []
+
         // Create the main grid wrapper
         const gridWrapper = $('<div class="ui-modern-grid"></div>')
-        if (this.layoutStyle === 'compact') {
+        if (layoutStyle === 'compact') {
             gridWrapper.addClass('ui-layout-compact')
         }
 
@@ -143,17 +350,18 @@ const UserInterfaceModern_ = {
             bottom: []
         }
 
-        this.panels.forEach(p => {
+        panels.forEach(p => {
             const pos = p.config?.position
             if (layoutRegions[pos]) {
                 layoutRegions[pos].push(p)
             }
         })
 
-        // Determine layout based on panel priorities
-        // this.panels is already sorted by priority (lowest number = highest priority)
-        // We need to consider all four priorities to generate the correct grid layout
+        logger.debug('Layout regions after grouping panels:', layoutRegions)
 
+        // Determine layout based on panel priorities
+        // panels is already sorted by priority (lowest number = highest priority)
+        // We need to consider all four priorities to generate the correct grid layout
         const hasLeft = layoutRegions.left.length > 0
         const hasRight = layoutRegions.right.length > 0
         const hasTop = layoutRegions.top.length > 0
@@ -177,145 +385,45 @@ const UserInterfaceModern_ = {
             'grid-template-rows': gridTemplate.rows
         })
 
-        // Render each region
-        const renderRegion = (regionName, regionPanels) => {
-            if (!regionPanels || regionPanels.length === 0) return null
-            
-            const regionDiv = $(`<div class="ui-region ui-region-${regionName}"></div>`)
-            
-            regionPanels.forEach(panel => {
-                const panelDiv = $('<div class="ui-panel"></div>').attr('id', panel.containerId)
-                const contentWrapper = $('<div class="ui-panel-content"></div>')
-                const body = $('<div class="ui-panel-body"></div>')
-
-                const allowed = panel.config.stateConstraints?.allowedStates || []
-
-                // Create the icons bar for iconified/focused state
-                const iconsContainer = $('<div class="ui-panel-icons"></div>')
-                if (panel.tools && panel.tools.size > 0) {
-                    const toolsArray = PanelManager_.getToolsForPanel(panel.id)
-                    toolsArray.forEach(toolMetadata => {
-                        const iconBtn = $(`<button class="ui-panel-icon-btn" title="${toolMetadata.name}" data-tool="${toolMetadata.id}"><span class="mdi mdi-view-dashboard"></span></button>`)
-                        iconBtn.on('click', () => {
-                            if (panel.state === 'focused' && panel.activeToolId === toolMetadata.id) {
-                                PanelManager_.setPanelState(panel.id, 'iconified')
-                            } else {
-                                PanelManager_.focusTool(panel.id, toolMetadata.id)
-                            }
-                        })
-                        iconsContainer.append(iconBtn)
-                    })
-                }
-                panelDiv.append(iconsContainer)
-
-                if (panel.config.hasHeader) {
-                    const header = $('<div class="ui-panel-header"></div>')
-                    const title = $('<h3 class="ui-panel-title"></h3>').text(panel.config.title || panel.id)
-                    const headerButtons = $('<div class="ui-panel-header-buttons"></div>')
-
-                    if (allowed.includes('iconified') || allowed.includes('collapsed')) {
-                        const minBtn = $('<button class="ui-panel-btn ui-panel-btn-minimize" title="Minimize"><span class="mdi mdi-window-minimize"></span></button>')
-                        minBtn.on('click', () => {
-                            const target = allowed.includes('iconified') ? 'iconified' : 'collapsed'
-                            PanelManager_.setPanelState(panel.id, target)
-                        })
-                        headerButtons.append(minBtn)
-                    }
-
-                    if (allowed.includes('expanded')) {
-                        const maxBtn = $('<button class="ui-panel-btn ui-panel-btn-maximize" title="Maximize"><span class="mdi mdi-window-maximize"></span></button>')
-                        maxBtn.on('click', () => {
-                            PanelManager_.setPanelState(panel.id, 'expanded')
-                        })
-                        headerButtons.append(maxBtn)
-                    }
-
-                    if (allowed.includes('collapsed')) {
-                        const closeBtn = $('<button class="ui-panel-btn ui-panel-btn-close" title="Close"><span class="mdi mdi-close"></span></button>')
-                        closeBtn.on('click', () => {
-                            PanelManager_.setPanelState(panel.id, 'collapsed')
-                        })
-                        headerButtons.append(closeBtn)
-                    }
-
-                    header.append(title).append(headerButtons)
-                    contentWrapper.append(header)
-                }
-
-                panelDiv.attr('data-panel-state', panel.state)
-
-                if (panel.config.capabilities && panel.config.capabilities.resizable) {
-                    panelDiv.append($('<div></div>').addClass(`ui-panel-drag-handle ui-panel-drag-handle-${regionName}`))
-                }
-
-                // Render placeholders for tools based on layoutType
-                if (panel.tools && panel.tools.size > 0) {
-                    if (panel.config.layoutType === 'tabbed') {
-                        this.renderTabbedLayout(panel, body)
-                    } else {
-                        this.renderStackedLayout(panel, body)
-                    }
-                } else {
-                    body.append('<p class="ui-empty-text">No tools configured</p>')
-                }
-
-                contentWrapper.append(body)
-                panelDiv.append(contentWrapper)
-                regionDiv.append(panelDiv)
-            })
-            
-            return regionDiv
-        }
-
         // We will append regions. Grid layout will organize them.
-        gridWrapper.append(renderRegion('top', layoutRegions.top))
+        gridWrapper.append(_renderRegion('top', layoutRegions.top))
         
         // A central map/globe container (wrapper for map/globe content)
         const centralArea = $('<div class="ui-region-center" id="ui-modern-center"></div>')
         gridWrapper.append(centralArea)
 
-        if (this.layoutStyle === 'compact') {
+        if (layoutStyle === 'compact') {
             const mapEl = $('#map')
             if (mapEl.length) {
                 centralArea.append(mapEl)
             }
         }
 
-        gridWrapper.append(renderRegion('left', layoutRegions.left))
-        gridWrapper.append(renderRegion('right', layoutRegions.right))
-        gridWrapper.append(renderRegion('bottom', layoutRegions.bottom))
+        gridWrapper.append(_renderRegion('left', layoutRegions.left))
+        gridWrapper.append(_renderRegion('right', layoutRegions.right))
+        gridWrapper.append(_renderRegion('bottom', layoutRegions.bottom))
 
         container.append(gridWrapper)
 
-        // Setup ResizeObserver for compact layout resizing
-        if (this._resizeObserver) {
-            this._resizeObserver.disconnect()
+        // Now that all DOM is in place, load all queued tools
+        if (toolLoadQueue.length > 0) {
+            logger.debug(`Loading ${toolLoadQueue.length} queued tools`)
+            const queue = toolLoadQueue;
+            toolLoadQueue = [] // Clear the queue
+            setTimeout(() => {
+                queue.forEach(loadFn => {
+                    try {
+                        loadFn()
+                    } catch (error) {
+                        logger.error('Failed to load tool:', error)
+                        // Continue loading other tools even if one fails
+                    }
+                })
+            }, 0)
         }
-        this._resizeObserver = new ResizeObserver(() => {
-            if (this.layoutStyle === 'compact') {
-                window.dispatchEvent(new Event('resize'))
-            }
-        })
-        if (gridWrapper.length > 0) {
-            this._resizeObserver.observe(gridWrapper[0])
-        }
-
-        // Initialize active tools correctly
-        this.panels.forEach(panel => {
-            const $panel = $(document.getElementById(panel.containerId))
-            if (panel.activeToolId && panel.state === 'focused') {
-                $panel.find('.ui-panel-icon-btn').removeClass('active')
-                $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
-                $panel.find('.ui-tool-card').removeClass('active')
-                $panel.find(`.ui-tool-card[data-tool="${panel.activeToolId}"]`).addClass('active')
-            } else {
-                // Remove active highlighting when not focused
-                $panel.find('.ui-panel-icon-btn').removeClass('active')
-            }
-        })
 
         this.attachResizeEvents()
-        
+
         // Ensure panels get their explicit dimensions applied on mount
         this.syncDOMState()
     },
@@ -329,7 +437,7 @@ const UserInterfaceModern_ = {
             this.panels = e.panels
         }
 
-        this.panels.forEach(panel => {
+        panels.forEach(panel => {
             const $panel = $(document.getElementById(panel.containerId))
             if ($panel.length === 0) return
 
@@ -337,12 +445,17 @@ const UserInterfaceModern_ = {
 
             if (panel.activeToolId && panel.state === 'focused') {
                 // Update active state on icons
+                const activeToolId = panel.activeToolId
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
-                $panel.find(`.ui-panel-icon-btn[data-tool="${panel.activeToolId}"]`).addClass('active')
+                $panel.find('.ui-panel-icon-btn').filter((_, element) => {
+                    return $(element).data('tool') === activeToolId
+                }).addClass('active')
 
                 // Update active state on tool cards (especially for focused state and tabbed)
                 $panel.find('.ui-tool-card').removeClass('active')
-                $panel.find(`.ui-tool-card[data-tool="${panel.activeToolId}"]`).addClass('active')
+                $panel.find('.ui-tool-card').filter((_, element) => {
+                    return $(element).data('tool') === activeToolId
+                }).addClass('active')
             } else {
                 // Remove active highlighting when not focused
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
@@ -369,10 +482,6 @@ const UserInterfaceModern_ = {
                 }
             }
         })
-
-        if (this.layoutStyle === 'compact') {
-            window.dispatchEvent(new Event('resize'))
-        }
     },
 
     /**
@@ -383,7 +492,6 @@ const UserInterfaceModern_ = {
         $(document).off('.uiModernResize')
         $('.ui-panel-drag-handle').off('mousedown.uiModernResize')
 
-        const self = this // Store reference to preserve context
         let isResizing = false
         let startX, startY
         let startWidth, startHeight
@@ -404,7 +512,7 @@ const UserInterfaceModern_ = {
             else if ($handle.hasClass('ui-panel-drag-handle-bottom')) currentRegion = 'bottom'
 
             const panelId = $currentPanel.attr('id')
-            const panelState = self.panels.find(p => p.containerId === panelId)
+            const panelState = panels.find(p => p.containerId === panelId)
             currentConfig = panelState ? panelState.config : null
 
             startX = e.clientX
@@ -461,7 +569,7 @@ const UserInterfaceModern_ = {
             }
             $currentPanel.css(cssUpdates)
 
-            if (self.layoutStyle === 'compact') {
+            if (layoutStyle === 'compact') {
                 window.dispatchEvent(new Event('resize'))
             }
         })
@@ -482,7 +590,7 @@ const UserInterfaceModern_ = {
                 currentRegion = null
                 $('body').css('user-select', '').removeClass('ui-is-dragging')
 
-                if (self.layoutStyle === 'compact') {
+                if (layoutStyle === 'compact') {
                     window.dispatchEvent(new Event('resize'))
                 }
             }
