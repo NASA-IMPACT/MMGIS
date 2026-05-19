@@ -71,9 +71,6 @@ const cssRegex = /\.css$/;
 const cssModuleRegex = /\.module\.css$/;
 const sassRegex = /\.(scss|sass)$/;
 const sassModuleRegex = /\.module\.(scss|sass)$/;
-// LayerManager USWDS global stylesheet. Scoped at the post-Sass step via
-// postcss-prefix-selector (Sass @forward cannot be nested inside a selector).
-const layerManagerScopedSassRegex = /src[\\/]essence[\\/]Tools[\\/]LayerManager[\\/]lib[\\/]styles[\\/]index\.scss$/;
 
 // This is the production and development configuration.
 // It is focused on developer experience, fast rebuilds, and a minimal bundle.
@@ -96,7 +93,7 @@ module.exports = function (webpackEnv) {
   const env = getClientEnvironment(paths.publicUrlOrPath.slice(0, -1));
 
   // common function to get style loaders
-  const getStyleLoaders = (cssOptions, preProcessor, extraPostcssPlugins = []) => {
+  const getStyleLoaders = (cssOptions, preProcessor) => {
     // prettier-ignore
     const loaders = [
       isEnvDevelopment && require.resolve("style-loader"),
@@ -141,7 +138,6 @@ module.exports = function (webpackEnv) {
             // so that it honors browserslist config in package.json
             // which in turn let's users customize the target behavior as per their needs.
             postcssNormalize(),
-            ...extraPostcssPlugins,
           ],
           sourceMap: isEnvProduction && shouldUseSourceMap,
         },
@@ -478,48 +474,12 @@ module.exports = function (webpackEnv) {
                 },
               }),
             },
-            // Special case: LayerManager USWDS global SCSS. Compiles at root
-            // scope via Sass, then prefixes every selector with
-            // `.blocks-layer-manager-scope` via postcss-prefix-selector so USWDS
-            // rules apply only inside the LayerManager panel.
-            // Must precede the generic sassRegex rule.
-            {
-              test: layerManagerScopedSassRegex,
-              use: getStyleLoaders(
-                {
-                  importLoaders: 3,
-                  sourceMap: isEnvProduction && shouldUseSourceMap,
-                },
-                "sass-loader",
-                [
-                  require("postcss-prefix-selector")({
-                    prefix: ".blocks-layer-manager-scope",
-                    transform: function (prefix, selector, prefixedSelector) {
-                      // Rewrite root-element selectors (`:root`, `html`, `body`)
-                      // to the scope wrapper so USWDS reset rules apply there.
-                      // Match EXACTLY — selectors with attribute / pseudo
-                      // modifiers (e.g. `:root[hidden]`, `html.no-js`) must NOT
-                      // collapse to the bare prefix, since the modifier is
-                      // meaningful and stripping it would apply the rule
-                      // unconditionally (this happened with `:root[hidden]`
-                      // which set position: absolute; left: -999em on the
-                      // wrapper, pushing the panel off-screen).
-                      if (/^(?::root|html|body)$/.test(selector.trim())) {
-                        return prefix;
-                      }
-                      return prefixedSelector;
-                    },
-                  }),
-                ]
-              ),
-              sideEffects: true,
-            },
             // Opt-in support for SASS (using .scss or .sass extensions).
             // By default we support SASS Modules with the
             // extensions .module.scss or .module.sass
             {
               test: sassRegex,
-              exclude: [sassModuleRegex, layerManagerScopedSassRegex],
+              exclude: sassModuleRegex,
               use: getStyleLoaders(
                 {
                   importLoaders: 3,

@@ -1,15 +1,6 @@
 @use '../theme-tokens';
 @use 'uswds-core' as *;
 
-/* Make the .blocks-layer-manager-scope wrapper transparent for layout so that
-   .blocks-layer-manager's `height/width: 100%` resolves against #toolPanel
-   instead of the wrapper (which would otherwise shrink to content -> 0).
-   The :root selector is rewritten to .blocks-layer-manager-scope by
-   postcss-prefix-selector (see configuration/webpack.config.js). */
-:root {
-    display: contents;
-}
-
 /* Tool root */
 .blocks-layer-manager {
     display: flex;

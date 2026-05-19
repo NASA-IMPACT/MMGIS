@@ -28,42 +28,40 @@ export function LayerManagerPanel({
 }: LayerManagerPanelProps) {
     const hasHeader = Boolean(title) || Boolean(onRefresh)
     return (
-        <div className="blocks-layer-manager-scope">
-            <div className="blocks-layer-manager">
-                {hasHeader && (
-                    <div className="blocks-layer-manager__header">
-                        {title && <div className="blocks-layer-manager__title">{title}</div>}
-                        {onRefresh && (
-                            <div className="blocks-layer-manager__actions">
-                                <Button
-                                    type="button"
-                                    unstyled
-                                    title="Refresh legends"
-                                    onClick={onRefresh}
-                                    className="blocks-layer-manager__action"
-                                >
-                                    <i className="mdi mdi-refresh mdi-18px" />
-                                </Button>
-                            </div>
-                        )}
-                    </div>
-                )}
-                <div className="blocks-layer-manager__content">
-                    {loading ? (
-                        <div className="blocks-layer-manager__loading">
-                            <div className="mmgisLoading" />
+        <div className="blocks-layer-manager">
+            {hasHeader && (
+                <div className="blocks-layer-manager__header">
+                    {title && <div className="blocks-layer-manager__title">{title}</div>}
+                    {onRefresh && (
+                        <div className="blocks-layer-manager__actions">
+                            <Button
+                                type="button"
+                                unstyled
+                                title="Refresh legends"
+                                onClick={onRefresh}
+                                className="blocks-layer-manager__action"
+                            >
+                                <i className="mdi mdi-refresh mdi-18px" />
+                            </Button>
                         </div>
-                    ) : (
-                        <LayerLegendList
-                            layers={layers}
-                            emptyMessage={emptyMessage}
-                            onVisibilityChange={onVisibilityChange}
-                            onOpacityChange={onOpacityChange}
-                            onColormapChange={onColormapChange}
-                            onRescaleChange={onRescaleChange}
-                        />
                     )}
                 </div>
+            )}
+            <div className="blocks-layer-manager__content">
+                {loading ? (
+                    <div className="blocks-layer-manager__loading">
+                        <div className="mmgisLoading" />
+                    </div>
+                ) : (
+                    <LayerLegendList
+                        layers={layers}
+                        emptyMessage={emptyMessage}
+                        onVisibilityChange={onVisibilityChange}
+                        onOpacityChange={onOpacityChange}
+                        onColormapChange={onColormapChange}
+                        onRescaleChange={onRescaleChange}
+                    />
+                )}
             </div>
         </div>
     )
