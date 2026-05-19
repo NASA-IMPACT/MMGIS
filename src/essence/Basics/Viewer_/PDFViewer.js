@@ -29,7 +29,7 @@ const ReactPDF = (props) => {
         setZoom(3)
     }, [pdfPath])
 
-    function onDocumentLoadSuccess({ numPages }: { numPages: number }): void {
+    function onDocumentLoadSuccess({ numPages }) {
         setNumPages(numPages)
     }
     const bcr = document
