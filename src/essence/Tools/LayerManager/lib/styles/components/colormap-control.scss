@@ -2,111 +2,111 @@
 @use 'uswds-core' as *;
 
 /* Colormap Control Styles */
-.colormap-control {
+.blocks-colormap-control {
     /* Folds in `.gradient-cog-popover .colormap-control { padding: 12px; }` from
        legacy LayerLegend.css to avoid cross-component CSS coupling. */
     padding: units(1.5);
-}
 
-.colormap-control-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: units(0.5);
-}
-
-.colormap-control-label {
-    font-size: font-size('body', 'xs');
-    color: color('ink');
-    min-width: 60px;
-}
-
-.colormap-control-input-group {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex: 1;
-    justify-content: flex-end;
-}
-
-.colormap-control-select {
-    flex: 1;
-    max-width: 150px;
-    height: 26px;
-    padding: 0 units(1);
-    font-size: font-size('body', 'xs');
-    color: color('base-darker');
-    background: color('base-lighter');
-    border: 1px solid color('base-light');
-    border-radius: 3px;
-    cursor: pointer;
-    outline: none;
-
-    &:hover {
-        border-color: color('base-dark');
+    &__row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: units(0.5);
     }
 
-    &:focus {
-        border-color: color('primary');
+    &__label {
+        font-size: font-size('body', 'xs');
+        color: color('ink');
+        min-width: 60px;
     }
-}
 
-.colormap-control-reverse {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    background: color('base-lighter');
-    border: 1px solid color('base-light');
-    border-radius: 3px;
-    color: color('ink');
-    cursor: pointer;
-    transition: all 0.15s ease;
+    &__input-group {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        flex: 1;
+        justify-content: flex-end;
+    }
 
-    &:hover {
-        border-color: color('base-dark');
+    &__select {
+        flex: 1;
+        max-width: 150px;
+        height: 26px;
+        padding: 0 units(1);
+        font-size: font-size('body', 'xs');
         color: color('base-darker');
-        background: color('base-light');
+        background: color('base-lighter');
+        border: 1px solid color('base-light');
+        border-radius: 3px;
+        cursor: pointer;
+        outline: none;
+
+        &:hover {
+            border-color: color('base-dark');
+        }
+
+        &:focus {
+            border-color: color('primary');
+        }
     }
 
-    &.active {
-        background: color('primary');
-        border-color: color('primary');
-        color: white;
-    }
-}
+    &__reverse {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        background: color('base-lighter');
+        border: 1px solid color('base-light');
+        border-radius: 3px;
+        color: color('ink');
+        cursor: pointer;
+        transition: all 0.15s ease;
 
-.colormap-control-preview {
-    margin: units(1) 0;
-    border-radius: 3px;
-    height: 16px;
-    width: 100%;
-}
+        &:hover {
+            border-color: color('base-dark');
+            color: color('base-darker');
+            background: color('base-light');
+        }
 
-.colormap-control-number {
-    width: 80px;
-    height: 26px;
-    padding: 0 units(1);
-    font-size: font-size('body', 'xs');
-    color: color('base-darker');
-    background: color('base-lighter');
-    border: 1px solid color('base-light');
-    border-radius: 3px;
-    outline: none;
-    text-align: right;
-
-    &:hover {
-        border-color: color('base-dark');
+        &--active {
+            background: color('primary');
+            border-color: color('primary');
+            color: white;
+        }
     }
 
-    &:focus {
-        border-color: color('primary');
+    &__preview {
+        margin: units(1) 0;
+        border-radius: 3px;
+        height: 16px;
+        width: 100%;
     }
-}
 
-.colormap-control-units {
-    font-size: 11px;
-    color: color('base');
-    min-width: 30px;
+    &__number {
+        width: 80px;
+        height: 26px;
+        padding: 0 units(1);
+        font-size: font-size('body', 'xs');
+        color: color('base-darker');
+        background: color('base-lighter');
+        border: 1px solid color('base-light');
+        border-radius: 3px;
+        outline: none;
+        text-align: right;
+
+        &:hover {
+            border-color: color('base-dark');
+        }
+
+        &:focus {
+            border-color: color('primary');
+        }
+    }
+
+    &__units {
+        font-size: 11px;
+        color: color('base');
+        min-width: 30px;
+    }
 }

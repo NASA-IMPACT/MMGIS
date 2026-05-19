@@ -23,13 +23,13 @@ export function LayerLegendList({
 }: LayerLegendListProps) {
     if (!layers || layers.length === 0) {
         return (
-            <div className="layer-legend-list">
-                <div className="layer-legend-empty">{emptyMessage}</div>
+            <div className="blocks-layer-legend-list">
+                <div className="blocks-layer-legend-list__empty">{emptyMessage}</div>
             </div>
         )
     }
     return (
-        <div className="layer-legend-list">
+        <div className="blocks-layer-legend-list">
             {layers.map((layer) => (
                 <LayerLegend
                     key={layer.id}

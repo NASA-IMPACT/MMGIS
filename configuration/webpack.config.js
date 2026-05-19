@@ -480,7 +480,7 @@ module.exports = function (webpackEnv) {
             },
             // Special case: LayerManager USWDS global SCSS. Compiles at root
             // scope via Sass, then prefixes every selector with
-            // `.layer-manager-scope` via postcss-prefix-selector so USWDS
+            // `.blocks-layer-manager-scope` via postcss-prefix-selector so USWDS
             // rules apply only inside the LayerManager panel.
             // Must precede the generic sassRegex rule.
             {
@@ -493,7 +493,7 @@ module.exports = function (webpackEnv) {
                 "sass-loader",
                 [
                   require("postcss-prefix-selector")({
-                    prefix: ".layer-manager-scope",
+                    prefix: ".blocks-layer-manager-scope",
                     transform: function (prefix, selector, prefixedSelector) {
                       // Don't prefix :root / html / body selectors.
                       if (

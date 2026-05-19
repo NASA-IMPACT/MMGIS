@@ -104,36 +104,36 @@ export function GradientGraphic({
     const gradientStyle = { background: makeGradient(gradientStops) }
 
     return (
-        <div className="gradient-graphic">
-            <div className="gradient-bar-row">
+        <div className="blocks-gradient-graphic">
+            <div className="blocks-gradient-graphic__bar-row">
                 <div
-                    className="gradient-bar-container"
+                    className="blocks-gradient-graphic__bar-container"
                     onMouseMove={handleMouseMove}
                     onMouseLeave={handleMouseLeave}
                 >
-                    <div ref={barRef} className="gradient-bar" style={gradientStyle} />
+                    <div ref={barRef} className="blocks-gradient-graphic__bar" style={gradientStyle} />
                     {hoverVal !== null && hasNumericLegend && (
                         <div
-                            className="gradient-tooltip visible"
+                            className="blocks-gradient-graphic__tooltip blocks-gradient-graphic__tooltip--visible"
                             style={{ left: tooltipPos.x }}
                         >
                             {formatTooltipValue(hoverVal, unit)}
                         </div>
                     )}
                 </div>
-                <div className="gradient-cog-wrapper">
+                <div className="blocks-gradient-graphic__cog-wrapper">
                     {hasCogSettings && cog && (
                         <>
                             <button
                                 ref={cogBtnRef}
-                                className={`gradient-expand-btn ${isCogExpanded ? 'active' : ''}`}
+                                className={`blocks-gradient-graphic__expand-btn ${isCogExpanded ? 'blocks-gradient-graphic__expand-btn--active' : ''}`}
                                 onClick={() => setIsCogExpanded(!isCogExpanded)}
                                 title={isCogExpanded ? 'Hide COG settings' : 'Show COG settings'}
                             >
                                 <i className={`mdi mdi-chevron-${isCogExpanded ? 'up' : 'down'} mdi-18px`} />
                             </button>
                             {isCogExpanded && (
-                                <div ref={cogPopoverRef} className="gradient-cog-popover">
+                                <div ref={cogPopoverRef} className="blocks-gradient-graphic__cog-popover">
                                     <ColormapControl
                                         layerName={layerId}
                                         colormap={cog.colormap}
@@ -151,11 +151,11 @@ export function GradientGraphic({
                     )}
                 </div>
             </div>
-            <div className="gradient-labels">
-                <span className="gradient-label min">
+            <div className="blocks-gradient-graphic__labels">
+                <span className="blocks-gradient-graphic__label blocks-gradient-graphic__label--min">
                     {formatLegendValue(hasCogSettings && cog ? cog.min : min)}
                 </span>
-                <span className="gradient-label max">
+                <span className="blocks-gradient-graphic__label blocks-gradient-graphic__label--max">
                     {formatLegendValue(hasCogSettings && cog ? cog.max : max)}
                 </span>
             </div>

@@ -114,7 +114,7 @@ export function LayerLegend({
                 ) : null
             case 'text':
                 return (
-                    <div className="text-legend">
+                    <div className="blocks-layer-legend__text">
                         {description || 'No legend information available'}
                     </div>
                 )
@@ -127,26 +127,26 @@ export function LayerLegend({
     const hasLegendContent = type && type !== 'none'
 
     return (
-        <div className="layer-legend" data-legend-id={id}>
-            <div className="layer-legend-header">
-                <div className="layer-legend-checkbox-wrapper">
+        <div className="blocks-layer-legend" data-legend-id={id}>
+            <div className="blocks-layer-legend__header">
+                <div className="blocks-layer-legend__checkbox-wrapper">
                     <input
                         type="checkbox"
-                        className="layer-legend-checkbox"
+                        className="blocks-layer-legend__checkbox"
                         checked={isVisible}
                         onChange={handleVisibilityToggle}
                     />
                 </div>
-                <div className="layer-legend-title-group">
-                    <span className="layer-legend-title" title={title}>
+                <div className="blocks-layer-legend__title-group">
+                    <span className="blocks-layer-legend__title" title={title}>
                         {title}
                     </span>
                 </div>
-                <div className="layer-legend-actions">
-                    <div className="layer-legend-opacity-wrapper">
+                <div className="blocks-layer-legend__actions">
+                    <div className="blocks-layer-legend__opacity-wrapper">
                         <button
                             ref={opacityBtnRef}
-                            className={`layer-legend-action-btn ${isOpacityExpanded ? 'active' : ''}`}
+                            className={`blocks-layer-legend__action-btn ${isOpacityExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}
                             onClick={handleOpacityToggle}
                             title={isOpacityExpanded ? 'Hide opacity' : 'Adjust opacity'}
                         >
@@ -155,32 +155,32 @@ export function LayerLegend({
                         {isOpacityExpanded && (
                             <div
                                 ref={opacityPopoverRef}
-                                className="layer-legend-opacity-popover"
+                                className="blocks-layer-legend__opacity-popover"
                             >
                                 <input
                                     type="range"
-                                    className="layer-legend-opacity-slider"
+                                    className="blocks-layer-legend__opacity-slider"
                                     min={0}
                                     max={1}
                                     step={0.01}
                                     value={localOpacity}
                                     onChange={handleOpacityChange}
                                 />
-                                <span className="layer-legend-opacity-value">
+                                <span className="blocks-layer-legend__opacity-value">
                                     {Math.round(localOpacity * 100)}%
                                 </span>
                             </div>
                         )}
                     </div>
                     <button
-                        className={`layer-legend-action-btn ${isInfoExpanded ? 'active' : ''}`}
+                        className={`blocks-layer-legend__action-btn ${isInfoExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}
                         onClick={handleInfoToggle}
                         title={isInfoExpanded ? 'Hide info' : 'Show info'}
                     >
                         <i className="mdi mdi-information-outline mdi-18px" />
                     </button>
                     <button
-                        className="layer-legend-action-btn"
+                        className="blocks-layer-legend__action-btn"
                         title="More options"
                     >
                         <i className="mdi mdi-dots-vertical mdi-18px" />
@@ -188,15 +188,15 @@ export function LayerLegend({
                 </div>
             </div>
             {isInfoExpanded && description && (
-                <div className="layer-legend-body">
+                <div className="blocks-layer-legend__body">
                     <p>{description}</p>
                 </div>
             )}
             {unit?.label && (
-                <div className="layer-legend-unit-label">{unit.label}</div>
+                <div className="blocks-layer-legend__unit-label">{unit.label}</div>
             )}
             {isVisible && hasLegendContent && (
-                <div className="layer-legend-content">
+                <div className="blocks-layer-legend__content">
                     {renderLegendGraphic()}
                 </div>
             )}

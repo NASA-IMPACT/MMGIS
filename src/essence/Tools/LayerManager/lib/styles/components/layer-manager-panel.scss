@@ -1,17 +1,17 @@
 @use '../theme-tokens';
 @use 'uswds-core' as *;
 
-/* Make the .layer-manager-scope wrapper transparent for layout so that
-   .layer-manager-panel's `height/width: 100%` resolves against #toolPanel
+/* Make the .blocks-layer-manager-scope wrapper transparent for layout so that
+   .blocks-layer-manager's `height/width: 100%` resolves against #toolPanel
    instead of the wrapper (which would otherwise shrink to content -> 0).
-   The :root selector is rewritten to .layer-manager-scope by
+   The :root selector is rewritten to .blocks-layer-manager-scope by
    postcss-prefix-selector (see configuration/webpack.config.js). */
 :root {
     display: contents;
 }
 
 /* Tool root */
-.layer-manager-panel {
+.blocks-layer-manager {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -19,77 +19,74 @@
     background: #ffffff;
     color: color('ink');
     font-family: 'Lato', sans-serif;
-}
 
-/* Header */
-.layer-manager-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: units(1) units(1.5);
-    background: color('base-lighter');
-    border-bottom: 1px solid color('base-light');
-    min-height: 40px;
-    flex-shrink: 0;
-}
-
-.layer-manager-title {
-    font-size: font-size('body', 'sm');
-    font-weight: 500;
-    color: color('base-darker');
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-}
-
-.layer-manager-actions {
-    display: flex;
-    align-items: center;
-    gap: units(0.5);
-    margin-left: auto; /* keeps actions right-aligned even when no title is present */
-}
-
-.layer-manager-action {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: none;
-    border-radius: 3px;
-    color: color('base');
-    cursor: pointer;
-    transition: all 0.15s ease;
-
-    &:hover {
-        background: color('base-lightest');
-        color: color('base-darker');
+    &__header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: units(1) units(1.5);
+        background: color('base-lighter');
+        border-bottom: 1px solid color('base-light');
+        min-height: 40px;
+        flex-shrink: 0;
     }
-}
 
-/* Content area */
-.layer-manager-content {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-}
+    &__title {
+        font-size: font-size('body', 'sm');
+        font-weight: 500;
+        color: color('base-darker');
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
 
-/* Loading state */
-.layer-manager-loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100px;
-    color: color('base');
+    &__actions {
+        display: flex;
+        align-items: center;
+        gap: units(0.5);
+        margin-left: auto; /* keeps actions right-aligned even when no title is present */
+    }
+
+    &__action {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        background: transparent;
+        border: none;
+        border-radius: 3px;
+        color: color('base');
+        cursor: pointer;
+        transition: all 0.15s ease;
+
+        &:hover {
+            background: color('base-lightest');
+            color: color('base-darker');
+        }
+    }
+
+    &__content {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    &__loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100px;
+        color: color('base');
+    }
 }
 
 /* Mobile responsive */
 @media (max-width: 768px) {
-    .layer-manager-header {
+    .blocks-layer-manager__header {
         padding: units(1.5) units(2);
     }
 
-    .layer-manager-title {
+    .blocks-layer-manager__title {
         font-size: font-size('body', 'md');
     }
 }

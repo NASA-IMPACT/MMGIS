@@ -30,19 +30,19 @@ export function LayerManagerPanel({
 }: LayerManagerPanelProps) {
     const hasHeader = Boolean(title) || Boolean(onRefresh)
     return (
-        <div className="layer-manager-scope">
-            <div className="layer-manager-panel">
+        <div className="blocks-layer-manager-scope">
+            <div className="blocks-layer-manager">
                 {hasHeader && (
-                    <div className="layer-manager-header">
-                        {title && <div className="layer-manager-title">{title}</div>}
+                    <div className="blocks-layer-manager__header">
+                        {title && <div className="blocks-layer-manager__title">{title}</div>}
                         {onRefresh && (
-                            <div className="layer-manager-actions">
+                            <div className="blocks-layer-manager__actions">
                                 <Button
                                     type="button"
                                     unstyled
                                     title="Refresh legends"
                                     onClick={onRefresh}
-                                    className="layer-manager-action"
+                                    className="blocks-layer-manager__action"
                                 >
                                     <i className="mdi mdi-refresh mdi-18px" />
                                 </Button>
@@ -50,9 +50,9 @@ export function LayerManagerPanel({
                         )}
                     </div>
                 )}
-                <div className="layer-manager-content">
+                <div className="blocks-layer-manager__content">
                     {loading ? (
-                        <div className="layer-manager-loading">
+                        <div className="blocks-layer-manager__loading">
                             <div className="mmgisLoading" />
                         </div>
                     ) : (

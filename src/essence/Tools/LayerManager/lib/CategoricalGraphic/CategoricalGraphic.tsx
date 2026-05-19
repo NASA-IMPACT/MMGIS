@@ -41,35 +41,35 @@ export function CategoricalGraphic({
 
     if (!isExpanded) {
         return (
-            <div className="categorical-graphic">
-                <div className="categorical-bar-row">
+            <div className="blocks-categorical-graphic">
+                <div className="blocks-categorical-graphic__bar-row">
                     <div
                         ref={barRef}
-                        className="categorical-swatch-line"
+                        className="blocks-categorical-graphic__swatch-line"
                         onMouseMove={handleMouseMove}
                         onMouseLeave={handleMouseLeave}
                     >
                         {stops.map((stop, index) => (
                             <div
                                 key={`${stop.color}-${index}`}
-                                className="categorical-swatch-segment"
+                                className="blocks-categorical-graphic__swatch-segment"
                                 style={{ backgroundColor: stop.color }}
                             />
                         ))}
                         {hoverLabel !== null && (
                             <div
-                                className="categorical-tooltip visible"
+                                className="blocks-categorical-graphic__tooltip blocks-categorical-graphic__tooltip--visible"
                                 style={{ left: tooltipPos.x }}
                             >
                                 {hoverLabel}
                             </div>
                         )}
                     </div>
-                    <div className="categorical-spacer" />
+                    <div className="blocks-categorical-graphic__spacer" />
                 </div>
                 {stops.length > 1 && (
                     <div
-                        className="categorical-toggle"
+                        className="blocks-categorical-graphic__toggle"
                         onClick={() => setIsExpanded(true)}
                     >
                         <i className="mdi mdi-chevron-down mdi-14px" />
@@ -81,16 +81,16 @@ export function CategoricalGraphic({
     }
 
     return (
-        <div className="categorical-graphic">
-            <div className="categorical-list">
+        <div className="blocks-categorical-graphic">
+            <div className="blocks-categorical-graphic__list">
                 {stops.map((stop, index) => (
-                    <div key={`${stop.color}-${index}`} className="categorical-item">
-                        <div className="categorical-swatch" style={{ backgroundColor: stop.color }} />
-                        <span className="categorical-label">{stop.label}</span>
+                    <div key={`${stop.color}-${index}`} className="blocks-categorical-graphic__item">
+                        <div className="blocks-categorical-graphic__swatch" style={{ backgroundColor: stop.color }} />
+                        <span className="blocks-categorical-graphic__label">{stop.label}</span>
                     </div>
                 ))}
             </div>
-            <div className="categorical-toggle" onClick={() => setIsExpanded(false)}>
+            <div className="blocks-categorical-graphic__toggle" onClick={() => setIsExpanded(false)}>
                 <i className="mdi mdi-chevron-up mdi-14px" />
                 <span>Collapse</span>
             </div>

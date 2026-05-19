@@ -111,12 +111,12 @@ export function ColormapControl({
     )
 
     return (
-        <div className="colormap-control">
-            <div className="colormap-control-row">
-                <label className="colormap-control-label">Colormap</label>
-                <div className="colormap-control-input-group">
+        <div className="blocks-colormap-control">
+            <div className="blocks-colormap-control__row">
+                <label className="blocks-colormap-control__label">Colormap</label>
+                <div className="blocks-colormap-control__input-group">
                     <select
-                        className="colormap-control-select"
+                        className="blocks-colormap-control__select"
                         value={baseColormap}
                         onChange={handleColormapSelect}
                         disabled={colormapsLoading}
@@ -126,7 +126,7 @@ export function ColormapControl({
                         ))}
                     </select>
                     <button
-                        className={`colormap-control-reverse ${reversed ? 'active' : ''}`}
+                        className={`blocks-colormap-control__reverse ${reversed ? 'blocks-colormap-control__reverse--active' : ''}`}
                         onClick={handleReverseToggle}
                         title="Reverse colormap"
                     >
@@ -134,32 +134,32 @@ export function ColormapControl({
                     </button>
                 </div>
             </div>
-            <div className="colormap-control-row">
-                <label className="colormap-control-label">Min</label>
-                <div className="colormap-control-input-group">
+            <div className="blocks-colormap-control__row">
+                <label className="blocks-colormap-control__label">Min</label>
+                <div className="blocks-colormap-control__input-group">
                     <input
                         type="number"
-                        className="colormap-control-number"
+                        className="blocks-colormap-control__number"
                         value={localMin}
                         onChange={handleMinChange}
                         onBlur={handleMinBlur}
                         onKeyDown={handleKeyDown}
                     />
-                    {units && <span className="colormap-control-units">{units}</span>}
+                    {units && <span className="blocks-colormap-control__units">{units}</span>}
                 </div>
             </div>
-            <div className="colormap-control-row">
-                <label className="colormap-control-label">Max</label>
-                <div className="colormap-control-input-group">
+            <div className="blocks-colormap-control__row">
+                <label className="blocks-colormap-control__label">Max</label>
+                <div className="blocks-colormap-control__input-group">
                     <input
                         type="number"
-                        className="colormap-control-number"
+                        className="blocks-colormap-control__number"
                         value={localMax}
                         onChange={handleMaxChange}
                         onBlur={handleMaxBlur}
                         onKeyDown={handleKeyDown}
                     />
-                    {units && <span className="colormap-control-units">{units}</span>}
+                    {units && <span className="blocks-colormap-control__units">{units}</span>}
                 </div>
             </div>
         </div>
