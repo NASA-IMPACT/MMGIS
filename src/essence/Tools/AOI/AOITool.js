@@ -455,15 +455,8 @@ const AOITool = {
         if (!aoi) return
         const layerName = this._guessActiveLayerName()
         const payload = { feature: aoi.feature, layerName }
-        const eventName = `plugin:${PLUGIN_ID}:areaDrawn`
 
-        console.log('[AOI] Emitting:', {
-            event: eventName,
-            payload,
-            source: aoi.source,
-        })
         this._api?.emit('areaDrawn', payload)
-        console.log(`[AOI] Emitted: ${eventName}`)
 
         this._hideTooltip()
     },
