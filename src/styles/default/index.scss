@@ -5,3 +5,7 @@
 
 // 2. Then forward USWDS itself
 @forward "uswds";
+
+// 3. Export theme tokens as CSS custom properties
+@use "../theme-export";
+@include theme-export.export-theme-tokens();

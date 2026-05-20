@@ -8,3 +8,7 @@
 
 // 3. Forward theme specific custom fonts
 @forward "fonts";
+
+// 4. Export theme tokens as CSS custom properties
+@use "../theme-export";
+@include theme-export.export-theme-tokens();
