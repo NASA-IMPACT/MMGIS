@@ -225,26 +225,71 @@ let Map_ = {
             // Clean up previous providers if re-initializing
             _providerCleanups.forEach((cleanup) => cleanup())
             _providerCleanups = [
-                window.mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter()),
-                window.mmgisAPI.provide('map:getBounds', () => Map_.map.getBounds()),
-                window.mmgisAPI.provide('map:getZoom', () => Map_.map.getZoom()),
-                window.mmgisAPI.provide('map:setView', ({ center, zoom }) => {
-                    if (center && zoom != null) {
-                        Map_.map.setView(center, zoom)
-                    } else if (center) {
-                        Map_.map.setView(center)
-                    }
+                window.mmgisAPI.provide('map:getCenter', () => engine.getCenter()),
+                window.mmgisAPI.provide('map:getBounds', () => engine.getBounds()),
+                window.mmgisAPI.provide('map:getZoom', () => engine.getZoom()),
+                window.mmgisAPI.provide('map:setView', ({ center, zoom } = {}) => {
+                    if (!center) return false
+                    engine.setView(center, zoom)
                     return true
                 }),
-                window.mmgisAPI.provide('map:fitBounds', (bounds) => {
-                    Map_.map.fitBounds(bounds)
+                window.mmgisAPI.provide('map:fitBounds', (payload) => {
+                    const bounds = Array.isArray(payload) ? payload : payload?.bounds
+                    const options = Array.isArray(payload) ? undefined : payload?.options
+                    engine.fitBounds(bounds, options)
                     return true
                 }),
                 window.mmgisAPI.provide('map:panTo', (latlng) => {
-                    Map_.map.panTo(latlng)
+                    engine.panTo(latlng)
+                    return true
+                }),
+                // Drawing — wraps the IMapEngine drawing primitives from spec 013
+                window.mmgisAPI.provide('map:enableDrawing', ({ shape, options } = {}) => {
+                    engine.enableDrawing(shape, options)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:disableDrawing', () => {
+                    engine.disableDrawing()
+                    return true
+                }),
+                window.mmgisAPI.provide('map:finishDrawing', () => {
+                    engine.finishDrawing()
+                    return true
+                }),
+                window.mmgisAPI.provide('map:isDrawing', () => engine.isDrawing()),
+                // Layer management — engine-agnostic CRUD on vector layers
+                window.mmgisAPI.provide('map:createLayer', (spec) => {
+                    engine.createLayer(spec)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:removeLayer', ({ id }) => {
+                    engine.removeLayer(id)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:hasLayer', ({ id }) => engine.hasLayer(id)),
+                // Anchored HTML overlays — implemented per-engine on IMapEngine
+                window.mmgisAPI.provide('map:addOverlay', (options) => {
+                    engine.addOverlay(options)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:removeOverlay', ({ id }) => {
+                    engine.removeOverlay(id)
                     return true
                 }),
             ]
+
+            // Engine event re-emits — translate adapter events onto the bus
+            const reEmit = (engineEvent, busEvent) => {
+                const handler = (payload) => window.mmgisAPI.emit(busEvent, payload)
+                engine.on(engineEvent, handler)
+                _providerCleanups.push(() => engine.off(engineEvent, handler))
+            }
+            reEmit('drawstart', 'map:drawstart')
+            reEmit('drawvertex', 'map:drawvertex')
+            reEmit('drawcomplete', 'map:drawcomplete')
+            reEmit('drawcancel', 'map:drawcancel')
+            reEmit('move', 'map:move')
+            reEmit('moveend', 'map:moveend')
         }
 
         //Make our layers
