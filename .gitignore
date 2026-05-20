@@ -62,3 +62,4 @@ docker-compose.env.yml
 #tools
 
 /public/css
+/public/img

@@ -43,6 +43,7 @@
     "start:docs": "cd ./docs && bundle exec jekyll serve",
     "start:analyzer": "node scripts/server.js --analyze",
     "build": "node scripts/build.js",
+    "build:themes": "bash scripts/build-themes.sh",
     "test": "playwright test",
     "test:unit": "cross-env PLAYWRIGHT_TEST_UNIT_ONLY=true playwright test tests/unit",
     "test:e2e": "playwright test tests/e2e",
@@ -50,8 +51,7 @@
     "test:debug": "playwright test --debug",
     "test:ui": "playwright test --ui",
     "test:report": "playwright show-report",
-    "start:test": "cross-env NODE_ENV=test PORT=8888 node scripts/server.js",
-    "build:themes": "node scripts/build-themes.js"
+    "start:test": "cross-env NODE_ENV=test PORT=8888 node scripts/server.js"
   },
   "dependencies": {
     "@azure/ai-agents": "^1.0.0-beta.1",
@@ -66,6 +66,9 @@
     "@ffmpeg/core": "^0.12.6",
     "@ffmpeg/ffmpeg": "^0.12.10",
     "@ffmpeg/util": "^0.12.1",
+    "@fontsource-utils/scss": "^0.2.2",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource/dm-mono": "^5.2.7",
     "@mapbox/shp-write": "^0.4.3",
     "@maphubs/tokml": "^0.6.1",
     "@popperjs/core": "^2.11.6",
