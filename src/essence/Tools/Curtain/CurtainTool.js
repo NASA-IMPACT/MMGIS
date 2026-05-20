@@ -8,8 +8,6 @@ import Globe_ from '../../Basics/Globe_/Globe_'
 import CursorInfo from '../../Ancillary/CursorInfo'
 import calls from '../../../pre/calls'
 
-// TODO: tighten in follow-up. React 19 removed ReactDOM.render in favor of createRoot.
-// Minimal shim during Task R1 React 16->19 upgrade; revisit alongside Task R3.
 import { createRoot } from 'react-dom/client'
 import React, { useState, useEffect, useRef } from 'react'
 
