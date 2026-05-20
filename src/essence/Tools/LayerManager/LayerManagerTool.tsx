@@ -17,13 +17,35 @@ const LayerManagerTool = {
     _cleanups: [] as Array<() => void>,
 
     initialize: async function () {
-        this.vars =
-            (await mmgisRequest<ToolVars>('tool:getVars', 'layermanager')) || {}
-        if (this.vars.width) this.width = this.vars.width
-        const isMobile = await mmgisRequest<boolean>('app:isMobile')
-        if (isMobile) {
-            this.width = 'full'
-            this.height = 500
+        // Both handlers are registered by Layers_.fina() during mission load.
+        // If initialize() fires before that (e.g. in a modern-layout boot path
+        // where the tool registers before Layers_ runs fina), the requests
+        // reject. Catch each independently so the tool still mounts with
+        // defaults instead of throwing an uncaught rejection at startup.
+        try {
+            this.vars =
+                (await mmgisRequest<ToolVars>(
+                    'tool:getVars',
+                    'layermanager',
+                )) || {}
+            if (this.vars.width) this.width = this.vars.width
+        } catch (err) {
+            console.warn(
+                '[LayerManagerTool] tool:getVars unavailable:',
+                err instanceof Error ? err.message : err,
+            )
+        }
+        try {
+            const isMobile = await mmgisRequest<boolean>('app:isMobile')
+            if (isMobile) {
+                this.width = 'full'
+                this.height = 500
+            }
+        } catch (err) {
+            console.warn(
+                '[LayerManagerTool] app:isMobile unavailable:',
+                err instanceof Error ? err.message : err,
+            )
         }
     },
 
