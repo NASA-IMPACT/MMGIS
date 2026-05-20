@@ -60,7 +60,11 @@ RUN if [ "$WITH_STAC" = "true" ]; then \
 
 # Copy only package files first (cached unless these change)
 COPY package*.json ./
-RUN npm install
+# --force matches the documented local install. The chart.js semver conflict
+# (react-chartjs-2@5 wants ^4.1.1; chartjs-plugin-zoom@1.2.1 pins ^3.2.0) is
+# tracked as follow-up #2 in the LayerManager refactor handoff. Don't switch
+# to --legacy-peer-deps; it silently drops @deck.gl/extensions and mesh-layers.
+RUN npm install --force
 
 #############################
 # MMGIS Configure Dependencies
