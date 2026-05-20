@@ -1,9 +1,16 @@
-/* 
- * UserInterfaceModern_.css
+/*
+ * UserInterfaceModern_.scss
+ *
+ * Renamed from .css to .scss to consume project-level USWDS theme tokens.
+ * `theme-tokens` resolves via sass-loader includePath (configuration/webpack.config.js)
+ * to src/essence/styles/theme/theme-tokens.scss, which configures USWDS so
+ * color()/units()/etc. return disasters palette values.
  */
+@use 'theme-tokens';
+@use 'uswds-core' as *;
 
-/* 
- USWDS Color Palette 
+/*
+ USWDS Color Palette
  This will later be replaced with themable design tokens
 */
 :root {
@@ -65,7 +72,10 @@
 
 /* Base Panel Styling */
 .ui-panel {
-    background: var(--mmgis-uswds-white);
+    /* Demo: project-level Sass theme token. color('primary-lightest') resolves
+       to disasters' #e7f1f3 (very light teal) via @use 'theme-tokens' above.
+       Revert to var(--mmgis-uswds-white) for the original white background. */
+    background: color('primary-lightest');
     backdrop-filter: var(--mmgis-modern-glass-blur);
     -webkit-backdrop-filter: var(--mmgis-modern-glass-blur);
     box-shadow: 0 4px 6px var(--mmgis-uswds-shadow);

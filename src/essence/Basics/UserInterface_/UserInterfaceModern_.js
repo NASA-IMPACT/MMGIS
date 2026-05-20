@@ -4,7 +4,7 @@ import { mmgisAPI } from '../../mmgisAPI/mmgisAPI'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
-import './UserInterfaceModern_.css'
+import './UserInterfaceModern_.scss'
 
 const logger = createLogger('UserInterfaceModern')
 
