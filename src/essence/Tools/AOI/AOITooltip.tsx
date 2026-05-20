@@ -1,5 +1,5 @@
 import React from 'react'
-import './AOIComponent.css'
+import './AOIComponent/AOIComponent.scss'
 
 export interface AOITooltipProps {
     label: string

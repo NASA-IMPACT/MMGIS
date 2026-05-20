@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react'
-import './AOIComponent.css'
+import { Alert, Button, TextInput } from '@trussworks/react-uswds'
+import './AOIComponent.scss'
 
 export type AOIMode = 'search' | 'inspect' | 'draw' | 'upload'
 export type AOIShape = 'polygon' | 'rectangle' | 'circle'
@@ -52,14 +53,15 @@ export function AOIComponent(props: AOIComponentProps) {
                     <i className="mdi mdi-chart-bar aoi-tool__title-icon" aria-hidden="true" />
                     <span>Analyze areas</span>
                 </div>
-                <button
+                <Button
                     type="button"
+                    unstyled
                     className="aoi-tool__close"
                     onClick={props.onClose}
                     aria-label="Close"
                 >
                     <i className="mdi mdi-close" aria-hidden="true" />
-                </button>
+                </Button>
             </header>
 
             <nav className="aoi-tool__tabs" role="tablist" aria-label="AOI selection mode">
@@ -106,9 +108,11 @@ function SearchPanel(props: AOIComponentProps) {
         <div className="aoi-panel aoi-panel--search">
             <p className="aoi-panel__hint">Search for a country or a region</p>
             <label className="aoi-search">
-                <input
-                    ref={inputRef}
+                <TextInput
+                    id="aoi-search-input"
+                    name="aoi-search"
                     type="search"
+                    inputRef={inputRef}
                     className="aoi-search__input"
                     placeholder={props.searchLoading ? 'Loading boundaries…' : 'Search'}
                     value={props.searchQuery}
@@ -219,21 +223,22 @@ function DrawInProgressPanel(props: AOIComponentProps) {
         <div className="aoi-panel aoi-panel--draw">
             <p className="aoi-panel__hint">{hint}</p>
             <div className="aoi-draw__actions" role="group" aria-label="Drawing actions">
-                <button
+                <Button
                     type="button"
                     className="aoi-draw__confirm"
                     onClick={props.onDrawConfirm}
                     disabled={!valid}
                 >
                     Confirm
-                </button>
-                <button
+                </Button>
+                <Button
                     type="button"
+                    outline
                     className="aoi-draw__cancel"
                     onClick={props.onDrawCancel}
                 >
                     Cancel
-                </button>
+                </Button>
             </div>
         </div>
     )
@@ -247,14 +252,15 @@ function UploadPanel(props: AOIComponentProps) {
                 Upload a GeoJSON, KML, or zipped Shapefile to define your analysis area.
             </p>
 
-            <button
+            <Button
                 type="button"
+                outline
                 className="aoi-upload__button"
                 onClick={() => inputRef.current?.click()}
                 disabled={props.uploadStatus === 'parsing'}
             >
                 {props.uploadStatus === 'parsing' ? 'Parsing…' : 'Upload file'}
-            </button>
+            </Button>
             <input
                 ref={inputRef}
                 type="file"
@@ -268,9 +274,9 @@ function UploadPanel(props: AOIComponentProps) {
             />
 
             {props.uploadStatus === 'error' && (
-                <p className="aoi-panel__error" role="alert">
+                <Alert type="error" headingLevel="h4" slim className="aoi-panel__error">
                     {props.uploadError || 'Could not parse that file.'}
-                </p>
+                </Alert>
             )}
 
             <p className="aoi-panel__hint aoi-panel__hint--secondary">
