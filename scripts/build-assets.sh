@@ -6,12 +6,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Asset source → target destination mappings.
-# For MMGIS, we copy fonts to public/css/fonts so theme CSS files can reference them
+# All built assets go to dist/ directory
 ASSETS=(
-  "node_modules/@fontsource:public/css/fonts"
-  "node_modules/@fontsource-variable:public/css/fonts"
-  "node_modules/@uswds/uswds/dist/fonts:public/css/fonts"
-  "node_modules/@uswds/uswds/dist/img:public/img"
+  "node_modules/@fontsource:dist/fonts"
+  "node_modules/@fontsource-variable:dist/fonts"
+  "node_modules/@uswds/uswds/dist/fonts:dist/fonts"
+  "node_modules/@uswds/uswds/dist/img:dist/img"
 )
 
 copy_asset() {

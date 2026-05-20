@@ -4,6 +4,7 @@
 nul
 
 /node_modules/
+/dist/
 /ssl/*
 !/ssl/.gitkeep
 /API/logs/*
@@ -60,6 +61,3 @@ docker-compose.env.yml
 /test-results/
 /.playwright/
 #tools
-
-/public/css
-/public/img
