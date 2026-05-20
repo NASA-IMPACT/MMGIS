@@ -6,9 +6,9 @@
  *   pluginId: 'aoi'
  *
  *   Emits  (auto-prefixed plugin:aoi:):
- *     - drawingStarted     { feature, source: 'search'|'draw'|'upload'|'inspect' }
+ *     - areaDrawn          { feature, source: 'search'|'draw'|'upload'|'inspect', layerName }
+ *     - analysisAOIReady   { feature }
  *     - drawingCleared     {}
- *     - areaDrawn          { feature, layerName }
  *     - drawingCancelled   {}
  *
  *   Provides (auto-prefixed plugin:aoi:):
@@ -362,7 +362,11 @@ const AOITool = {
 
         const aoi = { feature, source }
         this._state.currentAOI = aoi
-        this._api?.emit('drawingStarted', aoi)
+        this._api?.emit('areaDrawn', {
+            feature,
+            source,
+            layerName: this._guessActiveLayerName(),
+        })
 
         const c = featureCentroid(feature)
         if (c) {
@@ -453,18 +457,7 @@ const AOITool = {
     _onAnalyze() {
         const aoi = this._state.currentAOI
         if (!aoi) return
-        const layerName = this._guessActiveLayerName()
-        const payload = { feature: aoi.feature, layerName }
-        const eventName = `plugin:${PLUGIN_ID}:areaDrawn`
-
-        console.log('[AOI] Emitting:', {
-            event: eventName,
-            payload,
-            source: aoi.source,
-        })
-        this._api?.emit('areaDrawn', payload)
-        console.log(`[AOI] Emitted: ${eventName}`)
-
+        this._api?.emit('analysisAOIReady', { feature: aoi.feature })
         this._hideTooltip()
     },
 
