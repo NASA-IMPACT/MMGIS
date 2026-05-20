@@ -2,33 +2,8 @@
  * UserInterfaceModern_.css
  */
 
-/* 
- USWDS Color Palette 
- This will later be replaced with themable design tokens
-*/
-:root {
-    /* USWDS color palette */
-    --mmgis-uswds-primary: #005ea2; /* primary blue */
-    --mmgis-uswds-primary-dark: #1a4480;
-    --mmgis-uswds-primary-light: #73b3e7;
-    --mmgis-uswds-base-darker: #171c1e;
-    --mmgis-uswds-base-dark: #3d4551;
-    --mmgis-uswds-base-light: #f0f0f0;
-    --mmgis-uswds-white: #ffffff;
-    --mmgis-uswds-shadow: rgba(0, 0, 0, 0.15);
 
-    /* Modern interface tokens */
-    --mmgis-modern-bg: #f8f9fa;
-    --mmgis-modern-panel-bg: rgba(255, 255, 255, 0.95);
-    --mmgis-modern-border: 1px solid rgba(0, 0, 0, 0.1);
-    --mmgis-modern-radius: 8px;
-    --mmgis-modern-glass-blur: blur(12px);
-
-    /* Z-index layers */
-    --mmgis-z-index-panel-drag: 10;
-    --mmgis-z-index-compact-center: 10;
-    --mmgis-z-index-panel-icons: 2;
-}
+/* Modern UI uses theme tokens directly - no local overrides needed */
 
 /* Full screen grid layout */
 .ui-modern-grid {
@@ -65,27 +40,27 @@
 
 /* Base Panel Styling */
 .ui-panel {
-    background: var(--mmgis-uswds-white);
-    backdrop-filter: var(--mmgis-modern-glass-blur);
-    -webkit-backdrop-filter: var(--mmgis-modern-glass-blur);
-    box-shadow: 0 4px 6px var(--mmgis-uswds-shadow);
+    background: var(--theme-color-white, #ffffff);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 4px 6px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
     display: flex;
     flex-direction: column;
-    margin: 8px;
-    border-radius: var(--mmgis-modern-radius);
+    margin: var(--theme-spacing-1, 0.5rem);
+    border-radius: var(--theme-radius-md, 8px);
     overflow: hidden;
     position: relative;
-    color: var(--mmgis-uswds-base-darker);
-    font-family: "Public Sans Web", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--theme-color-base-darker, #3d4551);
+    font-family: var(--theme-font-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
     transition: width 0.3s cubic-bezier(0.2, 0, 0, 1), height 0.3s cubic-bezier(0.2, 0, 0, 1), flex 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .ui-panel-header {
-    background-color: var(--mmgis-uswds-primary);
-    color: var(--mmgis-uswds-white);
-    padding: 0.2rem 0.6rem;
-    font-size: .8rem;
-    font-weight: 600;
+    background-color: var(--theme-color-primary, #005ea2);
+    color: var(--theme-color-white, #ffffff);
+    padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-1, 0.5rem);
+    font-size: var(--theme-font-size-2xs, 0.88rem);
+    font-weight: var(--theme-font-weight-semibold, 600);
     letter-spacing: 0.5px;
     text-transform: capitalize;
     display: flex;
@@ -95,7 +70,7 @@
 
 .ui-panel-title {
     margin: 0;
-    font-size: .8rem;
+    font-size: var(--theme-font-size-2xs, 0.88rem);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -103,19 +78,19 @@
 
 .ui-panel-header-buttons {
     display: flex;
-    gap: 4px;
+    gap: var(--theme-spacing-05, 0.25rem);
 }
 
 .ui-panel-btn {
     background: transparent;
     border: none;
-    color: var(--mmgis-uswds-white);
+    color: var(--theme-color-white, #ffffff);
     opacity: 0.8;
     cursor: pointer;
-    padding: 4px;
+    padding: var(--theme-spacing-05, 0.25rem);
     display: flex;
     align-items: center;
-    border-radius: 4px;
+    border-radius: var(--theme-radius-sm, 4px);
     transition: background-color 0.2s, opacity 0.2s;
 }
 
@@ -127,20 +102,20 @@
 .ui-panel-body {
     flex: 1;
     display: flex;
-    gap: 0.75rem;
+    gap: var(--theme-spacing-105, 0.75rem);
 }
 
 /* Tool Cards */
 /* Tool Cards - Base Styles (shared by stacked and tabbed) */
 .ui-tool-card {
-    background-color: var(--mmgis-uswds-white);
+    background-color: var(--theme-color-white, #ffffff);
 }
 
 /* Stacked Tool Cards (default clickable cards in panel body) */
 .ui-tool-card-stacked {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--theme-spacing-1, 0.5rem);
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
@@ -151,25 +126,25 @@
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
-    gap: 0.5rem;
-    border-bottom: 1px solid var(--mmgis-modern-border);
-    padding-bottom: 0.5rem;
-    margin-bottom: 0.5rem;
+    gap: var(--theme-spacing-1, 0.5rem);
+    border-bottom: var(--theme-border-width-sm, 1px) solid rgba(0, 0, 0, 0.1);
+    padding-bottom: var(--theme-spacing-1, 0.5rem);
+    margin-bottom: var(--theme-spacing-1, 0.5rem);
     width: 100%;
     flex: 0 0 auto;
 }
 
 .ui-panel-tab {
-    padding: 0.4rem 0.8rem;
+    padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-1, 0.5rem);
     cursor: pointer;
-    border-bottom: 2px solid transparent;
+    border-bottom: var(--theme-border-width-md, 2px) solid transparent;
     opacity: 0.7;
-    font-size: 0.95rem;
-    font-weight: 500;
+    font-size: var(--theme-font-size-sm, 1rem);
+    font-weight: var(--theme-font-weight-normal, 400);
     white-space: nowrap;
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--theme-spacing-05, 0.25rem);
     transition: opacity 0.2s, border-bottom-color 0.2s;
 }
 
@@ -178,10 +153,10 @@
 }
 
 .ui-panel-tab.active {
-    border-bottom-color: var(--mmgis-uswds-primary);
-    color: var(--mmgis-uswds-primary-dark);
+    border-bottom-color: var(--theme-color-primary, #005ea2);
+    color: var(--theme-color-primary-dark, #1a4480);
     opacity: 1;
-    font-weight: 600;
+    font-weight: var(--theme-font-weight-semibold, 600);
 }
 
 .ui-panel-tab-content-area {
@@ -208,20 +183,20 @@
 }
 
 .ui-tool-icon {
-    font-size: 1.2rem;
-    color: var(--mmgis-uswds-primary);
+    font-size: var(--theme-font-size-lg, 1.38rem);
+    color: var(--theme-color-primary, #005ea2);
 }
 
 .ui-tool-title {
-    font-weight: 500;
-    font-size: 0.95rem;
-    color: var(--mmgis-uswds-base-dark);
+    font-weight: var(--theme-font-weight-normal, 400);
+    font-size: var(--theme-font-size-sm, 1rem);
+    color: var(--theme-color-base-dark, #565c65);
 }
 
 .ui-empty-text {
-    color: #888;
+    color: var(--theme-color-base, #71767a);
     font-style: italic;
-    font-size: 0.9rem;
+    font-size: var(--theme-font-size-xs, 0.94rem);
     margin: auto;
 }
 
@@ -229,7 +204,7 @@
 .ui-panel-drag-handle {
     position: absolute;
     background: transparent;
-    z-index: var(--mmgis-z-index-panel-drag);
+    z-index: 10;
 }
 
 .ui-panel-drag-handle:hover,
@@ -340,17 +315,17 @@
     flex-direction: column;
     flex: 1;
     overflow: hidden;
-    background: var(--mmgis-uswds-white);
+    background: var(--theme-color-white, #ffffff);
 }
 
 /* Sidebar Icons */
 .ui-panel-icons {
     display: none;
     background: transparent;
-    color: var(--mmgis-uswds-white);
-    padding: 4px;
-    gap: 4px;
-    z-index: var(--mmgis-z-index-panel-icons);
+    color: var(--theme-color-white, #ffffff);
+    padding: var(--theme-spacing-05, 0.25rem);
+    gap: var(--theme-spacing-05, 0.25rem);
+    z-index: 2;
     overflow-y: auto;
     overflow-x: hidden;
 }
@@ -358,12 +333,12 @@
 .ui-panel-icon-btn {
     background: transparent;
     border: none;
-    color: var(--mmgis-uswds-primary);
+    color: var(--theme-color-primary, #005ea2);
     opacity: 1;
     cursor: pointer;
-    font-size: 1.5rem;
-    padding: 8px;
-    border-radius: 4px;
+    font-size: var(--theme-font-size-xl, 2rem);
+    padding: var(--theme-spacing-1, 0.5rem);
+    border-radius: var(--theme-radius-sm, 4px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -371,14 +346,13 @@
 }
 
 .ui-panel-icon-btn:hover {
-    background: #4d8fc3; /* Fallback for color-mix */
-    background: color-mix(in srgb, var(--mmgis-uswds-primary-light) 30%, white);
+    background: color-mix(in srgb, var(--theme-color-primary-light, #73b3e7) 30%, white);
 }
 
 .ui-panel-icon-btn.active {
     opacity: 1;
-    background: var(--mmgis-uswds-primary);
-    color: var(--mmgis-uswds-white);
+    background: var(--theme-color-primary, #005ea2);
+    color: var(--theme-color-white, #ffffff);
 }
 
 /* Iconified & Focused States visibility */
@@ -489,3 +463,5 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     border-radius: 0;
     border: none;
 }
+
+/* Z-index management (no longer needed as variables, kept for reference) */

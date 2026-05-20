@@ -1,0 +1,14 @@
+// Disasters theme manifest
+
+// 1. Forward theme token configuration first (must be before uswds-core/@forward)
+@forward "theme-tokens";
+
+// 2. Then forward USWDS itself
+@forward "uswds";
+
+// 3. Forward theme specific custom fonts
+@forward "fonts";
+
+// 4. Export theme tokens as CSS custom properties
+@use "../theme-export";
+@include theme-export.export-theme-tokens();

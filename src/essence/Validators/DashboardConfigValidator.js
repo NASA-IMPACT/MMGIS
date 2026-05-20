@@ -70,6 +70,11 @@ export function validateModernConfig(config) {
         )
     }
 
+    // Validate theme (optional, defaults to 'default')
+    if (config.msv && config.msv.theme && typeof config.msv.theme !== 'string') {
+        errors.push('msv.theme must be a string')
+    }
+
     // Validate each panel
     const panelIds = new Set()
     panelSettings.panels.forEach((panel, index) => {

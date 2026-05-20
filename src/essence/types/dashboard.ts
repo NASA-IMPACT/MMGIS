@@ -45,6 +45,9 @@ export interface MSVConfig {
     /** Interface mode ('classic' | 'modern') */
     mode?: InterfaceMode;
 
+    /** Theme identifier (e.g. 'default', 'disasters', 'earthgov') */
+    theme?: string;
+
     /** Site name (optional) */
     site?: string;
 

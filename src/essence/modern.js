@@ -231,9 +231,10 @@ class ModernInterface {
         const activePanels = PanelManager_.getAllPanelsByPriority()
 
         const layoutStyle = this.configData?.panelSettings?.layoutStyle || 'overlay'
+        const theme = this.configData?.msv?.theme || 'default'
 
         // Initialize the User Interface with the sorted panels from PanelManager
-        UserInterfaceModern_.init(activePanels, layoutStyle)
+        UserInterfaceModern_.init(activePanels, layoutStyle, theme)
 
         // Initialize Map with proper error handling
         Map_.init(() => {
