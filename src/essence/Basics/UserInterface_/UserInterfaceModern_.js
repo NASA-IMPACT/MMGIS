@@ -135,10 +135,24 @@ const UserInterfaceModern_ = {
      * Initializes the modern layout.
      * @param {Array} panelsArr - Array of panel objects (parsed from config & PanelManager)
      * @param {string} style - The layout style ('overlay' | 'compact')
+     * @param {string} theme - The theme identifier (e.g. 'default', 'disasters')
      */
-    init: function (panelsArr, style = 'overlay') {
+    init: function (panelsArr, style = 'overlay', theme = 'default') {
         panels = panelsArr
         layoutStyle = style
+
+        try {
+            require(`../../../../dist/${theme}.css`)
+            logger.log(`Loaded theme CSS for ${theme}`)
+        } catch (e) {
+            logger.warn(`Failed to load theme CSS for ${theme}. Loading default.`, e)
+            try {
+                require(`../../../../dist/default.css`)
+            } catch (err) {
+                logger.error(`Failed to load default theme CSS.`, err)
+            }
+        }
+
         this.render()
 
         if (!cleanupLayoutListener) {
