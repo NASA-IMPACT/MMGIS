@@ -66,6 +66,16 @@ export function loadBoundaries(): Promise<LoadedBoundaries> {
             else if (kind === 'county') result.counties.features.push(f)
             else if (kind === 'city') result.cities.features.push(f)
         })
+        const total =
+            result.states.features.length +
+            result.counties.features.length +
+            result.cities.features.length
+        console.log(
+            `[AOI] Loaded ${total} boundaries ` +
+                `(states: ${result.states.features.length}, ` +
+                `counties: ${result.counties.features.length}, ` +
+                `cities: ${result.cities.features.length})`
+        )
         cache = result
         inflight = null
         return result
