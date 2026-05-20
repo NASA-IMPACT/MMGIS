@@ -1,7 +1,4 @@
-// Aggregator for geo component partials. Matches the monorepo convention at
-// tinacms-portal-monorepo:packages/blocks/src/styles/components-geo/index.scss
-// — pure listing, no theme-loading. The theme manifest at ../index.scss must
-// configure theme-tokens and load USWDS before forwarding this aggregator.
+// Aggregator for geo component partials — pure listing, no theme-loading.
 @use 'layer-manager-panel';
 @use 'layer-legend-list';
 @use 'layer-legend';

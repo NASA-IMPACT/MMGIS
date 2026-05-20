@@ -7,7 +7,5 @@ export { ColormapControl, type ColormapControlProps } from './geo/ColormapContro
 
 export type { Layer, LegendType, CategoricalStop, CogData, Colormap } from './types'
 
-// Stylesheet entry — consumers import this to load the compiled USWDS-themed CSS.
-// In MMGIS the import path lives in MMGISLayerManagerAdapter; in monorepo consumers
-// it will be imported from the published package's compiled CSS bundle.
+// Side-effect import of the component stylesheet.
 import './styles/index.scss'
