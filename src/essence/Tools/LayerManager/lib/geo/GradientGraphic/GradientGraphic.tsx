@@ -2,9 +2,9 @@ import React from 'react'
 import { useState, useCallback, useRef, type MouseEvent } from 'react'
 import { scaleLinear } from 'd3'
 import { ColormapControl } from '../ColormapControl/ColormapControl'
-import { useColormapGradient } from '../hooks/useColormapGradient'
-import { useClickOutside } from '../hooks/useClickOutside'
-import type { CogData } from '../types'
+import { useColormapGradient } from '../../hooks/useColormapGradient'
+import { useClickOutside } from '../../hooks/useClickOutside'
+import type { CogData } from '../../types'
 
 export type GradientGraphicProps = {
     stops?: string[] | null

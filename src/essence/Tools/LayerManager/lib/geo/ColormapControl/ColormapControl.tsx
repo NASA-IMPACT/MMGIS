@@ -7,7 +7,7 @@ import {
     type ChangeEvent,
     type KeyboardEvent,
 } from 'react'
-import { useAvailableColormaps } from '../hooks/useAvailableColormaps'
+import { useAvailableColormaps } from '../../hooks/useAvailableColormaps'
 
 export type ColormapControlProps = {
     layerName: string

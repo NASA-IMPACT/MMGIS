@@ -1,6 +1,6 @@
 import React from 'react'
 import { LayerLegend, type LayerLegendProps } from '../LayerLegend/LayerLegend'
-import type { Layer } from '../types'
+import type { Layer } from '../../types'
 
 export type LayerLegendListProps = {
     layers: Layer[]

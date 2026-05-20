@@ -9,8 +9,8 @@ import {
 } from 'react'
 import { GradientGraphic } from '../GradientGraphic/GradientGraphic'
 import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
-import { useClickOutside } from '../hooks/useClickOutside'
-import type { Layer } from '../types'
+import { useClickOutside } from '../../hooks/useClickOutside'
+import type { Layer } from '../../types'
 
 export type LayerLegendProps = {
     layer: Layer

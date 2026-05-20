@@ -1,5 +1,5 @@
 import React from 'react'
-import type { Layer } from '../types'
+import type { Layer } from '../../types'
 import { LayerLegendList } from '../LayerLegendList/LayerLegendList'
 
 export type LayerManagerPanelProps = {
