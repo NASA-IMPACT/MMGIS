@@ -1,0 +1,10 @@
+// MMGIS-global theme manifest. Mirrors the monorepo's per-theme manifest at
+// tinacms-portal-monorepo:packages/blocks/src/styles/disasters/index.scss.
+//
+// Imported once at MMGIS entry (src/index.js) so USWDS framework CSS, the
+// disasters reset, and the :root CSS custom properties are available to all
+// MMGIS code — tool internals, modern PanelManager chrome, and JSX inline
+// styles (`var(--color-primary)`) included.
+@forward 'theme-tokens';
+@forward 'uswds';
+@forward 'theme-token-bridge';

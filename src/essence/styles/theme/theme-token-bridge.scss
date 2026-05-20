@@ -1,0 +1,220 @@
+@use "uswds-core" as *;
+
+:root {
+  // Base
+  @if $theme-color-base-lightest != false {
+    --color-base-lightest: #{color("base-lightest")};
+  }
+  @if $theme-color-base-lighter != false {
+    --color-base-lighter: #{color("base-lighter")};
+  }
+  @if $theme-color-base-light != false {
+    --color-base-light: #{color("base-light")};
+  }
+  @if $theme-color-base != false {
+    --color-base: #{color("base")};
+  }
+  @if $theme-color-base-dark != false {
+    --color-base-dark: #{color("base-dark")};
+  }
+  @if $theme-color-base-darker != false {
+    --color-base-darker: #{color("base-darker")};
+  }
+  @if $theme-color-base-darkest != false {
+    --color-base-darkest: #{color("base-darkest")};
+  }
+  @if $theme-color-base-ink != false {
+    --color-ink: #{color("ink")};
+  }
+
+  // Primary
+  @if $theme-color-primary-lightest != false {
+    --color-primary-lightest: #{color("primary-lightest")};
+  }
+  @if $theme-color-primary-lighter != false {
+    --color-primary-lighter: #{color("primary-lighter")};
+  }
+  @if $theme-color-primary-light != false {
+    --color-primary-light: #{color("primary-light")};
+  }
+  @if $theme-color-primary != false {
+    --color-primary: #{color("primary")};
+  }
+  @if $theme-color-primary-vivid != false {
+    --color-primary-vivid: #{color("primary-vivid")};
+  }
+  @if $theme-color-primary-dark != false {
+    --color-primary-dark: #{color("primary-dark")};
+  }
+  @if $theme-color-primary-darker != false {
+    --color-primary-darker: #{color("primary-darker")};
+  }
+  @if $theme-color-primary-darkest != false {
+    --color-primary-darkest: #{color("primary-darkest")};
+  }
+
+  // Secondary
+  @if $theme-color-secondary-lightest != false {
+    --color-secondary-lightest: #{color("secondary-lightest")};
+  }
+  @if $theme-color-secondary-lighter != false {
+    --color-secondary-lighter: #{color("secondary-lighter")};
+  }
+  @if $theme-color-secondary-light != false {
+    --color-secondary-light: #{color("secondary-light")};
+  }
+  @if $theme-color-secondary != false {
+    --color-secondary: #{color("secondary")};
+  }
+  @if $theme-color-secondary-vivid != false {
+    --color-secondary-vivid: #{color("secondary-vivid")};
+  }
+  @if $theme-color-secondary-dark != false {
+    --color-secondary-dark: #{color("secondary-dark")};
+  }
+  @if $theme-color-secondary-darker != false {
+    --color-secondary-darker: #{color("secondary-darker")};
+  }
+  @if $theme-color-secondary-darkest != false {
+    --color-secondary-darkest: #{color("secondary-darkest")};
+  }
+
+  // Accent cool
+  @if $theme-color-accent-cool-lightest != false {
+    --color-accent-cool-lightest: #{color("accent-cool-lightest")};
+  }
+  @if $theme-color-accent-cool-lighter != false {
+    --color-accent-cool-lighter: #{color("accent-cool-lighter")};
+  }
+  @if $theme-color-accent-cool-light != false {
+    --color-accent-cool-light: #{color("accent-cool-light")};
+  }
+  @if $theme-color-accent-cool != false {
+    --color-accent-cool: #{color("accent-cool")};
+  }
+  @if $theme-color-accent-cool-dark != false {
+    --color-accent-cool-dark: #{color("accent-cool-dark")};
+  }
+  @if $theme-color-accent-cool-darker != false {
+    --color-accent-cool-darker: #{color("accent-cool-darker")};
+  }
+  @if $theme-color-accent-cool-darkest != false {
+    --color-accent-cool-darkest: #{color("accent-cool-darkest")};
+  }
+
+  // Accent warm
+  @if $theme-color-accent-warm-lightest != false {
+    --color-accent-warm-lightest: #{color("accent-warm-lightest")};
+  }
+  @if $theme-color-accent-warm-lighter != false {
+    --color-accent-warm-lighter: #{color("accent-warm-lighter")};
+  }
+  @if $theme-color-accent-warm-light != false {
+    --color-accent-warm-light: #{color("accent-warm-light")};
+  }
+  @if $theme-color-accent-warm != false {
+    --color-accent-warm: #{color("accent-warm")};
+  }
+  @if $theme-color-accent-warm-dark != false {
+    --color-accent-warm-dark: #{color("accent-warm-dark")};
+  }
+  @if $theme-color-accent-warm-darker != false {
+    --color-accent-warm-darker: #{color("accent-warm-darker")};
+  }
+  @if $theme-color-accent-warm-darkest != false {
+    --color-accent-warm-darkest: #{color("accent-warm-darkest")};
+  }
+
+  // Error
+  @if $theme-color-error-lighter != false {
+    --color-error-lighter: #{color("error-lighter")};
+  }
+  @if $theme-color-error-light != false {
+    --color-error-light: #{color("error-light")};
+  }
+  @if $theme-color-error != false {
+    --color-error: #{color("error")};
+  }
+  @if $theme-color-error-dark != false {
+    --color-error-dark: #{color("error-dark")};
+  }
+  @if $theme-color-error-darker != false {
+    --color-error-darker: #{color("error-darker")};
+  }
+
+  // Warning
+  @if $theme-color-warning-lighter != false {
+    --color-warning-lighter: #{color("warning-lighter")};
+  }
+  @if $theme-color-warning-light != false {
+    --color-warning-light: #{color("warning-light")};
+  }
+  @if $theme-color-warning != false {
+    --color-warning: #{color("warning")};
+  }
+  @if $theme-color-warning-dark != false {
+    --color-warning-dark: #{color("warning-dark")};
+  }
+  @if $theme-color-warning-darker != false {
+    --color-warning-darker: #{color("warning-darker")};
+  }
+
+  // Success
+  @if $theme-color-success-lighter != false {
+    --color-success-lighter: #{color("success-lighter")};
+  }
+  @if $theme-color-success-light != false {
+    --color-success-light: #{color("success-light")};
+  }
+  @if $theme-color-success != false {
+    --color-success: #{color("success")};
+  }
+  @if $theme-color-success-dark != false {
+    --color-success-dark: #{color("success-dark")};
+  }
+  @if $theme-color-success-darker != false {
+    --color-success-darker: #{color("success-darker")};
+  }
+
+  // Info
+  @if $theme-color-info-lighter != false {
+    --color-info-lighter: #{color("info-lighter")};
+  }
+  @if $theme-color-info-light != false {
+    --color-info-light: #{color("info-light")};
+  }
+  @if $theme-color-info != false {
+    --color-info: #{color("info")};
+  }
+  @if $theme-color-info-dark != false {
+    --color-info-dark: #{color("info-dark")};
+  }
+  @if $theme-color-info-darker != false {
+    --color-info-darker: #{color("info-darker")};
+  }
+
+  // Disabled
+  @if $theme-color-disabled-lighter != false {
+    --color-disabled-lighter: #{color("disabled-lighter")};
+  }
+  @if $theme-color-disabled-light != false {
+    --color-disabled-light: #{color("disabled-light")};
+  }
+  @if $theme-color-disabled != false {
+    --color-disabled: #{color("disabled")};
+  }
+  @if $theme-color-disabled-dark != false {
+    --color-disabled-dark: #{color("disabled-dark")};
+  }
+  @if $theme-color-disabled-darker != false {
+    --color-disabled-darker: #{color("disabled-darker")};
+  }
+
+  // Emergency
+  @if $theme-color-emergency != false {
+    --color-emergency: #{color("emergency")};
+  }
+  @if $theme-color-emergency-dark != false {
+    --color-emergency-dark: #{color("emergency-dark")};
+  }
+}
