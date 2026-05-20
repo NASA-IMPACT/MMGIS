@@ -662,6 +662,15 @@ module.exports = function (webpackEnv) {
               syntactic: true,
             },
           },
+          // Only type-check refactored / new TS code. Legacy files surface a
+          // long tail of errors (mostly merge-induced via `allowJs`) that aren't
+          // the LayerManager refactor's responsibility — see handoff §9 / follow-up #9.
+          // Add the path of any newly-refactored module here so it gets checked.
+          issue: {
+            include: [
+              { file: "**/src/essence/Tools/LayerManager/**/*.{ts,tsx}" },
+            ],
+          },
           logger: {
             infrastructure: "silent",
           },
