@@ -382,7 +382,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         const reposition = (): void => {
             try {
-                const pt = this.latLngToContainerPoint(options.latlng)
+                const pt = this.latLngToContainerPoint(options.latlng) as {
+                    x: number
+                    y: number
+                }
                 node.style.left = pt.x - node.offsetWidth / 2 + 'px'
                 node.style.top = pt.y - node.offsetHeight / 2 + 'px'
             } catch {
