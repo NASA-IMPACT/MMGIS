@@ -128,6 +128,9 @@ const AOITool = {
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
             subscribe('feature:active',    (result) => this._onMapFeatureClick(result))
+            subscribe(`plugin:${PLUGIN_ID}:analysisAOIReady`, () => {
+                console.log('Hello there')
+            })
         }
 
         this._render()
