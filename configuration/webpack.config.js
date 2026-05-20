@@ -13,15 +13,7 @@ const CssMinimizerPlugin = require("css-minimizer-webpack-plugin");
 const { WebpackManifestPlugin } = require("webpack-manifest-plugin");
 const InterpolateHtmlPlugin = require("react-dev-utils/InterpolateHtmlPlugin");
 const ModuleScopePlugin = require("react-dev-utils/ModuleScopePlugin");
-const _getCSSModuleLocalIdent = require("react-dev-utils/getCSSModuleLocalIdent");
-// react-dev-utils' getCSSModuleLocalIdent generates a base64 hash which can
-// include "/" or "+" — both illegal in a raw CSS class name and rejected by
-// the CSS minimizer. Replace them with "_" so the ident is always safe.
-const getCSSModuleLocalIdent = (context, localIdentName, localName, options) =>
-  _getCSSModuleLocalIdent(context, localIdentName, localName, options).replace(
-    /[\/+]/g,
-    "_"
-  );
+const getCSSModuleLocalIdent = require("react-dev-utils/getCSSModuleLocalIdent");
 const paths = require("./paths");
 const modules = require("./modules");
 const getClientEnvironment = require("./env");
@@ -155,13 +147,6 @@ module.exports = function (webpackEnv) {
           loader: require.resolve(preProcessor),
           options: {
             sourceMap: true,
-            implementation: require("sass"),
-            sassOptions: {
-              includePaths: [
-                path.resolve(__dirname, "../node_modules/@uswds/uswds/packages"),
-                path.resolve(__dirname, "../node_modules"),
-              ],
-            },
           },
         }
       );
@@ -661,15 +646,6 @@ module.exports = function (webpackEnv) {
             diagnosticOptions: {
               syntactic: true,
             },
-          },
-          // Only type-check refactored / new TS code. Legacy files surface a
-          // long tail of errors (mostly merge-induced via `allowJs`) that aren't
-          // the LayerManager refactor's responsibility — see handoff §9 / follow-up #9.
-          // Add the path of any newly-refactored module here so it gets checked.
-          issue: {
-            include: [
-              { file: "**/src/essence/Tools/LayerManager/**/*.{ts,tsx}" },
-            ],
           },
           logger: {
             infrastructure: "silent",
