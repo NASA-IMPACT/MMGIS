@@ -5,6 +5,7 @@ import './AOIComponent.scss'
 export type AOIMode = 'search' | 'inspect' | 'draw' | 'upload'
 export type AOIShape = 'polygon' | 'rectangle' | 'circle'
 export type UploadStatus = 'idle' | 'parsing' | 'error'
+export type AnalysisStatus = 'idle' | 'running'
 
 export interface AOISearchResult {
     id: string
@@ -35,6 +36,11 @@ export interface AOIComponentProps {
     uploadError?: string
     onUploadFile: (file: File) => void
 
+    analysisStatus?: AnalysisStatus
+    analysisLabel?: string
+    analysisDone?: number
+    analysisTotal?: number
+
     onClose: () => void
 }
 
@@ -46,6 +52,8 @@ const MODES: Array<{ id: AOIMode; label: string; icon: string }> = [
 ]
 
 export function AOIComponent(props: AOIComponentProps) {
+    const isAnalyzing = props.analysisStatus === 'running'
+
     return (
         <div className="aoi-tool" role="region" aria-label="Analyze areas">
             <header className="aoi-tool__header">
@@ -64,34 +72,75 @@ export function AOIComponent(props: AOIComponentProps) {
                 </Button>
             </header>
 
-            <nav className="aoi-tool__tabs" role="tablist" aria-label="AOI selection mode">
-                {MODES.map((m) => (
-                    <button
-                        key={m.id}
-                        type="button"
-                        role="tab"
-                        aria-selected={props.mode === m.id}
-                        className={
-                            'aoi-tool__tab' +
-                            (props.mode === m.id ? ' aoi-tool__tab--active' : '')
-                        }
-                        onClick={() => props.onModeChange(m.id)}
-                    >
-                        <i
-                            className={`mdi mdi-${m.icon} aoi-tool__tab-icon`}
-                            aria-hidden="true"
-                        />
-                        <span className="aoi-tool__tab-label">{m.label}</span>
-                    </button>
-                ))}
-            </nav>
+            {isAnalyzing ? (
+                <AnalyzingPanel
+                    label={props.analysisLabel || 'Area of interest'}
+                    done={props.analysisDone ?? 0}
+                    total={props.analysisTotal ?? 0}
+                />
+            ) : (
+                <>
+                    <nav className="aoi-tool__tabs" role="tablist" aria-label="AOI selection mode">
+                        {MODES.map((m) => (
+                            <button
+                                key={m.id}
+                                type="button"
+                                role="tab"
+                                aria-selected={props.mode === m.id}
+                                className={
+                                    'aoi-tool__tab' +
+                                    (props.mode === m.id ? ' aoi-tool__tab--active' : '')
+                                }
+                                onClick={() => props.onModeChange(m.id)}
+                            >
+                                <i
+                                    className={`mdi mdi-${m.icon} aoi-tool__tab-icon`}
+                                    aria-hidden="true"
+                                />
+                                <span className="aoi-tool__tab-label">{m.label}</span>
+                            </button>
+                        ))}
+                    </nav>
 
-            <div className="aoi-tool__body" role="tabpanel">
-                {props.mode === 'search' && <SearchPanel {...props} />}
-                {props.mode === 'inspect' && <InspectPanel />}
-                {props.mode === 'draw' && <DrawPanel {...props} />}
-                {props.mode === 'upload' && <UploadPanel {...props} />}
+                    <div className="aoi-tool__body" role="tabpanel">
+                        {props.mode === 'search' && <SearchPanel {...props} />}
+                        {props.mode === 'inspect' && <InspectPanel />}
+                        {props.mode === 'draw' && <DrawPanel {...props} />}
+                        {props.mode === 'upload' && <UploadPanel {...props} />}
+                    </div>
+                </>
+            )}
+        </div>
+    )
+}
+
+function AnalyzingPanel(
+    { label, done, total }: { label: string; done: number; total: number }
+) {
+    const percent = total > 0 ? Math.round((done / total) * 100) : 0
+    return (
+        <div
+            className="aoi-panel aoi-panel--analyzing"
+            role="status"
+            aria-live="polite"
+        >
+            <div className="aoi-analyzing__spinner" aria-hidden="true" />
+            <p className="aoi-analyzing__caption">Analyzing</p>
+            <p className="aoi-analyzing__label">{label}</p>
+            <p className="aoi-analyzing__percent">{percent}%</p>
+            <div
+                className="aoi-analyzing__bar"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={percent}
+            >
+                <div
+                    className="aoi-analyzing__bar-fill"
+                    style={{ width: `${percent}%` }}
+                />
             </div>
+            <p className="aoi-analyzing__status">Looking for insights</p>
         </div>
     )
 }

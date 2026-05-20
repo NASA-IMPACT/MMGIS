@@ -84,6 +84,10 @@ const initialState = () => ({
     uploadStatus: 'idle',
     uploadError: '',
     currentAOI: null,
+    analysisStatus: 'idle',
+    analysisLabel: '',
+    analysisDone: 0,
+    analysisTotal: 0,
 })
 
 /**
@@ -227,6 +231,11 @@ const AOITool = {
                 uploadStatus: this._state.uploadStatus,
                 uploadError: this._state.uploadError,
                 onUploadFile: (file) => this._onUploadFile(file),
+
+                analysisStatus: this._state.analysisStatus,
+                analysisLabel: this._state.analysisLabel,
+                analysisDone: this._state.analysisDone,
+                analysisTotal: this._state.analysisTotal,
 
                 onClose: () => this._onClose(),
             }),
@@ -431,7 +440,7 @@ const AOITool = {
             }).catch((err) => console.warn('[AOI] fitBounds failed', err))
         }
 
-        this._state.currentAOI = { feature, source }
+        this._state.currentAOI = { feature, source, label }
         this._api?.emit('areaDrawn', {
             feature,
             source,
@@ -526,16 +535,32 @@ const AOITool = {
             return
         }
 
+        this._setState({
+            analysisStatus: 'running',
+            analysisLabel: this._state.currentAOI?.label || 'Area of interest',
+            analysisDone: 0,
+            analysisTotal: layers.length,
+        })
+
         const body = JSON.stringify({
             type: 'Feature',
             geometry: feature.geometry,
             properties: {},
         })
+
+        let done = 0
         const entries = await Promise.all(
-            layers.map(async (layer) => [layer.name, await this._postStatsForLayer(layer, body)])
+            layers.map(async (layer) => {
+                const result = await this._postStatsForLayer(layer, body)
+                done += 1
+                this._setState({ analysisDone: done })
+                return [layer.name, result]
+            })
         )
         const analysisData = Object.fromEntries(entries)
         this._api?.emit('analysisReady', { analysisData })
+
+        this._setState({ analysisStatus: 'idle' })
     },
 
     async _getAnalyzableVisibleLayers() {
