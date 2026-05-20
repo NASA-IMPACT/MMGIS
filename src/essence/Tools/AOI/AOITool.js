@@ -8,20 +8,26 @@
  *   Emits  (auto-prefixed plugin:aoi:):
  *     - areaDrawn          { feature, source: 'search'|'draw'|'upload'|'inspect', layerName }
  *     - analysisAOIReady   { feature }
+ *     - analysisReady      { analysisData: { [layerName]: <stats response | null> } }
  *     - drawingCleared     {}
  *     - drawingCancelled   {}
  *
  *   Provides (auto-prefixed plugin:aoi:):
  *     - getCurrentSelection -> { feature, source } | null
  *
- *   Listens to (existing core events):
- *     - tool:change
+ *   Listens to:
+ *     - tool:change                       (core)
+ *     - map:drawstart / drawvertex /
+ *       drawcomplete / drawcancel         (engine bus)
+ *     - feature:active                    (inspect-mode boundary clicks)
+ *     - plugin:aoi:analysisAOIReady       (self — triggers the statistics POST)
  *
- *   Requests (existing handlers):
- *     - layers:getVisible
- *
- *   Requests (NOT YET AVAILABLE — see BLOCKERS.md):
- *     - plugin:analysis:supportsLayer  (owned by the Analysis plugin team)
+ *   Requests:
+ *     - map:createLayer / map:removeLayer
+ *     - map:fitBounds
+ *     - map:enableDrawing / map:finishDrawing / map:disableDrawing
+ *     - map:addOverlay / map:removeOverlay
+ *     - layers:getVisible / layers:getConfig
  *
  * This file is the only file in the plugin that imports MMGIS internals.
  * AOIComponent.tsx and AOITooltip.tsx must stay MMGIS-agnostic.
@@ -43,10 +49,13 @@ import {
 } from './aoiHelpers'
 import { loadBoundaries } from './aoiBoundaryLoader'
 
+// ── Plugin identity / layer ids ────────────────────────────────────────────────
 const PLUGIN_ID = 'aoi'
 const SELECTION_LAYER_ID = 'aoi:selection'
 const INSPECT_BOUNDARIES_LAYER_ID = 'aoi:inspect-boundaries'
+const TOOLTIP_OVERLAY_ID = 'aoi:tooltip'
 
+// ── Styles ─────────────────────────────────────────────────────────────────────
 const SELECTION_STYLE = {
     color: '#005ea2',
     weight: 3,
@@ -77,7 +86,18 @@ const initialState = () => ({
     currentAOI: null,
 })
 
-const TOOLTIP_OVERLAY_ID = 'aoi:tooltip'
+/**
+ * Build the statistics POST URL for a layer's `variables.analysis` block.
+ * `assets` and `bidx` repeat; `nodata` is set when present.
+ */
+function buildStatsUrl(analysis) {
+    const params = new URLSearchParams()
+    for (const asset of analysis.assets || []) params.append('assets', asset)
+    for (const b of analysis.bidx || []) params.append('bidx', String(b))
+    if (analysis.nodata != null) params.set('nodata', String(analysis.nodata))
+    const qs = params.toString()
+    return `${analysis.itemUrl}/statistics${qs ? `?${qs}` : ''}`
+}
 
 const AOITool = {
     // height:0 + width:0 makes ToolController_ collapse the docked side rail to 0px.
@@ -88,6 +108,8 @@ const AOITool = {
     _state: initialState(),
     _cleanups: [],
     _api: null,
+
+    // ── Lifecycle ──────────────────────────────────────────────────────────────
 
     make(targetId) {
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
@@ -128,8 +150,10 @@ const AOITool = {
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
             subscribe('feature:active',    (result) => this._onMapFeatureClick(result))
-            subscribe(`plugin:${PLUGIN_ID}:analysisAOIReady`, () => {
-                console.log('Hello there')
+            subscribe(`plugin:${PLUGIN_ID}:analysisAOIReady`, (e) => {
+                this._runAnalysisForVisibleLayers(e?.feature).catch((err) =>
+                    console.warn('[AOI] analysis run failed', err)
+                )
             })
         }
 
@@ -171,6 +195,8 @@ const AOITool = {
         return ''
     },
 
+    // ── Rendering ──────────────────────────────────────────────────────────────
+
     _setState(patch) {
         this._state = { ...this._state, ...patch }
         this._render()
@@ -208,36 +234,30 @@ const AOITool = {
         )
     },
 
-    /**
-     * Show the analyze/cancel tooltip anchored to a feature centroid.
-     * Core's `map:addOverlay` owns the DOM and repositions on view change.
-     */
-    _showTooltip({ label, latlng, analyzeEnabled }) {
-        const api = window.mmgisAPI
-        if (!api?.request) return
-        api.request('map:addOverlay', {
-            id: TOOLTIP_OVERLAY_ID,
-            latlng,
-            mount: (node) => {
-                render(
-                    React.createElement(AOITooltip, {
-                        label,
-                        position: { x: 0, y: 0 },
-                        analyzeEnabled,
-                        onAnalyze: () => this._onAnalyze(),
-                        onCancel: () => this._onCancel(),
-                    }),
-                    node
-                )
-                return () => unmountComponentAtNode(node)
-            },
-        }).catch((err) => console.warn('[AOI] addOverlay failed', err))
+    // ── Mode switching ─────────────────────────────────────────────────────────
+
+    _onModeChange(nextMode) {
+        const prev = this._state.mode
+        if (prev === nextMode) return
+
+        if (prev === 'inspect') this._hideInspectBoundaries()
+        if (nextMode === 'inspect') this._showInspectBoundaries()
+
+        if (prev === 'draw') {
+            // Cancel any in-flight drawing session when leaving Draw mode.
+            // The bus handler is a no-op if no session is active.
+            window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
+        }
+
+        this._setState({ mode: nextMode })
     },
 
-    _hideTooltip() {
-        window.mmgisAPI?.request?.('map:removeOverlay', { id: TOOLTIP_OVERLAY_ID })
-            .catch(() => { })
+    _onClose() {
+        const btn = document.getElementById('toolButtonAOI')
+        if (btn) btn.click()
     },
+
+    // ── Search mode ────────────────────────────────────────────────────────────
 
     _onSearchQueryChange(q) {
         this._setState({
@@ -251,6 +271,8 @@ const AOITool = {
         if (!entry) return
         this._applySelection(entry.feature, 'search', entry.label)
     },
+
+    // ── Draw mode ──────────────────────────────────────────────────────────────
 
     _onDrawShapeChange(shape) {
         this._setState({ drawShape: shape, drawVerticesCount: 0 })
@@ -283,16 +305,60 @@ const AOITool = {
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
         const feature = e?.feature
         if (!feature) return
-        const label =
-            (feature.properties && feature.properties.shape
-                ? `Drawn ${feature.properties.shape}`
-                : 'Drawn area')
+        const label = feature.properties?.shape
+            ? `Drawn ${feature.properties.shape}`
+            : 'Drawn area'
         this._applySelection(feature, 'draw', label)
     },
 
     _onDrawCancelEvent() {
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
     },
+
+    // ── Inspect mode ───────────────────────────────────────────────────────────
+
+    _showInspectBoundaries() {
+        const entries = this._state.searchAllEntries
+        if (!entries.length) return
+        const api = window.mmgisAPI
+        if (!api?.request) return
+        // Drop any prior layer first; createLayer is not idempotent.
+        api.request('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
+            .catch(() => { })
+            .then(() => api.request('map:createLayer', {
+                id: INSPECT_BOUNDARIES_LAYER_ID,
+                type: 'vector',
+                geojson: {
+                    type: 'FeatureCollection',
+                    features: entries.map((e) => e.feature),
+                },
+                style: INSPECT_STYLE,
+                interactive: true,
+            }))
+            .catch((err) => console.warn('[AOI] failed to show inspect boundaries', err))
+    },
+
+    _hideInspectBoundaries() {
+        window.mmgisAPI?.request?.('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
+            .catch(() => { })
+    },
+
+    _onMapFeatureClick(result) {
+        if (this._state.mode !== 'inspect') return
+        const feature = result?.feature
+        if (!feature?.geometry) return
+        const gtype = feature.geometry.type
+        if (gtype !== 'Polygon' && gtype !== 'MultiPolygon') return
+        const props = feature.properties || {}
+        const label =
+            props.name ||
+            props.NAME ||
+            props.title ||
+            (props._aoiKind ? `Inspected ${props._aoiKind}` : 'Inspected area')
+        this._applySelection(feature, 'inspect', label)
+    },
+
+    // ── Upload mode ────────────────────────────────────────────────────────────
 
     _onUploadFile(file) {
         this._setState({ uploadStatus: 'parsing', uploadError: '' })
@@ -340,6 +406,8 @@ const AOITool = {
         }
     },
 
+    // ── Selection lifecycle ────────────────────────────────────────────────────
+
     _applySelection(feature, source, label) {
         this._removeSelectionLayer()
 
@@ -363,8 +431,7 @@ const AOITool = {
             }).catch((err) => console.warn('[AOI] fitBounds failed', err))
         }
 
-        const aoi = { feature, source }
-        this._state.currentAOI = aoi
+        this._state.currentAOI = { feature, source }
         this._api?.emit('areaDrawn', {
             feature,
             source,
@@ -396,66 +463,40 @@ const AOITool = {
             .catch(() => { })
     },
 
-    _onModeChange(nextMode) {
-        const prev = this._state.mode
-        if (prev === nextMode) return
+    // ── Tooltip overlay ────────────────────────────────────────────────────────
 
-        if (prev === 'inspect') {
-            this._hideInspectBoundaries()
-        }
-        if (nextMode === 'inspect') {
-            this._showInspectBoundaries()
-        }
-
-        if (prev === 'draw') {
-            // Cancel any in-flight drawing session when leaving Draw mode.
-            // The bus handler is a no-op if no session is active.
-            window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
-        }
-
-        this._setState({ mode: nextMode })
-    },
-
-    _showInspectBoundaries() {
-        const entries = this._state.searchAllEntries
-        if (!entries.length) return
+    /**
+     * Show the analyze/cancel tooltip anchored to a feature centroid.
+     * Core's `map:addOverlay` owns the DOM and repositions on view change.
+     */
+    _showTooltip({ label, latlng, analyzeEnabled }) {
         const api = window.mmgisAPI
         if (!api?.request) return
-        // Drop any prior layer first; createLayer is not idempotent.
-        api.request('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
-            .catch(() => { })
-            .then(() => api.request('map:createLayer', {
-                id: INSPECT_BOUNDARIES_LAYER_ID,
-                type: 'vector',
-                geojson: {
-                    type: 'FeatureCollection',
-                    features: entries.map((e) => e.feature),
-                },
-                style: INSPECT_STYLE,
-                interactive: true,
-            }))
-            .catch((err) => console.warn('[AOI] failed to show inspect boundaries', err))
+        api.request('map:addOverlay', {
+            id: TOOLTIP_OVERLAY_ID,
+            latlng,
+            mount: (node) => {
+                render(
+                    React.createElement(AOITooltip, {
+                        label,
+                        position: { x: 0, y: 0 },
+                        analyzeEnabled,
+                        onAnalyze: () => this._onAnalyze(),
+                        onCancel: () => this._onCancel(),
+                    }),
+                    node
+                )
+                return () => unmountComponentAtNode(node)
+            },
+        }).catch((err) => console.warn('[AOI] addOverlay failed', err))
     },
 
-    _hideInspectBoundaries() {
-        window.mmgisAPI?.request?.('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
+    _hideTooltip() {
+        window.mmgisAPI?.request?.('map:removeOverlay', { id: TOOLTIP_OVERLAY_ID })
             .catch(() => { })
     },
 
-    _onMapFeatureClick(result) {
-        if (this._state.mode !== 'inspect') return
-        const feature = result?.feature
-        if (!feature || !feature.geometry) return
-        const gtype = feature.geometry.type
-        if (gtype !== 'Polygon' && gtype !== 'MultiPolygon') return
-        const props = feature.properties || {}
-        const label =
-            props.name ||
-            props.NAME ||
-            props.title ||
-            (props._aoiKind ? `Inspected ${props._aoiKind}` : 'Inspected area')
-        this._applySelection(feature, 'inspect', label)
-    },
+    // ── Analysis hand-off ──────────────────────────────────────────────────────
 
     _onAnalyze() {
         const aoi = this._state.currentAOI
@@ -469,13 +510,76 @@ const AOITool = {
         this._clearSelection()
     },
 
-    _guessActiveLayerName() {
-        return null
+    /**
+     * For every visible layer with `variables.analysis.is_analysis_supported`,
+     * POST the AOI feature to `<itemUrl>/statistics` in parallel, then emit
+     * a single `analysisReady` event keyed by layer name. Layers that errored
+     * or returned no data are present in the map with `null` so consumers can
+     * render per-layer empty states.
+     */
+    async _runAnalysisForVisibleLayers(feature) {
+        if (!feature?.geometry || !window.mmgisAPI?.request) return
+
+        const layers = await this._getAnalyzableVisibleLayers()
+        if (!layers.length) {
+            console.warn('[AOI] no analysis-supported layers are visible')
+            return
+        }
+
+        const body = JSON.stringify({
+            type: 'Feature',
+            geometry: feature.geometry,
+            properties: {},
+        })
+        const entries = await Promise.all(
+            layers.map(async (layer) => [layer.name, await this._postStatsForLayer(layer, body)])
+        )
+        const analysisData = Object.fromEntries(entries)
+        this._api?.emit('analysisReady', { analysisData })
     },
 
-    _onClose() {
-        const btn = document.getElementById('toolButtonAOI')
-        if (btn) btn.click()
+    async _getAnalyzableVisibleLayers() {
+        const bus = window.mmgisAPI
+        const on = (await bus.request('layers:getVisible')) || {}
+        const visibleUuids = Object.entries(on).filter(([, v]) => v).map(([k]) => k)
+        const layers = await Promise.all(
+            visibleUuids.map((uuid) => bus.request('layers:getConfig', uuid))
+        )
+        return layers.filter((l) => l?.variables?.analysis?.is_analysis_supported)
+    },
+
+    async _postStatsForLayer(layer, body) {
+        const analysis = layer.variables.analysis
+        if (!analysis?.itemUrl) {
+            console.warn(`[AOI] ${layer.name}: missing analysis.itemUrl`)
+            return null
+        }
+        try {
+            const resp = await fetch(buildStatsUrl(analysis), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body,
+                credentials: 'include',
+            })
+            if (!resp.ok) {
+                // Most common cause here is "AOI doesn't intersect this layer's
+                // coverage" — the stats API returns 5xx for that. We can't
+                // distinguish that from a real outage without parsing the body,
+                // so for now treat any non-2xx as "no data for this layer".
+                console.info(`[AOI] ${layer.name}: no data for this AOI (${resp.status})`)
+                return null
+            }
+            return await resp.json()
+        } catch (err) {
+            console.warn(`[AOI] ${layer.name}: stats fetch failed`, err)
+            return null
+        }
+    },
+
+    // ── Misc ───────────────────────────────────────────────────────────────────
+
+    _guessActiveLayerName() {
+        return null
     },
 }
 
