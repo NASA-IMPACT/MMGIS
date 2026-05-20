@@ -920,15 +920,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             interactive: false,
             geojson: { type: 'FeatureCollection', features: [previewFeature] },
         } as LayerOptions
-        if (this._layers.has(id)) {
-            const next = buildDeckLayer(id, opts)
-            this._layers.set(id, next)
-            this._syncLayers()
-        } else {
-            const next = buildDeckLayer(id, opts)
-            this._layers.set(id, next)
-            this._syncLayers()
-        }
+        const next = buildDeckLayer(id, opts)
+        this._layers.set(id, next)
+        this._syncLayers()
     }
 
     private _removeDrawingPreview(): void {

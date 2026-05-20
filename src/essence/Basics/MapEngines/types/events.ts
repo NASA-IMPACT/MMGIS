@@ -59,7 +59,6 @@ export type DrawShape = 'polygon' | 'rectangle' | 'circle'
  */
 export interface DrawingOptions {
     style?: Record<string, unknown>
-    finishOnDoubleClick?: boolean
     cancelOnEscape?: boolean
 }
 
