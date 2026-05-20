@@ -6,9 +6,10 @@
  *   pluginId: 'aoi'
  *
  *   Emits  (auto-prefixed plugin:aoi:):
- *     - selectionChanged   { feature, source: 'search'|'draw'|'upload'|'inspect' }
- *     - analysisRequested  { feature, layerName }
- *     - analysisCancelled  {}
+ *     - drawingStarted     { feature, source: 'search'|'draw'|'upload'|'inspect' }
+ *     - drawingCleared     {}
+ *     - areaDrawn          { feature, layerName }
+ *     - drawingCancelled   {}
  *
  *   Provides (auto-prefixed plugin:aoi:):
  *     - getCurrentSelection -> { feature, source } | null
@@ -361,7 +362,7 @@ const AOITool = {
 
         const aoi = { feature, source }
         this._state.currentAOI = aoi
-        this._api?.emit('selectionChanged', aoi)
+        this._api?.emit('drawingStarted', aoi)
 
         const c = featureCentroid(feature)
         if (c) {
@@ -378,7 +379,7 @@ const AOITool = {
         this._removeSelectionLayer()
         this._hideTooltip()
         this._state.currentAOI = null
-        this._api?.emit('selectionChanged', { feature: null, source: 'inspect' })
+        this._api?.emit('drawingCleared', {})
         this._render()
     },
 
@@ -454,21 +455,21 @@ const AOITool = {
         if (!aoi) return
         const layerName = this._guessActiveLayerName()
         const payload = { feature: aoi.feature, layerName }
-        const eventName = `plugin:${PLUGIN_ID}:analysisRequested`
+        const eventName = `plugin:${PLUGIN_ID}:areaDrawn`
 
-        console.log('[AOI] Sending to Analysis plugin (chart):', {
+        console.log('[AOI] Emitting:', {
             event: eventName,
             payload,
             source: aoi.source,
         })
-        this._api?.emit('analysisRequested', payload)
+        this._api?.emit('areaDrawn', payload)
         console.log(`[AOI] Emitted: ${eventName}`)
 
         this._hideTooltip()
     },
 
     _onCancel() {
-        this._api?.emit('analysisCancelled', {})
+        this._api?.emit('drawingCancelled', {})
         this._clearSelection()
     },
 
