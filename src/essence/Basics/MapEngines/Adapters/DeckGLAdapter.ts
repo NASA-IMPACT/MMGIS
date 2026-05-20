@@ -28,12 +28,6 @@ import {
 import { MapboxOverlay } from '@deck.gl/mapbox'
 import { Map as MaplibreGLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import {
-    EditableGeoJsonLayer,
-    DrawPolygonMode,
-    DrawRectangleMode,
-    DrawCircleFromCenterMode,
-} from '@deck.gl-community/editable-layers'
 
 import type { IMapEngine } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
@@ -69,8 +63,7 @@ import {
     pickInfoToResult,
     buildDeckLayer,
     buildDrawnFeature,
-    buildEditableLayerStyleProps,
-    haversineMeters,
+    buildPreviewFeature,
 } from './DeckGLHelpers'
 
 /**
@@ -206,25 +199,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _featureHoverHandler: FeatureInteractionHandler | null = null
 
     private _drawingShape: DrawShape | null = null
-    /** Click-by-click vertex list maintained from the top-level onClick handler so the
-     *  adapter can emit `drawvertex` events and reconstruct a feature in
-     *  {@link finishDrawing}. The mode also keeps its own click sequence internally;
-     *  this is a parallel record so we don't have to reach into its private state. */
-    private _drawingClickedVertices: { lat: number; lng: number }[] = []
-    private _drawingLayerId: string | null = null
-    private _drawingMode:
-        | typeof DrawPolygonMode
-        | typeof DrawRectangleMode
-        | typeof DrawCircleFromCenterMode
-        | null = null
-    private _drawingStyleProps: Record<string, unknown> = {}
-    /** Committed-features data passed to `EditableGeoJsonLayer`. The library renders
-     *  the tentative preview itself via `getGuides()`, so this stays an empty
-     *  collection until `addFeature` fires. */
-    private _drawingFeatures: GeoJSON.FeatureCollection = {
-        type: 'FeatureCollection',
-        features: [],
-    }
+    private _drawingVertices: { lat: number; lng: number }[] = []
+    private _drawingCursor: { lat: number; lng: number } | null = null
+    private _drawingStyle: Record<string, unknown> = {}
+    private _drawingPreviewLayerId: string | null = null
     private _drawingEscapeHandler: ((e: KeyboardEvent) => void) | null = null
     private _drawingFinishing = false
 
@@ -764,18 +742,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
 
         this._drawingShape = shape
-        this._drawingClickedVertices = []
-        this._drawingFeatures = { type: 'FeatureCollection', features: [] }
-        this._drawingStyleProps = buildEditableLayerStyleProps(
-            (options.style as Record<string, unknown>) ?? {}
-        )
-        this._drawingMode =
-            shape === 'polygon'
-                ? DrawPolygonMode
-                : shape === 'rectangle'
-                  ? DrawRectangleMode
-                  : DrawCircleFromCenterMode
-        this._drawingLayerId = `__aoi-draw-editable-${Math.random().toString(36).slice(2, 8)}`
+        this._drawingVertices = []
+        this._drawingStyle = (options.style as Record<string, unknown>) ?? {}
+        this._drawingPreviewLayerId = `__aoi-draw-preview-${Math.random()
+            .toString(36)
+            .slice(2, 8)}`
 
         if (options.cancelOnEscape !== false) {
             this._drawingEscapeHandler = (e: KeyboardEvent) => {
@@ -784,7 +755,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             document.addEventListener('keydown', this._drawingEscapeHandler)
         }
 
-        this._rebuildEditableLayer()
         this._emitEvent('drawstart', { shape })
     }
 
@@ -793,18 +763,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         const shape = this._drawingShape
 
-        if (this._drawingLayerId && this._layers.has(this._drawingLayerId)) {
-            this._layers.delete(this._drawingLayerId)
-            this._layerZIndices.delete(this._drawingLayerId)
-            this._syncLayers()
-        }
-
+        this._removeDrawingPreview()
         this._drawingShape = null
-        this._drawingClickedVertices = []
-        this._drawingLayerId = null
-        this._drawingMode = null
-        this._drawingStyleProps = {}
-        this._drawingFeatures = { type: 'FeatureCollection', features: [] }
+        this._drawingVertices = []
+        this._drawingCursor = null
+        this._drawingPreviewLayerId = null
+        this._drawingStyle = {}
 
         if (this._drawingEscapeHandler) {
             document.removeEventListener('keydown', this._drawingEscapeHandler)
@@ -819,7 +783,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     finishDrawing(): void {
         if (!this._drawingShape) return
         const shape = this._drawingShape
-        const vertices = this._drawingClickedVertices.slice()
+        const vertices = this._drawingVertices.slice()
 
         const feature = buildDrawnFeature(shape, vertices)
         if (!feature) {
@@ -837,88 +801,69 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return this._drawingShape !== null
     }
 
-    /**
-     * Record a click during an active drawing session and emit `drawvertex`.
-     * Called from the top-level `onClick` callback (standalone Deck and overlay
-     * MapboxOverlay). The `EditableGeoJsonLayer` handles its own click semantics
-     * via the mode; this is purely for surfacing the engine-agnostic event.
-     */
     private _handleDrawClick(info: PickingInfo): void {
         const c = info.coordinate
         if (!c || !this._drawingShape) return
-        this._drawingClickedVertices.push({ lat: c[1], lng: c[0] })
+        const vertex = { lat: c[1], lng: c[0] }
+        this._drawingVertices.push(vertex)
+
+        this._renderDrawingPreview()
         this._emitEvent('drawvertex', {
             shape: this._drawingShape,
-            vertices: this._drawingClickedVertices.slice(),
+            vertices: this._drawingVertices.slice(),
         })
-    }
 
-    /**
-     * Handle an edit emitted by `EditableGeoJsonLayer`. Only `addFeature` is
-     * reacted to — the library produces a finalised GeoJSON feature on
-     * polygon double-click / rectangle / circle second click. Other editTypes
-     * (`addTentativePosition`, `invalidPolygon`, …) are internal lifecycle
-     * signals; the library renders previews itself, and our top-level
-     * `onClick` already tracks committed vertices for the `drawvertex` event.
-     */
-    private _onEditableEdit = (action: {
-        updatedData: GeoJSON.FeatureCollection
-        editType: string
-    }): void => {
-        if (action.editType !== 'addFeature') return
-        if (!this._drawingShape) return
-
-        const last = action.updatedData.features[action.updatedData.features.length - 1]
-        if (!last) return
-
-        const normalised = this._normaliseDrawFeature(last, this._drawingShape)
-
-        this._drawingFinishing = true
-        this.disableDrawing()
-        this._drawingFinishing = false
-        this._emitEvent('drawcomplete', { feature: normalised })
-    }
-
-    /**
-     * Attach the same `properties.source = 'draw'` / `properties.shape` (and
-     * `properties.radius` for circles) markers that the Leaflet adapter emits,
-     * so plugins see identical features regardless of engine.
-     */
-    private _normaliseDrawFeature(
-        rawFeature: GeoJSON.Feature,
-        shape: DrawShape
-    ): GeoJSON.Feature {
-        const baseProps: Record<string, unknown> = {
-            ...(rawFeature.properties ?? {}),
-            source: 'draw',
-            shape,
+        if (
+            (this._drawingShape === 'rectangle' || this._drawingShape === 'circle') &&
+            this._drawingVertices.length >= 2
+        ) {
+            this.finishDrawing()
         }
-        if (shape === 'circle' && this._drawingClickedVertices.length >= 2) {
-            const [center, edge] = this._drawingClickedVertices
-            baseProps.radius = haversineMeters(center, edge)
-        }
-        return { ...rawFeature, properties: baseProps }
     }
 
-    /**
-     * Build (or rebuild) the `EditableGeoJsonLayer` with the current shape,
-     * mode, data, and style, then push it to the rendering target. Called once
-     * from `enableDrawing` to insert the layer.
-     */
-    private _rebuildEditableLayer(): void {
-        if (!this._drawingShape || !this._drawingLayerId || !this._drawingMode) return
-        const id = this._drawingLayerId
-        const layer = new EditableGeoJsonLayer({
+    private _handleDrawHover(info: PickingInfo): void {
+        const c = info.coordinate
+        if (!c || !this._drawingShape) return
+        if (this._drawingVertices.length === 0) return
+        this._drawingCursor = { lat: c[1], lng: c[0] }
+        this._renderDrawingPreview()
+    }
+
+    private _renderDrawingPreview(): void {
+        if (!this._drawingShape || !this._drawingPreviewLayerId) return
+        const previewFeature = buildPreviewFeature(
+            this._drawingShape,
+            this._drawingVertices,
+            this._drawingCursor ?? undefined
+        )
+        if (!previewFeature) return
+        const id = this._drawingPreviewLayerId
+        const opts: LayerOptions = {
             id,
-            data: this._drawingFeatures,
-            mode: this._drawingMode,
-            selectedFeatureIndexes: [],
-            pickable: true,
-            onEdit: this._onEditableEdit,
-            ...this._drawingStyleProps,
-        }) as unknown as Layer
-        this._layers.set(id, layer)
-        this._syncLayers()
+            type: 'vector',
+            style: this._drawingStyle,
+            interactive: false,
+            geojson: { type: 'FeatureCollection', features: [previewFeature] },
+        } as LayerOptions
+        if (this._layers.has(id)) {
+            const next = buildDeckLayer(id, opts)
+            this._layers.set(id, next)
+            this._syncLayers()
+        } else {
+            const next = buildDeckLayer(id, opts)
+            this._layers.set(id, next)
+            this._syncLayers()
+        }
+    }
+
+    private _removeDrawingPreview(): void {
+        const id = this._drawingPreviewLayerId
+        if (!id) return
+        if (this._layers.has(id)) {
+            this._layers.delete(id)
+            this._layerZIndices.delete(id)
+            this._syncLayers()
+        }
     }
 
     onFeatureClick(handler: FeatureInteractionHandler): void {
@@ -1026,7 +971,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._featureClickHandler?.(pickInfoToResult(info))
             },
             onHover: (info: PickingInfo) => {
-                if (this._drawingShape) return
+                if (this._drawingShape) {
+                    this._handleDrawHover(info)
+                }
                 this._featureHoverHandler?.(pickInfoToResult(info))
             },
         } as any)
@@ -1098,7 +1045,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._featureClickHandler?.(pickInfoToResult(info))
             },
             onHover: (info: PickingInfo) => {
-                if (this._drawingShape) return
+                if (this._drawingShape) {
+                    this._handleDrawHover(info)
+                }
                 this._featureHoverHandler?.(pickInfoToResult(info))
             },
         })
