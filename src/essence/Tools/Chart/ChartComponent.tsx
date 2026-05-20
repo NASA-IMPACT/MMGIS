@@ -1,126 +1,151 @@
 import React, { useEffect, useRef } from 'react'
 import ChartJS from 'chart.js/auto'
+import './theme.css'
 import './ChartComponent.css'
-
-export type ChartType = 'bar' | 'line'
-export type ChartStatus = 'idle' | 'loading' | 'empty' | 'error' | 'ready'
-
-export interface ChartSpec {
-    title: string
-    unit?: string
-    type?: ChartType
-    data: { time: string | number; value: number }[]
-}
-
-export interface LayerOption {
-    name: string
-    title?: string
-}
+import {
+    AnalysisData,
+    AssetStats,
+    ResultCard,
+    cardsFromAnalysisData,
+    emptyLayers,
+    buildHistogramBins,
+    formatStat,
+    formatCount,
+    formatPercent,
+} from './chartHelpers'
 
 export interface ChartComponentProps {
-    status: ChartStatus
-    summary?: string
-    charts?: ChartSpec[]
-    layers?: LayerOption[]
-    selectedLayer?: string | null
-    errorMessage?: string
-    emptyMessage?: string
-    onSelectLayer?: (name: string) => void
-    onExit?: () => void
+    analysisData?: AnalysisData | null
     onClose?: () => void
+    onExit?: () => void
 }
 
-export function ChartComponent(props: ChartComponentProps) {
-    const charts = props.charts ?? []
-    const layers = props.layers ?? []
-    const showDropdown = layers.length > 1
+export function ChartComponent({ analysisData, onClose, onExit }: ChartComponentProps) {
+    const cards = cardsFromAnalysisData(analysisData)
+    const empties = emptyLayers(analysisData)
+    const isIdle = !analysisData
 
     return (
-        <div className="chart-tool" role="region" aria-label="Analyze areas">
+        <div className="chart-tool" role="region" aria-label="Analysis results">
             <header className="chart-tool__header">
-                <h2 className="chart-tool__title">Analyze areas</h2>
-                {props.onClose && (
+                <h2 className="chart-tool__title">
+                    <i className="mdi mdi-chart-bar chart-tool__title-icon" aria-hidden="true" />
+                    <span>Analyze areas</span>
+                </h2>
+                {onClose && (
                     <button
                         type="button"
-                        className="chart-tool__icon-btn"
-                        onClick={props.onClose}
-                        aria-label="Close panel"
+                        className="chart-tool__close"
+                        onClick={onClose}
+                        aria-label="Close"
                     >
-                        ×
+                        <i className="mdi mdi-close" aria-hidden="true" />
                     </button>
                 )}
             </header>
 
             <div className="chart-tool__body">
-                {props.status === 'ready' && (
+                {isIdle && (
+                    <p className="chart-tool__placeholder">
+                        Draw an area on the map and click <strong>Analyze area</strong> to see statistics here.
+                    </p>
+                )}
+
+                {!isIdle && (
                     <>
-                        <button
-                            type="button"
-                            className="chart-tool__exit"
-                            onClick={props.onExit}
-                        >
-                            Exit analysis
-                        </button>
-
-                        {showDropdown && (
-                            <select
-                                className="chart-tool__select"
-                                value={props.selectedLayer ?? ''}
-                                onChange={(e) => props.onSelectLayer?.(e.target.value)}
-                                aria-label="Select layer"
+                        {onExit && (
+                            <button
+                                type="button"
+                                className="chart-tool__exit"
+                                onClick={onExit}
                             >
-                                {layers.map((l) => (
-                                    <option key={l.name} value={l.name}>
-                                        {l.title || l.name}
-                                    </option>
-                                ))}
-                            </select>
+                                Exit analysis
+                            </button>
                         )}
 
-                        {props.summary && (
-                            <section className="chart-tool__summary">
-                                <h3 className="chart-tool__summary-label">Analysis summary</h3>
-                                <p className="chart-tool__summary-text">{props.summary}</p>
-                            </section>
+                        {cards.length === 0 && empties.length === 0 && (
+                            <p className="chart-tool__placeholder">
+                                No analysis-supported layers are visible.
+                            </p>
                         )}
 
-                        {charts.map((c, i) => (
-                            <Chart key={`${c.title}-${i}`} {...c} />
+                        {cards.map((card) => (
+                            <ResultCardView
+                                key={`${card.layerName}__${card.assetName}`}
+                                card={card}
+                            />
+                        ))}
+
+                        {empties.map((layerName) => (
+                            <EmptyCard key={`empty__${layerName}`} layerName={layerName} />
                         ))}
                     </>
-                )}
-
-                {props.status === 'loading' && (
-                    <div className="chart-tool__loading">
-                        <div className="chart-tool__spinner" aria-hidden="true" />
-                        <p className="chart-tool__loading-text">Looking for insights…</p>
-                    </div>
-                )}
-
-                {props.status === 'idle' && (
-                    <div className="chart-tool__placeholder">
-                        Draw an Area of Interest to start analysis.
-                    </div>
-                )}
-
-                {props.status === 'empty' && (
-                    <div className="chart-tool__placeholder">
-                        {props.emptyMessage ||
-                            'No active layer with timeseries analysis support.'}
-                    </div>
-                )}
-
-                {props.status === 'error' && (
-                    <div className="chart-tool__placeholder chart-tool__placeholder--error">
-                        {props.errorMessage || 'Failed to load timeseries data.'}
-                    </div>
                 )}
             </div>
         </div>
     )
 }
 
-function Chart({ title, unit, type = 'bar', data }: ChartSpec) {
+function ResultCardView({ card }: { card: ResultCard }) {
+    const { layerName, assetName, stats } = card
+    const noPixels = stats.valid_pixels === 0
+
+    return (
+        <article className="chart-tool__card">
+            <header className="chart-tool__card-header">
+                <h3 className="chart-tool__card-title">{layerName}</h3>
+                <span className="chart-tool__card-subtitle">{assetName}</span>
+            </header>
+
+            {noPixels ? (
+                <p className="chart-tool__card-empty">No usable pixels in this area.</p>
+            ) : (
+                <>
+                    <div className="chart-tool__headline">
+                        <div className="chart-tool__headline-label">Mean</div>
+                        <div className="chart-tool__headline-value">{formatStat(stats.mean)}</div>
+                        <div className="chart-tool__headline-meta">
+                            {formatPercent(stats.valid_percent)} valid · {formatCount(stats.valid_pixels)} pixels
+                        </div>
+                    </div>
+
+                    <Histogram stats={stats} />
+
+                    <dl className="chart-tool__stats">
+                        <Stat label="Min" value={formatStat(stats.min)} />
+                        <Stat label="Max" value={formatStat(stats.max)} />
+                        <Stat label="Median" value={formatStat(stats.median)} />
+                        <Stat label="Std dev" value={formatStat(stats.std)} />
+                        <Stat label="2nd %ile" value={formatStat(stats.percentile_2)} />
+                        <Stat label="98th %ile" value={formatStat(stats.percentile_98)} />
+                    </dl>
+                </>
+            )}
+        </article>
+    )
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="chart-tool__stat">
+            <dt className="chart-tool__stat-label">{label}</dt>
+            <dd className="chart-tool__stat-value">{value}</dd>
+        </div>
+    )
+}
+
+function EmptyCard({ layerName }: { layerName: string }) {
+    return (
+        <article className="chart-tool__card chart-tool__card--empty">
+            <header className="chart-tool__card-header">
+                <h3 className="chart-tool__card-title">{layerName}</h3>
+            </header>
+            <p className="chart-tool__card-empty">Could not fetch statistics for this.</p>
+        </article>
+    )
+}
+
+function Histogram({ stats }: { stats: AssetStats }) {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const chartRef = useRef<ChartJS | null>(null)
 
@@ -131,30 +156,40 @@ function Chart({ title, unit, type = 'bar', data }: ChartSpec) {
         const styles = getComputedStyle(canvas)
         const themeVar = (name: string, fallback: string) =>
             styles.getPropertyValue(name).trim() || fallback
-        const accent = themeVar('--theme-accent', '#0e7482')
-        const grid = themeVar('--theme-border', '#dfe1e2')
-        const muted = themeVar('--theme-muted', '#565c65')
+        const accent = themeVar('--chart-accent', '#137480')
+        const grid = themeVar('--chart-border', '#dfe1e2')
+        const muted = themeVar('--chart-fg-muted', '#565c65')
+
+        const bins = buildHistogramBins(stats.histogram)
 
         chartRef.current = new ChartJS(canvas, {
-            type,
+            type: 'bar',
             data: {
-                labels: data.map((p) => formatShortDate(p.time)),
+                labels: bins.map((b) => b.label),
                 datasets: [
                     {
-                        label: title,
-                        data: data.map((p) => p.value),
+                        label: 'count',
+                        data: bins.map((b) => b.count),
                         backgroundColor: accent,
-                        borderColor: accent,
-                        borderWidth: type === 'line' ? 2 : 0,
-                        borderRadius: type === 'bar' ? 2 : 0,
-                        pointRadius: 0,
+                        borderRadius: 2,
                     },
                 ],
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { display: false }, tooltip: { intersect: false } },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: (ctx) => {
+                                const bin = bins[ctx[0].dataIndex]
+                                return `${formatStat(bin.lo)} – ${formatStat(bin.hi)}`
+                            },
+                            label: (ctx) => `${formatCount(ctx.parsed.y)} pixels`,
+                        },
+                    },
+                },
                 scales: {
                     x: {
                         ticks: { color: muted, maxTicksLimit: 6, autoSkip: true },
@@ -162,7 +197,7 @@ function Chart({ title, unit, type = 'bar', data }: ChartSpec) {
                     },
                     y: {
                         beginAtZero: true,
-                        ticks: { color: muted },
+                        ticks: { color: muted, callback: (v) => formatCount(Number(v)) },
                         grid: { color: grid },
                     },
                 },
@@ -173,53 +208,13 @@ function Chart({ title, unit, type = 'bar', data }: ChartSpec) {
             chartRef.current?.destroy()
             chartRef.current = null
         }
-    }, [title, type, unit, data])
-
-    const meta = describeData(data, unit)
+    }, [stats])
 
     return (
-        <article className="chart-tool__card">
-            <h3 className="chart-tool__card-title">{title}</h3>
-            {meta && <p className="chart-tool__card-meta">{meta}</p>}
-            <div className="chart-tool__card-canvas">
-                <canvas ref={canvasRef} />
-            </div>
-        </article>
+        <div className="chart-tool__histogram">
+            <canvas ref={canvasRef} />
+        </div>
     )
-}
-
-function describeData(
-    data: ChartSpec['data'],
-    unit?: string
-): string {
-    if (!data.length) return ''
-    const first = formatTime(data[0].time)
-    const last = formatTime(data[data.length - 1].time)
-    const sum = data.reduce((s, p) => s + p.value, 0)
-    const mean = sum / data.length
-    const rounded = Math.abs(mean) >= 10 ? Math.round(mean) : Math.round(mean * 100) / 100
-    const meanStr = unit ? `${rounded} ${unit}` : String(rounded)
-    return `${first} – ${last}    Mean: ${meanStr}`
-}
-
-function formatTime(t: string | number): string {
-    const d = new Date(t)
-    if (Number.isNaN(d.getTime())) return String(t)
-    return d.toLocaleString(undefined, {
-        month: 'short',
-        year: 'numeric',
-        timeZone: 'UTC',
-    })
-}
-
-function formatShortDate(t: string | number): string {
-    const d = new Date(t)
-    if (Number.isNaN(d.getTime())) return String(t)
-    return d.toLocaleString(undefined, {
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'UTC',
-    })
 }
 
 export default ChartComponent

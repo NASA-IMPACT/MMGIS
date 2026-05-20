@@ -1,166 +1,193 @@
-/* Chart plugin — scoped under .chart-tool. Theme tokens come from
- * `--theme-*` custom properties; fallback values match the Disasters
- * Portal Figma (light theme). When a future theme file defines
- * `--theme-*` on :root, every value below picks it up automatically. */
+/* Chart plugin — scoped under .chart-tool-host / .chart-tool.
+ * Every literal lives in theme.css; this file references var(--chart-*) only.
+ */
+
+.chart-tool-host {
+    position: fixed;
+    top: 70px;
+    right: 16px;
+    width: 372px;
+    max-height: calc(100vh - 90px);
+    overflow: hidden;
+    z-index: 1003;
+    border-radius: var(--chart-radius-md);
+    box-shadow: var(--chart-shadow-pop);
+    pointer-events: auto;
+}
 
 .chart-tool {
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     height: 100%;
-    background: var(--theme-bg, #ffffff);
-    color: var(--theme-text, #1b1b1b);
-    font-family: var(--theme-font-body, 'Source Sans Pro', sans-serif);
-    border: 1px solid var(--theme-border, #dfe1e2);
-    border-radius: var(--theme-radius-sm, 4px);
+    width: 100%;
+    background: var(--chart-bg);
+    color: var(--chart-fg);
+    font-family: var(--chart-font-body);
+    font-size: var(--chart-font-size-md);
+}
+
+.chart-tool * {
+    box-sizing: border-box;
 }
 
 .chart-tool__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--theme-space-3, 12px) var(--theme-space-4, 16px);
-    border-bottom: 1px solid var(--theme-border, #dfe1e2);
+    padding: var(--chart-space-3) var(--chart-space-4);
+    border-bottom: 1px solid var(--chart-border);
 }
 
 .chart-tool__title {
     margin: 0;
-    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--chart-space-2);
+    font-size: var(--chart-font-size-lg);
     font-weight: 600;
-    color: var(--theme-text, #1b1b1b);
 }
 
-.chart-tool__icon-btn {
-    background: transparent;
-    border: none;
-    color: var(--theme-muted, #565c65);
-    font-size: 1.25rem;
+.chart-tool__title-icon {
+    color: var(--chart-accent);
+    font-size: 16px;
+    line-height: 1;
+}
+
+.chart-tool__close {
+    background: none;
+    border: 0;
+    color: var(--chart-fg-muted);
+    font-size: 18px;
     line-height: 1;
     cursor: pointer;
-    padding: var(--theme-space-1, 4px);
+    padding: var(--chart-space-1);
 }
 
-.chart-tool__icon-btn:hover {
-    color: var(--theme-text, #1b1b1b);
+.chart-tool__close:hover {
+    color: var(--chart-fg);
 }
 
 .chart-tool__body {
-    flex: 1;
+    flex: 1 1 auto;
     overflow-y: auto;
-    padding: var(--theme-space-4, 16px);
+    padding: var(--chart-space-4);
     display: flex;
     flex-direction: column;
-    gap: var(--theme-space-4, 16px);
-}
-
-.chart-tool__exit {
-    width: 100%;
-    padding: var(--theme-space-2, 8px) var(--theme-space-3, 12px);
-    background: transparent;
-    color: var(--theme-accent, #0e7482);
-    border: 1px solid var(--theme-accent, #0e7482);
-    border-radius: var(--theme-radius-sm, 4px);
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-.chart-tool__exit:hover {
-    background: var(--theme-accent-soft, rgba(14, 116, 130, 0.08));
-}
-
-.chart-tool__select {
-    width: 100%;
-    padding: var(--theme-space-2, 8px) var(--theme-space-3, 12px);
-    background: var(--theme-bg, #ffffff);
-    color: var(--theme-text, #1b1b1b);
-    border: 1px solid var(--theme-border, #dfe1e2);
-    border-radius: var(--theme-radius-sm, 4px);
-    font-family: inherit;
-    font-size: 0.875rem;
-}
-
-.chart-tool__summary {
-    display: flex;
-    flex-direction: column;
-    gap: var(--theme-space-2, 8px);
-}
-
-.chart-tool__summary-label {
-    margin: 0;
-    font-size: 0.75rem;
-    font-weight: 400;
-    color: var(--theme-muted, #565c65);
-}
-
-.chart-tool__summary-text {
-    margin: 0;
-    font-size: 0.875rem;
-    line-height: 1.45;
-    color: var(--theme-text, #1b1b1b);
-}
-
-.chart-tool__card {
-    border: 1px solid var(--theme-border, #dfe1e2);
-    border-radius: var(--theme-radius-sm, 4px);
-    padding: var(--theme-space-3, 12px);
-    background: var(--theme-bg, #ffffff);
-}
-
-.chart-tool__card-title {
-    margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--theme-text, #1b1b1b);
-}
-
-.chart-tool__card-meta {
-    margin: var(--theme-space-1, 4px) 0 var(--theme-space-3, 12px);
-    font-size: 0.8125rem;
-    color: var(--theme-muted, #565c65);
-}
-
-.chart-tool__card-canvas {
-    position: relative;
-    height: 160px;
+    gap: var(--chart-space-3);
 }
 
 .chart-tool__placeholder {
     margin: 0;
-    padding: var(--theme-space-6, 32px) var(--theme-space-4, 16px);
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
     text-align: center;
-    color: var(--theme-muted, #565c65);
-    font-size: 0.875rem;
+    padding: var(--chart-space-5) var(--chart-space-3);
 }
 
-.chart-tool__placeholder--error {
-    color: var(--theme-error, #b50909);
+.chart-tool__exit {
+    width: 100%;
+    padding: var(--chart-space-2) var(--chart-space-3);
+    border: 1px solid var(--chart-border);
+    border-radius: var(--chart-radius-sm);
+    background: var(--chart-bg);
+    color: var(--chart-fg);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
 }
 
-/* Loading state */
-.chart-tool__loading {
+.chart-tool__exit:hover {
+    background: var(--chart-bg-muted);
+}
+
+.chart-tool__card {
+    border: 1px solid var(--chart-border);
+    border-radius: var(--chart-radius-md);
+    padding: var(--chart-space-3);
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--theme-space-3, 12px);
-    padding: var(--theme-space-6, 32px) var(--theme-space-4, 16px);
+    gap: var(--chart-space-3);
 }
 
-.chart-tool__spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--theme-border, #dfe1e2);
-    border-top-color: var(--theme-accent, #0e7482);
-    border-radius: 50%;
-    animation: chart-tool-spin 800ms linear infinite;
+.chart-tool__card--empty {
+    background: var(--chart-bg-muted);
 }
 
-.chart-tool__loading-text {
+.chart-tool__card-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.chart-tool__card-title {
     margin: 0;
-    color: var(--theme-muted, #565c65);
-    font-size: 0.875rem;
+    font-size: var(--chart-font-size-md);
+    font-weight: 600;
 }
 
-@keyframes chart-tool-spin {
-    to { transform: rotate(360deg); }
+.chart-tool__card-subtitle {
+    color: var(--chart-fg-muted);
+    font-family: var(--chart-font-mono);
+    font-size: var(--chart-font-size-sm);
+}
+
+.chart-tool__card-empty {
+    margin: 0;
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
+    font-style: italic;
+}
+
+.chart-tool__headline {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.chart-tool__headline-label {
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
+}
+
+.chart-tool__headline-value {
+    font-size: var(--chart-font-size-xl);
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.chart-tool__headline-meta {
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
+}
+
+.chart-tool__histogram {
+    height: 120px;
+    width: 100%;
+}
+
+.chart-tool__stats {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: var(--chart-space-2);
+}
+
+.chart-tool__stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.chart-tool__stat-label {
+    margin: 0;
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
+}
+
+.chart-tool__stat-value {
+    margin: 0;
+    font-family: var(--chart-font-mono);
+    font-size: var(--chart-font-size-sm);
+    font-weight: 600;
 }
