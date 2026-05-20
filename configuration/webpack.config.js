@@ -158,6 +158,7 @@ module.exports = function (webpackEnv) {
             implementation: require("sass"),
             sassOptions: {
               includePaths: [
+                path.resolve(__dirname, "../src/essence/styles/theme"),
                 path.resolve(__dirname, "../node_modules/@uswds/uswds/packages"),
                 path.resolve(__dirname, "../node_modules"),
               ],

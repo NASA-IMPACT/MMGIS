@@ -65,6 +65,7 @@ import './css/mmgis.css'
 import './css/mmgisUI.css'
 import './css/tools.css'
 import 'tippy.js/dist/tippy.css'
+import './essence/styles/theme/index.scss'
 
 import App from './App'
 import * as serviceWorker from './serviceWorker'
