@@ -29,9 +29,9 @@ Five moving parts. Each is sketched here; sections below carry the detail.
 
 - Containerized service running today's MMGIS application image: one Node process serving the admin tool and main map app
 - The four Python sidecars (TiTiler, STAC, tipg, veloserver) as sibling services in the same cluster.
-- One managed Postgres holding everything Postgres holds today (users, sessions, configs, datasets, geodatasets, drawings, STAC catalog).
+- One managed Postgres holding the same data it holds today: user accounts and sessions, mission configs, tabular **datasets** and PostGIS-backed **geodatasets** (both uploaded as rows through the admin API), drawn features, and the STAC catalog.
 - One load balancer terminating TLS and routing today's same-origin paths (`/api`, `/configure`, `/stac`, `/titiler`, etc).
-- S3 replacing the local `Missions/` directory for mission assets.
+- S3 replaces the local `Missions/` directory for **raster mission assets** (tile pyramids, DEMs, basemap imagery). AWS containers have no shared local disk, so S3 is the obvious cloud equivalent — nothing about *what* MMGIS stores changes, only where the on-disk part physically lives.
 
 **Dashboard builds (one per published dashboard)**
 
@@ -153,7 +153,7 @@ CloudFront is AWS's CDN — it caches static assets at edge locations close to u
 
 ### 4.4 Mission asset storage
 
-Mission assets move from the admin's local disk to S3 (covered in §3). The remaining decision is how *uploads* get there.
+*Raster* mission assets — the tile pyramids, DEMs, and basemap imagery that lived in the `Missions/` folder — move to S3 (covered in §3). Postgres-backed data (datasets, geodatasets, configs, drawings) stays in Postgres; only the on-disk slice of MMGIS moves. The remaining decision is how uploads get there.
 
 A "presigned URL" is an S3 feature where the server hands the browser a temporary URL that includes a signature granting upload permission for one specific object. The browser then PUTs the file straight to S3 — the server is involved only in handing out the URL, not in moving bytes.
 
@@ -168,9 +168,23 @@ A "presigned URL" is an S3 feature where the server hands the browser a temporar
 
 **Why:** Lifts upload bandwidth off the admin service and removes timeout risk.
 
-**Open:** Q-UPLOAD-CEILING (how large should browser uploads be allowed to be?)
+### 4.5 Big-file upload workflow
 
-### 4.5 Authentication
+Today, mission operators handle big raw imagery on their workstation: run a GDAL script, get a **tile pyramid** (a folder of thousands of small tile images), then `scp` the folder into MMGIS's `Missions/` directory. The UI upload path is capped at 500MB and isn't used for the big stuff.
+
+In AWS there's no shared filesystem to `scp` to, and admin users won't have direct AWS credentials — everything has to go through the admin UI.
+
+The question: how does a tile pyramid (thousands of files, many GB) get from a workstation into S3 via the admin UI? Presigned uploads handle one big file fine, but a pyramid is many files.
+
+**Options:**
+
+- *Upload as a single archive.* Operator zips the pyramid, uploads the archive via presigned, a backend task extracts it back into S3. One operator action; reintroduces a backend step in the upload path.
+- *Bulk multi-file upload.* Browser fires off many presigned uploads in parallel. Works for small pyramids; brittle for big ones (browser memory, dropped connections, no resumability).
+- *Shift the production format to COGs.* A Cloud-Optimized GeoTIFF is one file containing the whole pyramid; TiTiler (already in our sidecars) serves tiles from it on demand. Operators run `tifs2cogs` (already in `auxiliary/stac/`) instead of `gdal2customtiles`. One file, standard upload. Requires migrating existing tile-pyramid layers in mission configs.
+
+**Open:** Q-BIG-UPLOAD. Once the workflow is settled, the per-file size cap follows from it and is a deploy-time config value.
+
+### 4.6 Authentication
 
 The auth model doesn't change: local accounts, hashed passwords, Postgres-backed sessions, the existing first-user-becomes-superadmin gate, the three `AUTH` modes (`local`, `off`, `csso`). The one real concern is the bootstrap window.
 
@@ -207,10 +221,14 @@ No backend, no database, no sidecar — only shared services from the admin stac
 
 ### 5.2 What dashboards read at runtime
 
-- **Their own baked mission config** for the mission (this replaces the boot-time mission-config fetch).
-- **The shared sidecars** in the admin stack for any layer whose data was too large to bake.
-- **The shared Postgres**, indirectly via tipg or other read-path services — never directly. Dashboards do not have database credentials.
-- **Their own baked data files** for any data that fits the bake threshold.
+For each kind of data a dashboard needs:
+
+- *Mission configuration.* Baked into the JS bundle. No request.
+- *Raster tiles, DEMs, basemap imagery.* Fetched from S3 via CloudFront — usually from the admin's shared S3 bucket (the data already lives there from when admins uploaded it; no per-dashboard copy needed).
+- *Small per-mission tabular or vector data.* Baked into the dashboard's own S3 bucket at publish time as JSON or GeoJSON, fetched as a static asset.
+- *Larger tabular or vector data.* Queried dynamically from a shared sidecar (TiTiler for raster mosaics, tipg for PostGIS vector tiles, a custom endpoint for tabular search). Dashboards never connect to Postgres directly.
+
+The dashboard doesn't have to figure out where any of this lives at runtime — every URL it needs is already in the baked mission config. As part of the publish step, each layer's URL is rewritten to point wherever its data actually ended up: an absolute URL into admin's S3, a relative URL into the dashboard's own bucket, or an absolute sidecar URL. At runtime, the dashboard just reads each URL out of its config and fetches on demand, the same way today's MMGIS fetches tiles on demand from its local server. The static-vs-dynamic choice only affects *which origin* serves the bytes, not *when* they load.
 
 ### 5.3 Per-feature drop list
 
@@ -315,7 +333,7 @@ In today's stack, the admin server's sidecar proxy wraps each Python service in 
 The new code path: an admin clicks **Publish** in the admin tool. What happens:
 
 1. **Admin tool → admin server.** The publish request, with mission, dashboard name, and settings.
-2. **Admin server → bundling task.** Reads the mission's current config from Postgres, builds the dashboard's frontend bundle with the configuration frozen in, and emits a directory.
+2. **Admin server → bundling task.** Reads the mission's current config from Postgres. For each layer the mission references, decides where the data will live (baked into the dashboard's bucket, left in admin's S3, or served by a sidecar) and rewrites the layer's URL in the baked config accordingly. Builds the dashboard's frontend bundle with the rewritten configuration frozen in. Emits a directory of bundle plus baked static assets.
 3. **Admin server → provisioning.** Creates the per-dashboard S3 bucket, CloudFront distribution, password-gate Function, and DNS record.
 4. **Admin server → upload + invalidate.** Uploads the bundle to the new bucket and issues a CloudFront invalidation so users see the new build immediately.
 5. **Admin server → admin tool.** Returns the dashboard URL; the admin tool surfaces it and records it in the dashboards registry table.
@@ -372,30 +390,31 @@ The admin tracks every dashboard it has published — at minimum URL, name, owne
 
 ## 9. Data flow
 
-A recurring question this ADR explicitly does **not** solve, but commits to a default.
-
 ### 9.1 The local-files heritage
 
-Original MMGIS was a local-machine app: big imagery and elevation files lived on disk under a mission directory, mission configs referenced them with relative paths, and tabular/vector data uploaded through the admin landed in Postgres. The AWS deployed world has no shared local disk, so two things change:
+MMGIS's storage was always split: **raster files on local disk** under the mission directory; **structured data in Postgres** (tabular datasets, PostGIS geodatasets, mission configs, drawings, sessions). The AWS deployed world has no shared local disk, so:
 
-- **Files that used to be on local disk → S3** under the same prefix layout. The relative-path resolver in mission configs points at the S3 prefix instead of the filesystem.
+- **Raster files → S3**, same prefix layout. The relative-path resolver in mission configs points at the S3 prefix instead of the filesystem.
+- **Structured data → still Postgres**, now on RDS instead of in a container.
 - **No "point at a local path" workflow survives.** Mission configs may not reference absolute filesystem paths; relative paths under the mission folder remain supported.
 
-Data uploaded through the admin (datasets, geodatasets) continues to land in Postgres as today, since Postgres is still part of the admin stack.
+### 9.2 Where dashboard data comes from
 
-### 9.2 Bake-vs-database default
+A dashboard pulls data from one of three places. The choice isn't really about *size* — S3 can hold anything — it's about **access pattern** (static fetch vs. dynamic query) and **which bucket** holds it.
 
-For data a dashboard needs to read, in priority order:
+- **Static fetch from the admin's S3 bucket.** No copy needed; the data already lives there from when admins uploaded it. The baked mission config points at the existing CloudFront-fronted URL. Right for raster tiles, DEMs, basemap imagery — the big files that already live in admin S3 and would only duplicate if copied per dashboard.
+- **Static fetch from the dashboard's own S3 bucket.** Baked at publish time. The publish step reads from admin storage (Postgres rows or admin S3 files), serializes to JSON or GeoJSON, and writes a static file into the dashboard's bucket alongside the JS bundle. Right for *mission-specific* small data — the mission config itself, small lookup tables, baked search indices. Clean deletion lifecycle: drop the dashboard's bucket and its data is gone with it.
+- **Dynamic query against a shared sidecar.** The dashboard makes HTTP requests to TiTiler (raster mosaics over big COGs), tipg (PostGIS as vector tiles or OGC Features), or a thin custom endpoint for tabular search. Right when the access pattern is "compute this on demand," not "fetch this file."
 
-1. **Default: bake to JSON / MVT / GeoJSON in S3** and have the dashboard fetch it as a static asset.
-2. **Fallback: a shared admin-stack service** (a sidecar for raster, vector, or catalog; a thin custom query endpoint for tabular).
-3. **Last resort: a dashboard-scoped table in the shared Postgres** plus the thin query endpoint to read it.
+The default position is to push as much as possible into the first two categories (static fetches, no service hop) and use sidecars only for data that genuinely needs dynamic querying.
 
-We do not pre-commit a numeric bake threshold. Per-feature in `features.md` we note which mode each data source uses; the threshold is selected case-by-case until we have enough cases to formalize a rule.
+**The publish step is therefore a selective data-copying operation.** For each piece of data the mission references, it decides: leave it where it is (admin's S3 or a sidecar) and write the URL into the baked config; or read from admin storage, serialize, and write into the dashboard's bucket. Most missions end up with a mix of all three.
+
+**Last resort: a dashboard-scoped table in the shared Postgres** plus a thin query endpoint to read it. Only when the dashboard genuinely needs writeable per-dashboard persistence — rare enough that we don't pre-commit a design.
 
 ### 9.3 The open part
 
-**Open:** Q-BAKE-CEILING — for genuinely large baked artifacts (multi-GB on S3 with streaming parsing), is the static-asset path viable, or does the bake-vs-shared cutover happen much earlier in practice? Investigation, not an ADR-time decision.
+**Open:** Q-BAKE-CEILING — how much data can a dashboard load at boot before it feels slow? This is the UX ceiling that decides which data lands in the first two categories (static fetch) vs. the third (sidecar query). Investigation needed; not an ADR-time decision.
 
 *Implementation: see `detailed-implementation-plan.md` Phase F.*
 
@@ -458,14 +477,14 @@ Questions with a home section in this ADR are pointer entries. Questions tracked
 - **Q-CALLS-API** — Stub the API-call dispatcher, or branch each call site individually? → §6.1.
 - **Q-TIME** — Per-layer disposition for time-composited layers in dashboards. → §6.2.
 - **Q-VELO** — Is veloserver referenced by any current mission config? → §8.2.
+- **Q-BIG-UPLOAD** — How do tile pyramids (thousands of files, many GB) reach S3 via the admin UI? → §4.5.
 
 ### Feature-level (tracked in `features.md`)
 
 - **Q-DRAW** — Drawing in dashboards: drop, read-only display of baked features, or local-storage edit mode?
 - **Q-LANDING** — Does any dashboard host multiple frozen missions, or is it strictly one-mission-per-deploy?
 - **Q-SEARCH** — Dashboard search: client-side baked index, routed through tipg, or a shared search endpoint in the admin stack? Per-dashboard scoping (one dashboard can't discover another's data) is part of the answer either way.
-- **Q-BAKE-CEILING** — How large can a baked artifact realistically get before the static-asset path falls over?
-- **Q-UPLOAD-CEILING** — Today's UI uploads are bounded by the server's body-parser limit; presigned S3 lifts the ceiling by orders of magnitude. Should the UI grow into that capacity, or stay modest?
+- **Q-BAKE-CEILING** — How much data can a dashboard reasonably load at boot before it feels slow? This is a bandwidth/UX ceiling on the static-fetch path (S3 can store anything; the question is what's tolerable for a user). The answer sets the line between "bake as a static file" and "route through a sidecar."
 - **Q-SSO** — Does the admin ever deploy where CSSO is mandatory? If not, the CSSO middleware is dead code in AWS.
 - **Q-SHORTENER** — Is the link shortener used? If not, drop everywhere.
 - **Q-DOCS** — Does the dashboard ever need to ship the docs site, or does it live only on the admin?
