@@ -1,6 +1,3 @@
-@use '../theme-tokens';
-@use 'uswds-core' as *;
-
 /* Tool root */
 .blocks-layer-manager {
     display: flex;
@@ -8,7 +5,7 @@
     height: 100%;
     width: 100%;
     background: #ffffff;
-    color: color('ink');
+    color: var(--theme-color-ink, #1b1b1b);
     font-family: 'Lato', sans-serif;
 
     &__content {
@@ -22,6 +19,6 @@
         align-items: center;
         justify-content: center;
         height: 100px;
-        color: color('base');
+        color: var(--theme-color-base, #71767a);
     }
 }

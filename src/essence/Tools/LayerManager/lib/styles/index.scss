@@ -1,7 +1,8 @@
-// LayerManager lib theme manifest. Self-contained: configures USWDS via the
-// local theme-tokens, loads USWDS framework CSS, and pulls in component
-// partials via the geo aggregator. Mirrors the monorepo's per-theme manifest
-// shape at tinacms-portal-monorepo:packages/blocks/src/styles/disasters/index.scss.
-@forward 'theme-tokens';
-@forward 'uswds';
+// LayerManager lib stylesheet entry. Only emits the lib's component partials.
+//
+// Theming (USWDS framework + theme tokens + :root --theme-* custom properties)
+// is provided by the MMGIS-global per-theme bundles at dist/<theme>.css, loaded
+// at runtime by UserInterfaceModern_.init via mission.config.msv.theme.
+// Component partials in components-geo/ consume those CSS custom properties
+// directly via var(--theme-color-*, fallback) — no Sass theme coupling here.
 @forward 'components-geo';

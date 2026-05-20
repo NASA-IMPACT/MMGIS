@@ -1,17 +1,14 @@
-@use '../theme-tokens';
-@use 'uswds-core' as *;
-
 /* Gradient Graphic Styles */
 .blocks-gradient-graphic {
     display: flex;
     flex-direction: column;
-    gap: units(0.5);
+    gap: var(--theme-spacing-05, 0.25rem);
     width: 100%;
 
     &__bar-row {
         display: flex;
         align-items: center;
-        gap: units(1);
+        gap: var(--theme-spacing-1, 0.5rem);
         width: 100%;
     }
 
@@ -43,18 +40,18 @@
         background: transparent;
         border: none;
         border-radius: 3px;
-        color: color('base');
+        color: var(--theme-color-base, #71767a);
         cursor: pointer;
         flex-shrink: 0;
         transition: background-color 0.15s ease, color 0.15s ease;
 
         &:hover {
-            background: color('base-lighter');
-            color: color('base-darker');
+            background: var(--theme-color-base-lighter, #dfe1e2);
+            color: var(--theme-color-base-darker, #3d4551);
         }
 
         &--active {
-            color: color('primary');
+            color: var(--theme-color-primary, #0e7482);
         }
     }
 
@@ -62,9 +59,9 @@
         position: absolute;
         top: 100%;
         right: 0;
-        margin-top: units(1);
-        background: color('base-lightest');
-        border: 1px solid color('base-light');
+        margin-top: var(--theme-spacing-1, 0.5rem);
+        background: var(--theme-color-base-lightest, #f0f0f0);
+        border: 1px solid var(--theme-color-base-light, #a9aeb1);
         border-radius: 6px;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
         z-index: 1000;
@@ -77,9 +74,9 @@
             right: 10px;
             width: 10px;
             height: 10px;
-            background: color('base-lightest');
-            border-left: 1px solid color('base-light');
-            border-top: 1px solid color('base-light');
+            background: var(--theme-color-base-lightest, #f0f0f0);
+            border-left: 1px solid var(--theme-color-base-light, #a9aeb1);
+            border-top: 1px solid var(--theme-color-base-light, #a9aeb1);
             transform: rotate(45deg);
         }
     }
@@ -93,8 +90,8 @@
     }
 
     &__label {
-        font-size: font-size('body', 'xs');
-        color: color('ink');
+        font-size: var(--theme-font-size-xs, 0.83rem);
+        color: var(--theme-color-ink, #1b1b1b);
         line-height: 1.2;
 
         &--min {
@@ -111,7 +108,7 @@
         position: absolute;
         background: rgba(0, 0, 0, 0.85);
         color: white;
-        padding: units(0.5) units(1);
+        padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-1, 0.5rem);
         border-radius: 3px;
         font-size: 11px;
         pointer-events: none;

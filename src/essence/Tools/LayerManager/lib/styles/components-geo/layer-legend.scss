@@ -1,12 +1,9 @@
-@use '../theme-tokens';
-@use 'uswds-core' as *;
-
 /* Individual Legend Item */
 .blocks-layer-legend {
     display: flex;
     flex-direction: column;
     background: #ffffff;
-    border-bottom: 1px solid color('base-lighter');
+    border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     width: 100%;
 
     &:last-child {
@@ -16,10 +13,10 @@
     &__header {
         display: flex;
         align-items: center;
-        padding: units(1) units(1.5);
+        padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
         background: #ffffff;
         min-height: 44px;
-        gap: units(1);
+        gap: var(--theme-spacing-1, 0.5rem);
     }
 
     &__checkbox-wrapper {
@@ -34,7 +31,7 @@
         height: 18px;
         margin: 0;
         cursor: pointer;
-        accent-color: color('primary');
+        accent-color: var(--theme-color-primary, #0e7482);
         border-radius: 3px;
     }
 
@@ -47,9 +44,9 @@
     }
 
     &__title {
-        font-size: font-size('body', 'sm');
+        font-size: var(--theme-font-size-sm, 0.93rem);
         font-weight: 400;
-        color: color('base-darker');
+        color: var(--theme-color-base-darker, #3d4551);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -72,26 +69,26 @@
         background: transparent;
         border: none;
         border-radius: 3px;
-        color: color('base');
+        color: var(--theme-color-base, #71767a);
         cursor: pointer;
         transition: background-color 0.15s ease, color 0.15s ease;
 
         &:hover {
-            background: color('base-lighter');
-            color: color('base-darker');
+            background: var(--theme-color-base-lighter, #dfe1e2);
+            color: var(--theme-color-base-darker, #3d4551);
         }
 
         &--active {
-            color: color('primary');
+            color: var(--theme-color-primary, #0e7482);
         }
     }
 
     /* Legend Body (expandable description) */
     &__body {
-        padding: units(1) units(1.5) units(1) units(5);
+        padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem) var(--theme-spacing-1, 0.5rem) var(--theme-spacing-5, 2.5rem);
         background: #ffffff;
-        color: color('ink');
-        font-size: font-size('body', 'xs');
+        color: var(--theme-color-ink, #1b1b1b);
+        font-size: var(--theme-font-size-xs, 0.83rem);
         line-height: 1.5;
         max-height: 120px;
         overflow-y: auto;
@@ -109,32 +106,32 @@
         }
 
         &::-webkit-scrollbar-thumb {
-            background: color('base-light');
+            background: var(--theme-color-base-light, #a9aeb1);
             border-radius: 3px;
         }
 
         &::-webkit-scrollbar-thumb:hover {
-            background: color('base-dark');
+            background: var(--theme-color-base-dark, #565c65);
         }
     }
 
     /* Unit label shown below the legend */
     &__unit-label {
-        padding: units(0.5) units(1.5) units(1) units(5);
-        font-size: font-size('body', 'xs');
-        color: color('base');
+        padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-105, 0.75rem) var(--theme-spacing-1, 0.5rem) var(--theme-spacing-5, 2.5rem);
+        font-size: var(--theme-font-size-xs, 0.83rem);
+        color: var(--theme-color-base, #71767a);
     }
 
     /* Legend Content (graphics area) */
     &__content {
-        padding: 0 units(1.5) units(1.5) units(5);
+        padding: 0 var(--theme-spacing-105, 0.75rem) var(--theme-spacing-105, 0.75rem) var(--theme-spacing-5, 2.5rem);
         background: #ffffff;
     }
 
     /* Text legend (minimal) */
     &__text {
-        font-size: font-size('body', 'xs');
-        color: color('ink');
+        font-size: var(--theme-font-size-xs, 0.83rem);
+        color: var(--theme-color-ink, #1b1b1b);
         font-style: italic;
     }
 
@@ -150,10 +147,10 @@
         margin-top: 4px;
         display: flex;
         align-items: center;
-        gap: units(1);
-        padding: units(1) units(1.5);
-        background: color('base-lightest');
-        border: 1px solid color('base-light');
+        gap: var(--theme-spacing-1, 0.5rem);
+        padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
+        background: var(--theme-color-base-lightest, #f0f0f0);
+        border: 1px solid var(--theme-color-base-light, #a9aeb1);
         border-radius: 4px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         z-index: 1000;
@@ -166,9 +163,9 @@
             right: 10px;
             width: 10px;
             height: 10px;
-            background: color('base-lightest');
-            border-left: 1px solid color('base-light');
-            border-top: 1px solid color('base-light');
+            background: var(--theme-color-base-lightest, #f0f0f0);
+            border-left: 1px solid var(--theme-color-base-light, #a9aeb1);
+            border-top: 1px solid var(--theme-color-base-light, #a9aeb1);
             transform: rotate(45deg);
         }
     }
@@ -178,7 +175,7 @@
         height: 4px;
         -webkit-appearance: none;
         appearance: none;
-        background: color('base-light');
+        background: var(--theme-color-base-light, #a9aeb1);
         border-radius: 2px;
         outline: none;
         cursor: pointer;
@@ -188,7 +185,7 @@
             appearance: none;
             width: 14px;
             height: 14px;
-            background: color('primary');
+            background: var(--theme-color-primary, #0e7482);
             border-radius: 50%;
             cursor: pointer;
             transition: transform 0.1s ease;
@@ -201,7 +198,7 @@
         &::-moz-range-thumb {
             width: 14px;
             height: 14px;
-            background: color('primary');
+            background: var(--theme-color-primary, #0e7482);
             border-radius: 50%;
             cursor: pointer;
             border: none;
@@ -209,8 +206,8 @@
     }
 
     &__opacity-value {
-        font-size: font-size('body', 'xs');
-        color: color('ink');
+        font-size: var(--theme-font-size-xs, 0.83rem);
+        color: var(--theme-color-ink, #1b1b1b);
         min-width: 32px;
         text-align: right;
     }
