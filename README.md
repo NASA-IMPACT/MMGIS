@@ -78,23 +78,17 @@ To build the Docker image, run:
   ```
 
 - Set all the ENV variables in `.env`. More information about the ENVs can be found [here.](https://nasa-ammos.github.io/MMGIS/setup/envs)
-  - If using the postgis/postgres image from within the docker-compose.yml, set the ENV `DB_NAME` to the name of the service (in this case `db`)
 
 #### docker-compose.yml
 
-This repo contains a `/docker-compose.sample.yml` file that defines a service for the application and a PostgreSQL database with PostGIS installed
+This repo contains a `docker-compose.yml` file that defines services for the application and a PostgreSQL database with PostGIS installed. Credentials are read from your `.env` file.
 
-- Copy this file to a `docker-compose.yml`.
-- In the `db` service in `docker-compose.yml`, set the `POSTGRES_PASSWORD` environment variable and use this for MMGIS's `DB_PASS` ENV value.
-- Fill out the other `environment` variables within the `docker-compose.yml` as well.
-- To run MMGIS in a container, you need to create a directory on the host machine and map this to a directory in the container.
-  - On the host machine, create a `Missions` directory and copy the contents of `./Missions` to your directory.
-  - Via the docker-compose.yml, map this directory to `/usr/src/app/Missions` in the container. For example, if the host directory is `./Missions`, the volume mapping would be `- ./Missions:/usr/src/app/Missions`
-- Note, the `/docker-compose.sample.yml` includes optional STAC and TiTiler services. If any of them are unwanted, they can be removed from the docker-compose-yml and their respective `.env` variable `WITH_{service}` can be set to false.
+- The `Missions` directory is automatically mounted into the container.
+- Optional STAC and TiTiler services are available via Docker Compose profiles. To enable them, use `docker-compose --profile stac up` and set their respective `.env` variable `WITH_{service}` to true.
 
 ### Running
 
-Run: `docker-compose up -d`
+Run: `docker-compose up --build`
 
 ### First Time UI Setup
 

@@ -99,6 +99,35 @@ function initAdjacentServersProxy(app, isDocker, ensureAdmin) {
     );
   }
 
+  //// Generic CORS Proxy
+  // Routes any external https:// URL through the server to bypass browser CORS restrictions.
+  if (process.env.NODE_ENV === "development") {
+    app.use(
+      `${process.env.ROOT_PATH || ""}/corsproxy`,
+      ensureAdmin(false, false, true), // allow all GETs
+      createProxyMiddleware({
+        changeOrigin: true,
+        router: (req) => {
+          try {
+            const targetUrl = req.url.replace(/^\//, "");
+            return new URL(targetUrl).origin;
+          } catch {
+            return "http://localhost";
+          }
+        },
+        pathRewrite: (path) => {
+          try {
+            const targetUrl = path.replace(/^\//, "");
+            const parsed = new URL(targetUrl);
+            return parsed.pathname + parsed.search;
+          } catch {
+            return path;
+          }
+        },
+      })
+    );
+  }
+
   // Veloserver
   if (process.env.WITH_VELOSERVER === "true") {
     app.use(

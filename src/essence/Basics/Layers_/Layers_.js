@@ -377,6 +377,16 @@ const L_ = {
                 nextUrl = `/${nextUrl}`
             }
         }
+        if (process.env.NODE_ENV === 'development' && F_.isUrlAbsolute(nextUrl)) {
+            try {
+                if (new URL(nextUrl).origin !== window.location.origin) {
+                    const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
+                    nextUrl = `${rootPath}/corsproxy/${nextUrl}`
+                }
+            } catch (e) {
+                // Invalid URL, leave unchanged
+            }
+        }
         return nextUrl
     },
     //Takes in config layer obj
@@ -459,7 +469,17 @@ const L_ = {
                             $('.drawToolContextMenuHeaderClose').click()
                         } catch (err) {}
                     }
-                    L_.Map_.rmNotNull(L_.layers.layer[s.name])
+                    if (
+                        L_.Map_.engine &&
+                        L_.Map_.engine.engineType !== 'leaflet'
+                    ) {
+                        L_.Map_.engine.updateLayer(
+                            L_.Map_.nativeLayer(L_.layers.layer[s.name]),
+                            { visible: false }
+                        )
+                    } else {
+                        L_.Map_.rmNotNull(L_.layers.layer[s.name])
+                    }
                     if (L_.layers.attachments[s.name]) {
                         for (let sub in L_.layers.attachments[s.name]) {
                             switch (L_.layers.attachments[s.name][sub].type) {
@@ -591,9 +611,14 @@ const L_ = {
                         }
                     }
 
-                    L_.Map_.engine.addLayer(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                    )
+                    const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
+                    if (L_.Map_.engine.engineType !== 'leaflet') {
+                        if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
+                            L_.Map_.engine.addLayer(nativeLayer)
+                        }
+                    } else {
+                        L_.Map_.engine.addLayer(nativeLayer)
+                    }
                     L_.Map_.engine.setLayerZIndex(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                         L_._layersOrdered.length +
@@ -702,9 +727,14 @@ const L_ = {
                                         }
                                     })
                             }
-                            L_.Map_.engine.addLayer(
-                                L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                            )
+                            const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
+                            if (L_.Map_.engine.engineType !== 'leaflet') {
+                                if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
+                                    L_.Map_.engine.addLayer(nativeLayer)
+                                }
+                            } else {
+                                L_.Map_.engine.addLayer(nativeLayer)
+                            }
                             L_.Map_.engine.setLayerZIndex(
                                 L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                                 L_._layersOrdered.length +

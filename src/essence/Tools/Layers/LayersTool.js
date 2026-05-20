@@ -775,6 +775,8 @@ function interfaceWithMMGIS(fromInit) {
                     settings = getVectorLayerSettings(node[i].name)
                     break
                 case 'tile':
+                case 'TileLayer':
+                case 'BitmapLayer':
                     currentOpacity = L_.getLayerOpacity(node[i].name)
                     if (currentOpacity == null)
                         currentOpacity = L_.layers.opacity[node[i].name]
@@ -821,7 +823,8 @@ function interfaceWithMMGIS(fromInit) {
                                 : f['mix-blend-mode']
                     }
 
-                    additionalSettings = ''
+                    const levelSettings = getTileLevelSettings(node[i])
+                    additionalSettings = levelSettings
                     let expressionSettings = ''
 
                     // Check if layer supports expressions (COG or STAC)
@@ -926,7 +929,8 @@ function interfaceWithMMGIS(fromInit) {
                                     `</div>`,
                                 '</li>',
                             '</div>',
-                            expressionSettings
+                            expressionSettings,
+                            levelSettings
                         ].join('\n')
                     } else if (expressionSettings) {
                         // If only expression settings (no COG transform), just show expression editor
@@ -1503,7 +1507,7 @@ function interfaceWithMMGIS(fromInit) {
 
             if (
                 quasiLayers.includes(li.attr('type')) ||
-                L_.layers.layer[layerName]
+                L_.layers.layer[layerName] != null
             )
                 checkbox.toggleClass('on')
             else if (
@@ -2241,6 +2245,30 @@ function interfaceWithMMGIS(fromInit) {
         LegendTool.refreshLegends()
     })
 
+    $('.tilelevelselector').on('click', async function () {
+        let layerName = $(this).attr('layername')
+        const level = $(this).attr('level')
+        const layerUUID = L_.asLayerUUID(layerName)
+        const layerData = L_.layers.data[layerUUID]
+
+        if (layerData == null || layerData.currentTileLevel == level) return
+
+        layerData.currentTileLevel = level
+        $(`.tilelevelselector[layername="${layerName}"]`)
+            .removeClass('on')
+            .addClass('off')
+        $(this).removeClass('off').addClass('on')
+
+        if (L_.layers.layer[layerData.name] == null) return
+
+        L_.Map_.rmNotNull(L_.layers.layer[layerData.name])
+        await L_.Map_.makeLayer(layerData, true, null, null, true, null, true)
+        if (L_.layers.on[layerData.name]) {
+            L_.addVisible(L_.Map_, [layerData.name])
+        }
+        LegendTool.refreshLegends()
+    })
+
     //Applies slider values to map layers
     $('.tilefilterslider').on('input', function () {
         var val = $(this).val()
@@ -2932,6 +2960,64 @@ function interfaceWithMMGIS(fromInit) {
     }
 
     // Sublayer things
+    /**
+     * Returns the HTML markup for the tile level selector, or an empty string if the layer has no tile levels.
+     * @param {object} layer - Layer config object with optional `variables.tileLevels`.
+     */
+    function getTileLevelSettings(layer) {
+        const levels = layer.variables?.tileLevels
+        if (!Array.isArray(levels) || levels.length === 0) return ''
+
+        const selected =
+            layer.currentTileLevel ??
+            layer.variables?.defaultTileLevel ??
+            getTileLevelKey(levels[0], 0)
+
+        return [
+            '<div class="layerSettingsTitle">',
+            '<div>Tile Levels</div>',
+            '</div>',
+            levels
+                .map((level, index) => {
+                    const key = getTileLevelKey(level, index)
+                    const label = getTileLevelLabel(level, index)
+                    const checked = key == selected ? ' on' : ' off'
+                    return [
+                        '<li>',
+                        '<div>',
+                        `<div>${label}</div>`,
+                        '<div class="checkboxcont">',
+                        `<div class="tilelevelselector checkbox small${checked}" layername="${layer.name}" level="${key}"></div>`,
+                        '</div>',
+                        '</div>',
+                        '</li>',
+                    ].join('\n')
+                })
+                .join('\n'),
+        ].join('\n')
+    }
+
+    /**
+     * Returns a stable string key for a tile level entry, falling back through common field names to the array index.
+     * @param {object|*} level - Tile level entry from `variables.tileLevels`.
+     * @param {number} index - Position in the tile levels array, used as last-resort key.
+     */
+    function getTileLevelKey(level, index) {
+        if (level == null || typeof level !== 'object')
+            return String(level ?? index)
+        return String(level.value ?? level.id ?? level.name ?? level.label ?? index)
+    }
+
+    /**
+     * Returns the display label for a tile level entry, falling back through common field names to the array index.
+     * @param {object|*} level - Tile level entry from `variables.tileLevels`.
+     * @param {number} index - Position in the tile levels array, used as last-resort label.
+     */
+    function getTileLevelLabel(level, index) {
+        if (level == null || typeof level !== 'object')
+            return String(level ?? index)
+        return String(level.label ?? level.name ?? level.value ?? level.id ?? index)
+    }
 
     function getVectorLayerSettings(layerName) {
         let currentOpacity = L_.getLayerOpacity(layerName)

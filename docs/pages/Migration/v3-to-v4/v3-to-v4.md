@@ -36,7 +36,7 @@ All adjacent services are proxied through MMGIS and endpoints that perform write
 
 #### With Docker
 
-1. Fill out the `POSTGRES_*` environment variables in and use `docker-compose.sample.yml`
+1. Fill out the database environment variables (`DB_USER`, `DB_PASS`, etc.) in `.env` and run `docker-compose up --build`
 
 #### Without Docker
 

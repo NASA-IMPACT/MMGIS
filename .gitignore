@@ -4,6 +4,7 @@
 nul
 
 /node_modules/
+/dist/
 /ssl/*
 !/ssl/.gitkeep
 /API/logs/*
@@ -47,8 +48,6 @@ sessions
 .terraform/
 .terraform.lock.hcl
 
-docker-compose.yml
-docker-compose.env.yml
 
 .mcp.json
 .serena
@@ -60,5 +59,3 @@ docker-compose.env.yml
 /test-results/
 /.playwright/
 #tools
-
-claude/

@@ -36,8 +36,8 @@ All adjacent services are proxied through MMGIS and endpoints that perform write
 
 #### With Docker
 
-1. Fill out the `POSTGRES_*` environment variables in and use `docker-compose.sample.yml`
-1. Unused services within the docker-compose.yml can be safely removed.
+1. Fill out the database environment variables (`DB_USER`, `DB_PASS`, etc.) in `.env`
+1. Run `docker-compose --profile stac up --build` to include STAC/TiTiler services
 
 #### Without Docker
 
