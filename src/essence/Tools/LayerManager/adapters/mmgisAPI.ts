@@ -5,6 +5,7 @@ type MMGISAPI = {
     on: (event: string, handler: (payload?: unknown) => void) => EventCleanup
     emit: (event: string, payload?: unknown) => void
     provide?: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
+    hasHandler?: (name: string) => boolean
 }
 
 declare global {
@@ -32,4 +33,8 @@ export const mmgisEmit = (event: string, payload?: unknown): void => {
 export const mmgisProvide = (name: string, handler: (...args: unknown[]) => unknown): EventCleanup => {
     if (!window.mmgisAPI?.provide) return () => {}
     return window.mmgisAPI.provide(name, handler)
+}
+
+export const mmgisHasHandler = (name: string): boolean => {
+    return window.mmgisAPI?.hasHandler?.(name) === true
 }

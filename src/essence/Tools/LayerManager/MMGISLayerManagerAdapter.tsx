@@ -1,9 +1,10 @@
 import React from 'react'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { LayerManagerPanel } from './lib'
 import type { Layer } from './lib/types'
 import { useMMGISEvent } from './adapters/useMMGISEvent'
 import { useMMGISToolVars } from './adapters/useMMGISToolVars'
+import { useMMGISHandlerReady } from './adapters/useMMGISHandlerReady'
 import { getVisibleLayersWithLegends } from './adapters/getVisibleLayersWithLegends'
 import {
     toggleVisibility,
@@ -37,9 +38,11 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layer:refreshStatusChange', refresh)
     useMMGISEvent('layer:opacityChange', refresh)
 
-    useEffect(() => {
-        refresh()
-    }, [refresh])
+    // 'layers:getAll' is registered by Layers_.fina() during mission load.
+    // Wait for it before doing the initial refresh, otherwise the adapter
+    // mounts to an empty list and never recovers (no event fires when the
+    // mission's layers first become available).
+    useMMGISHandlerReady('layers:getAll', refresh)
 
     return (
         <LayerManagerPanel
