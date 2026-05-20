@@ -1,0 +1,7 @@
+// EarthGov theme manifest
+
+// 1. Forward theme token configuration first (must be before uswds-core/@forward)
+@forward "theme-tokens";
+
+// 2. Then forward USWDS itself
+@forward "uswds";

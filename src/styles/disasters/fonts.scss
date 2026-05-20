@@ -1,0 +1,29 @@
+// To include custom font families not within USWDS,
+// 1. use https://fontsource.org/ to install the font utilities and font package
+// 2. use the font utilities to generate the font-face declarations in this file
+//    Note, the directory path as "fonts/font-name/...".
+//    This is consistent with our current implementation of USWDS fonts,
+//    which are copied from node_modules to /dist/fonts. See build-assets.sh script for reference.
+// 3. reference the font family in USWDS theme definition via $theme-typeface-tokens in theme-tokens.scss
+//    For more information on font family tokens, see the USWDS documentation:
+//    https://designsystem.digital.gov/design-tokens/typesetting/font-family/
+
+@use "pkg:@fontsource-utils/scss" as fontsource;
+@use "pkg:@fontsource/dm-mono/scss" as dm-mono;
+@use "pkg:@fontsource-variable/inter/scss" as inter;
+
+@include fontsource.faces(
+  $metadata: dm-mono.$metadata,
+  $subsets: latin,
+  $weights: 400,
+  $styles: all,
+  $directory: "fonts/dm-mono/files"
+);
+
+@include fontsource.faces(
+  $metadata: inter.$metadata,
+  $subsets: latin,
+  $weights: 300 400 600 700 900,
+  $styles: normal italic,
+  $directory: "fonts/inter/files"
+);

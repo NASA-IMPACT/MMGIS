@@ -1,0 +1,104 @@
+// earthgov theme configuration
+@use "uswds-core" with (
+  $theme-show-notifications: false,
+  $theme-show-compile-warnings: false,
+  $utilities-use-important: false,
+  $theme-image-path: "./img",
+  $theme-font-path: "./fonts",
+  $theme-utility-breakpoints: (
+    "mobile": true,
+    "mobile-lg": true,
+    "tablet-lg": true,
+    "desktop": true,
+    "desktop-lg": true,
+    "widescreen": true,
+  ),
+  $theme-button-border-radius: 0,
+  $theme-card-border-radius: 0,
+  // TYPOGRAPHY
+  $theme-typeface-tokens: (
+      baseFontFamily: (
+        "display-name": var(--base-font-family),
+        "cap-height": 364px,
+      ),
+    ),
+  $theme-font-type-serif: "merriweather",
+  $theme-font-type-sans: "helvetica",
+  $theme-font-type-mono: "roboto-mono",
+
+  $theme-type-scale-3xs: 1,
+  $theme-type-scale-2xs: 3,
+  $theme-type-scale-xs: 4,
+  $theme-type-scale-sm: 5,
+  $theme-type-scale-md: 7,
+  $theme-type-scale-lg: 9,
+  $theme-type-scale-xl: 12,
+  $theme-type-scale-2xl: 14,
+  $theme-type-scale-3xl: 18,
+
+  // COLORS
+  // Body
+  $theme-body-background-color: "black",
+  // Text
+  $theme-text-color: "white",
+  $theme-text-reverse-color: "ink",
+  $theme-link-color: "primary-light",
+  $theme-link-reverse-color: "primary",
+  $theme-link-visited-color: "primary-light",
+
+  // Base
+  $theme-color-base-lightest: "gray-cool-4",
+  $theme-color-base-light: "gray-cool-30",
+  $theme-color-base-darkest: "gray-cool-80",
+  $theme-color-base-ink: "gray-cool-90",
+
+  $theme-header-max-width: "widescreen",
+  $theme-footer-max-width: "widescreen",
+
+  $theme-banner-max-width: "widescreen",
+
+  $theme-in-page-nav-background-color: "white",
+
+  $theme-accordion-button-background-color: "primary-vivid",
+
+  $overflow-settings: (
+    responsive: true,
+  ),
+  $position-settings: (
+    responsive: true,
+  ),
+  $top-settings: (
+    responsive: true,
+  ),
+  $right-settings: (
+    responsive: true,
+  ),
+  $left-settings: (
+    responsive: true,
+  ),
+  $bottom-settings: (
+    responsive: true,
+  ),
+  $z-index-settings: (
+    responsive: true,
+  ),
+  $background-color-settings: (
+    responsive: true,
+  ),
+  $font-style-settings: (
+    responsive: true,
+  ),
+  $color-settings: (
+    responsive: true,
+    hover: true,
+  ),
+  $flex-direction-settings: (
+    responsive: true,
+  ),
+  $flex-settings: (
+    responsive: true,
+  ),
+  $order-settings: (
+    responsive: true,
+  )
+);
