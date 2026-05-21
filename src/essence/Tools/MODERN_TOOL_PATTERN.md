@@ -6,18 +6,86 @@ This guide explains how to create MMGIS tools compatible with the **modern layou
 
 **Modern tools enable**:
 - Dynamic placement in any DOM container
-- Multiple instances of the same tool
 - Cleaner lifecycle management
 - Dashboard and custom panel layouts
 
 ---
 
-## 4-Step Checklist for Modern Tools
+## Tool Architecture Types
 
-Follow these steps to make your tool compatible with modern layouts:
+MMGIS supports three tool architecture patterns:
 
-### 1. Add Core State Properties
-Add `targetId` and `made` to your tool object to track its instance state:
+### 1. **Legacy jQuery Tools** (Classic Layout)
+- Hardcoded to render in `#toolPanel`
+- No `targetId` support
+- Global event handlers
+
+### 3. **Modern React Tools** (Modern Layout)
+- Supports dynamic `targetId` placement
+- Uses React for rendering
+- Component-based architecture
+- Built-in cleanup and lifecycle
+
+---
+
+## Modern React Tool Pattern (Recommended)
+
+For new tools, use React with TypeScript/JSX:
+
+### Core Structure
+
+```typescript
+import React from 'react'
+import { createRoot, Root } from 'react-dom/client'
+
+let _root: Root | null = null
+
+const MyTool = {
+    height: 0,
+    width: 300,
+    targetId: null as string | null,
+    made: false,
+
+    make: function (targetId?: string) {
+        this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
+        const container = document.getElementById(this.targetId)
+
+        if (!container) {
+            console.error(`MyTool: container ${this.targetId} not found`)
+            return
+        }
+
+        _root = createRoot(container)
+        _root.render(<MyToolComponent />)
+        this.made = true
+    },
+
+    destroy: function () {
+        if (_root) {
+            _root.unmount()
+            _root = null
+        }
+        this.targetId = null
+        this.made = false
+    },
+
+    getUrlString: function () {
+        return ''
+    }
+}
+
+export default MyTool
+```
+
+---
+
+## Modern jQuery Tool Pattern
+
+If your tool is simple and doesn't need React, use this jQuery pattern:
+
+### 4-Step Checklist
+
+#### 1. Add Core State Properties
 
 ```javascript
 const MyTool = {
@@ -27,46 +95,46 @@ const MyTool = {
 }
 ```
 
-### 2. Update `make()` to Accept `targetId`
-Modify the `make()` method to accept and store the `targetId` parameter. Default to `'toolPanel'` if invalid:
+#### 2. Update `make()` to Accept `targetId`
 
 ```javascript
 make: function (targetId) {
     this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
-
     this.MMGISInterface = new interfaceWithMMGIS()
     this.made = true
 }
 ```
 
-### 3. Use Dynamic DOM Targeting and Scoping
-Replace hardcoded selectors (like `#toolPanel` or `#tools`) with the dynamic `targetId`. Ensure all DOM operations and event listeners are scoped to this container to prevent conflicts with other instances.
+#### 3. Use Dynamic DOM Targeting
+
+**IMPORTANT**: All DOM operations must use `this.targetId`, not hardcoded `#toolPanel`:
 
 ```javascript
 function interfaceWithMMGIS() {
-    // 1. Target the specific container
+    // 1. Get the target container
     const tools = $(`#${MyTool.targetId}`)
 
-    // 2. Render content
-    tools.css('background', 'var(--color-k)')
-    tools.html('<div style="height: 100%">' + markup + '</div>')
+    // 2. Render your markup
+    tools.html(markup)
 
-    // 3. Scope event handlers using .find() or event delegation on 'tools'
-    tools.find('.myTool-button').on('click', function() { ... })
-    // OR
-    tools.on('click', '.myTool-button', function() { ... })
+    // 3. Attach event handlers scoped to this container
+    // This ensures they're cleaned up when the tool is destroyed
+    tools.find('.myTool-button').on('click', function() {
+        // Handle click
+    })
 }
 ```
 
-### 4. Clean Up in `destroy()`
-Ensure you clean up the container, remove event listeners, and reset the state:
+**Why scope events to the container?**
+- Prevents memory leaks when tool is destroyed
+- Allows multiple instances without conflicts
+- Makes cleanup simple: `tools.off()` removes all handlers
+
+#### 4. Clean Up in `destroy()`
 
 ```javascript
 destroy: function () {
-    // Clean up DOM and events
     this.MMGISInterface.separateFromMMGIS()
-    
-    // Reset state
     this.targetId = null
     this.made = false
 }
@@ -74,9 +142,8 @@ destroy: function () {
 // Inside interfaceWithMMGIS:
 function separateFromMMGIS() {
     const tools = $(`#${MyTool.targetId}`)
-
-    tools.off()     // Remove event listeners
-    tools.empty()   // Clear DOM
+    tools.off()     // Remove all event listeners
+    tools.empty()   // Clear DOM content
 }
 ```
 
