@@ -13,8 +13,6 @@ This guide explains how to create MMGIS tools compatible with the **modern layou
 
 ## Tool Architecture Types
 
-MMGIS supports three tool architecture patterns:
-
 ### 1. **Legacy jQuery Tools** (Classic Layout)
 - Hardcoded to render in `#toolPanel`
 - No `targetId` support
