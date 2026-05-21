@@ -1,6 +1,5 @@
 // Title Tool
 // Displays a logo and title text from dashboard configuration
-import $ from 'jquery'
 import { createRoot } from 'react-dom/client'
 import React from 'react'
 import L_ from '../../Basics/Layers_/Layers_'
@@ -39,6 +38,12 @@ const TitleTool = {
         if (toolVars && toolVars.icon) {
             this.iconClass = toolVars.icon
         }
+
+        // Get config options
+        this.showLogo = toolVars?.showLogo !== false // default true
+        this.showTitleText = toolVars?.showTitleText !== false // default true
+        this.actionButtonText = toolVars?.actionButtonText || ''
+        this.actionButtonLink = toolVars?.actionButtonLink || ''
     },
 
     make: function (targetId) {
@@ -71,9 +76,6 @@ function interfaceWithMMGIS() {
         return
     }
 
-    // Set panel background to transparent for title tool
-    $(container).css('background', 'transparent')
-
     // Render React component
     _root = createRoot(container)
     _root.render(
@@ -81,6 +83,10 @@ function interfaceWithMMGIS() {
             titleText={TitleTool.titleText}
             logoUrl={TitleTool.logoUrl}
             iconClass={TitleTool.iconClass}
+            showLogo={TitleTool.showLogo}
+            showTitleText={TitleTool.showTitleText}
+            actionButtonText={TitleTool.actionButtonText}
+            actionButtonLink={TitleTool.actionButtonLink}
         />
     )
 
@@ -88,10 +94,6 @@ function interfaceWithMMGIS() {
         if (_root) {
             _root.unmount()
             _root = null
-        }
-        const container = document.getElementById(TitleTool.targetId)
-        if (container) {
-            $(container).css('background', 'var(--mmgis-panel-bg)')
         }
     }
 }
