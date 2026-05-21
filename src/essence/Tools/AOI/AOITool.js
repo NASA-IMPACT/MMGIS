@@ -19,7 +19,7 @@
  *     - tool:change                       (core)
  *     - map:drawstart / drawvertex /
  *       drawcomplete / drawcancel         (engine bus)
- *     - feature:active                    (inspect-mode boundary clicks)
+ *     - map:featureClick                  (inspect-mode boundary clicks, filtered by layerId)
  *     - plugin:aoi:analysisAOIReady       (self — triggers the statistics POST)
  *
  *   Requests:
@@ -91,6 +91,17 @@ const initialState = () => ({
 })
 
 /**
+ * Bbox area of a GeoJSON feature, used to order overlapping polygons so
+ * smaller ones (states) sit on top of larger ones (country) for picking.
+ * Returns 0 when bounds can't be computed.
+ */
+function bboxArea(feature) {
+    const b = featureBounds(feature)
+    if (!b) return 0
+    return (b[2] - b[0]) * (b[3] - b[1])
+}
+
+/**
  * Build the statistics POST URL for a layer's `variables.analysis` block.
  * `assets` and `bidx` repeat; `nodata` is set when present.
  */
@@ -153,7 +164,7 @@ const AOITool = {
             subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
-            subscribe('feature:active',    (result) => this._onMapFeatureClick(result))
+            subscribe('map:featureClick',  (info) => this._onMapFeatureClick(info))
             subscribe(`plugin:${PLUGIN_ID}:analysisAOIReady`, (e) => {
                 this._runAnalysisForVisibleLayers(e?.feature).catch((err) =>
                     console.warn('[AOI] analysis run failed', err)
@@ -331,6 +342,16 @@ const AOITool = {
         if (!entries.length) return
         const api = window.mmgisAPI
         if (!api?.request) return
+
+        // Sort largest-area first so big polygons (e.g. "United States") render
+        // first and small ones (states) end up on top. Deck.gl picks the
+        // topmost feature, so this ensures a click in Alabama returns Alabama,
+        // not the country polygon that contains it.
+        const features = entries
+            .map((e) => e.feature)
+            .slice()
+            .sort((a, b) => bboxArea(b) - bboxArea(a))
+
         // Drop any prior layer first; createLayer is not idempotent.
         api.request('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
             .catch(() => { })
@@ -339,7 +360,7 @@ const AOITool = {
                 type: 'vector',
                 geojson: {
                     type: 'FeatureCollection',
-                    features: entries.map((e) => e.feature),
+                    features,
                 },
                 style: INSPECT_STYLE,
                 interactive: true,
@@ -352,9 +373,10 @@ const AOITool = {
             .catch(() => { })
     },
 
-    _onMapFeatureClick(result) {
+    _onMapFeatureClick(info) {
         if (this._state.mode !== 'inspect') return
-        const feature = result?.feature
+        if (info?.layerId !== INSPECT_BOUNDARIES_LAYER_ID) return
+        const feature = info?.feature
         if (!feature?.geometry) return
         const gtype = feature.geometry.type
         if (gtype !== 'Polygon' && gtype !== 'MultiPolygon') return
