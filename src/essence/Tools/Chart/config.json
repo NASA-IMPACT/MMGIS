@@ -1,20 +1,9 @@
 {
     "defaultIcon": "chart-bar",
-    "description": "View timeseries analysis for an Area of Interest. Listens for plugin:aoi:analysisRequested and renders one chart per asset of each analyzable raster layer.",
+    "description": "Render per-layer analysis results published by the AOI plugin.",
     "descriptionFull": {
-        "title": "Renders a timeseries chart panel for an Area of Interest. Subscribes to plugin:aoi:analysisRequested on the mmgisAPI Event Bus, queries currently-visible layers via layers:getAll / layers:getVisible / layers:getConfig, and for each layer that declares variables.analysis.collection runs a two-step VEDA fetch: list STAC items intersecting the AOI, then POST per-item statistics with the AOI geometry. One chart card is rendered per asset.",
-        "example": {
-            "layerVariables": {
-                "analysis": {
-                    "collection": "(str) STAC collection id, e.g. 'landsat-ndvi-daily'",
-                    "baseUrl": "(str, optional) defaults to https://dev.openveda.cloud/api",
-                    "title": "(str, optional) display name in the layer dropdown",
-                    "summary": "(str, optional) summary paragraph shown above the charts",
-                    "assets": "(str[], optional) which asset names to chart; if omitted, all assets in the first stats response are charted",
-                    "statistic": "(str, optional) one of mean | median | min | max | std (default 'mean')"
-                }
-            }
-        }
+        "title": "Subscribes to plugin:aoi:analysisReady on the mmgisAPI Event Bus and renders one card per (layer, asset) with a headline mean, histogram, and stats grid. No per-layer configuration required — analysis-supported layers are configured on the AOI plugin side.",
+        "example": {}
     },
     "hasVars": false,
     "name": "Chart",
