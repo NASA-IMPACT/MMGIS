@@ -31,6 +31,29 @@ export const inject = (configJson) => {
   return JSON.parse(injected);
 };
 
+const COMMON_COLORMAP_NAMES = [
+  "viridis", "viridis_r",
+  "plasma", "plasma_r",
+  "inferno", "inferno_r",
+  "magma", "magma_r",
+  "cividis", "cividis_r",
+  "greys", "greys_r",
+  "blues", "blues_r",
+  "greens", "greens_r",
+  "reds", "reds_r",
+  "rdbu", "rdbu_r",
+  "spectral", "spectral_r",
+  "jet", "jet_r",
+  "turbo", "turbo_r",
+  "hot", "hot_r",
+  "cool", "cool_r",
+  "gist_heat", "gist_heat_r",
+  "gist_earth", "gist_earth_r",
+  "terrain", "terrain_r",
+  "ocean", "ocean_r",
+  "rainbow", "rainbow_r",
+].sort();
+
 function getTileMatrixSets() {
   const injectableName = "TILE_MATRIX_SETS";
   if (window.mmgisglobal.WITH_TITILER === "true") {
@@ -91,53 +114,11 @@ function getColormapNames(injectableName) {
       () => {
         console.warn(`Failed to query for ${injectableName}. Using defaults.`);
         // Fallback to common colormap names
-        injectables[injectableName] = [
-          "viridis", "viridis_r",
-          "plasma", "plasma_r",
-          "inferno", "inferno_r",
-          "magma", "magma_r",
-          "cividis", "cividis_r",
-          "greys", "greys_r",
-          "blues", "blues_r",
-          "greens", "greens_r",
-          "reds", "reds_r",
-          "rdbu", "rdbu_r",
-          "spectral", "spectral_r",
-          "jet", "jet_r",
-          "turbo", "turbo_r",
-          "hot", "hot_r",
-          "cool", "cool_r",
-          "gist_heat", "gist_heat_r",
-          "gist_earth", "gist_earth_r",
-          "terrain", "terrain_r",
-          "ocean", "ocean_r",
-          "rainbow", "rainbow_r",
-        ].sort();
+        injectables[injectableName] = COMMON_COLORMAP_NAMES;
       }
     );
   } else {
     // Without TiTiler, use a common subset of colormaps
-    injectables[injectableName] = [
-      "viridis", "viridis_r",
-      "plasma", "plasma_r",
-      "inferno", "inferno_r",
-      "magma", "magma_r",
-      "cividis", "cividis_r",
-      "greys", "greys_r",
-      "blues", "blues_r",
-      "greens", "greens_r",
-      "reds", "reds_r",
-      "rdbu", "rdbu_r",
-      "spectral", "spectral_r",
-      "jet", "jet_r",
-      "turbo", "turbo_r",
-      "hot", "hot_r",
-      "cool", "cool_r",
-      "gist_heat", "gist_heat_r",
-      "gist_earth", "gist_earth_r",
-      "terrain", "terrain_r",
-      "ocean", "ocean_r",
-      "rainbow", "rainbow_r",
-    ].sort();
+    injectables[injectableName] = COMMON_COLORMAP_NAMES;
   }
 }
