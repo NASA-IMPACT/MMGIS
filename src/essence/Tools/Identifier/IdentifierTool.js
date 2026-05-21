@@ -7,6 +7,7 @@ import L_ from '../../Basics/Layers_/Layers_'
 import Map_ from '../../Basics/Map_/Map_'
 import Globe_ from '../../Basics/Globe_/Globe_'
 import CursorInfo from '../../Ancillary/CursorInfo'
+import ServiceUrls from '../../Basics/ServiceUrls/ServiceUrls'
 import calls from '../../../pre/calls'
 
 //Add the tool markup if you want to do it this way
@@ -684,41 +685,32 @@ function queryDataValue(url, lng, lat, numBands, layerUUID, callback) {
     numBands = numBands || 1
     var dataPath
     if (url != null && url.startsWith('stac-collection:')) {
-        let timeParam = ''
-        if (L_.layers.data[layerUUID].time?.enabled == true)
-            timeParam = `&datetime=${L_.layers.data[layerUUID].time.start}/${L_.layers.data[layerUUID].time.end}`
-
-        // Expression or Bands
-        let expressionParam = ''
-        let bandsParam = ''
         const layer = L_.layers.data[layerUUID]
+        const collectionName = url.split('stac-collection:')[1]
+
+        // Build query parameters
+        const params = { items_limit: 10 }
+
+        // Time parameter
+        if (layer.time?.enabled == true) {
+            params.datetime = `${layer.time.start}/${layer.time.end}`
+        }
 
         // Check currentCogExpression first (runtime value), then fall back to cogExpression (configured value)
         const expressionToUse =
             layer.currentCogExpression || layer.cogExpression
         if (expressionToUse && expressionToUse.trim() !== '') {
-            const processedExpression = processExpression(expressionToUse)
-            expressionParam = `&expression=${encodeURIComponent(processedExpression)}`
+            // Expression needs URL encoding due to special chars like (), /, +
+            params.expression = encodeURIComponent(processExpression(expressionToUse))
         } else {
             // Fall back to bands if no expression
-            let b = layer.cogBandsQuery
-            if (b != null) {
-                b.forEach((band) => {
-                    if (band != null) bandsParam += `&bidx=${band}`
-                })
+            if (layer.cogBandsQuery != null) {
+                params.bidx = layer.cogBandsQuery.filter(b => b != null)
             }
         }
 
         fetch(
-            `${
-                mmgisglobal.NODE_ENV === 'development'
-                    ? 'http://localhost:8888'
-                    : `${window.location.origin}${(
-                          window.location.pathname || ''
-                      ).replace(/\/$/g, '')}`
-            }/titilerpgstac/collections/${
-                url.split('stac-collection:')[1]
-            }/point/${lng},${lat}?assets=asset&items_limit=10${timeParam}${expressionParam}${bandsParam}`,
+            ServiceUrls.buildStacCollectionPointUrl(lng, lat, collectionName, layer, params),
             {
                 method: 'GET',
                 headers: {
@@ -749,43 +741,33 @@ function queryDataValue(url, lng, lat, numBands, layerUUID, callback) {
             .catch((err) => {})
         return
     } else if (url != null && url.startsWith('COG:')) {
-        // Time
-        let timeParam = ''
-        if (L_.layers.data[layerUUID].time?.enabled == true)
-            timeParam = `&datetime=${L_.layers.data[layerUUID].time.start}/${L_.layers.data[layerUUID].time.end}`
-
-        // Expression or Bands
-        let expressionParam = ''
-        let bandsParam = ''
         const layer = L_.layers.data[layerUUID]
+        const cogUrl = L_.getUrl('tile', url)
+
+        // Build query parameters
+        const params = {}
+
+        // Time parameter
+        if (layer.time?.enabled == true) {
+            params.datetime = `${layer.time.start}/${layer.time.end}`
+        }
 
         // Check currentCogExpression first (runtime value), then fall back to cogExpression (configured value)
         const expressionToUse =
             layer.currentCogExpression || layer.cogExpression
         if (expressionToUse && expressionToUse.trim() !== '') {
-            const processedExpression = processExpression(expressionToUse)
-            expressionParam = `&expression=${encodeURIComponent(processedExpression)}`
+            // Expression needs URL encoding due to special chars like (), /, +
+            params.expression = encodeURIComponent(processExpression(expressionToUse))
         } else {
             // Fall back to bands if no expression
-            let b = layer.cogBandsQuery || layer.cogBands
-            if (b != null) {
-                b.forEach((band) => {
-                    if (band != null) bandsParam += `&bidx=${band}`
-                })
+            const bands = layer.cogBandsQuery || layer.cogBands
+            if (bands != null) {
+                params.bidx = bands.filter(b => b != null)
             }
         }
 
         fetch(
-            `${
-                mmgisglobal.NODE_ENV === 'development'
-                    ? 'http://localhost:8888'
-                    : `${window.location.origin}${(
-                          window.location.pathname || ''
-                      ).replace(/\/$/g, '')}`
-            }/titiler/cog/point/${lng},${lat}?assets=asset&url=${L_.getUrl(
-                'tile',
-                url
-            )}${timeParam}${expressionParam}${bandsParam}`,
+            ServiceUrls.buildTiTilerPointUrl(lng, lat, cogUrl, layer, params),
             {
                 method: 'GET',
                 headers: {

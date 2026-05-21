@@ -23,7 +23,8 @@ var colorFilterExtension = {
 
         if (
             this.options.splitColonType === 'stac-collection' ||
-            this.options.splitColonType === 'COG'
+            this.options.splitColonType === 'COG' ||
+            this.options.splitColonType === 'titiler-url'
         ) {
             let datetime
             if (this.options.endtime != null) {

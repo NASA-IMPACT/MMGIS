@@ -1,6 +1,7 @@
 import $ from 'jquery'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
+import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { captureVector } from '../Layers_/LayerCapturer'
 import {
     constructVectorLayer,
@@ -1491,12 +1492,22 @@ async function makeTileLayer(layerObj, mapContext = null) {
                     resamplingParam = `&resampling=${layerObj.cogResampling}`
                 }
 
-                layerUrl = `${window.location.origin}${(
-                    window.location.pathname || ''
-                ).replace(/\/$/g, '')}/titiler/cog/tiles/${
-                    layerObj.tileMatrixSet || 'WebMercatorQuad'
-                }/{z}/{x}/{y}.webp?url=${layerUrl}${bandsParam}${resamplingParam}`
-
+                layerUrl = ServiceUrls.buildTiTilerCogTilesUrl(layerUrl, layerObj, {
+                    tileMatrixSet: layerObj.tileMatrixSet,
+                    bands: (!layerObj.cogExpression || layerObj.cogExpression.trim() === '') ? layerObj.cogBands : null,
+                    resampling: layerObj.cogResampling
+                })
+                break
+            case 'titiler-url':
+                // Pre-existing TiTiler endpoint URL - just strip the prefix and use as-is
+                // COG parameters will be appended dynamically in getTileUrl middleware
+                splitColonType = splitColonLayerUrl[0]
+                layerUrl = splitColonLayerUrl.slice(1).join(':')
+                // Make URL absolute if needed
+                if (!F_.isUrlAbsolute(layerUrl)) {
+                    layerUrl = L_.missionPath + layerUrl
+                }
+                break
             default:
                 break
         }
@@ -1952,9 +1963,7 @@ function makeImageLayer(layerObj, mapContext = null) {
     }
     let layerUrl = L_.getUrl(layerObj.type, layerObj.url, layerObj)
     if (!F_.isUrlAbsolute(layerUrl)) {
-        layerUrl = `${window.location.origin}${(
-            window.location.pathname || ''
-        ).replace(/\/$/g, '')}/${layerUrl}`
+        layerUrl = `${ServiceUrls.getLocalBaseUrl()}/${layerUrl}`
     }
 
     let bb = null
@@ -2144,9 +2153,7 @@ function makeVideoLayer(layerObj, mapContext = null) {
     }
     let layerUrl = L_.getUrl(layerObj.type, layerObj.url, layerObj)
     if (!F_.isUrlAbsolute(layerUrl)) {
-        layerUrl = `${window.location.origin}${(
-            window.location.pathname || ''
-        ).replace(/\/$/g, '')}/${layerUrl}`
+        layerUrl = `${ServiceUrls.getLocalBaseUrl()}/${layerUrl}`
     }
 
     if (!layerObj.boundingBox || layerObj.boundingBox.length !== 4) {
