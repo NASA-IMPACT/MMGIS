@@ -6,7 +6,22 @@ Lean does not host data of any kind. Features whose current implementation depen
 
 ---
 
-## 1. Time-windowed layers (`_time_` URL convention)
+## Settled drops
+
+Capabilities lean does not provide and is not building a substitute for. Documented here so the loss is clear.
+
+- **In-admin data upload.** Datasets, geodatasets, mission assets, tile pyramids. Admins author mission configs by referencing external URLs only.
+- **Python sidecars as part of MMGIS.** TiTiler, TiTiler-pgSTAC, STAC, tipg, and the `/veloserver` proxy. Missions point at external services for any capability these used to provide.
+- **`Missions/` static file serving.** No per-mission on-disk asset tree; the admin serves no mission assets from disk.
+- **`mmgis-stac` database.** Not created since the STAC sidecar isn't deployed.
+- **Link shortener.** Not deployed.
+- **Webhooks on Draw / Config events.** Not deployed.
+
+---
+
+## Open gaps
+
+### 1. Time-windowed layers (`_time_` URL convention)
 
 **What it does.** Layer URLs contain a `_time_` placeholder. The frontend's time slider substitutes a date; the admin's `Missions/` middleware resolves it to the closest-prior tile on disk. With `?composite=true`, sharp alpha-blends up to 100 time-tagged tiles in the requested window — most recent non-transparent pixel wins.
 
