@@ -61,7 +61,6 @@ The only structural exception is `/api/utils`, which is heterogeneous enough to 
 ## Genuine open questions
 
 - **LongTermToken**: keep is the default, but is admin-script automation an actual lean use case? If not, this could move to "Gate." Cost of being wrong is low — the routes are admin-only.
-- **`/api/files` (Draw)**: the route names (`/make`, `/remove`, `/publish`, `/compile`) look upload-adjacent but the implementation is pure Postgres metadata management. Worth double-checking if anyone has been treating these as upload endpoints from an integration; they aren't.
 
 ## Related
 
