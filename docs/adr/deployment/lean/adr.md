@@ -15,7 +15,7 @@ Supersedes the `preserve` ADRs. Two assumptions changed:
 
 What remains: map rendering, mission configuration, and a new dashboard publishing flow. Everything else MMGIS does as a server, we drop.
 
-`features.md` is shared with the preserve angle and is the authoritative per-feature inventory.
+`features.md` is shared with the preserve angle and is the authoritative per-feature inventory. [`feature-gaps.md`](./feature-gaps.md) catalogs the capabilities lean drops or only delivers through new work.
 
 ## What we're doing
 
@@ -28,17 +28,17 @@ The admin keeps the map app, mission editor, and auth. It gains one new responsi
 
 ## Known constraints
 
-Settled commitments. Open decisions are below.
+Settled commitments. Open decisions are in another section.
 
 1. **One admin instance per environment, many dashboard deployments.** Dashboards are published from the admin; they do not run their own backend.
 2. **The admin is the only deployable with compute.** Dashboards are S3 + CloudFront + a CloudFront Function. No Lambda, no ECS, no Fargate per dashboard.
-3. **No Python sidecars deploy as part of MMGIS.** The four vendored sidecars (TiTiler, TiTiler-pgSTAC, STAC, tipg) and the `/veloserver` proxy route to an external service are excluded. Their proxy routes (`/titiler`, `/stac`, `/tipg`, `/titilerpgstac`, `/veloserver`) are not exposed from production. If a mission needs functionality those services provide, it points the relevant layers at external services directly (VEDA's TiTiler, a public STAC catalog, etc.).
+3. **No sidecars deploy as part of MMGIS.** Today's deployment ships five sidecar services that MMGIS proxies to: four Python services with source under `adjacent-servers/` (TiTiler, TiTiler-pgSTAC, STAC, tipg), and one NASA-AMMOS Docker image (Veloserver). None of the five deploy in lean. Their proxy routes (`/titiler`, `/titilerpgstac`, `/stac`, `/tipg`, `/veloserver`) are not exposed from production. If a mission needs functionality these services provide, its layer configs reference an externally hosted instance directly (VEDA's TiTiler, a public STAC catalog, etc.).
 4. **No data upload through the admin in production.** Datasets, geodatasets, mission assets, tile pyramids — none of these are uploaded into MMGIS. Mission configurations in this deployment reference external URLs only.
 5. **Dashboard URLs are bare CloudFront distribution names.** Each dashboard is reachable at its distribution's default domain name (`d<n>.cloudfront.net`). The admin records this URL in its registry and returns it to the publisher. If the eventual owner wants a friendly hostname, they CNAME their own DNS at the distribution; the admin does not manage DNS for dashboards.
 6. **Single-mission-per-dashboard.** A published dashboard always loads exactly one mission. No mission picker, no `?mission=` switching in dashboards.
 7. **Admin URL is a dedicated subdomain or its own `.gov` URL.** CloudFront in front of the admin ALB.
 8. **Dashboard auth is one shared password across all dashboards.** A single value, edge-evaluated by a CloudFront Function. Per-dashboard passwords are out of scope until a production audience needs it.
-9. **Admin auth mirrors today's MMGIS** — local accounts with Postgres-backed sessions, optional CSSO, the same `111`/`110`/`001`/`000` permission codes. No change.
+9. **Admin auth mirrors today's MMGIS** — local accounts with Postgres-backed sessions, optional SSO, the same `111`/`110`/`001`/`000` permission codes. No change.
 10. **PostGIS Postgres for the admin.** One managed instance, both the main MMGIS database and the dashboards-registry table on it. The STAC database (`mmgis-stac`) is not created because the STAC sidecar is not deployed.
 11. **Deploys into an existing VPC** in the AWS account. No net-new VPC.
 12. **CI/CD via GitHub Actions.**
@@ -64,7 +64,7 @@ Networking:
 
 Auth:
 
-- **Local mode by default**, CSSO optional via existing env var. Same bcrypt + Postgres-session model.
+- **Local mode by default**, SSO optional via existing env var. Same bcrypt + Postgres-session model.
 - **First superadmin seeded by `init-db.js`** from Secrets Manager. Public `first_signup` is disabled to prevent races.
 - **No dashboard auth runs on the admin.** Dashboards have their own gate at the edge.
 
@@ -109,14 +109,15 @@ Dashboards never call the admin server, never call a sidecar, never connect to P
 
 ### Frontend refactor surface
 
-Every MMGIS-server call flows through `src/pre/calls.js`, which has a dormant `SERVER != 'node'` branch. Sidecar calls bypass the dispatcher via direct `fetch` from a handful of files (Phase 6 of the plans). In dashboard mode `calls.js` gets a per-call disposition table:
+The dashboard frontend is the same Essence bundle as the admin, built with `mmgisglobal.SERVER='static'` (vs `'node'`). The flip activates a dormant branch in `src/pre/calls.js` — the dispatcher for ~35 named JSON API calls — replacing its current no-op with a per-call handling table. Four handling strategies:
 
 - **Bake** — answer known at build time, frozen into the bundle. Used for mission configuration.
-- **Reroute** — `getbands`, `getprofile`, `proj42wkt`, `query_tileset_times` are admin Express routes today. In a dashboard they are unreachable. The features that consume them either hide (default), redirect to a VEDA microservice if one exists, or compute client-side. Per-feature decisions live in `features.md`.
-- **Compute** — answer in the browser using baked data.
-- **Drop** — login form, WebSocket connect, mission picker, every backend-write feature.
+- **Reroute** — point at an external URL supplied by the mission config (sidecar substitutes).
+- **Compute** — calculate client-side from baked data.
+- **Drop** — return a graceful error or hide the feature (login, WebSocket connect, every backend-write call, every call against a module that's gated out in lean).
 
-Activated by a build-time flip on `mmgisglobal.SERVER`.
+Per-call handling lives in [`api.md`](./api.md); per-feature decisions in [`features.md`](../features.md).
+
 
 ## Open decisions
 
@@ -128,38 +129,32 @@ Both options run the same image, the same task definition shape, the same ALB-fr
 
 #### Option A — ECS Fargate
 
-The team owns the ALB, listener rules, target groups, canary configuration, scaling policies, and rollout choreography. Tooling (CDK, GitHub Actions, etc.) is broadly compatible. Migration paths to other compute services (EC2, EKS, App Runner) are well-trodden if the deployment ever has to move.
+The team owns the ALB, listener rules, target groups, canary configuration, scaling policies, and rollout choreography. Tooling (CDK, GitHub Actions, etc.) is broadly compatible and well-known.
 
 **Pros:**
 
 - Mature, well-documented.
-- Full control over deployment strategy — canary, blue/green, in-place, whatever the team wants.
-- Standard CloudWatch and X-Ray integration; no surprises.
-- Easy to add capacity for non-admin workloads later (the publish-task ECS RunTask uses the same cluster).
-- Multi-environment (dev, staging, prod) is straightforward.
+- Full control over deployment strategy — canary, blue/green, in-place, etc
 
 **Cons:**
 
 - More AWS resources to define and maintain (ALB listener rules, target groups, scaling policies, canary configs).
 - More IAM and CI/CD surface than Express Mode.
-- The team is on the hook for tuning the rollout strategy.
 
 #### Option B — ECS Express Mode
 
 AWS-managed deployment mode for ECS, announced November 2025. The team supplies a task definition; AWS manages the ALB, the canary/rollout strategy, scaling, and the deployment lifecycle.
 
 **Pros:**
-
 - Less infrastructure code (no ALB, no target groups, no scaling policy).
-- AWS owns the rollout strategy; one less thing to tune.
-- Lower operational burden for a team that doesn't need a custom deployment strategy.
+- Lower operational burden.
+- Using new stuff is cool 
 
 **Cons:**
 
 - Express Mode is six months old as of this ADR (announced November 2025). Production maturity is still being established.
-- Locks the deployment shape to canary and the ALB config to ECS-managed. Migrating off Express Mode later is a real migration, not a config change.
+- Locks the deployment shape to canary and the ALB config to ECS-managed.
 - The internal-only ECS RunTask for the publish flow (which runs in the same cluster) may or may not interact cleanly with Express Mode-managed networking; needs verification.
-- Less control if a specific rollout strategy or ALB feature is needed.
 
 ---
 
@@ -194,36 +189,19 @@ Leave the unused surfaces in place. Add a deployment-mode environment variable (
 - The original NASA-AMMOS deployment continues to work when `MMGIS_DEPLOYMENT_MODE=full` is set (or absent). Upstream contributions, merge-back, and shared changes are practical.
 - The lean angle becomes a *deployment mode*, not a *fork*. Other teams could adopt it without inheriting our deletions.
 - Code recovery (reanimating a feature) is a config change, not a git-history archaeology project.
-- The cost of being wrong on D2 is low; the gate can be removed in a later pass.
 
 **Cons:**
 
 - The codebase remains large. Reviewers still have to reason about the gated surfaces. New contributors still have to find out which mode the gate evaluates to in any given deployment.
-- Every new feature in the lean path has to consider both modes — what does it do when the gate is off?
+- Every new feature in the lean path is harder to develop.
+- Future refactors and code clean up are harder.
 - The env-gating itself is surface area. The gates have to be tested in both modes, and a missed gate is a production-affecting bug (e.g. an upload route accidentally mounted in lean mode). Can introduce fragility.
 
-
-## Open concerns to track
-
-Issues to resolve before going live.
-- **Time-windowed layers (`_time_` URL convention).** Some mission configs reference `_time_` tokens; the `Missions/` static middleware resolves them at request time (closest-prior-time tile by default, `sharp`-composited when `?composite=true`). No admin file-serving in production means both paths are unreachable. Default: hide layers that depend on `_time_`. Composite can be pre-baked at publish time as an opt-in per layer. Read `scripts/middleware.js` `missions()` before locking the default.
-
-## Vocabulary
-
-- **Admin** — today's MMGIS app, deployed once on AWS.
-- **Mission** — a row in the admin's `configs` table: layers, tools, map view, CRS, time settings. Editable via Configure SPA; lives only in the admin.
-- **Dashboard** — a static, read-only frontend bundle with one mission baked in, served from S3 + CloudFront. One mission can yield many dashboards; each dashboard is a single mission snapshot.
-- **Stack** — the CloudFormation stack that owns a dashboard's AWS resources (bucket, distribution, Function). One stack per dashboard; the stack ARN is the durable handle for that dashboard's infrastructure.
-- **Sidecar** — one of the four vendored Python services (TiTiler, TiTiler-pgSTAC, STAC, tipg) or the proxy-only `/veloserver` route to an external service. Not deployed in lean.
-- **External URL** — a URL pointing at a service outside MMGIS (VEDA microservices, public COG buckets, public STAC catalogs). The substitute for what MMGIS's sidecars would otherwise serve.
-- **Bake** — freeze data into a static file at publish time so the dashboard can fetch it without a backend.
-- **Dispatcher** — the `src/pre/calls.js` chokepoint that picks an API call's destination (bake / reroute / compute / drop) based on build mode.
-- **Burn / keep** — the D2 code-disposition options. Burn = delete unused surfaces from the codebase. Keep = leave them in place, environment-gated.
-- **Publish flow** — the admin-side pipeline that turns a mission config into a deployed dashboard.
 
 ## Companion documents
 
 - [`../features.md`](../features.md) — per-feature inventory and disposition matrix.
+- [`feature-gaps.md`](./feature-gaps.md) — capabilities lean drops or only delivers through new work, with per-gap options.
 - [`implementation-plan-burn.md`](./implementation-plan-burn.md) — implementation plan for D2 = burn.
 - [`implementation-plan-keep.md`](./implementation-plan-keep.md) — implementation plan for D2 = keep.
 - [`../preserve/`](../preserve/) — the prior angle's documents, retained for reference.
