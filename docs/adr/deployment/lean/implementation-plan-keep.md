@@ -76,30 +76,31 @@ Conventions:
 
 ---
 
-## Phase 3 — Gate the upload surface
+## Phase 3 — Gate the Datasets and Geodatasets modules
 
-**Goal:** In `lean` mode, no upload endpoint accepts files. In `full` mode, today's upload paths work unchanged. (#32 in `features.md`.)
+**Goal:** In `lean` mode, the Datasets and Geodatasets modules don't mount at all — no upload, no read, no admin UI tab. Both modules operate exclusively on local Postgres tables that get populated by uploads (which lean disables), so without uploads the read paths return empty and are dead weight. In `full` mode, both modules work unchanged. (#32 in `features.md`.)
 
-The dataset and geodataset *read* paths remain in both modes (Postgres rows are queryable).
+This mirrors the whole-module gating pattern Phase 5 uses for Shortener and Webhooks. Decision driver: every endpoint in `API/Backend/Datasets/routes/datasets.js` and `API/Backend/Geodatasets/routes/geodatasets.js` operates exclusively on local Postgres — confirmed by inspection (no `fetch`, `axios`, or proxy forwards anywhere in either router). Empty tables in lean = silently-broken features. A clean 404 on the route is better than a "success: []" that the frontend renders as missing data.
 
 **Files:**
-- Edit: `API/Backend/Datasets/routes/datasets.js` — wrap the Busboy upload handler in `if (isLean()) return res.status(404).end()` early-return. Keep the read endpoints unguarded.
-- Edit: `API/Backend/Geodatasets/routes/geodatasets.js` — same.
-- Edit: `API/Backend/Draw/routes/files.js` — same on the upload paths; Draw write-edits (which write Postgres) stay enabled in both modes.
-- Edit: `scripts/server.js` — leave the `bodyParser` 500 MB cap in place. The cap is meaningful in `full` mode for Draw payloads.
-- Edit: `configure/src/pages/Datasets.js`, `GeoDatasets.js` — hide the upload affordance when the SPA receives a "deployment mode = lean" hint from the bootstrap. The hint can ride the existing `WITH_*` Pug flags as a sibling `DEPLOYMENT_MODE` flag. Add to `API/Backend/Config/setup.js`.
-- Edit: `configure/src/core/calls.js` — leave call definitions; the affordances that invoke them are hidden.
+- Edit: `API/Backend/Datasets/setup.js` — wrap the route mount in `if (isFull())`. The model still syncs in both modes (Sequelize creates the table on boot), so a future mode flip doesn't need a migration.
+- Edit: `API/Backend/Geodatasets/setup.js` — same.
+- Edit: `scripts/server.js` — leave the `bodyParser` 500 MB cap in place. The cap is still meaningful in `full` mode for Datasets payloads.
+- Edit: `configure/src/pages/Datasets.js`, `GeoDatasets.js` — hide the tabs from the SPA's nav when the SPA receives a "deployment mode = lean" hint from the bootstrap. Plumb the hint through `API/Backend/Config/setup.js` as a sibling `DEPLOYMENT_MODE` flag on the Pug shell template (alongside the existing `WITH_*` flags).
+- Edit: `configure/src/core/calls.js` — leave the call definitions in place; the routes they target won't mount in lean, but the call defs are harmless dead code.
+
+Note: the Draw module is preserved in lean per the ADR and is not affected by this phase. `API/Backend/Draw/routes/files.js` despite its name does not handle file uploads — it manages drawing-file *metadata records* in Postgres. No Busboy, multipart, or filesystem writes in that router (confirmed by grep).
 
 **Operations:**
-1. Add the early-return gates on upload routes.
-2. Add the `DEPLOYMENT_MODE` flag to the Configure shell Pug template, plumb through to the SPA's Redux store at boot.
-3. Update Datasets/GeoDatasets pages to read the flag.
+1. Apply the whole-module gates in the two `setup.js` files.
+2. Add the `DEPLOYMENT_MODE` Pug flag and plumb to the SPA's Redux store at boot.
+3. Hide the Datasets and GeoDatasets nav entries when `DEPLOYMENT_MODE === 'lean'`.
 
 **Verification:**
-- `MMGIS_DEPLOYMENT_MODE=lean`: `POST /api/datasets/upload` returns 404; Datasets page in Configure renders the list view but no Add button.
-- `MMGIS_DEPLOYMENT_MODE=full`: upload still works.
+- `MMGIS_DEPLOYMENT_MODE=lean`: every `/api/datasets/*` and `/api/geodatasets/*` endpoint returns 404; Datasets and GeoDatasets tabs not visible in Configure.
+- `MMGIS_DEPLOYMENT_MODE=full` (or unset): both modules work as today.
 
-**Rollback:** Revert the gate edits.
+**Rollback:** Revert the `setup.js` gates and the Configure SPA tab-hiding edits. Default mode is `full` so behavior returns to today's.
 
 ---
 
@@ -155,22 +156,28 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 **Goal:** Activate the dispatcher's dormant `SERVER != 'node'` branch with a bake/reroute/compute/drop table. Centralize the inline sidecar-URL builders in four files into one helper. Generate the baked mission config at publish time. Disable the WebSocket connect and login form in static mode. The activations are tied to the build mode (`static` vs `server`), independent of the server-side `MMGIS_DEPLOYMENT_MODE`. (#10, #14 in `features.md`.)
 
-**Note:** This phase is structurally identical to the burn variant's Phase 6. The frontend code doesn't need a `full/lean` runtime gate because dashboard builds always run in `static` mode and admin builds always run in `server` mode. The helper's reroute disposition table is what holds the runtime difference.
+**Note:** This phase is structurally identical to the burn variant's Phase 6. The frontend code doesn't need a `full/lean` runtime gate because dashboard builds always run in `static` mode and admin builds always run in `server` mode. The helper's reroute handling table is what holds the runtime difference.
 
 **Files:**
 - Edit: `public/index.html` — `mmgisglobal.SERVER` is set from a Webpack `DefinePlugin` value. Server-mode build: `"node"`. Static-mode build: `"static"`.
 - Edit: `src/pre/calls.js` — replace the dormant `if (window.mmgisglobal.SERVER != 'node') { console.warn(…); error() }` block with a dispatch into a `STATIC_HANDLERS` table.
-- New: `src/pre/staticHandlers.js` — bake/reroute/compute/drop entries keyed by `c[]` name.
+- New: `src/pre/staticHandlers.js` — bake/reroute/compute/drop entries keyed by `c[]` name in `calls.js`. See Operations step 2 for the per-call mapping. Note: `calls.js` has 35 entries today (not the ~30 originally estimated); every entry needs to be handled.
 - New: `src/essence/Basics/serviceUrls.js` — helper exporting per-service URL functions. Server-mode return value: same-origin paths (so full MMGIS admin still hits `/titiler`). Static-mode return value: the absolute URL from the baked config.
 - Edit: `src/essence/Basics/Map_/Map_.js`, `src/essence/Basics/Layers_/Layers_.js`, `src/essence/Tools/Identifier/IdentifierTool.js`, `src/essence/Tools/Layers/LayersTool.js` — replace inline interpolations with helper calls.
 - Edit: `API/updateTools.js` — add `bakeStaticConfig` codegen.
 - Edit: `src/essence/LandingPage/LandingPage.js` — short-circuit `init` in static mode.
 - Edit: `src/essence/essence.js` — login modal skipped in static mode.
 - Edit: `src/essence/essence.js` — WebSocket layer-update consumer (`essence.ws` at lines 141–321) short-circuits in static mode.
+- Edit: `src/essence/Basics/Viewer_/Viewer_.js` — flip `ajaxWithCredentials` to `false` in static mode for OpenSeadragon image-pyramid loads. Anonymous S3 reads fail with credentials on.
+- Edit: `scripts/publish-static.js` (Phase 7) — copy the mission's `Missions/<mission>/Data/mosaic_parameters.csv` to the dashboard's S3 bucket root. Photosphere and ModelViewer fetch this path directly without URL templating; absent it, both panes fail silently. Skipped if the mission doesn't use Photosphere or ModelViewer.
 
 **Operations:**
 1. Wire `DefinePlugin`.
-2. Implement `STATIC_HANDLERS`. **Difference from burn variant:** the `reroute` cases for `getbands`, `getprofile`, `proj42wkt` can optionally point at the full admin's same-origin endpoints if a dashboard's audience happens to host one nearby. This is mission-config-driven, not a hard route in the table — the table just gives the mission the option.
+2. Implement `STATIC_HANDLERS`. Per-call handling for the 35 entries in `calls.js`:
+   - **Bake**: `get`, `get_generaloptions`, `missions` (these are the actual entry names in `calls.js`; the mission-config calls)
+   - **Compute**: `query_tileset_times` (use baked `tilesetTimes`)
+   - **Reroute** (mission-config-driven, optional): `getbands`, `getprofile`, `proj42wkt` can point at the full admin's same-origin endpoints if a dashboard's audience happens to host one nearby. The table gives the mission the option; it's not a hard route.
+   - **Drop** (everything else): `login`, `signup`, `logout`, all `draw_*` (7), all `files_*` (10), `shortener_*` (2), `datasets_get`, all `geodatasets_*` (4), `draw_aggregations`, `spatial_published`, `tactical_targets`, `clear_test`, plus the remaining Utils calls (`getminmax`, `ll2aerll`, `chronice`) — none of these are reachable in a dashboard.
 3. Implement `serviceUrls.js`.
 4. Implement `bakeStaticConfig`.
 5. Implement the LandingPage short-circuit, the login skip, the WebSocket skip.
@@ -194,7 +201,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 **Files:**
 - New: `API/Backend/Dashboards/setup.js` — `onceSynced`/`onceInit` lifecycle. The `synced` step (Sequelize sync) runs in both modes; the `init` step (route mounting) gates on `isLean()`.
 - New: `API/Backend/Dashboards/models/dashboard.js` — Sequelize model. Columns as in burn-variant Phase 7: `id`, `name`, `mission`, `created_by`, `status`, `stack_arn`, `stack_name`, `cloudfront_url` (cached), `settings`, `last_error`, timestamps. Stack outputs come from `DescribeStacks` at read time, not from the row.
-- New: `API/Backend/Dashboards/routes/dashboards.js` — endpoints. Mounted only when `isLean()`. The `ensureAdmin` guard remains; full admin routes use the same guard for parity. `GET` paths merge Postgres rows with `DescribeStacks` live state.
+- New: `API/Backend/Dashboards/routes/dashboards.js` — endpoints: `POST /api/dashboards/publish`, `POST /api/dashboards/:id/update`, `DELETE /api/dashboards/:id`, `GET /api/dashboards`, `GET /api/dashboards/:id`. All admin-only via `s.ensureAdmin()`. Mounted only when `isLean()`. The Update endpoint re-bakes the bundle from the current mission config and PutObjects new assets to the existing bucket; the CloudFront distribution is not replaced. `GET` paths merge Postgres rows with `DescribeStacks` live state.
 - New: `scripts/publish-static.js`, `scripts/lib/cfn-template.js`, `scripts/lib/aws-provision.js` — same as burn variant. The publish task calls `CreateStack` and polls `DescribeStacks` until terminal state, then uploads the bundle. `DeleteStack` is called inline from the admin's `DELETE` handler (no separate teardown script).
 - New: `configure/src/pages/Dashboards.js` — admin UI. The Dashboards tab is hidden from the SPA's nav when `DEPLOYMENT_MODE === 'full'`.
 - Edit: `configure/src/core/calls.js`, `Configure.js` — same as burn variant.
@@ -226,9 +233,11 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 - New: `infrastructure/ecs/publish-task.json` — publish-task definition.
 - New: `infrastructure/iam/admin-role.json` — admin's ECS task role. Permissions as in burn-variant Phase 8 (includes `cloudformation:DescribeStacks` for live-state merge and `cloudformation:DeleteStack` + bucket-empty permissions for the inline delete handler).
 - New: `infrastructure/iam/publish-role.json` — publish task role. Permissions as in burn-variant Phase 8 (CloudFormation create/describe/delete + the underlying S3/CloudFront permissions CFN exercises on the role's behalf).
-- New: `infrastructure/cloudfront-admin.json` — CloudFront distribution config.
+- New: `infrastructure/cloudfront-admin.json` — CloudFront distribution config. CF→ALB hop is HTTPS. Attach the AllViewer origin request policy (forwards cookies, headers, query strings — required for login, sessions, and WebSocket headers) and the CachingDisabled cache policy (admin responses must not be cached). Defaults forward nothing; without these, login breaks silently.
+- Edit: `scripts/server.js` — change `app.set('trust proxy', 1)` to `app.set('trust proxy', 2)` to match the CF→ALB→ECS hop count. Without this, Express treats CloudFront's IP as the client and `Secure` cookies, rate-limiting, and `X-Forwarded-For` logging all go wrong.
 - New: `infrastructure/cloudfront-function.js` — reference source for the password-gate Function; embedded into the rendered CloudFormation template at publish time.
 - Edit: `Dockerfile` — no edit needed if `MMGIS_DEPLOYMENT_MODE` is passed via ECS env vars (recommended). If baked at build time, multi-stage with an arg.
+- Optional: lean image trim. The production Dockerfile installs Python micromamba and the `adjacent-servers/` sidecar source for full-mode use. In lean those are dead weight. A multi-stage `Dockerfile.lean` (or `--target lean`) that skips the micromamba install and `COPY adjacent-servers/` reduces image size and CI time. Source stays in the repo for upstream-compat; only the image differs.
 
 **Operations:**
 1. Author task definitions, IAM roles, CloudFront config.

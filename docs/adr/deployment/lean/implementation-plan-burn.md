@@ -82,32 +82,36 @@ Conventions:
 
 ---
 
-## Phase 3 — Burn the upload surface
+## Phase 3 — Burn the Datasets and Geodatasets modules
 
-**Goal:** Remove every path that ingests files into the MMGIS server. (#32 in `features.md`.) The admin no longer accepts dataset CSV uploads, geodataset GeoJSON uploads, or mission-asset file uploads.
+**Goal:** In lean, the Datasets and Geodatasets modules cease to exist — no routes, no models, no admin UI tabs, no frontend dispatcher entries. Both modules operate exclusively on local Postgres tables that the upload paths populated; with uploads gone, the read paths return nothing useful. Cleaner to delete the surface entirely than to leave dead reads mounted. (#32 in `features.md`.)
 
-The dataset and geodataset *models* and *read paths* survive — datasets-as-rows in Postgres remain queryable; only the ingest is gone. Layered: the route still exists, the upload mechanism does not.
+This mirrors Phase 5's deletion of Shortener and Webhooks. Decision driver: every endpoint in both routers operates exclusively on local Postgres — confirmed by inspection (no `fetch`, `axios`, or proxy forwards anywhere in either router). Empty tables = silently-broken features in the frontend.
 
 **Files:**
-- Edit: `API/Backend/Datasets/routes/datasets.js` — remove the Busboy upload handler, the multipart parsing, and the `makeNewDatasetTable` codegen path. Keep the read endpoints (`GET /api/datasets/...`) and the query endpoints. The CSV-via-csvtojson code path is deleted; the `makeNewDatasetTable` helper file `API/Backend/Datasets/utils/makeNewDatasetTable.js` (or wherever it is) is also deleted.
-- Edit: `API/Backend/Geodatasets/routes/geodatasets.js` — remove the upload handler; keep `GET /api/geodatasets/.../mvt` and `/geojson` read paths.
-- Edit: `API/Backend/Draw/routes/files.js` — drawing-file *upload* paths drop; in-line drawing edits stay. The "publish a baked drawing as a feature file" admin action stays because it writes to Postgres, not disk.
-- Edit: `package.json` — remove `busboy`, `csvtojson` if not used elsewhere. Re-run `npm install` to update the lockfile.
-- Edit: `configure/src/pages/Datasets.js` — remove the upload-form components and their wiring; keep the table/list view of existing datasets. Same for `configure/src/pages/GeoDatasets.js`.
-- Edit: `configure/src/core/calls.js` — remove `uploadDataset`, `uploadGeodataset`, and any other `upload*` entries.
-- Edit: `scripts/server.js` — remove the `bodyParser` 500 MB cap; restore the framework default (1 MB is fine for the Draw payload sizes we still accept). Verify by checking the largest Draw POST payload size in production traces if available.
+- Delete: `API/Backend/Datasets/` (the full module — routes, model, setup).
+- Delete: `API/Backend/Geodatasets/` (the full module).
+- Delete: `configure/src/pages/Datasets.js`, `configure/src/pages/GeoDatasets.js` (or their full subdirectories).
+- Edit: `configure/src/core/Configure.js` — remove the Datasets and GeoDatasets nav entries and route registrations.
+- Edit: `configure/src/core/calls.js` — remove the Datasets and GeoDatasets call definitions entirely.
+- Edit: `src/pre/calls.js` — remove `datasets_get`, `geodatasets_get`, `geodatasets_intersect`, `geodatasets_aggregations`, `geodatasets_search`.
+- Edit: `src/essence/Basics/Layers_/MetadataCapturer.js` — remove the `calls.api('datasets_get', ...)` call site at line 139 (and any other datasets/geodatasets call sites).
+- Edit: `package.json` — remove `busboy`, `csvtojson` if no other consumers; re-run `npm install`.
+- Edit: `scripts/server.js` — reduce the `bodyParser` 500 MB cap to the framework default. Draw is the remaining write workload; its JSON payloads fit comfortably.
+
+Note: the Draw module is preserved in lean per the ADR. `API/Backend/Draw/routes/files.js` despite its name does not handle file uploads — it manages drawing-file metadata records in Postgres. No Busboy or multipart parsing in that router (confirmed by grep).
 
 **Operations:**
-1. Edit the listed routers to remove upload handlers.
-2. Delete the upload helper utilities (`makeNewDatasetTable.js` and similar).
-3. Edit the Configure SPA pages.
+1. Delete the listed directories.
+2. Strip the dispatcher entries and the MetadataCapturer call site.
+3. Strip the SPA nav entries, pages, and call definitions.
 4. Update `package.json`; run `npm install`.
-5. Re-run `npm test` and remove tests pinned to deleted upload paths.
+5. Run `npm test`; drop any tests pinned to deleted Datasets/Geodatasets paths.
 
 **Verification:**
-- `POST /api/datasets/upload` returns 404.
-- The Datasets page in Configure renders the existing datasets list but the "Add" affordance is gone.
-- `git grep -E "busboy|csvtojson|multipart"` returns no hits outside the preserve folder.
+- `git grep -E '/api/datasets|/api/geodatasets|datasets_get|geodatasets_'` returns no hits outside the preserve folder and `features.md`.
+- `npm start` boots without errors. `/api/datasets/*` and `/api/geodatasets/*` return 404.
+- Configure SPA renders without the Datasets and GeoDatasets nav entries.
 
 **Rollback:** `git revert` the phase. Re-install the removed npm deps.
 
@@ -180,11 +184,11 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 **Files:**
 - Edit: `public/index.html` — change line 341 so `mmgisglobal.SERVER` is set from a Webpack `DefinePlugin` value. In server-mode builds the value is `"node"` (no change); in static-mode builds the value is `"static"`.
 - Edit: `src/pre/calls.js` — replace the dormant `if (window.mmgisglobal.SERVER != 'node') { console.warn(…); error() }` block with a dispatch into a `STATIC_HANDLERS` table. The table is populated from imports — see below.
-- New: `src/pre/staticHandlers.js` — the bake/reroute/compute/drop table. Each entry keyed by call name from `c[]` in `calls.js`. Cases:
-  - **Bake** — read from `STATIC_MISSION_CONFIG` (the Webpack-aliased module that resolves to `src/pre/staticConfig.js`). Calls: `getMission`, `getConfig`, `getMissions`, `getGeneralOptions`.
+- New: `src/pre/staticHandlers.js` — the bake/reroute/compute/drop table. Each entry keyed by call name from `c[]` in `calls.js`. Note: `calls.js` has 35 entries today; every entry needs to be handled. Cases:
+  - **Bake** — read from `STATIC_MISSION_CONFIG` (the Webpack-aliased module that resolves to `src/pre/staticConfig.js`). Calls: `get`, `get_generaloptions`, `missions` (these are the actual entry names in `calls.js`).
   - **Reroute** — point at an external URL baked into the config. Calls (in lean): none by default — the natural `reroute` targets would be sidecars we no longer deploy. If a mission's audience wants client-side calls against their VEDA microservices, those URLs are in the layer config directly, not in the dispatcher.
   - **Compute** — answer in browser using baked data. Candidates: `query_tileset_times` (use baked `tilesetTimes`), possibly elevation profile (if baked DEM is available — usually not).
-  - **Drop** — return an error gracefully. Calls: `login`, `signup`, all write endpoints (`saveConfig`, `addDataset`, `uploadFile`, every Draw write, etc.), `first_signup`.
+  - **Drop** — return an error gracefully. Calls: `login`, `signup`, `logout`, all `draw_*` (7 entries), all `files_*` (10 entries), `shortener_*` (2 entries), `datasets_get`, all `geodatasets_*` (4 entries), `draw_aggregations`, `spatial_published`, `tactical_targets`, `clear_test`, plus the remaining Utils calls not covered above (`getbands`, `getprofile`, `getminmax`, `ll2aerll`, `chronice`, `proj42wkt`) — none of these are reachable in a dashboard.
 - New: `src/essence/Basics/serviceUrls.js` — a helper exporting `getTitilerBaseUrl()`, `getStacBaseUrl()`, `getTipgBaseUrl()`, etc. In server mode it returns same-origin paths (`/titiler`, `/stac`, ...) — except in the burn variant those paths don't exist in production, so the helper's server-mode return value is *only* used in development against a local sidecar. In static mode it returns the absolute URL from `STATIC_MISSION_CONFIG`. *Note for the burn variant:* a layer in a lean mission config points directly at an external service; the helper exists for the four inline-URL files to import a single source of truth, but its production behavior is "return whatever the config says, never construct a path."
 - Edit: `src/essence/Basics/Map_/Map_.js` — replace inline `/titiler/...` interpolations with `serviceUrls` helper calls.
 - Edit: `src/essence/Basics/Layers_/Layers_.js` — same.
@@ -194,6 +198,8 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 - Edit: `src/essence/LandingPage/LandingPage.js` — short-circuit `init` when `MODE === 'static'`. Skip the mission-picker grid, immediately call `essence.init(...)` with the baked config.
 - Edit: `src/essence/essence.js` — when `MODE === 'static'`, don't render the login modal in any flow; treat the user as anonymous read-only.
 - Edit: `src/essence/essence.js` — short-circuit the WebSocket connect call (`essence.ws = new WebSocket(...)` at lines 141–321) to no-op in static mode. This is the layer-update-notification consumer for the main map client. The Configure SPA's WebSocket consumer is admin-only and doesn't ship in dashboards, so no separate edit needed. Draw is not a WebSocket subscriber.
+- Edit: `src/essence/Basics/Viewer_/Viewer_.js` — flip `ajaxWithCredentials` to `false` in static mode for OpenSeadragon image-pyramid loads. Anonymous S3 reads fail with credentials on.
+- Edit: `scripts/publish-static.js` (Phase 7) — copy the mission's `Missions/<mission>/Data/mosaic_parameters.csv` to the dashboard's S3 bucket root. Photosphere and ModelViewer fetch this path directly without URL templating; absent it, both panes fail silently. Skipped if the mission doesn't use Photosphere or ModelViewer.
 
 **Operations:**
 1. Wire `DefinePlugin` in `configuration/webpack.config.js` to inject the build mode into `public/index.html`'s `mmgisglobal.SERVER` assignment.
@@ -205,7 +211,7 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 **Verification:**
 - Server-mode `npm run build` + `npm start` works exactly as today.
 - A unit spec: set `STATIC_MODE=true` and a fixture `staticConfig.js`, run the static build, serve `build-static/` with `npx serve`, observe that the page loads without any `/api/*` network calls.
-- The dispatcher returns the baked mission config when `getMission` is called in static mode.
+- The dispatcher returns the baked mission config when `get`, `get_generaloptions`, or `missions` is called in static mode.
 - The mission picker is not rendered in static mode.
 - A WebSocket connection attempt is not made in static mode (DevTools Network shows no ws upgrade).
 
@@ -220,8 +226,8 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 **Files:**
 - New: `API/Backend/Dashboards/setup.js`
 - New: `API/Backend/Dashboards/models/dashboard.js` — Sequelize model. Columns: `id (PK)`, `name (string, unique per mission)`, `mission (string)`, `created_by (FK users)`, `status (enum: provisioning, published, deleting, deleted, failed)`, `stack_arn (string, unique, nullable until CreateStack returns)`, `stack_name (string, derived from id)`, `cloudfront_url (string, cached for list rendering)`, `settings (JSONB)`, `last_error (text, nullable)`, `created_at`, `updated_at`, `deleted_at`. Stack outputs (`bucket_name`, `cloudfront_id`, `function_arn`) are not duplicated into the row — they come from `DescribeStacks` at read time. The password value is not stored per-dashboard; it lives in Secrets Manager and is baked into the Function source at template-render time.
-- New: `API/Backend/Dashboards/routes/dashboards.js` — endpoints: `POST /api/dashboards/publish`, `DELETE /api/dashboards/:id`, `GET /api/dashboards`, `GET /api/dashboards/:id`. All admin-only via `s.ensureAdmin(true, false, false)`. The `GET` paths call `DescribeStacks` for each row's `stack_arn` (batched into one `DescribeStacks` call for the list endpoint) and merge live status into the response.
-- New: `scripts/publish-static.js` — CLI invoked by the spawned ECS task. Argument: `--dashboard-id`. Sequence: read the dashboard row + mission config from RDS, run `bakeStaticConfig`, spawn Webpack with `STATIC_MODE=true`, render the CloudFormation template via `cfn-template.js`, call `CreateStack`, poll `DescribeStacks` until terminal state, upload `build-static/` contents to the stack's bucket on success, update the row to `published` (or `failed` with the rollback reason surfaced from `DescribeStackEvents`).
+- New: `API/Backend/Dashboards/routes/dashboards.js` — endpoints: `POST /api/dashboards/publish`, `POST /api/dashboards/:id/update`, `DELETE /api/dashboards/:id`, `GET /api/dashboards`, `GET /api/dashboards/:id`. All admin-only via `s.ensureAdmin(true, false, false)`. The Update endpoint re-bakes the bundle from the current mission config and PutObjects new assets to the existing bucket; the CloudFront distribution is not replaced. The `GET` paths call `DescribeStacks` for each row's `stack_arn` (batched into one `DescribeStacks` call for the list endpoint) and merge live status into the response.
+- New: `scripts/publish-static.js` — CLI invoked by the spawned ECS task. Arguments: `--dashboard-id` and `--action=publish|update`. Publish sequence: read the dashboard row + mission config from RDS, run `bakeStaticConfig`, spawn Webpack with `STATIC_MODE=true`, render the CloudFormation template via `cfn-template.js`, call `CreateStack`, poll `DescribeStacks` until terminal state, upload `build-static/` contents to the stack's bucket on success, update the row to `published` (or `failed` with the rollback reason surfaced from `DescribeStackEvents`). Update sequence: same up through Webpack, then skip CFN and PutObject the new bundle into the existing bucket, with optional `/index.html` invalidation; update `updated_at`.
 - New: `scripts/lib/cfn-template.js` — pure function that returns the CloudFormation template JSON for a dashboard. Inputs: `stackName`, `passwordBase64`. Outputs declared on the stack: `BucketName`, `DistributionDomainName`, `DistributionId`, `FunctionArn`. The Function source is rendered into the template as an inline string with the `EXPECTED_BASIC_AUTH` base64 constant pre-baked. Keep the template in JSON (not YAML) so it round-trips through `JSON.stringify` cleanly.
 - New: `scripts/lib/aws-provision.js` — thin wrappers over the AWS SDK so the publish script stays declarative and unit-testable. Functions: `createStack(stackName, templateBody)`, `pollStackUntilTerminal(stackArn, { timeoutMs })`, `describeStack(stackArn)`, `describeStackEvents(stackArn)`, `uploadBundle(bucketName, buildDir)`, `deleteStack(stackArn)`. Modules: `@aws-sdk/client-cloudformation`, `@aws-sdk/client-s3`, `@aws-sdk/client-ecs` (the last used by `routes/dashboards.js` to spawn the publish task). No direct `@aws-sdk/client-cloudfront` use — CloudFormation owns the CloudFront and Function lifecycle.
 - New: `configure/src/pages/Dashboards.js` — the admin UI. List dashboards (status from merged Postgres + `DescribeStacks` response), Publish modal (mission picker + name field), Delete confirmation, status-polling indicator.
@@ -264,8 +270,10 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 - New: `infrastructure/ecs/publish-task.json` — publish-task task definition. Same image as admin (the publish script is in the same repo) but invoked with `node scripts/publish-static.js`. Different IAM role with scoped permissions.
 - New: `infrastructure/iam/admin-role.json` — admin's ECS task role. Permissions: read its Secrets Manager entries, write CloudWatch logs, `ecs:RunTask` scoped to the publish task definition ARN, `cloudformation:DescribeStacks` (for the `GET /api/dashboards/*` live-state merge), `cloudformation:DeleteStack` and `s3:DeleteObject|ListBucket` on `mmgis-dashboard-*` (for the `DELETE` handler's empty-then-delete sequence).
 - New: `infrastructure/iam/publish-role.json` — publish task role. Permissions: `cloudformation:CreateStack|DescribeStacks|DescribeStackEvents|DeleteStack`, plus the resource-creation permissions CloudFormation needs to provision the dashboard stack on the role's behalf: `s3:CreateBucket|PutObject|DeleteBucket|PutBucketPolicy|GetBucketLocation` on `mmgis-dashboard-*`, `cloudfront:CreateDistribution|GetDistribution|UpdateDistribution|DeleteDistribution|CreateFunction|PublishFunction|DescribeFunction|DeleteFunction|GetFunction`. Also `rds-db:connect` for the admin Postgres and `secretsmanager:GetSecretValue` for the dashboards-shared-password secret.
-- New: `infrastructure/cloudfront-admin.json` — CloudFront distribution config in front of the admin ALB.
+- New: `infrastructure/cloudfront-admin.json` — CloudFront distribution config in front of the admin ALB. CF→ALB hop is HTTPS. Attach the AllViewer origin request policy (forwards cookies, headers, query strings — required for login, sessions, and WebSocket headers) and the CachingDisabled cache policy (admin responses must not be cached). Defaults forward nothing; without these, login breaks silently.
+- Edit: `scripts/server.js` — change `app.set('trust proxy', 1)` to `app.set('trust proxy', 2)` to match the CF→ALB→ECS hop count. Without this, Express treats CloudFront's IP as the client and `Secure` cookies, rate-limiting, and `X-Forwarded-For` logging all go wrong.
 - New: `infrastructure/cloudfront-function.js` — reference source for the password-gate Function. Read by `cfn-template.js` at publish time, embedded as a string into the rendered CloudFormation template with the password constant baked in. Checked in to make the auth logic reviewable independently of the template render.
+- Edit: `Dockerfile` — strip the Python micromamba install and the `COPY adjacent-servers/` lines. In burn those directories no longer exist; the image shrinks accordingly. CI build time drops along with image size.
 
 **Operations:**
 1. Author the task definitions. The admin task is a long-running ECS service; the publish task is a one-off `runTask` invocation per publish.
