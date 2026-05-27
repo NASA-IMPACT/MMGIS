@@ -163,12 +163,12 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 **Goal:** Activate the dispatcher's dormant `SERVER != 'node'` branch with a bake/reroute/compute/drop table. Centralize the inline sidecar-URL builders in four files into one helper. Generate the baked mission config at publish time. Disable the WebSocket connect and login form in static mode. The activations are tied to the build mode (`static` vs `server`), independent of the server-side `MMGIS_DEPLOYMENT_MODE`. (#10, #14 in `features.md`.)
 
-**Note:** This phase is structurally identical to the burn variant's Phase 6. The frontend code doesn't need a `full/lean` runtime gate because dashboard builds always run in `static` mode and admin builds always run in `server` mode. The helper's reroute handling table is what holds the runtime difference.
+**Runtime behavior is variant-invariant — see [`api.md`](./api.md) Frontend dispatcher for the per-call disposition table (all 40 entries with one-line reasons and gap cross-references). The work below is the source-level wiring; burn vs keep only differ in code-cleanup style** (burn removes entries from `calls.js`; keep leaves them and the dispatcher drops at runtime). Dashboard builds always run in `static` mode and admin builds always run in `server` mode — no `full/lean` runtime gate is needed in the frontend code itself.
 
 **Files:**
 - Edit: `public/index.html` — change the `mmgisglobal.SERVER = "node"` literal to a placeholder substituted at build time. **Use `InterpolateHtmlPlugin`** (the same mechanism that handles the existing `%NODE_ENV%` substitution in this file), not `DefinePlugin` — DefinePlugin only rewrites JS bundles, not HTML. Server-mode build substitutes `"node"`; static-mode build substitutes `"static"`.
 - Edit: `src/pre/calls.js` — replace the dormant `if (window.mmgisglobal.SERVER != 'node') { console.warn(…); error() }` block with a dispatch into a `STATIC_HANDLERS` table.
-- New: `src/pre/staticHandlers.js` — bake/reroute/compute/drop entries keyed by `c[]` name in `calls.js`. See Operations step 2 for the per-call mapping. Note: `calls.js` has **40 entries** today; every entry needs a disposition. Verify with `grep -E '^    [a-zA-Z0-9_]+: \{$' src/pre/calls.js | wc -l` (a `[a-z_]+` pattern silently misses `ll2aerll` and `proj42wkt` because they have digits).
+- New: `src/pre/staticHandlers.js` — one handler per `c[]` entry in `calls.js`. The disposition for each entry (Bake / Compute / Reroute / Drop) is defined in [`api.md`](./api.md) Frontend dispatcher — mirror that table here. Before locking, re-grep `calls.js` and confirm every entry has a handler; today's count is 40.
 - New: `src/essence/Basics/serviceUrls.js` — helper exporting per-service URL functions. Server-mode return value: same-origin paths (so full MMGIS admin still hits `/titiler`). Static-mode return value: the absolute URL from the baked config.
 - Edit: `src/essence/Basics/Map_/Map_.js`, `src/essence/Basics/Layers_/Layers_.js`, `src/essence/Tools/Identifier/IdentifierTool.js`, `src/essence/Tools/Layers/LayersTool.js` — replace inline interpolations with helper calls.
 - Edit: `API/updateTools.js` — add `bakeStaticConfig` codegen.
@@ -207,13 +207,12 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 - **Coordinates-bar elevation column behavior in static mode.** `getbands` is dropped; the coordinates bar's elevation column shows empty per-mousemove. If the Measure-profile gap is resolved with client-side `geotiff.js` against a baked DEM COG, the coordinates bar uses the same code path. Otherwise hide the elevation column in static mode. **Status: blocked on the Measure-tool decision** — implementer should resolve Measure first, then mirror the disposition here.
   - File: `src/essence/Ancillary/Coordinates.js` (the elevation-readout code; previous spec cited lines 600–647; re-grep for `getbands`).
 
+- **Identifier tool: force `trueValue=false` in static mode for plain-`.tif` layers.** `getbands` is dropped; the recursive numeric-value query at `src/essence/Tools/Identifier/IdentifierTool.js:820` 404s. Skip the recursive call when `mmgisglobal.SERVER !== 'node'`. Legend-matched RGB fallback preserves the cursor readout; COG/STAC layers continue to work via external TiTiler / TiTiler-pgSTAC. The tool stays usable; only plain-`.tif` numeric precision is lost.
+  - File: `src/essence/Tools/Identifier/IdentifierTool.js` (around the `getbands` call site).
+
 **Operations:**
 1. Wire `InterpolateHtmlPlugin` in `configuration/webpack.config.js` to substitute `mmgisglobal.SERVER` in `public/index.html`. Match the existing `%NODE_ENV%` substitution pattern.
-2. Implement `STATIC_HANDLERS`. Per-call handling for the 40 entries in `calls.js`:
-   - **Bake**: `get`, `get_generaloptions`, `missions` (the mission-config calls)
-   - **Compute**: `query_tileset_times` (use baked `tilesetTimes`)
-   - **Reroute** (mission-config-driven, optional): `getbands`, `getprofile`, `proj42wkt` can point at the full admin's same-origin endpoints if a dashboard's audience happens to host one nearby. The table gives the mission the option; it's not a hard route.
-   - **Drop** (everything else): `login`, `signup`, `logout`, all 7 `draw_*` (`draw_add`, `draw_edit`, `draw_remove`, `draw_undo`, `draw_merge`, `draw_split`, `draw_aggregations`), all 10 `files_*` (`files_getfiles`, `files_getfile`, `files_make`, `files_remove`, `files_restore`, `files_change`, `files_modifykeyword`, `files_compile`, `files_publish`, `files_gethistory`), both `shortener_*`, `datasets_get`, all 4 `geodatasets_*` (`geodatasets_get`, `geodatasets_intersect`, `geodatasets_aggregations`, `geodatasets_search`), `spatial_published`, `tactical_targets`, `clear_test`, plus remaining Utils (`getminmax`, `ll2aerll`, `chronice`). Re-grep `calls.js` before locking the table; these counts are a snapshot.
+2. Implement `STATIC_HANDLERS` — one handler per `c[]` entry in `calls.js`, mirroring the disposition table in [`api.md`](./api.md) Frontend dispatcher. Re-grep `calls.js` before locking; today's count is 40.
 3. Implement `serviceUrls.js`.
 4. Implement `bakeStaticConfig`.
 5. Implement the LandingPage short-circuit, the login skip, the WebSocket skip.

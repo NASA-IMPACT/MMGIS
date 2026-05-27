@@ -1,6 +1,11 @@
 # `/api/*` handling map (lean)
 
-Per-mount keep/gate decision for the lean deployment. See [`adr.md`](./adr.md) for context.
+Server-side `/api/*` mount handling and the frontend `calls.js` dispatcher for the lean deployment. See [`adr.md`](./adr.md) for context.
+
+This file covers two related but distinct surfaces:
+
+1. **Server-side mounts** (the admin) — which `/api/*` routes the admin process exposes in lean. Covered in the `Map` and `/api/utils breakdown` sections.
+2. **Frontend dispatcher** (the dashboard) — what each of the 40 entries in `src/pre/calls.js` does at runtime when `mmgisglobal.SERVER === 'static'`. Covered in the `Frontend dispatcher` section.
 
 **Legend:**
 
@@ -48,7 +53,7 @@ Utils is a grab-bag. Per-endpoint:
 | `POST /chronice` | **Gate** | Python time-op script; no caller in lean. |
 | `GET /proj42wkt` | **Keep** (optional) | Pure compute (proj4 → WKT). Harmless either way. |
 
-## Patterns
+## Server-side patterns
 
 Three categories cover every gate decision above:
 
@@ -58,6 +63,69 @@ Three categories cover every gate decision above:
 
 The only structural exception is `/api/utils`, which is heterogeneous enough to need per-endpoint gating.
 
+---
+
+## Frontend dispatcher
+
+The dashboard frontend uses the same `src/pre/calls.js` dispatcher as the admin. With `mmgisglobal.SERVER = 'static'` (vs `'node'`), the dispatcher's static branch activates and routes each named call into one of four handlers:
+
+- **Bake** — answer frozen into the bundle at publish, served from `STATIC_MISSION_CONFIG`.
+- **Reroute** — point at an external URL supplied by the mission config. No default-Reroute entries below; sidecar URL substitution happens in `serviceUrls.js`, not the dispatcher.
+- **Compute** — answer computed client-side, typically from values baked into the mission config at publish or read directly from the COG/data file.
+- **Drop** — return a graceful error or no-op. Used for write paths, auth, anything tied to dropped modules.
+
+The table describes **runtime dashboard behavior** and is variant-invariant. Burn and keep produce the same observable dashboard; source-level differences (burn removes some dispatcher entries; keep gates them) are implementation-plan content (Phase 6), not dispatcher content.
+
+40 entries today; counts in the Patterns subsection. Re-grep `src/pre/calls.js` before locking — the regex `^    [a-zA-Z0-9_]+: \{$` catches all 40 (a `[a-z_]+` pattern silently misses `ll2aerll` and `proj42wkt`).
+
+| Call | URL | Disposition | One-line why |
+|---|---|---|---|
+| `get` | `/api/configure/get` | Bake | Mission config baked into `STATIC_MISSION_CONFIG`. |
+| `get_generaloptions` | `/api/configure/getGeneralOptions` | Bake | General options baked at publish. |
+| `missions` | `/api/configure/missions` | Bake | One mission per dashboard; baked mission list. |
+| `login` | `/api/users/login` | Drop | Dashboards are anonymous read-only; CloudFront Function gates access. |
+| `signup` | `/api/users/signup` | Drop | No user management in dashboards. |
+| `logout` | `/api/users/logout` | Drop | No session to clear. |
+| `getbands` | `/api/utils/getbands` | Drop | Plain-`.tif` pixel queries; Identifier forces `trueValue=false` in static mode, falling back to legend-matched RGB (per Phase 6 of the implementation plans). |
+| `getprofile` | `/api/utils/getprofile` | Drop | Elevation profile; UI fate per feature-gap #4 (Measure). |
+| `getminmax` | `/api/utils/getminmax` | Compute | `cogMin`/`cogMax` baked into mission config or read from COG IFD via `geotiff.js`. |
+| `ll2aerll` | `/api/utils/ll2aerll` | Drop | SPICE sun-geometry compute; gap #5 (Shade). |
+| `chronice` | `/api/utils/chronice` | Drop | SPICE LMST conversion; gap #5 (Shade). |
+| `proj42wkt` | `/api/utils/proj42wkt` | Compute | WKT baked into mission config or converted via `proj4js` at runtime. |
+| `draw_add` | `/api/draw/add` | Drop | Drawing in dashboards per gap #2. |
+| `draw_edit` | `/api/draw/edit` | Drop | Gap #2. |
+| `draw_remove` | `/api/draw/remove` | Drop | Gap #2. |
+| `draw_undo` | `/api/draw/undo` | Drop | Gap #2. |
+| `draw_merge` | `/api/draw/merge` | Drop | Gap #2. |
+| `draw_split` | `/api/draw/split` | Drop | Gap #2. |
+| `draw_aggregations` | `/api/draw/aggregations` | Drop | Gap #2. |
+| `files_getfiles` | `/api/files/getfiles` | Drop | Gap #2. |
+| `files_getfile` | `/api/files/getfile` | Drop | Gap #2. |
+| `files_make` | `/api/files/make` | Drop | Gap #2. |
+| `files_remove` | `/api/files/remove` | Drop | Gap #2. |
+| `files_restore` | `/api/files/restore` | Drop | Gap #2. |
+| `files_change` | `/api/files/change` | Drop | Gap #2. |
+| `files_modifykeyword` | `/api/files/modifykeyword` | Drop | Gap #2. |
+| `files_compile` | `/api/files/compile` | Drop | Gap #2. |
+| `files_publish` | `/api/files/publish` | Drop | Gap #2. |
+| `files_gethistory` | `/api/files/gethistory` | Drop | Gap #2. |
+| `shortener_shorten` | `/api/shortener/shorten` | Drop | Link shortener not deployed. |
+| `shortener_expand` | `/api/shortener/expand` | Drop | Link shortener not deployed. |
+| `clear_test` | `/api/draw/clear_test` | Drop | Test-only; no production caller. |
+| `tactical_targets` | `/api/tactical/targets` | Drop | Private-plugin endpoint; gap #7 (Plugin tools). |
+| `datasets_get` | `/api/datasets/get` | Drop | Datasets module dropped; gap #6 governs popup behavior. |
+| `geodatasets_get` | `/api/geodatasets/get` | Drop | Geodatasets module dropped; gap #6. |
+| `geodatasets_intersect` | `/api/geodatasets/intersect` | Drop | Geodatasets module dropped; gap #6. |
+| `geodatasets_aggregations` | `/api/geodatasets/aggregations` | Drop | Geodatasets module dropped; gap #6. |
+| `geodatasets_search` | `/api/geodatasets/search` | Drop | Geodatasets module dropped; gap #3 (Search) governs UI. |
+| `spatial_published` | `/api/spatial/published` | Drop | Response is `console.log`'d and never consumed (dead path). |
+| `query_tileset_times` | `/api/utils/queryTilesetTimes` | Compute | Baked `times.json` per time-enabled tile layer. |
+
+
+The `Drop` entries cluster around two root causes: (a) write paths and auth flows that have no place in an anonymous read-only dashboard, (b) calls against admin-only modules (Draw, Datasets, Geodatasets, Shortener, plugin-provided endpoints) that don't ship in lean.
+
+The `Compute` entries (`getminmax`, `proj42wkt`, `query_tileset_times`) share a server-side-at-publish vs client-side-at-runtime choice. See the "publish-time bakes" block in Phase 6 of either implementation plan for the trade-offs.
+
 ## Genuine open questions
 
 - **LongTermToken**: keep is the default, but is admin-script automation an actual lean use case? If not, this could move to "Gate." Cost of being wrong is low — the routes are admin-only.
@@ -65,5 +133,6 @@ The only structural exception is `/api/utils`, which is heterogeneous enough to 
 ## Related
 
 - [`adr.md`](./adr.md) — full ADR, the Known constraints section enumerates what's dropped.
+- [`feature-gaps.md`](./feature-gaps.md) — the eight real gaps the dispatcher table cites by number (`gap #N`). Each entry explains what the dropped call meant for the user and the options for handling the loss.
 - [`implementation-plan-keep.md`](./implementation-plan-keep.md) — Phase 3 implements the Datasets/Geodatasets gating; Phase 5 implements Shortener gating; Phase 6 covers the dispatcher table.
 - [`implementation-plan-burn.md`](./implementation-plan-burn.md) — same numbering, equivalent edits via deletion instead of gating.

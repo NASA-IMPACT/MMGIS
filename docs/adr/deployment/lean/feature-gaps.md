@@ -6,6 +6,8 @@ Lean does not host data of any kind. Features whose current implementation depen
 
 Items here are real gaps that need product or architecture decisions. Trivial code re-writes, baked-value additions to the publish task, and items settled by the no-local-data principle live in the implementation plans.
 
+When a feature has an easy code change that meaningfully keeps it working, that is the obvious choice and the gap doesn't appear here. This doc covers only the cases where the trade-offs are real.
+
 ---
 
 ## Settled drops
@@ -58,33 +60,19 @@ Capabilities lean does not provide and is not building a substitute for. Documen
 
 **Why lean breaks it.** Two code paths. Vector layers (in-memory GeoJSON) search entirely client-side and keep working. Vectortile / geodataset-backed layers call `POST /api/geodatasets/search`, which 404s in dashboards. The failure callback is a no-op (`Search.js:338`), so the user sees nothing — no pan, no highlight, no error toast.
 
+Unlike tile data, there is no universal search URL contract — OGC API Features, STAC + CQL filter extension, and Elasticsearch/Typesense each speak different protocols — so "point at an external source" requires picking a protocol and wiring the frontend to it, not just changing a URL string.
+
 **Options:**
 
 - **A. Hide search when no vector-layer source exists.** Show the box only when at least one searchable layer is in-memory vector. Vectortile/geodataset searches go away.
 - **B. Bake a per-layer search index at publish.** Emit `{key, value, coordinates, featureId}` JSON alongside the tiles; rewire `searchGeodatasets()` to look up locally. Adds bundle size proportional to feature count.
 - **C. Convert searchable layers to in-memory vector at publish.** Only viable when feature count is small enough to ship as a GeoJSON FeatureCollection.
 - **D. Cross-origin call to a shared admin endpoint.** Restores function; introduces CORS/auth coupling; admin outage equals dashboard search outage.
+- **E. Pluggable external search.** Add a search-adapter abstraction so layer configs declare an external service and a protocol (OGC API Features + CQL2, STAC + filter extension, custom). Mission owner hosts the service. Costs: net-new frontend architecture; per-protocol adapter maintenance; layer-config schema extension.
 
 ---
 
-### 4. Pixel value queries (Identifier tool)
-
-**What it does.** As the cursor moves over the map, the Identifier tool shows the per-layer value under the cursor — either legend-matched RGB (pure client) or true numeric value queried from source data.
-
-**Why lean breaks it.** Numeric queries hit three endpoints lean drops: `/api/utils/getbands` for plain `.tif` layers, `/titiler/cog/point/...` for COG layers, and `/titilerpgstac/collections/.../point/...` for STAC-collection layers. Legend-color matching for plain raster tiles still works since it's pure client.
-
-The COG and STAC cases are settled by the principle: mission owner hosts external TiTiler / TiTiler-pgSTAC and the layer URL points there. The real gap is the plain-`.tif` case (`getbands` over GDAL), which has no clean external substitute.
-
-**Options:**
-
-- **A. Legend-only mode.** Force `trueValue=false` and skip the recursive numeric query. Works for layers with a `_legend`; degrades to nearest-color matching.
-- **B. Bake a value grid.** Pre-sample each raster at publish into a coarse-resolution JSON or PNG-encoded value grid bundled with the dashboard; interpolate client-side. Storage scales with raster size and resolution.
-- **C. Require COG conversion at publish.** Force plain `.tif` layers to be converted to COG and routed through an external TiTiler. Removes the gap by removing the case.
-- **D. Hide the tool.**
-
----
-
-### 5. Elevation profile (Measure tool)
+### 4. Elevation profile (Measure tool)
 
 **What it does.** Drawing a line in Measure renders a profile chart of elevation samples between the endpoints, fetched from `/api/utils/getprofile` (Python over GDAL).
 
@@ -99,7 +87,7 @@ The COG and STAC cases are settled by the principle: mission owner hosts externa
 
 ---
 
-### 6. Sun-angle compute (Shade tool)
+### 5. Sun-angle compute (Shade tool)
 
 **What it does.** Given a source point and a time, the Shade tool computes solar azimuth/elevation/range at the surface for sunlight modeling. The compute path reads DEM elevation at the source via `/api/utils/getbands`, then calls `/api/utils/ll2aerll` (SPICE-backed) to derive sun geometry. For Mars missions with an observer-specific time field, `/api/utils/chronice` converts UTC ↔ LMST (Local Mean Solar Time) for display.
 
@@ -109,12 +97,12 @@ The COG and STAC cases are settled by the principle: mission owner hosts externa
 
 - **A. Hide the compute path.** Keep static-shade rendering only; remove the time/target inputs.
 - **B. Pre-compute for a fixed set of times.** Bake azimuth/elevation/range at publish for chosen times; the time picker becomes a discrete selector.
-- **C. Client-side compute with baked elevation.** Read elevation via `geotiff.js` against a baked DEM COG, then port the SPICE-equivalent solar math into the bundle (large net-new code; SPICE is not trivially JS-portable, so this path is open-ended).
+- **C. Client-side compute with baked elevation.** Read elevation via `geotiff.js` against a baked DEM COG, then port the SPICE-equivalent solar math into the bundle. No SPICE-equivalent JS library exists today; this option assumes the team writes or sponsors one. Substantial unbudgeted effort — listed for completeness, not as a near-term path.
 - **D. Hide the tool.**
 
 ---
 
-### 7. Server-served vector and tabular data (Datasets / Geodatasets / tipg)
+### 6. Server-served vector and tabular data (Datasets / Geodatasets / tipg)
 
 **What it does.**
 
@@ -124,16 +112,21 @@ The COG and STAC cases are settled by the principle: mission owner hosts externa
 
 **Why lean breaks it.** All three depend on the admin's Postgres + sidecar stack, and the implementation plans drop the Datasets and Geodatasets modules entirely in lean. In a dashboard, every `geodatasets:`-prefixed layer fails to load (vector or vectortile), dataset-link popups silently lose joined fields, filters and aggregations 404, and any `/tipg/...` mission URL 404s.
 
-**Options:**
+**The core decision is A vs B: where does the data live for a dashboard?** Both are principle-compatible — the `Missions/` settled-drops bullet already permits S3-baked content alongside externally hosted content. The choice is driven by data size, mission owner capacity, and bundle-budget. C and D are accommodations for the cases where neither A nor B applies cleanly.
 
-- **A. Bake to static files in the dashboard's S3 bucket at publish.** Datasets → JSON keyed by link column. Geodatasets → static `.geojson` (small/medium) or pre-tiled MVT/`pmtiles` (large). tipg → same pre-tiled MVT story. Publish task rewrites mission URLs to the baked locations. Server-side filtering and aggregation move client-side (works for small/medium tables) or are dropped.
-- **B. Mission owner hosts externally.** Layer URLs point at a public OGC Features service, a hosted vector-tile server, or a CDN-hosted JSON. No bake step; mission owner's responsibility.
-- **C. Pre-join into feature properties at publish.** For Datasets specifically, merge joined rows into each feature's properties before the GeoJSON is baked. No runtime lookup needed; larger GeoJSON.
-- **D. Hide the dependent layers / features.** Cheapest. User-visible loss of any geodataset-backed map content.
+**Core options:**
+
+- **A. Bake to static files in the dashboard's S3 bucket at publish.** Datasets → JSON keyed by link column. Geodatasets → static `.geojson` (small/medium) or pre-tiled MVT/`pmtiles` (large). tipg → same pre-tiled MVT story. Publish task rewrites mission URLs to the baked locations. Server-side filtering and aggregation move client-side (works for small/medium tables) or are dropped. Best when data fits comfortably in the dashboard bundle.
+- **B. Mission owner hosts externally.** Layer URLs point at a public OGC Features service, a hosted vector-tile server, or a CDN-hosted JSON. No bake step; mission owner's responsibility. Best when data is large, frequently updated, or already hosted somewhere.
+
+**Accommodations:**
+
+- **C. Pre-join into feature properties at publish.** For Datasets specifically, merge joined rows into each feature's properties before the GeoJSON is baked. No runtime lookup needed; larger GeoJSON. Use when A applies and the runtime join is the only thing keeping it from working.
+- **D. Hide the dependent layers / features.** Cheapest. User-visible loss of any geodataset-backed map content. Use when neither A nor B is viable for a given mission.
 
 ---
 
-### 8. Plugin tools in dashboards
+### 7. Plugin tools in dashboards
 
 **What it does (today).** `API/updateTools.js` codegen scans `src/essence/Tools/*` and any `*Plugin-Tools*` / `*Private-Tools*` sibling directories at build time, writes `src/pre/tools.js` with `import` statements per tool, and Webpack bundles them. The same path runs for both admin and dashboard builds. Plugin backends (`*Plugin-Backend*`) mount Express routes at admin boot.
 
@@ -148,7 +141,7 @@ The COG and STAC cases are settled by the principle: mission owner hosts externa
 
 ---
 
-### 9. Layer-config validation against deployment capability
+### 8. Layer-config validation against deployment capability
 
 **What it does (today).** `API/Backend/Config/validate.js` runs on save (and via `POST /api/configure/validate`). It checks structure: required fields, presence of URLs, numeric ranges, duplicate UUIDs, recognized layer types. It does **not** check URL reachability, scheme (`/Missions/...` vs absolute), whether sidecar paths are mounted in the deploy target, or whether referenced tool/kind UUIDs exist.
 
@@ -160,7 +153,3 @@ The COG and STAC cases are settled by the principle: mission owner hosts externa
 - **B. Save-time backend reject.** Extend `validate.js` with an opt-in reachability probe. Catches errors at save; the admin server's outbound reach may differ from the dashboard runtime.
 - **C. Publish-time gate.** New step in the publish task: dry-fetch every URL from the publish runner. Tests from the target perspective (most accurate); slowest; needs new tooling.
 - **D. Runtime layer-hide.** If a layer's first fetch 404s, drop it with a console warning. Graceful degradation; does not prevent broken dashboards from shipping.
-
----
-
-More to be added.

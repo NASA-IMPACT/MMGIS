@@ -111,7 +111,7 @@ Dashboards never call the admin server, never call a sidecar, never connect to P
 
 ### Frontend refactor surface
 
-The dashboard frontend is the same Essence bundle as the admin, built with `mmgisglobal.SERVER='static'` (vs `'node'`). The flip activates a dormant branch in `src/pre/calls.js` — the dispatcher for ~35 named JSON API calls — replacing its current no-op with a per-call handling table. Four handling strategies:
+The dashboard frontend is the same Essence bundle as the admin, built with `mmgisglobal.SERVER='static'` (vs `'node'`). The flip activates a dormant branch in `src/pre/calls.js` — the dispatcher for every named JSON API call — replacing its current no-op with a per-call handling table. Four handling strategies:
 
 - **Bake** — answer known at build time, frozen into the bundle. Used for mission configuration.
 - **Reroute** — point at an external URL supplied by the mission config (sidecar substitutes).

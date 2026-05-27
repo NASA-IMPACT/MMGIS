@@ -183,14 +183,12 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 **Goal:** Activate the dispatcher's dormant `SERVER != 'node'` branch with a bake/reroute/compute/drop table. Centralize the inline sidecar-URL builders in four files into one helper. Generate the baked mission config at publish time. Disable the WebSocket connect and login form in static mode. (#10, #14 in `features.md`.)
 
+**Runtime behavior is variant-invariant — see [`api.md`](./api.md) Frontend dispatcher for the per-call disposition table (all 40 entries with one-line reasons and gap cross-references). The work below is the source-level wiring; burn vs keep only differ in code-cleanup style** (burn removes Drop-disposition entries from `calls.js` and their handlers from `staticHandlers.js`; keep leaves them in place and the dispatcher drops at runtime).
+
 **Files:**
 - Edit: `public/index.html` — change the `mmgisglobal.SERVER = "node"` literal to a placeholder substituted at build time. **Use `InterpolateHtmlPlugin`** (the same mechanism that handles the existing `%NODE_ENV%` substitution in this file), not `DefinePlugin` — DefinePlugin only rewrites JS bundles, not HTML, and won't work here. In server-mode builds the substituted value is `"node"` (no change); in static-mode builds it's `"static"`.
-- Edit: `src/pre/calls.js` — replace the dormant `if (window.mmgisglobal.SERVER != 'node') { console.warn(…); error() }` block with a dispatch into a `STATIC_HANDLERS` table. The table is populated from imports — see below.
-- New: `src/pre/staticHandlers.js` — the bake/reroute/compute/drop table. Each entry keyed by call name from `c[]` in `calls.js`. Note: `calls.js` has **40 entries** today (verify with `grep -E '^    [a-zA-Z0-9_]+: \{$' src/pre/calls.js | wc -l` — a `[a-z_]+` pattern silently misses `ll2aerll` and `proj42wkt` because they have digits). Every entry needs a disposition. Cases:
-  - **Bake** — read from `STATIC_MISSION_CONFIG` (the Webpack-aliased module that resolves to `src/pre/staticConfig.js`). Calls: `get`, `get_generaloptions`, `missions`.
-  - **Reroute** — point at an external URL baked into the config. None by default — the natural reroute targets would be sidecars we no longer deploy. If a mission's audience wants client-side calls against their VEDA microservices, those URLs are in the layer config directly, not in the dispatcher.
-  - **Compute** — answer in browser using baked data. Candidate: `query_tileset_times` (use baked `tilesetTimes`).
-  - **Drop** — return an error gracefully. Everything else: `login`, `signup`, `logout`, all 7 `draw_*` (`draw_add`, `draw_edit`, `draw_remove`, `draw_undo`, `draw_merge`, `draw_split`, `draw_aggregations`), all 10 `files_*` (`files_getfiles`, `files_getfile`, `files_make`, `files_remove`, `files_restore`, `files_change`, `files_modifykeyword`, `files_compile`, `files_publish`, `files_gethistory`), both `shortener_*`, `datasets_get`, all 4 `geodatasets_*` (`geodatasets_get`, `geodatasets_intersect`, `geodatasets_aggregations`, `geodatasets_search`), `spatial_published`, `tactical_targets`, `clear_test`, plus the Utils calls not covered above (`getbands`, `getprofile`, `getminmax`, `ll2aerll`, `chronice`, `proj42wkt`). Re-grep before locking the table; these counts are a snapshot.
+- Edit: `src/pre/calls.js` — replace the dormant `if (window.mmgisglobal.SERVER != 'node') { console.warn(…); error() }` block with a dispatch into a `STATIC_HANDLERS` table. In the burn variant, also remove every `c[]` entry that gets a Drop disposition per the api.md table.
+- New: `src/pre/staticHandlers.js` — one handler per remaining `c[]` entry in `calls.js`, mirroring the disposition table in [`api.md`](./api.md) Frontend dispatcher. Re-grep `calls.js` before locking; today's count is 40 in keep, fewer in burn (Drop entries are excised).
 - New: `src/essence/Basics/serviceUrls.js` — a helper exporting `getTitilerBaseUrl()`, `getStacBaseUrl()`, `getTipgBaseUrl()`, etc. In server mode it returns same-origin paths (`/titiler`, `/stac`, ...) — except in the burn variant those paths don't exist in production, so the helper's server-mode return value is *only* used in development against a local sidecar. In static mode it returns the absolute URL from `STATIC_MISSION_CONFIG`. *Note for the burn variant:* a layer in a lean mission config points directly at an external service; the helper exists for the four inline-URL files to import a single source of truth, but its production behavior is "return whatever the config says, never construct a path."
 - Edit: `src/essence/Basics/Map_/Map_.js` — replace inline `/titiler/...` interpolations with `serviceUrls` helper calls.
 - Edit: `src/essence/Basics/Layers_/Layers_.js` — same.
@@ -231,6 +229,9 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 - **Coordinates-bar elevation column behavior in static mode.** `getbands` is dropped; the coordinates bar's elevation column shows empty per-mousemove. If the Measure-profile gap is resolved with client-side `geotiff.js` against a baked DEM COG, the coordinates bar uses the same code path. Otherwise hide the elevation column in static mode. **Status: blocked on the Measure-tool decision** — implementer should resolve Measure first, then mirror the disposition here.
   - File: `src/essence/Ancillary/Coordinates.js` (the elevation-readout code; previous spec cited lines 600–647; re-grep for `getbands`).
+
+- **Identifier tool: force `trueValue=false` in static mode for plain-`.tif` layers.** `getbands` is dropped; the recursive numeric-value query at `src/essence/Tools/Identifier/IdentifierTool.js:820` 404s. Skip the recursive call when `mmgisglobal.SERVER !== 'node'`. Legend-matched RGB fallback preserves the cursor readout; COG/STAC layers continue to work via external TiTiler / TiTiler-pgSTAC. The tool stays usable; only plain-`.tif` numeric precision is lost.
+  - File: `src/essence/Tools/Identifier/IdentifierTool.js` (around the `getbands` call site).
 
 **Operations:**
 1. Wire `InterpolateHtmlPlugin` in `configuration/webpack.config.js` to substitute the build mode into `public/index.html`'s `mmgisglobal.SERVER` assignment. Match the existing `%NODE_ENV%` substitution pattern. (`DefinePlugin` doesn't work for HTML — it only rewrites JS bundles.)
@@ -378,6 +379,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 3. Audit `sample.env` and `.env.example` files; remove every env that no longer has a consumer.
 4. Update README.md and `AGENTS.md` to reflect the post-burn deployment posture. Remove the "Docker Compose" section's references to optional sidecar profiles.
 5. Update `docs/` Jekyll site references. Same edits.
+6. **Known dead-code candidate: `spatial_published`.** Only call site is `src/essence/Ancillary/QueryURL.js:145` (in the `rmcxyzoom` URL-param branch). Success callback is `console.log(d)`; error callback is `console.warn(d)`. Response is never consumed — no state mutation, no map move, no `L_.FUTURES` update. Backend handler is plugin-provided (no `API/Backend/Spatial/` in repo). Safe to remove the entire `rmcxyzoom` block in `QueryURL.js` and the `spatial_published` entry from `src/pre/calls.js`; no production behavior depends on it.
 
 **Verification:**
 - `git grep -E '...'` returns zero unintended hits.
