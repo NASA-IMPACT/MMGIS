@@ -85,7 +85,7 @@ Each published dashboard is provisioned as a **CloudFormation stack**, created b
 
 ### Publish flow
 
-Publish and Delete actions live on a new Dashboards page in `/configure`.
+Publish, Update, and Delete actions live on a new Dashboards page in `/configure`.
 
 1. Admin clicks **Publish** in new Dashboards page; `/api/publish` receives `{ mission, dashboard_name }`.
 2. Admin server inserts a `provisioning` row in the new `dashboards` table, spawns an ECS RunTask, returns `{ dashboard_id, status }`.
@@ -95,6 +95,8 @@ Publish and Delete actions live on a new Dashboards page in `/configure`.
 6. Task uploads the bundle to the stack's bucket via `PutObject`.
 7. Task updates the row to `published` with `stack_arn` and `cloudfront_url`. Exits.
 8. SPA polling sees `published`, surfaces the URL.
+
+**Update:** `POST /api/dashboards/:id/update` re-bakes the bundle from the current mission config and PutObjects the new assets to the existing bucket. The CloudFront distribution is not replaced — same `dashboard_id`, same stack, same URL. The row's `updated_at` reflects the latest republish. The same ECS RunTask shape as Publish, minus the CFN `CreateStack` + polling.
 
 **Delete:** `DELETE /api/dashboards/:id` marks the row `deleting` and calls `DeleteStack`. CFN handles the 15–30 min teardown. The row flips to `deleted` on the next read where `DescribeStacks` 404s.
 
