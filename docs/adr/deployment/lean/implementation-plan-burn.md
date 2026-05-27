@@ -1,3 +1,5 @@
+This is an LLM artifact. It was used during the creation of the ADR to document and track 'settled' topics of future work to provide grounding for planning and understanding feature flux concretely. It should be used as a starting place for both understanding the proposed task and for doing the actual work, but it may not always be correct on the details and should be treated as a draft.
+
 # Implementation plan — burn variant
 
 **Status:** Draft
@@ -55,7 +57,7 @@ Conventions:
 - Edit: `scripts/server.js` — remove the `require('../adjacent-servers/adjacent-servers.js')` spawn-on-boot block.
 - Edit: `configuration/env.js` — remove `WITH_TITILER`, `WITH_STAC`, `WITH_TIPG`, `WITH_TITILER_PGSTAC`, `WITH_VELOSERVER`, every `TITILER_*`, `STAC_*`, `TIPG_*`, `VELOSERVER_*` env, and the `ADJACENT_SERVER_CUSTOM_<N>` registry.
 - Edit: `API/Backend/Config/setup.js` — the Pug `index.pug` rendering passes `WITH_STAC` / `WITH_TIPG` / `WITH_TITILER` flags into the Configure shell template; remove those passes.
-- Edit: `configure/src/pages/STAC.js` (or its parent route registration) — the STAC tab in Configure exists for the embedded STAC sidecar. Remove the page, the route, and any nav entry.
+- Delete: `configure/src/pages/STAC/` (the whole directory — `STAC.js` plus its sibling `Modals/`). Also remove the page's registration in `configure/src/components/Main/Main.js` and nav entry in `configure/src/components/Panel/Panel.js`. The STAC tab in Configure exists for the embedded STAC sidecar.
 - Delete: `docker-compose.yml` — remove the `stac`, `titiler`, `tipg`, `titiler-pgstac`, `veloserver` services and their `profiles: ["stac"]` / `profiles: ["veloserver"]` entries. The MMGIS app + Postgres services stay.
 - Delete: `docker-compose.dev.yml` — same edits as `docker-compose.yml`.
 - Delete: `docker-compose.db.yml` mentions of the STAC database initialization. (The `mmgis-stac` database is not created in this angle.)
@@ -86,13 +88,13 @@ Conventions:
 
 **Goal:** In lean, the Datasets and Geodatasets modules cease to exist — no routes, no models, no admin UI tabs, no frontend dispatcher entries. Both modules operate exclusively on local Postgres tables that the upload paths populated; with uploads gone, the read paths return nothing useful. Cleaner to delete the surface entirely than to leave dead reads mounted. (#32 in `features.md`.)
 
-This mirrors Phase 5's deletion of Shortener and Webhooks. Decision driver: every endpoint in both routers operates exclusively on local Postgres — confirmed by inspection (no `fetch`, `axios`, or proxy forwards anywhere in either router). Empty tables = silently-broken features in the frontend.
+This mirrors Phase 5's deletion of the link shortener. Decision driver: every endpoint in both routers operates exclusively on local Postgres — confirmed by inspection (no `fetch`, `axios`, or proxy forwards anywhere in either router). Empty tables = silently-broken features in the frontend.
 
 **Files:**
 - Delete: `API/Backend/Datasets/` (the full module — routes, model, setup).
 - Delete: `API/Backend/Geodatasets/` (the full module).
-- Delete: `configure/src/pages/Datasets.js`, `configure/src/pages/GeoDatasets.js` (or their full subdirectories).
-- Edit: `configure/src/core/Configure.js` — remove the Datasets and GeoDatasets nav entries and route registrations.
+- Delete: `configure/src/pages/Datasets/` and `configure/src/pages/GeoDatasets/` (the full subdirectories — Configure SPA convention is `pages/<Name>/<Name>.js` plus any sibling `Modals/`, not a bare `<Name>.js`).
+- Edit: `configure/src/components/Panel/Panel.js` (nav buttons) and `configure/src/components/Main/Main.js` (page-switch dispatch) — remove the Datasets and GeoDatasets entries. Note: `configure/src/core/Configure.js` is a layout component, not the route table.
 - Edit: `configure/src/core/calls.js` — remove the Datasets and GeoDatasets call definitions entirely.
 - Edit: `src/pre/calls.js` — remove `datasets_get`, `geodatasets_get`, `geodatasets_intersect`, `geodatasets_aggregations`, `geodatasets_search`.
 - Edit: `src/essence/Basics/Layers_/MetadataCapturer.js` — remove the `calls.api('datasets_get', ...)` call site at line 139 (and any other datasets/geodatasets call sites).
@@ -101,12 +103,20 @@ This mirrors Phase 5's deletion of Shortener and Webhooks. Decision driver: ever
 
 Note: the Draw module is preserved in lean per the ADR. `API/Backend/Draw/routes/files.js` despite its name does not handle file uploads — it manages drawing-file metadata records in Postgres. No Busboy or multipart parsing in that router (confirmed by grep).
 
+**Other Configure SPA surfaces to handle in burn** (mostly covered by other-phase deletions; called out so the implementer doesn't miss them):
+
+- **COG fields in the layer modal.** `configure/src/metaconfigs/layer-tile-config.json`, `layer-data-config.json`, `layer-image-config.json` declare COG-related fields. The "Populate from cog/info" button in `configure/src/core/Maker.js` (grep `Populate from cog`) calls `/api/utils/getbands`, which doesn't exist after Phase 2's sidecar burn cleans `getbands` out of the dispatcher. Remove the button from Maker; the fields themselves stay since externally hosted COGs work.
+- **Velocity layer type.** `configure/src/components/Main/Modals/LayerModal/LayerModal.js` `allowed` list and `configure/src/metaconfigs/layer-velocity-config.json`. With veloserver excluded, runtime velocity layers fail unless the URL is external. Optional: remove velocity from the `allowed` list, or leave it for advanced operators who supply external URLs. Pick at implementation time.
+- **APIs page cards.** `configure/src/pages/APIs/APIs.js` renders cards for STAC, TiTiler, TiTiler-PgSTAC, Tipg. With Phase 2's `WITH_*` env-allowlist deletion, these cards render as `cardInactive` permanently in burn. Either delete the entire page (cleaner, since the underlying services are deleted) or leave it as-is (cards render inactive harmlessly).
+- **STAC / Datasets / GeoDatasets row-action icons.** The STAC, Datasets, and GeoDatasets pages are all deleted in burn (Datasets/GeoDatasets in this phase; STAC in Phase 2), so the row-action icons go with them. Nothing extra to do.
+
 **Operations:**
 1. Delete the listed directories.
 2. Strip the dispatcher entries and the MetadataCapturer call site.
 3. Strip the SPA nav entries, pages, and call definitions.
-4. Update `package.json`; run `npm install`.
-5. Run `npm test`; drop any tests pinned to deleted Datasets/Geodatasets paths.
+4. Remove the COG-populate button from `Maker.js`; decide velocity-type fate; decide APIs-page fate.
+5. Update `package.json`; run `npm install`.
+6. Run `npm test`; drop any tests pinned to deleted Datasets/Geodatasets paths.
 
 **Verification:**
 - `git grep -E '/api/datasets|/api/geodatasets|datasets_get|geodatasets_'` returns no hits outside the preserve folder and `features.md`.
@@ -146,32 +156,24 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 ---
 
-## Phase 5 — Trim other unused server features
+## Phase 5 — Burn the link shortener
 
-**Goal:** Remove the link shortener and the webhooks module if neither has consumers in the lean angle. These are not high-cost surfaces but they are surface, and the burn variant's value proposition is "the codebase reflects the deployment."
+**Goal:** Remove the link shortener — no consumers in the lean angle, and the burn variant's value proposition is "the codebase reflects the deployment."
 
-Re-evaluate before deleting; this phase may shrink based on whether VEDA wants to keep webhook integrations.
+**Webhooks is kept** in lean (decision reversed from the original draft). Reasons: Draw and Config already fire webhooks; the new Dashboards publish/update/delete flow is the most operationally relevant outbound-event source for lean. Phase 7 wires the Dashboards routes to `triggerWebhooks`. No webhook code is deleted, no `triggerwebhooks` call sites are touched.
 
 **Files (link shortener, #34):**
 - Delete: `API/Backend/Shortener/`
 - Edit: `API/setups.js` — confirm autoload uses directory scan; no edit needed.
 - Edit: `sample.env` — remove `DISABLE_LINK_SHORTENER`.
 
-**Files (webhooks, #33):**
-- Delete: `API/Backend/Webhooks/`
-- Edit: `API/Backend/Draw/routes/draw.js` — remove the `Webhooks/processes/triggerwebhooks` call from the Draw write paths.
-- Edit: `configure/src/pages/WebHooks.js` and its route registration — remove from Configure SPA.
-
 **Operations:**
-1. Confirm with stakeholders that neither has consumers. If webhooks is wanted, skip its deletion and treat this phase as link-shortener-only.
-2. Delete the directories.
-3. Remove call sites.
-4. Run `npm test` and drop any tests for the removed modules.
+1. Delete the link-shortener directory.
+2. Run `npm test` and drop any tests for the removed module.
 
 **Verification:**
-- Routes `/short/*` (or wherever the shortener mounted) return 404.
-- Routes `/api/webhooks` return 404.
-- Draw writes succeed and do not log webhook errors.
+- Routes `/api/shortener/*` return 404 (actual mount path; the plan previously said `/short/*`).
+- Webhooks routes (`/api/webhooks`) continue to work; Draw and Config webhook firing is unchanged.
 
 **Rollback:** `git revert` the phase.
 
@@ -182,13 +184,13 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 **Goal:** Activate the dispatcher's dormant `SERVER != 'node'` branch with a bake/reroute/compute/drop table. Centralize the inline sidecar-URL builders in four files into one helper. Generate the baked mission config at publish time. Disable the WebSocket connect and login form in static mode. (#10, #14 in `features.md`.)
 
 **Files:**
-- Edit: `public/index.html` — change line 341 so `mmgisglobal.SERVER` is set from a Webpack `DefinePlugin` value. In server-mode builds the value is `"node"` (no change); in static-mode builds the value is `"static"`.
+- Edit: `public/index.html` — change the `mmgisglobal.SERVER = "node"` literal to a placeholder substituted at build time. **Use `InterpolateHtmlPlugin`** (the same mechanism that handles the existing `%NODE_ENV%` substitution in this file), not `DefinePlugin` — DefinePlugin only rewrites JS bundles, not HTML, and won't work here. In server-mode builds the substituted value is `"node"` (no change); in static-mode builds it's `"static"`.
 - Edit: `src/pre/calls.js` — replace the dormant `if (window.mmgisglobal.SERVER != 'node') { console.warn(…); error() }` block with a dispatch into a `STATIC_HANDLERS` table. The table is populated from imports — see below.
-- New: `src/pre/staticHandlers.js` — the bake/reroute/compute/drop table. Each entry keyed by call name from `c[]` in `calls.js`. Note: `calls.js` has 35 entries today; every entry needs to be handled. Cases:
-  - **Bake** — read from `STATIC_MISSION_CONFIG` (the Webpack-aliased module that resolves to `src/pre/staticConfig.js`). Calls: `get`, `get_generaloptions`, `missions` (these are the actual entry names in `calls.js`).
-  - **Reroute** — point at an external URL baked into the config. Calls (in lean): none by default — the natural `reroute` targets would be sidecars we no longer deploy. If a mission's audience wants client-side calls against their VEDA microservices, those URLs are in the layer config directly, not in the dispatcher.
-  - **Compute** — answer in browser using baked data. Candidates: `query_tileset_times` (use baked `tilesetTimes`), possibly elevation profile (if baked DEM is available — usually not).
-  - **Drop** — return an error gracefully. Calls: `login`, `signup`, `logout`, all `draw_*` (7 entries), all `files_*` (10 entries), `shortener_*` (2 entries), `datasets_get`, all `geodatasets_*` (4 entries), `draw_aggregations`, `spatial_published`, `tactical_targets`, `clear_test`, plus the remaining Utils calls not covered above (`getbands`, `getprofile`, `getminmax`, `ll2aerll`, `chronice`, `proj42wkt`) — none of these are reachable in a dashboard.
+- New: `src/pre/staticHandlers.js` — the bake/reroute/compute/drop table. Each entry keyed by call name from `c[]` in `calls.js`. Note: `calls.js` has **40 entries** today (verify with `grep -E '^    [a-zA-Z0-9_]+: \{$' src/pre/calls.js | wc -l` — a `[a-z_]+` pattern silently misses `ll2aerll` and `proj42wkt` because they have digits). Every entry needs a disposition. Cases:
+  - **Bake** — read from `STATIC_MISSION_CONFIG` (the Webpack-aliased module that resolves to `src/pre/staticConfig.js`). Calls: `get`, `get_generaloptions`, `missions`.
+  - **Reroute** — point at an external URL baked into the config. None by default — the natural reroute targets would be sidecars we no longer deploy. If a mission's audience wants client-side calls against their VEDA microservices, those URLs are in the layer config directly, not in the dispatcher.
+  - **Compute** — answer in browser using baked data. Candidate: `query_tileset_times` (use baked `tilesetTimes`).
+  - **Drop** — return an error gracefully. Everything else: `login`, `signup`, `logout`, all 7 `draw_*` (`draw_add`, `draw_edit`, `draw_remove`, `draw_undo`, `draw_merge`, `draw_split`, `draw_aggregations`), all 10 `files_*` (`files_getfiles`, `files_getfile`, `files_make`, `files_remove`, `files_restore`, `files_change`, `files_modifykeyword`, `files_compile`, `files_publish`, `files_gethistory`), both `shortener_*`, `datasets_get`, all 4 `geodatasets_*` (`geodatasets_get`, `geodatasets_intersect`, `geodatasets_aggregations`, `geodatasets_search`), `spatial_published`, `tactical_targets`, `clear_test`, plus the Utils calls not covered above (`getbands`, `getprofile`, `getminmax`, `ll2aerll`, `chronice`, `proj42wkt`). Re-grep before locking the table; these counts are a snapshot.
 - New: `src/essence/Basics/serviceUrls.js` — a helper exporting `getTitilerBaseUrl()`, `getStacBaseUrl()`, `getTipgBaseUrl()`, etc. In server mode it returns same-origin paths (`/titiler`, `/stac`, ...) — except in the burn variant those paths don't exist in production, so the helper's server-mode return value is *only* used in development against a local sidecar. In static mode it returns the absolute URL from `STATIC_MISSION_CONFIG`. *Note for the burn variant:* a layer in a lean mission config points directly at an external service; the helper exists for the four inline-URL files to import a single source of truth, but its production behavior is "return whatever the config says, never construct a path."
 - Edit: `src/essence/Basics/Map_/Map_.js` — replace inline `/titiler/...` interpolations with `serviceUrls` helper calls.
 - Edit: `src/essence/Basics/Layers_/Layers_.js` — same.
@@ -197,12 +199,41 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 - Edit: `API/updateTools.js` — add a `bakeStaticConfig({ configData, missionsList, generalOptions, mission })` codegen function that writes `src/pre/staticConfig.js` with the mission config frozen as `export default {...}`.
 - Edit: `src/essence/LandingPage/LandingPage.js` — short-circuit `init` when `MODE === 'static'`. Skip the mission-picker grid, immediately call `essence.init(...)` with the baked config.
 - Edit: `src/essence/essence.js` — when `MODE === 'static'`, don't render the login modal in any flow; treat the user as anonymous read-only.
-- Edit: `src/essence/essence.js` — short-circuit the WebSocket connect call (`essence.ws = new WebSocket(...)` at lines 141–321) to no-op in static mode. This is the layer-update-notification consumer for the main map client. The Configure SPA's WebSocket consumer is admin-only and doesn't ship in dashboards, so no separate edit needed. Draw is not a WebSocket subscriber.
+- Edit: `src/essence/essence.js` — short-circuit the WebSocket setup in static mode. The cleanest gate is the existing `ENABLE_MMGIS_WEBSOCKETS` check (grep for it) or the top of `connectWebSocket` — adding a `MODE === 'static'` short-circuit there beats wrapping the inner handler bodies. This is the layer-update-notification consumer for the main map client. The Configure SPA's WebSocket consumer is admin-only and doesn't ship in dashboards, so no separate edit needed. Draw is not a WebSocket subscriber.
 - Edit: `src/essence/Basics/Viewer_/Viewer_.js` — flip `ajaxWithCredentials` to `false` in static mode for OpenSeadragon image-pyramid loads. Anonymous S3 reads fail with credentials on.
 - Edit: `scripts/publish-static.js` (Phase 7) — copy the mission's `Missions/<mission>/Data/mosaic_parameters.csv` to the dashboard's S3 bucket root. Photosphere and ModelViewer fetch this path directly without URL templating; absent it, both panes fail silently. Skipped if the mission doesn't use Photosphere or ModelViewer.
 
+**Additional publish-time bakes** (substitute values for dispatcher calls that drop in dashboards):
+
+- **Bake `cogMin` / `cogMax` per single-band COG layer.** `getminmax` is dropped; single-band COG layers render NaN colormap range without baked values. Two implementation paths:
+  - *Server-side at publish:* run `gdalinfo` once per `type === 'image'` layer with a `.tif`-style URL; write `cogMin` / `cogMax` into the layer's baked config. Requires GDAL in the publish-task image — **conflicts with Phase 8's Dockerfile strip of micromamba/`adjacent-servers/`**. If this path is chosen, Phase 8 must retain GDAL in the publish-task image.
+  - *Client-side at runtime:* if every COG in scope is generated with `-co STATISTICS=YES`, `geotiff.js` can read per-band stats from the IFD without GDAL. Requires authoring discipline on COG generation; preserves the image trim.
+  - Call site to silence: `getminmax` call in `src/essence/Basics/Map_/Map_.js` (grep `getminmax`).
+
+- **Bake the projection WKT per mission CRS.** `proj42wkt` is dropped; shapefile export in Layers and Draw tools fails to emit `.prj`. Two implementation paths:
+  - *Server-side at publish:* run `proj42wkt.py` once on the mission's proj4 string and bake the WKT into the mission config. Same GDAL/Python dependency concern as cogMin/cogMax.
+  - *Client-side at runtime:* `proj4js` (already a dependency) supports proj4 → WKT conversion; do the conversion in the export handler in static mode.
+  - Call sites: shapefile export in `src/essence/Tools/Layers/LayersTool.js` and `src/essence/Tools/Draw/DrawTool_Files.js` (grep for `proj42wkt`).
+
+- **Bake `times.json` per time-enabled tile layer.** `query_tileset_times` is dropped; the TimeUI sparkline histogram bars don't render without the count data. At publish, emit a static `times.json` per time-enabled layer listing per-bin tile counts. In static mode, `TimeUI._makeHistogram` reads from that path instead of calling the endpoint.
+  - **Open question for this item:** where does the count data come from at publish time? Today's endpoint reads `Missions/<mission>/Layers/<layer>/<time>/` directory listings. In lean the tile pyramid is external. Three options: (a) list the external bucket/prefix at publish time (requires bucket-read perms; works only for S3-hosted pyramids); (b) read a manifest the mission owner provides (push the work upstream); (c) derive from explicit time settings in the mission config. None of these is settled — flag for the implementer or whoever owns mission authoring conventions.
+  - Call site to silence: `src/essence/Basics/TimeControl_/TimeUI.js` `_makeHistogram` (grep for `query_tileset_times`).
+
+**Posture for the three items above:** all three have a "GDAL/Python at publish" vs "compute client-side" choice. The plan does not pre-pick; the implementer should make a single decision for all three to keep the image story coherent. **For the burn variant specifically:** if any of the three picks the server-side path, Phase 8's `Dockerfile` strip of micromamba/`adjacent-servers/` has to back off enough to retain GDAL/Python in the publish-task image; this defeats much of the image-size win burn was after. Client-side is the better-aligned default for burn.
+
+**Additional frontend behavior in static mode:**
+
+- **Fix `transformStacUrl` to honor the layer's actual URL.** The Animation tool's offscreen renderer calls `transformStacUrl(...)` which today builds same-origin `/titilerpgstac/...` paths from `window.location`. Dashboards have no such route. Make `transformStacUrl` read the STAC endpoint from the layer config instead. **Side benefit:** also unbreaks the Animation tool for any deployment where STAC happens to not be same-origin.
+  - Files: `src/essence/Basics/Layers_/Layers_.js` (the `transformStacUrl` function — previous spec cited line 282; re-grep); `src/essence/Tools/Animation/OffscreenMapManager.js` (the callers — previous spec cited lines 499 and 526; re-grep).
+
+- **Mission-deeplink override in static mode.** A dashboard URL with `?mission=other-mission` would attempt to fetch `Missions/other-mission/config.json`, 404, and show "mission not found." `?forcelanding=true` produces an empty mission picker. In static mode (`mmgisglobal.SERVER !== 'node'`) with `MAIN_MISSION` set, ignore both params and force-load the baked mission. Strip the params with `history.replaceState` so they don't propagate to share links.
+  - File: `src/essence/LandingPage/LandingPage.js` (the mission-resolution path; previous spec cited lines 11–47 and 324–378; re-grep for `mission` and `forcelanding`).
+
+- **Coordinates-bar elevation column behavior in static mode.** `getbands` is dropped; the coordinates bar's elevation column shows empty per-mousemove. If the Measure-profile gap is resolved with client-side `geotiff.js` against a baked DEM COG, the coordinates bar uses the same code path. Otherwise hide the elevation column in static mode. **Status: blocked on the Measure-tool decision** — implementer should resolve Measure first, then mirror the disposition here.
+  - File: `src/essence/Ancillary/Coordinates.js` (the elevation-readout code; previous spec cited lines 600–647; re-grep for `getbands`).
+
 **Operations:**
-1. Wire `DefinePlugin` in `configuration/webpack.config.js` to inject the build mode into `public/index.html`'s `mmgisglobal.SERVER` assignment.
+1. Wire `InterpolateHtmlPlugin` in `configuration/webpack.config.js` to substitute the build mode into `public/index.html`'s `mmgisglobal.SERVER` assignment. Match the existing `%NODE_ENV%` substitution pattern. (`DefinePlugin` doesn't work for HTML — it only rewrites JS bundles.)
 2. Implement `STATIC_HANDLERS`.
 3. Implement `serviceUrls.js` and rewrite the four inline-URL files to use it. Grep verifies (`git grep -E "/titiler/|/stac/|/tipg/"` returns no matches in `src/`).
 4. Implement `bakeStaticConfig`.
@@ -226,13 +257,13 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 **Files:**
 - New: `API/Backend/Dashboards/setup.js`
 - New: `API/Backend/Dashboards/models/dashboard.js` — Sequelize model. Columns: `id (PK)`, `name (string, unique per mission)`, `mission (string)`, `created_by (FK users)`, `status (enum: provisioning, published, deleting, deleted, failed)`, `stack_arn (string, unique, nullable until CreateStack returns)`, `stack_name (string, derived from id)`, `cloudfront_url (string, cached for list rendering)`, `settings (JSONB)`, `last_error (text, nullable)`, `created_at`, `updated_at`, `deleted_at`. Stack outputs (`bucket_name`, `cloudfront_id`, `function_arn`) are not duplicated into the row — they come from `DescribeStacks` at read time. The password value is not stored per-dashboard; it lives in Secrets Manager and is baked into the Function source at template-render time.
-- New: `API/Backend/Dashboards/routes/dashboards.js` — endpoints: `POST /api/dashboards/publish`, `POST /api/dashboards/:id/update`, `DELETE /api/dashboards/:id`, `GET /api/dashboards`, `GET /api/dashboards/:id`. All admin-only via `s.ensureAdmin(true, false, false)`. The Update endpoint re-bakes the bundle from the current mission config and PutObjects new assets to the existing bucket; the CloudFront distribution is not replaced. The `GET` paths call `DescribeStacks` for each row's `stack_arn` (batched into one `DescribeStacks` call for the list endpoint) and merge live status into the response.
+- New: `API/Backend/Dashboards/routes/dashboards.js` — endpoints: `POST /api/dashboards/publish`, `POST /api/dashboards/:id/update`, `DELETE /api/dashboards/:id`, `GET /api/dashboards`, `GET /api/dashboards/:id`. Admin-only via `s.ensureAdmin()` (no-args, matches the precedent in every other JSON router). If long-term-token callers should be blocked too, use `s.ensureAdmin(false, true)` instead (matches the `LongTermToken/setup.js` precedent). **Do not use `s.ensureAdmin(true, false, false)` as previously drafted** — the signature is `(toLoginPage, denyLongTermTokens, allowGets, allowPosts, disallow)`, so those args mean "render login HTML, *allow* long-term tokens, *disallow* GETs," which is the opposite of what's intended for a JSON API. The Update endpoint re-bakes the bundle from the current mission config and PutObjects new assets to the existing bucket; the CloudFront distribution is not replaced. The `GET` paths call `DescribeStacks` for each row's `stack_arn` (batched into one `DescribeStacks` call for the list endpoint) and merge live status into the response. **Fire `triggerWebhooks(...)` from the Publish, Update, and Delete handlers** after the terminal row update — this is the most operationally relevant outbound-event source in lean. Use the same call shape as the existing call sites in `API/Backend/Config/setup.js` and `API/Backend/Draw/routes/draw.js` (`require('../../Webhooks/processes/triggerwebhooks')` then call with an event-type and payload).
 - New: `scripts/publish-static.js` — CLI invoked by the spawned ECS task. Arguments: `--dashboard-id` and `--action=publish|update`. Publish sequence: read the dashboard row + mission config from RDS, run `bakeStaticConfig`, spawn Webpack with `STATIC_MODE=true`, render the CloudFormation template via `cfn-template.js`, call `CreateStack`, poll `DescribeStacks` until terminal state, upload `build-static/` contents to the stack's bucket on success, update the row to `published` (or `failed` with the rollback reason surfaced from `DescribeStackEvents`). Update sequence: same up through Webpack, then skip CFN and PutObject the new bundle into the existing bucket, with optional `/index.html` invalidation; update `updated_at`.
 - New: `scripts/lib/cfn-template.js` — pure function that returns the CloudFormation template JSON for a dashboard. Inputs: `stackName`, `passwordBase64`. Outputs declared on the stack: `BucketName`, `DistributionDomainName`, `DistributionId`, `FunctionArn`. The Function source is rendered into the template as an inline string with the `EXPECTED_BASIC_AUTH` base64 constant pre-baked. Keep the template in JSON (not YAML) so it round-trips through `JSON.stringify` cleanly.
 - New: `scripts/lib/aws-provision.js` — thin wrappers over the AWS SDK so the publish script stays declarative and unit-testable. Functions: `createStack(stackName, templateBody)`, `pollStackUntilTerminal(stackArn, { timeoutMs })`, `describeStack(stackArn)`, `describeStackEvents(stackArn)`, `uploadBundle(bucketName, buildDir)`, `deleteStack(stackArn)`. Modules: `@aws-sdk/client-cloudformation`, `@aws-sdk/client-s3`, `@aws-sdk/client-ecs` (the last used by `routes/dashboards.js` to spawn the publish task). No direct `@aws-sdk/client-cloudfront` use — CloudFormation owns the CloudFront and Function lifecycle.
-- New: `configure/src/pages/Dashboards.js` — the admin UI. List dashboards (status from merged Postgres + `DescribeStacks` response), Publish modal (mission picker + name field), Delete confirmation, status-polling indicator.
+- New: `configure/src/pages/Dashboards/Dashboards.js` (Configure SPA convention is `pages/<Name>/<Name>.js` per directory) — the admin UI. List dashboards (status from merged Postgres + `DescribeStacks` response), Publish modal (mission picker + name field), Delete confirmation, status-polling indicator.
 - Edit: `configure/src/core/calls.js` — add `getDashboards`, `publishDashboard`, `deleteDashboard`, `getDashboard`.
-- Edit: `configure/src/core/Configure.js` — register the Dashboards page in the route table.
+- Edit: `configure/src/components/Main/Main.js` (page-switch dispatch) and `configure/src/components/Panel/Panel.js` (nav buttons) — register the Dashboards page and its nav entry. Note: `configure/src/core/Configure.js` is a layout component, not the route table.
 
 **CloudFormation details to handle in `cfn-template.js` / `aws-provision.js`:**
 
@@ -262,18 +293,35 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 
 ## Phase 8 — ECS task definitions, IAM, GitHub Actions deploy
 
-**Goal:** Land the AWS infrastructure that runs the admin and the publish-task. Define IAM scopes. Move CI/CD from `docker-compose` to GitHub Actions.
+**Goal:** Land the AWS infrastructure that runs the admin and the publish-task. Define IAM scopes. Add a GitHub Actions workflow for the lean deployment. (Note: CI/CD already runs on GHA today — `docker-build.yml`, `bump-version.yml`, `playwright-tests.yml`, `security-scan.yml`. This phase adds a new deploy workflow alongside them; nothing "moves.")
+
+**Conventions for this phase:**
+
+- **`MMGIS_DEPLOYMENT_MODE` injection: runtime ECS env var only.** Set it in the task definition's `environment[]`, not as a Dockerfile build-time arg. The current `Dockerfile` is single-stage; do not introduce multi-stage. Burn doesn't actually need the env var at all (burn = no mode flag), so the admin-task entry below omits it.
+- **ECS requires two separate roles per task.** Define them separately:
+  - **Task execution role** — used by ECS itself to pull the image, write log streams, and inject env vars from Secrets Manager. Permissions: `ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`, `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `logs:CreateLogStream`, `logs:PutLogEvents`, `secretsmanager:GetSecretValue` (on the DB-credentials and session-secret secrets, for ECS `secrets[]` injection).
+  - **Task role** — used by code running inside the container for SDK calls. Permissions vary per task (admin vs publish); listed per role below.
+- **Resource ARNs.** The bullets below describe permission *intent*. At implementation time, write explicit ARN templates: `arn:aws:ecs:<region>:<account>:task-definition/<family>:*`, `arn:aws:cloudformation:<region>:<account>:stack/mmgis-dashboard-*/*`, `arn:aws:s3:::mmgis-dashboard-*` (and the `/*` variant for object actions).
+- **Outbound HTTPS egress.** The admin ECS task fires `triggerWebhooks(...)` to user-configured external URLs (Draw events, Config saves, and the new Dashboards Publish/Update/Delete events per Phase 7). If the ECS task runs in a private subnet (the standard pattern when CloudFront fronts the ALB), it needs **either a NAT gateway in the VPC, or VPC endpoints for whatever destinations webhooks will fire at**. Without this, webhook calls hang and time out silently — a common "wait, why aren't my webhooks firing" production bug.
 
 **Files:**
-- New: `.github/workflows/deploy.yml` — GitHub Actions workflow. Triggers on push to a release branch. Steps: build the MMGIS image, push to ECR, update ECS service. Optionally builds the publish-task image as a separate ECR repo if the publish-task uses a different base.
-- New: `infrastructure/ecs/admin-task.json` — admin task definition. Container, environment variables (database URL from Secrets Manager, session secret from Secrets Manager, admin URL, `MMGIS_DEPLOYMENT_MODE=lean` or omit since burn = no mode flag), log driver to CloudWatch.
-- New: `infrastructure/ecs/publish-task.json` — publish-task task definition. Same image as admin (the publish script is in the same repo) but invoked with `node scripts/publish-static.js`. Different IAM role with scoped permissions.
-- New: `infrastructure/iam/admin-role.json` — admin's ECS task role. Permissions: read its Secrets Manager entries, write CloudWatch logs, `ecs:RunTask` scoped to the publish task definition ARN, `cloudformation:DescribeStacks` (for the `GET /api/dashboards/*` live-state merge), `cloudformation:DeleteStack` and `s3:DeleteObject|ListBucket` on `mmgis-dashboard-*` (for the `DELETE` handler's empty-then-delete sequence).
-- New: `infrastructure/iam/publish-role.json` — publish task role. Permissions: `cloudformation:CreateStack|DescribeStacks|DescribeStackEvents|DeleteStack`, plus the resource-creation permissions CloudFormation needs to provision the dashboard stack on the role's behalf: `s3:CreateBucket|PutObject|DeleteBucket|PutBucketPolicy|GetBucketLocation` on `mmgis-dashboard-*`, `cloudfront:CreateDistribution|GetDistribution|UpdateDistribution|DeleteDistribution|CreateFunction|PublishFunction|DescribeFunction|DeleteFunction|GetFunction`. Also `rds-db:connect` for the admin Postgres and `secretsmanager:GetSecretValue` for the dashboards-shared-password secret.
+
+- New: `.github/workflows/deploy-lean.yml` — GitHub Actions workflow. Triggers on push to a release branch (or tag — pick the convention; the existing workflows trigger on `master`/`development`/PR/tag/release). Steps: build the MMGIS image, push to ECR, update ECS service. Reuses the action versions/patterns from `docker-build.yml` for consistency.
+- New: `infrastructure/ecs/admin-task.json` — admin task definition. Environment variables (database URL from Secrets Manager, session secret from Secrets Manager, admin URL), log driver to CloudWatch. References the admin task execution role and admin task role separately.
+- New: `infrastructure/ecs/publish-task.json` — publish-task task definition. Same image as admin (the publish script is in the same repo) but invoked with `node scripts/publish-static.js`. References its own task execution role and a separate (broader) task role.
+- New: `infrastructure/iam/admin-task-execution-role.json` — execution-role permissions per "Conventions" above.
+- New: `infrastructure/iam/admin-task-role.json` — admin's runtime SDK permissions:
+  - `ecs:RunTask` on the publish task definition ARN (so the admin can spawn publish tasks).
+  - `iam:PassRole` on both the publish task execution role and the publish task role (required for `RunTask` to attach those roles to the spawned task; missing this is a common gotcha).
+  - `cloudformation:DescribeStacks` on `mmgis-dashboard-*` (for the `GET /api/dashboards/*` live-state merge).
+  - `cloudformation:DeleteStack` on `mmgis-dashboard-*` and `s3:DeleteObject`, `s3:ListBucket` on `mmgis-dashboard-*` (for the `DELETE` handler's empty-then-delete sequence).
+  - `secretsmanager:GetSecretValue` on the dashboards-shared-password secret (if the admin reads it at runtime; if it only flows through ECS `secrets[]` injection, this belongs on the execution role only).
+- New: `infrastructure/iam/publish-task-execution-role.json` — execution-role permissions per "Conventions."
+- New: `infrastructure/iam/publish-task-role.json` — publish task's runtime SDK permissions: `cloudformation:CreateStack|DescribeStacks|DescribeStackEvents|DeleteStack` on `mmgis-dashboard-*`, plus the resource-creation permissions CloudFormation acts on behalf of: `s3:CreateBucket|PutObject|DeleteBucket|PutBucketPolicy|GetBucketLocation` on `mmgis-dashboard-*`, `cloudfront:CreateDistribution|GetDistribution|UpdateDistribution|DeleteDistribution|CreateFunction|PublishFunction|DescribeFunction|DeleteFunction|GetFunction`. Also `secretsmanager:GetSecretValue` on the dashboards-shared-password secret (read at runtime to bake into the CFN template). **Note:** the previous draft included `rds-db:connect` here — drop it. That permission only applies under RDS IAM authentication, which the current code (in `scripts/server.js`) doesn't use; it relies on `DB_USER`/`DB_PASS` env vars (password auth via Secrets Manager). If the admin ever switches to RDS IAM auth, add `rds-db:connect` then.
 - New: `infrastructure/cloudfront-admin.json` — CloudFront distribution config in front of the admin ALB. CF→ALB hop is HTTPS. Attach the AllViewer origin request policy (forwards cookies, headers, query strings — required for login, sessions, and WebSocket headers) and the CachingDisabled cache policy (admin responses must not be cached). Defaults forward nothing; without these, login breaks silently.
 - Edit: `scripts/server.js` — change `app.set('trust proxy', 1)` to `app.set('trust proxy', 2)` to match the CF→ALB→ECS hop count. Without this, Express treats CloudFront's IP as the client and `Secure` cookies, rate-limiting, and `X-Forwarded-For` logging all go wrong.
 - New: `infrastructure/cloudfront-function.js` — reference source for the password-gate Function. Read by `cfn-template.js` at publish time, embedded as a string into the rendered CloudFormation template with the password constant baked in. Checked in to make the auth logic reviewable independently of the template render.
-- Edit: `Dockerfile` — strip the Python micromamba install and the `COPY adjacent-servers/` lines. In burn those directories no longer exist; the image shrinks accordingly. CI build time drops along with image size.
+- Edit: `Dockerfile` — strip the Python micromamba install and the `COPY adjacent-servers/` lines. In burn those directories no longer exist (per Phase 2); the image shrinks accordingly and CI build time drops. Keep the `Dockerfile` single-stage. (Unrelated to `MMGIS_DEPLOYMENT_MODE`, which doesn't apply in burn.)
 
 **Operations:**
 1. Author the task definitions. The admin task is a long-running ECS service; the publish task is a one-off `runTask` invocation per publish.
@@ -294,9 +342,10 @@ Re-evaluate before deleting; this phase may shrink based on whether VEDA wants t
 **Goal:** Address the two open concerns from the ADR that survive the move to CloudFormation — admin boot when Postgres is unreachable, and the first-superadmin / `first_signup` security gap — plus the latent WebSocket idle-timeout footgun in the existing code. The teardown-reliability concern is dropped because CloudFormation owns the resource-lifecycle dance; the live-reads pattern from Phase 7 surfaces stuck stacks in the UI without a separate reconcile job.
 
 **Files:**
-- Edit: `scripts/init-db.js` — wrap the connection-establishment loop in a bounded retry (e.g., 10 attempts × 5s = 50s), and exit non-zero with a clear log on exhaustion. The ECS task definition's restart policy then takes over; ECS will mark the task unhealthy and the service will retry, giving RDS room to recover.
-- Edit: `scripts/init-db.js` — when `process.env.SEED_SUPERADMIN_USERNAME` and `SEED_SUPERADMIN_PASSWORD` are present (injected from Secrets Manager), create the user with permission `"111"` if no users exist. Idempotent — does nothing if a user with that username already exists.
+- Edit: `scripts/init-db.js` — **introduce** a bounded retry loop on the initial Sequelize connect (e.g., 10 attempts × 5s = 50s), then exit non-zero with a clear log on exhaustion. Current code is single-shot (`new Sequelize(...)` + serial `.authenticate()`/`.query()`); there is no existing loop to "wrap." The ECS task definition's restart policy then takes over; ECS will mark the task unhealthy and the service will retry, giving RDS room to recover.
+- Edit: `scripts/init-db.js` — when `process.env.SEED_SUPERADMIN_USERNAME` and `SEED_SUPERADMIN_PASSWORD` are present (injected from Secrets Manager), create the user with permission `"111"` if no users exist. Idempotent — does nothing if a user with that username already exists. Note: `init-db.js` does not import the `User` model today; the existing `User.count()` / first-user logic lives in `API/Backend/Users/routes/users.js`. The seed implementation needs to either import the model into `init-db.js` (new dependency) or run raw SQL against the `users` table.
 - Edit: `API/Backend/Users/routes/users.js` — delete the `POST /api/users/first_signup` route entirely. The seed mechanism above replaces it.
+- Edit: `public/adminlogin.js` — remove the `/api/users/first_signup` call. This is a public bootstrap page (separate from the Configure SPA) that historically hit `first_signup` to create the very first admin; with the seed mechanism it's no longer needed. `grep -n first_signup public/adminlogin.js` to confirm before editing.
 - Edit: `API/websocket.js` — add a server-side ping/pong heartbeat on `wss`. On each tick (default 30s, configurable via `WEBSOCKET_PING_INTERVAL_MS`), iterate `wss.clients`: if a client did not pong since the previous tick, `ws.terminate()`; otherwise mark it unresponsive and call `ws.ping()`. Register a `pong` handler on each connection that clears the unresponsive mark. Clear the interval on `wss.close`. The existing code has no heartbeat, leaving the WS vulnerable to any 60s-idle intermediary (ALB default, NAT, corporate proxy, mobile carrier).
 - Optional: rename the misleading `webSocketPingInterval` field in `src/essence/essence.js` (line 137) and `configure/src/core/Websocket.js` (line 12) to `webSocketReconnectInterval`. Both are reconnect timers despite the name — the rename is documentation, no functional change. No client-side ping code is needed; the browser `WebSocket` API answers server pings automatically.
 
