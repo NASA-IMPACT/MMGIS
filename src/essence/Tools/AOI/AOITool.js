@@ -7,8 +7,7 @@
  *
  *   Emits  (auto-prefixed plugin:aoi:):
  *     - areaDrawn          { feature, source: 'search'|'draw'|'upload'|'inspect', layerName }
- *     - analysisAOIReady   { feature }
- *     - analysisReady      { analysisData: { [layerName]: <stats response | null> } }
+ *     - analysisAOIReady   { feature }   — consumed by the FetchStats plugin
  *     - drawingCleared     {}
  *     - drawingCancelled   {}
  *
@@ -20,14 +19,14 @@
  *     - map:drawstart / drawvertex /
  *       drawcomplete / drawcancel         (engine bus)
  *     - map:featureClick                  (inspect-mode boundary clicks, filtered by layerId)
- *     - plugin:aoi:analysisAOIReady       (self — triggers the statistics POST)
+ *     - plugin:fetch-stats:analysisProgress  { done, total }
+ *     - plugin:fetch-stats:analysisReady     { analysisData }
  *
  *   Requests:
  *     - map:createLayer / map:removeLayer
  *     - map:fitBounds
  *     - map:enableDrawing / map:finishDrawing / map:disableDrawing
  *     - map:addOverlay / map:removeOverlay
- *     - layers:getVisible / layers:getConfig
  *
  * This file is the only file in the plugin that imports MMGIS internals.
  * AOIComponent.tsx and AOITooltip.tsx must stay MMGIS-agnostic.
@@ -101,19 +100,6 @@ function bboxArea(feature) {
     return (b[2] - b[0]) * (b[3] - b[1])
 }
 
-/**
- * Build the statistics POST URL for a layer's `variables.analysis` block.
- * `assets` and `bidx` repeat; `nodata` is set when present.
- */
-function buildStatsUrl(analysis) {
-    const params = new URLSearchParams()
-    for (const asset of analysis.assets || []) params.append('assets', asset)
-    for (const b of analysis.bidx || []) params.append('bidx', String(b))
-    if (analysis.nodata != null) params.set('nodata', String(analysis.nodata))
-    const qs = params.toString()
-    return `${analysis.itemUrl}/statistics${qs ? `?${qs}` : ''}`
-}
-
 const AOITool = {
     // height:0 + width:0 makes ToolController_ collapse the docked side rail to 0px.
     height: 0,
@@ -165,10 +151,22 @@ const AOITool = {
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
             subscribe('map:featureClick',  (info) => this._onMapFeatureClick(info))
-            subscribe(`plugin:${PLUGIN_ID}:analysisAOIReady`, (e) => {
-                this._runAnalysisForVisibleLayers(e?.feature).catch((err) =>
-                    console.warn('[AOI] analysis run failed', err)
-                )
+            subscribe('plugin:fetch-stats:analysisProgress', ({ done, total }) => {
+                console.log(`[AOI] plugin:fetch-stats:analysisProgress — ${done}/${total}`)
+                if (done === 0) {
+                    this._setState({
+                        analysisStatus: 'running',
+                        analysisLabel: this._state.currentAOI?.label || 'Area of interest',
+                        analysisDone: 0,
+                        analysisTotal: total,
+                    })
+                } else {
+                    this._setState({ analysisDone: done })
+                }
+            })
+            subscribe('plugin:fetch-stats:analysisReady', ({ analysisData }) => {
+                console.log('[AOI] plugin:fetch-stats:analysisReady — dismissing overlay', analysisData)
+                this._setState({ analysisStatus: 'idle' })
             })
         }
 
@@ -539,88 +537,6 @@ const AOITool = {
     _onCancel() {
         this._api?.emit('drawingCancelled', {})
         this._clearSelection()
-    },
-
-    /**
-     * For every visible layer with `variables.analysis.is_analysis_supported`,
-     * POST the AOI feature to `<itemUrl>/statistics` in parallel, then emit
-     * a single `analysisReady` event keyed by layer name. Layers that errored
-     * or returned no data are present in the map with `null` so consumers can
-     * render per-layer empty states.
-     */
-    async _runAnalysisForVisibleLayers(feature) {
-        if (!feature?.geometry || !window.mmgisAPI?.request) return
-
-        const layers = await this._getAnalyzableVisibleLayers()
-        if (!layers.length) {
-            console.warn('[AOI] no analysis-supported layers are visible')
-            return
-        }
-
-        this._setState({
-            analysisStatus: 'running',
-            analysisLabel: this._state.currentAOI?.label || 'Area of interest',
-            analysisDone: 0,
-            analysisTotal: layers.length,
-        })
-
-        const body = JSON.stringify({
-            type: 'Feature',
-            geometry: feature.geometry,
-            properties: {},
-        })
-
-        let done = 0
-        const entries = await Promise.all(
-            layers.map(async (layer) => {
-                const result = await this._postStatsForLayer(layer, body)
-                done += 1
-                this._setState({ analysisDone: done })
-                return [layer.name, result]
-            })
-        )
-        const analysisData = Object.fromEntries(entries)
-        this._api?.emit('analysisReady', { analysisData })
-
-        this._setState({ analysisStatus: 'idle' })
-    },
-
-    async _getAnalyzableVisibleLayers() {
-        const bus = window.mmgisAPI
-        const on = (await bus.request('layers:getVisible')) || {}
-        const visibleUuids = Object.entries(on).filter(([, v]) => v).map(([k]) => k)
-        const layers = await Promise.all(
-            visibleUuids.map((uuid) => bus.request('layers:getConfig', uuid))
-        )
-        return layers.filter((l) => l?.variables?.analysis?.is_analysis_supported)
-    },
-
-    async _postStatsForLayer(layer, body) {
-        const analysis = layer.variables.analysis
-        if (!analysis?.itemUrl) {
-            console.warn(`[AOI] ${layer.name}: missing analysis.itemUrl`)
-            return null
-        }
-        try {
-            const resp = await fetch(buildStatsUrl(analysis), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body,
-                credentials: 'include',
-            })
-            if (!resp.ok) {
-                // Most common cause here is "AOI doesn't intersect this layer's
-                // coverage" — the stats API returns 5xx for that. We can't
-                // distinguish that from a real outage without parsing the body,
-                // so for now treat any non-2xx as "no data for this layer".
-                console.info(`[AOI] ${layer.name}: no data for this AOI (${resp.status})`)
-                return null
-            }
-            return await resp.json()
-        } catch (err) {
-            console.warn(`[AOI] ${layer.name}: stats fetch failed`, err)
-            return null
-        }
     },
 
     // ── Misc ───────────────────────────────────────────────────────────────────
