@@ -1,13 +1,13 @@
 /**
  * Chart plugin — MMGIS wrapper.
  *
- * Receiver-only. Subscribes (at module scope) to `plugin:aoi:analysisReady`
+ * Receiver-only. Subscribes (at module scope) to `plugin:fetch-stats:analysisReady`
  * and renders the per-layer stats payload via ChartComponent.
  *
  *   pluginId: 'chart'
  *
  *   Listens to:
- *     - plugin:aoi:analysisReady   { analysisData: { [layerName]: <stats|null> } }
+ *     - plugin:fetch-stats:analysisReady   { analysisData: { [layerName]: <stats|null> } }
  *
  * This file is the only one in the plugin that touches mmgisAPI.
  * ChartComponent.tsx and chartHelpers.ts stay MMGIS-agnostic.
@@ -21,7 +21,7 @@ import ChartComponent from './ChartComponent'
 const PLUGIN_ID = 'chart'
 
 // ── Module-level state ────────────────────────────────────────────────────────
-// MMGIS tools are mutually exclusive, so when AOI emits `analysisReady`,
+// MMGIS tools are mutually exclusive, so when FetchStats emits `analysisReady`,
 // Chart's `make()` hasn't run yet. The bus listener has to live at module
 // scope to catch the emit; we stash the latest payload here and replay it
 // to the instance once it mounts.
@@ -44,7 +44,7 @@ function _onAnalysisReady(payload) {
 function _subscribeBus() {
     const api = typeof window !== 'undefined' ? window.mmgisAPI : null
     if (!api?.on) return false
-    api.on('plugin:aoi:analysisReady', _onAnalysisReady)
+    api.on('plugin:fetch-stats:analysisReady', _onAnalysisReady)
     return true
 }
 
