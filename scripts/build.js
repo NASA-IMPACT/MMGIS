@@ -232,4 +232,16 @@ function copyPublicFolder() {
     dereference: true,
     filter: (file) => file !== paths.appHtml,
   });
+
+  // Copy dist/ (built theme assets) to build/dist/
+  const distPath = path.join(__dirname, "..", "dist");
+  const buildDistPath = path.join(paths.appBuild, "dist");
+  if (fs.existsSync(distPath)) {
+    fs.copySync(distPath, buildDistPath, {
+      dereference: true,
+    });
+    console.log(chalk.cyan("Copied dist/ assets to build/dist/\n"));
+  } else {
+    console.log(chalk.yellow("Warning: dist/ directory not found. Run 'npm run build:themes' to generate theme assets.\n"));
+  }
 }

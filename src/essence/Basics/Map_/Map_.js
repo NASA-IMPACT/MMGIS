@@ -1,6 +1,7 @@
 import $ from 'jquery'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
+import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { captureVector } from '../Layers_/LayerCapturer'
 import {
     constructVectorLayer,
@@ -14,6 +15,7 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
+import { applyCogFieldsToUrl } from '../Layers_/cogUrlUtils'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -586,6 +588,7 @@ let Map_ = {
      */
     rmNotNull: function (layer) {
         if (layer != null) {
+            CursorInfo.hide(true)
             this.engine.removeLayer(this.nativeLayer(layer))
             layer = null
         }
@@ -988,6 +991,28 @@ async function makeLayer(
                 case 'video':
                     makeVideoLayer(layerObj, mapContext)
                     break
+                case 'GeoJsonLayer':
+                case 'ScatterplotLayer':
+                    await makeVectorLayer(
+                        layerObj,
+                        evenIfOff,
+                        null,
+                        forceGeoJSON,
+                        isRefresh,
+                        mapContext
+                    )
+                    break
+                case 'TileLayer':
+                case 'BitmapLayer':
+                    makeTileLayer(layerObj, mapContext)
+                    break
+                case 'MVTLayer':
+                    makeVectorTileLayer(layerObj, mapContext)
+                    break
+                case 'PointCloudLayer':
+                case 'Tile3DLayer':
+                    makeTileLayer(layerObj, mapContext)
+                    break
                 default:
                     console.warn('Unknown layer type: ' + layerObj.type)
             }
@@ -1137,7 +1162,15 @@ function featureDefaultClick(feature, layer, e) {
     })
 }
 
-//Pretty much like makePointLayer but without the pointToLayer stuff
+/**
+ * Fetches GeoJSON for a vector layer and registers it with the active map engine.
+ * @param {object} layerObj - Layer config from the mission JSON.
+ * @param {boolean} evenIfOff - Build the layer even if it is toggled off.
+ * @param {object|null} useEmptyGeoJSON - Seed with this GeoJSON instead of fetching.
+ * @param {object|null} forceGeoJSON - Skip fetch and use this GeoJSON directly.
+ * @param {boolean} isRefresh - Suppress side-effects that should only run on first load.
+ * @param {object|null} mapContext - Override map/registry context; defaults to main map.
+ */
 async function makeVectorLayer(
     layerObj,
     evenIfOff,
@@ -1178,7 +1211,50 @@ async function makeVectorLayer(
                 }
             )
 
+        /**
+         * Constructs and registers the map layer from fetched GeoJSON data.
+         * @param {object|string} data - GeoJSON feature collection, or 'off' to mark layer as disabled.
+         * @param {boolean} allowInvalid - Skip GeoJSON validation and render as-is.
+         */
         function add(data, allowInvalid) {
+            if (
+                Map_.engine &&
+                Map_.engine.engineType === MAP_ENGINE.DECKGL &&
+                layerObj.type === 'ScatterplotLayer'
+            ) {
+                if (data == null || data === 'off') {
+                    L_._layersLoaded[
+                        L_._layersOrdered.indexOf(layerObj.name)
+                    ] = true
+                    ctx.layerRegistry.layer[layerObj.name] =
+                        data == null ? null : false
+                    allLayersLoaded()
+                    resolve()
+                    return
+                }
+
+                layerObj.style = layerObj.style || {}
+                layerObj.style.opacity =
+                    ctx.layerRegistry.opacity[layerObj.name] || 1
+                ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
+                    layerObj.name,
+                    {
+                        type: layerObj.type,
+                        data,
+                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        style: layerObj.style || {},
+                        variables: layerObj.variables || {},
+                        interactive: true,
+                    }
+                )
+                L_._layersLoaded[
+                    L_._layersOrdered.indexOf(layerObj.name)
+                ] = true
+                allLayersLoaded()
+                resolve()
+                return
+            }
+
             data = F_.parseIntoGeoJSON(data)
 
             let invalidGeoJSONTrace = gjv.valid(data, true)
@@ -1252,10 +1328,11 @@ async function makeVectorLayer(
                 ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
-                        type: 'vector',
+                        type: layerObj.type || 'vector',
                         geojson: data,
                         opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
                         style: layerObj.style || {},
+                        variables: layerObj.variables || {},
                         interactive: true,
                     }
                 )
@@ -1366,6 +1443,11 @@ async function makeVelocityLayer(
                 }
             )
 
+        /**
+         * Constructs and registers the map layer from fetched GeoJSON data.
+         * @param {object|string} data - GeoJSON feature collection, or 'off' to mark layer as disabled.
+         * @param {boolean} allowInvalid - Skip GeoJSON validation and render as-is.
+         */
         function add(data, allowInvalid) {
             if (layerObj.type == 'velocity') {
                 if (
@@ -1515,6 +1597,11 @@ async function makeVelocityLayer(
     })
 }
 
+/**
+ * Builds a raster tile layer (TMS, WMTS, COG via TiTiler, STAC) and registers it with the active map engine.
+ * @param {object} layerObj - Layer config from the mission JSON.
+ * @param {object|null} mapContext - Override map/registry context; defaults to main map.
+ */
 async function makeTileLayer(layerObj, mapContext = null) {
     // Default to main map context for backward compatibility
     const ctx = mapContext || {
@@ -1523,18 +1610,14 @@ async function makeTileLayer(layerObj, mapContext = null) {
         default: true,
     }
 
-    // Helper function to add default 'asset_' prefix to bands in expressions if not already prefixed
-    const processExpression = (expression) => {
-        if (!expression || expression.trim() === '') return expression
-        // Replace bX or BX (where X is a number) with asset_bX or asset_BX
-        // Only replace if not already prefixed with an asset name (word_bX pattern)
-        return expression.replace(/(?<!\w)([bB])(\d+)/g, 'asset_$1$2')
-    }
-
-    let layerUrl = L_.getUrl(layerObj.type, layerObj.url, layerObj)
+    const tileLevel = getActiveTileLevel(layerObj)
+    const tileLevelUrl = getTileLevelUrl(tileLevel)
+    const tileElevation = getTileLevelElevation(tileLevel)
+    const sourceUrl = tileLevelUrl || layerObj.url
+    let layerUrl = L_.getUrl(layerObj.type, sourceUrl, layerObj)
 
     let splitColonType
-    const splitColonLayerUrl = layerObj.url.split(':')
+    const splitColonLayerUrl = sourceUrl.split(':')
     if (splitColonLayerUrl[1] != null) {
         let bandsParam = ''
         let b
@@ -1571,11 +1654,22 @@ async function makeTileLayer(layerObj, mapContext = null) {
                     resamplingParam = `&resampling=${layerObj.cogResampling}`
                 }
 
-                layerUrl = `${window.location.origin}${(
-                    window.location.pathname || ''
-                ).replace(/\/$/g, '')}/titiler/cog/tiles/${layerObj.tileMatrixSet || 'WebMercatorQuad'
-                    }/{z}/{x}/{y}.webp?url=${layerUrl}${bandsParam}${resamplingParam}`
-
+                layerUrl = ServiceUrls.buildTiTilerCogTilesUrl(layerUrl, layerObj, {
+                    tileMatrixSet: layerObj.tileMatrixSet,
+                    bands: (!layerObj.cogExpression || layerObj.cogExpression.trim() === '') ? layerObj.cogBands : null,
+                    resampling: layerObj.cogResampling
+                })
+                break
+            case 'titiler-url':
+                // Pre-existing TiTiler endpoint URL - just strip the prefix and use as-is
+                // COG parameters will be appended dynamically in getTileUrl middleware
+                splitColonType = splitColonLayerUrl[0]
+                layerUrl = splitColonLayerUrl.slice(1).join(':')
+                // Make URL absolute if needed
+                if (!F_.isUrlAbsolute(layerUrl)) {
+                    layerUrl = L_.missionPath + layerUrl
+                }
+                break
             default:
                 break
         }
@@ -1602,13 +1696,20 @@ async function makeTileLayer(layerObj, mapContext = null) {
     } else tileFormat = layerObj.tileformat
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+        // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
+        // would normally add per-tile in getTileUrl.
+        if (splitColonType === 'COG' || splitColonType === 'stac-collection' || layerObj.cogTransform === true) {
+            layerUrl = applyCogFieldsToUrl(layerUrl, layerObj)
+        }
+
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
-            type: 'tile',
+            type: layerObj.type || 'tile',
             url: layerUrl,
             opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
+            tileElevation,
         })
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
@@ -1710,6 +1811,39 @@ async function makeTileLayer(layerObj, mapContext = null) {
     allLayersLoaded()
 }
 
+function getActiveTileLevel(layerObj) {
+    const levels = layerObj.variables?.tileLevels
+    if (!Array.isArray(levels) || levels.length === 0) return null
+
+    const selected =
+        layerObj.currentTileLevel ??
+        layerObj.variables?.defaultTileLevel ??
+        getTileLevelKey(levels[0], 0)
+
+    return (
+        levels.find((level, index) => getTileLevelKey(level, index) == selected) ||
+        levels[0]
+    )
+}
+
+function getTileLevelKey(level, index) {
+    if (level == null || typeof level !== 'object') return String(level ?? index)
+    return String(level.value ?? level.id ?? level.name ?? level.label ?? index)
+}
+
+function getTileLevelUrl(level) {
+    if (level == null || typeof level !== 'object') return null
+    return typeof level.url === 'string' && level.url.length > 0
+        ? level.url
+        : null
+}
+
+function getTileLevelElevation(level) {
+    if (level == null || typeof level !== 'object') return undefined
+    const elevation = Number(level.height ?? level.elevation ?? level.z)
+    return Number.isFinite(elevation) ? elevation : undefined
+}
+
 function makeVectorTileLayer(layerObj, mapContext = null) {
     // Default to main map context for backward compatibility
     const ctx = mapContext || {
@@ -1724,6 +1858,40 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         layerUrl =
             `${window.mmgisglobal.ROOT_PATH || ''}/api/geodatasets/get?layer=${urlSplit[1]
             }` + '&type=mvt&x={x}&y={y}&z={z}'
+    }
+
+    if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+        ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
+            type: layerObj.type || 'vectortile',
+            url: layerUrl,
+            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            minZoom: parseInt(layerObj.minZoom),
+            maxNativeZoom: parseInt(layerObj.maxNativeZoom),
+            maxZoom: parseInt(layerObj.maxZoom),
+            style: layerObj.style || {},
+            interactive: true,
+            nativeOptions: {
+                autoHighlight: layerObj.style?.hoverHighlight === true,
+                onHover: (info) => {
+                    const properties = info?.object?.properties
+                    const vtKey = layerObj.style?.vtKey
+
+                    if (properties == null || vtKey == null || properties[vtKey] == null) {
+                        CursorInfo.hide(true)
+                        return
+                    }
+
+                    CursorInfo.update(
+                        vtKey + ': ' + properties[vtKey],
+                        null,
+                        false
+                    )
+                },
+            },
+        })
+        L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+        allLayersLoaded()
+        return
     }
 
     var bb = null
@@ -1956,9 +2124,7 @@ function makeImageLayer(layerObj, mapContext = null) {
     }
     let layerUrl = L_.getUrl(layerObj.type, layerObj.url, layerObj)
     if (!F_.isUrlAbsolute(layerUrl)) {
-        layerUrl = `${window.location.origin}${(
-            window.location.pathname || ''
-        ).replace(/\/$/g, '')}/${layerUrl}`
+        layerUrl = `${ServiceUrls.getLocalBaseUrl()}/${layerUrl}`
     }
 
     let bb = null
@@ -2148,9 +2314,7 @@ function makeVideoLayer(layerObj, mapContext = null) {
     }
     let layerUrl = L_.getUrl(layerObj.type, layerObj.url, layerObj)
     if (!F_.isUrlAbsolute(layerUrl)) {
-        layerUrl = `${window.location.origin}${(
-            window.location.pathname || ''
-        ).replace(/\/$/g, '')}/${layerUrl}`
+        layerUrl = `${ServiceUrls.getLocalBaseUrl()}/${layerUrl}`
     }
 
     if (!layerObj.boundingBox || layerObj.boundingBox.length !== 4) {

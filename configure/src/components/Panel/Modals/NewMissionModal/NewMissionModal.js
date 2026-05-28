@@ -98,7 +98,7 @@ const useStyles = makeStyles((theme) => ({
   backgroundIcon: {
     margin: "7px 8px 0px 0px",
   },
-  planetDropdown: {
+  dropdownItem: {
     width: "100%",
     margin: "8px 0px 4px 0px !important",
   },
@@ -132,6 +132,7 @@ const NewMissionModal = (props) => {
   const [createDir, setCreateDir] = useState(true);
   const [selectedPlanet, setSelectedPlanet] = useState("Earth");
   const [selectedEngine, setSelectedEngine] = useState("leaflet");
+  const [selectedMode, setSelectedMode] = useState("classic");
   const [basemapProvider, setBasemapProvider] = useState("none");
   const [basemapStyle, setBasemapStyle] = useState("");
   const [basemapToken, setBasemapToken] = useState("");
@@ -161,6 +162,7 @@ const NewMissionModal = (props) => {
           minor: planetRadius.minor,
         },
         mapEngine: selectedEngine,
+        mode: selectedMode,
       },
     };
 
@@ -198,7 +200,8 @@ const NewMissionModal = (props) => {
             setMissionName("");
             setCreateDir(true);
             setSelectedPlanet("Earth");
-            setSelectedEngine("leaflet");
+            setSelectedEngine("deckgl");
+            setSelectedMode("classic");
             setBasemapProvider("none");
             setBasemapStyle("");
             setBasemapToken("");
@@ -218,7 +221,8 @@ const NewMissionModal = (props) => {
             setMissionName("");
             setCreateDir(true);
             setSelectedPlanet("Earth");
-            setSelectedEngine("leaflet");
+            setSelectedEngine("deckgl");
+            setSelectedMode("classic");
             setBasemapProvider("none");
             setBasemapStyle("");
             setBasemapToken("");
@@ -282,7 +286,7 @@ const NewMissionModal = (props) => {
         <Typography className={c.subtitle2}>
           {`A new and unique name for a mission. No special characters allowed and it should not start with a number.`}
         </Typography>
-        <FormControl className={c.planetDropdown} variant="filled">
+        <FormControl className={c.dropdownItem} variant="filled">
           <InputLabel>Planet</InputLabel>
           <Select
             value={selectedPlanet}
@@ -297,7 +301,7 @@ const NewMissionModal = (props) => {
         <Typography className={c.subtitle2}>
           {`Select the planet to set the default radius values for this mission. You can always change this later.`}
         </Typography>
-        <FormControl className={c.planetDropdown} variant="filled">
+        <FormControl className={c.dropdownItem} variant="filled">
           <InputLabel>Map Engine</InputLabel>
           <Select
             value={selectedEngine}
@@ -314,9 +318,24 @@ const NewMissionModal = (props) => {
         <Typography className={c.subtitle2}>
           {`Choose the rendering engine for this mission's 2D map. This cannot be changed after the mission is created.`}
         </Typography>
-        {selectedEngine !== "" && (
+        <FormControl className={c.dropdownItem} variant="filled">
+          <InputLabel>Interface Mode</InputLabel>
+          <Select
+            value={selectedMode}
+            onChange={(e) => setSelectedMode(e.target.value)}
+            label="Interface Mode"
+          >
+            <MenuItem value="classic">Classic</MenuItem>
+            <MenuItem value="modern">Modern</MenuItem>
+          </Select>
+        </FormControl>
+        <Typography className={c.subtitle2}>
+          {`Choose a interface style for the mission. This cannot be changed after the mission is created. 
+          The classic mode is the original MMGIS layout whereas the modern mode has more flexible panel arrangements and modern look and feel.`}
+        </Typography>
+        {selectedEngine === "deckgl" && (
           <>
-            <FormControl className={c.planetDropdown} variant="filled">
+            <FormControl className={c.dropdownItem} variant="filled">
               <InputLabel>Basemap</InputLabel>
               <Select
                 value={basemapProvider}

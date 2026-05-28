@@ -152,14 +152,95 @@ const useStyles = makeStyles((theme) => ({
 /**
  * Layer types each engine supports for the Layer Type dropdown.
  * Mirrors ENGINE_LAYER_SUPPORT in src/essence/Basics/MapEngines/types/engine.ts.
- * Structural types (header, query, model) are always available regardless of engine.
+ * Structural types are filtered per engine because not all engines support layer
+ * tree grouping.
  */
 const ENGINE_LAYER_SUPPORT = {
   leaflet: ["vector", "tile", "vectortile", "data", "image", "video", "velocity"],
-  deckgl: ["vector", "tile", "pointcloud"],
+  deckgl: [
+    "GeoJsonLayer",
+    "TileLayer",
+    "Tile3DLayer",
+    "PointCloudLayer",
+    "MVTLayer",
+    "ScatterplotLayer",
+  ],
 };
 
-const STRUCTURAL_LAYER_TYPES = ["header", "query", "model"];
+const ENGINE_STRUCTURAL_LAYER_TYPES = {
+  leaflet: ["header", "query", "model"],
+  deckgl: [],
+};
+
+/**
+ * Layer metaconfigs keyed by stored layer type.
+ */
+const LAYER_TYPE_CONFIGS = {
+  data: dataConfig,
+  header: headerConfig,
+  model: modelConfig,
+  query: queryConfig,
+  tile: tileConfig,
+  vector: vectorConfig,
+  vectortile: vectortileConfig,
+  velocity: velocityConfig,
+  image: imageConfig,
+  video: videoConfig,
+  GeoJsonLayer: vectorConfig,
+  ScatterplotLayer: vectorConfig,
+  TileLayer: tileConfig,
+  BitmapLayer: tileConfig,
+  Tile3DLayer: tileConfig,
+  PointCloudLayer: tileConfig,
+  MVTLayer: vectortileConfig,
+};
+
+/**
+ * Config fields to hide per engine and layer type.
+ * Structure: ENGINE_HIDDEN_FIELDS[engine][layerType] = Set of field paths.
+ * Use "_all" to hide a field for every layer type under that engine.
+ *
+ * Field paths match the `field` key in the metaconfig JSON files.
+ * Add entries here when a field is not meaningful for a given engine/type combo.
+ */
+const ENGINE_HIDDEN_FIELDS = {
+  deckgl: {
+    _all: new Set([
+      "variables.markerIcon.shadowUrl",
+      "variables.markerIcon.shadowSize.0",
+      "variables.markerIcon.shadowSize.1",
+      "variables.markerIcon.shadowAnchor.0",
+      "variables.markerIcon.shadowAnchor.1",
+    ]),
+    vector: new Set([
+      "shape",
+      "style.shapeIcon",
+      "style.shapeProp",
+      "style.shapeRotationOffset",
+      "style.animation",
+    ]),
+    GeoJsonLayer: new Set([
+      "shape",
+      "style.shapeIcon",
+      "style.shapeProp",
+      "style.shapeRotationOffset",
+      "style.animation",
+    ]),
+    ScatterplotLayer: new Set([
+      "shape",
+      "style.shapeIcon",
+      "style.shapeProp",
+      "style.shapeRotationOffset",
+      "style.animation",
+    ]),
+    tile: new Set([]),
+    TileLayer: new Set([]),
+    BitmapLayer: new Set([]),
+    Tile3DLayer: new Set([]),
+    PointCloudLayer: new Set([]),
+    MVTLayer: new Set([]),
+  },
+};
 
 const MODAL_NAME = "layer";
 const LayerModal = (props) => {
@@ -176,63 +257,29 @@ const LayerModal = (props) => {
 
   const dispatch = useDispatch();
 
-  let config = {};
-  switch (layer.type) {
-    case "data":
-      config = dataConfig;
-      break;
-
-    case "header":
-      config = headerConfig;
-      break;
-
-    case "model":
-      config = modelConfig;
-      break;
-
-    case "query":
-      config = queryConfig;
-      break;
-
-    case "tile":
-      config = tileConfig;
-      break;
-
-    case "vector":
-      config = vectorConfig;
-      break;
-
-    case "vectortile":
-      config = vectortileConfig;
-      break;
-
-    case "velocity":
-      config = velocityConfig;
-      break;
-
-    case "image":
-      config = imageConfig;
-      break;
-
-    case "video":
-      config = videoConfig;
-      break;
-
-    default:
-      break;
-  }
+  let config = LAYER_TYPE_CONFIGS[layer.type] || {};
+  const mapEngine = configuration?.msv?.mapEngine || "leaflet";
 
   config = inject(config);
 
-  const mapEngine = configuration?.msv?.mapEngine || "leaflet";
   if (mapEngine !== "leaflet" && ENGINE_LAYER_SUPPORT[mapEngine] && config.tabs) {
     const allowedTypes = [
       ...ENGINE_LAYER_SUPPORT[mapEngine],
-      ...STRUCTURAL_LAYER_TYPES,
+      ...(ENGINE_STRUCTURAL_LAYER_TYPES[mapEngine] ?? []),
     ];
+    const engineFields = ENGINE_HIDDEN_FIELDS[mapEngine] ?? {};
+    const hiddenFields = new Set([
+      ...(engineFields._all ?? []),
+      ...(engineFields[layer.type] ?? []),
+    ]);
+
     config = JSON.parse(JSON.stringify(config));
     config.tabs.forEach((tab) => {
       tab.rows.forEach((row) => {
+        row.components = row.components.filter(
+          (comp) => !comp.field || !hiddenFields.has(comp.field)
+        );
+
         row.components.forEach((comp) => {
           if (comp.field === "type" && comp.type === "dropdown") {
             const filtered = comp.options.filter((opt) =>
@@ -245,7 +292,11 @@ const LayerModal = (props) => {
           }
         });
       });
+
+      tab.rows = tab.rows.filter((row) => row.components.length > 0);
     });
+
+    config.tabs = config.tabs.filter((tab) => tab.rows.length > 0);
   }
 
   const handleClose = (skipSetConfiguration) => {

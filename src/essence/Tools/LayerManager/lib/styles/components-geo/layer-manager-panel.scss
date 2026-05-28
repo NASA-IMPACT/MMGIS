@@ -1,0 +1,24 @@
+/* Tool root */
+.blocks-layer-manager {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background: #ffffff;
+    color: var(--theme-color-ink, #1b1b1b);
+    font-family: 'Lato', sans-serif;
+
+    &__content {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    &__loading {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100px;
+        color: var(--theme-color-base, #71767a);
+    }
+}

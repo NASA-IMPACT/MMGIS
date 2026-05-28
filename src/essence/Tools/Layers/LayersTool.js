@@ -3,6 +3,7 @@ import Sortable from 'sortablejs'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import L_ from '../../Basics/Layers_/Layers_'
 import Map_ from '../../Basics/Map_/Map_'
+import ServiceUrls from '../../Basics/ServiceUrls/ServiceUrls'
 
 import DataShaders from '../../Ancillary/DataShaders'
 import LayerInfoModal from './LayerInfoModal/LayerInfoModal'
@@ -27,6 +28,15 @@ import {
 import './LayersTool.css'
 
 const helpKey = 'LayersTool'
+
+/**
+ * Check if TiTiler is available for a layer (either locally or via external URL)
+ * @param {object} layerConfig - The layer configuration object
+ * @returns {boolean} True if TiTiler is available
+ */
+const hasTiTilerAccess = (layerConfig) => {
+    return window.mmgisglobal.WITH_TITILER === 'true' || layerConfig?.titilerUrl != null
+}
 
 /**
  * Generate the tool markup dynamically based on available layer types
@@ -765,6 +775,8 @@ function interfaceWithMMGIS(fromInit) {
                     settings = getVectorLayerSettings(node[i].name)
                     break
                 case 'tile':
+                case 'TileLayer':
+                case 'BitmapLayer':
                     currentOpacity = L_.getLayerOpacity(node[i].name)
                     if (currentOpacity == null)
                         currentOpacity = L_.layers.opacity[node[i].name]
@@ -811,7 +823,8 @@ function interfaceWithMMGIS(fromInit) {
                                 : f['mix-blend-mode']
                     }
 
-                    additionalSettings = ''
+                    const levelSettings = getTileLevelSettings(node[i])
+                    additionalSettings = levelSettings
                     let expressionSettings = ''
 
                     // Check if layer supports expressions (COG or STAC)
@@ -859,14 +872,14 @@ function interfaceWithMMGIS(fromInit) {
                             node[i].cogColormap
                         )
 
-                        if (window.mmgisglobal.WITH_TITILER === 'true') {
+                        if (hasTiTilerAccess(node[i])) {
+                            // Use resolved colormap (has default fallback) for the URL
+                            const colormapUrl = ServiceUrls.buildColormapImageUrl(node[i].cogColormap || colormap, node[i])
                             // prettier-ignore
-                            additionalSettings = [
-                                `<img id="titlerCogColormapImage_${node[i].name}" src="${window.location.origin}${(
-                                            window.location.pathname || ''
-                                        ).replace(/\/$/g, '')}/titiler/colorMaps/${node[i].cogColormap}?format=png"
+                            additionalSettings = colormapUrl ? [
+                                `<img id="titlerCogColormapImage_${node[i].name}" src="${colormapUrl}"
                                 data-colormap="${colormap}" data-colormap-reverse="${reverse}"></img>`,
-                            ].join('\n')
+                            ].join('\n') : ''
                         } else {
                             additionalSettings =
                                 additionalSettingsJSColormapHelper(
@@ -916,7 +929,8 @@ function interfaceWithMMGIS(fromInit) {
                                     `</div>`,
                                 '</li>',
                             '</div>',
-                            expressionSettings
+                            expressionSettings,
+                            levelSettings
                         ].join('\n')
                     } else if (expressionSettings) {
                         // If only expression settings (no COG transform), just show expression editor
@@ -1051,12 +1065,10 @@ function interfaceWithMMGIS(fromInit) {
                             node[i].variables?.streamlines?.colorScale
                         )
 
-                        if (window.mmgisglobal.WITH_TITILER === 'true') {
+                        if (hasTiTilerAccess(node[i])) {
                             // prettier-ignore
                             additionalSettings = [
-                                `<img id="titlerCogColormapImage_${node[i].name}" src="${window.location.origin}${(
-                                            window.location.pathname || ''
-                                        ).replace(/\/$/g, '')}/titiler/colorMaps/${node[i].variables?.streamlines?.colorScale?.toLowerCase() || VELOCITY_DEFAULT_COLOR_RAMP}?format=png"
+                                `<img id="titlerCogColormapImage_${node[i].name}" src="${ServiceUrls.buildColormapImageUrl(node[i].variables?.streamlines?.colorScale?.toLowerCase() || VELOCITY_DEFAULT_COLOR_RAMP, node[i])}"
                                 data-colormap="${colormap}" data-colormap-reverse="${reverse}"></img>`,
                             ].join('\n')
                         } else {
@@ -1141,14 +1153,14 @@ function interfaceWithMMGIS(fromInit) {
                             node[i].cogColormap
                         )
 
-                        if (window.mmgisglobal.WITH_TITILER === 'true') {
+                        if (hasTiTilerAccess(node[i])) {
+                            // Use resolved colormap (has default fallback) for the URL
+                            const colormapUrl = ServiceUrls.buildColormapImageUrl(node[i].cogColormap || colormap, node[i])
                             // prettier-ignore
-                            additionalSettings = [
-                                `<img id="titlerCogColormapImage_${node[i].name}" src="${window.location.origin}${(
-                                            window.location.pathname || ''
-                                        ).replace(/\/$/g, '')}/titiler/colorMaps/${node[i].cogColormap}?format=png"
+                            additionalSettings = colormapUrl ? [
+                                `<img id="titlerCogColormapImage_${node[i].name}" src="${colormapUrl}"
                                 data-colormap="${colormap}" data-colormap-reverse="${reverse}"></img>`,
-                            ].join('\n')
+                            ].join('\n') : ''
                         } else {
                             additionalSettings =
                                 additionalSettingsJSColormapHelper(
@@ -1450,7 +1462,7 @@ function interfaceWithMMGIS(fromInit) {
                     break
             }
 
-            if (window.mmgisglobal.WITH_TITILER === 'true') {
+            if (hasTiTilerAccess(node[i])) {
                 // Check if TiTiler images loaded
                 if ($(`#titlerCogColormapImage_${node[i].name}`).length) {
                     $(`#titlerCogColormapImage_${node[i].name}`).on(
@@ -1495,7 +1507,7 @@ function interfaceWithMMGIS(fromInit) {
 
             if (
                 quasiLayers.includes(li.attr('type')) ||
-                L_.layers.layer[layerName]
+                L_.layers.layer[layerName] != null
             )
                 checkbox.toggleClass('on')
             else if (
@@ -1690,12 +1702,7 @@ function interfaceWithMMGIS(fromInit) {
                     .split('?')[0]
 
                 // Fetch STAC items (lazy load on first open)
-                const stacUrl = `${window.location.origin}${(
-                    window.location.pathname || ''
-                ).replace(
-                    /\/$/g,
-                    ''
-                )}/stac/collections/${collectionName}/items?limit=1`
+                const stacUrl = ServiceUrls.buildStacItemsUrl(collectionName, layerData, { limit: 1 })
 
                 fetch(stacUrl)
                     .then((response) => response.json())
@@ -2235,6 +2242,30 @@ function interfaceWithMMGIS(fromInit) {
         }
 
         // Refresh legends
+        LegendTool.refreshLegends()
+    })
+
+    $('.tilelevelselector').on('click', async function () {
+        let layerName = $(this).attr('layername')
+        const level = $(this).attr('level')
+        const layerUUID = L_.asLayerUUID(layerName)
+        const layerData = L_.layers.data[layerUUID]
+
+        if (layerData == null || layerData.currentTileLevel == level) return
+
+        layerData.currentTileLevel = level
+        $(`.tilelevelselector[layername="${layerName}"]`)
+            .removeClass('on')
+            .addClass('off')
+        $(this).removeClass('off').addClass('on')
+
+        if (L_.layers.layer[layerData.name] == null) return
+
+        L_.Map_.rmNotNull(L_.layers.layer[layerData.name])
+        await L_.Map_.makeLayer(layerData, true, null, null, true, null, true)
+        if (L_.layers.on[layerData.name]) {
+            L_.addVisible(L_.Map_, [layerData.name])
+        }
         LegendTool.refreshLegends()
     })
 
@@ -2929,6 +2960,64 @@ function interfaceWithMMGIS(fromInit) {
     }
 
     // Sublayer things
+    /**
+     * Returns the HTML markup for the tile level selector, or an empty string if the layer has no tile levels.
+     * @param {object} layer - Layer config object with optional `variables.tileLevels`.
+     */
+    function getTileLevelSettings(layer) {
+        const levels = layer.variables?.tileLevels
+        if (!Array.isArray(levels) || levels.length === 0) return ''
+
+        const selected =
+            layer.currentTileLevel ??
+            layer.variables?.defaultTileLevel ??
+            getTileLevelKey(levels[0], 0)
+
+        return [
+            '<div class="layerSettingsTitle">',
+            '<div>Tile Levels</div>',
+            '</div>',
+            levels
+                .map((level, index) => {
+                    const key = getTileLevelKey(level, index)
+                    const label = getTileLevelLabel(level, index)
+                    const checked = key == selected ? ' on' : ' off'
+                    return [
+                        '<li>',
+                        '<div>',
+                        `<div>${label}</div>`,
+                        '<div class="checkboxcont">',
+                        `<div class="tilelevelselector checkbox small${checked}" layername="${layer.name}" level="${key}"></div>`,
+                        '</div>',
+                        '</div>',
+                        '</li>',
+                    ].join('\n')
+                })
+                .join('\n'),
+        ].join('\n')
+    }
+
+    /**
+     * Returns a stable string key for a tile level entry, falling back through common field names to the array index.
+     * @param {object|*} level - Tile level entry from `variables.tileLevels`.
+     * @param {number} index - Position in the tile levels array, used as last-resort key.
+     */
+    function getTileLevelKey(level, index) {
+        if (level == null || typeof level !== 'object')
+            return String(level ?? index)
+        return String(level.value ?? level.id ?? level.name ?? level.label ?? index)
+    }
+
+    /**
+     * Returns the display label for a tile level entry, falling back through common field names to the array index.
+     * @param {object|*} level - Tile level entry from `variables.tileLevels`.
+     * @param {number} index - Position in the tile levels array, used as last-resort label.
+     */
+    function getTileLevelLabel(level, index) {
+        if (level == null || typeof level !== 'object')
+            return String(level ?? index)
+        return String(level.label ?? level.name ?? level.value ?? level.id ?? index)
+    }
 
     function getVectorLayerSettings(layerName) {
         let currentOpacity = L_.getLayerOpacity(layerName)

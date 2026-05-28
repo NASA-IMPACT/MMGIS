@@ -1,0 +1,33 @@
+{
+    "name": "Title",
+    "description": "Display mission icon and title from the mission config file.",
+    "descriptionFull": {
+        "title": "Title Tool",
+        "example": {
+            "sortAlphabetically": true
+        }
+    },
+    "defaultIcon": "information-variant",
+    "hasVars": true,
+    "toolbarPriority": 3,
+    "width": 300,
+    "height": 0,
+    "paths": {
+        "TitleTool": "essence/Tools/Title/TitleTool"
+    },
+    "tests": {},
+    "expandable": false,
+    "separatedTool": false,
+    "metadata": {
+        "icon": "information-variant",
+        "requiredOrientation": "horizontal",
+        "compatiblePositions": ["top"],
+        "preferredPosition": "top",
+        "modernLayoutSupport": true,
+        "width": 300,
+        "height": 0
+    },
+    "config": {
+        "rows": []
+    }
+}

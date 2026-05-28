@@ -5,6 +5,7 @@ import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
+import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
@@ -179,6 +180,45 @@ const L_ = {
                     }
                     return null
                 }),
+                window.mmgisAPI.provide('layers:getOpacity', (layerUUID) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    return L_.layers.opacity[uuid] ?? 1
+                }),
+                window.mmgisAPI.provide('layers:setOpacity', ({ layerUUID, opacity }) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    if (L_.layers.data[uuid]) {
+                        L_.layers.opacity[uuid] = opacity
+                        L_.setLayerOpacity(uuid, opacity)
+                        return true
+                    }
+                    return false
+                }),
+                window.mmgisAPI.provide('layers:refresh', ({ layerUUID, options }) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    const tileLayer = L_.layers.layer[uuid]
+                    if (tileLayer && typeof tileLayer.refresh === 'function') {
+                        tileLayer.refresh(null, false, options || {})
+                        return true
+                    }
+                    return false
+                }),
+                window.mmgisAPI.provide('layers:updateConfig', ({ layerUUID, updates }) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    const layerConfig = L_.layers.data[uuid]
+                    if (layerConfig) {
+                        Object.assign(layerConfig, updates)
+                        return true
+                    }
+                    return false
+                }),
+                window.mmgisAPI.provide('layers:getAllConfigs', () => L_.layers.data),
+                window.mmgisAPI.provide('layers:getAllOpacities', () => L_.layers.opacity),
+                window.mmgisAPI.provide('layers:isVisible', (layerUUID) => {
+                    const uuid = L_.asLayerUUID(layerUUID)
+                    return L_.layers.on?.[uuid] === true
+                }),
+                window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
+                window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
             ]
         }
@@ -313,14 +353,13 @@ const L_ = {
             resamplingParam = `&resampling=${layerData.cogResampling}`
         }
 
-        // Build the base URL
-        const origin = window.location.origin
-        const pathname = (window.location.pathname || '').replace(/\/$/g, '')
+        // Build the base URL using ServiceUrls (supports external endpoints)
+        const baseUrl = ServiceUrls.getTiTilerPgStacUrl(layerData)
 
         // Generate different endpoints based on type
         if (type === 'tile') {
             // Tile endpoint for raster tiles
-            return `${origin}${pathname}/titilerpgstac/collections/${collectionName}/tiles/${
+            return `${baseUrl}/collections/${collectionName}/tiles/${
                 (layerData && layerData.tileMatrixSet) || 'WebMercatorQuad'
             }/{z}/{x}/{y}?assets=asset${bandsParam}${resamplingParam}`
         } else {
@@ -333,7 +372,7 @@ const L_ = {
                         `Attempting to use preview endpoint.`
                 )
             }
-            return `${origin}${pathname}/titilerpgstac/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
+            return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
         }
     },
     getUrl: function (type, url, layerData) {
@@ -354,6 +393,9 @@ const L_ = {
             nextUrl = nextUrl.slice(4)
             wasCOG = true
         }
+        if (nextUrl != null && nextUrl.startsWith('titiler-url:')) {
+            nextUrl = nextUrl.slice(12)
+        }
         if (!F_.isUrlAbsolute(nextUrl)) {
             nextUrl = L_.missionPath + nextUrl
         }
@@ -372,6 +414,16 @@ const L_ = {
                 window.mmgisglobal.IS_DOCKER === 'true'
             ) {
                 nextUrl = `/${nextUrl}`
+            }
+        }
+        if (process.env.NODE_ENV === 'development' && F_.isUrlAbsolute(nextUrl)) {
+            try {
+                if (new URL(nextUrl).origin !== window.location.origin) {
+                    const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
+                    nextUrl = `${rootPath}/corsproxy/${nextUrl}`
+                }
+            } catch (e) {
+                // Invalid URL, leave unchanged
             }
         }
         return nextUrl
@@ -456,7 +508,17 @@ const L_ = {
                             $('.drawToolContextMenuHeaderClose').click()
                         } catch (err) {}
                     }
-                    L_.Map_.rmNotNull(L_.layers.layer[s.name])
+                    if (
+                        L_.Map_.engine &&
+                        L_.Map_.engine.engineType !== 'leaflet'
+                    ) {
+                        L_.Map_.engine.updateLayer(
+                            L_.Map_.nativeLayer(L_.layers.layer[s.name]),
+                            { visible: false }
+                        )
+                    } else {
+                        L_.Map_.rmNotNull(L_.layers.layer[s.name])
+                    }
                     if (L_.layers.attachments[s.name]) {
                         for (let sub in L_.layers.attachments[s.name]) {
                             switch (L_.layers.attachments[s.name][sub].type) {
@@ -588,9 +650,14 @@ const L_ = {
                         }
                     }
 
-                    L_.Map_.engine.addLayer(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                    )
+                    const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
+                    if (L_.Map_.engine.engineType !== 'leaflet') {
+                        if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
+                            L_.Map_.engine.addLayer(nativeLayer)
+                        }
+                    } else {
+                        L_.Map_.engine.addLayer(nativeLayer)
+                    }
                     L_.Map_.engine.setLayerZIndex(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                         L_._layersOrdered.length +
@@ -699,9 +766,14 @@ const L_ = {
                                         }
                                     })
                             }
-                            L_.Map_.engine.addLayer(
-                                L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                            )
+                            const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
+                            if (L_.Map_.engine.engineType !== 'leaflet') {
+                                if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
+                                    L_.Map_.engine.addLayer(nativeLayer)
+                                }
+                            } else {
+                                L_.Map_.engine.addLayer(nativeLayer)
+                            }
                             L_.Map_.engine.setLayerZIndex(
                                 L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                                 L_._layersOrdered.length +

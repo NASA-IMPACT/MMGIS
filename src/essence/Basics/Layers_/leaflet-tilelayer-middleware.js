@@ -12,6 +12,7 @@
 */
 
 import F_ from '../../Basics/Formulae_/Formulae_'
+import { applyCogFieldsToUrl } from './cogUrlUtils'
 
 var colorFilterExtension = {
     intialize: function (url, options) {
@@ -22,7 +23,8 @@ var colorFilterExtension = {
 
         if (
             this.options.splitColonType === 'stac-collection' ||
-            this.options.splitColonType === 'COG'
+            this.options.splitColonType === 'COG' ||
+            this.options.splitColonType === 'titiler-url'
         ) {
             let datetime
             if (this.options.endtime != null) {
@@ -43,41 +45,7 @@ var colorFilterExtension = {
                 }exitwhenfull=false&skipcovered=false`
             }
 
-            if (
-                this.options.cogTransform === true &&
-                this.options.cogMin != null &&
-                this.options.cogMax != null
-            ) {
-                url += `${url.indexOf('?') === -1 ? '?' : '&'}rescale=[${
-                    this.options.currentCogMin != null
-                        ? this.options.currentCogMin
-                        : this.options.cogMin
-                },${
-                    this.options.currentCogMax != null
-                        ? this.options.currentCogMax
-                        : this.options.cogMax
-                }]`
-                if (this.options.cogColormap != null) {
-                    url += `${
-                        url.indexOf('?') === -1 ? '?' : '&'
-                    }colormap_name=${this.options.cogColormap}`
-                }
-            }
-
-            // Add expression parameter if it exists (takes precedence over bands)
-            // Check currentCogExpression first (runtime value), then fall back to cogExpression (configured value)
-            const expressionToUse = this.options.currentCogExpression || this.options.cogExpression
-            if (expressionToUse && expressionToUse.trim() !== '') {
-                // Process expression to add asset_ prefix if needed
-                const processExpression = (expression) => {
-                    if (!expression || expression.trim() === '') return expression
-                    // Replace bX or BX (where X is a number) with asset_bX or asset_BX
-                    // Only replace if not already prefixed with an asset name (word_bX pattern)
-                    return expression.replace(/(?<!\w)([bB])(\d+)/g, 'asset_$1$2')
-                }
-                const processedExpression = processExpression(expressionToUse)
-                url += `${url.indexOf('?') === -1 ? '?' : '&'}expression=${encodeURIComponent(processedExpression)}`
-            }
+            url = applyCogFieldsToUrl(url, this.options)
 
             if (mmgisglobal.options?.stac?.mosaicItemLimit != null) {
                 url += `${url.indexOf('?') === -1 ? '?' : '&'}items_limit=${

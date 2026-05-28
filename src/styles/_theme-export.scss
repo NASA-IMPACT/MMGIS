@@ -1,0 +1,119 @@
+// Theme Token Export Mixin
+// Exports USWDS design tokens as CSS custom properties for use in MMGIS components
+// Usage: @use "../theme-export"; @include theme-export.export-theme-tokens();
+
+@use "uswds-core" as *;
+
+@mixin export-theme-tokens() {
+  :root {
+    /* ===================================================================
+       COLOR TOKENS
+       =================================================================== */
+
+    /* Primary colors */
+    --theme-color-primary: #{color("primary")};
+    --theme-color-primary-dark: #{color("primary-dark")};
+    --theme-color-primary-darker: #{color("primary-darker")};
+    --theme-color-primary-light: #{color("primary-light")};
+
+    /* Secondary colors */
+    --theme-color-secondary: #{color("secondary")};
+    --theme-color-secondary-dark: #{color("secondary-dark")};
+    --theme-color-secondary-darker: #{color("secondary-darker")};
+    --theme-color-secondary-light: #{color("secondary-light")};
+
+    /* Accent colors */
+    --theme-color-accent-cool: #{color("accent-cool")};
+    --theme-color-accent-cool-dark: #{color("accent-cool-dark")};
+    --theme-color-accent-cool-darker: #{color("accent-cool-darker")};
+
+    /* Base (gray) colors - guaranteed in USWDS */
+    --theme-color-base-darkest: #{color("base-darkest")};
+    --theme-color-base-darker: #{color("base-darker")};
+    --theme-color-base-dark: #{color("base-dark")};
+    --theme-color-base: #{color("base")};
+    --theme-color-base-light: #{color("base-light")};
+    --theme-color-base-lighter: #{color("base-lighter")};
+    --theme-color-base-lightest: #{color("base-lightest")};
+
+    /* Semantic colors */
+    --theme-color-ink: #{color("ink")};
+    --theme-color-white: #{color("white")};
+    --theme-color-black: #{color("black")};
+
+    /* Shadow (computed) */
+    --theme-color-shadow: rgba(0, 0, 0, 0.15);
+
+    /* ===================================================================
+       TYPOGRAPHY TOKENS
+       =================================================================== */
+
+    /* Font families */
+    --theme-font-sans: #{family("sans")};
+    --theme-font-serif: #{family("serif")};
+    --theme-font-mono: #{family("mono")};
+    --theme-font-ui: #{family("ui")};
+    --theme-font-heading: #{family("heading")};
+    --theme-font-body: #{family("body")};
+    --theme-font-code: #{family("code")};
+    --theme-font-alt: #{family("alt")};
+
+    /* Font sizes (using "ui" family as default for UI components) */
+    --theme-font-size-3xs: #{fs("ui", "3xs")};
+    --theme-font-size-2xs: #{fs("ui", "2xs")};
+    --theme-font-size-xs: #{fs("ui", "xs")};
+    --theme-font-size-sm: #{fs("ui", "sm")};
+    --theme-font-size-md: #{fs("ui", "md")};
+    --theme-font-size-lg: #{fs("ui", "lg")};
+    --theme-font-size-xl: #{fs("ui", "xl")};
+    --theme-font-size-2xl: #{fs("ui", "2xl")};
+    --theme-font-size-3xl: #{fs("ui", "3xl")};
+
+    /* Font weights */
+    --theme-font-weight-light: #{fw("light")};
+    --theme-font-weight-normal: #{fw("normal")};
+    --theme-font-weight-semibold: #{fw("semibold")};
+    --theme-font-weight-bold: #{fw("bold")};
+    --theme-font-weight-heavy: #{fw("heavy")};
+
+    /* Line heights (using "ui" family) */
+    --theme-line-height-1: #{lh("ui", 1)};
+    --theme-line-height-2: #{lh("ui", 2)};
+    --theme-line-height-3: #{lh("ui", 3)};
+    --theme-line-height-4: #{lh("ui", 4)};
+    --theme-line-height-5: #{lh("ui", 5)};
+    --theme-line-height-6: #{lh("ui", 6)};
+
+    /* ===================================================================
+       SPACING TOKENS
+       =================================================================== */
+
+    --theme-spacing-05: #{units(0.5)};
+    --theme-spacing-1: #{units(1)};
+    --theme-spacing-105: #{units(1.5)};
+    --theme-spacing-2: #{units(2)};
+    --theme-spacing-205: #{units(2.5)};
+    --theme-spacing-3: #{units(3)};
+    --theme-spacing-4: #{units(4)};
+    --theme-spacing-5: #{units(5)};
+    --theme-spacing-6: #{units(6)};
+    --theme-spacing-7: #{units(7)};
+    --theme-spacing-8: #{units(8)};
+    --theme-spacing-9: #{units(9)};
+    --theme-spacing-10: #{units(10)};
+
+    /* ===================================================================
+       BORDER & RADIUS TOKENS
+       =================================================================== */
+
+    --theme-border-width-sm: #{units("1px")};
+    --theme-border-width-md: #{units("2px")};
+    --theme-border-width-lg: #{units("05")};
+
+    --theme-radius-0: 0;
+    --theme-radius-sm: #{radius("sm")};
+    --theme-radius-md: #{radius("md")};
+    --theme-radius-lg: #{radius("lg")};
+    --theme-radius-pill: #{radius("pill")};
+  }
+}

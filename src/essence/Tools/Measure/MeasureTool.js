@@ -10,15 +10,23 @@ import calls from '../../../pre/calls'
 
 import metricsGraphics from '../../../external/MetricsGraphics/metricsgraphics.min'
 
-import { render, unmountComponentAtNode } from 'react-dom'
+import { createRoot } from 'react-dom/client'
 import React, { useState, useEffect, useRef } from 'react'
 
-import { Chart } from 'chart.js'
+let _measureRoot = null
+
+import { Chart, registerables } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import zoomPlugin from 'chartjs-plugin-zoom'
 import * as moment from 'moment'
 
 import './MeasureTool.css'
+
+// react-chartjs-2 v5 only auto-registers the controller for the chart type
+// (e.g. <Line/> registers LineController). Scales, elements, plugins, etc.
+// must be registered explicitly. Register all built-ins to preserve prior
+// auto-register behavior from react-chartjs-2 v3.
+Chart.register(...registerables)
 
 // Zoom isn't working nicely. Keep off
 //Chart.register(zoomPlugin)
@@ -799,10 +807,14 @@ let MeasureTool = {
         this.dems = MeasureTool.getDems()
         this.activeDemIdx = 0
 
-        render(<Measure />, document.getElementById('tools'))
+        _measureRoot = createRoot(document.getElementById('tools'))
+        _measureRoot.render(<Measure />)
     },
     destroy: function () {
-        unmountComponentAtNode(document.getElementById('tools'))
+        if (_measureRoot) {
+            _measureRoot.unmount()
+            _measureRoot = null
+        }
 
         Map_.map
             .off('click', MeasureTool.clickMap)

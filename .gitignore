@@ -4,6 +4,7 @@
 nul
 
 /node_modules/
+/dist/
 /ssl/*
 !/ssl/.gitkeep
 /API/logs/*
@@ -58,4 +59,3 @@ sessions
 /test-results/
 /.playwright/
 #tools
-

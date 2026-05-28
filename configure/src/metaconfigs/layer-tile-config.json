@@ -57,12 +57,12 @@
               "description": "What the 'Source URL' is meant to reference. See the 'Source URL' description for more.",
               "type": "dropdown",
               "width": 2,
-              "options": ["url", "COG", "stac-collection"]
+              "options": ["url", "COG", "stac-collection", "titiler-url"]
             },
             {
               "field": "url",
               "name": "Source URL",
-              "description": "<strong>• URL: '{url}'</strong> A path that points to a tileset, service, or file. If the path is relative, it will be relative to the mission's /Missions/{mission} directory.\n\t<strong>• URL (TMS):</strong> Tile Map Service tiles are 256x256 sized images hierarchically organized by zoom level and referenced with x and y coordinates. These are the standard format for web tiles and are the format that MMGIS's auxiliary tiling scripts output. Append /{z}/{x}/{y}.png to your URL.\n\t<strong>• URL (WMTS):</strong> Web Map Tile Service is the same exact concept as TMS but it has an inverted Y-axis. Just like TMS, append /{z}/{x}/{y}.png to your URL.\n\t<strong>• URL (WMS):</strong> Web Map Service tiles are a popular way of publishing maps by professional GIS software. This format is similar to the previous two formats, but more generic and not so well optimized for use in web maps. A WMS image is defined by the coordinates of its corners. A layer (or list of layers) should be provided as an options by appending ?layers=<your_layer_name><,another_if_you _want> to your URL. To override WMS parameters append &<wms_param>=<value> again to the URL after the 'layers' parameters. If desired, use &TILESIZE= to change the tile size of the request and layer away from the default of 256. Example URL: http://ows.mundialis.de/services/service?layers=TOPO-WMS,OSM-Overlay-WMS\n\t<strong>• URL (GeoTiff): '{url_to_tif.tif}'</strong> A URL to the .tif. Note that this is not tiled and clients will download the entire file.\n<strong>• COG: '{url_to_cog.tif}'</strong> A URL to the .tif and make sure the 'Use TiTiler' option is enabled.\n<strong>• 'STAC-COLLECTION: '{name_of_an_mmgis_stac_collection}'</strong> - If titiler-pgstac is available, the tileset is the mosaicked COGs within the specified STAC collection.",
+              "description": "<strong>• URL: '{url}'</strong> A path that points to a tileset, service, or file. If the path is relative, it will be relative to the mission's /Missions/{mission} directory.\n\t<strong>• URL (TMS):</strong> Tile Map Service tiles are 256x256 sized images hierarchically organized by zoom level and referenced with x and y coordinates. These are the standard format for web tiles and are the format that MMGIS's auxiliary tiling scripts output. Append /{z}/{x}/{y}.png to your URL.\n\t<strong>• URL (WMTS):</strong> Web Map Tile Service is the same exact concept as TMS but it has an inverted Y-axis. Just like TMS, append /{z}/{x}/{y}.png to your URL.\n\t<strong>• URL (WMS):</strong> Web Map Service tiles are a popular way of publishing maps by professional GIS software. This format is similar to the previous two formats, but more generic and not so well optimized for use in web maps. A WMS image is defined by the coordinates of its corners. A layer (or list of layers) should be provided as an options by appending ?layers=<your_layer_name><,another_if_you _want> to your URL. To override WMS parameters append &<wms_param>=<value> again to the URL after the 'layers' parameters. If desired, use &TILESIZE= to change the tile size of the request and layer away from the default of 256. Example URL: http://ows.mundialis.de/services/service?layers=TOPO-WMS,OSM-Overlay-WMS\n\t<strong>• URL (GeoTiff): '{url_to_tif.tif}'</strong> A URL to the .tif. Note that this is not tiled and clients will download the entire file.\n<strong>• COG: '{url_to_cog.tif}'</strong> A URL to the .tif and make sure the 'Use TiTiler' option is enabled.\n<strong>• STAC-COLLECTION: '{name_of_an_mmgis_stac_collection}'</strong> - If titiler-pgstac is available, the tileset is the mosaicked COGs within the specified STAC collection.\n<strong>• TITILER-URL: '{titiler_tile_endpoint}'</strong> - A pre-existing TiTiler tile endpoint URL with {z}/{x}/{y} placeholders. COG parameters (rescale, colormap, bands, expression) will be appended dynamically.",
               "type": "text",
               "width": 6,
               "required": true
@@ -180,6 +180,47 @@
     {
       "name": "COG",
       "rows": [
+        {
+          "name": "External Service URLs",
+          "subdescription": "Override the default local proxy URLs with external service endpoints. Leave empty to use the local MMGIS proxy.",
+          "components": [
+            {
+              "field": "titilerUrl",
+              "name": "TiTiler URL",
+              "description": "External TiTiler endpoint URL (e.g., https://titiler.example.com). Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "titilerPgStacUrl",
+              "name": "TiTiler-pgSTAC URL",
+              "description": "External TiTiler-pgSTAC endpoint URL for STAC mosaics. Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "stacUrl",
+              "name": "STAC API URL",
+              "description": "External STAC API endpoint URL. Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "tipgUrl",
+              "name": "TiPG URL",
+              "description": "External TiPG (OGC Features/Tiles API) endpoint URL. Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "veloserverUrl",
+              "name": "Veloserver URL",
+              "description": "External Veloserver endpoint URL for wind/velocity data. Leave empty to use the local proxy.",
+              "type": "text",
+              "width": 6
+            }
+          ]
+        },
         {
           "name": "TiTiler Configuration",
           "components": [
@@ -546,6 +587,55 @@
               "description": "Provides a menu option for users to download the specified source data file for the layer.",
               "type": "text",
               "width": 12
+            }
+          ]
+        },
+        {
+          "subname": "Tile Levels",
+          "components": [
+            {
+              "field": "variables.defaultTileLevel",
+              "name": "Default Tile Level",
+              "description": "The value, id, name or label of the tile level to select initially.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "variables.tileLevels",
+              "name": "Tile Levels",
+              "description": "Selectable tile levels for this layer. If URL is set, that level uses the URL override. Height raises DeckGL bitmap tiles above the map in meters.",
+              "type": "objectarray",
+              "width": 12,
+              "object": [
+                {
+                  "field": "label",
+                  "name": "Label",
+                  "description": "User-facing label, such as 1000 hPa.",
+                  "type": "text",
+                  "width": 3
+                },
+                {
+                  "field": "value",
+                  "name": "Value",
+                  "description": "Stable level value used by the selector.",
+                  "type": "text",
+                  "width": 2
+                },
+                {
+                  "field": "url",
+                  "name": "URL",
+                  "description": "Optional source URL override for this level.",
+                  "type": "text",
+                  "width": 5
+                },
+                {
+                  "field": "height",
+                  "name": "Height",
+                  "description": "Optional DeckGL height in meters for this level.",
+                  "type": "number",
+                  "width": 2
+                }
+              ]
             }
           ]
         }
