@@ -152,7 +152,6 @@ const AOITool = {
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
             subscribe('map:featureClick',  (info) => this._onMapFeatureClick(info))
             subscribe('plugin:fetch-stats:analysisProgress', ({ done, total }) => {
-                console.log(`[AOI] plugin:fetch-stats:analysisProgress — ${done}/${total}`)
                 if (done === 0) {
                     this._setState({
                         analysisStatus: 'running',
@@ -164,8 +163,7 @@ const AOITool = {
                     this._setState({ analysisDone: done })
                 }
             })
-            subscribe('plugin:fetch-stats:analysisReady', ({ analysisData }) => {
-                console.log('[AOI] plugin:fetch-stats:analysisReady — dismissing overlay', analysisData)
+            subscribe('plugin:fetch-stats:analysisReady', () => {
                 this._setState({ analysisStatus: 'idle' })
             })
         }
