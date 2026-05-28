@@ -1,10 +1,10 @@
+This is an inventory of potential feature gaps resulting from a lean deployment. It should be treated as a starting point, not necessarily an authoritative list. In review, we should read through each, decide if they matter to us or whether they are already being implemented in a planned future plugin.
+
 # Feature gaps in the lean deployment
 
 Features full MMGIS provides that lean either drops or can only deliver through new work. Working list.
 
 Lean does not host data of any kind. Features whose current implementation depends on local files either need an external substitute — typically STAC or another mission-owner-hosted service — or are dropped. Mission owners who want a capability are responsible for hosting the data behind it.
-
-Items here are real gaps that need product or architecture decisions. Trivial code re-writes, baked-value additions to the publish task, and items settled by the no-local-data principle live in the implementation plans.
 
 When a feature has an easy code change that meaningfully keeps it working, that is the obvious choice and the gap doesn't appear here. This doc covers only the cases where the trade-offs are real.
 
@@ -22,7 +22,47 @@ Capabilities lean does not provide and is not building a substitute for. Documen
 
 ---
 
-## Open gaps
+## Default disposition
+
+Cases where the obvious answer is to hide or drop the unsupported sub-feature in dashboards. Any preservation path is a real engineering investment that should be triggered by a specific mission need, not built speculatively. Listed for visibility so the loss isn't forgotten and the escape hatches are documented.
+
+### Drawing tool
+
+**What it does.** Admin users collaboratively create, edit, organize, version, and publish vector features (points, lines, polygons, notes, arrows) inside named "files," with templated properties, history/undo, and import/export.
+
+**Default: drop in dashboards.** Anonymous read-only dashboards have no place for collaborative editing. Every read and write currently goes through `/api/draw/*` and `/api/files/*`; dashboards have neither.
+
+**Escape hatch — read-only baked snapshot.** At publish, export each Draw file as compiled GeoJSON to S3 and patch the tool to load from those static URLs. Disable add/edit/delete/publish/history/templater UI. Requires forking `DrawTool_Shapes.fetchAllFeatures` and `getFiles`. Use when team annotations are central to a mission.
+
+### Elevation profile (Measure tool)
+
+**What it does.** Drawing a line in Measure renders a profile chart of elevation samples between the endpoints, fetched from `/api/utils/getprofile` (Python over GDAL). 2D / 3D distance measurements run client-side and are unaffected.
+
+**Default: hide the profile chart.** `getprofile` 404s; the chart hits its `data.length < 3` fallback (flat zero line, console warning). Distance-only Measure still works.
+
+**Escape hatch — client-side sample the mission's DEM.** Use the already-bundled `geotiff.js` to sample N points along the drawn line. Requires the DEM to be COG-formatted and reachable over HTTP — works against any host (mission owner's external S3 / CDN, or a copy baked into the dashboard bucket) that supports range requests and serves the right CORS headers. Use when elevation profiles are core to the deliverable.
+
+### Sun-angle compute (Shade tool)
+
+**What it does.** Given a source point and a time, computes solar azimuth/elevation/range at the surface for sunlight modeling. The compute path reads DEM elevation via `/api/utils/getbands`, then calls `/api/utils/ll2aerll` (SPICE-backed) for sun geometry. For Mars missions with an observer-specific time field, `/api/utils/chronice` converts UTC ↔ LMST (Local Mean Solar Time) for display. Static-shade rendering (no compute) is a separate, simpler path.
+
+**Default: hide the compute path.** Keep static-shade rendering; remove the time/target inputs. All three backend routes 404 in dashboards and SPICE has no JS port today.
+
+**Escape hatch — pre-compute fixed times.** Bake azimuth/elevation/range at publish for a chosen set of times; the picker becomes a discrete selector. Use when sun position at specific times is central to the mission.
+
+### Search (vectortile / geodataset path)
+
+**What it does.** A top-bar search box finds features in mission layers by typing a value from a configured property (e.g. site name). Vector layers (in-memory GeoJSON) search entirely client-side. Vectortile / geodataset-backed layers call `POST /api/geodatasets/search`.
+
+**Default: hide the search box when no in-memory vector layer is searchable.** Vector-layer search keeps working in dashboards. Vectortile / geodataset search is moot in lean because the Datasets/Geodatasets modules are dropped (see *Real decisions §2*).
+
+**Escape hatch — pluggable external search adapter.** See *Follow-ups* below. Not built today; defer until a mission actually requests external search.
+
+---
+
+## Real architectural decisions
+
+Cases where the trade-offs are real and the choice affects how many missions are publishable.
 
 ### 1. Time-windowed layers (`_time_` URL convention)
 
@@ -30,79 +70,14 @@ Capabilities lean does not provide and is not building a substitute for. Documen
 
 **Why lean breaks it.** No `Missions/` middleware and no local data, so the substituted URL has nothing to answer it.
 
-**Note on option A and the time bar.** When `config.time.enabled === true` but no time-windowed layers survive, `TimeControl_` still renders the full top bar, slider, and play controls. The slider moves but no layer updates — a scrubber that goes nowhere. Option A should pair with forcing `time.enabled = false` at publish when no time-windowed layers remain.
-
 **Options:**
 
-- **A. Hide.** Time-windowed layers don't appear in lean missions. Real capability loss for missions whose value depends on time-scrubbing.
+- **A. Hide.** Time-windowed layers don't appear in lean missions. Pair with forcing `config.time.enabled = false` at publish when no time-windowed layers remain; otherwise `TimeControl_` renders the full top bar and slider with nothing to control (a scrubber that goes nowhere). Real capability loss for missions whose value depends on time-scrubbing.
 - **B. STAC-backed.** The mission owner uploads the source data to a temporal-aware external service (STAC + a tile server like TiTiler-pgSTAC). Frontend's `TimeControl_` is rewired to drive STAC queries instead of string substitution. STAC mosaicking sorted datetime-descending reproduces both the closest-prior and the alpha-composite behavior. Costs: data hosting is the mission owner's responsibility; one-time frontend rewrite; layer-config schema change.
 
 ---
 
-### 2. Drawing tool in dashboards
-
-**What it does.** Admin users collaboratively create, edit, organize, version, and publish vector features (points, lines, polygons, notes, arrows) inside named "files," with templated properties, history/undo, and import/export.
-
-**Why lean breaks it.** Every read and write goes through `/api/draw/*` and `/api/files/*`; dashboards have neither. On open, the file list is empty, no shapes are loadable, and every edit/publish/history action 404s. The rendering pipeline (Leaflet styling, popups) is bundle-only and could still display features if they arrived statically.
-
-**Options:**
-
-- **A. Drop from dashboards.** Hide the tool. Loses even read-only browsing of team annotations.
-- **B. Read-only baked snapshot.** At publish, export each Draw file as compiled GeoJSON to S3 and patch the tool to load from those static URLs. Disable add/edit/delete/publish/history/templater UI. Requires forking `DrawTool_Shapes.fetchAllFeatures` and `getFiles`.
-- **C. Local-browser-storage editing.** Per-viewer scratchpad backed by IndexedDB/localStorage. No collaboration, no cross-device persistence; templater intersect (depends on `/api/geodatasets/intersect`) stays broken.
-- **D. External storage shim.** Point `calls.api` Draw endpoints at a separately deployed backend service. Restores full function; reintroduces a backend and CORS/auth surface that contradicts the no-backend premise.
-
----
-
-### 3. Search
-
-**What it does.** A top-bar search box finds features in mission layers by typing a value from a configured property (e.g. site name).
-
-**Why lean breaks it.** Two code paths. Vector layers (in-memory GeoJSON) search entirely client-side and keep working. Vectortile / geodataset-backed layers call `POST /api/geodatasets/search`, which 404s in dashboards. The failure callback is a no-op (`Search.js:338`), so the user sees nothing — no pan, no highlight, no error toast.
-
-Unlike tile data, there is no universal search URL contract — OGC API Features, STAC + CQL filter extension, and Elasticsearch/Typesense each speak different protocols — so "point at an external source" requires picking a protocol and wiring the frontend to it, not just changing a URL string.
-
-**Options:**
-
-- **A. Hide search when no vector-layer source exists.** Show the box only when at least one searchable layer is in-memory vector. Vectortile/geodataset searches go away.
-- **B. Bake a per-layer search index at publish.** Emit `{key, value, coordinates, featureId}` JSON alongside the tiles; rewire `searchGeodatasets()` to look up locally. Adds bundle size proportional to feature count.
-- **C. Convert searchable layers to in-memory vector at publish.** Only viable when feature count is small enough to ship as a GeoJSON FeatureCollection.
-- **D. Cross-origin call to a shared admin endpoint.** Restores function; introduces CORS/auth coupling; admin outage equals dashboard search outage.
-- **E. Pluggable external search.** Add a search-adapter abstraction so layer configs declare an external service and a protocol (OGC API Features + CQL2, STAC + filter extension, custom). Mission owner hosts the service. Costs: net-new frontend architecture; per-protocol adapter maintenance; layer-config schema extension.
-
----
-
-### 4. Elevation profile (Measure tool)
-
-**What it does.** Drawing a line in Measure renders a profile chart of elevation samples between the endpoints, fetched from `/api/utils/getprofile` (Python over GDAL).
-
-**Why lean breaks it.** `getprofile` 404s in dashboards. The chart hits its `data.length < 3` fallback (flat zero line, console warning). 2D / 3D distance measurements still work — those are computed client-side.
-
-**Options:**
-
-- **A. Hide the profile chart.** Keep distance-only Measure.
-- **B. Client-side sample a baked DEM COG.** Use the already-bundled `geotiff.js` to sample N points along the drawn line, where the mission's DEMs are COG-formatted and reachable.
-- **C. External tile-server point queries.** N requests per drag to a public TiTiler `/cog/point`. Slow at high step counts; mission owner hosts the tile server.
-- **D. Pre-compute profiles for fixed transects.** Only works for curated measurements, not arbitrary drawing.
-
----
-
-### 5. Sun-angle compute (Shade tool)
-
-**What it does.** Given a source point and a time, the Shade tool computes solar azimuth/elevation/range at the surface for sunlight modeling. The compute path reads DEM elevation at the source via `/api/utils/getbands`, then calls `/api/utils/ll2aerll` (SPICE-backed) to derive sun geometry. For Mars missions with an observer-specific time field, `/api/utils/chronice` converts UTC ↔ LMST (Local Mean Solar Time) for display.
-
-**Why lean breaks it.** All three routes 404 in dashboards. The compute affordance produces an error toast and the lighting overlay does not update; the LMST input row for Mars observer panels fails to populate (UTC ↔ LMST conversion needs SPICE kernels on disk).
-
-**Options:**
-
-- **A. Hide the compute path.** Keep static-shade rendering only; remove the time/target inputs.
-- **B. Pre-compute for a fixed set of times.** Bake azimuth/elevation/range at publish for chosen times; the time picker becomes a discrete selector.
-- **C. Client-side compute with baked elevation.** Read elevation via `geotiff.js` against a baked DEM COG, then port the SPICE-equivalent solar math into the bundle. No SPICE-equivalent JS library exists today; this option assumes the team writes or sponsors one. Substantial unbudgeted effort — listed for completeness, not as a near-term path.
-- **D. Hide the tool.**
-
----
-
-### 6. Server-served vector and tabular data (Datasets / Geodatasets / tipg)
+### 2. Server-served vector and tabular data (Datasets / Geodatasets / tipg)
 
 **What it does.**
 
@@ -126,7 +101,7 @@ Unlike tile data, there is no universal search URL contract — OGC API Features
 
 ---
 
-### 7. Plugin tools in dashboards
+### 3. Plugin tools in dashboards
 
 **What it does (today).** `API/updateTools.js` codegen scans `src/essence/Tools/*` and any `*Plugin-Tools*` / `*Private-Tools*` sibling directories at build time, writes `src/pre/tools.js` with `import` statements per tool, and Webpack bundles them. The same path runs for both admin and dashboard builds. Plugin backends (`*Plugin-Backend*`) mount Express routes at admin boot.
 
@@ -141,15 +116,10 @@ Unlike tile data, there is no universal search URL contract — OGC API Features
 
 ---
 
-### 8. Layer-config validation against deployment capability
+## Follow-ups (not lean-specific)
 
-**What it does (today).** `API/Backend/Config/validate.js` runs on save (and via `POST /api/configure/validate`). It checks structure: required fields, presence of URLs, numeric ranges, duplicate UUIDs, recognized layer types. It does **not** check URL reachability, scheme (`/Missions/...` vs absolute), whether sidecar paths are mounted in the deploy target, or whether referenced tool/kind UUIDs exist.
+Concerns that surface in the context of lean but are not lean-specific decisions. Tracked here so they're not lost.
 
-**Why lean breaks it.** Admin can author a config with `/titiler/...`, `/stac/...`, `/Missions/...`, `geodatasets:...`, or `api:...` URLs that the lean deployment can't fulfill. The config saves cleanly, the dashboard publishes cleanly, and the user sees a broken map with no diagnostic. The same risk applies to full mode if the operator runs without one of the `WITH_*` flags.
+- **Layer-config validation.** `API/Backend/Config/validate.js` runs on save and checks structural shape (required fields, numeric ranges, duplicate UUIDs, recognized layer types). It does **not** check URL reachability, scheme (`/Missions/...` vs absolute), whether sidecar paths are mounted in the deploy target, or whether referenced tool/kind UUIDs exist. The same risk applies in full mode today if the operator runs without one of the `WITH_*` flags — lean just makes the consequences more visible. Track as a separate config-validation hardening item; out of scope for the lean ADR.
 
-**Options:**
-
-- **A. Authoring-time UI hints in Configure SPA.** HEAD-probe URLs on blur in `Maker.js`; warn on 404 or wrong scheme. Lowest friction; misses auth-required URLs and CDN-only paths.
-- **B. Save-time backend reject.** Extend `validate.js` with an opt-in reachability probe. Catches errors at save; the admin server's outbound reach may differ from the dashboard runtime.
-- **C. Publish-time gate.** New step in the publish task: dry-fetch every URL from the publish runner. Tests from the target perspective (most accurate); slowest; needs new tooling.
-- **D. Runtime layer-hide.** If a layer's first fetch 404s, drop it with a console warning. Graceful degradation; does not prevent broken dashboards from shipping.
+- **Pluggable external search adapter.** A search-adapter abstraction in the frontend (one adapter per protocol: OGC API Features + CQL2, STAC + filter extension, custom) would let layer configs declare an external search service for vectortile / geodataset layers. Unlike tile data there is no universal search URL contract; "point at an external source" requires picking a protocol and wiring the frontend to it. Independent of the Datasets/Geodatasets disposition above. Defer until a mission actually requests it.

@@ -87,37 +87,37 @@ The table describes **runtime dashboard behavior** and is variant-invariant. Bur
 | `signup` | `/api/users/signup` | Drop | No user management in dashboards. |
 | `logout` | `/api/users/logout` | Drop | No session to clear. |
 | `getbands` | `/api/utils/getbands` | Drop | Plain-`.tif` pixel queries; Identifier forces `trueValue=false` in static mode, falling back to legend-matched RGB (per Phase 6 of the implementation plans). |
-| `getprofile` | `/api/utils/getprofile` | Drop | Elevation profile; UI fate per feature-gap #4 (Measure). |
+| `getprofile` | `/api/utils/getprofile` | Drop | Elevation profile; UI hides by default (see feature-gaps *Default disposition: Elevation profile*). |
 | `getminmax` | `/api/utils/getminmax` | Compute | `cogMin`/`cogMax` baked into mission config or read from COG IFD via `geotiff.js`. |
-| `ll2aerll` | `/api/utils/ll2aerll` | Drop | SPICE sun-geometry compute; gap #5 (Shade). |
-| `chronice` | `/api/utils/chronice` | Drop | SPICE LMST conversion; gap #5 (Shade). |
+| `ll2aerll` | `/api/utils/ll2aerll` | Drop | SPICE sun-geometry compute; feature-gaps *Default disposition: Sun-angle compute*. |
+| `chronice` | `/api/utils/chronice` | Drop | SPICE LMST conversion; feature-gaps *Default disposition: Sun-angle compute*. |
 | `proj42wkt` | `/api/utils/proj42wkt` | Compute | WKT baked into mission config or converted via `proj4js` at runtime. |
-| `draw_add` | `/api/draw/add` | Drop | Drawing in dashboards per gap #2. |
-| `draw_edit` | `/api/draw/edit` | Drop | Gap #2. |
-| `draw_remove` | `/api/draw/remove` | Drop | Gap #2. |
-| `draw_undo` | `/api/draw/undo` | Drop | Gap #2. |
-| `draw_merge` | `/api/draw/merge` | Drop | Gap #2. |
-| `draw_split` | `/api/draw/split` | Drop | Gap #2. |
-| `draw_aggregations` | `/api/draw/aggregations` | Drop | Gap #2. |
-| `files_getfiles` | `/api/files/getfiles` | Drop | Gap #2. |
-| `files_getfile` | `/api/files/getfile` | Drop | Gap #2. |
-| `files_make` | `/api/files/make` | Drop | Gap #2. |
-| `files_remove` | `/api/files/remove` | Drop | Gap #2. |
-| `files_restore` | `/api/files/restore` | Drop | Gap #2. |
-| `files_change` | `/api/files/change` | Drop | Gap #2. |
-| `files_modifykeyword` | `/api/files/modifykeyword` | Drop | Gap #2. |
-| `files_compile` | `/api/files/compile` | Drop | Gap #2. |
-| `files_publish` | `/api/files/publish` | Drop | Gap #2. |
-| `files_gethistory` | `/api/files/gethistory` | Drop | Gap #2. |
+| `draw_add` | `/api/draw/add` | Drop | Drawing drops in dashboards by default (see feature-gaps *Default disposition: Drawing tool*). |
+| `draw_edit` | `/api/draw/edit` | Drop | Same as `draw_add`. |
+| `draw_remove` | `/api/draw/remove` | Drop | Same as `draw_add`. |
+| `draw_undo` | `/api/draw/undo` | Drop | Same as `draw_add`. |
+| `draw_merge` | `/api/draw/merge` | Drop | Same as `draw_add`. |
+| `draw_split` | `/api/draw/split` | Drop | Same as `draw_add`. |
+| `draw_aggregations` | `/api/draw/aggregations` | Drop | Same as `draw_add`. |
+| `files_getfiles` | `/api/files/getfiles` | Drop | Same as `draw_add`. |
+| `files_getfile` | `/api/files/getfile` | Drop | Same as `draw_add`. |
+| `files_make` | `/api/files/make` | Drop | Same as `draw_add`. |
+| `files_remove` | `/api/files/remove` | Drop | Same as `draw_add`. |
+| `files_restore` | `/api/files/restore` | Drop | Same as `draw_add`. |
+| `files_change` | `/api/files/change` | Drop | Same as `draw_add`. |
+| `files_modifykeyword` | `/api/files/modifykeyword` | Drop | Same as `draw_add`. |
+| `files_compile` | `/api/files/compile` | Drop | Same as `draw_add`. |
+| `files_publish` | `/api/files/publish` | Drop | Same as `draw_add`. |
+| `files_gethistory` | `/api/files/gethistory` | Drop | Same as `draw_add`. |
 | `shortener_shorten` | `/api/shortener/shorten` | Drop | Link shortener not deployed. |
 | `shortener_expand` | `/api/shortener/expand` | Drop | Link shortener not deployed. |
 | `clear_test` | `/api/draw/clear_test` | Drop | Test-only; no production caller. |
-| `tactical_targets` | `/api/tactical/targets` | Drop | Private-plugin endpoint; gap #7 (Plugin tools). |
-| `datasets_get` | `/api/datasets/get` | Drop | Datasets module dropped; gap #6 governs popup behavior. |
-| `geodatasets_get` | `/api/geodatasets/get` | Drop | Geodatasets module dropped; gap #6. |
-| `geodatasets_intersect` | `/api/geodatasets/intersect` | Drop | Geodatasets module dropped; gap #6. |
-| `geodatasets_aggregations` | `/api/geodatasets/aggregations` | Drop | Geodatasets module dropped; gap #6. |
-| `geodatasets_search` | `/api/geodatasets/search` | Drop | Geodatasets module dropped; gap #3 (Search) governs UI. |
+| `tactical_targets` | `/api/tactical/targets` | Drop | Private-plugin endpoint; see feature-gaps decision §3 (Plugin tools). |
+| `datasets_get` | `/api/datasets/get` | Drop | Datasets module dropped; popup behavior per feature-gaps decision §2 (Datasets / Geodatasets / tipg). |
+| `geodatasets_get` | `/api/geodatasets/get` | Drop | Geodatasets module dropped; see feature-gaps decision §2. |
+| `geodatasets_intersect` | `/api/geodatasets/intersect` | Drop | Geodatasets module dropped; see feature-gaps decision §2. |
+| `geodatasets_aggregations` | `/api/geodatasets/aggregations` | Drop | Geodatasets module dropped; see feature-gaps decision §2. |
+| `geodatasets_search` | `/api/geodatasets/search` | Drop | Geodatasets module dropped; UI hides search box when no in-memory vector layer is searchable (feature-gaps *Default disposition: Search*). |
 | `spatial_published` | `/api/spatial/published` | Drop | Response is `console.log`'d and never consumed (dead path). |
 | `query_tileset_times` | `/api/utils/queryTilesetTimes` | Compute | Baked `times.json` per time-enabled tile layer. |
 
@@ -133,6 +133,6 @@ The `Compute` entries (`getminmax`, `proj42wkt`, `query_tileset_times`) share a 
 ## Related
 
 - [`adr.md`](./adr.md) — full ADR, the Known constraints section enumerates what's dropped.
-- [`feature-gaps.md`](./feature-gaps.md) — the eight real gaps the dispatcher table cites by number (`gap #N`). Each entry explains what the dropped call meant for the user and the options for handling the loss.
+- [`feature-gaps.md`](./feature-gaps.md) — what each dropped call meant for the user and how dashboards handle the loss. Organized into *Default disposition* (hide-by-default features with documented escape hatches) and *Real architectural decisions* (the three genuinely open product/architecture choices).
 - [`implementation-plan-keep.md`](./implementation-plan-keep.md) — Phase 3 implements the Datasets/Geodatasets gating; Phase 5 implements Shortener gating; Phase 6 covers the dispatcher table.
 - [`implementation-plan-burn.md`](./implementation-plan-burn.md) — same numbering, equivalent edits via deletion instead of gating.
