@@ -31,6 +31,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import PrecisionManufacturingIcon from "@mui/icons-material/PrecisionManufacturing";
 
 import { setConfiguration, setSnackBarText } from "./ConfigureStore";
+import UploadField from "./components/UploadField";
 import {
   getIn,
   setIn,
@@ -425,6 +426,35 @@ const getComponent = (
           </Typography>
         </div>
       );
+    case "upload": {
+      const uploadDomain =
+        window.mmgisglobal && window.mmgisglobal.NODE_ENV === "development"
+          ? "http://localhost:8888/"
+          : (window.mmgisglobal && window.mmgisglobal.ROOT_PATH) || "";
+      const normalizedDomain =
+        uploadDomain.length > 0 && !uploadDomain.endsWith("/")
+          ? uploadDomain + "/"
+          : uploadDomain;
+      return (
+        <UploadField
+          label={com.name}
+          description={com.description}
+          value={fieldValue}
+          mission={
+            configuration?.msv?.missionFolderName ||
+            configuration?.msv?.mission
+          }
+          domain={normalizedDomain}
+          disabled={disabled || isDisabled}
+          onChange={(p) =>
+            updateConfiguration(forceField || com.field, p, layer)
+          }
+          onError={(msg) =>
+            dispatch(setSnackBarText({ text: msg, severity: "error" }))
+          }
+        />
+      );
+    }
     case "text":
       inner = (
         <TextField
