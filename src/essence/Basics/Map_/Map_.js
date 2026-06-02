@@ -15,7 +15,7 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
-import { applyCogFieldsToUrl } from '../Layers_/cogUrlUtils'
+import { compileTileUrl } from '../Layers_/tileUrlUtils'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -1536,9 +1536,22 @@ async function makeTileLayer(layerObj, mapContext = null) {
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
         // would normally add per-tile in getTileUrl.
-        if (splitColonType === 'COG' || splitColonType === 'stac-collection' || layerObj.cogTransform === true) {
-            layerUrl = applyCogFieldsToUrl(layerUrl, layerObj)
+        // Extract time config, defaulting to empty object
+        const timeConfig = layerObj.time || {};
+
+        const deckOptions = {
+            ...layerObj,
+            splitColonType: splitColonType,
+            timeEnabled: timeConfig.enabled === true,
+            time: timeConfig.end ?? '',
+            compositeTile: timeConfig.compositeTile ?? false,
+            starttime: timeConfig.start ?? '',
+            endtime: timeConfig.end ?? '',
+            customTimes: timeConfig.customTimes ?? '',
+            tileFormat: layerObj.tileformat || 'tms',
+            timeFormat: timeConfig.format,
         }
+        layerUrl = compileTileUrl(layerUrl, deckOptions)
 
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'tile',
@@ -1571,13 +1584,13 @@ async function makeTileLayer(layerObj, mapContext = null) {
             typeof layerObj.time === 'undefined'
                 ? false
                 : layerObj.time.compositeTile || false,
-        starttime:
-            typeof layerObj.time === 'undefined' ? '' : layerObj.time.start,
+        starttime: typeof layerObj.time === 'undefined' ? '' : layerObj.time.start,
         endtime: typeof layerObj.time === 'undefined' ? '' : layerObj.time.end,
         customTimes:
             typeof layerObj.time === 'undefined'
                 ? null
                 : layerObj.time.customTimes,
+        timeFormat: layerObj.time?.format,
         cogTransform: layerObj.cogTransform,
         cogMin: layerObj.cogMin,
         currentCogMin: layerObj.currentCogMin,
