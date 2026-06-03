@@ -761,7 +761,6 @@ const TimeUI = {
             promptTimeOnDateChangeTransitionDelay: 200,
         }
 
-        // startElm is already defined at the top
         TimeUI.startTempus = new TempusDominus(startElm, options)
         TimeUI.startTempus.dates.formatInput = function (date) {
             return moment(date).format(FORMAT)

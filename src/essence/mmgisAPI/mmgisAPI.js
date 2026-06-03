@@ -696,7 +696,7 @@ var mmgisAPI = {
      * @returns {object} - an object containing the visibility state of each layer
      */
     getLayerConfigs: mmgisAPI_.getLayerConfigs,
-    /** getRawConfigData - returns the original unmutated configuration data 
+    /** getRawConfigData - returns the original unmutated configuration data
      * @returns {object} - the original configData object
      */
     getRawConfigData: mmgisAPI_.getRawConfigData,

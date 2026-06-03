@@ -8,6 +8,7 @@ type MMGISAPI = {
     hasHandler?: (name: string) => boolean
     getLayerConfigs?: () => any
     getRawConfigData?: () => any
+    getVisibleLayers?: () => Record<string, boolean>
 }
 
 declare global {
@@ -53,4 +54,8 @@ export const mmgisGetLayerConfigs = (): any => {
 
 export const mmgisGetRawConfigData = (): any => {
     return window.mmgisAPI?.getRawConfigData?.() || {}
+}
+
+export const mmgisGetVisibleLayers = (): Record<string, boolean> => {
+    return window.mmgisAPI?.getVisibleLayers?.() || {}
 }

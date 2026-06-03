@@ -20,34 +20,51 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
     return (
         <div className="playback-controls">
             <button className="playback-btn" onClick={onGoToStart} title="Go to start">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-                    <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" 
+                stroke-linejoin="round" className="lucide lucide-skip-back w-3.5 h-3.5" aria-hidden="true">
+                    <path d="M17.971 4.285A2 2 0 0 1 21 6v12a2 2 0 0 1-3.029 1.715l-9.997-5.998a2 2 0 0 1-.003-3.432z" />
+                    <path d="M3 20V4"/>
                 </svg>
             </button>
             <button className="playback-btn" onClick={onStepBackward} title="Step backward">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-                    <path d="M11 18V6l-8.5 6 8.5 6zm.5-6l8.5 6V6l-8.5 6z" />
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
+                className="lucide lucide-step-back w-3.5 h-3.5" aria-hidden="true">
+                    <path d="M13.971 4.285A2 2 0 0 1 17 6v12a2 2 0 0 1-3.029 1.715l-9.997-5.998a2 2 0 0 1-.003-3.432z"/>
+                    <path d="M21 20V4"/>
                 </svg>
             </button>
             <button className="playback-btn play-btn" onClick={onPlayToggle} title={isPlaying ? "Pause" : "Play"}>
                 {isPlaying ? (
-                    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
+                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
+                    className="lucide lucide-pause w-4 h-4 fill-current" aria-hidden="true">
+                        <rect x="14" y="3" width="5" height="18" rx="1"></rect>
+                        <rect x="5" y="3" width="5" height="18" rx="1"></rect>
                     </svg>
                 ) : (
-                    <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                        <path d="M8 5v14l11-7z" />
+                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
+                    fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
+                    className="lucide lucide-play w-4 h-4 fill-current ml-px" aria-hidden="true">
+                        <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/>
                     </svg>
                 )}
             </button>
             <button className="playback-btn" onClick={onStepForward} title="Step forward">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-                    <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z" />
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
+                className="lucide lucide-step-forward w-3.5 h-3.5" aria-hidden="true">
+                    <path d="M10.029 4.285A2 2 0 0 0 7 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z"/>
+                    <path d="M3 4v16"/>
                 </svg>
             </button>
             <button className="playback-btn" onClick={onGoToEnd} title="Go to end">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-                    <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
+                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
+                className="lucide lucide-skip-forward w-3.5 h-3.5" aria-hidden="true">
+                    <path d="M21 4v16"/>
+                    <path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z"/>
                 </svg>
             </button>
         </div>

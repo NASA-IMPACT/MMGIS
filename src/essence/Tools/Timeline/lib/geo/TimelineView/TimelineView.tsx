@@ -14,6 +14,7 @@ export interface TimelineViewProps {
     timeMode: TimeMode
     layers: LayerTimeData[]
     onCurrentTimeChange: (time: Date) => void
+    onResetZoomReady?: (resetZoomFn: () => void) => void
 }
 
 export const TimelineView: React.FC<TimelineViewProps> = ({
@@ -23,6 +24,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     timeMode,
     layers,
     onCurrentTimeChange,
+    onResetZoomReady,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const svgRef = useRef<SVGSVGElement>(null)
@@ -34,7 +36,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const [zoomTransform, setZoomTransform] = useState(zoomIdentity)
 
     const axisHeight = 24 // Space for the bottom axis
-    const layerBarHeight = 24
+    const layerBarHeight = 15
     const topBarHeight = 24 // Space for top axis
 
     // Calculate total height needed for layers
@@ -132,10 +134,18 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         const svg = select(svgRef.current)
         svg.call(zoomBehavior as any)
 
+        // Expose reset zoom function to parent
+        if (onResetZoomReady) {
+            const resetZoom = () => {
+                svg.transition().duration(300).call(zoomBehavior.transform as any, zoomIdentity)
+            }
+            onResetZoomReady(resetZoom)
+        }
+
         return () => {
             svg.on('.zoom', null)
         }
-    }, [dimensions])
+    }, [dimensions, onResetZoomReady])
 
     // Update scrubber position
     const scrubberX = transformedXScale(currentTime)
@@ -264,7 +274,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
 
                             {/* Scrubber diamond head at the top of the layers */}
                             <polygon
-                                points={`${scrubberX},0 ${scrubberX + 6},6 ${scrubberX},12 ${scrubberX - 6},6`}
+                                points={`${scrubberX},0 ${scrubberX + 8},8 ${scrubberX},16 ${scrubberX - 8},8`}
                                 fill="#0b7a8a"
                                 stroke="#ffffff"
                                 strokeWidth="1.5"
@@ -274,12 +284,6 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                         </g>
                     </svg>
                 </div>
-            </div>
-            {/* Zoom instructions */}
-            <div className="timeline-instructions" style={{ flexShrink: 0 }}>
-                <span className="instruction-text">
-                    Scroll to zoom • Drag scrubber to change time • Click to jump
-                </span>
             </div>
         </>
     )

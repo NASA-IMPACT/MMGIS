@@ -1,10 +1,13 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef } from 'react'
 import moment from 'moment'
+import { FloatingPopover } from '../../../../../Ancillary/FloatingPopover'
+import { TimeMode } from '../../types'
 
 export interface DateSelectorProps {
     selectedDate: Date
     startTime: Date
     endTime: Date
+    timeMode?: TimeMode
     onDateChange: (date: Date) => void
 }
 
@@ -12,32 +15,36 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     selectedDate,
     startTime,
     endTime,
+    timeMode = 'DAY',
     onDateChange,
 }) => {
     const [isOpen, setIsOpen] = useState(false)
     const [inputValue, setInputValue] = useState('')
-    const dropdownRef = useRef<HTMLDivElement>(null)
+    const buttonRef = useRef<HTMLButtonElement>(null)
 
     // Format the selected date for display
-    const formattedDate = moment(selectedDate).format('MMM, D YYYY')
+    let formattedDate = moment(selectedDate).format('MMM D, YYYY')
+    if (timeMode === 'MONTH') {
+        formattedDate = moment(selectedDate).format('MMMM YYYY')
+    } else if (timeMode === 'HOUR') {
+        formattedDate = moment(selectedDate).format('MMM D, YYYY, HH:mm')
+    }
 
-    // Handle click outside to close dropdown
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false)
-            }
-        }
+    const getFormatPattern = () => {
+        if (timeMode === 'MONTH') return 'YYYY-MM'
+        if (timeMode === 'HOUR') return 'YYYY-MM-DDTHH:mm'
+        return 'YYYY-MM-DD'
+    }
 
-        if (isOpen) {
-            document.addEventListener('mousedown', handleClickOutside)
-            return () => document.removeEventListener('mousedown', handleClickOutside)
-        }
-    }, [isOpen])
+    const getInputType = () => {
+        if (timeMode === 'MONTH') return 'month'
+        if (timeMode === 'HOUR') return 'datetime-local'
+        return 'date'
+    }
 
     const handleDateClick = () => {
         setIsOpen(!isOpen)
-        setInputValue(moment(selectedDate).format('YYYY-MM-DD'))
+        setInputValue(moment(selectedDate).format(getFormatPattern()))
     }
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,9 +68,10 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     }
 
     return (
-        <div className="date-selector" ref={dropdownRef}>
+        <div className="date-selector">
             <div className="date-selector-display">
                 <button
+                    ref={buttonRef}
                     className="date-selector-main-button"
                     onClick={handleDateClick}
                     type="button"
@@ -79,30 +87,94 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 </button>
             </div>
 
-            {isOpen && (
-                <div className="date-selector-dropdown">
+            <FloatingPopover
+                anchorRef={buttonRef}
+                isOpen={isOpen}
+                onClose={() => setIsOpen(false)}
+                placement="bottom"
+                offset={10}
+            >
+                <div className="date-selector-dropdown" style={{ position: 'relative', top: 0, left: 0 }}>
                     <form onSubmit={handleInputSubmit} className="date-input-form">
-                        <label htmlFor="date-input">Select Date:</label>
-                        <input
-                            id="date-input"
-                            type="date"
-                            value={inputValue}
-                            onChange={handleInputChange}
-                            min={moment(startTime).format('YYYY-MM-DD')}
-                            max={moment(endTime).format('YYYY-MM-DD')}
-                        />
+                        <label htmlFor="date-input">
+                            {timeMode === 'MONTH' ? 'Select Month' : timeMode === 'HOUR' ? 'Select Date & Time' : 'Select Date'}
+                        </label>
+                        
+                        {timeMode === 'MONTH' && (() => {
+                            const currentMonth = moment(inputValue || selectedDate).month() + 1
+                            const currentYear = moment(inputValue || selectedDate).year()
+                            const startY = moment(startTime).year()
+                            const endY = moment(endTime).year()
+                            const years = []
+                            for(let y=startY; y<=endY; y++) years.push(y)
+
+                            return (
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <select 
+                                        className="date-select" 
+                                        value={currentMonth.toString().padStart(2, '0')} 
+                                        onChange={(e) => setInputValue(`${currentYear}-${e.target.value}`)}
+                                    >
+                                        {moment.months().map((m, i) => <option key={m} value={(i+1).toString().padStart(2, '0')}>{m}</option>)}
+                                    </select>
+                                    <select 
+                                        className="date-select" 
+                                        value={currentYear} 
+                                        onChange={(e) => setInputValue(`${e.target.value}-${currentMonth.toString().padStart(2, '0')}`)}
+                                    >
+                                        {years.map(y => <option key={y} value={y}>{y}</option>)}
+                                    </select>
+                                </div>
+                            )
+                        })()}
+
+                        {timeMode === 'HOUR' && (() => {
+                            const datePart = moment(inputValue || selectedDate).format('YYYY-MM-DD')
+                            const timePart = moment(inputValue || selectedDate).format('HH:mm')
+                            return (
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <input 
+                                        className="time-input-field" 
+                                        type="date" 
+                                        value={datePart} 
+                                        onChange={e => setInputValue(`${e.target.value}T${timePart}`)} 
+                                        min={moment(startTime).format('YYYY-MM-DD')}
+                                        max={moment(endTime).format('YYYY-MM-DD')}
+                                    />
+                                    <input 
+                                        className="time-input-field" 
+                                        type="time" 
+                                        value={timePart} 
+                                        onChange={e => setInputValue(`${datePart}T${e.target.value}`)} 
+                                    />
+                                </div>
+                            )
+                        })()}
+
+                        {timeMode === 'DAY' && (
+                            <input
+                                id="date-input"
+                                type="date"
+                                value={inputValue}
+                                onChange={handleInputChange}
+                                min={moment(startTime).format('YYYY-MM-DD')}
+                                max={moment(endTime).format('YYYY-MM-DD')}
+                                className="time-input-field"
+                            />
+                        )}
+
                         <button type="submit" className="date-submit-button">
-                            Go
+                            Apply
                         </button>
                     </form>
                     <div className="date-range-info">
-                        <small>
-                            Range: {moment(startTime).format('MMM D, YYYY')} -{' '}
-                            {moment(endTime).format('MMM D, YYYY')}
-                        </small>
+                        <small>Range</small>
+                        <div className="date-range-dates">
+                            {moment(startTime).format('MMM D, YYYY')} - {moment(endTime).format('MMM D, YYYY')}
+                        </div>
                     </div>
                 </div>
-            )}
+            </FloatingPopover>
         </div>
     )
 }

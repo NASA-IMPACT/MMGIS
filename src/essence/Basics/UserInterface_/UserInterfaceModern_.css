@@ -109,6 +109,7 @@
 /* Tool Cards - Base Styles (shared by stacked and tabbed) */
 .ui-tool-card {
     background-color: var(--theme-color-white, #ffffff);
+    width: 100%;
 }
 
 /* Stacked Tool Cards (default clickable cards in panel body) */
