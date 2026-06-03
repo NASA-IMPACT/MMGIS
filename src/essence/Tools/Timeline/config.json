@@ -1,0 +1,17 @@
+{
+  "name": "Timeline",
+  "description": "Interactive timeline visualization for navigating temporal data with zoom and layer visibility controls",
+  "defaultIcon": "timeline",
+  "paths": {
+    "TimelineTool": "essence/Tools/Timeline/TimelineTool"
+  },
+  "metadata": {
+    "icon": "timeline",
+    "requiredOrientation": "horizontal",
+    "compatiblePositions": ["bottom"],
+    "preferredPosition": "bottom",
+    "modernLayoutSupport": true,
+    "minHeight": 150,
+    "recommendedHeight": 200
+  }
+}
