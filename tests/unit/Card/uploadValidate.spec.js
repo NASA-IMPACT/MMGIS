@@ -25,6 +25,7 @@ test.describe('CardPlugin upload validation', () => {
 
     test('isValidMission rejects traversal and separators', () => {
         expect(isValidMission('')).toBe(false)
+        expect(isValidMission('.')).toBe(false)
         expect(isValidMission('..')).toBe(false)
         expect(isValidMission('a/../b')).toBe(false)
         expect(isValidMission('a/b')).toBe(false)

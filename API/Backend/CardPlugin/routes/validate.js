@@ -20,6 +20,9 @@ function isValidMission(mission) {
     if (mission.trim() === '') return false;
     if (mission.includes('..')) return false;
     if (mission.includes('/') || mission.includes('\\')) return false;
+    // A pure-dot name (e.g. ".") resolves to a directory segment, so the upload
+    // would land in the Missions root instead of a mission folder.
+    if (/^\.+$/.test(mission)) return false;
     return true;
 }
 

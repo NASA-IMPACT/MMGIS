@@ -46,11 +46,18 @@ router.post('/upload', function (req, res) {
         responded = true;
         res.status(code).json({ status: 'failure', message });
     };
+    const succeed = () => {
+        if (responded) return;
+        responded = true;
+        res.status(200).json({ status: 'success', path: savedRelPath });
+    };
 
+    let fileReceived = false;
     let savedRelPath = null;
     let destPath = null;
 
     bb.on('file', (name, file, info) => {
+        fileReceived = true;
         const ext = extensionForMime(info && info.mimeType);
         if (!ext) {
             file.resume(); // drain so the request can finish
@@ -83,15 +90,22 @@ router.post('/upload', function (req, res) {
             savedRelPath = null;
             fail(500, 'Failed to save image', err);
         });
+        // Only report success once the bytes are flushed to disk. Responding on
+        // busboy's 'close' would race the write stream — 'close' fires when the
+        // file readable has been drained into the write buffer, not when the
+        // file is fully written, so the client could get a path to a partial or
+        // (on a late write error + unlink) already-deleted file.
+        writeStream.on('finish', () => {
+            if (savedRelPath) succeed();
+        });
     });
 
     bb.on('error', (err) => fail(500, 'Upload failed', err));
 
     bb.on('close', () => {
-        if (responded) return;
-        if (!savedRelPath) return fail(400, 'No image provided');
-        responded = true;
-        res.status(200).json({ status: 'success', path: savedRelPath });
+        // A successful upload responds from the write stream's 'finish'. If no
+        // file part ever arrived, nothing else will respond — handle that here.
+        if (!fileReceived) fail(400, 'No image provided');
     });
 
     req.pipe(bb);
