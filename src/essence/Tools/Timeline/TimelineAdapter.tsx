@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import moment from 'moment'
-import { mmgisRequest, mmgisOn, mmgisEmit, mmgisGetLayerConfigs, mmgisGetRawConfigData } from './adapters/mmgisAPI'
+import { FloatingPopover } from '../../Ancillary/FloatingPopover'
+import { mmgisRequest, mmgisOn, mmgisEmit, mmgisGetLayerConfigs, mmgisGetRawConfigData, mmgisGetVisibleLayers } from './adapters/mmgisAPI'
 import {
     TimelineView,
     TimeModeControl,
@@ -35,11 +36,28 @@ export const TimelineAdapter: React.FC = () => {
     const [isReady, setIsReady] = useState(false)
 
     const [isPlaying, setIsPlaying] = useState(false)
+    const [layerVisibilityVersion, setLayerVisibilityVersion] = useState(0)
+    const [showInfoPopup, setShowInfoPopup] = useState(false)
+    const [resetZoomFn, setResetZoomFn] = useState<(() => void) | null>(null)
+    const infoButtonRef = useRef<HTMLButtonElement>(null)
 
+    const handleResetZoomReady = useCallback((fn: () => void) => {
+        setResetZoomFn(() => fn)
+    }, [])
+
+    // Subscribe to layer visibility changes
+    useEffect(() => {
+        const cleanup = mmgisOn('layer:visibilityChange', () => {
+            console.log('[Timeline] Layer visibility changed, refetching layers')
+            setLayerVisibilityVersion(v => v + 1)
+        })
+        return cleanup
+    }, [])
     useEffect(() => {
         const fetchLayers = () => {
             const configs = mmgisGetLayerConfigs()
             const rawConfig = mmgisGetRawConfigData()
+            const visibleLayers = mmgisGetVisibleLayers()
             const rawLayers = rawConfig?.layers || []
             const newLayers: LayerTimeData[] = []
 
@@ -54,35 +72,38 @@ export const TimelineAdapter: React.FC = () => {
                 return null
             }
 
-            console.log('[Timeline] Fetching layer configs for timeline:', { configs, rawLayers })
-
             Object.keys(configs).forEach(layerName => {
                 const layer = configs[layerName]
-                
+
+                // Filter to only visible layers
+                if (!visibleLayers?.[layerName]) {
+                    return
+                }
+
                 let start = startTime
                 let end = endTime
                 let color = '#808080' // default grey
-                
+
                 if (layer.time && layer.time.enabled) {
                     let rawLayer = null
                     if (rawLayers.length > 0) {
                         rawLayer = findRawLayer(rawLayers, layerName)
                     }
-                    const timeConfig = rawLayer?.time || layer.time
+                    const timeConfig = layer.time
 
-                    if (timeConfig.start) {
-                        const parsedStart = new Date(timeConfig.start)
+                    if (timeConfig.dataStartTime) {
+                        const parsedStart = new Date(timeConfig.dataStartTime)
                         if (!isNaN(parsedStart.getTime())) {
                             start = parsedStart
                         }
                     }
-                    if (timeConfig.end) {
-                        const parsedEnd = timeConfig.end === 'now' ? new Date() : new Date(timeConfig.end)
+                    if (timeConfig.dateEndTime) {
+                        const parsedEnd = timeConfig.dateEndTime === 'now' ? new Date() : new Date(timeConfig.dateEndTime)
                         if (!isNaN(parsedEnd.getTime())) {
                             end = parsedEnd
                         }
                     }
-                    
+
                     color = '#FF4D85' // pink for time enabled layers
                 }
 
@@ -100,7 +121,7 @@ export const TimelineAdapter: React.FC = () => {
         }
 
         fetchLayers()
-    }, [startTime, endTime])
+    }, [startTime, endTime, layerVisibilityVersion])
 
     // Fetch initial time data from TimeControl
     useEffect(() => {
@@ -157,19 +178,19 @@ export const TimelineAdapter: React.FC = () => {
         [startTime, endTime]
     )
 
-    // Handle start date change
-    const handleStartDateChange = useCallback(
-        (newStart: Date) => {
-            setStartTime(newStart)
+    // Handle current date change
+    const handleCurrentDateChange = useCallback(
+        (newCurrent: Date) => {
+            setCurrentTime(newCurrent)
 
             // Emit time:userChanged event for TimeControl to respond
             mmgisEmit('time:userChanged', {
-                startTime: newStart.toISOString(),
+                startTime: startTime.toISOString(),
                 endTime: endTime.toISOString(),
-                currentTime: currentTime.toISOString(),
+                currentTime: newCurrent.toISOString(),
             })
         },
-        [endTime, currentTime]
+        [startTime, endTime]
     )
 
     // Playback logic
@@ -244,7 +265,8 @@ export const TimelineAdapter: React.FC = () => {
                         selectedDate={currentTime}
                         startTime={startTime}
                         endTime={endTime}
-                        onDateChange={handleStartDateChange}
+                        timeMode={timeMode}
+                        onDateChange={handleCurrentDateChange}
                     />
                 </div>
                 <div className="timeline-header-center">
@@ -262,6 +284,29 @@ export const TimelineAdapter: React.FC = () => {
                         currentMode={timeMode}
                         onModeChange={setTimeMode}
                     />
+                    <div className="timeline-toolbar">
+                        <button
+                            className="timeline-tool-btn"
+                            onClick={() => resetZoomFn?.()}
+                            title="Reset Zoom"
+                            disabled={!resetZoomFn}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8A5.87 5.87 0 0 1 6 12c0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
+                            </svg>
+                        </button>
+                        <button
+                            ref={infoButtonRef}
+                            className="timeline-tool-btn"
+                            onClick={() => setShowInfoPopup(!showInfoPopup)}
+                            title="Info"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M0 0h24v24H0V0z" fill="none"/>
+                                <path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
             <div className="timeline-content">
@@ -272,8 +317,22 @@ export const TimelineAdapter: React.FC = () => {
                     timeMode={timeMode}
                     layers={layers}
                     onCurrentTimeChange={handleCurrentTimeChange}
+                    onResetZoomReady={handleResetZoomReady}
                 />
             </div>
+            <FloatingPopover
+                anchorRef={infoButtonRef}
+                isOpen={showInfoPopup}
+                onClose={() => setShowInfoPopup(false)}
+                placement="top"
+                offset={8}
+                className="timeline-info-tooltip-portal"
+            >
+                <div className="timeline-info-tooltip-content">
+                    <strong>Timeline Controls</strong>
+                    <p>Scroll to zoom • Drag scrubber to change time • Click to jump</p>
+                </div>
+            </FloatingPopover>
         </div>
     )
 }
