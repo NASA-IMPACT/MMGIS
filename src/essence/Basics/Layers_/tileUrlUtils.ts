@@ -87,8 +87,6 @@ function formatTime(date: Date, format: string): string {
 export function compileTileUrl(url: string, options: Record<string, any>): string {
     if (!url) return url
 
-    console.log('compileTileUrl', url, options)
-
     let nextUrl = url
 
     // 1. Process STAC/COG datetime parameters
@@ -180,8 +178,6 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
             nextUrl += `${paramDelimiter}composite=true`
         }
     }
-
-    console.log('nextUrl', nextUrl)
 
     return nextUrl
 }
