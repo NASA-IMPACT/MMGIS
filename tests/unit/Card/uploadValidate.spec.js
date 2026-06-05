@@ -10,10 +10,10 @@ test.describe('Upload validation', () => {
         expect(extensionForMime('image/jpeg')).toBe('jpg')
         expect(extensionForMime('image/webp')).toBe('webp')
         expect(extensionForMime('image/gif')).toBe('gif')
+        expect(extensionForMime('image/svg+xml')).toBe('svg')
     })
 
     test('extensionForMime rejects disallowed types', () => {
-        expect(extensionForMime('image/svg+xml')).toBeNull()
         expect(extensionForMime('application/pdf')).toBeNull()
         expect(extensionForMime(undefined)).toBeNull()
     })
