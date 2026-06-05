@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test'
 import {
     extensionForMime,
     isValidMission,
-} from '../../../API/Backend/CardPlugin/routes/validate.js'
+} from '../../../API/Backend/Upload/validate.js'
 
-test.describe('CardPlugin upload validation', () => {
+test.describe('Upload validation', () => {
     test('extensionForMime maps allowed image types', () => {
         expect(extensionForMime('image/png')).toBe('png')
         expect(extensionForMime('image/jpeg')).toBe('jpg')
