@@ -21,8 +21,8 @@ Open questions affecting these dispositions live in **ADR-A §8** (AWS-infra-sco
 | 3 | DEM-reading tools | Measure, Curtain, Viewshed, Shade — read elevation tiles client-side | DEM tiles | yes | yes | Bundle + DEM tiles from S3 (see #22) |
 | 4 | Heavy-compute tools | Isochrone — travel-time polygons over DEM pixels; today uses server help | DEM tiles, server compute | yes | open | Bundle; backend compute via Lambda or shared service if pure-client isn't viable |
 | 5 | Data-querying tools | Identifier, Chemistry — fetch features/values on demand | Geodataset / dataset query | yes | open | Bundle; data path per #20/#21 |
-| 6 | Drawing tool | Interactive create/edit/history/publish of user features | Postgres (read+write), WebSocket | yes | open | Admin: ECS+Postgres; dashboard: drop, read-only display of baked features, or local-browser-storage editing |
-| 7 | Real-time collaboration | WebSocket broadcast: Draw sync, layer-update notifications (Configure → Essence), Configure multi-admin coordination | WebSocket | yes | no | ALB WebSocket on admin ECS task |
+| 6 | Drawing tool | Interactive create/edit/history/publish of user features | Postgres (read+write), WebSocket | no | no | Gated out in lean (D2) — routes not mounted, no Draw in admin or dashboards |
+| 7 | Real-time collaboration | WebSocket broadcast: layer-update notifications (Configure → Essence), Configure multi-admin coordination | WebSocket | yes | no | ALB WebSocket on admin ECS task |
 | 8 | Time control | Temporal layer windowing + time bar UI | Time-aware data sources | yes | yes | Bundle; needs time-aware data baked or shared |
 | 9 | URL state | Shareable `?mapLat=…&on=…&tools=…` links | None | yes | yes | Bundle |
 | 10 | mmgisAPI | Public embed/plugin surface on `window.mmgisAPI` | None (delegates to other features) | yes | yes | Bundle; some methods no-op in dashboard |
@@ -58,7 +58,7 @@ Open questions affecting these dispositions live in **ADR-A §8** (AWS-infra-sco
 | 30 | SSO integration | CSSO header-based identity (off by default) | Upstream proxy headers | open | no | Only if deployment requires; otherwise dormant |
 | 31 | Permissions | Active set: `111`/`110`/`001`/`000` (guest); ENUM reserves all 8 values. First-user-becomes-superadmin via `first_signup` | Postgres (`users.permission`) | yes | no | Postgres on admin |
 | 32 | File uploads | Busboy ingestion for datasets, geodatasets, mission assets | Express + file system | yes | no | Presigned browser-to-S3 (Busboy still serves small payloads through Express) |
-| 33 | Webhooks | Admin-defined HTTP callbacks fired on Draw/Config changes | Postgres + outbound HTTP | yes | no | Postgres + outbound HTTP from admin ECS |
+| 33 | Webhooks | Admin-defined HTTP callbacks fired on Config changes | Postgres + outbound HTTP | yes | no | Postgres + outbound HTTP from admin ECS |
 | 34 | Link shortener | `(short, full, creator)` redirects | Postgres | open | no | Postgres on admin; or drop entirely |
 | 35 | Adjacent-services proxy | Reverse proxy for `/stac`, `/tipg`, `/titiler`, `/titilerpgstac`, `/veloserver` with admin gating | Express + http-proxy-middleware | yes | no | ALB target groups per service; dashboard frontend hits shared URLs directly |
 | 36 | Custom adjacent-server registry | `ADJACENT_SERVER_CUSTOM_<N>` env-driven proxy slots | Env vars + Express proxy | yes | no | Env-driven on admin ECS |
@@ -73,7 +73,7 @@ Open questions affecting these dispositions live in **ADR-A §8** (AWS-infra-sco
 
 | # | Feature | Description | Depends on | Admin | Dashboard | AWS |
 | --- | --- | --- | --- | --- | --- | --- |
-| 43 | Main MMGIS database | Postgres 16 + PostGIS — users, sessions, datasets, geodatasets, drawings, configs, tokens | Postgres + PostGIS extension | yes | no | Managed Postgres (engine choice TBD per overview open questions) |
+| 43 | Main MMGIS database | Postgres 16 + PostGIS — users, sessions, datasets, geodatasets, configs, tokens (drawings table present but unused; Draw gated out) | Postgres + PostGIS extension | yes | no | Managed Postgres (engine choice TBD per overview open questions) |
 | 44 | STAC database (`mmgis-stac`) | Separate Postgres for STAC + TiTiler-pgSTAC, uses pgstac extension | Postgres + pgstac extension | yes | no | Managed Postgres + pgstac; shared with #43 or separate (per overview open questions) |
 
 ## Build / ops

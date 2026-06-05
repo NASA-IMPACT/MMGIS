@@ -8,7 +8,7 @@ This is an LLM artifact. It was used during the creation of the ADR to document 
 
 This plan deletes the surfaces that don't ship in the lean angle. The repository state after this plan reflects exactly what the team deploys.
 
-The companion features inventory is [`../features.md`](../features.md); per-feature rows are cited as `#NN`.
+The companion features inventory is [`../shared/features.md`](../shared/features.md); per-feature rows are cited as `#NN`.
 
 Each phase has the same structure: **Goal / Files / Operations / Verification / Rollback**.
 
@@ -107,7 +107,7 @@ This mirrors Phase 5's deletion of the link shortener. Decision driver: every en
 - Edit: `package.json` — remove `busboy`, `csvtojson` if no other consumers; re-run `npm install`.
 - Edit: `scripts/server.js` — reduce the `bodyParser` 500 MB cap to the framework default. Draw is the remaining write workload; its JSON payloads fit comfortably.
 
-Note: the Draw module is preserved in lean per the ADR. `API/Backend/Draw/routes/files.js` despite its name does not handle file uploads — it manages drawing-file metadata records in Postgres. No Busboy or multipart parsing in that router (confirmed by grep).
+Note: the Draw module is gated out in lean per the ADR (D2) — `/api/draw` and `/api/files` don't mount. `API/Backend/Draw/routes/files.js`, despite its name, does not handle file uploads — it manages drawing-file metadata records in Postgres (no Busboy or multipart parsing, confirmed by grep) — so it is gated as part of Draw, not as an asset-upload route.
 
 **Other Configure SPA surfaces to handle in burn** (mostly covered by other-phase deletions; called out so the implementer doesn't miss them):
 
@@ -136,7 +136,9 @@ Note: the Draw module is preserved in lean per the ADR. `API/Backend/Draw/routes
 
 ## Phase 4 — Burn the `Missions/` middleware and `_time_` compositor
 
-**Goal:** Remove the static-file middleware that serves `/Missions/*`, the path-traversal hardening, and the `sharp`-driven `_time_` time-window compositing. (#26 in `features.md`.) The admin no longer serves mission assets at all.
+**Goal:** Remove the static-file middleware that serves `/Missions/*`, the path-traversal hardening, and the `sharp`-driven `_time_` time-window compositing. (#26 in `features.md`.) The admin no longer *serves* mission assets from local disk.
+
+Static-asset **upload** is still supported, repointed to S3: the core `API/Backend/Upload` module (`createUploadRouter`, #103) writes to the admin's S3 asset bucket instead of `Missions/...` and returns an absolute URL; assets serve via CloudFront. The `Upload` module is **not** deleted by burn — only its local-disk storage branch is replaced. Depends on #103 merging.
 
 This is the surface slesa flagged at "section 3.2 Time-composited layers in dashboards" — the server-side compositing logic.
 
@@ -315,7 +317,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
   - **Task execution role** — used by ECS itself to pull the image, write log streams, and inject env vars from Secrets Manager. Permissions: `ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`, `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `logs:CreateLogStream`, `logs:PutLogEvents`, `secretsmanager:GetSecretValue` (on the DB-credentials and session-secret secrets, for ECS `secrets[]` injection).
   - **Task role** — used by code running inside the container for SDK calls. Permissions vary per task (admin vs publish); listed per role below.
 - **Resource ARNs.** The bullets below describe permission *intent*. At implementation time, write explicit ARN templates: `arn:aws:ecs:<region>:<account>:task-definition/<family>:*`, `arn:aws:cloudformation:<region>:<account>:stack/mmgis-dashboard-*/*`, `arn:aws:s3:::mmgis-dashboard-*` (and the `/*` variant for object actions).
-- **Outbound HTTPS egress.** The admin ECS task fires `triggerWebhooks(...)` to user-configured external URLs (Draw events, Config saves, and the new Dashboards Publish/Update/Delete events per Phase 7). If the ECS task runs in a private subnet (the standard pattern when CloudFront fronts the ALB), it needs **either a NAT gateway in the VPC, or VPC endpoints for whatever destinations webhooks will fire at**. Without this, webhook calls hang and time out silently — a common "wait, why aren't my webhooks firing" production bug.
+- **Outbound HTTPS egress.** The admin ECS task fires `triggerWebhooks(...)` to user-configured external URLs (Config saves and the new Dashboards Publish/Update/Delete events per Phase 7; Draw events don't fire — Draw is gated out). If the ECS task runs in a private subnet (the standard pattern when CloudFront fronts the ALB), it needs **either a NAT gateway in the VPC, or VPC endpoints for whatever destinations webhooks will fire at**. Without this, webhook calls hang and time out silently — a common "wait, why aren't my webhooks firing" production bug.
 
 **Files:**
 

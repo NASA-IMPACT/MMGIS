@@ -7,7 +7,7 @@
 
 This ADR covers the AWS infrastructure for both deployables introduced in the [overview](./overview-new.md): the admin stack, the dashboard infrastructure, and the cross-cutting concerns that connect them (URL topology, publish flow, shared sidecars, data layout).
 
-Frontend code changes that support dashboard mode are covered in [ADR-B](./adr-b-frontend-refactor.md). Per-feature drop/survive disposition is in [`features.md`](./features.md). Implementation phasing is in [`detailed-implementation-plan.md`](./detailed-implementation-plan.md).
+Frontend code changes that support dashboard mode are covered in [ADR-B](./adr-b-frontend-refactor.md). Per-feature drop/survive disposition is in [`features.md`](../shared/features.md). Implementation phasing is in [`detailed-implementation-plan.md`](./detailed-implementation-plan.md).
 
 The stakeholder-given intent and requirements are in the overview and are treated as constraints here.
 

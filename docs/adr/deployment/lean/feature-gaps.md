@@ -14,9 +14,9 @@ When a feature has an easy code change that meaningfully keeps it working, that 
 
 Capabilities lean does not provide and is not building a substitute for. Documented here so the loss is clear.
 
-- **In-admin data upload.** Datasets, geodatasets, mission assets, tile pyramids. Admins author mission configs by referencing external URLs only.
+- **In-admin geodata upload.** Datasets, geodatasets, tile pyramids. Admins reference external URLs for all geospatial data. (Static mission assets — images, icons — are *not* dropped: they upload to an S3 asset bucket via the core `Upload` route. See [`adr.md`](./adr.md) constraint 4.)
 - **Python sidecars as part of MMGIS.** TiTiler, TiTiler-pgSTAC, STAC, tipg, and the `/veloserver` proxy. Missions point at external services for any capability these used to provide.
-- **`Missions/` static file serving.** No per-mission on-disk asset tree. Mission assets — pre-tiled raster imagery, DEM tiles, radargrams, feature-attached media, icons / 3D models for Kinds, legend images, `video` / `model` / `image` layer source files, Isochrone cost-tile pyramids — must be hosted externally by the mission owner or baked into the dashboard's S3 bucket at the path the bundle expects.
+- **`Missions/` static file serving.** No per-mission on-disk asset tree. Large mission data — pre-tiled raster imagery, DEM tiles, radargrams, feature-attached media, 3D models for Kinds, `video` / `model` / `image` layer source files, Isochrone cost-tile pyramids — must be hosted externally by the mission owner or baked into the dashboard's S3 bucket at the path the bundle expects. (Exception: small admin-uploaded images/icons go to the admin's S3 asset bucket via the core `Upload` route — that path is kept, just repointed from local disk to S3.)
 - **`mmgis-stac` database.** Not created since the STAC sidecar isn't deployed.
 - **Link shortener.** Not deployed.
 
@@ -30,9 +30,9 @@ Cases where the obvious answer is to hide or drop the unsupported sub-feature in
 
 **What it does.** Admin users collaboratively create, edit, organize, version, and publish vector features (points, lines, polygons, notes, arrows) inside named "files," with templated properties, history/undo, and import/export.
 
-**Default: drop in dashboards.** Anonymous read-only dashboards have no place for collaborative editing. Every read and write currently goes through `/api/draw/*` and `/api/files/*`; dashboards have neither.
+**Default: gated out entirely (D2).** Draw is not mounted in lean — not in the admin, not in dashboards. Every read and write goes through `/api/draw/*` and `/api/files/*`, both gated out per [`api.md`](./api.md). There are no Draw files to create or bake.
 
-**Escape hatch — read-only baked snapshot.** At publish, export each Draw file as compiled GeoJSON to S3 and patch the tool to load from those static URLs. Disable add/edit/delete/publish/history/templater UI. Requires forking `DrawTool_Shapes.fetchAllFeatures` and `getFiles`. Use when team annotations are central to a mission.
+**If a mission needs annotations,** author them as a static GeoJSON layer referenced by external URL in the mission config, the same as any other geospatial data in lean.
 
 ### Elevation profile (Measure tool)
 

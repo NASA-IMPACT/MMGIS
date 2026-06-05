@@ -7,7 +7,7 @@
 
 This ADR covers the changes to the MMGIS frontend codebase that make dashboard mode possible: a small set of seams where the runtime branches between "running inside the admin stack" (today's behavior) and "running as a published dashboard" (no backend, no database, no WebSocket).
 
-AWS infrastructure decisions — admin compute, URL topology, the publish flow, sidecar hosting — are in [ADR-A](./adr-a-aws-deployment.md). Per-feature drop/survive disposition with implementation notes is in [`features.md`](./features.md). The stakeholder-given intent and requirements are in the [overview](./overview-new.md).
+AWS infrastructure decisions — admin compute, URL topology, the publish flow, sidecar hosting — are in [ADR-A](./adr-a-aws-deployment.md). Per-feature drop/survive disposition with implementation notes is in [`features.md`](../shared/features.md). The stakeholder-given intent and requirements are in the [overview](./overview-new.md).
 
 The high-level shape: dashboard mode is selected by a build-time flag. The codebase has one branch; the bundle is built twice (once for admin, once per dashboard) from the same source. Almost the entire frontend is unchanged in dashboard mode — the map engines, the tools, the chrome, and the embed API all run as-is. The work is concentrated at the five seams in §2.
 
@@ -42,7 +42,7 @@ The exact URL shape returned by the helper in dashboard mode depends on the choi
 
 MMGIS's backend has a few small utility endpoints that do work for the frontend (elevation profiles, projection conversions, image-band metadata). A dashboard has no backend, so each is handled individually: drop the feature, redirect to a sidecar, or move the math into the browser.
 
-Per-feature product decisions, not a mechanical rewrite. Dispositions live in [`features.md`](./features.md).
+Per-feature product decisions, not a mechanical rewrite. Dispositions live in [`features.md`](../shared/features.md).
 
 ### 2.5 Disabling server-dependent features
 
@@ -92,7 +92,7 @@ How the frontend side breaks under each ADR-A option:
 
 ## 4. Per-feature disposition summary
 
-The per-feature drop/survive matrix lives in [`features.md`](./features.md). The shape:
+The per-feature drop/survive matrix lives in [`features.md`](../shared/features.md). The shape:
 
 - **Most features survive as-is** in dashboards — pure-client tools, map viewports, time control, URL state, DEM-reading tools, the embed API.
 - **A defined set drops cleanly** — login, the three WebSocket consumers, the Configure admin tool, accounts / tokens / permissions, webhooks, file uploads, the sidecar proxy, the server-only utility routes, the Jekyll docs site.

@@ -8,7 +8,7 @@ This is an LLM artifact. It was used during the creation of the ADR to document 
 
 This plan leaves the existing surfaces in the codebase and gates each on a deployment-mode environment variable. After this plan, the original NASA-AMMOS deployment continues to work with `MMGIS_DEPLOYMENT_MODE` unset (or `=full`); the lean deployment sets `MMGIS_DEPLOYMENT_MODE=lean` and gets the smaller surface.
 
-The companion features inventory is [`../features.md`](../features.md); per-feature rows are cited as `#NN`.
+The companion features inventory is [`../shared/features.md`](../shared/features.md); per-feature rows are cited as `#NN`.
 
 Each phase has the same structure: **Goal / Files / Operations / Verification / Rollback**.
 
@@ -103,7 +103,7 @@ This mirrors the whole-module gating pattern Phase 5 uses for Shortener. Decisio
 - **APIs page cards.** `configure/src/pages/APIs/APIs.js` renders cards for STAC, TiTiler, TiTiler-PgSTAC, and Tipg. The cards already render as `cardInactive` when their respective `WITH_*` flag is false. Verify Phase 2 actually forces those flags to false in lean (it does — the keep Phase 2 edit forces them at the Pug shell), and add a confirmation verification step.
 - **Row-action icons in STAC / Datasets / GeoDatasets pages.** Update (`UploadIcon`), Append (`ControlPointDuplicateIcon`), Import (`UploadIcon`), Export (`DownloadIcon`) buttons in `configure/src/pages/STAC/STAC.js`, `configure/src/pages/Datasets/Datasets.js`, and `configure/src/pages/GeoDatasets/GeoDatasets.js`. Some of these surfaces are already hidden via the whole-page gating above (Datasets/GeoDatasets pages don't render in lean), but STAC's row actions are not — gate the upload/append/import buttons in `STAC/STAC.js` on `DEPLOYMENT_MODE === 'lean'`. The Export button can stay (read-only, harmless).
 
-Note: the Draw module is preserved in lean per the ADR and is not affected by this phase. `API/Backend/Draw/routes/files.js` despite its name does not handle file uploads — it manages drawing-file *metadata records* in Postgres. No Busboy, multipart, or filesystem writes in that router (confirmed by grep).
+**Draw module — gated out in lean (D2).** Per the ADR, Draw is not preserved in lean: no Draw in the admin, none in dashboards. Wrap the `/api/draw` and `/api/files` route mounts (both live under `API/Backend/Draw/`) in `if (isFull())`, mirroring the Datasets/Geodatasets pattern above. The Sequelize models still sync in both modes, so a future mode flip needs no migration — the `drawings` tables simply go unused in lean. The Draw tool is also gated out of the Essence bundle and Configure; its `/api/draw/*` and `/api/files/*` calls become `Drop` per [`api.md`](./api.md). `API/Backend/Draw/routes/files.js`, despite its name, manages drawing-file *metadata records* in Postgres, not uploads (no Busboy/multipart/filesystem writes — confirmed by grep); it is gated as part of Draw, not as an asset-upload route.
 
 **Operations:**
 1. Apply the whole-module gates in the two `setup.js` files.
@@ -120,24 +120,30 @@ Note: the Draw module is preserved in lean per the ADR and is not affected by th
 
 ## Phase 4 — Gate the `Missions/` middleware and `_time_` compositor
 
-**Goal:** In `lean` mode, the admin does not mount the `Missions/` static middleware or the `_time_` compositor. In `full` mode the existing 3-middleware stack is unchanged. (#26 in `features.md`.) The compositor logic is preserved for the upstream team and for any future opt-in.
+**Goal:** In `lean` mode, the admin does not mount the `Missions/` static *serving* middleware or the `_time_` compositor. In `full` mode the existing 3-middleware stack is unchanged. (#26 in `features.md`.) The compositor logic is preserved for the upstream team and for any future opt-in.
+
+Static-asset **upload** is *not* dropped — it is repointed. The core `API/Backend/Upload` module (`createUploadRouter`, #103) writes to `Missions/<mission>/<subdir>/uploads/` on disk today; in lean that storage backend swaps to the S3 asset bucket and the route returns an absolute S3/CloudFront URL instead of a mission-relative path. This is the single swap seam (`uploadRouter.js`); its image-only / 5 MB / no-SVG / path-traversal validators stay as-is. **Dependency:** the `Upload` module lives on `feature/103-card-plugin` and is not yet on `development` — this item is blocked until #103 merges.
 
 This is the surface slesa flagged at "section 3.2 Time-composited layers in dashboards" — the keep variant preserves the code so the discussion can be revisited.
 
 **Files:**
 - Edit: `scripts/server.js` — wrap the three middleware mounts (`ensureUser()`, `missions(ROOT_PATH)`, `express.static('Missions')`) in `if (isFull()) { ... }`.
 - `scripts/middleware.js` — unchanged. The factory still exists; it just isn't mounted in `lean` mode.
-- Edit: `sample.env` — document that `MISSIONS_*` env vars apply only to `full` mode.
+- Edit: `API/Backend/Upload/uploadRouter.js` (#103, once merged) — in `lean` mode, replace the `fs.createWriteStream` to `Missions/...` with an S3 `PutObject` to the asset bucket and return the absolute URL. `full` mode keeps the local-disk path.
+- Provision: an **S3 asset bucket** for the admin and PutObject IAM on the admin task role (Phase 8 / infra). Serve via the admin's CloudFront distribution.
+- Edit: `sample.env` — document that `MISSIONS_*` env vars apply only to `full` mode; add the asset-bucket name var for `lean`.
 - Edit: `package.json` — `sharp` stays in dependencies (the full-mode compositor uses it).
 
 **Operations:**
 1. Apply the mount-time gate in `scripts/server.js`.
 2. Document in code comments which features depend on `full` mode.
+3. After #103 merges, add the S3 storage branch to `uploadRouter.js` and provision the asset bucket + IAM.
 
 **Verification:**
 - `MMGIS_DEPLOYMENT_MODE=lean`: `GET /Missions/whatever` returns 404 from Express (no middleware mounted).
 - `MMGIS_DEPLOYMENT_MODE=full`: existing behavior — file served (or path-traversal error).
 - `_time_` URLs in `full` mode still composite via `sharp`.
+- `lean` mode: an admin image upload lands in the S3 asset bucket and the config stores a resolvable absolute URL; the asset renders in a published dashboard.
 
 **Rollback:** Revert the gate edit; `full` mode is the default.
 
@@ -147,7 +153,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 **Goal:** The link shortener has no meaningful role in the lean deployment; gate its route mounting on `full` mode so the admin URL surface is smaller in `lean`.
 
-**Webhooks is kept** in lean (decision reversed from the original draft). Reasons: Draw and Config already fire webhooks; the new Dashboards publish/update/delete flow is the most operationally relevant outbound-event source for lean (external CI/CD, monitoring, audit systems often want to know). Phase 7 wires the Dashboards routes to `triggerWebhooks`. No webhook code is gated.
+**Webhooks is kept** in lean (decision reversed from the original draft). Reasons: Config already fires webhooks (Draw's webhook calls go dark with Draw gated out); the new Dashboards publish/update/delete flow is the most operationally relevant outbound-event source for lean (external CI/CD, monitoring, audit systems often want to know). Phase 7 wires the Dashboards routes to `triggerWebhooks`. No webhook code is gated.
 
 **Files (link shortener, #34):**
 - Edit: `API/Backend/Shortener/setup.js` — wrap the route mount in `if (isFull())`. The model and routes remain in the repo.
@@ -198,10 +204,10 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
   - *Client-side at runtime:* if every COG in scope is generated with `-co STATISTICS=YES`, `geotiff.js` can read per-band stats from the IFD without GDAL. Requires authoring discipline on COG generation; removes the image-trim conflict.
   - Mission-config call site to silence either way: the `getminmax` call in `src/essence/Basics/Map_/Map_.js` (search for `getminmax`; the previous spec cited lines 2008–2042 — re-grep).
 
-- **Bake the projection WKT per mission CRS.** `proj42wkt` is dropped; shapefile export in Layers and Draw tools fails to emit `.prj`. Two implementation paths:
+- **Bake the projection WKT per mission CRS.** `proj42wkt` is dropped; shapefile export in the Layers tool fails to emit `.prj` (Draw's export path is gone with Draw gated out). Two implementation paths:
   - *Server-side at publish:* run `proj42wkt.py` once on the mission's proj4 string and bake the WKT into the mission config. Same GDAL/Python dependency concern as cogMin/cogMax.
   - *Client-side at runtime:* `proj4js` (already a dependency) supports proj4 → WKT conversion; do the conversion in the export handler in static mode.
-  - Call sites: shapefile export in `src/essence/Tools/Layers/LayersTool.js` and `src/essence/Tools/Draw/DrawTool_Files.js` (grep for `proj42wkt`).
+  - Call site: shapefile export in `src/essence/Tools/Layers/LayersTool.js` (grep for `proj42wkt`). The `src/essence/Tools/Draw/DrawTool_Files.js` call site is moot — Draw is gated out.
 
 - **Bake `times.json` per time-enabled tile layer.** `query_tileset_times` is dropped; the TimeUI sparkline histogram bars don't render without the count data. At publish, emit a static `times.json` per time-enabled layer listing per-bin tile counts. In static mode, `TimeUI._makeHistogram` reads from that path instead of calling the endpoint.
   - **Open question for this item:** where does the count data come from at publish time? Today's endpoint reads `Missions/<mission>/Layers/<layer>/<time>/` directory listings. In lean the tile pyramid is external. Three options to pick from before this item is implementable: (a) list the external bucket/prefix at publish time (requires bucket-read perms; works only for S3-hosted pyramids); (b) read a manifest the mission owner provides (push the work upstream to mission authoring); (c) derive from explicit time settings in the mission config if those carry enough information. None of these is settled — flag for the implementer or whoever owns mission authoring conventions.
@@ -289,7 +295,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
   - **Task execution role** — used by ECS itself to pull the image, write log streams, and inject env vars from Secrets Manager. Permissions: `ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`, `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `logs:CreateLogStream`, `logs:PutLogEvents`, `secretsmanager:GetSecretValue` on the DB-credentials and session-secret secrets.
   - **Task role** — used by code in the container for SDK calls. Permissions vary per task; listed below.
 - **Resource ARNs.** Permissions below describe *intent*. At implementation time, write explicit ARN templates: `arn:aws:ecs:<region>:<account>:task-definition/<family>:*`, `arn:aws:cloudformation:<region>:<account>:stack/mmgis-dashboard-*/*`, `arn:aws:s3:::mmgis-dashboard-*` (and `/*` variant for object actions).
-- **Outbound HTTPS egress.** The admin ECS task fires `triggerWebhooks(...)` to user-configured external URLs (Draw events, Config saves, and the new Dashboards Publish/Update/Delete events per Phase 7). If the ECS task runs in a private subnet (the standard pattern when CloudFront fronts the ALB), it needs **either a NAT gateway in the VPC, or VPC endpoints for whatever destinations webhooks will fire at**. Without this, webhook calls hang and time out silently — a common "wait, why aren't my webhooks firing" production bug.
+- **Outbound HTTPS egress.** The admin ECS task fires `triggerWebhooks(...)` to user-configured external URLs (Config saves and the new Dashboards Publish/Update/Delete events per Phase 7; Draw events don't fire — Draw is gated out). If the ECS task runs in a private subnet (the standard pattern when CloudFront fronts the ALB), it needs **either a NAT gateway in the VPC, or VPC endpoints for whatever destinations webhooks will fire at**. Without this, webhook calls hang and time out silently — a common "wait, why aren't my webhooks firing" production bug.
 
 **Files:**
 

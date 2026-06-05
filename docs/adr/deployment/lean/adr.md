@@ -11,7 +11,7 @@
 Supersedes the `preserve` ADRs. Two assumptions changed:
 
 - Sidecar functionality (TiTiler, STAC, link shortener, etc.) is already covered by microservices we host separately or are publicly available.
-- Admins won't upload or process custom data through MMGIS.
+- Admins won't upload or process custom geodata through MMGIS. (Static mission assets like images are still uploadable; geospatial data is referenced by external URL.)
 
 What remains: map rendering, mission configuration, and a new dashboard publishing flow. Everything else MMGIS does as a server, we drop.
 
@@ -22,7 +22,7 @@ What remains: map rendering, mission configuration, and a new dashboard publishi
 Two deployables on AWS:
 
 - An **admin stack** — today's MMGIS app, deployed as a container with its database. Multi-user, authenticated, used to build mission configurations and publish dashboards.
-- Many **dashboards** — each frozen at publish time around one mission. Read-only frontend bundle behind a CloudFront distribution with edge-evaluated basic auth. Dashboards have no backend. One mission can yield many dashboards.
+- Many **dashboards** — each frozen at publish time around one mission. Read-only frontend bundle behind a CloudFront distribution with edge-evaluated basic auth. Dashboards have no backend. A mission *is* a dashboard — the relationship is one-to-one. To publish a variation, copy the mission config into a new mission and publish that.
 
 The admin keeps the map app, mission editor, and auth. It gains one new responsibility: a publish flow that bakes a mission config into a static bundle on S3 + CloudFront.
 
@@ -33,7 +33,7 @@ Settled commitments. Open decisions are in another section.
 1. **One admin instance per environment, many dashboard deployments.** Dashboards are published from the admin; they do not run their own backend.
 2. **The admin is the only deployable with compute.** Dashboards are S3 + CloudFront + a CloudFront Function. No Lambda, no ECS, no Fargate per dashboard.
 3. **No sidecars deploy as part of MMGIS.** Today's deployment ships five sidecar services that MMGIS proxies to: four Python services with source under `adjacent-servers/` (TiTiler, TiTiler-pgSTAC, STAC, tipg), and one NASA-AMMOS Docker image (Veloserver). None of the five deploy in lean. Their proxy routes (`/titiler`, `/titilerpgstac`, `/stac`, `/tipg`, `/veloserver`) are not exposed from production. If a mission needs functionality these services provide, its layer configs reference an externally hosted instance directly (VEDA's TiTiler, a public STAC catalog, etc.).
-4. **No data upload through the admin in production.** Datasets, geodatasets, mission assets, tile pyramids — none of these are uploaded into MMGIS. Mission configurations in this deployment reference external URLs only.
+4. **No geodata upload through the admin in production.** Datasets, geodatasets, tile pyramids — none of these are ingested; mission configurations reference external URLs for all geospatial data. Static mission assets (images, icons) can still be uploaded; they go to S3.
 5. **Dashboard URLs are bare CloudFront distribution names.** Each dashboard is reachable at its distribution's default domain name (`d<n>.cloudfront.net`). The admin records this URL in its registry and returns it to the publisher. If the eventual owner wants a friendly hostname, they CNAME their own DNS at the distribution; the admin does not manage DNS for dashboards.
 6. **Single-mission-per-dashboard.** A published dashboard always loads exactly one mission. No mission picker, no `?mission=` switching in dashboards.
 7. **Admin URL is a dedicated subdomain or its own `.gov` URL.** CloudFront in front of the admin ALB.
@@ -51,16 +51,17 @@ A single AWS-managed container running today's MMGIS image. Express serves the m
 
 Persistence:
 
-- **One managed Postgres.** Users, sessions, mission configs, drawings, long-term tokens, webhooks, and the new `dashboards` registry. PostGIS for Draw's spatial geometry.
+- **One managed Postgres.** Users, sessions, mission configs, long-term tokens, webhooks, and the new `dashboards` registry. Draw is gated out in lean (D2), so its tables and PostGIS geometry go unused.
 - **Sessions stay Postgres-backed** via `connect-pg-simple`. The same restart-survives-sessions behavior we have today.
 - **No `mmgis-stac` database**, since STAC isn't deployed.
-- **No `Missions/` filesystem.** Per-mission asset middleware is unmounted; codebase fate per D2.
+- **One S3 asset bucket** for admin-uploaded static mission assets, served via CloudFront.
+- **No `Missions/` filesystem.** The asset-serving middleware is unmounted (codebase fate per D2); uploads go to the S3 asset bucket instead.
 
 Networking:
 
 - **One CloudFront distribution in front of one ALB.** ALB terminates TLS, path-routes `/`, `/api/*`, `/configure`, `/docs/*` to the ECS service.
 - **No sidecar target groups.** `/titiler`, `/stac`, `/tipg`, `/veloserver`, `/titilerpgstac` are not exposed.
-- **WebSocket upgrade on the same ALB**, for two existing admin-only flows: Configure-SPA lock warnings when one admin saves over another's edit, and layer-update push so open map clients refresh without reload when config changes. Draw is *not* a subscriber — concurrent Draw edits are last-write-wins via Postgres. Dashboards never connect.
+- **WebSocket upgrade on the same ALB**, for two existing admin-only flows: Configure-SPA lock warnings when one admin saves over another's edit, and layer-update push so open map clients refresh without reload when config changes. Dashboards never connect.
 
 Auth:
 
@@ -111,14 +112,14 @@ Dashboards never call the admin server, never call a sidecar, never connect to P
 
 ### Frontend refactor surface
 
-The dashboard frontend is the same Essence bundle as the admin, built with `mmgisglobal.SERVER='static'` (vs `'node'`). The flip activates a dormant branch in `src/pre/calls.js` — the dispatcher for every named JSON API call — replacing its current no-op with a per-call handling table. Four handling strategies:
+The dashboard frontend is the same Essence bundle as the admin, built with `mmgisglobal.SERVER='static'` (vs `'node'`). The flip activates a dormant branch in `src/pre/calls.js` — the dispatcher for every named JSON API call — replacing its current warn-and-bail with a per-call handling table. Four handling strategies:
 
 - **Bake** — answer known at build time, frozen into the bundle. Used for mission configuration.
 - **Reroute** — point at an external URL supplied by the mission config (sidecar substitutes), resolved by the existing `ServiceUrls` helper.
 - **Compute** — calculate client-side from baked data.
 - **Drop** — return a graceful error or hide the feature (login, WebSocket connect, every backend-write call, every call against a module that's gated out in lean).
 
-Per-call handling lives in [`api.md`](./api.md); per-feature decisions in [`features.md`](../features.md).
+Per-call handling lives in [`api.md`](./api.md); per-feature decisions in [`features.md`](../shared/features.md).
 
 
 ## Open decisions
@@ -157,6 +158,8 @@ AWS-managed deployment mode for ECS, announced November 2025. The team supplies 
 - Express Mode is six months old as of this ADR (announced November 2025). Production maturity is still being established.
 - Locks the deployment shape to canary and the ALB config to ECS-managed.
 - The internal-only ECS RunTask for the publish flow (which runs in the same cluster) may or may not interact cleanly with Express Mode-managed networking; needs verification.
+
+**Decision: ECS Express Mode** (2026-06-05).
 
 ---
 
@@ -199,10 +202,12 @@ Leave the unused surfaces in place. Add a deployment-mode environment variable (
 - Future refactors and code clean up are harder.
 - The env-gating itself is surface area. The gates have to be tested in both modes, and a missed gate is a production-affecting bug (e.g. an upload route accidentally mounted in lean mode). Can introduce fragility.
 
+**Decision: Option B — keep, env-gated** (reviewer pick, 2026-06-05). See [`implementation-plan-keep.md`](./implementation-plan-keep.md).
+
 
 ## Companion documents
 
-- [`../features.md`](../features.md) — per-feature inventory and disposition matrix.
+- [`../shared/features.md`](../shared/features.md) — per-feature inventory and disposition matrix.
 - [`feature-gaps.md`](./feature-gaps.md) — capabilities lean drops or only delivers through new work, with per-gap options.
 - [`implementation-plan-burn.md`](./implementation-plan-burn.md) — implementation plan for D2 = burn.
 - [`implementation-plan-keep.md`](./implementation-plan-keep.md) — implementation plan for D2 = keep.

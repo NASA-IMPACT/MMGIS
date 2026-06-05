@@ -23,20 +23,21 @@ This file covers two related but distinct surfaces:
 | `/api/configure` | **Keep** | Mission config CRUD — the admin's purpose. |
 | `/api/datasets` | **Gate (whole module)** | 100% local Postgres; no uploads in lean = no data to read. Per Phase 3. |
 | `/api/geodatasets` | **Gate (whole module)** | 100% local PostGIS; same logic as Datasets. Per Phase 3. |
-| `/api/draw` | **Keep** | ADR preserves Draw. All routes write Postgres directly. |
-| `/api/files` | **Keep** | Draw file-metadata routes (no actual file uploads — no Busboy/multipart in this router). |
+| `/api/draw` | **Gate (whole module)** | Draw is gated out in lean (D2) — router not mounted, no Draw in admin or dashboards. |
+| `/api/files` | **Gate (whole module)** | Draw file-metadata routes; gated out with Draw (D2). |
 | `/api/stac` | **Gate (whole module)** | Proxies the STAC sidecar; sidecar not deployed in lean. |
 | `/api/utils` | **Partial** | See breakdown below. |
-| `/api/webhooks` | **Keep** | Outbound-event channel: lets external systems react to Draw, Config (and future Dashboards) events. Used by features lean keeps. |
+| `/api/webhooks` | **Keep** | Outbound-event channel: lets external systems react to Config (and future Dashboards) events. Used by features lean keeps. |
 | `/api/testwebhooks` | **Keep** (dev-only) | Already gated on `NODE_ENV === 'development'` regardless of deployment mode. |
 | `/api/shortener` | **Gate (whole module)** | Already gated per Phase 5. |
+| `API/Backend/Upload` (`createUploadRouter`, #103) | **Keep — repoint to S3** | Shared asset-upload factory; registers no routes itself (consumers mount it). In lean its storage backend swaps from `Missions/<mission>/...` on disk to the S3 asset bucket, returning an absolute URL. Image-only / 5 MB / no-SVG validators unchanged. Depends on #103 merging. |
 
 Non-`/api/` mounts worth noting:
 
 | Mount | Handling | Why |
 |---|---|---|
 | `/configure` | **Keep** | Renders the Configure SPA shell; admin-gated. |
-| `/Missions/*` | **Gate** | Static mission-asset middleware; gone in lean per Phase 4. |
+| `/Missions/*` | **Gate** | Static mission-asset *serving* middleware; gone in lean per Phase 4. Uploaded assets are served from the S3 asset bucket / CloudFront instead (see `Upload` row above). |
 
 ## `/api/utils` breakdown
 
@@ -57,9 +58,9 @@ Utils is a grab-bag. Per-endpoint:
 
 Three categories cover every gate decision above:
 
-1. **Local-only modules with no data in lean** (Datasets, Geodatasets, Shortener, Stac) — gate the whole module. The data plane is missing; serving routes against it produces silently-broken UX.
+1. **Local-only modules with no data in lean** (Datasets, Geodatasets, Shortener, Stac, Draw, Files) — gate the whole module. The data plane is missing (or, for Draw, gated out per D2); serving routes against it produces silently-broken UX.
 2. **Local file/filesystem operations** (Utils GDAL endpoints, `/Missions/*`) — gate, since the filesystem they depend on is gone.
-3. **Admin/auth surface that lean still needs** (Users, Accounts, LongTermToken, Config, Draw) — keep.
+3. **Admin/auth surface that lean still needs** (Users, Accounts, LongTermToken, Config) — keep.
 
 The only structural exception is `/api/utils`, which is heterogeneous enough to need per-endpoint gating.
 
