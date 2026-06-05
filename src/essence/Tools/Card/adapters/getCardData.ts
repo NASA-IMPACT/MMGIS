@@ -1,4 +1,4 @@
-import { mmgisRequest } from './mmgisAPI'
+import { mmgisRequest } from '../../_shared/adapters/mmgisAPI'
 import { buildCardData, type RawCard } from './buildCardData'
 import type { CardItem } from '../lib/types'
 

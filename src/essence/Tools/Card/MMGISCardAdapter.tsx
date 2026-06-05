@@ -2,7 +2,7 @@ import React from 'react'
 import { useState, useCallback } from 'react'
 import { CardList } from './lib'
 import type { CardItem } from './lib/types'
-import { useMMGISHandlerReady } from './adapters/useMMGISHandlerReady'
+import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import { getCardData } from './adapters/getCardData'
 
 export function MMGISCardAdapter() {
