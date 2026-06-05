@@ -1,14 +1,54 @@
 {
     "defaultIcon": "layers",
-    "description": "Map controls: basemap style, zoom in, zoom out.",
+    "description": "Floating map control bar: basemap switcher, search, measure, zoom.",
     "descriptionFull": {
-        "title": "A horizontal map overlay control for switching between basemap styles and zooming in/out. Add this tool to a mission to show a floating map control bar."
+        "title": "A floating horizontal toolbar rendered over the map. Each of the four features can be enabled or disabled independently."
     },
-    "hasVars": false,
+    "hasVars": true,
     "name": "MapControl",
     "toolbarPriority": 5,
     "separatedTool": true,
     "paths": {
         "MapControlTool": "essence/Tools/MapControl/MapControlTool"
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.showBasemapSwitcher",
+                        "name": "Basemap switcher",
+                        "description": "Show the basemap style selector button.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showSearch",
+                        "name": "Search",
+                        "description": "Show the geocode search button.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showMeasure",
+                        "name": "Measure",
+                        "description": "Show the distance measure button.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showZoom",
+                        "name": "Zoom",
+                        "description": "Show the zoom in / zoom out buttons.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    }
+                ]
+            }
+        ]
     }
 }
