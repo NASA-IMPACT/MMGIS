@@ -3,6 +3,7 @@ import Sortable from 'sortablejs'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import L_ from '../../Basics/Layers_/Layers_'
 import Map_ from '../../Basics/Map_/Map_'
+import ServiceUrls from '../../Basics/ServiceUrls/ServiceUrls'
 
 import DataShaders from '../../Ancillary/DataShaders'
 import LayerInfoModal from './LayerInfoModal/LayerInfoModal'
@@ -27,6 +28,15 @@ import {
 import './LayersTool.css'
 
 const helpKey = 'LayersTool'
+
+/**
+ * Check if TiTiler is available for a layer (either locally or via external URL)
+ * @param {object} layerConfig - The layer configuration object
+ * @returns {boolean} True if TiTiler is available
+ */
+const hasTiTilerAccess = (layerConfig) => {
+    return window.mmgisglobal.WITH_TITILER === 'true' || layerConfig?.titilerUrl != null
+}
 
 /**
  * Generate the tool markup dynamically based on available layer types
@@ -862,14 +872,14 @@ function interfaceWithMMGIS(fromInit) {
                             node[i].cogColormap
                         )
 
-                        if (window.mmgisglobal.WITH_TITILER === 'true') {
+                        if (hasTiTilerAccess(node[i])) {
+                            // Use resolved colormap (has default fallback) for the URL
+                            const colormapUrl = ServiceUrls.buildColormapImageUrl(node[i].cogColormap || colormap, node[i])
                             // prettier-ignore
-                            additionalSettings = [
-                                `<img id="titlerCogColormapImage_${node[i].name}" src="${window.location.origin}${(
-                                            window.location.pathname || ''
-                                        ).replace(/\/$/g, '')}/titiler/colorMaps/${node[i].cogColormap}?format=png"
+                            additionalSettings = colormapUrl ? [
+                                `<img id="titlerCogColormapImage_${node[i].name}" src="${colormapUrl}"
                                 data-colormap="${colormap}" data-colormap-reverse="${reverse}"></img>`,
-                            ].join('\n')
+                            ].join('\n') : ''
                         } else {
                             additionalSettings =
                                 additionalSettingsJSColormapHelper(
@@ -1055,12 +1065,10 @@ function interfaceWithMMGIS(fromInit) {
                             node[i].variables?.streamlines?.colorScale
                         )
 
-                        if (window.mmgisglobal.WITH_TITILER === 'true') {
+                        if (hasTiTilerAccess(node[i])) {
                             // prettier-ignore
                             additionalSettings = [
-                                `<img id="titlerCogColormapImage_${node[i].name}" src="${window.location.origin}${(
-                                            window.location.pathname || ''
-                                        ).replace(/\/$/g, '')}/titiler/colorMaps/${node[i].variables?.streamlines?.colorScale?.toLowerCase() || VELOCITY_DEFAULT_COLOR_RAMP}?format=png"
+                                `<img id="titlerCogColormapImage_${node[i].name}" src="${ServiceUrls.buildColormapImageUrl(node[i].variables?.streamlines?.colorScale?.toLowerCase() || VELOCITY_DEFAULT_COLOR_RAMP, node[i])}"
                                 data-colormap="${colormap}" data-colormap-reverse="${reverse}"></img>`,
                             ].join('\n')
                         } else {
@@ -1145,14 +1153,14 @@ function interfaceWithMMGIS(fromInit) {
                             node[i].cogColormap
                         )
 
-                        if (window.mmgisglobal.WITH_TITILER === 'true') {
+                        if (hasTiTilerAccess(node[i])) {
+                            // Use resolved colormap (has default fallback) for the URL
+                            const colormapUrl = ServiceUrls.buildColormapImageUrl(node[i].cogColormap || colormap, node[i])
                             // prettier-ignore
-                            additionalSettings = [
-                                `<img id="titlerCogColormapImage_${node[i].name}" src="${window.location.origin}${(
-                                            window.location.pathname || ''
-                                        ).replace(/\/$/g, '')}/titiler/colorMaps/${node[i].cogColormap}?format=png"
+                            additionalSettings = colormapUrl ? [
+                                `<img id="titlerCogColormapImage_${node[i].name}" src="${colormapUrl}"
                                 data-colormap="${colormap}" data-colormap-reverse="${reverse}"></img>`,
-                            ].join('\n')
+                            ].join('\n') : ''
                         } else {
                             additionalSettings =
                                 additionalSettingsJSColormapHelper(
@@ -1454,7 +1462,7 @@ function interfaceWithMMGIS(fromInit) {
                     break
             }
 
-            if (window.mmgisglobal.WITH_TITILER === 'true') {
+            if (hasTiTilerAccess(node[i])) {
                 // Check if TiTiler images loaded
                 if ($(`#titlerCogColormapImage_${node[i].name}`).length) {
                     $(`#titlerCogColormapImage_${node[i].name}`).on(
@@ -1694,12 +1702,7 @@ function interfaceWithMMGIS(fromInit) {
                     .split('?')[0]
 
                 // Fetch STAC items (lazy load on first open)
-                const stacUrl = `${window.location.origin}${(
-                    window.location.pathname || ''
-                ).replace(
-                    /\/$/g,
-                    ''
-                )}/stac/collections/${collectionName}/items?limit=1`
+                const stacUrl = ServiceUrls.buildStacItemsUrl(collectionName, layerData, { limit: 1 })
 
                 fetch(stacUrl)
                     .then((response) => response.json())

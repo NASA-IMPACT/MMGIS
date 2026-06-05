@@ -975,7 +975,7 @@ var Formulae_ = {
         splice,
         assumeLayerHierarchy
     ) {
-        if (keyArray == null || keyArray === []) return false
+        if (keyArray == null) return false
         if (typeof keyArray === 'string') keyArray = keyArray.split('.')
         let object = obj
         for (let i = 0; i < keyArray.length - 1; i++) {

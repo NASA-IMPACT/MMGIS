@@ -1,5 +1,4 @@
 import { calls } from "./calls";
-import { data as colormapData } from '../external/js-colormaps.js'
 
 const injectablesDefaults = {
   TILE_MATRIX_SETS: ["WebMercatorQuad"],
@@ -31,6 +30,29 @@ export const inject = (configJson) => {
   });
   return JSON.parse(injected);
 };
+
+const COMMON_COLORMAP_NAMES = [
+  "viridis", "viridis_r",
+  "plasma", "plasma_r",
+  "inferno", "inferno_r",
+  "magma", "magma_r",
+  "cividis", "cividis_r",
+  "greys", "greys_r",
+  "blues", "blues_r",
+  "greens", "greens_r",
+  "reds", "reds_r",
+  "rdbu", "rdbu_r",
+  "spectral", "spectral_r",
+  "jet", "jet_r",
+  "turbo", "turbo_r",
+  "hot", "hot_r",
+  "cool", "cool_r",
+  "gist_heat", "gist_heat_r",
+  "gist_earth", "gist_earth_r",
+  "terrain", "terrain_r",
+  "ocean", "ocean_r",
+  "rainbow", "rainbow_r",
+].sort();
 
 function getTileMatrixSets() {
   const injectableName = "TILE_MATRIX_SETS";
@@ -76,21 +98,10 @@ function getColormapNames(injectableName) {
       "titiler_colormapNames",
       null,
       (res) => {
-        // Get the intersection of colormaps from js-colormaps and TiTiler
-        const js_colormaps = Object.keys(colormapData).map((color => color.toLowerCase()));
-        let colormaps = res.colorMaps;
-        colormaps = colormaps.filter((color) => {
-            if (js_colormaps.includes(color.toLowerCase())) {
-                return color;
-            }
+        // Use all colormaps from TiTiler directly (no filtering)
+        let colormaps = res.colorMaps || [];
 
-            // js-colormaps only includes the non reversed names so check for the reverse
-            if (color.endsWith("_r") && js_colormaps.includes(color.substr(0, color.length - 2))) {
-                return color;
-            }
-        });
-
-        // Sort
+        // Sort alphabetically
         colormaps.sort();
 
         // ... new Set removes duplicates
@@ -100,31 +111,14 @@ function getColormapNames(injectableName) {
           ),
         ];
       },
-      (res) => {
+      () => {
         console.warn(`Failed to query for ${injectableName}. Using defaults.`);
-        injectables[injectableName] = Object.keys(colormapData);
+        // Fallback to common colormap names
+        injectables[injectableName] = COMMON_COLORMAP_NAMES;
       }
     );
   } else {
-    // Get colormaps from js-colormaps and the inversed colors
-    const js_colormaps = Object.keys(colormapData).map((color => color.toLowerCase()));
-    let colormaps = [];
-    js_colormaps.forEach((color) => {
-      colormaps.push(color);
-      // js-colormaps only includes the non reversed names so add the reverse
-      if (!color.endsWith("_r")) {
-        colormaps.push(`${color}_r`);
-      }
-    });
-
-    // Sort
-    colormaps.sort();
-
-    // ... new Set removes duplicates
-    injectables[injectableName] = [
-      ...new Set(
-        injectablesDefaults[injectableName].concat(colormaps)
-      ),
-    ];
+    // Without TiTiler, use a common subset of colormaps
+    injectables[injectableName] = COMMON_COLORMAP_NAMES;
   }
 }

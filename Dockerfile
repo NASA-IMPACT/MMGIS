@@ -60,7 +60,10 @@ RUN if [ "$WITH_STAC" = "true" ]; then \
 
 # Copy only package files first (cached unless these change)
 COPY package*.json ./
-RUN npm install
+# --force is required: react-chartjs-2@5 wants chart.js@^4.1.1, but
+# chartjs-plugin-zoom@1.2.1 pins ^3.2.0. Don't use --legacy-peer-deps; in this
+# tree it silently drops @deck.gl/extensions and @deck.gl/mesh-layers.
+RUN npm install --force
 
 #############################
 # MMGIS Configure Dependencies
