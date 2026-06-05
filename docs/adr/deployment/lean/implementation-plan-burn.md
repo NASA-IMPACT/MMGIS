@@ -17,11 +17,15 @@ Conventions:
 - "Delete" means `git rm` the file; "Remove" means edit the file to take out a block.
 - Code disposition is recorded inline; the dispatcher table contents are deferred to Phase 6.
 
+> **Post-merge baseline (development `4f44d840`).** This plan was re-baselined after merging `development`. See [`merge-impact.md`](./merge-impact.md) for the full delta. Headlines for burn: Phase 6's URL helper **already exists** as `src/essence/Basics/ServiceUrls/ServiceUrls.js` (#63) and the four inline-URL files are **already migrated** to it — consume/adapt it, don't create `serviceUrls.js`; Phase 2's "grep out `/titiler` etc." is now mostly a single point (the `SERVICE_CONFIG` defaults in `ServiceUrls.js`) plus LayerManager's own `lib/utils/titiler.ts`; the build pipeline emits themes to `dist/` and `InterpolateHtmlPlugin` is already wired (Phases 1/6/8); the new `modern-ui` code uses "Dashboard" internally, colliding with Phase 7's "Dashboards" page; the dispatcher count in `calls.js` is **40** (unchanged — the plan's existing count is correct). The backend deletion targets (Phases 2-backend, 3-backend, 4, 5, 9) were untouched by the merge and delete cleanly.
+
 ---
 
 ## Phase 1 — Pre-work: build flag, env allowlist, baked-config stub
 
 **Goal:** Add the build-time switch that the rest of the plan keys off of, and the empty stub that the publish script will overwrite. No behavior change at this point.
+
+> **Post-merge note:** `InterpolateHtmlPlugin` is already configured in `configuration/webpack.config.js` (it substitutes `%NODE_ENV%` in `public/index.html`) — reuse it for the `SERVER` substitution in Phase 6. The build now also emits a top-level `dist/` of theme assets via `npm run build:themes`, and `webpack.config.js` was reverted toward upstream — start webpack edits from that merged baseline. React is now 19.x with USWDS/TypeScript/Sass added.
 
 **Files:**
 - `configuration/env.js`
@@ -48,6 +52,8 @@ Conventions:
 ## Phase 2 — Burn the sidecar proxy
 
 **Goal:** Remove the adjacent-server proxy front door, the spawner, the env-flagged `WITH_*` switches, and the four sidecar directories. After this phase the codebase has no concept of TiTiler / STAC / tipg / veloserver / TiTiler-pgSTAC as in-process services. (#35, #36, #41 in `features.md`.)
+
+> **Post-merge note:** `adjacent-servers/` and the backend proxy were **untouched** by the merge — they delete cleanly as written. But the front-end side of "grep out `/titiler`, `/stac`, …" (Operations step 3) changed shape: #63 **consolidated** the formerly-inline sidecar-URL construction in `Map_.js`/`Layers_.js`/`IdentifierTool.js`/`LayersTool.js` into `src/essence/Basics/ServiceUrls/ServiceUrls.js`. So the same-origin `/<service>` strings now live mainly in that one file's `SERVICE_CONFIG` defaults, plus LayerManager's separate `src/essence/Tools/LayerManager/lib/utils/titiler.ts`. Burn's intent (no same-origin sidecar paths in production) is better served by making `ServiceUrls` resolve **config-only** (return external URL, never construct a local path) than by deleting the helper — the four files depend on it now. Reconcile, don't `git rm`. Also note: the merge added `titiler-url` sourceType + an "External Service URLs" field section to `layer-tile-config.json` — **keep these** (they are how lean missions point at external sidecars); see Phase 3.
 
 **Files:**
 - Delete: `adjacent-servers/adjacent-servers-proxy.js`
@@ -105,7 +111,8 @@ Note: the Draw module is preserved in lean per the ADR. `API/Backend/Draw/routes
 
 **Other Configure SPA surfaces to handle in burn** (mostly covered by other-phase deletions; called out so the implementer doesn't miss them):
 
-- **COG fields in the layer modal.** `configure/src/metaconfigs/layer-tile-config.json`, `layer-data-config.json`, `layer-image-config.json` declare COG-related fields. The "Populate from cog/info" button in `configure/src/core/Maker.js` (grep `Populate from cog`) calls `/api/utils/getbands`, which doesn't exist after Phase 2's sidecar burn cleans `getbands` out of the dispatcher. Remove the button from Maker; the fields themselves stay since externally hosted COGs work.
+- **COG fields in the layer modal.** `configure/src/metaconfigs/layer-tile-config.json`, `layer-data-config.json`, `layer-image-config.json` declare COG-related fields. The populate-from-cog/info button in `configure/src/core/Maker.js` calls `/api/utils/getbands` (and `/titiler/cog/info`), which don't exist after Phase 2's sidecar burn cleans `getbands` out of the dispatcher. Remove the button from Maker; the fields themselves stay since externally hosted COGs work.
+  - **Post-merge note:** grep by line anchor, not the literal "Populate from cog" (that string isn't in the source). The inline same-origin call is at `configure/src/core/Maker.js:1854` (`${origin}/titiler/cog/info?url=...`); the button's result copy is at `Maker.js:579`/`:587`. The merge also added an "External Service URLs" section + `titiler-url` sourceType to `layer-tile-config.json` — **keep those fields**; they are how missions reference external sidecars. Only the populate-helper is removed.
 - **Velocity layer type.** `configure/src/components/Main/Modals/LayerModal/LayerModal.js` `allowed` list and `configure/src/metaconfigs/layer-velocity-config.json`. With veloserver excluded, runtime velocity layers fail unless the URL is external. Optional: remove velocity from the `allowed` list, or leave it for advanced operators who supply external URLs. Pick at implementation time.
 - **APIs page cards.** `configure/src/pages/APIs/APIs.js` renders cards for STAC, TiTiler, TiTiler-PgSTAC, Tipg. With Phase 2's `WITH_*` env-allowlist deletion, these cards render as `cardInactive` permanently in burn. Either delete the entire page (cleaner, since the underlying services are deleted) or leave it as-is (cards render inactive harmlessly).
 - **STAC / Datasets / GeoDatasets row-action icons.** The STAC, Datasets, and GeoDatasets pages are all deleted in burn (Datasets/GeoDatasets in this phase; STAC in Phase 2), so the row-action icons go with them. Nothing extra to do.
@@ -181,19 +188,18 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 ## Phase 6 — Frontend refactor: dispatcher, sidecar-URL helper, mission-config bake
 
-**Goal:** Activate the dispatcher's dormant `SERVER != 'node'` branch with a bake/reroute/compute/drop table. Centralize the inline sidecar-URL builders in four files into one helper. Generate the baked mission config at publish time. Disable the WebSocket connect and login form in static mode. (#10, #14 in `features.md`.)
+**Goal:** Activate the dispatcher's dormant `SERVER != 'node'` branch with a bake/reroute/compute/drop table. Adapt the centralized sidecar-URL helper (`ServiceUrls`, already in place and consumed by the four builder files per #63 — see note below) for config-only/static resolution. Generate the baked mission config at publish time. Disable the WebSocket connect and login form in static mode. (#10, #14 in `features.md`.)
 
 **Runtime behavior is variant-invariant — see [`api.md`](./api.md) Frontend dispatcher for the per-call disposition table (all 40 entries with one-line reasons and gap cross-references). The work below is the source-level wiring; burn vs keep only differ in code-cleanup style** (burn removes Drop-disposition entries from `calls.js` and their handlers from `staticHandlers.js`; keep leaves them in place and the dispatcher drops at runtime).
+
+> **Post-merge note — the service-URL helper already exists (#63).** `src/essence/Basics/ServiceUrls/ServiceUrls.js` implements the resolver this phase planned to create (per-layer field → global `mmgisglobal.options.services` → local `/<service>` default, all five sidecars), and the four files below are **already migrated** to it. Remaining burn work is *adapt*, not *create*: (1) make `ServiceUrls` resolve **config-only** in production/static mode (no same-origin `/<service>` fallback — burn has no sidecars to fall back to); (2) add the missing **TiPG/Veloserver builders** (`getTipgUrl`/`getVeloserverUrl` exist at `ServiceUrls.js:80-81` but have no `build*Url` companions); (3) `transformStacUrl` (`src/essence/Basics/Layers_/Layers_.js:322`) is **already migrated by #63** — it resolves via `ServiceUrls.getTiTilerPgStacUrl(layerData)`, so the Animation fix below is done; only the config-only/static behavior in (1) remains; (4) **LayerManager bypasses `ServiceUrls`** via `src/essence/Tools/LayerManager/lib/utils/titiler.ts:1` (same-origin `${origin}${pathname}/titiler`) — route it through `ServiceUrls`/baked config or skip its COG colormap fetch in static mode. The dispatcher core is intact: dormant `if (window.mmgisglobal.SERVER != 'node')` at `src/pre/calls.js:169`; `c` has **40** entries (`calls.js:4-162`) before any burn excision — `api: api` at `calls.js:214` is an export, not a call entry.
 
 **Files:**
 - Edit: `public/index.html` — change the `mmgisglobal.SERVER = "node"` literal to a placeholder substituted at build time. **Use `InterpolateHtmlPlugin`** (the same mechanism that handles the existing `%NODE_ENV%` substitution in this file), not `DefinePlugin` — DefinePlugin only rewrites JS bundles, not HTML, and won't work here. In server-mode builds the substituted value is `"node"` (no change); in static-mode builds it's `"static"`.
 - Edit: `src/pre/calls.js` — replace the dormant `if (window.mmgisglobal.SERVER != 'node') { console.warn(…); error() }` block with a dispatch into a `STATIC_HANDLERS` table. In the burn variant, also remove every `c[]` entry that gets a Drop disposition per the api.md table.
 - New: `src/pre/staticHandlers.js` — one handler per remaining `c[]` entry in `calls.js`, mirroring the disposition table in [`api.md`](./api.md) Frontend dispatcher. Re-grep `calls.js` before locking; today's count is 40 in keep, fewer in burn (Drop entries are excised).
-- New: `src/essence/Basics/serviceUrls.js` — a helper exporting `getTitilerBaseUrl()`, `getStacBaseUrl()`, `getTipgBaseUrl()`, etc. In server mode it returns same-origin paths (`/titiler`, `/stac`, ...) — except in the burn variant those paths don't exist in production, so the helper's server-mode return value is *only* used in development against a local sidecar. In static mode it returns the absolute URL from `STATIC_MISSION_CONFIG`. *Note for the burn variant:* a layer in a lean mission config points directly at an external service; the helper exists for the four inline-URL files to import a single source of truth, but its production behavior is "return whatever the config says, never construct a path."
-- Edit: `src/essence/Basics/Map_/Map_.js` — replace inline `/titiler/...` interpolations with `serviceUrls` helper calls.
-- Edit: `src/essence/Basics/Layers_/Layers_.js` — same.
-- Edit: `src/essence/Tools/Identifier/IdentifierTool.js` — same.
-- Edit: `src/essence/Tools/Layers/LayersTool.js` — same.
+- ~~New: `src/essence/Basics/serviceUrls.js`~~ **Already exists as `src/essence/Basics/ServiceUrls/ServiceUrls.js` (#63).** It already exports `getTiTilerUrl`/`getStacUrl`/`getTipgUrl`/`getVeloserverUrl`/`getTiTilerPgStacUrl` plus `build*Url` helpers (TiPG/Veloserver builders still missing). Burn adapts it to be **config-only in production**: return the external URL from the layer/mission config and never construct a same-origin `/<service>` path (burn has no in-process sidecars). Server-mode same-origin returns remain valid for local dev only.
+- ~~Edit the four URL-builder files~~ **Already migrated to `ServiceUrls` by #63:** `src/essence/Basics/Map_/Map_.js`, `src/essence/Basics/Layers_/Layers_.js`, `src/essence/Tools/Identifier/IdentifierTool.js`, `src/essence/Tools/Layers/LayersTool.js`. No re-wiring needed; the remaining work is the static/config-only behavior of `ServiceUrls` itself (above) plus the `transformStacUrl` and LayerManager fixes noted at the top of this phase.
 - Edit: `API/updateTools.js` — add a `bakeStaticConfig({ configData, missionsList, generalOptions, mission })` codegen function that writes `src/pre/staticConfig.js` with the mission config frozen as `export default {...}`.
 - Edit: `src/essence/LandingPage/LandingPage.js` — short-circuit `init` when `MODE === 'static'`. Skip the mission-picker grid, immediately call `essence.init(...)` with the baked config.
 - Edit: `src/essence/essence.js` — when `MODE === 'static'`, don't render the login modal in any flow; treat the user as anonymous read-only.
@@ -221,7 +227,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 **Additional frontend behavior in static mode:**
 
-- **Fix `transformStacUrl` to honor the layer's actual URL.** The Animation tool's offscreen renderer calls `transformStacUrl(...)` which today builds same-origin `/titilerpgstac/...` paths from `window.location`. Dashboards have no such route. Make `transformStacUrl` read the STAC endpoint from the layer config instead. **Side benefit:** also unbreaks the Animation tool for any deployment where STAC happens to not be same-origin.
+- **Fix `transformStacUrl` to honor the layer's actual URL.** **✓ Done by #63** — `transformStacUrl` (`Layers_/Layers_.js:322`) already resolves via `ServiceUrls.getTiTilerPgStacUrl(layerData)`; the Animation path inherits it. Only the config-only/static behavior of `ServiceUrls` remains. Original context: the offscreen renderer calls `transformStacUrl(...)` which *previously* built same-origin `/titilerpgstac/...` from `window.location`.
   - Files: `src/essence/Basics/Layers_/Layers_.js` (the `transformStacUrl` function — previous spec cited line 282; re-grep); `src/essence/Tools/Animation/OffscreenMapManager.js` (the callers — previous spec cited lines 499 and 526; re-grep).
 
 - **Mission-deeplink override in static mode.** A dashboard URL with `?mission=other-mission` would attempt to fetch `Missions/other-mission/config.json`, 404, and show "mission not found." `?forcelanding=true` produces an empty mission picker. In static mode (`mmgisglobal.SERVER !== 'node'`) with `MAIN_MISSION` set, ignore both params and force-load the baked mission. Strip the params with `history.replaceState` so they don't propagate to share links.
@@ -236,7 +242,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 **Operations:**
 1. Wire `InterpolateHtmlPlugin` in `configuration/webpack.config.js` to substitute the build mode into `public/index.html`'s `mmgisglobal.SERVER` assignment. Match the existing `%NODE_ENV%` substitution pattern. (`DefinePlugin` doesn't work for HTML — it only rewrites JS bundles.)
 2. Implement `STATIC_HANDLERS`.
-3. Implement `serviceUrls.js` and rewrite the four inline-URL files to use it. Grep verifies (`git grep -E "/titiler/|/stac/|/tipg/"` returns no matches in `src/`).
+3. Adapt the existing `src/essence/Basics/ServiceUrls/ServiceUrls.js` to config-only production resolution (the four files are already wired to it per #63, and `transformStacUrl` is already migrated); add TiPG/Veloserver builders; reconcile LayerManager's `lib/utils/titiler.ts`. Grep verifies the only remaining `/titiler|/stac|/tipg` references in `src/` are the intentional `SERVICE_CONFIG` dev defaults in `ServiceUrls.js` (and reconciled LayerManager util) — not scattered inline construction.
 4. Implement `bakeStaticConfig`.
 5. Implement the LandingPage short-circuit, the `essence.js` login skip, and the WebSocket skip.
 
@@ -254,6 +260,10 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 ## Phase 7 — Publish flow: backend module + spawned ECS task + CloudFormation template
 
 **Goal:** Add the admin's Publish and Delete endpoints, the spawned-ECS-task that runs the static build and provisions a per-dashboard CloudFormation stack, and the new `dashboards` Postgres table. (#53, #54, #55 in `features.md`.)
+
+> **Post-merge note — "Dashboards" naming collision (decide before building this page).** The merged `modern-ui` work uses "Dashboard" *internally* for its panel-layout config: `src/essence/Validators/DashboardConfigValidator.js`, `src/essence/Basics/PanelManager_/DashboardConfigFactory.js`, `src/essence/types/dashboard.ts`. User-facing copy was renamed to "Interface," but the code symbols remain. This phase's unrelated "Dashboards" concept (publish page, `dashboards` table, `API/Backend/Dashboards/`) collides. **Open decision:** (a) name the publish concept distinctly — "Publish" / "Deployments" / "Published Apps" — and leave modern-ui untouched (recommended, lower risk), or (b) rename modern-ui's `Dashboard*` symbols to `PanelConfig*`. **Burn-specific:** burn would normally rename to keep the tree clean, but these symbols are freshly merged core code, not lean-only cruft — prefer (a) so burn isn't churning unrelated modern-ui code.
+>
+> **Post-merge note — published dashboards must boot the modern interface.** A baked mission with `msv.mode: "modern"` boots through `src/essence/modern.js` / `PanelManager_`, not classic. The `static`-mode publish bundle (Phase 6) must support the modern layout path. Add an end-to-end check: publish a `modern`-mode mission and confirm panels render.
 
 **Files:**
 - New: `API/Backend/Dashboards/setup.js`
@@ -295,6 +305,8 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 ## Phase 8 — ECS task definitions, IAM, GitHub Actions deploy
 
 **Goal:** Land the AWS infrastructure that runs the admin and the publish-task. Define IAM scopes. Add a GitHub Actions workflow for the lean deployment. (Note: CI/CD already runs on GHA today — `docker-build.yml`, `bump-version.yml`, `playwright-tests.yml`, `security-scan.yml`. This phase adds a new deploy workflow alongside them; nothing "moves.")
+
+> **Post-merge note — theme assets.** The merge added a `dist/` theme step: `npm run build:themes` (`scripts/build-themes.sh`) emits `dist/{theme}.css` + fonts/images, and `scripts/build.js` copies `dist/` → `build/dist/`. Both the admin image build **and** the static dashboard publish build (Phase 7's `scripts/publish-static.js`) must run `build:themes` and bake `dist/` into their output, or themed missions ship without CSS/fonts. The Dockerfile strip below removes micromamba/`adjacent-servers/` but must **retain** the theme-build step.
 
 **Conventions for this phase:**
 
@@ -374,7 +386,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 **Goal:** Catch what the burn left behind. Re-grep, prune docs, prune dead code paths discovered during the implementation.
 
 **Operations:**
-1. `git grep -E 'WITH_|ADJACENT|adjacent-server|titiler|stac|tipg|veloserver|busboy|csvtojson|sharp|Missions/'` over the whole tree. Each hit is either a) intentional (this plan, the `features.md` inventory, the preserve folder, comments) or b) cleanup. Resolve each.
+1. `git grep -E 'WITH_|ADJACENT|adjacent-server|titiler|stac|tipg|veloserver|busboy|csvtojson|sharp|Missions/'` over the whole tree. Each hit is either a) intentional (this plan, the `features.md` inventory, the preserve folder, comments) or b) cleanup. Resolve each. **Post-merge note:** `titiler`/`stac`/`tipg`/`veloserver` now legitimately appear in merged core code that burn does **not** delete — `src/essence/Basics/ServiceUrls/ServiceUrls.js` (the external-service resolver, kept; reconciled to config-only per Phase 6) and `src/essence/Tools/LayerManager/lib/utils/titiler.ts` (kept; reconciled). Treat those as intentional, not cleanup targets — burn removes the in-process sidecars, not the ability to reference external ones.
 2. Audit the `configure/` SPA for orphaned routes after removing STAC, Datasets-upload, Dashboards-WebHooks pages. The router will silently 404 on a navigation to a removed page; better to remove the route entries.
 3. Audit `sample.env` and `.env.example` files; remove every env that no longer has a consumer.
 4. Update README.md and `AGENTS.md` to reflect the post-burn deployment posture. Remove the "Docker Compose" section's references to optional sidecar profiles.

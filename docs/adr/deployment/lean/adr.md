@@ -2,7 +2,7 @@
 
 **Status:** Proposed — Under Review
 
-**Last updated:** 2026-05-21
+**Last updated:** 2026-06-05
 
 **Supersedes:** `../preserve/overview.md`, `../preserve/adr-a-aws-deployment.md`, `../preserve/adr-b-frontend-refactor.md` (the "preserve features by default" angle).
 
@@ -89,7 +89,7 @@ Publish, Update, and Delete actions live on a new Dashboards page in `/configure
 
 1. Admin clicks **Publish** in new Dashboards page; `/api/publish` receives `{ mission, dashboard_name }`.
 2. Admin server inserts a `provisioning` row in the new `dashboards` table, spawns an ECS RunTask, returns `{ dashboard_id, status }`.
-3. Task reads the mission config from Postgres, bakes it into a source file, runs Webpack (`STATIC_MODE=true`) to create the bundle.
+3. Task reads the mission config from Postgres, bakes it into a source file, runs the theme build (`npm run build:themes`, which emits `dist/` CSS + fonts), then Webpack (`STATIC_MODE=true`) to create the bundle. The `dist/` assets are baked in so themed dashboards render with their CSS/fonts.
 4. Task calls CFN `CreateStack` with a rendered template (bucket + distribution + Function, password baked into the Function source). Stack name encodes the dashboard ID for idempotency.
 5. Task polls `DescribeStacks` until `CREATE_COMPLETE` (~5–10 min; distribution provisioning dominates).
 6. Task uploads the bundle to the stack's bucket via `PutObject`.
@@ -114,7 +114,7 @@ Dashboards never call the admin server, never call a sidecar, never connect to P
 The dashboard frontend is the same Essence bundle as the admin, built with `mmgisglobal.SERVER='static'` (vs `'node'`). The flip activates a dormant branch in `src/pre/calls.js` — the dispatcher for every named JSON API call — replacing its current no-op with a per-call handling table. Four handling strategies:
 
 - **Bake** — answer known at build time, frozen into the bundle. Used for mission configuration.
-- **Reroute** — point at an external URL supplied by the mission config (sidecar substitutes).
+- **Reroute** — point at an external URL supplied by the mission config (sidecar substitutes), resolved by the existing `ServiceUrls` helper.
 - **Compute** — calculate client-side from baked data.
 - **Drop** — return a graceful error or hide the feature (login, WebSocket connect, every backend-write call, every call against a module that's gated out in lean).
 
