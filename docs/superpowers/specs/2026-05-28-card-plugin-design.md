@@ -32,7 +32,7 @@ Three independent, separately testable units:
 | Unit | Location | Responsibility |
 |---|---|---|
 | Card tool (frontend) | `src/essence/Tools/Card/` | Render the card list in the sidebar from tool vars. Event-bus only. |
-| `upload` field type | `configure/src/core/Maker.js` (+ `UploadField` component + `cardUpload.js` caller) | File picker → POST → store returned mission-relative path. |
+| `upload` field type | `configure/src/core/Maker.js` (+ `UploadField` component + `upload.js` caller) | File picker → POST → store returned mission-relative path. Plugin-agnostic: the upload `subdir` comes from the field's config. |
 | Upload core module | `API/Backend/Upload/` | One generic `busboy` route saving images under `Missions/<mission>/<subdir>/uploads/`. Plugin-agnostic. |
 
 ### Data model
@@ -85,9 +85,10 @@ In `config.json` this is an `objectarray` whose `image` sub-field is `type: "upl
 
 ### Configure — `upload` field type
 
-- New `case "upload"` in `configure/src/core/Maker.js` renders the `UploadField` component (`configure/src/core/components/UploadField.js`), passing the active mission (`configuration.msv.missionFolderName || configuration.msv.mission`) and the computed API domain.
-- `UploadField` shows a file `<input accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml">` and, on select, calls `uploadCardImage(file, mission)` in `configure/src/core/cardUpload.js`.
-- `uploadCardImage` POSTs the file (field name `image`) to `${domain}api/upload?mission=<name>&subdir=CardPlugin` with `credentials: 'include'`, and resolves with the returned mission-relative `path` (or throws with the server's error message).
+- New `case "upload"` in `configure/src/core/Maker.js` renders the `UploadField` component (`configure/src/core/components/UploadField.js`), passing the active mission (`configuration.msv.missionFolderName || configuration.msv.mission`), the computed API domain, and `subdir={com.subdir}` — the upload target folder declared by the field's own config.
+- `UploadField` takes a `subdir` prop, shows a file `<input accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml">` and, on select, guards that a `mission` and a `subdir` are present (errors via `onError` if either is missing) before calling `uploadImage(file, mission, subdir)` from `configure/src/core/upload.js`.
+- `uploadImage(file, mission, subdir)` POSTs the file (field name `image`) to `${domain}api/upload?mission=<name>&subdir=<subdir>` with `credentials: 'include'`, and resolves with the returned mission-relative `path` (or throws with the server's error message). It contains no hardcoded plugin name — the `subdir` is purely a parameter.
+- The card declares its own `subdir` in `src/essence/Tools/Card/config.json`: the `image` sub-field is `type: "upload"` with `"subdir": "CardPlugin"`. So `"CardPlugin"` lives **only** in the plugin's config — the Configure core (`Maker.js`, `UploadField`, `upload.js`) holds no card-specific knowledge, making the `upload` field type genuinely reusable by any plugin (each declares its own `subdir`).
 - On success the field calls `updateConfiguration(forceField || com.field, path, layer)`; on failure it surfaces the error via the snackbar (`onError`). Functions inside `objectarray`, so each card row gets its own uploader. Reuses the existing config-value plumbing — no change to how values save/load.
 
 ### Frontend — `src/essence/Tools/Card/`
@@ -135,7 +136,7 @@ Tests are **Playwright** (repo suite), under `tests/unit/Card/`:
 
 - `uploadValidate.spec.js` — pure validation helpers (mime→ext mapping, safe path segments).
 - `uploadRouting.spec.js` — upload route behavior (valid save + returned path; bad mission/subdir; unsupported type; oversize; missing file).
-- `uploadImage.spec.js` — the Configure-side upload caller.
+- `uploadImage.spec.js` — the Configure-side upload caller (`uploadImage(file, mission, subdir)` from `configure/src/core/upload.js`).
 - `resolveImageUrl.spec.js` — render-time image URL resolution.
 - **Manual:** configure a mission with 2–3 cards incl. real uploads; confirm the sidebar matches the Figma.
 

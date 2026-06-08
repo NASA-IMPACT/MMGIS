@@ -4,7 +4,7 @@
 
 **Goal:** Add a Card plugin — a modern TSX/React sidebar tool that renders a configurable list of cards (square-cropped image, title, subtitle, link), authored in the Configure page via a new image-upload field, with images stored under `Missions/<mission>/CardPlugin/uploads/`.
 
-**Architecture:** Three independent units. (1) A **generic, plugin-agnostic** core upload service `API/Backend/Upload/` with one `busboy` upload route writing to the per-mission `Missions/` dir (served statically already). The card plugin has NO backend folder — it just calls this generic endpoint with `subdir=CardPlugin`. (2) A new reusable `upload` field type in the Configure SPA (`Maker.js`) that POSTs a file and stores the returned mission-relative path. (3) A modern Card tool (`src/essence/Tools/Card/`) mirroring `LayerManager` — `createRoot`, `targetId`, event-bus only — that reads its `cards` tool-var and renders them. Card *data* lives in mission config (existing save/load); the only new backend surface is the generic upload service.
+**Architecture:** Three independent units. (1) A **generic, plugin-agnostic** core upload service `API/Backend/Upload/` with one `busboy` upload route writing to the per-mission `Missions/` dir (served statically already). The card plugin has NO backend folder — it just calls this generic endpoint with `subdir=CardPlugin`. (2) A new reusable `upload` field type in the Configure SPA (`Maker.js`) that POSTs a file and stores the returned mission-relative path. The Configure-side uploader is itself plugin-agnostic: the core module `configure/src/core/upload.js` exposes `uploadImage(file, mission, subdir)` and the `upload` field reads its `subdir` from the field's own config, so any plugin can reuse the field type by declaring its own `subdir` — "CardPlugin" lives only in the card plugin's `config.json`, never in the Configure core. (3) A modern Card tool (`src/essence/Tools/Card/`) mirroring `LayerManager` — `createRoot`, `targetId`, event-bus only — that reads its `cards` tool-var and renders them. Card *data* lives in mission config (existing save/load); the only new backend surface is the generic upload service.
 
 **Tech Stack:** Node/Express + `busboy` 1.6 (backend), React 19 + TypeScript + SCSS (tool), MUI + Redux (Configure SPA), Playwright unit specs (`tests/unit/Card/`).
 
@@ -377,18 +377,19 @@ git commit -m "feat(upload): add generic core image upload service"
 
 ### Task 2: `upload` config field type in the Configure SPA
 
-**Goal:** Add a reusable `upload` field type so admins can upload an image (instead of typing a path) anywhere in the config schema, including inside an `objectarray`. The field POSTs to the Task 1 generic upload endpoint (with `subdir=CardPlugin`) and stores the returned mission-relative path.
+**Goal:** Add a reusable, plugin-agnostic `upload` field type so admins can upload an image (instead of typing a path) anywhere in the config schema, including inside an `objectarray`. The field POSTs to the Task 1 generic upload endpoint and stores the returned mission-relative path. The upload target folder is not hardcoded: the core uploader takes `subdir` as a parameter and the field reads it from its own config (`com.subdir`), so each plugin declares its own `subdir` — the card plugin declares `"subdir": "CardPlugin"` in its `config.json`. This keeps the Configure core decoupled from any particular plugin and lets the `upload` field type be reused by any future plugin.
 
 **Files:**
-- Create: `configure/src/core/cardUpload.js`
+- Create: `configure/src/core/upload.js`
 - Test: `tests/unit/Card/uploadImage.spec.js`
 - Create: `configure/src/core/components/UploadField.js`
 - Modify: `configure/src/core/Maker.js` (add `case "upload"` in the component-render switch)
 
 **Acceptance Criteria:**
-- [ ] `uploadCardImage(file, mission)` POSTs `multipart/form-data` (field `image`) to `${domain}api/upload?mission=<mission>&subdir=CardPlugin` and resolves to the returned `path`; throws on non-success.
+- [ ] `uploadImage(file, mission, subdir)` POSTs `multipart/form-data` (field `image`) to `${domain}api/upload?mission=<mission>&subdir=<subdir>` and resolves to the returned `path`; throws on non-success. No plugin name is hardcoded in the function — `subdir` is a parameter.
 - [ ] Unit spec passes (fetch mocked).
-- [ ] `Maker.js` renders a file picker + preview + clear for `type: "upload"`, persists the returned path via `updateConfiguration`, and surfaces errors via the snackbar.
+- [ ] `UploadField` reads its `subdir` prop from the field config, guards it is present (errors `Upload field is missing a "subdir" in its config.` if not), and calls `uploadImage(file, mission, subdir)`.
+- [ ] `Maker.js` renders a file picker + preview + clear for `type: "upload"`, passes `subdir={com.subdir}` to `UploadField`, persists the returned path via `updateConfiguration`, and surfaces errors via the snackbar.
 
 **Verify:** `npx playwright test tests/unit/Card/uploadImage.spec.js` → passes.
 
@@ -400,22 +401,26 @@ Create `tests/unit/Card/uploadImage.spec.js`:
 
 ```js
 import { test, expect } from '@playwright/test'
-import { uploadCardImage } from '../../../configure/src/core/cardUpload.js'
+import { uploadImage } from '../../../configure/src/core/upload.js'
 
 const installFetchMock = (impl) => {
     global.window = global.window || {}
     global.window.mmgisglobal = { NODE_ENV: 'production', ROOT_PATH: '' }
     global.fetch = impl
     if (!global.FormData) {
-        // Minimal FormData stand-in for Node test env.
+        // Minimal FormData stand-in for the Node test env.
         global.FormData = class {
-            constructor() { this._d = {} }
-            append(k, v) { this._d[k] = v }
+            constructor() {
+                this._d = {}
+            }
+            append(k, v) {
+                this._d[k] = v
+            }
         }
     }
 }
 
-test.describe('uploadCardImage', () => {
+test.describe('uploadImage', () => {
     test('POSTs to the upload route and returns the path', async () => {
         let calledUrl = null
         let calledInit = null
@@ -424,10 +429,13 @@ test.describe('uploadCardImage', () => {
             calledInit = init
             return {
                 ok: true,
-                json: async () => ({ status: 'success', path: 'CardPlugin/uploads/x.png' }),
+                json: async () => ({
+                    status: 'success',
+                    path: 'CardPlugin/uploads/x.png',
+                }),
             }
         })
-        const path = await uploadCardImage({ name: 'x.png' }, 'MSL')
+        const path = await uploadImage({ name: 'x.png' }, 'MSL', 'CardPlugin')
         expect(path).toBe('CardPlugin/uploads/x.png')
         expect(calledUrl).toBe('api/upload?mission=MSL&subdir=CardPlugin')
         expect(calledInit.method).toBe('POST')
@@ -436,11 +444,14 @@ test.describe('uploadCardImage', () => {
     test('throws on a failure response', async () => {
         installFetchMock(async () => ({
             ok: false,
-            json: async () => ({ status: 'failure', message: 'Unsupported image type' }),
+            json: async () => ({
+                status: 'failure',
+                message: 'Unsupported image type',
+            }),
         }))
-        await expect(uploadCardImage({ name: 'x.svg' }, 'MSL')).rejects.toThrow(
-            'Unsupported image type',
-        )
+        await expect(
+            uploadImage({ name: 'x.svg' }, 'MSL', 'CardPlugin'),
+        ).rejects.toThrow('Unsupported image type')
     })
 })
 ```
@@ -448,11 +459,11 @@ test.describe('uploadCardImage', () => {
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `npx playwright test tests/unit/Card/uploadImage.spec.js`
-Expected: FAIL — `cardUpload.js` does not exist.
+Expected: FAIL — `upload.js` does not exist.
 
 - [ ] **Step 3: Implement the upload helper**
 
-Create `configure/src/core/cardUpload.js`:
+Create `configure/src/core/upload.js`:
 
 ```js
 // Computes the API base the same way configure/src/core/calls.js does.
@@ -465,16 +476,17 @@ function getDomain() {
     return d;
 }
 
-// Uploads an image File to the generic core upload endpoint for `mission`,
-// under the card plugin's own `subdir`. Resolves with the stored
-// mission-relative path, or throws with the server's error message.
-export async function uploadCardImage(file, mission) {
+// Uploads an image File to the generic core upload endpoint, under the given
+// `mission` and `subdir` (the caller — e.g. a plugin's config field — names its
+// own subdir). Resolves with the stored mission-relative path, or throws with
+// the server's error message.
+export async function uploadImage(file, mission, subdir) {
     const form = new FormData();
     form.append('image', file);
 
     const url = `${getDomain()}api/upload?mission=${encodeURIComponent(
         mission,
-    )}&subdir=CardPlugin`;
+    )}&subdir=${encodeURIComponent(subdir)}`;
     const res = await fetch(url, {
         method: 'POST',
         body: form,
@@ -507,16 +519,19 @@ Create `configure/src/core/components/UploadField.js`:
 import React, { useRef, useState } from 'react';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import { uploadCardImage } from '../cardUpload';
+import { uploadImage } from '../upload';
 
-// A config field that uploads an image and stores the returned mission-relative
-// path. `value` is the current stored path (may be empty). On success it calls
-// onChange(path); on failure it calls onError(message) and keeps the old value.
+// A generic config field that uploads an image and stores the returned
+// mission-relative path. `value` is the current stored path (may be empty);
+// `subdir` is the upload target folder declared by the field's config (so this
+// field is not tied to any one plugin). On success it calls onChange(path); on
+// failure it calls onError(message) and keeps the old value.
 export default function UploadField({
     label,
     description,
     value,
     mission,
+    subdir,
     disabled,
     domain,
     onChange,
@@ -534,9 +549,13 @@ export default function UploadField({
             onError && onError('Save or select a mission before uploading.');
             return;
         }
+        if (!subdir) {
+            onError && onError('Upload field is missing a "subdir" in its config.');
+            return;
+        }
         setUploading(true);
         try {
-            const path = await uploadCardImage(file, mission);
+            const path = await uploadImage(file, mission, subdir);
             onChange && onChange(path);
         } catch (err) {
             onError && onError(err.message || 'Image upload failed');
@@ -583,7 +602,11 @@ export default function UploadField({
                     disabled={disabled || uploading}
                     onClick={() => inputRef.current && inputRef.current.click()}
                 >
-                    {uploading ? 'Uploading…' : value ? 'Replace image' : 'Upload image'}
+                    {uploading
+                        ? 'Uploading…'
+                        : value
+                          ? 'Replace image'
+                          : 'Upload image'}
                 </Button>
                 {value ? (
                     <Button
@@ -643,6 +666,7 @@ Then add a new `case` inside the component-render `switch` (the same switch that
             configuration?.msv?.missionFolderName ||
             configuration?.msv?.mission
           }
+          subdir={com.subdir}
           domain={normalizedDomain}
           disabled={disabled || isDisabled}
           onChange={(p) =>
@@ -668,7 +692,7 @@ Expected: build completes without errors referencing `UploadField`/`upload`.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add configure/src/core/cardUpload.js configure/src/core/components/UploadField.js configure/src/core/Maker.js tests/unit/Card/uploadImage.spec.js
+git add configure/src/core/upload.js configure/src/core/components/UploadField.js configure/src/core/Maker.js tests/unit/Card/uploadImage.spec.js
 git commit -m "feat(configure): add reusable image upload field type"
 ```
 
@@ -694,7 +718,7 @@ git commit -m "feat(configure): add reusable image upload field type"
 - [ ] `resolveLinkUrl(linkUrl)` coerces a scheme-less dotted domain to `https://`, passes through internal `/path` and absolute http(s), and returns `undefined` for unsafe/non-http(s) schemes and bare single-label words.
 - [ ] `buildCardData(cards, missionPath)` maps raw config cards to renderable `CardItem`s (image resolved, link resolved); non-array input → `[]`.
 - [ ] Resolver/builder spec passes.
-- [ ] `config.json` declares the tool, the `cards` `objectarray` (with an `upload` image sub-field), and modern-layout `metadata`.
+- [ ] `config.json` declares the tool, the `cards` `objectarray` (with an `upload` image sub-field that declares `"subdir": "CardPlugin"`), and modern-layout `metadata`.
 - [ ] `CardTool.tsx` mounts/unmounts a React root into `targetId` and cleans up on `destroy`.
 
 **Verify:** `npx playwright test tests/unit/Card/resolveImageUrl.spec.js` → passes.
@@ -1004,6 +1028,7 @@ Create `src/essence/Tools/Card/config.json`:
                                 "name": "Image",
                                 "description": "Upload an image (png/jpg/webp/gif/svg, &le;5MB). It is cropped to a square in the card.",
                                 "type": "upload",
+                                "subdir": "CardPlugin",
                                 "width": 12
                             },
                             {
@@ -1378,7 +1403,7 @@ git commit -m "feat(card): render cards with square images, title, subtitle, lin
 
 **Spec coverage:**
 - Card plugin in sidebar → Tasks 3–4 (modern tool, `metadata` left/right vertical). ✓
-- Admin config: image upload, title, subtitle, link → Task 3 `config.json` `objectarray` + Task 2 `upload` field. ✓
+- Admin config: image upload, title, subtitle, link → Task 3 `config.json` `objectarray` + Task 2 `upload` field. The `upload` field is plugin-agnostic — the card declares its `"subdir": "CardPlugin"` in its own config and the Configure core threads it through, so no plugin name is hardcoded in the core. ✓
 - Image upload to `uploads/` folder on disk (per-mission) → Task 1's generic upload service writes `Missions/<mission>/<subdir>/uploads/`; the card uses `subdir=CardPlugin`. ✓ (Reconciled the spec's "within the plugin folder" with the reality that the bundled tool dir is not writable/served, and made the backend plugin-agnostic so other plugins can reuse it.)
 - Future S3 → documented out-of-scope; the generic upload service is the swap seam. ✓
 - Cropped to square automatically → CSS `object-fit: cover` in `card.scss` (`.blocks-card__image`). ✓
@@ -1387,10 +1412,11 @@ git commit -m "feat(card): render cards with square images, title, subtitle, lin
 
 **Placeholder scan:** No TBD/TODO; every code step shows complete code matching the shipped files. ✓
 
-**Type consistency:** `resolveImageUrl`/`resolveLinkUrl`/`buildCardData` all live in `adapters/buildCardData.ts` and are consumed by `getCardData.ts`. Raw config fields (`image`/`title`/`subtitle`/`linkUrl`) map through `buildCardData` to the renderable `CardItem` (`imageUrl`/`title`/`subtitle`/`linkUrl`) used by `lib/types.ts`, `Card`, and `CardList`. The generic upload route returns `{ status, path }`; `uploadCardImage` and `UploadField` consume `path`/`message` consistently. ✓
+**Type consistency:** `resolveImageUrl`/`resolveLinkUrl`/`buildCardData` all live in `adapters/buildCardData.ts` and are consumed by `getCardData.ts`. Raw config fields (`image`/`title`/`subtitle`/`linkUrl`) map through `buildCardData` to the renderable `CardItem` (`imageUrl`/`title`/`subtitle`/`linkUrl`) used by `lib/types.ts`, `Card`, and `CardList`. The generic upload route returns `{ status, path }`; `uploadImage` and `UploadField` consume `path`/`message` consistently, with `subdir` threaded from the field config (`com.subdir` → `UploadField` prop → `uploadImage` arg → query param). ✓
 
 **As-built notes (verified against the shipped branch):**
 - Backend is the generic `API/Backend/Upload/` service (`setup.js`, `uploadRouter.js`, `validate.js`), mounted at `/api/upload` behind `s.ensureAdmin()`; there is no `API/Backend/CardPlugin/`.
 - Allowed image types include SVG (`IMAGE_MIME_TO_EXT` in `API/Backend/Upload/validate.js`).
 - `L_.getToolVars` key is the lowercased config `name`, i.e. `"card"` (passed as the 2nd arg to `mmgisRequest('tool:getVars', 'card')`).
 - The Configure mission segment used for the upload path is `configuration?.msv?.missionFolderName || configuration?.msv?.mission`.
+- The Configure-side uploader is generic: `configure/src/core/upload.js` exports `uploadImage(file, mission, subdir)` (no hardcoded plugin name), `UploadField` takes a `subdir` prop and guards it (`Upload field is missing a "subdir" in its config.`), and `Maker.js`'s `case "upload"` passes `subdir={com.subdir}`. "CardPlugin" lives only in the card's `config.json` image field (`"subdir": "CardPlugin"`), so the `upload` field type is reusable by any plugin.
