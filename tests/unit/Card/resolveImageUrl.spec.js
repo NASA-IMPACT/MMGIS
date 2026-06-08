@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import {
     resolveImageUrl,
+    resolveLinkUrl,
     buildCardData,
 } from '../../../src/essence/Tools/Card/adapters/buildCardData.ts'
 
@@ -65,5 +66,44 @@ test.describe('buildCardData', () => {
                 linkUrl: 'https://x',
             },
         ])
+    })
+})
+
+test.describe('resolveLinkUrl', () => {
+    test('returns undefined for empty/blank input', () => {
+        expect(resolveLinkUrl('')).toBeUndefined()
+        expect(resolveLinkUrl('   ')).toBeUndefined()
+        expect(resolveLinkUrl(undefined)).toBeUndefined()
+        expect(resolveLinkUrl(null)).toBeUndefined()
+    })
+
+    test('prepends https:// to scheme-less external links', () => {
+        expect(resolveLinkUrl('www.google.com')).toBe('https://www.google.com')
+        expect(resolveLinkUrl('bass.codebycarson.com')).toBe(
+            'https://bass.codebycarson.com',
+        )
+        expect(resolveLinkUrl('  example.com/path  ')).toBe(
+            'https://example.com/path',
+        )
+    })
+
+    test('passes through absolute http(s) and internal links', () => {
+        expect(resolveLinkUrl('https://x.com')).toBe('https://x.com')
+        expect(resolveLinkUrl('http://x.com')).toBe('http://x.com')
+        expect(resolveLinkUrl('/internal/path')).toBe('/internal/path')
+        expect(resolveLinkUrl('//cdn.x.com/a')).toBe('//cdn.x.com/a')
+    })
+
+    test('rejects unsafe or non-http(s) schemes', () => {
+        expect(resolveLinkUrl('javascript:alert(1)')).toBeUndefined()
+        expect(resolveLinkUrl('data:text/html,<script>')).toBeUndefined()
+        expect(resolveLinkUrl('mailto:a@b.com')).toBeUndefined()
+        expect(resolveLinkUrl('tel:+15551234')).toBeUndefined()
+        expect(resolveLinkUrl('ftp://x.com')).toBeUndefined()
+    })
+
+    test('rejects scheme-less bare words with no dotted host', () => {
+        expect(resolveLinkUrl('arst')).toBeUndefined()
+        expect(resolveLinkUrl('notaurl')).toBeUndefined()
     })
 })
