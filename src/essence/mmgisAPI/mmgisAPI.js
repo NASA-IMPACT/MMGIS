@@ -121,10 +121,14 @@ var mmgisAPI_ = {
                 true
             )
 
-            // Then add
-            if (didSet)
+            // Then add. resetConfig re-parses configData into L_.layers.data so the
+            // new layer exists before modifyLayer renders it (matches the
+            // updateLayersHelper/WebSocket flow). In-memory only — not persisted to
+            // the backend, so added layers are lost on reload.
+            if (didSet) {
+                await L_.resetConfig(configData)
                 await L_.modifyLayer(configData, layerObj.name, 'addLayer')
-            else {
+            } else {
                 reject('Failed to add layer.')
                 return
             }

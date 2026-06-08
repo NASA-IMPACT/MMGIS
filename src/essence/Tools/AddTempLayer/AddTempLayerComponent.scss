@@ -1,6 +1,209 @@
-// AddTempLayer — theme-token styling (scaffold).
-// Real styles (modal, fields, error state) come in a later step.
+// AddTempLayer — theme-token styling (USWDS).
+// Trigger button + "Add layer from URL" modal. No submit wiring yet.
 
 .add-temp-layer {
     font-family: var(--theme-font-ui);
+    padding: var(--theme-spacing-1);
+    box-sizing: border-box;
+    width: 100%;
+}
+
+// ─── Trigger button (dashed, full-width) ──────────────────────────────────
+
+.add-temp-layer__trigger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--theme-spacing-1);
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--theme-spacing-1) var(--theme-spacing-2);
+    background: transparent;
+    border: 1px dashed var(--theme-color-base-light);
+    border-radius: var(--theme-radius-md);
+    color: var(--theme-color-primary);
+    font-family: var(--theme-font-ui);
+    font-size: var(--theme-font-size-2xs);
+    font-weight: var(--theme-font-weight-semibold);
+    cursor: pointer;
+    transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+
+    &:hover {
+        border-color: var(--theme-color-primary-dark);
+        color: var(--theme-color-primary-dark);
+        background: var(--theme-color-base-lightest);
+    }
+
+    svg {
+        flex-shrink: 0;
+    }
+}
+
+.add-temp-layer__trigger-label {
+    white-space: nowrap;
+}
+
+// ─── Modal (portaled to document.body) ────────────────────────────────────
+
+.add-temp-layer__overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    // Anchor top-right, just below the top map toolbar (search / zoom / share).
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding-top: var(--theme-spacing-8);
+    padding-right: var(--theme-spacing-2);
+    box-sizing: border-box;
+}
+
+.add-temp-layer__modal {
+    width: 372px;
+    max-width: 100%;
+    background: var(--theme-color-white);
+    border-radius: var(--theme-radius-lg);
+    box-shadow: 0 8px 32px var(--theme-color-shadow);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-family: var(--theme-font-ui);
+}
+
+.add-temp-layer__modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--theme-spacing-2);
+    border-bottom: 1px solid var(--theme-color-base-lighter);
+}
+
+.add-temp-layer__modal-title {
+    display: flex;
+    align-items: center;
+    gap: var(--theme-spacing-1);
+    font-size: var(--theme-font-size-sm);
+    font-weight: var(--theme-font-weight-semibold);
+    color: var(--theme-color-ink);
+}
+
+.add-temp-layer__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--theme-spacing-05);
+    border: none;
+    background: transparent;
+    color: var(--theme-color-base);
+    cursor: pointer;
+    border-radius: var(--theme-radius-md);
+
+    &:hover {
+        background: var(--theme-color-base-lightest);
+        color: var(--theme-color-ink);
+    }
+}
+
+.add-temp-layer__modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--theme-spacing-2);
+    padding: var(--theme-spacing-2);
+}
+
+.add-temp-layer__help {
+    margin: 0;
+    font-size: var(--theme-font-size-2xs);
+    color: var(--theme-color-base-dark);
+}
+
+.add-temp-layer__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--theme-spacing-05);
+}
+
+.add-temp-layer__label {
+    font-size: var(--theme-font-size-3xs);
+    font-weight: var(--theme-font-weight-semibold);
+    color: var(--theme-color-base-dark);
+}
+
+.add-temp-layer__input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: var(--theme-spacing-1);
+    border: 1px solid var(--theme-color-base-light);
+    border-radius: var(--theme-radius-md);
+    background: var(--theme-color-white);
+    color: var(--theme-color-ink);
+    font-family: var(--theme-font-ui);
+    font-size: var(--theme-font-size-2xs);
+    outline: none;
+
+    &:focus {
+        border-color: var(--theme-color-primary);
+        box-shadow: 0 0 0 2px var(--theme-color-primary-light);
+    }
+
+    &--error {
+        border-color: var(--theme-color-secondary);
+
+        &:focus {
+            border-color: var(--theme-color-secondary);
+            box-shadow: 0 0 0 2px var(--theme-color-secondary-light);
+        }
+    }
+}
+
+.add-temp-layer__error {
+    margin-top: var(--theme-spacing-05);
+    font-size: var(--theme-font-size-3xs);
+    color: var(--theme-color-secondary);
+}
+
+.add-temp-layer__behaviour {
+    background: var(--theme-color-base-lightest);
+    border-radius: var(--theme-radius-md);
+    padding: var(--theme-spacing-1) var(--theme-spacing-2);
+}
+
+.add-temp-layer__behaviour-list {
+    margin: 0;
+    padding-left: var(--theme-spacing-2);
+    font-size: var(--theme-font-size-3xs);
+    color: var(--theme-color-base-dark);
+
+    li {
+        margin: var(--theme-spacing-05) 0;
+    }
+}
+
+.add-temp-layer__modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: var(--theme-spacing-2);
+    border-top: 1px solid var(--theme-color-base-lighter);
+}
+
+.add-temp-layer__submit {
+    padding: var(--theme-spacing-1) var(--theme-spacing-3);
+    border: none;
+    border-radius: var(--theme-radius-md);
+    background: var(--theme-color-primary);
+    color: var(--theme-color-white);
+    font-family: var(--theme-font-ui);
+    font-size: var(--theme-font-size-2xs);
+    font-weight: var(--theme-font-weight-semibold);
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    &:hover {
+        background: var(--theme-color-primary-dark);
+    }
+
+    &:disabled {
+        opacity: 0.6;
+        cursor: default;
+    }
 }
