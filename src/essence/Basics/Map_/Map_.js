@@ -20,6 +20,7 @@ import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
 import TimeControl from '../TimeControl_/TimeControl'
+
 import gjv from 'geojson-validation'
 import {
     evaluate_cmap,
@@ -36,7 +37,7 @@ import { buildDeckLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 
 let L = window.L
 
-let essenceFina = function () { }
+let essenceFina = function () {}
 
 mapEngineRegistry.register(MAP_ENGINE.LEAFLET, LeafletAdapter)
 mapEngineRegistry.register(MAP_ENGINE.DECKGL, DeckGLAdapter)
@@ -79,14 +80,13 @@ function _resolveBasemapStyles(basemapConfig, engineType) {
         { name: 'Terrain', style: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png' },
     ]
 
-    const mapboxDefaults = MAPBOX_DEFAULTS
     const maplibreDefaults = isLeaflet ? MAPLIBRE_DEFAULTS_LEAFLET : MAPLIBRE_DEFAULTS_DECKGL
 
     const styles =
         basemapConfig.styles && basemapConfig.styles.length > 0
             ? [...basemapConfig.styles]
             : basemapConfig.provider === 'mapbox'
-                ? [...mapboxDefaults]
+                ? [...MAPBOX_DEFAULTS]
                 : [...maplibreDefaults]
 
     return styles
@@ -632,10 +632,10 @@ let Map_ = {
             ) {
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].setZIndex(
                     L_._layersOrdered.length +
-                    1 -
-                    L_._layersOrdered.indexOf(
-                        L_._layersOrdered[hasIndex[i]]
-                    )
+                        1 -
+                        L_._layersOrdered.indexOf(
+                            L_._layersOrdered[hasIndex[i]]
+                        )
                 )
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].clearCache()
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].redraw()
@@ -649,10 +649,10 @@ let Map_ = {
         for (let i = 0; i < hasIndexRaster.length; i++) {
             L_.layers.layer[L_._layersOrdered[hasIndexRaster[i]]].setZIndex(
                 L_._layersOrdered.length +
-                1 -
-                L_._layersOrdered.indexOf(
-                    L_._layersOrdered[hasIndexRaster[i]]
-                )
+                    1 -
+                    L_._layersOrdered.indexOf(
+                        L_._layersOrdered[hasIndexRaster[i]]
+                    )
             )
         }
 
@@ -665,7 +665,7 @@ let Map_ = {
                 L_.layers.layer[key].forEach((l) => {
                     try {
                         l.bringToFront()
-                    } catch (err) { }
+                    } catch (err) {}
                 })
             }
         })
@@ -679,7 +679,7 @@ let Map_ = {
         // If it's a dynamic extent layer, just re-call its function
         if (
             L_._onSpecificLayerToggleSubscriptions[
-            `dynamicextent_${layerObj.name}`
+                `dynamicextent_${layerObj.name}`
             ] != null
         ) {
             if (L_.layers.on[layerObj.name])
@@ -834,9 +834,9 @@ let Map_ = {
         const zoom = Map_.map.getZoom()
 
         const min = Map_.map
-            .project(bounds.getNorthWest(), zoom)
-            .divideBy(256)
-            .floor(),
+                .project(bounds.getNorthWest(), zoom)
+                .divideBy(256)
+                .floor(),
             max = Map_.map
                 .project(bounds.getSouthEast(), zoom)
                 .divideBy(256)
@@ -1245,7 +1245,7 @@ async function makeVectorLayer(
                     if (existingLayer != null && existingLayer !== false) {
                         console.warn(
                             `[${new Date().toISOString()}] Refresh failed for ${layerObj.display_name}, ` +
-                            `keeping existing layer. Next refresh in ${layerObj.time?.refreshIntervalAmount || 60}s`
+                                `keeping existing layer. Next refresh in ${layerObj.time?.refreshIntervalAmount || 60}s`
                         )
                         // Mark layer as having a failed refresh
                         ctx.layerRegistry.refreshFailed[layerObj.name] = true
@@ -1474,7 +1474,7 @@ async function makeVelocityLayer(
                             position: layerObj.variables?.streamlines
                                 ?.displayPosition
                                 ? layerObj.variables?.streamlines
-                                    ?.displayPosition
+                                      ?.displayPosition
                                 : 'bottomleft',
                             emptyString: '',
                         },
@@ -1507,7 +1507,7 @@ async function makeVelocityLayer(
                             : 15,
                         colorScale: colorScale,
                     })
-                    velocityLayer.setZIndex = function () { }
+                    velocityLayer.setZIndex = function () {}
                     L_.layers.layer[layerObj.name] = velocityLayer
                 } else if (layerObj.kind == 'particles') {
                     let points = []
@@ -1543,7 +1543,7 @@ async function makeVelocityLayer(
                             : 'Oxa6b3e9',
                     }
                     let rainLayer = L.rain(points, options)
-                    rainLayer.setZIndex = function () { }
+                    rainLayer.setZIndex = function () {}
                     L_.layers.layer[layerObj.name] = rainLayer
                 }
                 L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] =
@@ -1814,7 +1814,8 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
 
     if (urlSplit[0].toLowerCase() === 'geodatasets' && urlSplit[1] != null) {
         layerUrl =
-            `${window.mmgisglobal.ROOT_PATH || ''}/api/geodatasets/get?layer=${urlSplit[1]
+            `${window.mmgisglobal.ROOT_PATH || ''}/api/geodatasets/get?layer=${
+                urlSplit[1]
             }` + '&type=mvt&x={x}&y={y}&z={z}'
     }
 
@@ -1974,7 +1975,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                         e.layer._renderer._features[i].feature._pxBounds.max
                             .y >= p.y &&
                         e.layer._renderer._features[i].feature.properties[
-                        vtId
+                            vtId
                         ] != e.layer.properties[vtId]
                     ) {
                         L_.layers.layer[layerName].activeFeatures.push({
@@ -2246,8 +2247,8 @@ function makeImageLayer(layerObj, mapContext = null) {
 
             L_.layers.layer[layerObj.name].setZIndex(
                 L_._layersOrdered.length +
-                1 -
-                L_._layersOrdered.indexOf(layerObj.name)
+                    1 -
+                    L_._layersOrdered.indexOf(layerObj.name)
             )
 
             L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
@@ -2344,8 +2345,8 @@ function makeVideoLayer(layerObj, mapContext = null) {
 
         L_.layers.layer[layerObj.name].setZIndex(
             L_._layersOrdered.length +
-            1 -
-            L_._layersOrdered.indexOf(layerObj.name)
+                1 -
+                L_._layersOrdered.indexOf(layerObj.name)
         )
 
         L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])

@@ -5,7 +5,7 @@
  *   map:getBasemapStyles  map:getBasemap  map:setBasemap
  *   map:zoomIn            map:zoomOut
  *   map:fitBounds         map:latLngToContainerPoint
- *   map:createLayer       map:removeLayer   (provided by PR #90 imapengine-drawing)
+ *   map:createLayer       map:removeLayer
  *
  * Bus channels consumed (on / subscribe):
  *   map:click             map:mousemove
@@ -15,9 +15,7 @@ import { createRoot } from 'react-dom/client'
 import { MapControlComponent } from './MapControlComponent'
 
 const ROOT_ID    = 'mmgis-map-control-root'
-// position:fixed anchors to the viewport regardless of which UI layout is
-// active (Modern UI's #modern-content is emptied on re-render; Default UI uses
-// #mapScreen). Mounting into document.body is the simplest, safest anchor.
+// Viewport-fixed, click-through overlay layer mounted on document.body.
 const ROOT_STYLE = 'position:fixed;inset:0;pointer-events:none;z-index:1002;'
 const TOP_BAR_ID = 'topBarRight'
 const SEARCH_OVERLAY_ID = 'plugin:mapcontrol:search'
@@ -162,11 +160,8 @@ function ConnectedMapControl() {
         }
     }, [])
 
-    // Vector overlays go through map:createLayer / map:removeLayer (provided by
-    // the imapengine-drawing PR #90). We render ephemeral vector geometry, so we
-    // use the generic layer CRUD rather than #90's map:addOverlay, which is a
-    // DOM-element-at-a-point overlay with a different contract.
-    // Guard: only call removeLayer if the layer was actually drawn.
+    // Ephemeral vector overlays via map:createLayer / map:removeLayer.
+    // overlayExistsRef guards removeLayer so it only fires after a draw.
     const overlayExistsRef = useRef(false)
     const onDrawOverlay = useCallback(({ id, geojson, style }) => {
         overlayExistsRef.current = true
@@ -238,8 +233,7 @@ function ConnectedMapControl() {
 }
 
 // ─── InterfaceWithMMGIS ───────────────────────────────────────────────────────
-// Mounts the React overlay into document.body with position:fixed so it is
-// immune to any parent container being emptied or repositioned.
+// Mounts the React tree into the overlay layer; separateFromMMGIS tears it down.
 
 function InterfaceWithMMGIS() {
     document.getElementById(ROOT_ID)?.remove()

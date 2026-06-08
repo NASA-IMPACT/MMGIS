@@ -191,29 +191,6 @@ function getPropValue(object: unknown, path: string | undefined): unknown {
  *
  * @throws {Error} If `options.type` is not a supported layer type.
  */
-function _toRgba(
-    input: unknown,
-    fallback: [number, number, number, number]
-): [number, number, number, number] {
-    if (Array.isArray(input) && input.length >= 3) {
-        const [r, g, b, a] = input as number[]
-        return [r, g, b, a ?? 255]
-    }
-    if (typeof input === 'string') {
-        let s = input.trim()
-        if (s.startsWith('#')) s = s.slice(1)
-        if (s.length === 3) s = s.split('').map((c) => c + c).join('')
-        if (s.length === 6 || s.length === 8) {
-            const r = parseInt(s.slice(0, 2), 16)
-            const g = parseInt(s.slice(2, 4), 16)
-            const b = parseInt(s.slice(4, 6), 16)
-            const a = s.length === 8 ? parseInt(s.slice(6, 8), 16) : 255
-            if (!isNaN(r) && !isNaN(g) && !isNaN(b)) return [r, g, b, a]
-        }
-    }
-    return fallback
-}
-
 export function buildDeckLayer(id: string, options: LayerOptions): Layer {
     const resolvedType = DECKGL_TYPE_ALIAS[options.type ?? ''] ?? options.type
     switch (resolvedType) {
@@ -231,11 +208,11 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     const bbox = (props.tile as { bbox: { west: number; south: number; east: number; north: number } }).bbox
                     const bounds = Number.isFinite(tileElevation)
                         ? [
-                            [bbox.west, bbox.south, tileElevation],
-                            [bbox.west, bbox.north, tileElevation],
-                            [bbox.east, bbox.north, tileElevation],
-                            [bbox.east, bbox.south, tileElevation],
-                        ]
+                              [bbox.west, bbox.south, tileElevation],
+                              [bbox.west, bbox.north, tileElevation],
+                              [bbox.east, bbox.north, tileElevation],
+                              [bbox.east, bbox.south, tileElevation],
+                          ]
                         : [bbox.west, bbox.south, bbox.east, bbox.north]
                     return new BitmapLayer({
                         ...(props as object),
@@ -278,59 +255,59 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             const getFillColor =
                 fillColorProp || fillOpacityProp
                     ? (feature: Record<string, unknown>) => {
-                        const hexVal = fillColorProp
-                            ? (getPropValue(feature, fillColorProp) as string | undefined)
-                            : undefined
-                        const alphaVal = fillOpacityProp
-                            ? getPropValue(feature, fillOpacityProp)
-                            : undefined
-                        if (hexVal === undefined && alphaVal === undefined) return staticFillColor
-                        return hexToRgba(
-                            hexVal ?? (style.fillColor as string | undefined),
-                            alphaVal !== undefined
-                                ? Number(alphaVal)
-                                : style.fillOpacity !== undefined
+                          const hexVal = fillColorProp
+                              ? (getPropValue(feature, fillColorProp) as string | undefined)
+                              : undefined
+                          const alphaVal = fillOpacityProp
+                              ? getPropValue(feature, fillOpacityProp)
+                              : undefined
+                          if (hexVal === undefined && alphaVal === undefined) return staticFillColor
+                          return hexToRgba(
+                              hexVal ?? (style.fillColor as string | undefined),
+                              alphaVal !== undefined
+                                  ? Number(alphaVal)
+                                  : style.fillOpacity !== undefined
                                     ? Number(style.fillOpacity)
                                     : 0.8,
-                            staticFillColor
-                        )
-                    }
+                              staticFillColor
+                          )
+                      }
                     : staticFillColor
 
             const getLineColor =
                 colorProp || opacityProp
                     ? (feature: Record<string, unknown>) => {
-                        const hexVal = colorProp
-                            ? (getPropValue(feature, colorProp) as string | undefined)
-                            : undefined
-                        const alphaVal = opacityProp
-                            ? getPropValue(feature, opacityProp)
-                            : undefined
-                        if (hexVal === undefined && alphaVal === undefined) return staticLineColor
-                        return hexToRgba(
-                            hexVal ?? (style.color as string | undefined),
-                            alphaVal !== undefined
-                                ? Number(alphaVal)
-                                : style.opacity !== undefined
+                          const hexVal = colorProp
+                              ? (getPropValue(feature, colorProp) as string | undefined)
+                              : undefined
+                          const alphaVal = opacityProp
+                              ? getPropValue(feature, opacityProp)
+                              : undefined
+                          if (hexVal === undefined && alphaVal === undefined) return staticLineColor
+                          return hexToRgba(
+                              hexVal ?? (style.color as string | undefined),
+                              alphaVal !== undefined
+                                  ? Number(alphaVal)
+                                  : style.opacity !== undefined
                                     ? Number(style.opacity)
                                     : 1,
-                            staticLineColor
-                        )
-                    }
+                              staticLineColor
+                          )
+                      }
                     : staticLineColor
 
             const getLineWidth = weightProp
                 ? (feature: Record<string, unknown>) => {
-                    const v = getPropValue(feature, weightProp)
-                    return v !== undefined ? Number(v) : staticLineWidth
-                }
+                      const v = getPropValue(feature, weightProp)
+                      return v !== undefined ? Number(v) : staticLineWidth
+                  }
                 : staticLineWidth
 
             const getPointRadius = radiusProp
                 ? (feature: Record<string, unknown>) => {
-                    const v = getPropValue(feature, radiusProp)
-                    return v !== undefined ? Number(v) : staticPointRadius
-                }
+                      const v = getPropValue(feature, radiusProp)
+                      return v !== undefined ? Number(v) : staticPointRadius
+                  }
                 : staticPointRadius
 
             const markerIcon = o.variables?.markerIcon
@@ -356,16 +333,16 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 pickable: o.interactive ?? true,
                 ...(iconUrl
                     ? {
-                        getIcon: () => ({
-                            url: iconUrl,
-                            width: iconW,
-                            height: iconH,
-                            anchorX,
-                            anchorY,
-                        }),
-                        getIconSize: iconH,
-                        iconSizeUnits: 'pixels' as const,
-                    }
+                          getIcon: () => ({
+                              url: iconUrl,
+                              width: iconW,
+                              height: iconH,
+                              anchorX,
+                              anchorY,
+                          }),
+                          getIconSize: iconH,
+                          iconSizeUnits: 'pixels' as const,
+                      }
                     : {}),
                 ...(o.nativeOptions ?? {}),
             } as ConstructorParameters<typeof GeoJsonLayer>[0]) as unknown as Layer
@@ -411,9 +388,9 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     : {}
             const data =
                 o.data &&
-                    typeof o.data === 'object' &&
-                    !Array.isArray(o.data) &&
-                    (o.data as { type?: unknown }).type === 'FeatureCollection'
+                typeof o.data === 'object' &&
+                !Array.isArray(o.data) &&
+                (o.data as { type?: unknown }).type === 'FeatureCollection'
                     ? (o.data as { features?: unknown[] }).features
                     : o.data
             const getPosition = (object: unknown): [number, number] | [number, number, number] => {
@@ -443,9 +420,9 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 getPosition,
                 getRadius: radiusProp
                     ? (object: unknown) => {
-                        const value = getPropValue(object, radiusProp)
-                        return value !== undefined ? Number(value) : staticRadius
-                    }
+                          const value = getPropValue(object, radiusProp)
+                          return value !== undefined ? Number(value) : staticRadius
+                      }
                     : staticRadius,
                 getFillColor: hexToRgba(
                     style.fillColor as string | undefined,
@@ -497,8 +474,8 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
         default:
             throw new Error(
                 `buildDeckLayer: unsupported layer type "${options.type}"` +
-                (resolvedType !== options.type ? ` (resolved to "${resolvedType}")` : '') +
-                `. Supported types: 'tile', 'vector', 'vectortile', 'scatterplot', 'tile3d', 'pointcloud'.`
+                    (resolvedType !== options.type ? ` (resolved to "${resolvedType}")` : '') +
+                    `. Supported types: 'tile', 'vector', 'vectortile', 'scatterplot', 'tile3d', 'pointcloud'.`
             )
     }
 }
