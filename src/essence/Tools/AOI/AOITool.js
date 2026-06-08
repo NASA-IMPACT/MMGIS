@@ -28,8 +28,7 @@
  *     - map:fitBounds
  *     - map:enableDrawing / map:finishDrawing / map:disableDrawing
  *     - map:addOverlay / map:removeOverlay
- *
- * This file is the only file in the plugin that imports MMGIS internals.
+
  * AOIComponent.tsx and AOITooltip.tsx must stay MMGIS-agnostic.
  */
 
