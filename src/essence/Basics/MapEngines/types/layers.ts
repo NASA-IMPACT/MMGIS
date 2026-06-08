@@ -149,3 +149,17 @@ export interface IconOptions {
     scale?: number
     element?: HTMLElement
 }
+
+/**
+ * Anchored HTML overlay attached to a geographic point.
+ *
+ * The engine creates a DOM node, anchors it to `latlng`, and keeps it
+ * positioned across map view changes. The caller passes `mount` to render
+ * content into the node and (optionally) returns a cleanup function the
+ * engine runs on `removeOverlay` / engine destroy.
+ */
+export interface OverlayOptions {
+    id: string
+    latlng: LatLngLike
+    mount: (node: HTMLElement) => (() => void) | void
+}

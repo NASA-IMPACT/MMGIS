@@ -23,7 +23,12 @@ import {
     MapInitOptions,
     ProjectionOptions,
 } from '../types/view'
-import { LayerOptions, TileLayerOptions, MarkerOptions } from '../types/layers'
+import {
+    LayerOptions,
+    TileLayerOptions,
+    MarkerOptions,
+    OverlayOptions,
+} from '../types/layers'
 import { IMapEngineMarkers } from '../IMapEngineMarkers'
 import {
     buildLeafletLayer,
@@ -32,11 +37,23 @@ import {
     resolveLeafletMarkerId,
 } from './LeafletHelpers'
 import {
+    TerraDraw,
+    TerraDrawPointMode,
+    TerraDrawLineStringMode,
+    TerraDrawPolygonMode,
+    TerraDrawRectangleMode,
+    TerraDrawCircleMode,
+} from 'terra-draw'
+import { TerraDrawLeafletAdapter } from 'terra-draw-leaflet-adapter'
+import { extractVerticesFromGeometry } from './DrawingHelpers'
+import {
     MapEventHandler,
     MapEventOptions,
     FeatureInteractionHandler,
     FeaturePickResult,
     QueryFeaturesOptions,
+    DrawShape,
+    DrawingOptions,
 } from '../types/events'
 import { MapEngineType } from '../types/engine'
 
@@ -70,6 +87,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _markers: Map<string, any> = new Map()
 
     /**
+     * Registry of anchored HTML overlays (id -> teardown function).
+     */
+    private _overlays: Map<string, () => void> = new Map()
+
+    /**
      * Registry of event handlers for cleanup
      */
     private _eventHandlers: Map<string, Function> = new Map()
@@ -78,6 +100,20 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Stored initialization options
      */
     private _initOptions: MapInitOptions | null = null
+
+    /**
+     * Wrapped map listeners installed by onFeatureClick / onFeatureHover.
+     * Stored so replacing the handler (or destroying the adapter) cleanly
+     * detaches the prior listener — without this Leaflet's `.on()` would
+     * accumulate one extra click listener per call.
+     */
+    private _featureClickListener: ((e: any) => void) | null = null
+    private _featureHoverMoveListener: ((e: any) => void) | null = null
+    private _featureHoverOutListener: (() => void) | null = null
+
+    private _terraDraw: TerraDraw | null = null
+    private _drawingShape: DrawShape | null = null
+    private _terraDrawListeners: Array<() => void> = []
 
     /**
      * Initialize the Leaflet map instance
@@ -251,6 +287,26 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             this._map.off(eventName, handler)
         })
         this._eventHandlers.clear()
+
+        this._overlays.forEach((teardown) => {
+            try {
+                teardown()
+            } catch {
+                // ignore — destroy must remain idempotent
+            }
+        })
+        this._overlays.clear()
+
+        if (this._terraDraw) {
+            this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
+            this._terraDrawListeners = []
+            try { this._terraDraw.stop() } catch { /* ignore */ }
+            this._terraDraw = null
+        }
+        this._drawingShape = null
+
+        this._detachFeatureClickListener()
+        this._detachFeatureHoverListeners()
 
         this._layers.clear()
         this._markers.clear()
@@ -724,10 +780,15 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     }
 
     /**
-     * Normalize Leaflet events to standard format
+     * Normalize Leaflet events to a standard shape while preserving any
+     * custom payload fields the emitter passed (e.g. `feature` on
+     * `drawcomplete`, `vertices` on `drawvertex`). Without the spread,
+     * `emit(name, { feature })` would silently strip `feature` and any
+     * downstream consumer subscribed via `on(name, …)` would see nothing.
      */
     private _normalizeEvent(e: any, eventName: string): any {
         const normalized: any = {
+            ...e,
             type: eventName,
             originalEvent: e.originalEvent,
         }
@@ -746,16 +807,24 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             normalized.layerPoint = { x: e.layerPoint.x, y: e.layerPoint.y }
         }
 
+        // Strip Leaflet internals that shouldn't leak to bus subscribers.
+        delete normalized.target
+        delete normalized.sourceTarget
+        delete normalized.propagatedFrom
+
         return normalized
     }
 
     /**
      * Register a handler called when the user clicks a rendered feature.
      * Attaches a map-level click listener; on each click iterates registered
-     * vector layers to find the topmost feature under the cursor.
+     * vector layers to find the topmost feature under the cursor. Returns an
+     * unsubscribe function. Replace semantics: calling again with a new
+     * handler detaches the prior listener first.
      */
-    onFeatureClick(handler: FeatureInteractionHandler): void {
-        this._map.on('click', (e: any) => {
+    onFeatureClick(handler: FeatureInteractionHandler): () => void {
+        this._detachFeatureClickListener()
+        const listener = (e: any) => {
             const result = this._pickFeatureAtLatLng(e.latlng)
             handler({
                 feature: result?.feature ?? null,
@@ -765,16 +834,32 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                     ? { x: e.containerPoint.x, y: e.containerPoint.y }
                     : undefined,
             })
-        })
+        }
+        this._featureClickListener = listener
+        this._map.on('click', listener)
+        return () => {
+            if (this._featureClickListener === listener) {
+                this._detachFeatureClickListener()
+            }
+        }
+    }
+
+    private _detachFeatureClickListener(): void {
+        if (this._featureClickListener && this._map) {
+            this._map.off('click', this._featureClickListener)
+        }
+        this._featureClickListener = null
     }
 
     /**
      * Register a handler called when the user moves over a rendered feature.
      * Uses mousemove to track the hovered feature and mouseout to clear it.
-     * Returns feature: null when the cursor leaves the map.
+     * Returns feature: null when the cursor leaves the map. Returns an
+     * unsubscribe function. Replace semantics — see {@link onFeatureClick}.
      */
-    onFeatureHover(handler: FeatureInteractionHandler): void {
-        this._map.on('mousemove', (e: any) => {
+    onFeatureHover(handler: FeatureInteractionHandler): () => void {
+        this._detachFeatureHoverListeners()
+        const moveListener = (e: any) => {
             const result = this._pickFeatureAtLatLng(e.latlng)
             handler({
                 feature: result?.feature ?? null,
@@ -784,10 +869,138 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                     ? { x: e.containerPoint.x, y: e.containerPoint.y }
                     : undefined,
             })
+        }
+        const outListener = () => handler({ feature: null })
+        this._featureHoverMoveListener = moveListener
+        this._featureHoverOutListener = outListener
+        this._map.on('mousemove', moveListener)
+        this._map.on('mouseout', outListener)
+        return () => {
+            if (this._featureHoverMoveListener === moveListener) {
+                this._detachFeatureHoverListeners()
+            }
+        }
+    }
+
+    private _detachFeatureHoverListeners(): void {
+        if (this._map) {
+            if (this._featureHoverMoveListener) {
+                this._map.off('mousemove', this._featureHoverMoveListener)
+            }
+            if (this._featureHoverOutListener) {
+                this._map.off('mouseout', this._featureHoverOutListener)
+            }
+        }
+        this._featureHoverMoveListener = null
+        this._featureHoverOutListener = null
+    }
+
+    private _ensureTerraDraw(options: DrawingOptions): TerraDraw {
+        if (this._terraDraw) return this._terraDraw
+
+        const finishKey = 'Enter'
+        const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
+
+        const td = new TerraDraw({
+            adapter: new TerraDrawLeafletAdapter({ lib: L, map: this._map }),
+            modes: [
+                new TerraDrawPointMode(),
+                new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawPolygonMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawRectangleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawCircleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+            ],
         })
-        this._map.on('mouseout', () => {
-            handler({ feature: null })
-        })
+
+        const onFinish = (id: any) => {
+            const snap = td.getSnapshotFeature(id)
+            if (!snap) return
+            const shape = this._drawingShape ?? 'polygon'
+            const feature: GeoJSON.Feature = {
+                type: 'Feature',
+                properties: { source: 'draw', shape, ...(snap.properties ?? {}) },
+                geometry: snap.geometry as GeoJSON.Geometry,
+            }
+            this._stopDrawing()
+            this.emit('drawcomplete', { feature })
+        }
+
+        const onChange = (ids: any[], type: string) => {
+            if (type !== 'create' && type !== 'update') return
+            if (!this._drawingShape) return
+            const lastId = ids[ids.length - 1]
+            const snap = td.getSnapshotFeature(lastId)
+            if (!snap) return
+            const vertices = extractVerticesFromGeometry(snap.geometry as GeoJSON.Geometry)
+            if (!vertices) return
+            this.emit('drawvertex', { shape: this._drawingShape, vertices })
+        }
+
+        td.on('finish', onFinish)
+        td.on('change', onChange)
+        this._terraDrawListeners.push(
+            () => td.off('finish', onFinish),
+            () => td.off('change', onChange),
+        )
+
+        this._terraDraw = td
+        return td
+    }
+
+    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+        if (this._drawingShape) {
+            this.disableDrawing()
+        }
+
+        const td = this._ensureTerraDraw(options)
+        if (!td.enabled) td.start()
+        td.clear()
+        td.setMode(shape)
+        this._drawingShape = shape
+        this.emit('drawstart', { shape })
+    }
+
+    /**
+     * Tear down the terra-draw session and clear in-progress geometry
+     * without emitting any lifecycle event. Used by both the user-facing
+     * cancel path ({@link disableDrawing}) and the internal finish path
+     * ({@link enableDrawing}'s `onFinish`) so the latter can emit
+     * `drawcomplete` instead of `drawcancel`.
+     */
+    private _stopDrawing(): DrawShape | null {
+        if (!this._drawingShape) return null
+        const shape = this._drawingShape
+        this._drawingShape = null
+        if (this._terraDraw) {
+            try { this._terraDraw.clear() } catch { /* terra-draw mid-vertex */ }
+            try { this._terraDraw.stop() } catch { /* idempotent */ }
+        }
+        return shape
+    }
+
+    disableDrawing(): void {
+        const shape = this._stopDrawing()
+        if (shape) this.emit('drawcancel', { shape })
+    }
+
+    /**
+     * terra-draw modes commit on `Enter` via their `keyEvents.finish` binding.
+     * There's no programmatic-finish API yet (see
+     * https://github.com/JamesLMilner/terra-draw), so we dispatch a synthetic
+     * keydown to the map container — the mode's keyboard handler picks it up
+     * and emits `finish` if the geometry is valid. If it isn't (e.g. polygon
+     * with <3 vertices), the dispatch is a no-op and we fall through to
+     * cancel.
+     */
+    finishDrawing(): void {
+        if (!this._drawingShape || !this._terraDraw) return
+        const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+        this._container?.dispatchEvent(evt)
+        if (this._drawingShape) this.disableDrawing()
+    }
+
+    isDrawing(): boolean {
+        return this._drawingShape !== null
     }
 
     /**
@@ -875,6 +1088,83 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      *
      * @throws {Error} If the marker ID is not found in the registry.
      */
+    /**
+     * Anchored HTML overlay. Mirrors {@link DeckGLAdapter.addOverlay}: own
+     * the DOM node directly (appended to the map container), project
+     * lat/lng -> pixel on every view change, reposition. Avoids
+     * L.marker + L.divIcon quirks (0×0 hit box, interactive-flag CSS
+     * surprises) that diverged from the deck.gl behaviour.
+     */
+    addOverlay(options: OverlayOptions): void {
+        if (!options?.id) {
+            throw new Error('addOverlay: options.id is required')
+        }
+        if (this._overlays.has(options.id)) {
+            this.removeOverlay(options.id)
+        }
+
+        const container = this._container
+        if (!container) return
+
+        const node = document.createElement('div')
+        node.style.position = 'absolute'
+        // Above all default Leaflet panes (popup-pane is 700) so clicks land
+        // on the overlay, not on hidden marker/popup panes layered above us.
+        node.style.zIndex = '1000'
+        container.appendChild(node)
+
+        // Tell Leaflet not to forward DOM events on this node up to the map's
+        // click pipeline. This is Leaflet's canonical "popup absorbs clicks"
+        // primitive — equivalent to L.DomEvent.disableClickPropagation. Without
+        // it, clicking a tooltip button bubbles to the map, re-fires
+        // feature:active, and AOI re-renders the tooltip — which masks the
+        // dismiss and looks like "nothing happened".
+        const Lib = (L as any)
+        if (Lib?.DomEvent?.disableClickPropagation) {
+            Lib.DomEvent.disableClickPropagation(node)
+            Lib.DomEvent.disableScrollPropagation?.(node)
+        }
+
+        let userCleanup: (() => void) | void
+        try {
+            userCleanup = options.mount(node)
+        } catch (err) {
+            console.warn('[LeafletAdapter] addOverlay mount threw:', err)
+        }
+
+        const ll = this._normalizeLatLng(options.latlng)
+        const reposition = (): void => {
+            try {
+                const pt = this._map.latLngToContainerPoint([ll.lat, ll.lng])
+                node.style.left = pt.x - node.offsetWidth / 2 + 'px'
+                node.style.top = pt.y - node.offsetHeight / 2 + 'px'
+            } catch {
+                // projection not ready yet — try again on next view change
+            }
+        }
+        reposition()
+        this._map.on('move', reposition)
+        this._map.on('moveend', reposition)
+
+        this._overlays.set(options.id, () => {
+            this._map.off('move', reposition)
+            this._map.off('moveend', reposition)
+            try {
+                if (typeof userCleanup === 'function') userCleanup()
+            } catch (err) {
+                console.warn('[LeafletAdapter] addOverlay cleanup threw:', err)
+            }
+            if (node.parentNode) node.parentNode.removeChild(node)
+        })
+    }
+
+    removeOverlay(id: string): void {
+        const teardown = this._overlays.get(id)
+        if (!teardown) return
+        teardown()
+        this._overlays.delete(id)
+    }
+
     updateMarker(marker: any | string, updates: Partial<MarkerOptions>): any {
         const id = resolveLeafletMarkerId(marker)
         const leafletMarker = this._markers.get(id)
@@ -921,22 +1211,47 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     // ========================================
 
     /**
-     * Walk registered vector layers and return the first feature whose bounds
-     * contain the given latlng. Used by onFeatureClick and onFeatureHover.
+     * Walk registered vector layers and return the specific feature under
+     * the click point. Uses leaflet-pip for point-in-polygon picking when
+     * available (handles the common case of a GeoJSON layer with many
+     * polygon features). Falls back to bounds-intersection for single-feature
+     * layers or layers without polygons.
      */
     private _pickFeatureAtLatLng(
         latlng: any
     ): { feature: Record<string, unknown>; layerId: string } | null {
+        const pip = (L as any)?.leafletPip
+        const lnglat = [latlng.lng, latlng.lat] as [number, number]
         for (const [id, leafletLayer] of this._layers) {
-            if (typeof leafletLayer.getBounds !== 'function') continue
             try {
-                if (leafletLayer.getBounds().contains(latlng)) {
+                if (
+                    pip?.pointInLayer &&
+                    typeof leafletLayer.eachLayer === 'function'
+                ) {
+                    // Collect all polygons under the click and return the
+                    // last one (= topmost rendered, since L.GeoJSON renders
+                    // in eachLayer / insertion order). This matches the
+                    // expected "topmost wins" behaviour of every mapping
+                    // library — plugins control which feature wins by
+                    // controlling render order.
+                    const hits = pip.pointInLayer(lnglat, leafletLayer, false)
+                    if (hits && hits.length) {
+                        const top = hits[hits.length - 1]
+                        if (top?.feature) return { feature: top.feature, layerId: id }
+                    }
+                    continue
+                }
+                if (
+                    typeof leafletLayer.getBounds === 'function' &&
+                    leafletLayer.getBounds().contains(latlng)
+                ) {
                     return { feature: leafletLayer.toGeoJSON?.() ?? {}, layerId: id }
                 }
             } catch {
-                // layer bounds not yet available
+                // layer not ready / unsupported geometry — skip
             }
         }
         return null
     }
 }
+

@@ -28,6 +28,7 @@ export type {
     PointCloudLayerOptions,
     MarkerOptions,
     IconOptions,
+    OverlayOptions,
 } from './types/layers'
 
 export type {
@@ -36,6 +37,12 @@ export type {
     FeaturePickResult,
     FeatureInteractionHandler,
     QueryFeaturesOptions,
+    DrawShape,
+    DrawingOptions,
+    DrawStartEvent,
+    DrawVertexEvent,
+    DrawCompleteEvent,
+    DrawCancelEvent,
 } from './types/events'
 
 export type {

@@ -1,0 +1,12 @@
+{
+    "description": "Background plugin that listens for analysisAOIReady, POSTs each visible analysis-supported layer to its stats endpoint in parallel, and emits analysisReady when all responses are collected. No UI panel.",
+    "hasVars": false,
+    "name": "FetchStats",
+    "separatedTool": false,
+    "paths": {
+        "FetchStatsTool": "essence/Tools/FetchStats/FetchStatsTool"
+    },
+    "config": {
+        "rows": []
+    }
+}
