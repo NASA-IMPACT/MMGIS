@@ -9,6 +9,11 @@
  * Emits (auto-prefixed plugin:fetch-stats:):
  *   - analysisProgress   { done: number, total: number }
  *   - analysisReady      { analysisData: { [layerDisplayName]: <stats response | null> } }
+ *   - analysisSkipped    { reason: 'no-eligible-layers' }
+ *                        Fires when an analysisAOIReady arrives but no
+ *                        visible layer has `variables.analysis.is_analysis_supported`.
+ *                        Consumers can surface a "toggle on an analysis layer"
+ *                        message to the user.
  */
 
 const PLUGIN_ID = 'fetch-stats'
@@ -87,7 +92,7 @@ const FetchStatsTool = {
 
         const layers = await this._getAnalyzableVisibleLayers()
         if (!layers.length) {
-            console.warn('[FetchStats] no analysis-supported layers are visible')
+            this._api.emit('analysisSkipped', { reason: 'no-eligible-layers' })
             return
         }
 

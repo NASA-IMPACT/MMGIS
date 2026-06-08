@@ -21,6 +21,7 @@
  *     - map:featureClick                  (inspect-mode boundary clicks, filtered by layerId)
  *     - plugin:fetch-stats:analysisProgress  { done, total }
  *     - plugin:fetch-stats:analysisReady     { analysisData }
+ *     - plugin:fetch-stats:analysisSkipped   { reason }
  *
  *   Requests:
  *     - map:createLayer / map:removeLayer
@@ -89,6 +90,7 @@ const initialState = () => ({
     analysisLabel: '',
     analysisDone: 0,
     analysisTotal: 0,
+    analysisError: null,
 })
 
 /**
@@ -112,6 +114,7 @@ const AOITool = {
     _state: initialState(),
     _cleanups: [],
     _api: null,
+    _analysisErrorTimeout: null,
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -169,6 +172,9 @@ const AOITool = {
             subscribe('plugin:fetch-stats:analysisReady', () => {
                 this._setState({ analysisStatus: 'idle' })
             })
+            subscribe('plugin:fetch-stats:analysisSkipped', ({ reason } = {}) => {
+                this._showAnalysisError(this._messageForSkipReason(reason))
+            })
         }
 
         this._render()
@@ -184,6 +190,11 @@ const AOITool = {
             }
         })
         this._cleanups = []
+
+        if (this._analysisErrorTimeout) {
+            clearTimeout(this._analysisErrorTimeout)
+            this._analysisErrorTimeout = null
+        }
 
         // Fire-and-forget: cancel any active drawing session via the bus.
         window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
@@ -239,6 +250,42 @@ const AOITool = {
         return cleaned.length ? cleaned : DEFAULT_DRAW_SHAPES
     },
 
+    /**
+     * Surface a transient inline error in the AOI panel. Auto-dismisses after
+     * 8s so the user isn't stuck looking at stale feedback; the user can also
+     * dismiss it manually via {@link _dismissAnalysisError}.
+     */
+    _showAnalysisError(message) {
+        if (!message) return
+        if (this._analysisErrorTimeout) {
+            clearTimeout(this._analysisErrorTimeout)
+        }
+        this._setState({ analysisError: message })
+        this._analysisErrorTimeout = setTimeout(() => {
+            this._analysisErrorTimeout = null
+            this._setState({ analysisError: null })
+        }, 8000)
+    },
+
+    _dismissAnalysisError() {
+        if (this._analysisErrorTimeout) {
+            clearTimeout(this._analysisErrorTimeout)
+            this._analysisErrorTimeout = null
+        }
+        this._setState({ analysisError: null })
+    },
+
+    /**
+     * Map a `plugin:fetch-stats:analysisSkipped.reason` to a user-facing message.
+     * Unknown reasons get a generic fallback.
+     */
+    _messageForSkipReason(reason) {
+        if (reason === 'no-eligible-layers') {
+            return 'No analyzable layer is currently visible. Toggle on a layer with analysis support and try again.'
+        }
+        return 'Analysis could not run.'
+    },
+
     _render() {
         if (!this._root) return
         render(
@@ -270,6 +317,8 @@ const AOITool = {
                 analysisLabel: this._state.analysisLabel,
                 analysisDone: this._state.analysisDone,
                 analysisTotal: this._state.analysisTotal,
+                analysisError: this._state.analysisError,
+                onDismissAnalysisError: () => this._dismissAnalysisError(),
 
                 onClose: () => this._onClose(),
             }),

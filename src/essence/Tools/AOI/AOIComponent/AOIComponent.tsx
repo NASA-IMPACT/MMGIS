@@ -41,6 +41,8 @@ export interface AOIComponentProps {
     analysisLabel?: string
     analysisDone?: number
     analysisTotal?: number
+    analysisError?: string | null
+    onDismissAnalysisError?: () => void
 
     onClose: () => void
 }
@@ -72,6 +74,30 @@ export function AOIComponent(props: AOIComponentProps) {
                     <i className="mdi mdi-close" aria-hidden="true" />
                 </Button>
             </header>
+
+            {props.analysisError ? (
+                <div className="aoi-tool__alert">
+                    <Alert
+                        type="error"
+                        headingLevel="h4"
+                        slim
+                        noIcon={false}
+                    >
+                        {props.analysisError}
+                    </Alert>
+                    {props.onDismissAnalysisError && (
+                        <Button
+                            type="button"
+                            unstyled
+                            className="aoi-tool__alert-dismiss"
+                            onClick={props.onDismissAnalysisError}
+                            aria-label="Dismiss notice"
+                        >
+                            <i className="mdi mdi-close" aria-hidden="true" />
+                        </Button>
+                    )}
+                </div>
+            ) : null}
 
             {isAnalyzing ? (
                 <AnalyzingPanel
