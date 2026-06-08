@@ -290,6 +290,17 @@ let Map_ = {
             reEmit('drawcancel', 'map:drawcancel')
             reEmit('move', 'map:move')
             reEmit('moveend', 'map:moveend')
+
+            // Feature click → bus. Plugins (e.g. AOI Inspect) consume
+            // `map:featureClick` to react to clicks on layers created via
+            // `map:createLayer`. The whole pick result is forwarded so
+            // consumers can filter by layerId or react to empty-space clicks.
+            if (typeof engine.onFeatureClick === 'function') {
+                const off = engine.onFeatureClick((info) =>
+                    window.mmgisAPI.emit('map:featureClick', info)
+                )
+                if (typeof off === 'function') _providerCleanups.push(off)
+            }
         }
 
         //Make our layers

@@ -221,18 +221,27 @@ export interface IMapEngine<
     emit(eventName: string, data?: unknown): void
 
     /**
-     * Register a handler called when the user clicks a feature.
-     * Leaflet: wired through onEachFeature click handlers.
+     * Register a handler called when the user clicks a feature. Returns an
+     * unsubscribe function — call it to detach the handler.
+     *
+     * Replace semantics: only one handler is active at a time. Calling again
+     * with a new handler replaces the previous one; the previous unsubscribe
+     * becomes a no-op.
+     *
+     * Leaflet: wired through map click + leaflet-pip picking.
      * deck.gl: uses onClick picking callback.
      */
-    onFeatureClick(handler: FeatureInteractionHandler): void
+    onFeatureClick(handler: FeatureInteractionHandler): () => void
 
     /**
-     * Register a handler called when the user hovers over a feature.
-     * Leaflet: mouseover/mouseout on vector layers.
+     * Register a handler called when the user hovers over a feature. Returns
+     * an unsubscribe function. See {@link onFeatureClick} for replace
+     * semantics.
+     *
+     * Leaflet: mousemove/mouseout on the map.
      * deck.gl: onHover picking callback.
      */
-    onFeatureHover(handler: FeatureInteractionHandler): void
+    onFeatureHover(handler: FeatureInteractionHandler): () => void
 
     /**
      * Query visible features at a point or within a box.

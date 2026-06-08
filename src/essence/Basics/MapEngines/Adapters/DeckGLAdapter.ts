@@ -62,9 +62,17 @@ import {
     resolveLayerId,
     pickInfoToResult,
     buildDeckLayer,
-    buildDrawnFeature,
-    buildPreviewFeature,
 } from './DeckGLHelpers'
+import {
+    TerraDraw,
+    TerraDrawPointMode,
+    TerraDrawLineStringMode,
+    TerraDrawPolygonMode,
+    TerraDrawRectangleMode,
+    TerraDrawCircleMode,
+} from 'terra-draw'
+import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
+import { extractVerticesFromGeometry } from './DrawingHelpers'
 
 /**
  * Minimal API surface that is identical between mapbox-gl and maplibre-gl `Map` instances.
@@ -199,12 +207,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _featureHoverHandler: FeatureInteractionHandler | null = null
 
     private _drawingShape: DrawShape | null = null
-    private _drawingVertices: { lat: number; lng: number }[] = []
-    private _drawingCursor: { lat: number; lng: number } | null = null
-    private _drawingStyle: Record<string, unknown> = {}
-    private _drawingPreviewLayerId: string | null = null
-    private _drawingEscapeHandler: ((e: KeyboardEvent) => void) | null = null
-    private _drawingFinishing = false
+    private _terraDraw: TerraDraw | null = null
+    private _terraDrawListeners: Array<() => void> = []
 
     /** Registry of anchored HTML overlays (id -> teardown function). */
     private _overlays = new Map<string, () => void>()
@@ -290,6 +294,14 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * The adapter must not be used again after this call.
      */
     destroy(): void {
+        if (this._terraDraw) {
+            this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
+            this._terraDrawListeners = []
+            try { this._terraDraw.stop() } catch { /* ignore */ }
+            this._terraDraw = null
+        }
+        this._drawingShape = null
+
         if (this._isOverlayMode) {
             if (this._basemap) {
                 this._basemap.off('move', this._onBasemapMove)
@@ -370,6 +382,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         const node = document.createElement('div')
         node.style.position = 'absolute'
+        // Above the deck.gl canvas (~0) and the maplibre/mapbox basemap canvas.
+        // Lower than LeafletAdapter's overlay (1000) because deck.gl has no
+        // competing UI panes layered above us — there's nothing else fighting
+        // for hit-testing at this point on the stack.
         node.style.zIndex = '500'
         container.appendChild(node)
 
@@ -811,136 +827,138 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._emitEvent(eventName, data)
     }
 
+    private _ensureTerraDraw(options: DrawingOptions): TerraDraw | null {
+        if (this._terraDraw) return this._terraDraw
+        if (!this._isOverlayMode || !this._basemap) return null
+
+        const finishKey = 'Enter'
+        const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
+
+        const td = new TerraDraw({
+            adapter: new TerraDrawMapLibreGLAdapter({ map: this._basemap as any }),
+            modes: [
+                new TerraDrawPointMode(),
+                new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawPolygonMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawRectangleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawCircleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+            ],
+        })
+
+        const onFinish = (id: any) => {
+            const snap = td.getSnapshotFeature(id)
+            if (!snap) return
+            const shape = this._drawingShape ?? 'polygon'
+            const feature: GeoJSON.Feature = {
+                type: 'Feature',
+                properties: { source: 'draw', shape, ...(snap.properties ?? {}) },
+                geometry: snap.geometry as GeoJSON.Geometry,
+            }
+            this._stopDrawing()
+            this._emitEvent('drawcomplete', { feature })
+        }
+
+        const onChange = (ids: any[], type: string) => {
+            if (type !== 'create' && type !== 'update') return
+            if (!this._drawingShape) return
+            const lastId = ids[ids.length - 1]
+            const snap = td.getSnapshotFeature(lastId)
+            if (!snap) return
+            const vertices = extractVerticesFromGeometry(snap.geometry as GeoJSON.Geometry)
+            if (!vertices) return
+            this._emitEvent('drawvertex', { shape: this._drawingShape, vertices })
+        }
+
+        td.on('finish', onFinish)
+        td.on('change', onChange)
+        this._terraDrawListeners.push(
+            () => td.off('finish', onFinish),
+            () => td.off('change', onChange),
+        )
+
+        this._terraDraw = td
+        return td
+    }
+
     enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
-        this._drawingShape = shape
-        this._drawingVertices = []
-        this._drawingStyle = (options.style as Record<string, unknown>) ?? {}
-        this._drawingPreviewLayerId = `__aoi-draw-preview-${Math.random()
-            .toString(36)
-            .slice(2, 8)}`
-
-        if (options.cancelOnEscape !== false) {
-            this._drawingEscapeHandler = (e: KeyboardEvent) => {
-                if (e.key === 'Escape') this.disableDrawing()
-            }
-            document.addEventListener('keydown', this._drawingEscapeHandler)
+        const td = this._ensureTerraDraw(options)
+        if (!td) {
+            throw new Error(
+                '[DeckGLAdapter] enableDrawing requires overlay mode ' +
+                '(maplibre or mapbox basemap). Initialise the engine with ' +
+                'MapInitOptions.basemap to use drawing.'
+            )
         }
-
+        if (!td.enabled) td.start()
+        td.clear()
+        td.setMode(shape)
+        this._drawingShape = shape
         this._emitEvent('drawstart', { shape })
     }
 
-    disableDrawing(): void {
-        if (!this._drawingShape) return
-
+    /**
+     * Tear down the terra-draw session and clear in-progress geometry
+     * without emitting any lifecycle event. Used by both the user-facing
+     * cancel path ({@link disableDrawing}) and the internal finish path
+     * ({@link _ensureTerraDraw}'s `onFinish`) so the latter can emit
+     * `drawcomplete` instead of `drawcancel`.
+     */
+    private _stopDrawing(): DrawShape | null {
+        if (!this._drawingShape) return null
         const shape = this._drawingShape
-
-        this._removeDrawingPreview()
         this._drawingShape = null
-        this._drawingVertices = []
-        this._drawingCursor = null
-        this._drawingPreviewLayerId = null
-        this._drawingStyle = {}
-
-        if (this._drawingEscapeHandler) {
-            document.removeEventListener('keydown', this._drawingEscapeHandler)
-            this._drawingEscapeHandler = null
+        if (this._terraDraw) {
+            try { this._terraDraw.clear() } catch { /* mid-vertex */ }
+            try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
-
-        if (!this._drawingFinishing) {
-            this._emitEvent('drawcancel', { shape })
-        }
+        return shape
     }
 
+    disableDrawing(): void {
+        const shape = this._stopDrawing()
+        if (shape) this._emitEvent('drawcancel', { shape })
+    }
+
+    /**
+     * terra-draw modes commit on `Enter` via their `keyEvents.finish` binding.
+     * There's no programmatic-finish API yet (see
+     * https://github.com/JamesLMilner/terra-draw), so we dispatch a synthetic
+     * keydown to the map container — the mode's keyboard handler picks it up
+     * and emits `finish` if the geometry is valid. If it isn't (e.g. polygon
+     * with <3 vertices), the dispatch is a no-op and we fall through to
+     * cancel.
+     */
     finishDrawing(): void {
-        if (!this._drawingShape) return
-        const shape = this._drawingShape
-        const vertices = this._drawingVertices.slice()
-
-        const feature = buildDrawnFeature(shape, vertices)
-        if (!feature) {
-            this.disableDrawing()
-            return
-        }
-
-        this._drawingFinishing = true
-        this.disableDrawing()
-        this._drawingFinishing = false
-        this._emitEvent('drawcomplete', { feature })
+        if (!this._drawingShape || !this._terraDraw) return
+        const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+        this._container?.dispatchEvent(evt)
+        if (this._drawingShape) this.disableDrawing()
     }
 
     isDrawing(): boolean {
         return this._drawingShape !== null
     }
 
-    private _handleDrawClick(info: PickingInfo): void {
-        const c = info.coordinate
-        if (!c || !this._drawingShape) return
-        const vertex = { lat: c[1], lng: c[0] }
-        this._drawingVertices.push(vertex)
-
-        this._renderDrawingPreview()
-        this._emitEvent('drawvertex', {
-            shape: this._drawingShape,
-            vertices: this._drawingVertices.slice(),
-        })
-
-        if (
-            (this._drawingShape === 'rectangle' || this._drawingShape === 'circle') &&
-            this._drawingVertices.length >= 2
-        ) {
-            this.finishDrawing()
-        }
-    }
-
-    private _handleDrawHover(info: PickingInfo): void {
-        const c = info.coordinate
-        if (!c || !this._drawingShape) return
-        if (this._drawingVertices.length === 0) return
-        this._drawingCursor = { lat: c[1], lng: c[0] }
-        this._renderDrawingPreview()
-    }
-
-    private _renderDrawingPreview(): void {
-        if (!this._drawingShape || !this._drawingPreviewLayerId) return
-        const previewFeature = buildPreviewFeature(
-            this._drawingShape,
-            this._drawingVertices,
-            this._drawingCursor ?? undefined
-        )
-        if (!previewFeature) return
-        const id = this._drawingPreviewLayerId
-        const opts: LayerOptions = {
-            id,
-            type: 'vector',
-            style: this._drawingStyle,
-            interactive: false,
-            geojson: { type: 'FeatureCollection', features: [previewFeature] },
-        } as LayerOptions
-        const next = buildDeckLayer(id, opts)
-        this._layers.set(id, next)
-        this._syncLayers()
-    }
-
-    private _removeDrawingPreview(): void {
-        const id = this._drawingPreviewLayerId
-        if (!id) return
-        if (this._layers.has(id)) {
-            this._layers.delete(id)
-            this._layerZIndices.delete(id)
-            this._syncLayers()
-        }
-    }
-
-    onFeatureClick(handler: FeatureInteractionHandler): void {
+    onFeatureClick(handler: FeatureInteractionHandler): () => void {
         this._featureClickHandler = handler
+        return () => {
+            if (this._featureClickHandler === handler) {
+                this._featureClickHandler = null
+            }
+        }
     }
 
-    onFeatureHover(handler: FeatureInteractionHandler): void {
+    onFeatureHover(handler: FeatureInteractionHandler): () => void {
         this._featureHoverHandler = handler
+        return () => {
+            if (this._featureHoverHandler === handler) {
+                this._featureHoverHandler = null
+            }
+        }
     }
 
     /**
@@ -1033,16 +1051,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._emitEvent('moveend', clamped)
             },
             onClick: (info: PickingInfo) => {
-                if (this._drawingShape) {
-                    this._handleDrawClick(info)
-                    return
-                }
+                if (this._drawingShape) return
                 this._featureClickHandler?.(pickInfoToResult(info))
             },
             onHover: (info: PickingInfo) => {
-                if (this._drawingShape) {
-                    this._handleDrawHover(info)
-                }
+                if (this._drawingShape) return
                 this._featureHoverHandler?.(pickInfoToResult(info))
             },
         } as any)
@@ -1104,19 +1117,14 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._isOverlayMode = true
 
         this._overlay = new MapboxOverlay({
-            interleaved: false,
+            interleaved: true,
             layers: [],
             onClick: (info: PickingInfo) => {
-                if (this._drawingShape) {
-                    this._handleDrawClick(info)
-                    return
-                }
+                if (this._drawingShape) return
                 this._featureClickHandler?.(pickInfoToResult(info))
             },
             onHover: (info: PickingInfo) => {
-                if (this._drawingShape) {
-                    this._handleDrawHover(info)
-                }
+                if (this._drawingShape) return
                 this._featureHoverHandler?.(pickInfoToResult(info))
             },
         })
