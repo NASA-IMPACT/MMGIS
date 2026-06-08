@@ -262,6 +262,6 @@ function isPolygonal(f: Feature | undefined | null): f is Feature {
     )
 }
 
-function slug(s: string): string {
+export function slug(s: string): string {
     return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }

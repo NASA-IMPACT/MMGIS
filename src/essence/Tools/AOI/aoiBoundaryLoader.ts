@@ -9,6 +9,7 @@
  */
 
 import type { Feature, FeatureCollection } from 'geojson'
+import { slug } from './aoiHelpers'
 
 declare const require: {
     context: (
@@ -154,8 +155,4 @@ function extractFeature(json: unknown): Feature | null {
         return json as Feature
     }
     return null
-}
-
-function slug(s: string): string {
-    return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
