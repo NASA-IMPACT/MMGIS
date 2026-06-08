@@ -474,17 +474,6 @@ const AOITool = {
             interactive: false,
         }).catch((err) => console.warn('[AOI] failed to add selection layer', err))
 
-        const bbox = featureBounds(feature)
-        if (bbox) {
-            api?.request?.('map:fitBounds', {
-                bounds: [
-                    { lat: bbox[1], lng: bbox[0] },
-                    { lat: bbox[3], lng: bbox[2] },
-                ],
-                options: { padding: 120, maxZoom: 5 },
-            }).catch((err) => console.warn('[AOI] fitBounds failed', err))
-        }
-
         this._state.currentAOI = { feature, source, label }
         this._api?.emit('areaDrawn', {
             feature,
@@ -493,12 +482,44 @@ const AOITool = {
         })
 
         const c = featureCentroid(feature)
-        if (c) {
-            this._showTooltip({
-                label,
-                latlng: { lat: c[1], lng: c[0] },
-                analyzeEnabled: true,
+        const showTooltip = () => {
+            if (c) {
+                this._showTooltip({
+                    label,
+                    latlng: { lat: c[1], lng: c[0] },
+                    analyzeEnabled: true,
+                })
+            }
+        }
+
+        const bbox = featureBounds(feature)
+        if (bbox && api?.on && api?.off) {
+            // Defer the tooltip until the fitBounds animation settles so it
+            // mounts at the final centroid pixel instead of flickering through
+            // intermediate positions during the camera move.
+            let fallback
+            const oneShot = () => {
+                api.off('map:moveend', oneShot)
+                clearTimeout(fallback)
+                showTooltip()
+            }
+            api.on('map:moveend', oneShot)
+            // Belt-and-braces: if no moveend fires (e.g. already at target view),
+            // show the tooltip after a short timeout anyway.
+            fallback = setTimeout(oneShot, 1500)
+
+            api.request('map:fitBounds', {
+                bounds: [
+                    { lat: bbox[1], lng: bbox[0] },
+                    { lat: bbox[3], lng: bbox[2] },
+                ],
+                options: { padding: 120, maxZoom: 5 },
+            }).catch((err) => {
+                console.warn('[AOI] fitBounds failed', err)
+                oneShot()
             })
+        } else {
+            showTooltip()
         }
     },
 
