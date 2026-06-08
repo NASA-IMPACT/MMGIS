@@ -32,6 +32,7 @@
 - Test: `tests/unit/Card/uploadValidate.spec.js`
 - Create: `API/Backend/Upload/uploadRouter.js`
 - Create: `API/Backend/Upload/setup.js`
+- Test: `tests/unit/Card/uploadRouting.spec.js` (route-mounting regression: `POST /api/upload` resolves at the mount point — 400 not 404 — and `/api/upload/upload` 404s)
 
 **Acceptance Criteria:**
 - [ ] `extensionForMime` maps allowed image MIME types (png/jpeg/webp/gif/svg) to extensions and returns `null` otherwise.
@@ -368,7 +369,7 @@ Expected: prints `setup loads OK` with no require errors.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add API/Backend/Upload/ tests/unit/Card/uploadValidate.spec.js
+git add API/Backend/Upload/ tests/unit/Card/uploadValidate.spec.js tests/unit/Card/uploadRouting.spec.js
 git commit -m "feat(upload): add generic core image upload service"
 ```
 
@@ -1172,6 +1173,7 @@ git commit -m "feat(card): scaffold modern Card tool, shared adapters, and data 
 - Create: `src/essence/Tools/Card/lib/styles/components/card-list.scss`
 - Create: `src/essence/Tools/Card/lib/styles/components/index.scss`
 - Create: `src/essence/Tools/Card/lib/styles/index.scss`
+- Create: `src/essence/Tools/Card/lib/styles/scss-imports.d.ts` (ambient `declare module '*.scss'` so the side-effect style imports typecheck)
 - Create: `src/essence/Tools/Card/lib/index.ts`
 
 **Acceptance Criteria:**
