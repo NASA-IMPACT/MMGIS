@@ -19,7 +19,13 @@ let setup = {
             s.ensureAdmin(),
             s.checkHeadersCodeInjection,
             s.setContentType,
-            createUploadRouter({ allowedMimeToExt: IMAGE_MIME_TO_EXT })
+            // routePath '/' so the handler sits at the mount point itself
+            // (/api/upload). The default '/upload' would double to
+            // /api/upload/upload and 404 the caller.
+            createUploadRouter({
+                allowedMimeToExt: IMAGE_MIME_TO_EXT,
+                routePath: '/',
+            })
         );
     },
     // Once the server starts
