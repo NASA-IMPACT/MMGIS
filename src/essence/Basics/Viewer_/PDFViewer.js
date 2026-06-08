@@ -1,4 +1,4 @@
-import { render } from 'react-dom'
+import { createRoot } from 'react-dom/client'
 import React, { useState, useEffect } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf'
 import { useResizeDetector } from 'react-resize-detector'
@@ -7,7 +7,8 @@ import 'react-pdf/dist/Page/AnnotationLayer.css'
 import 'react-pdf/dist/Page/TextLayer.css'
 
 // Setting worker path to worker bundle.
-pdfjs.GlobalWorkerOptions.workerSrc = '/public/workers/pdf.worker.min.js'
+// react-pdf v9 ships with pdfjs-dist v4 which uses an .mjs worker.
+pdfjs.GlobalWorkerOptions.workerSrc = '/public/workers/pdf.worker.min.mjs'
 
 const ReactPDF = (props) => {
     const { pdfPath } = props
@@ -26,7 +27,7 @@ const ReactPDF = (props) => {
         setZoom(3)
     }, [pdfPath])
 
-    function onDocumentLoadSuccess({ numPages }: { numPages: number }): void {
+    function onDocumentLoadSuccess({ numPages }) {
         setNumPages(numPages)
     }
     const bcr = document
@@ -218,11 +219,17 @@ const ReactPDF = (props) => {
 export default function (options) {
     options = options || {}
 
+    let pdfRoot = null
+    let pdfRootContainer = null
+
     async function changePDF(pdfPath, canvasId) {
-        render(
-            <ReactPDF pdfPath={pdfPath} />,
-            document.getElementById('pdfViewerWrapper')
-        )
+        const container = document.getElementById('pdfViewerWrapper')
+        if (!container) return
+        if (!pdfRoot || pdfRootContainer !== container) {
+            pdfRoot = createRoot(container)
+            pdfRootContainer = container
+        }
+        pdfRoot.render(<ReactPDF pdfPath={pdfPath} />)
     }
 
     return {
