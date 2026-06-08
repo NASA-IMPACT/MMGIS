@@ -18,16 +18,28 @@ function extensionForMime(mimeType, allowedMimeToExt = IMAGE_MIME_TO_EXT) {
     return allowedMimeToExt[mimeType.toLowerCase()] || null;
 }
 
-// Reject anything that could escape the Missions/<mission> directory.
-function isValidMission(mission) {
-    if (typeof mission !== 'string') return false;
-    if (mission.trim() === '') return false;
-    if (mission.includes('..')) return false;
-    if (mission.includes('/') || mission.includes('\\')) return false;
+// A single safe path segment: rejects anything that could escape its parent
+// directory (no traversal, no separators, no pure-dot name like "." or "..").
+function isSafePathSegment(value) {
+    if (typeof value !== 'string') return false;
+    if (value.trim() === '') return false;
+    if (value.includes('..')) return false;
+    if (value.includes('/') || value.includes('\\')) return false;
     // A pure-dot name (e.g. ".") resolves to a directory segment, so the upload
-    // would land in the Missions root instead of a mission folder.
-    if (/^\.+$/.test(mission)) return false;
+    // would land in the parent instead of the intended folder.
+    if (/^\.+$/.test(value)) return false;
     return true;
 }
 
-module.exports = { IMAGE_MIME_TO_EXT, extensionForMime, isValidMission };
+// Mission name and upload subdir share the same constraint: one safe segment
+// under Missions/. Named separately so callers read clearly at the call site.
+const isValidMission = isSafePathSegment;
+const isValidSubdir = isSafePathSegment;
+
+module.exports = {
+    IMAGE_MIME_TO_EXT,
+    extensionForMime,
+    isSafePathSegment,
+    isValidMission,
+    isValidSubdir,
+};

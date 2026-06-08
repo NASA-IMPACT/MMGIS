@@ -4,40 +4,49 @@ const path = require('path');
 const crypto = require('crypto');
 const busboy = require('busboy');
 const logger = require('../../logger');
-const { extensionForMime, isValidMission, IMAGE_MIME_TO_EXT } = require('./validate');
+const {
+    extensionForMime,
+    isValidMission,
+    isValidSubdir,
+    IMAGE_MIME_TO_EXT,
+} = require('./validate');
 
 const MISSIONS_DIR = path.join(__dirname, '../../../Missions');
 const DEFAULT_MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
 
-// Build a reusable, single-file multipart image-upload router that any plugin
-// can mount under its own namespace. The saved file lands at
-// Missions/<mission>/<subdir>/<uuid>.<ext> and the route responds with
-// { status: 'success', path: '<subdir>/<uuid>.<ext>' } (mission-relative).
+// Build a generic, plugin-agnostic single-file image-upload router. The caller
+// supplies the target per request via the `mission` and `subdir` query params
+// (both validated against path traversal); the file lands at
+// Missions/<mission>/<subdir>/uploads/<uuid>.<ext> and the route responds with
+// { status: 'success', path: '<subdir>/uploads/<uuid>.<ext>' } (mission-relative).
 //
-// Options:
-//   subdir            (required) folder under Missions/<mission> to write into
+// Options (mount-level policy, not per-request):
 //   allowedMimeToExt  mimetype -> extension allow-list (default: images)
 //   maxFileBytes      per-file size cap (default: 5 MB)
 //   routePath         router-relative path for the POST handler (default: /upload)
 function createUploadRouter(options = {}) {
     const {
-        subdir,
         allowedMimeToExt = IMAGE_MIME_TO_EXT,
         maxFileBytes = DEFAULT_MAX_FILE_BYTES,
         routePath = '/upload',
     } = options;
 
-    if (!subdir) throw new Error('createUploadRouter: "subdir" is required');
-
     const router = express.Router();
 
-    // POST <routePath>?mission=<name>  (multipart, single file)
+    // POST <routePath>?mission=<name>&subdir=<name>  (multipart, single file)
     router.post(routePath, function (req, res) {
         const mission = req.query.mission;
         if (!isValidMission(mission)) {
             return res
                 .status(400)
                 .json({ status: 'failure', message: 'Invalid or missing mission' });
+        }
+
+        const subdir = req.query.subdir;
+        if (!isValidSubdir(subdir)) {
+            return res
+                .status(400)
+                .json({ status: 'failure', message: 'Invalid or missing upload target' });
         }
 
         // The mission's folder may not exist yet — e.g. missions imported via

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import {
     extensionForMime,
     isValidMission,
+    isValidSubdir,
 } from '../../../API/Backend/Upload/validate.js'
 
 test.describe('Upload validation', () => {
@@ -32,5 +33,17 @@ test.describe('Upload validation', () => {
         expect(isValidMission('a\\b')).toBe(false)
         expect(isValidMission(null)).toBe(false)
         expect(isValidMission(42)).toBe(false)
+    })
+
+    test('isValidSubdir accepts plain names and rejects traversal', () => {
+        expect(isValidSubdir('CardPlugin')).toBe(true)
+        expect(isValidSubdir('')).toBe(false)
+        expect(isValidSubdir('.')).toBe(false)
+        expect(isValidSubdir('..')).toBe(false)
+        expect(isValidSubdir('a/../b')).toBe(false)
+        expect(isValidSubdir('a/b')).toBe(false)
+        expect(isValidSubdir('a\\b')).toBe(false)
+        expect(isValidSubdir(null)).toBe(false)
+        expect(isValidSubdir(undefined)).toBe(false)
     })
 })

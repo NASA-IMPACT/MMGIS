@@ -8,16 +8,16 @@ function getDomain() {
     return d;
 }
 
-// Uploads an image File to the CardPlugin route for `mission`.
-// Resolves with the stored mission-relative path, or throws with the
-// server's error message.
+// Uploads an image File to the generic core upload endpoint for `mission`,
+// under the card plugin's own `subdir`. Resolves with the stored
+// mission-relative path, or throws with the server's error message.
 export async function uploadCardImage(file, mission) {
     const form = new FormData();
     form.append('image', file);
 
-    const url = `${getDomain()}api/cardplugin/upload?mission=${encodeURIComponent(
+    const url = `${getDomain()}api/upload?mission=${encodeURIComponent(
         mission,
-    )}`;
+    )}&subdir=CardPlugin`;
     const res = await fetch(url, {
         method: 'POST',
         body: form,

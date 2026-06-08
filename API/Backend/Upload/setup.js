@@ -1,12 +1,30 @@
-// API/Backend/Upload is a shared library module — it exposes createUploadRouter
-// (./uploadRouter.js) and validation helpers (./validate.js) for plugins to
-// mount under their own namespaces, and registers no routes of its own.
-//
-// The core setup scanner (API/setups.js) requires a setup.js from every
-// API/Backend/* directory, so this provides the standard no-op lifecycle hooks.
+const { createUploadRouter } = require('./uploadRouter');
+const { IMAGE_MIME_TO_EXT } = require('./validate');
+
+// Upload is a generic, plugin-agnostic core service. It exposes a single image
+// upload endpoint that any caller (plugin or core) reaches over the API — no
+// per-plugin backend code lives here. The caller names its target per request
+// via the `mission` and `subdir` query params (both validated against path
+// traversal); files land under Missions/<mission>/<subdir>/uploads/.
 let setup = {
-    onceInit: (s) => {},
+    // Once the app initializes
+    onceInit: (s) => {
+        // Image upload is a Configure-page (admin) action, so it uses the same
+        // authorization posture as the Config write routes (see
+        // API/Backend/Config/setup.js): ensureAdmin requires an authenticated
+        // admin/lead session (permission "111"/"110"). It does NOT auto-pass
+        // under AUTH=off — a session without an admin permission is rejected.
+        s.app.use(
+            s.ROOT_PATH + '/api/upload',
+            s.ensureAdmin(),
+            s.checkHeadersCodeInjection,
+            s.setContentType,
+            createUploadRouter({ allowedMimeToExt: IMAGE_MIME_TO_EXT })
+        );
+    },
+    // Once the server starts
     onceStarted: (s) => {},
+    // Once all tables sync
     onceSynced: (s) => {},
 };
 

@@ -35,7 +35,7 @@ test.describe('uploadCardImage', () => {
         })
         const path = await uploadCardImage({ name: 'x.png' }, 'MSL')
         expect(path).toBe('CardPlugin/uploads/x.png')
-        expect(calledUrl).toBe('api/cardplugin/upload?mission=MSL')
+        expect(calledUrl).toBe('api/upload?mission=MSL&subdir=CardPlugin')
         expect(calledInit.method).toBe('POST')
     })
 
