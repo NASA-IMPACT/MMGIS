@@ -53,20 +53,6 @@ let _providerCleanups = []
 let _basemapStyles = []
 let _basemapActiveIndex = 0
 
-const _overlayIds = new Set()
-
-const _OVERLAY_STYLE_KEYS = [
-    'color', 'weight', 'opacity',
-    'fillColor', 'fillOpacity',
-    'radius', 'dashArray', 'lineCap', 'lineJoin',
-]
-function _pickStyle(style) {
-    if (!style || typeof style !== 'object') return {}
-    const out = {}
-    for (const k of _OVERLAY_STYLE_KEYS) if (style[k] != null) out[k] = style[k]
-    return out
-}
-
 let _mapClickHandler = null
 let _mapMouseMoveHandler = null
 
@@ -340,34 +326,6 @@ let Map_ = {
                     const next = Math.max(current - 1, min)
                     if (next === current) return false
                     Map_.engine.setZoom(next)
-                    return true
-                }),
-                window.mmgisAPI.provide('map:addOverlay', ({ id, geojson, style } = {}) => {
-                    if (!Map_.engine || !id || !geojson) return false
-                    if (_overlayIds.has(id)) {
-                        Map_.engine.removeLayer(id)
-                        _overlayIds.delete(id)
-                    }
-                    Map_.engine.createLayer({
-                        id,
-                        type: 'vector',
-                        geojson,
-                        style: _pickStyle(style),
-                        interactive: false,
-                    })
-                    _overlayIds.add(id)
-                    return true
-                }),
-                window.mmgisAPI.provide('map:removeOverlay', (id) => {
-                    if (!Map_.engine || !_overlayIds.has(id)) return false
-                    Map_.engine.removeLayer(id)
-                    _overlayIds.delete(id)
-                    return true
-                }),
-                window.mmgisAPI.provide('map:clearOverlays', () => {
-                    if (!Map_.engine) return false
-                    _overlayIds.forEach((id) => Map_.engine.removeLayer(id))
-                    _overlayIds.clear()
                     return true
                 }),
                 window.mmgisAPI.provide('map:latLngToContainerPoint', (latlng) => {

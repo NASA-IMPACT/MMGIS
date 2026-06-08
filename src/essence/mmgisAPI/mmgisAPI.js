@@ -778,28 +778,6 @@ var mmgisAPI = {
      */
     zoomOut: () => mmgisAPI.request('map:zoomOut'),
 
-    /** addOverlay - draws an ephemeral GeoJSON overlay on the map, keyed by id.
-     * Calling again with the same id replaces the previous overlay. These overlays
-     * are not persisted and do not appear in the Layers tool.
-     * @param {object} options
-     * @param {string} options.id - unique id, convention: 'plugin:<pluginId>:<name>'
-     * @param {object} options.geojson - a GeoJSON Feature or FeatureCollection
-     * @param {object} [options.style] - Leaflet path style (color, weight, opacity, fillColor, fillOpacity, radius, dashArray, lineCap, lineJoin)
-     * @returns {Promise<boolean>}
-     */
-    addOverlay: (options) => mmgisAPI.request('map:addOverlay', options),
-
-    /** removeOverlay - removes an overlay previously added with addOverlay.
-     * @param {string} id
-     * @returns {Promise<boolean>} - true if removed, false if no overlay with that id
-     */
-    removeOverlay: (id) => mmgisAPI.request('map:removeOverlay', id),
-
-    /** clearOverlays - removes all overlays added with addOverlay.
-     * @returns {Promise<boolean>}
-     */
-    clearOverlays: () => mmgisAPI.request('map:clearOverlays'),
-
     /** latLngToContainerPoint - project a {lat, lng} to pixel coordinates
      * relative to the map container. Useful for positioning DOM overlays.
      * @param {{lat: number, lng: number}} latlng

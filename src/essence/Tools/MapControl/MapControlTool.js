@@ -4,8 +4,8 @@
  * Bus channels consumed (request):
  *   map:getBasemapStyles  map:getBasemap  map:setBasemap
  *   map:zoomIn            map:zoomOut
- *   map:addOverlay        map:removeOverlay
  *   map:fitBounds         map:latLngToContainerPoint
+ *   map:createLayer       map:removeLayer   (provided by PR #90 imapengine-drawing)
  *
  * Bus channels consumed (on / subscribe):
  *   map:click             map:mousemove
@@ -162,16 +162,26 @@ function ConnectedMapControl() {
         }
     }, [])
 
-    // Guard: only call map:removeOverlay if the overlay was actually drawn.
+    // Vector overlays go through map:createLayer / map:removeLayer (provided by
+    // the imapengine-drawing PR #90). We render ephemeral vector geometry, so we
+    // use the generic layer CRUD rather than #90's map:addOverlay, which is a
+    // DOM-element-at-a-point overlay with a different contract.
+    // Guard: only call removeLayer if the layer was actually drawn.
     const overlayExistsRef = useRef(false)
-    const onDrawOverlay = useCallback((opts) => {
+    const onDrawOverlay = useCallback(({ id, geojson, style }) => {
         overlayExistsRef.current = true
-        window.mmgisAPI?.request('map:addOverlay', opts)
+        window.mmgisAPI?.request('map:createLayer', {
+            id,
+            type: 'vector',
+            geojson,
+            style,
+            interactive: false,
+        })
     }, [])
     const onRemoveOverlay = useCallback((id) => {
         if (!overlayExistsRef.current) return
         overlayExistsRef.current = false
-        window.mmgisAPI?.request('map:removeOverlay', id).catch(() => {})
+        window.mmgisAPI?.request('map:removeLayer', { id }).catch(() => {})
     }, [])
 
     const onProjectLatLng = useCallback((latlng) => {
@@ -193,8 +203,10 @@ function ConnectedMapControl() {
             [result.bbox[0], result.bbox[2]],
             [result.bbox[1], result.bbox[3]],
         ])
-        api.request('map:addOverlay', {
+        api.request('map:createLayer', {
             id: SEARCH_OVERLAY_ID,
+            type: 'vector',
+            interactive: false,
             geojson: {
                 type: 'FeatureCollection',
                 features: [{
