@@ -76,25 +76,24 @@ export function AOIComponent(props: AOIComponentProps) {
             </header>
 
             {props.analysisError ? (
-                <div className="aoi-tool__alert">
-                    <Alert
-                        type="error"
-                        headingLevel="h4"
-                        slim
-                        noIcon={false}
-                    >
-                        {props.analysisError}
-                    </Alert>
+                <div
+                    className="aoi-tool__alert aoi-tool__alert--error"
+                    role="alert"
+                >
+                    <i
+                        className="mdi mdi-alert-circle aoi-tool__alert-icon"
+                        aria-hidden="true"
+                    />
+                    <p className="aoi-tool__alert-text">{props.analysisError}</p>
                     {props.onDismissAnalysisError && (
-                        <Button
+                        <button
                             type="button"
-                            unstyled
                             className="aoi-tool__alert-dismiss"
                             onClick={props.onDismissAnalysisError}
                             aria-label="Dismiss notice"
                         >
                             <i className="mdi mdi-close" aria-hidden="true" />
-                        </Button>
+                        </button>
                     )}
                 </div>
             ) : null}
