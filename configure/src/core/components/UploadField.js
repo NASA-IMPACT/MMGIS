@@ -96,7 +96,7 @@ export default function UploadField({
                 <input
                     ref={inputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
                     style={{ display: 'none' }}
                     onChange={handleSelect}
                 />

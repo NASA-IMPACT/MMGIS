@@ -46,7 +46,7 @@
                             {
                                 "field": "image",
                                 "name": "Image",
-                                "description": "Upload an image (png/jpg/webp/gif, &le;5MB). It is cropped to a square in the card.",
+                                "description": "Upload an image (png/jpg/webp/gif/svg, &le;5MB). It is cropped to a square in the card.",
                                 "type": "upload",
                                 "width": 12
                             },
