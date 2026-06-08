@@ -5,9 +5,9 @@ const IMAGE_MIME_TO_EXT = {
     'image/jpeg': 'jpg',
     'image/webp': 'webp',
     'image/gif': 'gif',
-    // SVG is allowed: uploaders are trusted admins, and cards render images via
-    // <img src>, which does not execute scripts embedded in an SVG. (Residual
-    // risk is limited to someone opening the raw asset URL directly.)
+    // SVG is allowed: uploaders are trusted admins, and uploaded images are
+    // rendered via <img src>, which does not execute scripts embedded in an SVG.
+    // (Residual risk is limited to someone opening the raw asset URL directly.)
     'image/svg+xml': 'svg',
 };
 

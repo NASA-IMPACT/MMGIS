@@ -1,16 +1,19 @@
 import React, { useRef, useState } from 'react';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import { uploadCardImage } from '../cardUpload';
+import { uploadImage } from '../upload';
 
-// A config field that uploads an image and stores the returned mission-relative
-// path. `value` is the current stored path (may be empty). On success it calls
-// onChange(path); on failure it calls onError(message) and keeps the old value.
+// A generic config field that uploads an image and stores the returned
+// mission-relative path. `value` is the current stored path (may be empty);
+// `subdir` is the upload target folder declared by the field's config (so this
+// field is not tied to any one plugin). On success it calls onChange(path); on
+// failure it calls onError(message) and keeps the old value.
 export default function UploadField({
     label,
     description,
     value,
     mission,
+    subdir,
     disabled,
     domain,
     onChange,
@@ -28,9 +31,13 @@ export default function UploadField({
             onError && onError('Save or select a mission before uploading.');
             return;
         }
+        if (!subdir) {
+            onError && onError('Upload field is missing a "subdir" in its config.');
+            return;
+        }
         setUploading(true);
         try {
-            const path = await uploadCardImage(file, mission);
+            const path = await uploadImage(file, mission, subdir);
             onChange && onChange(path);
         } catch (err) {
             onError && onError(err.message || 'Image upload failed');

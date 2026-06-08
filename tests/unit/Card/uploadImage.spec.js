@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { uploadCardImage } from '../../../configure/src/core/cardUpload.js'
+import { uploadImage } from '../../../configure/src/core/upload.js'
 
 const installFetchMock = (impl) => {
     global.window = global.window || {}
@@ -18,7 +18,7 @@ const installFetchMock = (impl) => {
     }
 }
 
-test.describe('uploadCardImage', () => {
+test.describe('uploadImage', () => {
     test('POSTs to the upload route and returns the path', async () => {
         let calledUrl = null
         let calledInit = null
@@ -33,7 +33,7 @@ test.describe('uploadCardImage', () => {
                 }),
             }
         })
-        const path = await uploadCardImage({ name: 'x.png' }, 'MSL')
+        const path = await uploadImage({ name: 'x.png' }, 'MSL', 'CardPlugin')
         expect(path).toBe('CardPlugin/uploads/x.png')
         expect(calledUrl).toBe('api/upload?mission=MSL&subdir=CardPlugin')
         expect(calledInit.method).toBe('POST')
@@ -47,8 +47,8 @@ test.describe('uploadCardImage', () => {
                 message: 'Unsupported image type',
             }),
         }))
-        await expect(uploadCardImage({ name: 'x.svg' }, 'MSL')).rejects.toThrow(
-            'Unsupported image type',
-        )
+        await expect(
+            uploadImage({ name: 'x.svg' }, 'MSL', 'CardPlugin'),
+        ).rejects.toThrow('Unsupported image type')
     })
 })

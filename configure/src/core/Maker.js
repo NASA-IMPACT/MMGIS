@@ -444,6 +444,7 @@ const getComponent = (
             configuration?.msv?.missionFolderName ||
             configuration?.msv?.mission
           }
+          subdir={com.subdir}
           domain={normalizedDomain}
           disabled={disabled || isDisabled}
           onChange={(p) =>

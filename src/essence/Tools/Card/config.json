@@ -48,6 +48,7 @@
                                 "name": "Image",
                                 "description": "Upload an image (png/jpg/webp/gif/svg, &le;5MB). It is cropped to a square in the card.",
                                 "type": "upload",
+                                "subdir": "CardPlugin",
                                 "width": 12
                             },
                             {
