@@ -260,6 +260,13 @@ module.exports = function (webpackEnv) {
         name: (entrypoint) => `runtime-${entrypoint.name}`,
       },
     },
+    // Treat npm `leaflet` as a reference to the global `L` set by MMGIS's
+    // vendored Leaflet 1.5.1 (src/external/Leaflet/leaflet1.5.1). This prevents
+    // third-party libraries (e.g. terra-draw-leaflet-adapter) from bundling a
+    // second Leaflet copy that clobbers `window.L` and detaches `L.Proj`.
+    externals: {
+      leaflet: 'L',
+    },
     resolve: {
       // This allows you to set a fallback for where webpack should look for modules.
       // We placed these paths second because we want `node_modules` to "win"

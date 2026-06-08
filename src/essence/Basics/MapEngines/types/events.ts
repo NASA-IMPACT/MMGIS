@@ -43,14 +43,17 @@ export interface QueryFeaturesOptions {
 /**
  * Supported interactive drawing shapes.
  *
- * `'polygon'`   — n-vertex polygon, click-to-add-vertex, finalised on
- *                 double-click (or `enter` if the adapter supports it).
- * `'rectangle'` — two corner clicks define an axis-aligned rectangle.
- * `'circle'`    — first click sets the center; second click sets the radius.
- *                 Returned geometry is a 32-segment Polygon approximation so
- *                 downstream consumers don't need a special `Circle` code path.
+ * `'point'`      — single click places a Point feature.
+ * `'linestring'` — click-to-add-vertex, finalised on double-click or Enter.
+ *                  Returns a LineString geometry.
+ * `'polygon'`    — n-vertex polygon, click-to-add-vertex, finalised on
+ *                  double-click or Enter.
+ * `'rectangle'`  — two corner clicks define an axis-aligned rectangle.
+ * `'circle'`     — first click sets the center; second click sets the radius.
+ *                  Returned geometry is a Polygon approximation so downstream
+ *                  consumers don't need a special `Circle` code path.
  */
-export type DrawShape = 'polygon' | 'rectangle' | 'circle'
+export type DrawShape = 'point' | 'linestring' | 'polygon' | 'rectangle' | 'circle'
 
 /**
  * Options for `IMapEngine.enableDrawing`. `style` follows the same shape as
