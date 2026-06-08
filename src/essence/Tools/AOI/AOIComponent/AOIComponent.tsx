@@ -3,7 +3,7 @@ import { Alert, Button, TextInput } from '@trussworks/react-uswds'
 import './AOIComponent.scss'
 
 export type AOIMode = 'search' | 'inspect' | 'draw' | 'upload'
-export type AOIShape = 'polygon' | 'rectangle' | 'circle'
+export type AOIShape = 'point' | 'linestring' | 'polygon' | 'rectangle' | 'circle'
 export type UploadStatus = 'idle' | 'parsing' | 'error'
 export type AnalysisStatus = 'idle' | 'running'
 
@@ -25,6 +25,7 @@ export interface AOIComponentProps {
     onSearchSelect: (id: string) => void
 
     drawShape: AOIShape | null
+    drawShapes?: AOIShape[]
     drawDisabled?: boolean
     isDrawing: boolean
     drawVerticesCount: number
@@ -218,12 +219,19 @@ function DrawPanel(props: AOIComponentProps) {
     return <DrawShapePickerPanel {...props} />
 }
 
+const ALL_SHAPES: Array<{ id: AOIShape; label: string; icon: string }> = [
+    { id: 'point', label: 'Point', icon: 'map-marker-outline' },
+    { id: 'linestring', label: 'Line', icon: 'vector-polyline' },
+    { id: 'polygon', label: 'Polygon', icon: 'vector-polygon' },
+    { id: 'rectangle', label: 'Rectangle', icon: 'square-outline' },
+    { id: 'circle', label: 'Circle', icon: 'circle-outline' },
+]
+
+const DEFAULT_ALLOWED_SHAPES: AOIShape[] = ['polygon', 'rectangle', 'circle']
+
 function DrawShapePickerPanel(props: AOIComponentProps) {
-    const shapes: Array<{ id: AOIShape; label: string; icon: string }> = [
-        { id: 'polygon', label: 'Polygon', icon: 'vector-polygon' },
-        { id: 'rectangle', label: 'Rectangle', icon: 'square-outline' },
-        { id: 'circle', label: 'Circle', icon: 'circle-outline' },
-    ]
+    const allow = new Set(props.drawShapes ?? DEFAULT_ALLOWED_SHAPES)
+    const shapes = ALL_SHAPES.filter((s) => allow.has(s.id))
     return (
         <div className="aoi-panel aoi-panel--draw">
             <p className="aoi-panel__hint">Choose a shape</p>
@@ -257,16 +265,29 @@ function DrawShapePickerPanel(props: AOIComponentProps) {
     )
 }
 
+const MIN_VERTICES_BY_SHAPE: Record<AOIShape, number> = {
+    point: 1,
+    linestring: 2,
+    polygon: 3,
+    rectangle: 2,
+    circle: 2,
+}
+
+const HINT_BY_SHAPE: Record<AOIShape, (count: number, min: number) => string> = {
+    point: () => 'Click on the map to place the point.',
+    linestring: (count) =>
+        `Click to add vertices. ${count} placed (need 2+). Double-click or Enter to finish.`,
+    polygon: (count, min) =>
+        `Click on the map to add vertices. ${count} placed (need ${min}+).`,
+    rectangle: () => 'Click two corners to define the rectangle.',
+    circle: () => 'Click the centre, then click the edge to define the circle.',
+}
+
 function DrawInProgressPanel(props: AOIComponentProps) {
     const shape = props.drawShape!
-    const minVertices = shape === 'polygon' ? 3 : 2
+    const minVertices = MIN_VERTICES_BY_SHAPE[shape]
     const valid = props.drawVerticesCount >= minVertices
-    const hint =
-        shape === 'polygon'
-            ? `Click on the map to add vertices. ${props.drawVerticesCount} placed (need ${minVertices}+).`
-            : shape === 'rectangle'
-                ? 'Click two corners to define the rectangle.'
-                : 'Click the centre, then click the edge to define the circle.'
+    const hint = HINT_BY_SHAPE[shape](props.drawVerticesCount, minVertices)
 
     return (
         <div className="aoi-panel aoi-panel--draw">

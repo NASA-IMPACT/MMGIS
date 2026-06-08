@@ -37,6 +37,13 @@
                         "type": "dropdown",
                         "width": 3,
                         "options": ["left", "right"]
+                    },
+                    {
+                        "field": "variables.drawShapes",
+                        "name": "Draw Shapes",
+                        "description": "Which shapes appear in the Draw tab. Comma-separated subset of: point, linestring, polygon, rectangle, circle. If empty, defaults to polygon, rectangle, circle.",
+                        "type": "textarray",
+                        "width": 6
                     }
                 ]
             },

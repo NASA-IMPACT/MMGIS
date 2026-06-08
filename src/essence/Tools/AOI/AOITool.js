@@ -50,6 +50,8 @@ import { loadBoundaries } from './aoiBoundaryLoader'
 
 // ── Plugin identity / layer ids ────────────────────────────────────────────────
 const PLUGIN_ID = 'aoi'
+const DEFAULT_DRAW_SHAPES = ['polygon', 'rectangle', 'circle']
+const VALID_DRAW_SHAPES = new Set(['point', 'linestring', 'polygon', 'rectangle', 'circle'])
 const SELECTION_LAYER_ID = 'aoi:selection'
 const INSPECT_BOUNDARIES_LAYER_ID = 'aoi:inspect-boundaries'
 const TOOLTIP_OVERLAY_ID = 'aoi:tooltip'
@@ -104,6 +106,7 @@ const AOITool = {
     // height:0 + width:0 makes ToolController_ collapse the docked side rail to 0px.
     height: 0,
     width: 0,
+    made: false,
     MMGISInterface: null,
     _root: null,
     _state: initialState(),
@@ -169,6 +172,7 @@ const AOITool = {
         }
 
         this._render()
+        this.made = true
     },
 
     destroy() {
@@ -200,6 +204,7 @@ const AOITool = {
 
         this._state = initialState()
         this._api = null
+        this.made = false
     },
 
     getUrlString() {
@@ -211,6 +216,27 @@ const AOITool = {
     _setState(patch) {
         this._state = { ...this._state, ...patch }
         this._render()
+    },
+
+    /**
+     * Resolve the configured Draw-shape allowlist from the mission's AOI
+     * tool variables. Accepts either an array (`textarray` config field) or
+     * a comma-separated string, trims/normalises entries, and drops any
+     * value not in the supported set. Falls back to a sensible default when
+     * unset or empty.
+     */
+    _resolveDrawShapes() {
+        const raw = this._api?.getVars?.()?.drawShapes
+        const list = Array.isArray(raw)
+            ? raw
+            : typeof raw === 'string'
+                ? raw.split(',')
+                : null
+        if (!list) return DEFAULT_DRAW_SHAPES
+        const cleaned = list
+            .map((s) => String(s).trim().toLowerCase())
+            .filter((s) => VALID_DRAW_SHAPES.has(s))
+        return cleaned.length ? cleaned : DEFAULT_DRAW_SHAPES
     },
 
     _render() {
@@ -228,6 +254,7 @@ const AOITool = {
                 onSearchSelect: (id) => this._onSearchSelect(id),
 
                 drawShape: this._state.drawShape,
+                drawShapes: this._resolveDrawShapes(),
                 drawDisabled: this._state.drawDisabled,
                 isDrawing: this._state.isDrawing,
                 drawVerticesCount: this._state.drawVerticesCount,
