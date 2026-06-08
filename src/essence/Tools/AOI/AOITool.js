@@ -6,7 +6,7 @@
  *   pluginId: 'aoi'
  *
  *   Emits  (auto-prefixed plugin:aoi:):
- *     - areaDrawn          { feature, source: 'search'|'draw'|'upload'|'inspect', layerName }
+ *     - areaDrawn          { feature, source: 'search'|'draw'|'upload'|'inspect' }
  *     - analysisAOIReady   { feature }   — consumed by the FetchStats plugin
  *     - drawingCleared     {}
  *     - drawingCancelled   {}
@@ -475,11 +475,7 @@ const AOITool = {
         }).catch((err) => console.warn('[AOI] failed to add selection layer', err))
 
         this._state.currentAOI = { feature, source, label }
-        this._api?.emit('areaDrawn', {
-            feature,
-            source,
-            layerName: this._guessActiveLayerName(),
-        })
+        this._api?.emit('areaDrawn', { feature, source })
 
         const c = featureCentroid(feature)
         const showTooltip = () => {
@@ -585,11 +581,6 @@ const AOITool = {
         this._clearSelection()
     },
 
-    // ── Misc ───────────────────────────────────────────────────────────────────
-
-    _guessActiveLayerName() {
-        return null
-    },
 }
 
 function interfaceWithMMGIS(tool) {
