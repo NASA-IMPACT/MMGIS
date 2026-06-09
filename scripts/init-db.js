@@ -4,8 +4,28 @@ const logger = require("../API/logger");
 const utils = require("../API/utils");
 const execSync = require("child_process").execSync;
 require("dotenv").config({ path: __dirname + "/../.env" });
+const {
+  isRetryableConnectionError,
+  authenticateWithRetry,
+} = require("./init-db-retry");
 
 const isDocker = utils.isDocker();
+
+function getRetryOptions(label) {
+  return {
+    maxAttempts: parseInt(process.env.DB_INIT_RETRY_ATTEMPTS, 10) || 10,
+    delayMs: parseInt(process.env.DB_INIT_RETRY_DELAY_MS, 10) || 3000,
+    onRetry: (attempt, maxAttempts, delayMs, err) => {
+      const reason =
+        err.message || (err.parent && err.parent.code) || err.name;
+      logger(
+        "info",
+        `Database connection (${label}) failed (attempt ${attempt} of ${maxAttempts}): ${reason}. Retrying in ${delayMs}ms...`,
+        "connection"
+      );
+    },
+  };
+}
 
 function classifyPostgresError(err) {
   // Check if we have a PostgreSQL error with a code
@@ -108,6 +128,31 @@ async function initializeDatabase() {
         },
       }
     );
+    // The database server may still be coming up (common right after a
+    // restart in orchestrated hosting), so wait for it with a bounded retry
+    // instead of crash-looping on the first refused connection.
+    try {
+      await authenticateWithRetry(
+        baseSequelize,
+        getRetryOptions("database server")
+      );
+    } catch (err) {
+      if (isRetryableConnectionError(err)) {
+        logger(
+          "infrastructure_error",
+          "Unable to reach the database server after retries.",
+          "connection",
+          null,
+          err
+        );
+        reject(err);
+        return;
+      }
+      // Non-connection errors here (e.g. no default database to
+      // authenticate against) were tolerated before; the CREATE DATABASE
+      // calls and keepGoing() still determine real success/failure.
+    }
+
     await baseSequelize
       .query(`SELECT version();`)
       .then((version) => {
@@ -275,8 +320,7 @@ async function initializeDatabase() {
         }
       );
       // Source: http://docs.sequelizejs.com/manual/installation/getting-started.html
-      sequelize
-        .authenticate()
+      authenticateWithRetry(sequelize, getRetryOptions(process.env.DB_NAME))
         .then(async () => {
           logger("info", "Database connection is successful.", "connection");
           await sequelize
@@ -357,6 +401,20 @@ async function initializeDatabase() {
               return null;
             });
 
+          try {
+            await seedSuperadmin();
+          } catch (err) {
+            logger(
+              "error",
+              "Failed to seed the superadmin user.",
+              "connection",
+              null,
+              err
+            );
+            reject(err);
+            return;
+          }
+
           resolve();
         })
         .catch((err) => {
@@ -374,4 +432,41 @@ async function initializeDatabase() {
 
     return null;
   });
+}
+
+// Optionally seed the first admin account from env so fresh deploys don't
+// depend on the open first-signup page. No-op unless both vars are set and
+// no users exist yet.
+async function seedSuperadmin() {
+  const username = process.env.SEED_SUPERADMIN_USERNAME;
+  const password = process.env.SEED_SUPERADMIN_PASSWORD;
+  if (!username || !password) return;
+
+  // Required lazily — pulls in API/connection.js, which opens its own
+  // database connection on load.
+  const { User } = require("../API/Backend/Users/models/user");
+
+  // init-db runs before server.js's sequelize.sync() creates the users
+  // table, so ensure it exists first.
+  await User.sync();
+
+  const count = await User.count();
+  if (count > 0) {
+    logger(
+      "info",
+      "Users already exist. Skipping the superadmin seed.",
+      "connection"
+    );
+    return;
+  }
+
+  // The model's beforeCreate hook bcrypt-hashes the password.
+  await User.create({
+    username: username,
+    email: null,
+    password: password,
+    permission: "111",
+    token: null,
+  });
+  logger("info", `Seeded superadmin user '${username}'.`, "connection");
 }

@@ -347,6 +347,7 @@ function ensureAdmin(
       res.render("adminlogin", {
         user: req.user,
         VERSION: configurePackageJson.version,
+        DISABLE_FIRST_SIGNUP: process.env.DISABLE_FIRST_SIGNUP === "true",
       });
       return;
     }

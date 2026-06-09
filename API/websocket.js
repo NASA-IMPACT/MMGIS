@@ -28,6 +28,22 @@ const websocket = {
     const wss = new WebSocket.Server({ noServer: true });
     websocket.wss = wss;
 
+    // Heartbeat: proxies and load balancers silently drop idle connections,
+    // so periodically ping every client and terminate the ones that stopped
+    // answering. Browsers answer pings automatically.
+    const pingIntervalMs =
+      parseInt(process.env.WEBSOCKET_PING_INTERVAL_MS, 10) || 30000;
+    const heartbeatInterval = setInterval(() => {
+      wss.clients.forEach((client) => {
+        if (client.isAlive === false) {
+          client.terminate();
+          return;
+        }
+        client.isAlive = false;
+        client.ping();
+      });
+    }, pingIntervalMs);
+
     // Broadcast to all clients
     wss.broadcast = function broadcast(data, isBinary) {
       wss.clients.forEach((client) => {
@@ -38,6 +54,10 @@ const websocket = {
     };
 
     wss.on("connection", (ws) => {
+      ws.isAlive = true;
+      ws.on("pong", () => {
+        ws.isAlive = true;
+      });
       ws.on("message", (message) => {
         wss.broadcast(message);
       });
@@ -63,6 +83,7 @@ const websocket = {
 
     wss.on("close", () => {
       logger("info", "Websocket disconnected...", "websocket", null, "");
+      clearInterval(heartbeatInterval);
       websocket.wss = null;
     });
   },
