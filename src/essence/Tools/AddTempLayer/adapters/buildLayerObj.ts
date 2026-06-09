@@ -16,10 +16,14 @@ export function uniqueLayerName(): string {
  * Build an MMGIS layerObj. Returns null if the URL is invalid or the type
  * can't be determined.
  *
- * Type → MMGIS mapping:
- *   geojson  → { type: 'vector' }
- *   wms      → { type: 'tile', tileformat: 'wms' }
- *   wmts/xyz → { type: 'tile', tileformat: 'wmts' }  (tms:false; standard z/x/y)
+ * Type → MMGIS mapping (consumed by the merged core WMS support):
+ *   geojson → { type: 'vector', url }
+ *   wms     → { type: 'tile', tileformat: 'wms', url } — full WMS url passed
+ *             through; Leaflet's WMSColorFilter and deck.gl's WMSLayer both
+ *             parse LAYERS/FORMAT/… out of it.
+ *   wmts    → { type: 'tile', tileformat: 'wmts', url } — KVP rewritten to a
+ *             {z}/{y}/{x} template so it renders via the template-tile path.
+ *   xyz     → { type: 'tile', tileformat: 'wmts', url } — {z}/{x}/{y} template.
  */
 export function buildLayerObj(
     input: AddTempLayerInput,
@@ -42,19 +46,84 @@ export function buildLayerObj(
         return { ...base, type: 'vector', url }
     }
 
-    // deck.gl's TileLayer has no {s} subdomain concept, so collapse {s} to a
-    // concrete subdomain ('a' is valid on OSM/Carto and harmless on Leaflet).
-    const tileUrl = url.replace(/\{s\}/g, 'a')
-    // MMGIS sets Leaflet tms:true only when tileformat === 'tms'; standard web
-    // XYZ needs tms:false, so xyz maps to 'wmts'.
-    const tileformat = type === 'wms' ? 'wms' : 'wmts'
+    if (type === 'wms') {
+        // Pass the full WMS url through unchanged: both engines parse the WMS
+        // params (LAYERS, FORMAT, …) out of it. WMS renders at any zoom (no
+        // fixed native tile grid), so no maxNativeZoom.
+        return {
+            ...base,
+            type: 'tile',
+            tileformat: 'wms',
+            url,
+            minZoom: 0,
+            maxZoom: 22,
+        }
+    }
+
+    if (type === 'wmts') {
+        // Rewrite a WMTS KVP GetTile endpoint into a {z}/{y}/{x} url template so
+        // it renders via the standard template-tile path in both engines.
+        const templated = buildWmtsTemplate(url)
+        if (!templated) return null
+        return {
+            ...base,
+            type: 'tile',
+            tileformat: 'wmts',
+            url: templated,
+            minZoom: 0,
+            maxNativeZoom: 18,
+            maxZoom: 22,
+        }
+    }
+
+    // xyz — templated raster tiles. deck.gl's TileLayer has no {s} subdomain
+    // concept, so collapse {s} to a concrete subdomain ('a' is valid on
+    // OSM/Carto and harmless on Leaflet). tileformat 'wmts' => tms:false.
     return {
         ...base,
         type: 'tile',
-        url: tileUrl,
-        tileformat,
+        tileformat: 'wmts',
+        url: url.replace(/\{s\}/g, 'a'),
         minZoom: 0,
         maxNativeZoom: 18,
         maxZoom: 22,
     }
+}
+
+/**
+ * Rewrite a WMTS KVP GetTile url into a {z}/{y}/{x} template. Returns null when
+ * no LAYER param is present (WMTS can't request a tile without one). Best-effort:
+ * assumes a zoom-indexed TileMatrix (web-mercator GoogleMapsCompatible), which
+ * covers the common Earth case; named matrix sets won't map cleanly.
+ */
+function buildWmtsTemplate(rawUrl: string): string | null {
+    const qIdx = rawUrl.indexOf('?')
+    const baseUrl = qIdx === -1 ? rawUrl : rawUrl.slice(0, qIdx)
+    const search = qIdx === -1 ? '' : rawUrl.slice(qIdx + 1)
+    const params = new URLSearchParams(search)
+    const get = (k: string): string | null => {
+        for (const [key, val] of params) {
+            if (key.toLowerCase() === k) return val
+        }
+        return null
+    }
+
+    const layer = get('layer')
+    if (!layer) return null
+
+    // Build the literal template by hand — URLSearchParams would percent-encode
+    // the {z}/{y}/{x} braces and break the placeholders.
+    const qs = [
+        'SERVICE=WMTS',
+        'REQUEST=GetTile',
+        `VERSION=${get('version') || '1.0.0'}`,
+        `LAYER=${encodeURIComponent(layer)}`,
+        `STYLE=${encodeURIComponent(get('style') || 'default')}`,
+        `FORMAT=${encodeURIComponent(get('format') || 'image/png')}`,
+        `TILEMATRIXSET=${encodeURIComponent(get('tilematrixset') || 'GoogleMapsCompatible')}`,
+        'TILEMATRIX={z}',
+        'TILEROW={y}',
+        'TILECOL={x}',
+    ].join('&')
+    return `${baseUrl}?${qs}`
 }

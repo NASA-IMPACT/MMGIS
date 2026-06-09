@@ -5,6 +5,10 @@ import type { TempLayerType } from '../types'
 export function validateUrl(url: string): boolean {
     const u = (url || '').trim()
     if (u.length === 0) return false
+    // Reject internal whitespace — a single URL has none after trimming, so this
+    // catches two URLs pasted into the field at once (which would otherwise be
+    // concatenated into one broken request).
+    if (/\s/.test(u)) return false
     try {
         const parsed = new URL(u)
         return parsed.protocol === 'http:' || parsed.protocol === 'https:'
