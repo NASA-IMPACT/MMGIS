@@ -112,6 +112,10 @@ function getClientEnvironment(publicUrl) {
         SKIP_CLIENT_INITIAL_LOGIN: process.env.SKIP_CLIENT_INITIAL_LOGIN || "",
         IS_DOCKER: process.env.IS_DOCKER,
         WITH_TITILER: process.env.WITH_TITILER,
+        // Deployment shape: 'full' (upstream default) or 'lean'
+        MMGIS_DEPLOYMENT_MODE: process.env.MMGIS_DEPLOYMENT_MODE || "full",
+        // 'true' when building a statically-deployable bundle
+        STATIC_MODE: process.env.STATIC_MODE,
       }
     );
   // Stringify all values so we can feed into webpack DefinePlugin
