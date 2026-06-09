@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { mmgisRequest } from './mmgisAPI'
+import { mmgisRequest } from '../../_shared/adapters/mmgisAPI'
 
 export const useMMGISToolVars = <T extends Record<string, unknown> = Record<string, unknown>>(
     toolName: string,

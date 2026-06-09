@@ -1,0 +1,35 @@
+// AOI plugin design tokens.
+//
+// Mirrors the tinacms-portal-monorepo theme-tokens.scss pattern: a single
+// partial that any AOI stylesheet @uses to mix into a host selector. The CSS
+// custom properties below carry an `--mmgis-*` fallback so a host theme can
+// override them at `:root` without touching this file.
+
+@mixin aoi-tokens {
+    --aoi-bg:           var(--mmgis-surface,        #ffffff);
+    --aoi-bg-muted:     var(--mmgis-surface-muted,  #f6f7f8);
+    --aoi-fg:           var(--mmgis-text,           #1b1b1b);
+    --aoi-fg-muted:     var(--mmgis-text-muted,     #565c65);
+    --aoi-accent:       var(--mmgis-accent,         #137480);
+    --aoi-accent-hover: var(--mmgis-accent-hover,   #0e5a64);
+    --aoi-accent-fg:    var(--mmgis-accent-fg,      #ffffff);
+    --aoi-border:       var(--mmgis-border,         #dfe1e2);
+    --aoi-border-hover: var(--mmgis-border-hover,   #a9aeb1);
+    --aoi-danger:       var(--mmgis-danger,         #b50909);
+
+    --aoi-radius-sm:    var(--mmgis-radius-sm,      4px);
+    --aoi-radius-md:    var(--mmgis-radius-md,      6px);
+
+    --aoi-space-1:      var(--mmgis-space-1,        4px);
+    --aoi-space-2:      var(--mmgis-space-2,        8px);
+    --aoi-space-3:      var(--mmgis-space-3,        12px);
+    --aoi-space-4:      var(--mmgis-space-4,        16px);
+    --aoi-space-5:      var(--mmgis-space-5,        24px);
+
+    --aoi-font-body:    var(--mmgis-font-body,      'Source Sans Pro', system-ui, sans-serif);
+    --aoi-font-size-sm: var(--mmgis-font-size-sm,   13px);
+    --aoi-font-size-md: var(--mmgis-font-size-md,   14px);
+    --aoi-font-size-lg: var(--mmgis-font-size-lg,   16px);
+
+    --aoi-shadow-pop:   var(--mmgis-shadow-pop,     0 2px 6px rgba(0, 0, 0, 0.18));
+}

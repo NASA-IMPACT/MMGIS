@@ -166,3 +166,4 @@ function _normalizePosition(position: any): { lat: number; lng: number } {
     }
     return position
 }
+

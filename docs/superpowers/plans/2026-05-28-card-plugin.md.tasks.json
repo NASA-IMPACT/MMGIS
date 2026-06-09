@@ -1,0 +1,32 @@
+{
+  "planPath": "docs/superpowers/plans/2026-05-28-card-plugin.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Backend CardPlugin upload module",
+      "status": "pending",
+      "description": "POST /api/cardplugin/upload route saving images to Missions/<mission>/CardPlugin/uploads/ + pure validation module (TDD).\n\n```json:metadata\n{\"files\":[\"API/Backend/CardPlugin/routes/validate.js\",\"tests/unit/Card/uploadValidate.spec.js\",\"API/Backend/CardPlugin/routes/upload.js\",\"API/Backend/CardPlugin/setup.js\"],\"verifyCommand\":\"npx playwright test tests/unit/Card/uploadValidate.spec.js\",\"acceptanceCriteria\":[\"extensionForMime maps allowed types\",\"isValidMission rejects traversal\",\"route behind ensureUser+stopGuests\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: upload config field type (Configure SPA)",
+      "status": "pending",
+      "blockedBy": [0],
+      "description": "Reusable upload field type: uploadCardImage helper + UploadField component + Maker.js case (TDD on helper).\n\n```json:metadata\n{\"files\":[\"configure/src/core/cardUpload.js\",\"tests/unit/Card/uploadImage.spec.js\",\"configure/src/core/components/UploadField.js\",\"configure/src/core/Maker.js\"],\"verifyCommand\":\"npx playwright test tests/unit/Card/uploadImage.spec.js\",\"acceptanceCriteria\":[\"uploadCardImage POSTs multipart and returns path\",\"throws on failure\",\"Maker renders upload field\"]}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: Card tool scaffold + adapters + resolver",
+      "status": "pending",
+      "description": "Register modern Card tool (createRoot/targetId/bus-only), read cards tool-var, pure resolveImageUrl (TDD).\n\n```json:metadata\n{\"files\":[\"src/essence/Tools/Card/adapters/mmgisAPI.ts\",\"src/essence/Tools/Card/adapters/useMMGISToolVars.ts\",\"src/essence/Tools/Card/lib/types.ts\",\"src/essence/Tools/Card/lib/resolveImageUrl.ts\",\"tests/unit/Card/resolveImageUrl.spec.js\",\"src/essence/Tools/Card/config.json\",\"src/essence/Tools/Card/CardTool.tsx\",\"src/essence/Tools/Card/MMGISCardAdapter.tsx\"],\"verifyCommand\":\"npx playwright test tests/unit/Card/resolveImageUrl.spec.js\",\"acceptanceCriteria\":[\"resolveImageUrl handles empty/absolute/relative\",\"config.json declares cards objectarray\",\"CardTool mounts/unmounts root\"]}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: Card components, styles, final wiring",
+      "status": "pending",
+      "blockedBy": [2],
+      "description": "Render cards per Figma (square object-fit image, title, subtitle, link); adapter resolves image URLs via app:getMissionPath.\n\n```json:metadata\n{\"files\":[\"src/essence/Tools/Card/lib/Card.tsx\",\"src/essence/Tools/Card/lib/CardList.tsx\",\"src/essence/Tools/Card/lib/index.ts\",\"src/essence/Tools/Card/lib/styles/card.scss\",\"src/essence/Tools/Card/MMGISCardAdapter.tsx\"],\"verifyCommand\":\"npx tsc --noEmit -p tsconfig.json\",\"acceptanceCriteria\":[\"Card renders anchor with 65x65 object-fit image\",\"CardList maps cards\",\"adapter resolves URLs\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-05-28"
+}
