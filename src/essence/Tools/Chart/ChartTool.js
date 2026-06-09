@@ -17,7 +17,7 @@
  */
 
 import React from 'react'
-import { render, unmountComponentAtNode } from 'react-dom'
+import { createRoot } from 'react-dom/client'
 
 import ChartComponent from './ChartComponent'
 
@@ -98,6 +98,7 @@ const ChartTool = {
     width: 0,
     MMGISInterface: null,
     _root: null,
+    _reactRoot: null,
 
     make(targetId) {
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
@@ -106,10 +107,11 @@ const ChartTool = {
     },
 
     destroy() {
-        if (this._root) {
-            unmountComponentAtNode(this._root)
-            this._root = null
+        if (this._reactRoot) {
+            this._reactRoot.unmount()
+            this._reactRoot = null
         }
+        this._root = null
         if (this.MMGISInterface) {
             this.MMGISInterface.separateFromMMGIS()
             this.MMGISInterface = null
@@ -122,13 +124,12 @@ const ChartTool = {
     },
 
     _render() {
-        if (!this._root) return
-        render(
+        if (!this._reactRoot) return
+        this._reactRoot.render(
             React.createElement(ChartComponent, {
                 analysisData: _latestAnalysisData,
                 onClose: () => this._onClose(),
-            }),
-            this._root
+            })
         )
     },
 
@@ -151,6 +152,7 @@ function interfaceWithMMGIS(tool) {
     root.className = 'chart-tool-host'
     document.body.appendChild(root)
     tool._root = root
+    tool._reactRoot = createRoot(root)
 
     this.separateFromMMGIS = function () {
         if (tool._root && tool._root.parentNode) {

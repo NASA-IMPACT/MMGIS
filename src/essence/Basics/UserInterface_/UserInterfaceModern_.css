@@ -118,6 +118,7 @@
     gap: var(--theme-spacing-1, 0.5rem);
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border-bottom: var(--theme-border-width-sm, 1px) solid rgba(0, 0, 0, 0.05);
 }
 
 /* Tabs */
