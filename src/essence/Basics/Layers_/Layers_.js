@@ -220,6 +220,14 @@ const L_ = {
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
+                // Raw mission branding fields (title/logo). Resolution policy
+                // (e.g. fallback order) is left to consumers, not baked in here.
+                window.mmgisAPI.provide('app:getBranding', () => ({
+                    pagename: L_.configData?.look?.pagename || null,
+                    mission: L_.configData?.msv?.mission || null,
+                    name: window.mmgisglobal?.name || null,
+                    logoUrl: L_.configData?.look?.logourl || null,
+                })),
             ]
         }
     },

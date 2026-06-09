@@ -58,7 +58,6 @@ const LayerManagerTool = {
             )
             return
         }
-        $(container).css('background', 'var(--color-k)')
         _root = createRoot(container)
         _root.render(<MMGISLayerManagerAdapter />)
         this.made = true
