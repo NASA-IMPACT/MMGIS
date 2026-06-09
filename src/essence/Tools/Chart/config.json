@@ -1,0 +1,15 @@
+{
+    "defaultIcon": "chart-bar",
+    "description": "Render per-layer analysis results published by the FetchStats plugin.",
+    "descriptionFull": {
+        "title": "Subscribes to plugin:fetch-stats:analysisReady on the mmgisAPI Event Bus and renders one card per (layer, asset) with a headline mean, histogram, and stats grid. No per-layer configuration required — analysis-supported layers are configured on the AOI plugin side, and FetchStats runs the actual statistics requests.",
+        "example": {}
+    },
+    "hasVars": false,
+    "name": "Chart",
+    "toolbarPriority": 6,
+    "separatedTool": true,
+    "paths": {
+        "ChartTool": "essence/Tools/Chart/ChartTool"
+    }
+}

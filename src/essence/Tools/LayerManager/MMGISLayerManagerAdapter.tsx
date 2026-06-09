@@ -4,7 +4,7 @@ import { LayerManagerPanel } from './lib'
 import type { Layer } from './lib/types'
 import { useMMGISEvent } from './adapters/useMMGISEvent'
 import { useMMGISToolVars } from './adapters/useMMGISToolVars'
-import { useMMGISHandlerReady } from './adapters/useMMGISHandlerReady'
+import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import { getVisibleLayersWithLegends } from './adapters/getVisibleLayersWithLegends'
 import {
     toggleVisibility,
