@@ -1,0 +1,37 @@
+/* Chart plugin theme tokens.
+ *
+ * Every literal lives here. ChartComponent.css references only var(--chart-*).
+ * A host theme can override these on :root or `.chart-tool-host` and every
+ * fallback below picks the override up automatically.
+ */
+
+.chart-tool-host,
+.chart-tool {
+    --chart-bg:           #ffffff;
+    --chart-bg-muted:     #f6f7f8;
+    --chart-fg:           #1b1b1b;
+    --chart-fg-muted:     #565c65;
+    --chart-accent:       #137480;
+    --chart-accent-fg:    #ffffff;
+    --chart-border:       #dfe1e2;
+    --chart-border-hover: #a9aeb1;
+    --chart-danger:       #b50909;
+
+    --chart-radius-sm:    4px;
+    --chart-radius-md:    6px;
+
+    --chart-space-1:      4px;
+    --chart-space-2:      8px;
+    --chart-space-3:      12px;
+    --chart-space-4:      16px;
+    --chart-space-5:      24px;
+
+    --chart-font-body:    'Source Sans Pro', system-ui, sans-serif;
+    --chart-font-mono:    ui-monospace, SFMono-Regular, Menlo, monospace;
+    --chart-font-size-sm: 13px;
+    --chart-font-size-md: 14px;
+    --chart-font-size-lg: 16px;
+    --chart-font-size-xl: 24px;
+
+    --chart-shadow-pop:   0 2px 6px rgba(0, 0, 0, 0.18);
+}
