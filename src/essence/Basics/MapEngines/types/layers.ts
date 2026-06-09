@@ -40,6 +40,12 @@ export interface TileLayerOptions extends LayerOptions {
     maxNativeZoom?: number
     tileSize?: number
     tileElevation?: number
+    /**
+     * Tile request scheme. 'wms' routes to deck.gl's WMSLayer (the GetMap BBOX
+     * is computed by deck per view). Anything else is treated as a
+     * {z}/{x}/{y} URL template (xyz / wmts-rest / tms).
+     */
+    tileformat?: string
     nativeOptions?: Record<string, unknown>
 }
 
