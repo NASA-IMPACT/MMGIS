@@ -217,9 +217,8 @@ const L_ = {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true
                 }),
-                // Generic "add a managed layer" channel (in-memory only — not
-                // persisted to the backend, so it's lost on reload). layerObj
-                // requires { name, type, ... }. See mmgisAPI.addLayer.
+                // In-memory layer add/remove (not persisted; lost on reload).
+                // layerObj requires { name, type, ... }. See mmgisAPI.addLayer.
                 window.mmgisAPI.provide('layers:addLayer', (layerObj) =>
                     window.mmgisAPI.addLayer(layerObj)
                 ),
@@ -368,16 +367,17 @@ const L_ = {
         // Generate different endpoints based on type
         if (type === 'tile') {
             // Tile endpoint for raster tiles
-            return `${baseUrl}/collections/${collectionName}/tiles/${(layerData && layerData.tileMatrixSet) || 'WebMercatorQuad'
-                }/{z}/{x}/{y}?assets=asset${bandsParam}${resamplingParam}`
+            return `${baseUrl}/collections/${collectionName}/tiles/${
+                (layerData && layerData.tileMatrixSet) || 'WebMercatorQuad'
+            }/{z}/{x}/{y}?assets=asset${bandsParam}${resamplingParam}`
         } else {
             // For images, we use preview endpoint
             // Note: STAC collections are typically designed for tile serving
             if (layerData && layerData.name) {
                 console.warn(
                     `STAC layer "${layerData.name}" is configured as an image layer. ` +
-                    `STAC collections work best with tile layer type. ` +
-                    `Attempting to use preview endpoint.`
+                        `STAC collections work best with tile layer type. ` +
+                        `Attempting to use preview endpoint.`
                 )
             }
             return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
@@ -427,7 +427,8 @@ const L_ = {
         if (
             process.env.NODE_ENV === 'development' &&
             process.env.ENABLE_CORS_PROXY === 'true' &&
-            F_.isUrlAbsolute(nextUrl)) {
+            F_.isUrlAbsolute(nextUrl)
+        ) {
             try {
                 if (new URL(nextUrl).origin !== window.location.origin) {
                     const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
@@ -517,7 +518,7 @@ const L_ = {
                     if (!ignoreToggleStateChange) {
                         try {
                             $('.drawToolContextMenuHeaderClose').click()
-                        } catch (err) { }
+                        } catch (err) {}
                     }
                     if (
                         L_.Map_.engine &&
@@ -580,7 +581,7 @@ const L_ = {
                         for (let sub in L_.layers.attachments[s.name]) {
                             if (L_.layers.attachments[s.name][sub].on) {
                                 switch (
-                                L_.layers.attachments[s.name][sub].type
+                                    L_.layers.attachments[s.name][sub].type
                                 ) {
                                     case 'model':
                                         L_.Globe_.litho.addLayer(
@@ -614,10 +615,10 @@ const L_ = {
                                                 ].layer
                                             ),
                                             L_._layersOrdered.length +
-                                            1 -
-                                            L_._layersOrdered.indexOf(
-                                                s.name
-                                            )
+                                                1 -
+                                                L_._layersOrdered.indexOf(
+                                                    s.name
+                                                )
                                         )
                                         break
                                     case 'labels':
@@ -650,10 +651,10 @@ const L_ = {
                                                 ].layer
                                             ),
                                             L_._layersOrdered.length +
-                                            1 -
-                                            L_._layersOrdered.indexOf(
-                                                s.name
-                                            )
+                                                1 -
+                                                L_._layersOrdered.indexOf(
+                                                    s.name
+                                                )
                                         )
                                         break
                                 }
@@ -672,8 +673,8 @@ const L_ = {
                     L_.Map_.engine.setLayerZIndex(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                         L_._layersOrdered.length +
-                        1 -
-                        L_._layersOrdered.indexOf(s.name)
+                            1 -
+                            L_._layersOrdered.indexOf(s.name)
                     )
                 }
 
@@ -742,8 +743,8 @@ const L_ = {
                     L_.Map_.engine.setLayerZIndex(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                         L_._layersOrdered.length +
-                        1 -
-                        L_._layersOrdered.indexOf(s.name)
+                            1 -
+                            L_._layersOrdered.indexOf(s.name)
                     )
                 } else {
                     let hadToMake = false
@@ -788,8 +789,8 @@ const L_ = {
                             L_.Map_.engine.setLayerZIndex(
                                 L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                                 L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(s.name)
+                                    1 -
+                                    L_._layersOrdered.indexOf(s.name)
                             )
                         }
 
@@ -843,11 +844,11 @@ const L_ = {
                                                 ?.bearing &&
                                                 s.variables?.markerAttachments
                                                     ?.bearing.enabled ==
-                                                null) ||
-                                                s.variables?.markerAttachments
-                                                    ?.bearing?.enabled === true
+                                                    null) ||
+                                            s.variables?.markerAttachments
+                                                ?.bearing?.enabled === true
                                                 ? s.variables.markerAttachments
-                                                    .bearing
+                                                      .bearing
                                                 : null,
                                     },
                                     opacity: L_.layers.opacity[s.name],
@@ -975,8 +976,8 @@ const L_ = {
                         L_.Map_.engine.setLayerZIndex(
                             L_.Map_.nativeLayer(sublayer.layer),
                             L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(layerName)
+                                1 -
+                                L_._layersOrdered.indexOf(layerName)
                         )
                         break
                     case 'labels':
@@ -990,8 +991,8 @@ const L_ = {
                         L_.Map_.engine.setLayerZIndex(
                             L_.Map_.nativeLayer(sublayer.layer),
                             L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(layerName)
+                                1 -
+                                L_._layersOrdered.indexOf(layerName)
                         )
                         L_.setSublayerOpacity(layerName, sublayerName)
                         break
@@ -1067,7 +1068,7 @@ const L_ = {
                             ]) {
                                 const sublayer =
                                     L_.layers.attachments[
-                                    L_.layers.dataFlat[i].name
+                                        L_.layers.dataFlat[i].name
                                     ][s]
                                 if (sublayer.on) {
                                     switch (sublayer.type) {
@@ -1143,7 +1144,7 @@ const L_ = {
                         console.log(e)
                         console.warn(
                             'Warning: Failed to add layer to map: ' +
-                            L_.layers.dataFlat[i].name
+                                L_.layers.dataFlat[i].name
                         )
                     }
                 }
@@ -1162,8 +1163,8 @@ const L_ = {
                     engine.setLayerZIndex(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
                         L_._layersOrdered.length +
-                        1 -
-                        L_._layersOrdered.indexOf(s.name)
+                            1 -
+                            L_._layersOrdered.indexOf(s.name)
                     )
 
                     let demUrl = s.demtileurl
@@ -1245,10 +1246,10 @@ const L_ = {
                                             ?.bearing &&
                                             s.variables?.markerAttachments
                                                 ?.bearing.enabled == null) ||
-                                            s.variables?.markerAttachments?.bearing
-                                                ?.enabled === true
+                                        s.variables?.markerAttachments?.bearing
+                                            ?.enabled === true
                                             ? s.variables.markerAttachments
-                                                .bearing
+                                                  .bearing
                                             : null,
                                 },
                                 opacity: L_.layers.opacity[s.name],
@@ -1280,8 +1281,8 @@ const L_ = {
                     geojson.features
                         ? geojson.features
                         : geojson.length > 0 && geojson[0].type === 'Feature'
-                            ? geojson
-                            : null
+                          ? geojson
+                          : null
                 )
             if (keepLastN && keepLastN > 0) {
                 layer._sourceGeoJSON.features =
@@ -1347,7 +1348,7 @@ const L_ = {
     setStyle(layer, newStyle) {
         try {
             layer.setStyle(newStyle)
-        } catch (err) { }
+        } catch (err) {}
     },
     setActiveFeature(layer) {
         if (layer && layer.feature && layer.options?.layerName)
@@ -1444,7 +1445,7 @@ const L_ = {
         }
         try {
             //layer.bringToFront()
-        } catch (err) { }
+        } catch (err) {}
     },
     toggleFeature(layer, on) {
         const display = on ? 'inherit' : 'none'
@@ -1792,15 +1793,15 @@ const L_ = {
         const styleString =
             (s.color != null
                 ? 'text-shadow: ' +
-                F_.getTextShadowString(s.color, s.strokeOpacity, s.weight) +
-                '; '
+                  F_.getTextShadowString(s.color, s.strokeOpacity, s.weight) +
+                  '; '
                 : '') +
             (s.fillColor != null ? 'color: ' + s.fillColor + '; ' : '') +
             (s.fontSize != null ? 'font-size: ' + s.fontSize + '; ' : '') +
             (s.rotation != null
                 ? 'transform: rotateZ(' +
-                parseInt(!isNaN(s.rotation) ? s.rotation : 0) * -1 +
-                'deg); '
+                  parseInt(!isNaN(s.rotation) ? s.rotation : 0) * -1 +
+                  'deg); '
                 : '')
 
         const id = className + '_' + id1 + '_' + id2
@@ -1824,14 +1825,14 @@ const L_ = {
             )
             .setContent(
                 "<div>" +
-                `<div id='${id}'` +
-                ` class='${className === 'DrawToolAnnotation' ? 'drawToolAnnotation' : 'mmgisAnnotation'} ${className}_${id1} blackTextBorder'` +
-                " layer='" + id1 +
-                "' layerId='" + layerId +
-                (L_.layers.layer[layerId] != null ? "' index='" + L_.layers.layer[layerId].length : '') +
-                "' style='" + styleString + "'>" +
-                `${feature.properties.name.replace(/[<>;{}]/g, '')}`,
-                '</div>' +
+                    `<div id='${id}'` +
+                    ` class='${className === 'DrawToolAnnotation' ? 'drawToolAnnotation' : 'mmgisAnnotation'} ${className}_${id1} blackTextBorder'` +
+                    " layer='" + id1 +
+                    "' layerId='" + layerId + 
+                    (L_.layers.layer[layerId] != null ? "' index='" + L_.layers.layer[layerId].length : '') +
+                    "' style='" + styleString + "'>" +
+                    `${feature.properties.name.replace(/[<>;{}]/g, '')}`,
+                    '</div>' +
                 '</div>'
             )
 
@@ -2084,9 +2085,9 @@ const L_ = {
                                         'color',
                                         layer.feature?.properties?.style
                                             ?.fillColor ||
-                                        layer.options?.fillColor ||
-                                        fillColor ||
-                                        'white'
+                                            layer.options?.fillColor ||
+                                            fillColor ||
+                                            'white'
                                     )
                         } else if (layer._isArrow) {
                             // Arrow
@@ -2202,7 +2203,7 @@ const L_ = {
                                         sublayerName
                                     ].layer._layers[sll].feature._style
                                 )
-                            } catch (err) { }
+                            } catch (err) {}
                         }
                     }
                 }
@@ -2559,8 +2560,8 @@ const L_ = {
                     layer._latlng.lat,
                     layer._latlng.lng,
                     activePoint.zoom ||
-                    L_.Map_.mapScaleZoom ||
-                    L_.Map_.map.getZoom(),
+                        L_.Map_.mapScaleZoom ||
+                        L_.Map_.map.getZoom(),
                 ]
             } else if (layer._latlngs) {
                 let lat = 0,
@@ -2575,8 +2576,8 @@ const L_ = {
                     lng / llflat.length,
                     parseInt(
                         activePoint.zoom ||
-                        L_.Map_.mapScaleZoom ||
-                        L_.Map_.map.getZoom()
+                            L_.Map_.mapScaleZoom ||
+                            L_.Map_.map.getZoom()
                     ),
                 ]
             }
@@ -2676,9 +2677,9 @@ const L_ = {
         if (!keepTime) {
             console.warn(
                 'Warning: The input for keep' +
-                trimType.capitalizeFirstLetter() +
-                'Time is invalid: ' +
-                keepTime
+                    trimType.capitalizeFirstLetter() +
+                    'Time is invalid: ' +
+                    keepTime
             )
             return
         }
@@ -2686,7 +2687,7 @@ const L_ = {
         if (!timePropPath) {
             console.warn(
                 'Warning: The input for timePropPath is invalid: ' +
-                timePropPath
+                    timePropPath
             )
             return
         }
@@ -2696,9 +2697,9 @@ const L_ = {
             if (isNaN(keepAfterAsDate.getTime())) {
                 console.warn(
                     'Warning: The input for keep' +
-                    trimType.capitalizeFirstLetter() +
-                    'Time is invalid: ' +
-                    keepTime
+                        trimType.capitalizeFirstLetter() +
+                        'Time is invalid: ' +
+                        keepTime
                 )
                 return
             }
@@ -2725,7 +2726,7 @@ const L_ = {
                         if (isNaN(layerDate.getTime())) {
                             console.warn(
                                 'Warning: The time for the layer is invalid: ' +
-                                layer.feature.properties[timePropPath]
+                                    layer.feature.properties[timePropPath]
                             )
                             continue
                         }
@@ -2749,7 +2750,7 @@ const L_ = {
         } else {
             console.warn(
                 'Warning: Unable to trim vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
         }
     },
@@ -2766,12 +2767,12 @@ const L_ = {
         if (Number.isNaN(Number(keepNum))) {
             console.warn(
                 'Warning: Unable to trim vector layer `' +
-                layerName +
-                '` as keep' +
-                keepType.capitalizeFirstLetter() +
-                'N == ' +
-                keepN +
-                ' and is not a valid integer'
+                    layerName +
+                    '` as keep' +
+                    keepType.capitalizeFirstLetter() +
+                    'N == ' +
+                    keepN +
+                    ' and is not a valid integer'
             )
             return
         }
@@ -2830,7 +2831,7 @@ const L_ = {
         } else {
             console.warn(
                 'Warning: Unable to trim vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
         }
     },
@@ -2841,10 +2842,10 @@ const L_ = {
         if (!time) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as time === ' +
-                time +
-                ' and is invalid'
+                    layerName +
+                    '` as time === ' +
+                    time +
+                    ' and is invalid'
             )
             return
         }
@@ -2858,10 +2859,10 @@ const L_ = {
         if (!timeProp) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as timeProp === ' +
-                timeProp +
-                ' and is invalid'
+                    layerName +
+                    '` as timeProp === ' +
+                    timeProp +
+                    ' and is invalid'
             )
             return
         }
@@ -2870,10 +2871,10 @@ const L_ = {
         if (Number.isNaN(Number(trimNum))) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as trimN == ' +
-                trimN +
-                ' and is not a valid integer'
+                    layerName +
+                    '` as trimN == ' +
+                    trimN +
+                    ' and is not a valid integer'
             )
             return
         }
@@ -2882,10 +2883,10 @@ const L_ = {
         if (!TRIM_DIRECTION.includes(startOrEnd)) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as startOrEnd == ' +
-                startOrEnd +
-                ' and is not a valid input value'
+                    layerName +
+                    '` as startOrEnd == ' +
+                    startOrEnd +
+                    ' and is not a valid input value'
             )
             return
         }
@@ -2893,10 +2894,10 @@ const L_ = {
         if (!time) {
             console.warn(
                 'Warning: Unable to trim the LineString in vector layer `' +
-                layerName +
-                '` as startOrEnd == ' +
-                startOrEnd +
-                ' and is not a valid input value'
+                    layerName +
+                    '` as startOrEnd == ' +
+                    startOrEnd +
+                    ' and is not a valid input value'
             )
             return
         }
@@ -2915,8 +2916,8 @@ const L_ = {
             if (findNonLineString.length > 0) {
                 console.warn(
                     'Warning: Unable to trim the vector layer `' +
-                    layerName +
-                    '` as the features contain geometry that is not LineString'
+                        layerName +
+                        '` as the features contain geometry that is not LineString'
                 )
                 return
             }
@@ -2947,10 +2948,10 @@ const L_ = {
                         if (!feature.properties.hasOwnProperty(timeProp)) {
                             console.warn(
                                 'Warning: Unable to trim the vector layer `' +
-                                layerName +
-                                "` as the the feature's properties object is missing the `" +
-                                timeProp +
-                                '` key'
+                                    layerName +
+                                    "` as the the feature's properties object is missing the `" +
+                                    timeProp +
+                                    '` key'
                             )
                             return
                         }
@@ -2995,10 +2996,10 @@ const L_ = {
                         if (!feature.properties.hasOwnProperty(timeProp)) {
                             console.warn(
                                 'Warning: Unable to trim the vector layer `' +
-                                layerName +
-                                "` as the the feature's properties object is missing the key `" +
-                                timeProp +
-                                '` for the end time'
+                                    layerName +
+                                    "` as the the feature's properties object is missing the key `" +
+                                    timeProp +
+                                    '` for the end time'
                             )
                             return
                         }
@@ -3038,15 +3039,15 @@ const L_ = {
             } else {
                 console.warn(
                     'Warning: Unable to trim the vector layer `' +
-                    layerName +
-                    '` as the layer contains no features'
+                        layerName +
+                        '` as the layer contains no features'
                 )
                 return
             }
         } else {
             console.warn(
                 'Warning: Unable to trim vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
         }
     },
@@ -3057,9 +3058,9 @@ const L_ = {
         if (!inputData) {
             console.warn(
                 'Warning: Unable to append to vector layer `' +
-                layerName +
-                '` as inputData is invalid: ' +
-                JSON.stringify(inputData, null, 4)
+                    layerName +
+                    '` as inputData is invalid: ' +
+                    JSON.stringify(inputData, null, 4)
             )
             return false
         }
@@ -3068,11 +3069,11 @@ const L_ = {
         if (!inputData.properties.hasOwnProperty(timeProp)) {
             console.warn(
                 'Warning: Unable to append to the vector layer `' +
-                layerName +
-                '` as timeProp === ' +
-                timeProp +
-                ' and does not exist as a property in inputData: ' +
-                JSON.stringify(lastFeature, null, 4)
+                    layerName +
+                    '` as timeProp === ' +
+                    timeProp +
+                    ' and does not exist as a property in inputData: ' +
+                    JSON.stringify(lastFeature, null, 4)
             )
             return false
         }
@@ -3096,9 +3097,9 @@ const L_ = {
                 if (lastFeature.geometry.type !== 'LineString') {
                     console.warn(
                         'Warning: Unable to append to the vector layer `' +
-                        layerName +
-                        '` as the feature is not a LineStringfeature: ' +
-                        JSON.stringify(lastFeature, null, 4)
+                            layerName +
+                            '` as the feature is not a LineStringfeature: ' +
+                            JSON.stringify(lastFeature, null, 4)
                     )
                     return false
                 }
@@ -3107,11 +3108,11 @@ const L_ = {
                 if (!lastFeature.properties.hasOwnProperty(timeProp)) {
                     console.warn(
                         'Warning: Unable to append to the vector layer `' +
-                        layerName +
-                        '` as timeProp === ' +
-                        timeProp +
-                        ' and does not exist as a property in the feature: ' +
-                        JSON.stringify(lastFeature, null, 4)
+                            layerName +
+                            '` as timeProp === ' +
+                            timeProp +
+                            ' and does not exist as a property in the feature: ' +
+                            JSON.stringify(lastFeature, null, 4)
                     )
                     return
                 }
@@ -3120,9 +3121,9 @@ const L_ = {
                     if (inputData.geometry.type !== 'LineString') {
                         console.warn(
                             'Warning: Unable to append to vector layer `' +
-                            layerName +
-                            "` as inputData has the wrong geometry type (must be of type 'LineString'): " +
-                            JSON.stringify(inputData, null, 4)
+                                layerName +
+                                "` as inputData has the wrong geometry type (must be of type 'LineString'): " +
+                                JSON.stringify(inputData, null, 4)
                         )
                         return false
                     }
@@ -3139,9 +3140,9 @@ const L_ = {
                 } else {
                     console.warn(
                         'Warning: Unable to append to vector layer `' +
-                        layerName +
-                        "` as inputData has the wrong type (must be of type 'Feature'): " +
-                        JSON.stringify(inputData, null, 4)
+                            layerName +
+                            "` as inputData has the wrong type (must be of type 'Feature'): " +
+                            JSON.stringify(inputData, null, 4)
                     )
                     return false
                 }
@@ -3159,7 +3160,7 @@ const L_ = {
                     console.log(e)
                     console.warn(
                         'Warning: Unable to append LineString to layer as the layer or input data is invalid: ' +
-                        layerName
+                            layerName
                     )
                     return false
                 }
@@ -3176,15 +3177,15 @@ const L_ = {
             } else {
                 console.warn(
                     'Warning: Unable to append to the vector layer `' +
-                    layerName +
-                    '` as the layer contains no features'
+                        layerName +
+                        '` as the layer contains no features'
                 )
                 return false
             }
         } else {
             console.warn(
                 'Warning: Unable to append to vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
             return false
         }
@@ -3210,7 +3211,7 @@ const L_ = {
                 console.log(e)
                 console.warn(
                     'Warning: Unable to update vector layer as the layer or input data is invalid: ' +
-                    layerName
+                        layerName
                 )
                 return false
             }
@@ -3220,7 +3221,7 @@ const L_ = {
         } else {
             console.warn(
                 'Warning: Unable to update vector layer as it does not exist: ' +
-                layerName
+                    layerName
             )
             return false
         }
@@ -3284,8 +3285,8 @@ const L_ = {
                             if (sub === 'image_overlays') {
                                 subUpdateLayers[sub].layer.setZIndex(
                                     L_._layersOrdered.length +
-                                    1 -
-                                    L_._layersOrdered.indexOf(layerName)
+                                        1 -
+                                        L_._layersOrdered.indexOf(layerName)
                                 )
                             }
                         }
@@ -3362,9 +3363,8 @@ const L_ = {
             await L_.removeLayerFromLayersData(layerName)
         }
 
-        // Notify listeners that the layer list changed so they can rebuild
-        // (e.g. the Layers panel). Decoupled — works in both classic and modern
-        // layouts and lets any subscriber react.
+        // Notify subscribers (e.g. the Layers panel) that the layer list
+        // changed, so they rebuild. Works in classic and modern layouts.
         if (window.mmgisAPI) {
             window.mmgisAPI.emit('layers:listChanged')
         }
@@ -3837,7 +3837,7 @@ const L_ = {
             if (
                 typeof props[p] === 'string' &&
                 props[p].toLowerCase().match(/\.(jpeg|jpg|gif|png|xml)$/) !=
-                null
+                    null
             ) {
                 let url = props[p]
                 const isGif = url.toLowerCase().match(/\.gif$/) != null
