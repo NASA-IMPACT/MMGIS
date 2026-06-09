@@ -10,5 +10,14 @@
     "separatedTool": true,
     "paths": {
         "AddTempLayerTool": "essence/Tools/AddTempLayer/AddTempLayerTool"
+    },
+    "metadata": {
+        "icon": "add",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": ["left", "right"],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 300,
+        "height": 0
     }
 }
