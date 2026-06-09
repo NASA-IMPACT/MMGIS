@@ -71,12 +71,17 @@ export function emptyLayers(
 
 /**
  * histogram is [counts, edges] with `edges.length === counts.length + 1`.
- * Returns one bin per count, labeled at the bin midpoint.
+ * Returns one bin per count, labeled at the bin midpoint. Returns an empty
+ * list when the input is missing or malformed (e.g. a partially-populated
+ * stats response) so a single bad payload doesn't crash the whole card.
  */
 export function buildHistogramBins(
-    histogram: [number[], number[]]
+    histogram: [number[], number[]] | null | undefined
 ): HistBin[] {
+    if (!histogram) return []
     const [counts, edges] = histogram
+    if (!Array.isArray(counts) || !Array.isArray(edges)) return []
+    if (edges.length < counts.length + 1) return []
     return counts.map((count, i) => {
         const lo = edges[i]
         const hi = edges[i + 1]

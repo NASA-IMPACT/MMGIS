@@ -17,10 +17,9 @@ import {
 export interface ChartComponentProps {
     analysisData?: AnalysisData | null
     onClose?: () => void
-    onExit?: () => void
 }
 
-export function ChartComponent({ analysisData, onClose, onExit }: ChartComponentProps) {
+export function ChartComponent({ analysisData, onClose }: ChartComponentProps) {
     const cards = cardsFromAnalysisData(analysisData)
     const empties = emptyLayers(analysisData)
     const isIdle = !analysisData
@@ -30,7 +29,7 @@ export function ChartComponent({ analysisData, onClose, onExit }: ChartComponent
             <header className="chart-tool__header">
                 <h2 className="chart-tool__title">
                     <i className="mdi mdi-chart-bar chart-tool__title-icon" aria-hidden="true" />
-                    <span>Analyze areas</span>
+                    <span>Analysis results</span>
                 </h2>
                 {onClose && (
                     <button
@@ -44,7 +43,7 @@ export function ChartComponent({ analysisData, onClose, onExit }: ChartComponent
                 )}
             </header>
 
-            <div className="chart-tool__body">
+            <div className="chart-tool__body" aria-live="polite">
                 {isIdle && (
                     <p className="chart-tool__placeholder">
                         Draw an area on the map and click <strong>Analyze area</strong> to see statistics here.
@@ -53,16 +52,6 @@ export function ChartComponent({ analysisData, onClose, onExit }: ChartComponent
 
                 {!isIdle && (
                     <>
-                        {onExit && (
-                            <button
-                                type="button"
-                                className="chart-tool__exit"
-                                onClick={onExit}
-                            >
-                                Exit analysis
-                            </button>
-                        )}
-
                         {cards.length === 0 && empties.length === 0 && (
                             <p className="chart-tool__placeholder">
                                 No analysis-supported layers are visible.
@@ -148,10 +137,11 @@ function EmptyCard({ layerName }: { layerName: string }) {
 function Histogram({ stats }: { stats: AssetStats }) {
     const canvasRef = useRef<HTMLCanvasElement>(null)
     const chartRef = useRef<ChartJS | null>(null)
+    const bins = buildHistogramBins(stats.histogram)
 
     useEffect(() => {
         const canvas = canvasRef.current
-        if (!canvas) return
+        if (!canvas || bins.length === 0) return
 
         const styles = getComputedStyle(canvas)
         const themeVar = (name: string, fallback: string) =>
@@ -159,8 +149,6 @@ function Histogram({ stats }: { stats: AssetStats }) {
         const accent = themeVar('--chart-accent', '#137480')
         const grid = themeVar('--chart-border', '#dfe1e2')
         const muted = themeVar('--chart-fg-muted', '#565c65')
-
-        const bins = buildHistogramBins(stats.histogram)
 
         chartRef.current = new ChartJS(canvas, {
             type: 'bar',
@@ -208,7 +196,9 @@ function Histogram({ stats }: { stats: AssetStats }) {
             chartRef.current?.destroy()
             chartRef.current = null
         }
-    }, [stats])
+    }, [stats, bins])
+
+    if (bins.length === 0) return null
 
     return (
         <div className="chart-tool__histogram">
