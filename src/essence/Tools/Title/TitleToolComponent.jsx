@@ -1,6 +1,18 @@
 import React from 'react'
 import './TitleTool.css'
 
+const PLUGIN_ID = 'title'
+
+// Resolve this plugin's scoped mmgisAPI once. forPlugin() has a side effect
+// (it registers a getVars provider), so we avoid calling it on every click.
+let _api = null
+const getApi = () => {
+    if (!_api && window.mmgisAPI?.forPlugin) {
+        _api = window.mmgisAPI.forPlugin(PLUGIN_ID)
+    }
+    return _api
+}
+
 /**
  * TitleToolComponent - React component for displaying mission title and logo
  *
@@ -13,7 +25,8 @@ import './TitleTool.css'
  * @param {boolean} props.showLogo - Whether to show the logo/icon (default: true)
  * @param {boolean} props.showTitleText - Whether to show the title text (default: true)
  * @param {string} props.actionButtonText - Text to display on the action button (optional)
- * @param {string} props.actionButtonLink - URL or event name for action button (optional)
+ * @param {string} props.actionButtonLink - http(s) URL (opened in a new tab), or a
+ *   bus event name emitted under this plugin's namespace as 'plugin:title:<value>' (optional)
  */
 const TitleToolComponent = ({
     titleText,
@@ -32,15 +45,11 @@ const TitleToolComponent = ({
             // Open external URL in new tab
             window.open(actionButtonLink, '_blank', 'noopener,noreferrer')
         } else {
-            // Emit MMGIS event
-            window.dispatchEvent(
-                new CustomEvent('mmgis-event', {
-                    detail: {
-                        event: actionButtonLink,
-                        source: 'TitleTool',
-                    },
-                })
-            )
+            // Otherwise treat the link as a bus event name and emit it under
+            // this plugin's namespace, i.e. 'plugin:title:<actionButtonLink>'.
+            // A consumer plugin subscribes to that to react (e.g. open AOI).
+            const api = getApi()
+            if (api) api.emit(actionButtonLink)
         }
     }
 
