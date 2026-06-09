@@ -3,6 +3,9 @@
 .env
 nul
 
+# mmgis-deployment skill: per-deployment runtime files (server log)
+.mmgis/
+
 /node_modules/
 /dist/
 /ssl/*
@@ -51,7 +54,8 @@ sessions
 
 .mcp.json
 .serena
-.claude
+.claude/*
+!.claude/skills/
 .playwright-mcp
 
 # Playwright Test Artifacts
