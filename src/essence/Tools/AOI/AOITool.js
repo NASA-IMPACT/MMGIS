@@ -33,7 +33,7 @@
  */
 
 import React from 'react'
-import { render, unmountComponentAtNode } from 'react-dom'
+import { createRoot } from 'react-dom/client'
 
 import AOIComponent from './AOIComponent'
 import AOITooltip from './AOITooltip'
@@ -110,6 +110,7 @@ const AOITool = {
     made: false,
     MMGISInterface: null,
     _root: null,
+    _reactRoot: null,
     _state: initialState(),
     _cleanups: [],
     _api: null,
@@ -202,10 +203,11 @@ const AOITool = {
         this._hideInspectBoundaries()
         this._hideTooltip()
 
-        if (this._root) {
-            unmountComponentAtNode(this._root)
-            this._root = null
+        if (this._reactRoot) {
+            this._reactRoot.unmount()
+            this._reactRoot = null
         }
+        this._root = null
 
         if (this.MMGISInterface) {
             this.MMGISInterface.separateFromMMGIS()
@@ -286,8 +288,8 @@ const AOITool = {
     },
 
     _render() {
-        if (!this._root) return
-        render(
+        if (!this._reactRoot) return
+        this._reactRoot.render(
             React.createElement(AOIComponent, {
                 mode: this._state.mode,
                 onModeChange: (mode) => this._onModeChange(mode),
@@ -320,8 +322,7 @@ const AOITool = {
                 onDismissAnalysisError: () => this._dismissAnalysisError(),
 
                 onClose: () => this._onClose(),
-            }),
-            this._root
+            })
         )
     },
 
@@ -595,17 +596,17 @@ const AOITool = {
             id: TOOLTIP_OVERLAY_ID,
             latlng,
             mount: (node) => {
-                render(
+                const tooltipRoot = createRoot(node)
+                tooltipRoot.render(
                     React.createElement(AOITooltip, {
                         label,
                         position: { x: 0, y: 0 },
                         analyzeEnabled,
                         onAnalyze: () => this._onAnalyze(),
                         onCancel: () => this._onCancel(),
-                    }),
-                    node
+                    })
                 )
-                return () => unmountComponentAtNode(node)
+                return () => tooltipRoot.unmount()
             },
         }).catch((err) => console.warn('[AOI] addOverlay failed', err))
     },
@@ -636,6 +637,7 @@ function interfaceWithMMGIS(tool) {
     root.className = 'aoi-tool-host'
     document.body.appendChild(root)
     tool._root = root
+    tool._reactRoot = createRoot(root)
 
     this.separateFromMMGIS = function () {
         if (tool._root && tool._root.parentNode) {
