@@ -1,0 +1,76 @@
+.blocks-aoi-search {
+    position: relative;
+    display: block;
+
+    &__input {
+        width: 100%;
+        height: 36px;
+        padding: 0 var(--theme-spacing-3, 24px) 0 var(--theme-spacing-105, 12px);
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-md, 4px);
+        background: var(--theme-color-white, #ffffff);
+        color: var(--theme-color-ink, #1b1b1b);
+        font: inherit;
+
+        &:focus {
+            outline: 2px solid var(--theme-color-primary, #137480);
+            outline-offset: -1px;
+        }
+
+        &:disabled {
+            background: var(--theme-color-base-lightest, #f6f7f8);
+            color: var(--theme-color-base-dark, #565c65);
+            cursor: not-allowed;
+        }
+    }
+
+    &__icon {
+        position: absolute;
+        right: var(--theme-spacing-105, 12px);
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 16px;
+        line-height: 1;
+        color: var(--theme-color-base-dark, #565c65);
+        pointer-events: none;
+    }
+
+    &__results {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: 220px;
+        overflow-y: auto;
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-md, 4px);
+    }
+
+    &__result {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
+        background: transparent;
+        border: 0;
+        border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        color: var(--theme-color-ink, #1b1b1b);
+        cursor: pointer;
+        text-align: left;
+        font: inherit;
+
+        &:last-child {
+            border-bottom: 0;
+        }
+
+        &:hover {
+            background: var(--theme-color-base-lightest, #f6f7f8);
+        }
+    }
+
+    &__result-kind {
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: var(--theme-font-size-2xs, 13px);
+        text-transform: capitalize;
+    }
+}

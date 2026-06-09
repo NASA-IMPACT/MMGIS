@@ -18,6 +18,10 @@
     "paths": {
         "AOITool": "essence/Tools/AOI/AOITool"
     },
+    "metadata": {
+        "icon": "selection-drag",
+        "modernLayoutSupport": true
+    },
     "config": {
         "rows": [
             {
