@@ -1,6 +1,7 @@
 const router = require("./routes/configs");
 const triggerWebhooks = require("../Webhooks/processes/triggerwebhooks.js");
 const configurePackageJson = require("../../../configure/package.json");
+const { MODE } = require("../Utils/deploymentMode");
 
 let setup = {
   //Once the app initializes
@@ -39,6 +40,7 @@ let setup = {
             WITH_TIPG: process.env.WITH_TIPG,
             WITH_TITILER: process.env.WITH_TITILER,
             WITH_TITILER_PGSTAC: process.env.WITH_TITILER_PGSTAC,
+            DEPLOYMENT_MODE: MODE,
           });
         }
       );
