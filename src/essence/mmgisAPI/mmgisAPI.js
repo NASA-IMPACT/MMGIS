@@ -875,19 +875,23 @@ var mmgisAPI = {
     // ============ PLUGIN-SCOPED API ============
 
     /**
-     * Get a plugin-scoped API for emitting events and providing handlers.
-     * Automatically prefixes names with 'plugin:{pluginId}:'.
+     * Get a plugin-scoped API for emitting events, providing handlers, and
+     * reading the plugin's tool configuration. Event/handler names are
+     * automatically prefixed with 'plugin:{pluginId}:'.
      *
      * For subscribing (on) or requesting (request), use mmgisAPI directly with full paths.
      *
      * @param {string} pluginId - Unique plugin identifier (e.g., 'draw', 'info', 'layerManager')
-     * @returns {Object} Scoped API with emit and provide methods
+     * @returns {Object} Scoped API with emit, provide, and getVars methods
      * @example
      * const api = mmgisAPI.forPlugin('draw');
      *
      * // Emitting/providing (auto-prefixed)
      * api.provide('getActiveFeature', () => data);  // -> 'plugin:draw:getActiveFeature'
      * api.emit('featureUpdated', data);             // -> 'plugin:draw:featureUpdated'
+     *
+     * // Reading this plugin's configured tool variables
+     * const vars = api.getVars();                    // -> L_.getToolVars('draw') || {}
      *
      * // Subscribing/requesting (use mmgisAPI directly)
      * mmgisAPI.on('layer:visibilityChange', handler);
@@ -896,9 +900,17 @@ var mmgisAPI = {
     forPlugin(pluginId) {
         const prefix = `plugin:${pluginId}:`
 
+        // Auto-register this plugin's tool variables as a queryable provider so
+        // any consumer (including sandboxed marketplace plugins, where direct
+        // method calls aren't possible) can read it via the standard request
+        // pattern: `mmgisAPI.request('plugin:{id}:getVars')`. The scoped
+        // `getVars()` below is a sync convenience for the plugin's own code.
+        mmgisAPI.provide(`${prefix}getVars`, () => L_.getToolVars(pluginId) || {})
+
         return {
             emit: (event, data) => mmgisAPI.emit(prefix + event, data),
             provide: (name, handler) => mmgisAPI.provide(prefix + name, handler),
+            getVars: () => L_.getToolVars(pluginId) || {},
             pluginId,
             prefix,
         }
