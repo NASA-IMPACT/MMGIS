@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const logger = require("./logger");
+const { isLean } = require("./Backend/Utils/deploymentMode");
 
 function updateTools() {
   let tools = {};
@@ -37,6 +38,9 @@ function updateTools() {
       );
       return;
     }
+
+    // Lean deployments exclude the Draw tool entirely
+    if (isLean() && items[i].name === "Draw") continue;
 
     if (isDir && items[i].name[0] != "_" && items[i].name[0] != ".") {
       try {
