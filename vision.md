@@ -5,7 +5,7 @@
 
 ## Why this exists
 
-NASA science teams need custom spatial visualization tools to showcase their data products — potentially 40+ new tools a year. Today each one is built from scratch: expensive, slow, and dependent on specialized React/geospatial expertise. That is a major, recurring cost in development and maintenance. The alternative — general-purpose tools (Worldview, Giovanni) — lacks the domain-specific features Earth-science workflows need.
+NASA science teams need custom spatial visualization tools to showcase their data products — potentially 40+ new tools a year. Today each one is built from scratch: expensive, slow, and dependent on specialized React/geospatial expertise. That is a major, recurring cost in development and maintenance.
 
 The fix: let **non-coders assemble custom spatial visualization apps from reusable plugins**, instead of having developers hand-build each tool. Developers build plugins once; many teams reuse them.
 
@@ -23,7 +23,7 @@ Feeding both is a **plugin marketplace**: developers build plugins, push them, a
 - **Assemble, don't code.** A non-coder selects a plugin or set of plugins, places them in the layout, and wires them together — what you see is what you get.
 - **Plugins connect to each other.** A plugin's output/data-type connects to another plugin's input. Example: a *datetime* plugin feeds a *statistics* plugin — select an area of interest and a datetime, and it calls an API to fetch statistics for that selection.
 - **Layout freedom.** The builder decides where plugins live — left, right, bottom, panels arranged however they want — rather than every plugin having one fixed slot. Some plugins will declare orientation/placement restrictions, and that's fine; those constraints belong to the plugin.
-- **Plugins are lightweight and decoupled.** The core exposes an API; plugins build on top of it without modifying the core. Any plugin can talk to any compatible core; two plugins that do similar things can be swapped without core changes. Communication is message/event-based.
+- **Plugins are lightweight and decoupled.** The core exposes an API; plugins build on top of it without modifying the core. Two plugins that do similar things can be swapped without core changes. Communication is message/event-based.
 
 ## Relationship to MMGIS
 
