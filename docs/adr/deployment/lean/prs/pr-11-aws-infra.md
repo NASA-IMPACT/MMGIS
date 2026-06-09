@@ -1,8 +1,8 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`./00-overview.md`](./00-overview.md). Draft; verify against current code before acting.
 
 # PR 11 — AWS infrastructure: ECS, IAM, CloudFront, GitHub Actions
 
-**Maps to:** Phase 8. **Depends on:** PR 8 (publish task). **Blocks:** PR 10 (provides the S3 asset bucket).
+**Depends on:** PR 8 (publish task). **Blocks:** PR 10 (provides the S3 asset bucket).
 
 **Goal:** Land the lean deployment's AWS recipes — ECS task definitions, two-roles-per-task least-privilege IAM, the admin CloudFront config, the password-gate CloudFront Function reference source, the `deploy-lean.yml` pipeline, the `trust proxy 1→2` fix, and the S3 asset bucket (plus its `PutObject` IAM) that PR 10's image upload depends on.
 
@@ -22,7 +22,7 @@ A quick word on storage, because there are **two different kinds of bucket** in 
 |---|---|---|
 | `infrastructure/` *(new dir)* | New top-level directory for the VEDA AWS deployment recipes | **Confirmed new** — no `infrastructure/` exists today. Upstream/full deployment doesn't touch it. |
 | `.github/workflows/deploy-lean.yml` *(new)* | Lean deploy pipeline: build image → push to ECR → trigger ECS Express Mode rollout. Reuse action versions/patterns from `docker-build.yml` | The four existing workflows are confirmed: `docker-build.yml`, `bump-version.yml`, `playwright-tests.yml`, `security-scan.yml`. Nothing moves; this lands alongside. Trigger on a release tag/branch (existing `docker-build.yml` triggers on push branches + tags + `release`). |
-| `infrastructure/ecs/admin-task.json` *(new)* | Admin task definition. `environment[]` carries `MMGIS_DEPLOYMENT_MODE=lean` + `DISABLE_FIRST_SIGNUP=true`; `secrets[]` injects DB URL + `SESSION_SECRET` + `SEED_SUPERADMIN_USERNAME` + `SEED_SUPERADMIN_PASSWORD` from Secrets Manager. References admin **execution** role + admin **task** role separately | Mode is a **runtime ECS env var**, not a Dockerfile build-arg (see Discrepancies). Must run `build:themes`-baked image (theme assets). The seed creds + `DISABLE_FIRST_SIGNUP` close the seam PR 12 depends on (superadmin seed + first-signup gate); without them PR 12's hardening is inert on a fresh lean deploy. Publish task def does **not** need these. |
+| `infrastructure/ecs/admin-task.json` *(new)* | Admin task definition. `environment[]` carries `MMGIS_DEPLOYMENT_MODE=lean` + `DISABLE_FIRST_SIGNUP=true`; `secrets[]` injects DB URL + `SESSION_SECRET` + `SEED_SUPERADMIN_USERNAME` + `SEED_SUPERADMIN_PASSWORD` from Secrets Manager. References admin **execution** role + admin **task** role separately | Mode is a **runtime ECS env var**, not a Dockerfile build-arg (see notes below). Must run `build:themes`-baked image (theme assets). The seed creds + `DISABLE_FIRST_SIGNUP` close the seam PR 12 depends on (superadmin seed + first-signup gate); without them PR 12's hardening is inert on a fresh lean deploy. Publish task def does **not** need these. |
 | `infrastructure/ecs/publish-task.json` *(new)* | Publish task definition. **Same image** as admin, entrypoint `node scripts/publish-static.js`. References its own execution role + its own (broader) task role | Spawned per publish by the admin via `RunTask` (PR 8). |
 | `infrastructure/iam/admin-task-execution-role.json` *(new)* | ECS-side pull/log/secret-inject perms | ECR pull (`GetAuthorizationToken`, `BatchCheckLayerAvailability`, `GetDownloadUrlForLayer`, `BatchGetImage`), `logs:CreateLogStream`/`PutLogEvents`, `secretsmanager:GetSecretValue` on the DB-creds + session-secret secret ARNs only. |
 | `infrastructure/iam/admin-task-role.json` *(new)* | Admin runtime SDK perms (scoped) | `ecs:RunTask` on the publish task-def ARN; `iam:PassRole` on **both** publish roles (PassRole gotcha — see steps); `cloudformation:DescribeStacks`/`DeleteStack` on `mmgis-dashboard-*`; `s3:DeleteObject`/`ListBucket` on `mmgis-dashboard-*`; **plus** `s3:PutObject` on the asset bucket (PR 10 dependency). |
@@ -33,7 +33,7 @@ A quick word on storage, because there are **two different kinds of bucket** in 
 | `infrastructure/s3-asset-bucket.json` *(new)* | Asset bucket definition (CFN snippet or provisioning doc) for admin-uploaded static mission assets | One shared bucket. **This PR provisions it; PR 10 repoints upload code to it.** Served same-origin under `/assets/…` by the admin CloudFront `/assets/*` behavior (added here). Assets carry **no special auth** — they inherit the serving distribution's gate. |
 | `scripts/server.js` (L510) | `app.set("trust proxy", 1)` → `2` | **Verified:** line 510 currently reads `app.set("trust proxy", 1)`. Two hops now (CloudFront→ALB→ECS). Wrong value breaks `Secure` cookies, rate-limiting, and `X-Forwarded-For`. |
 | `Dockerfile` | **No edit** | **Verified single-stage** (`FROM node:20-slim`, micromamba install, `ARG WITH_STAC`). Mode flows via ECS `environment[]`. Do not add a build-arg or a second stage. |
-| `infrastructure/Dockerfile.lean` *(optional)* | Trimmed lean image: skip micromamba install + `adjacent-servers/` | **Defer** until image size is a real problem. Note: the `COPY adjacent-servers/` an earlier draft cites was **not found** in the current `Dockerfile`; only the micromamba install block is present — confirm the copy step's location before trimming. |
+| `infrastructure/Dockerfile.lean` *(optional)* | Trimmed lean image: skip micromamba install + `adjacent-servers/` | **Defer** until image size is a real problem. Note: there is no `COPY adjacent-servers/` in the current `Dockerfile` (only the micromamba install block) — confirm what pulls `adjacent-servers/` into the image before trimming. |
 
 ## Implementation steps
 
@@ -69,11 +69,11 @@ A quick word on storage, because there are **two different kinds of bucket** in 
 
 11. **`deploy-lean.yml`**: build the MMGIS image (including `build:themes`), push to ECR, register the new admin task-def revision, and let ECS Express Mode roll it out (see D1 note below — the workflow registers the revision and triggers the managed deployment rather than hand-rolling an ALB/target-group swap). Reuse action versions and auth patterns from `docker-build.yml`. Trigger on the release convention (tag or release branch).
 
-12. **Document prereqs** in the workflow/README: existing VPC + subnets, ACM cert, Secrets Manager entries (DB creds, session secret, dashboards-shared-password, and the superadmin seed creds `SEED_SUPERADMIN_USERNAME`/`SEED_SUPERADMIN_PASSWORD` that the admin task def injects for PR 12's seed), and the **outbound HTTPS egress** requirement — the admin fires `triggerWebhooks(...)` to external URLs on Config saves and Dashboards Publish/Update/Delete; a private-subnet task needs a NAT gateway or VPC endpoints or webhooks hang and time out silently. Document the dual-deployment posture (`full` = upstream default; `lean` = this workflow).
+12. **Document prereqs** in the workflow/README: existing VPC + subnets, the **admin subdomain/hostname + its ACM cert** (ADR constraint 7 — the admin is reached at a dedicated subdomain or its own `.gov`; the DNS record and cert are **operator-provided / out-of-band**, not created by `infrastructure/`, which only references the cert ARN and the CloudFront alias), Secrets Manager entries (DB creds, session secret, dashboards-shared-password, and the superadmin seed creds `SEED_SUPERADMIN_USERNAME`/`SEED_SUPERADMIN_PASSWORD` that the admin task def injects for PR 12's seed), and the **outbound HTTPS egress** requirement — the admin fires `triggerWebhooks(...)` to external URLs on Config saves and Dashboards Publish/Update/Delete; a private-subnet task needs a NAT gateway or VPC endpoints or webhooks hang and time out silently. Document the dual-deployment posture (`full` = upstream default; `lean` = this workflow).
 
-### D1 reconciliation — ECS Express Mode (decided 2026-06-05)
+### D1 — ECS Express Mode (decided 2026-06-05)
 
-The plan text predates D1 and says "update ECS service" generically, implying the team owns the ALB, target groups, and rollout. **D1 chose ECS Express Mode**, so AWS manages the ALB, the canary/rollout strategy, and scaling. Concretely:
+**D1 chose ECS Express Mode**, so AWS manages the ALB, the canary/rollout strategy, and scaling. Concretely:
 
 - **No** ALB, listener-rule, target-group, or scaling-policy definitions belong in `infrastructure/` — Express Mode owns them. The CloudFront admin config still points at the AWS-managed ALB endpoint Express Mode exposes.
 - `deploy-lean.yml` **registers a new task-def revision and triggers the Express-managed deployment**; it does not script a blue/green or target-group cutover.
@@ -92,9 +92,9 @@ The plan text predates D1 and says "update ECS service" generically, implying th
 - `git revert` the PR (removes `infrastructure/`, `deploy-lean.yml`, and the one-line `server.js` change). The `trust proxy` revert is the only code change and is inert outside the CloudFront-fronted deployment.
 - AWS resources: tear down the staging environment. Any dashboard stacks remain under the `mmgis-dashboard-*` prefix and are deleted via the admin Delete affordance or the AWS console. The asset bucket is removed with the environment; if it holds uploads (only after PR 10 lands), empty it first.
 
-## Discrepancies vs plan
+## Implementation notes & gotchas
 
-- **D1 (Express Mode) postdates the original planning.** An earlier draft said "update ECS service" and implied team-owned ALB/target-groups/scaling. Reconciled above: Express Mode owns the ALB/rollout/scaling, so `infrastructure/` defines **no** ALB/target-group/scaling resources, and `deploy-lean.yml` registers a task-def revision + triggers the managed deployment instead of scripting a cutover.
-- **Mode injection conflict resolved to runtime env var.** The plan flags that an earlier draft contradicted itself (build-arg vs env). This PR uses ECS `environment[]` only; `Dockerfile` is confirmed single-stage and gets no edit.
-- **`rds-db:connect` dropped** from the publish task role — code uses password auth (`DB_USER`/`DB_PASS` in `scripts/server.js`), so the RDS-IAM-auth action does not apply.
-- **`COPY adjacent-servers/` not found in `Dockerfile`.** An earlier draft's optional `Dockerfile.lean` trim cites skipping a `COPY adjacent-servers/`; the current `Dockerfile` shows the micromamba install block but no such copy line. Re-confirm what actually pulls `adjacent-servers/` into the image before authoring any lean trim. The optional trim is deferred regardless.
+- **ECS Express Mode (D1) owns the ALB/rollout/scaling.** So `infrastructure/` defines **no** ALB/target-group/scaling resources, and `deploy-lean.yml` registers a task-def revision + triggers the managed deployment rather than scripting a cutover.
+- **Mode injection = runtime ECS env var.** Set `MMGIS_DEPLOYMENT_MODE` via ECS `environment[]` only; `Dockerfile` stays single-stage and gets no edit (no build-arg).
+- **No `rds-db:connect`** on the publish task role — the code uses password auth (`DB_USER`/`DB_PASS` in `scripts/server.js`), so the RDS-IAM-auth action does not apply.
+- **No `COPY adjacent-servers/` in the `Dockerfile`** (only the micromamba install block). Re-confirm what actually pulls `adjacent-servers/` into the image before authoring any lean trim; the optional `Dockerfile.lean` trim is deferred regardless.

@@ -1,4 +1,4 @@
-This is an inventory of potential feature gaps resulting from a lean deployment. It should be treated as a starting point, not necessarily an authoritative list. In review, we should read through each, decide if they matter to us or whether they are already being implemented in a planned future plugin.
+> **Status: exploratory inventory, NOT a source of truth.** This catalogs potential feature gaps from a lean deployment so none is forgotten. The authoritative decisions live in [`adr.md`](./adr.md), [`api.md`](./api.md), and the per-PR docs in [`prs/`](./prs/) — where this doc and those disagree, those win. Lean's standing default for any gap below is **gate/hide it**, with the listed "escape hatch" reserved for a specific mission that actually needs it (built only when triggered, not speculatively).
 
 # Feature gaps in the lean deployment
 
@@ -62,13 +62,15 @@ Cases where the obvious answer is to hide or drop the unsupported sub-feature in
 
 ## Real architectural decisions
 
-Cases where the trade-offs are real and the choice affects how many missions are publishable.
+Cases where the trade-offs are real and the choice affects how many missions are publishable. **Lean default (decided 2026-06-09): gate/hide all three.** The lettered options below are retained as escape hatches for a specific mission that needs the capability — not as still-open choices. §1 and §2 default to hide-or-reference-external; §3 is handled by per-mission config discipline (see the rewritten §3).
 
 ### 1. Time-windowed layers (`_time_` URL convention)
 
 **What it does.** Layer URLs contain a `_time_` placeholder. The frontend's time slider substitutes a date; the admin's `Missions/` middleware resolves it to the closest-prior tile on disk. With `?composite=true`, sharp alpha-blends up to 100 time-tagged tiles in the requested window — most recent non-transparent pixel wins.
 
 **Why lean breaks it.** No `Missions/` middleware and no local data, so the substituted URL has nothing to answer it.
+
+**Lean default: A (hide).** Implemented at publish time per [PR 8](./prs/pr-08-publish-flow-backend.md) (force `config.time.enabled = false` when no resolvable time layer remains). B is the escape hatch for a mission that genuinely needs time-scrubbing.
 
 **Options:**
 
@@ -87,7 +89,9 @@ Cases where the trade-offs are real and the choice affects how many missions are
 
 **Why lean breaks it.** All three depend on the admin's Postgres + sidecar stack, and lean drops the Datasets and Geodatasets modules entirely. In a dashboard, every `geodatasets:`-prefixed layer fails to load (vector or vectortile), dataset-link popups silently lose joined fields, filters and aggregations 404, and any `/tipg/...` mission URL 404s.
 
-**The core decision is A vs B: where does the data live for a dashboard?** Both are principle-compatible — the `Missions/` settled-drops bullet already permits S3-baked content alongside externally hosted content. The choice is driven by data size, mission owner capacity, and bundle-budget. C and D are accommodations for the cases where neither A nor B applies cleanly.
+**Lean default: hide (D), with external hosting (B) as the per-mission escape hatch.** The `Datasets`/`Geodatasets` modules are gated out ([PR 3](./prs/pr-03-gate-datasets-geodatasets.md)) and the `datasets_*`/`geodatasets_*` dispatcher calls Drop ([PR 7](./prs/pr-07-static-frontend-dispatcher.md)), so by default these layers simply don't appear in a dashboard. A mission that needs the data points its layer URLs at an external OGC Features / vector-tile / CDN-JSON service (B); the publish flow performs no URL rewrite or bake. A and C (bake at publish) remain available but are not built by default.
+
+**The core decision (when a mission opts in) is A vs B: where does the data live for a dashboard?** Both are principle-compatible — the `Missions/` settled-drops bullet already permits S3-baked content alongside externally hosted content. The choice is driven by data size, mission owner capacity, and bundle-budget. C and D are accommodations for the cases where neither A nor B applies cleanly.
 
 **Core options:**
 
@@ -103,16 +107,26 @@ Cases where the trade-offs are real and the choice affects how many missions are
 
 ### 3. Plugin tools in dashboards
 
-**What it does (today).** `API/updateTools.js` codegen scans `src/essence/Tools/*` and any `*Plugin-Tools*` / `*Private-Tools*` sibling directories at build time, writes `src/pre/tools.js` with `import` statements per tool, and Webpack bundles them. The same path runs for both admin and dashboard builds. Plugin backends (`*Plugin-Backend*`) mount Express routes at admin boot.
+**The mechanism (clarified 2026-06-09).** `API/updateTools.js` is build-time codegen: it scans `src/essence/Tools/*` (plus any `*Plugin-Tools*` / `*Private-Tools*` siblings) and emits a static `import` for **every** tool into `src/pre/tools.js`, for both admin and dashboard builds. **But bundling ≠ rendering.** At runtime only the tools in a mission's `tools` list (where `on !== false`) are instantiated (`Layers_.js` builds `L_.tools`; `ToolController_`/`ToolControllerModern_` looks each up in the static `toolModules` map and calls `.make()`). A tool that's in the bundle but not selected by the mission is **dormant dead code — it never renders and causes no runtime error.**
 
-**Why lean breaks it.** The dashboard bundles every plugin tool present in the build tree — no opt-in/out flag exists. Plugin tools that depend on `calls.api(...)` against backend endpoints silently no-op in dashboard mode (the `SERVER != 'node'` guard at `src/pre/calls.js:169` calls the error callback and returns; many call sites pass no error handler). The tool button stays visible; clicks fire nothing. The same shape applies to plugin-driven layer URL prefixes like `api:tacticaltargets` (handled by a private plugin's `api/tactical/targets` endpoint) — layers using these URLs load as empty.
+**So the actual breakage scope is narrow:** a dashboard only malfunctions on tools its mission *actually selects* that depend on the admin backend or the `Missions/` filesystem (which don't exist in a dashboard). This is the same backend-coupling lean already handles for the older tools (Identifier/Measure/Shade — via per-call Drop/Reroute in [`api.md`](./api.md) plus per-mission config discipline). The newly-merged tools just add a few more instances:
 
-**Options:**
+| Tool | Static-dashboard verdict | Handling |
+|---|---|---|
+| **AOI** | Safe — boundary GeoJSON is webpack-bundled assets (the mission-relative config fields are dead code) | none needed |
+| **Chart** | Safe — event-bus only, no backend | none needed |
+| **FetchStats** | Safe **iff** the layer's `analysis.itemUrl` is external (raw `fetch` to `<itemUrl>/statistics`; same reroute shape as `getminmax`) | per-mission discipline: only configure it with an external `itemUrl` |
+| **Card** | Uploaded images resolve to `Missions/<mission>/…` → 404 in a dashboard | handled by **PR 10** (upload returns root-relative `/assets/…`, which `resolveImageUrl` passes through unchanged) + **PR 8** (asset copy into the dashboard bucket) |
+| **`api:tacticaltargets` layer URL** | Private-plugin layer prefix → loads empty in a dashboard | the `tactical_targets` dispatcher call Drops (api.md); the mission should not use that layer URL in lean |
 
-- **A. Add a `staticCompatible: true|false` flag in each tool's `config.json`.** Dashboard build path filters non-compatible tools out of `src/pre/tools.js`. Tool authors opt in explicitly.
-- **B. Hide tool buttons at runtime when `SERVER !== 'node'` and the tool declares backend dependence.** Relies on tool authors marking their tools honestly.
-- **C. Two build entrypoints.** `scripts/build.js` (admin) plus a new `scripts/build-static.js` that runs `updateTools` with a static-mode filter and writes a separate `src/pre/tools.static.js`. Cleanest separation; heaviest change.
-- **D. Status quo.** Plugin tools that don't work no-op silently; their UI remains. Mission owners avoid configuring them.
+**Lean decision: no new PR.** Because unselected tools are harmless and the only real breakage (Card uploaded images) is already covered by PR 10 + PR 8, lean relies on the same per-mission config discipline it already applies to Identifier/Measure/Shade — don't select a backend-coupled tool unless its data is reachable externally; author Card images as uploads (→ `/assets/…`) or absolute URLs. A `staticCompatible` flag + build-time filter (the old option A below) is **not** built for lean.
+
+**The retained options (for reference / future):**
+
+- **A. Add a `staticCompatible: true|false` flag in each tool's `config.json`,** filtered out of the dashboard build. This is the right shape for the *vision's* true-decoupled-plugin overhaul (Overhaul #1), but that is a separate post-lean effort, not deployment scope.
+- **B.** Hide tool buttons at runtime when `SERVER !== 'node'` and the tool declares backend dependence.
+- **C.** Two build entrypoints (`build.js` + a static `build-static.js`). Cleanest separation, heaviest change.
+- **D. Status quo + per-mission discipline** — the lean default described above.
 
 ---
 

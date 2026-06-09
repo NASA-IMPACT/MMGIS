@@ -17,27 +17,27 @@ This file covers two related but distinct surfaces:
 
 | Mount | Handling | One-line why |
 |---|---|---|
-| `/api/users` | **Keep** (disable `first_signup`) | Admin auth. `first_signup` is a security gap — gated by `DISABLE_FIRST_SIGNUP=true` per Phase 9. |
+| `/api/users` | **Keep** (disable `first_signup`) | Admin auth. `first_signup` is a security gap — gated by `DISABLE_FIRST_SIGNUP=true` per PR 12. |
 | `/api/accounts` | **Keep** | Admin user CRUD. |
 | `/api/longtermtoken` | **Keep** | Bearer tokens for admin scripting against the lean admin API. |
 | `/api/configure` | **Keep** | Mission config CRUD — the admin's purpose. |
-| `/api/datasets` | **Gate (whole module)** | 100% local Postgres; no uploads in lean = no data to read. Per Phase 3. |
-| `/api/geodatasets` | **Gate (whole module)** | 100% local PostGIS; same logic as Datasets. Per Phase 3. |
+| `/api/datasets` | **Gate (whole module)** | 100% local Postgres; no uploads in lean = no data to read. Per PR 3. |
+| `/api/geodatasets` | **Gate (whole module)** | 100% local PostGIS; same logic as Datasets. Per PR 3. |
 | `/api/draw` | **Gate (whole module)** | Draw is gated out in lean (D2) — router not mounted, no Draw in admin or dashboards. |
 | `/api/files` | **Gate (whole module)** | Draw file-metadata routes; gated out with Draw (D2). |
 | `/api/stac` | **Gate (whole module)** | Proxies the STAC sidecar; sidecar not deployed in lean. |
 | `/api/utils` | **Partial** | See breakdown below. |
 | `/api/webhooks` | **Keep** | Outbound-event channel: lets external systems react to Config (and future Dashboards) events. Used by features lean keeps. |
 | `/api/testwebhooks` | **Keep** (dev-only) | Already gated on `NODE_ENV === 'development'` regardless of deployment mode. |
-| `/api/shortener` | **Gate (whole module)** | Already gated per Phase 5. |
-| `API/Backend/Upload` (`createUploadRouter`, #103) | **Keep — repoint to S3** | `setup.js` mounts a single admin route (`/api/upload`, `ensureAdmin`); `createUploadRouter` is the factory behind it. In lean its storage backend swaps from `Missions/<mission>/...` on disk to the S3 asset bucket, returning a root-relative `/assets/…` path (served same-origin per deployment; see PR 10). Image-only / 5 MB / path-traversal validators unchanged; the validator allows `image/svg+xml` — intentional (trusted admins). Depends on #103 merging. |
+| `/api/shortener` | **Gate (whole module)** | Already gated per PR 5. |
+| `API/Backend/Upload` (`createUploadRouter`, #103) | **Keep — repoint to S3** | `setup.js` mounts a single admin route (`/api/upload`, `ensureAdmin`); `createUploadRouter` is the factory behind it. In lean its storage backend swaps from `Missions/<mission>/...` on disk to the S3 asset bucket, returning a root-relative `/assets/…` path (served same-origin per deployment; see PR 10). Image-only / 5 MB / path-traversal validators unchanged; the validator allows `image/svg+xml` — intentional (trusted admins). The #103 `Upload` module is present on the branch. |
 
 Non-`/api/` mounts worth noting:
 
 | Mount | Handling | Why |
 |---|---|---|
 | `/configure` | **Keep** | Renders the Configure SPA shell; admin-gated. |
-| `/Missions/*` | **Gate** | Static mission-asset *serving* middleware; gone in lean per Phase 4. Uploaded assets are served from the S3 asset bucket / CloudFront instead (see `Upload` row above). |
+| `/Missions/*` | **Gate** | Static mission-asset *serving* middleware; gone in lean per PR 5. Uploaded assets are served from the S3 asset bucket / CloudFront instead (see `Upload` row above). |
 
 ## `/api/utils` breakdown
 
@@ -75,7 +75,7 @@ The dashboard frontend uses the same `src/pre/calls.js` dispatcher as the admin.
 - **Compute** — answer computed client-side, typically from values baked into the mission config at publish or read directly from the COG/data file.
 - **Drop** — return a graceful error or no-op. Used for write paths, auth, anything tied to dropped modules.
 
-The table describes **runtime dashboard behavior** and is variant-invariant. Burn and keep produce the same observable dashboard; source-level differences (burn removes some dispatcher entries; keep gates them) are implementation-plan content (Phase 6), not dispatcher content.
+The table describes **runtime dashboard behavior** and is variant-invariant. Burn and keep produce the same observable dashboard; source-level differences (burn removes some dispatcher entries; keep gates them) are per-PR implementation detail (PR 7), not dispatcher content.
 
 40 entries today; counts in the Patterns subsection. Re-grep `src/pre/calls.js` before locking — the regex `^    [a-zA-Z0-9_]+: \{$` catches all 40 (a `[a-z_]+` pattern silently misses `ll2aerll` and `proj42wkt`).
 
@@ -135,4 +135,4 @@ Only `proj42wkt` remains a `Compute` entry — a trivial client-side proj4→WKT
 
 - [`adr.md`](./adr.md) — full ADR, the Known constraints section enumerates what's dropped.
 - [`feature-gaps.md`](./feature-gaps.md) — what each dropped call meant for the user and how dashboards handle the loss. Organized into *Default disposition* (hide-by-default features with documented escape hatches) and *Real architectural decisions* (the three genuinely open product/architecture choices).
-- [`prs/`](./prs/) — per-PR implementation docs (sequenced in [`pr-breakdown.md`](./pr-breakdown.md)): PRs 3–4 gate Datasets/Geodatasets/Draw, PR 5 gates the Shortener, and PR 7 wires the dispatcher table.
+- [`prs/`](./prs/) — per-PR implementation docs (sequenced in [`prs/00-overview.md`](./prs/00-overview.md)): PRs 3–4 gate Datasets/Geodatasets/Draw, PR 5 gates the Shortener and the `Missions/`-bound `/api/utils` endpoints, and PR 7 wires the dispatcher table.

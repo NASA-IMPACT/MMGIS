@@ -1,8 +1,8 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`./00-overview.md`](./00-overview.md). Draft; verify against current code before acting.
 
 # PR 13 — Cleanup pass + dual-mode CI
 
-**Maps to:** Phase 10. **Depends on:** all prior PRs. **Blocks:** none (final).
+**Depends on:** all prior PRs. **Blocks:** none (final).
 
 **Goal:** Sweep the codebase so every deployment-mode check goes through the shared helper, make CI run the test suite in both `full` and `lean` modes, and update the project docs so contributors understand the two-mode posture and how to change gated code without breaking either shape.
 
@@ -19,10 +19,10 @@ Finally, it updates the written docs. Right now nothing in the README, the agent
 | File | Change | Notes (verified against code) |
 |---|---|---|
 | (audit only — no edits expected) | `git grep -E 'isLean\|isFull\|MMGIS_DEPLOYMENT_MODE'`; fix any consumer that reads `process.env.MMGIS_DEPLOYMENT_MODE` directly to go through the helper instead | Today the only `isLean/isFull` hits are unrelated OpenSeadragon `isFullScreen` code (`src/external/OpenSeadragon/openseadragon.js`) — exclude `src/external/` and `node_modules/` from the audit grep. The helper and all gates land in PRs 1–12; this PR verifies, it should not introduce new gates. |
-| `.github/workflows/playwright-tests.yml` | Add a job matrix over `MMGIS_DEPLOYMENT_MODE: [full, lean]`; write the value into `.env` in the existing "Setup test environment" step; keep the existing unit + e2e steps | **Plan says "`npm test`"; the actual test command is `playwright test`** (`package.json` `"test": "playwright test"`; no Jest, no `jest.config.js`). The existing workflow runs `npx playwright test tests/unit --project=chromium` then `tests/e2e`. The matrix wraps this one job; each leg spins up its own Postgres service (already defined). |
+| `.github/workflows/playwright-tests.yml` | Add a job matrix over `MMGIS_DEPLOYMENT_MODE: [full, lean]`; write the value into `.env` in the existing "Setup test environment" step; keep the existing unit + e2e steps | **The test command is `playwright test`** (`package.json` `"test": "playwright test"`; no Jest, no `jest.config.js`). The existing workflow runs `npx playwright test tests/unit --project=chromium` then `tests/e2e`. The matrix wraps this one job; each leg spins up its own Postgres service (already defined). |
 | `README.md` | Add a "Deployment modes" section: `full` (default, upstream path) vs `lean` (VEDA AWS), the `MMGIS_DEPLOYMENT_MODE` env var, and a pointer to the ADR / lean docs | File exists at repo root. |
 | `AGENTS.md` | Add a short dual-mode note near the top (Architecture or a new section): the mode gate, the `isLean()`/`isFull()` helper, and the "author in full first" contributor rule | File exists at repo root; `CLAUDE.md` already `@AGENTS.md`-includes it, so the note reaches Claude Code too. |
-| `docs/pages/Setup/ENVs/ENVs.md` | Document `MMGIS_DEPLOYMENT_MODE`, `STATIC_MODE`, `STATIC_MISSION_NAME` (Phase 1) and the Phase 9 vars that landed (`DISABLE_FIRST_SIGNUP`, `SEED_SUPERADMIN_USERNAME`/`_PASSWORD`, `WEBSOCKET_PING_INTERVAL_MS`) as `#### \`VAR=\`` blocks matching the file's existing format | Jekyll page, permalink `/setup/envs`; this is the page CLAUDE.md/AGENTS.md link to as "Environment Variables Documentation." Cross-check the final list against `sample.env` so docs and sample stay in sync. |
+| `docs/pages/Setup/ENVs/ENVs.md` | Document the env vars PR 1 actually shipped (`MMGIS_DEPLOYMENT_MODE`, `STATIC_MODE`; `STATIC_MISSION_NAME` **only if it was kept** — PR 1 flagged it speculative, so omit unless a consumer landed) plus the PR 12 vars that landed (`DISABLE_FIRST_SIGNUP`, `SEED_SUPERADMIN_USERNAME`/`_PASSWORD`, `WEBSOCKET_PING_INTERVAL_MS`) as `#### \`VAR=\`` blocks matching the file's existing format | Jekyll page, permalink `/setup/envs`; this is the page CLAUDE.md/AGENTS.md link to as "Environment Variables Documentation." Cross-check the final list against `sample.env` so docs and sample stay in sync — document only vars that actually exist. |
 | `docs/pages/Setup/Setup.md` (or a new sibling page under `docs/pages/Setup/`) | Add a "Deployment shapes" subsection describing the full vs lean topologies (full = monolith + sidecars; lean = admin behind CloudFront + published static dashboards) | Jekyll `layout: page`, `parent: Setup`. If adding a new page, give it a `permalink`, `parent: Setup`, and `nav_order` per the existing front-matter convention. |
 | `docs/adr/deployment/lean/` (link only) | From README/AGENTS, link to the lean ADR and this PR set rather than duplicating the detail | The ADR and plans already live here; keep the top-level docs short and point inward. |
 
@@ -55,8 +55,8 @@ Concrete checks:
 
 Revert the workflow edit and the doc edits. The audit step makes no functional change of its own (any fixes it surfaces are tiny, isolated, and individually revertible). Reverting the CI matrix leaves the single-mode workflow that exists today; reverting the docs leaves the prior text. No runtime impact in either mode.
 
-## Discrepancies vs plan
+## Implementation notes & gotchas
 
-- **An earlier draft's "`npm test`" is wrong for this repo.** `npm test` runs `playwright test`, not Jest — there is no `jest.config.js`, and the AGENTS.md "Jest 29" stack note does not match the actual test tooling. The both-modes matrix must wrap the existing Playwright workflow (`.github/workflows/playwright-tests.yml`), parameterizing the `MMGIS_DEPLOYMENT_MODE` line in its `.env` setup step — not a hypothetical Jest config.
+- **Test command is Playwright, not Jest.** `npm test` runs `playwright test` — there is no `jest.config.js` (the AGENTS.md "Jest 29" stack note is inaccurate). The both-modes matrix wraps the existing Playwright workflow (`.github/workflows/playwright-tests.yml`), parameterizing the `MMGIS_DEPLOYMENT_MODE` line in its `.env` setup step.
 - **The audit grep needs exclusions.** Bare `git grep isLean|isFull` is dominated by unrelated OpenSeadragon `isFullScreen` matches in `src/external/`; scope the audit to first-party code or the result is noise.
 - **Out of scope (explicitly deferred), not addressed by this PR:** a `full`→`lean` data/`Missions/` migration path; mission-config validation that flags sidecar URLs in `lean`; cross-account audit logging for externally-published dashboards; and a removal date for the `full`-mode gates. These are tracked separately.

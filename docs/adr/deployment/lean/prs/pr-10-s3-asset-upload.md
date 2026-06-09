@@ -1,10 +1,10 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`./00-overview.md`](./00-overview.md). Draft; verify against current code before acting.
 
 # PR 10 — S3 asset upload repoint
 
-> **BLOCKED until issue #103 merges to `development`.** The upload code this PR edits — the `API/Backend/Upload/` module — does not exist on this branch yet. It lives on `feature/103-card-plugin`. Verified: `API/Backend/Upload/` is absent on the current branch and is not git-tracked here. Nothing in this PR can start until that module merges.
+> **Upload module present.** This PR edits `API/Backend/Upload/` (the #103 image-upload module). Verified on the branch: `setup.js`, `uploadRouter.js`, `validate.js` exist and are git-tracked; the single storage seam (`bb.on('file', …)` → `fs.createWriteStream` to `Missions/`) is intact; the 5 MB cap and the `isValidMission` path-traversal guard are present; and `validate.js` includes `image/svg+xml` (SVG allowed).
 
-**Maps to:** Phase 4 (asset-upload portion). **Depends on:** PR 5, PR 11 (asset bucket + IAM), and issue #103 merging. **Blocks:** none.
+**Depends on:** PR 5, PR 11 (asset bucket + IAM). **Blocks:** none.
 
 **Goal:** In `lean` mode, repoint the shared image-upload module so it writes to the admin's **shared S3 asset bucket** and returns a root-relative `/assets/…` reference, instead of writing to local `Missions/` disk — leaving `full`-mode disk behavior and all validators untouched.
 
@@ -25,13 +25,13 @@ The cloud storage bucket itself, and the permission for the admin to write to it
 | File | Change | Notes (verified against code) |
 |---|---|---|
 | `API/Backend/Upload/uploadRouter.js` *(edit, from #103)* | In `lean` mode, replace the `fs.createWriteStream` write with an S3 `PutObject` to the shared admin asset bucket (mission-scoped key, e.g. `assets/<mission>/<subdir>/uploads/<uuid>.<ext>`) and return the **root-relative `/assets/…`** path. `full` mode keeps the local-disk branch verbatim. | The single swap seam — all disk I/O is in one `bb.on('file', ...)` handler; only the destination/response there changes. |
-| `API/Backend/Upload/validate.js` *(unchanged)* | No change. The MIME allow-list, extension mapping, and `isValidMission` path-traversal guard apply identically in both modes. | The plan/breakdown said "no-SVG," but the merged `validate.js` *includes* `image/svg+xml` — kept intentionally (trusted admins; decided 2026-06-08). Leave as-is. |
-| `API/Backend/Upload/setup.js` *(unchanged)* | No change. | Its `onceInit` mounts the single admin route — `s.app.use(s.ROOT_PATH + '/api/upload', s.ensureAdmin(), s.checkHeadersCodeInjection, s.setContentType, createUploadRouter({ allowedMimeToExt: IMAGE_MIME_TO_EXT }))`. No per-mode change is needed here because the storage swap lives entirely inside `uploadRouter.js`; the mount point, auth posture, and allow-list wiring are mode-independent. |
+| `API/Backend/Upload/validate.js` *(unchanged)* | No change. The MIME allow-list, extension mapping, and `isValidMission` path-traversal guard apply identically in both modes. | `validate.js` *includes* `image/svg+xml` — kept intentionally (trusted admins; decided 2026-06-08). Leave as-is. |
+| `API/Backend/Upload/setup.js` *(unchanged)* | No change. | Its `onceInit` mounts the single admin route — `s.app.use(s.ROOT_PATH + '/api/upload', s.ensureAdmin(), s.checkHeadersCodeInjection, s.setContentType, createUploadRouter({ allowedMimeToExt: IMAGE_MIME_TO_EXT, routePath: '/' }))`. **The `routePath: '/'` is load-bearing** — `createUploadRouter`'s default `routePath` is `/upload`, so without it the handler would mount at `/api/upload/upload`. No per-mode change is needed here because the storage swap lives entirely inside `uploadRouter.js`; the mount point, auth posture, and allow-list wiring are mode-independent. |
 | `sample.env` *(edit)* | Document the asset-bucket name env var used in `lean`; note `MISSIONS_*` vars apply only to `full` mode. | Same var name the asset bucket (PR 11) is provisioned under — keep them identical. |
 
 ## Implementation steps
 
-1. **Confirm the blocker is cleared.** `API/Backend/Upload/` must be present on the working branch (i.e. #103 has merged to `development` and been merged forward). Do not start otherwise.
+1. **Confirm the module is present.** `git ls-files API/Backend/Upload/` should list `setup.js`, `uploadRouter.js`, and `validate.js` before starting.
 2. **Add a mode check at the storage point only.** Inside `createUploadRouter`'s `bb.on('file', ...)` handler — after the existing extension validation and after a UUID filename is chosen — branch on the deployment-mode helper. The validation, size-limit (`file.on('limit')`), and error paths above and around it stay shared.
 3. **Lean branch — write to S3.** Stream/buffer the validated file part to the asset bucket via `PutObject` under an `/assets/`-prefixed, **mission-scoped** key (e.g. `assets/<mission>/<subdir>/uploads/<uuid>.<ext>` — the shared bucket holds every mission), with the correct image `Content-Type`. Honor the same 5 MB cap busboy already enforces; on the `limit` event, abort without leaving a partial object.
 4. **Lean branch — return the root-relative path.** Respond `{ status: 'success', path: '/assets/<mission>/<subdir>/uploads/<uuid>.<ext>' }`. The response *shape* stays `{ status, path }`; only the value differs. Card's `resolveImageUrl` passes the leading `/` through unchanged, so it resolves against the page's own origin — admin or dashboard — with no rebake on a later custom domain.
@@ -51,8 +51,8 @@ The cloud storage bucket itself, and the permission for the admin to write to it
 
 Revert the `uploadRouter.js` edit and the `sample.env` line. Because the S3 branch is gated behind `lean` and `full` is the default, reverting restores today's local-disk behavior for every existing deployment with zero migration. Objects already written to the asset bucket are harmless if left in place.
 
-## Discrepancies vs plan
+## Implementation notes & gotchas
 
-- **SVG handling — decided (2026-06-08): allowed.** An earlier draft said "no-SVG," but the merged `validate.js` *includes* `image/svg+xml`, and the call is to **keep it**: uploaders are trusted admins. The `/assets/*` asset is served behind the same gate as the rest of the deployment (admin CloudFront for in-progress missions; the dashboard's password Function once published), so the residual "admin opens the raw SVG URL directly" risk is unchanged from today's on-disk behavior. No validator change; the "no-SVG" wording in that earlier draft is superseded.
+- **SVG allowed (decided 2026-06-08).** `validate.js` includes `image/svg+xml` — uploaders are trusted admins, and the `/assets/*` asset is served behind the deployment's gate (admin CloudFront for in-progress missions; the dashboard's password Function once published), so the residual "admin opens the raw SVG URL directly" risk is unchanged from on-disk. No validator change.
 - **Root-relative resolution is Card-specific today.** Card's `resolveImageUrl` passes a leading `/` through, but `F_.isUrlAbsolute` (used by the generic layer machinery) only matches `http(s)://`/`//host` — *not* a single leading `/`. So a `/assets/…` path is safe for uploads as they're consumed now (Card images), but a future non-Card feature rendering an uploaded asset via layer code would mis-prefix it; revisit `isUrlAbsolute` if that arises.
-- **Asset bucket ownership.** The plan text attributes the bucket + IAM to "Phase 8 / infra"; the PR breakdown pins it to **PR 11**. This doc treats PR 11 as the owner (provisioning the bucket, PutObject IAM on the admin task role, and CloudFront fronting) and lists it as a hard dependency. No bucket or IAM is created in this PR.
+- **Asset bucket ownership.** **PR 11** owns the asset bucket + IAM — provisioning the bucket, PutObject IAM on the admin task role, and CloudFront fronting — and is a hard dependency of this PR. No bucket or IAM is created here.

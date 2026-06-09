@@ -1,8 +1,8 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`./00-overview.md`](./00-overview.md). Draft; verify against current code before acting.
 
 # PR 2 — Gate sidecar proxy
 
-**Maps to:** Phase 2. **Depends on:** PR 1 (the `isFull()`/`isLean()` helper). **Blocks:** none.
+**Depends on:** PR 1 (the `isFull()`/`isLean()` helper). **Blocks:** none.
 
 **Goal:** In `lean` mode, register no adjacent-server proxy routes, suppress the on-boot sidecar spawner, force the `WITH_*` Pug flags to `false`, and skip the `mmgis-stac` database creation — while leaving every full-mode path untouched.
 
@@ -25,7 +25,7 @@ The net effect: a lean server boots clean, with no helper warnings, no leftover 
 | `scripts/server.js` | **No gate edit** — leave the `require`s (L38–39) and the `adjacentServers(); initAdjacentServersProxy(app, isDocker, ensureAdmin);` calls (L490–491) intact. The gate lives inside the modules. | Verified. Both modules require the PR-1 backend helper internally; server.js is unchanged. |
 | `API/Backend/Config/setup.js` | In the Configure-Pug `res.render(...)` (L19–42), force `WITH_STAC`/`WITH_TIPG`/`WITH_TITILER`/`WITH_TITILER_PGSTAC` to `false` (string `"false"`) when `isLean()`; otherwise pass `process.env.WITH_*` as today (L38–41). | Verified. These four flags are passed to `../configure/build/index.pug`. The Configure SPA already hides STAC/sidecar surfaces when the flag is false — no SPA edit here. Note: `WITH_VELOSERVER` is **not** passed to this Pug shell, so there is nothing to force for Veloserver here. |
 | `scripts/init-db.js` | Add `&& isFull()` (equivalently `&& !isLean()`) to the `if (WITH_STAC \|\| WITH_TIPG \|\| WITH_TITILER_PGSTAC)` guard (L124–128) so the `CREATE DATABASE "mmgis-stac"` + `pypgstac migrate` block (L129–198) is skipped in lean. | Verified. The block is the only `mmgis-stac` creator. The main `DB_NAME` create (L200+) is separate and stays. `pgstac` extension comes from the Postgres image, not here. |
-| `docker-compose.yml`, `docker-compose.dev.yml` | **No edit.** Sidecar services stay under their existing `profiles` gates; lean production doesn't use docker-compose, and local dev can still opt in. | Confirm the `profiles:` gates exist before declaring no-op (an earlier draft asserts `["stac"]`/`["veloserver"]`); if a sidecar service lacks a profile gate, note it rather than editing here. |
+| `docker-compose.yml`, `docker-compose.dev.yml` | **No edit.** Sidecar services stay under their existing `profiles` gates; lean production doesn't use docker-compose, and local dev can still opt in. | Confirm the `profiles:` gates (expected `["stac"]`/`["veloserver"]`) exist before declaring no-op; if a sidecar service lacks a profile gate, note it rather than editing here. |
 
 ## Implementation steps
 
@@ -48,7 +48,7 @@ The net effect: a lean server boots clean, with no helper warnings, no leftover 
 
 Revert the gate edits; default `full` means existing deployments are unaffected regardless.
 
-## Discrepancies vs plan
+## Implementation notes & gotchas
 
-- **`WITH_VELOSERVER` is not a Pug flag.** Phase 2 says the `WITH_*` flags are forced false at the Configure Pug shell, but `API/Backend/Config/setup.js` only passes `WITH_STAC`/`WITH_TIPG`/`WITH_TITILER`/`WITH_TITILER_PGSTAC` (L38–41) — Veloserver isn't rendered there. The Veloserver proxy route is still suppressed in lean (it's gated inside `initAdjacentServersProxy`); there's just no Pug flag to force for it.
-- **The gate lives in the modules, not in `scripts/server.js`.** An earlier draft's note ("leave the require + setup call intact; the gate is in the module") is correct as written; flagged here only to be explicit that server.js gets no edit in this PR.
+- **`WITH_VELOSERVER` is not a Pug flag.** This PR forces the `WITH_*` flags false at the Configure Pug shell, but `API/Backend/Config/setup.js` only passes `WITH_STAC`/`WITH_TIPG`/`WITH_TITILER`/`WITH_TITILER_PGSTAC` (L38–41) — Veloserver isn't rendered there. The Veloserver proxy route is still suppressed in lean (gated inside `initAdjacentServersProxy`); there's just no Pug flag to force for it.
+- **The gate lives in the modules, not in `scripts/server.js`** — leave the `require` + setup call intact; `server.js` gets no edit in this PR.

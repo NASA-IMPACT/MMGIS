@@ -1,8 +1,8 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`./00-overview.md`](./00-overview.md). Draft; verify against current code before acting.
 
 # PR 1 — Deployment-mode foundation
 
-**Maps to:** Phase 1. **Depends on:** none. **Blocks:** every other lean PR.
+**Depends on:** none. **Blocks:** every other lean PR.
 
 **Goal:** Introduce the `MMGIS_DEPLOYMENT_MODE` gate (`full` default / `lean`), the build-time `SERVER` switch wiring, the client/server mode helpers, and the gitignored baked-config stub. **No behavior change** — `full` is the default and nothing reads the gate yet.
 
@@ -18,11 +18,11 @@ It also drops in a tiny placeholder file that the dashboard-publishing process (
 
 | File | Change | Notes (verified against code) |
 |---|---|---|
-| `API/Backend/Utils/deploymentMode.js` *(new)* | `isLean()`, `isFull()`, `assertLean()`, frozen `MODE` const; defaults `full`; throws on unknown | **Canonical path: `API/Backend/Utils/deploymentMode.js`.** An earlier draft's `API/utils/deploymentMode.js` is wrong (no `API/utils/` dir); this is the settled target the siblings import (PRs 02/04/05 require this module by its location-relative path). `assertLean()` is exported but currently has no consumer — see Discrepancies. |
-| `src/pre/deploymentMode.js` *(new)* | Client counterpart; reads `mmgisglobal.SERVER` (`node`→full, `static`→lean-dashboard, else throw) | `src/pre/` exists (`calls.js`, `RefreshAuth.js`). **No importer in any of the 13 PRs** — PR 7 branches directly on `mmgisglobal.SERVER`. Currently consumer-less/optional; see Discrepancies. |
-| `src/essence/Basics/mode.js` *(new)* | Thin re-export of `src/pre/deploymentMode.js` for older consumers | Optional shim; only add if a consumer needs the older path. No consumer exists today — see Discrepancies. |
+| `API/Backend/Utils/deploymentMode.js` *(new)* | `isLean()`, `isFull()`, `assertLean()`, frozen `MODE` const; defaults `full`; throws on unknown | **Canonical path: `API/Backend/Utils/deploymentMode.js`** (there is no `API/utils/` dir). The siblings import it by location-relative path (PRs 02/04/05). `assertLean()` is exported but currently has no consumer — see notes below. |
+| `src/pre/deploymentMode.js` *(new)* | Client counterpart; reads `mmgisglobal.SERVER` (`node`→full, `static`→lean-dashboard, else throw) | `src/pre/` exists (`calls.js`, `RefreshAuth.js`). **No importer in any of the 13 PRs** — PR 7 branches directly on `mmgisglobal.SERVER`. Currently consumer-less/optional; see notes below. |
+| `src/essence/Basics/mode.js` *(new)* | Thin re-export of `src/pre/deploymentMode.js` for older consumers | Optional shim; only add if a consumer needs the older path. No consumer exists today — see notes below. |
 | `src/pre/staticConfig.js` *(new, gitignored)* | Stub exporting `{}`; publish script overwrites | |
-| `configuration/env.js` | Add `MMGIS_DEPLOYMENT_MODE`, `STATIC_MODE`, `STATIC_MISSION_NAME` to the client-exposed `raw` object (≈ the `AUTH`/`CLEARANCE_NUMBER` block, ~L98+) | The "allowlist" is the CRA-style `raw` map in env.js, not a standalone list. Keep all `WITH_*`/`TITILER_*`/etc. — full mode needs them. `STATIC_MODE` is used (PR 8 builds with `STATIC_MODE=true`); `STATIC_MISSION_NAME` has no consumer — see Discrepancies. |
+| `configuration/env.js` | Add `MMGIS_DEPLOYMENT_MODE`, `STATIC_MODE`, `STATIC_MISSION_NAME` to the client-exposed `raw` object (≈ the `AUTH`/`CLEARANCE_NUMBER` block, ~L98+) | The "allowlist" is the CRA-style `raw` map in env.js, not a standalone list. Keep all `WITH_*`/`TITILER_*`/etc. — full mode needs them. `STATIC_MODE` is used (PR 8 builds with `STATIC_MODE=true`); `STATIC_MISSION_NAME` has no consumer — see notes below. |
 | `configuration/webpack.config.js` | Add Webpack alias `STATIC_MISSION_CONFIG → src/pre/staticConfig.js` | Don't touch `InterpolateHtmlPlugin` here — `SERVER` substitution is PR 7's job. |
 | `sample.env` | Add `MMGIS_DEPLOYMENT_MODE=full` + comment on the two modes / upstream-compat default | |
 | `.gitignore` | Ignore `src/pre/staticConfig.js` and `build-static/` | |
@@ -46,11 +46,11 @@ It also drops in a tiny placeholder file that the dashboard-publishing process (
 
 Revert the new files and the env.js / webpack / sample.env / .gitignore edits. Default-`full` means zero impact on existing deployments regardless.
 
-## Discrepancies vs plan
+## Implementation notes & gotchas
 
-- **Backend helper path — settled.** An earlier draft's `API/utils/deploymentMode.js` is invalid (no `API/utils/` dir). Canonical path is now **`API/Backend/Utils/deploymentMode.js`**, which PRs 02/04/05 already import by their location-relative paths (e.g. `../API/Backend/Utils/deploymentMode` from `adjacent-servers/`). No further decision needed.
-- The env "allowlist" is the `raw` object in `configuration/env.js`; an earlier draft's "allowlist entries" phrasing maps to keys there.
-- **Orphaned scope (carried straight from an earlier draft, but no consumer in any of the 13 PRs — verified by grepping the other `pr-*.md`):**
-  - `STATIC_MISSION_NAME` (added to `env.raw`) — **no consumer.** PR 7's LandingPage deeplink override keys off the **existing** `MAIN_MISSION` var, not `STATIC_MISSION_NAME`. Currently unused/speculative; recommend dropping it unless a later flow needs it. (Contrast `STATIC_MODE`, which **is** used — PR 8 builds with `STATIC_MODE=true`.)
-  - `assertLean()` — exported from the helper but **unused by any later PR.** Speculative API surface; keep only if a future consumer is planned.
-  - `src/pre/deploymentMode.js` (client helper) + `src/essence/Basics/mode.js` (shim) — **no importer.** PR 7 branches directly on `mmgisglobal.SERVER`. Both are currently consumer-less/optional; add only when something imports them.
+- **Backend helper path.** Canonical: **`API/Backend/Utils/deploymentMode.js`** (there is no `API/utils/` dir). PRs 02/04/05 import it by location-relative path (e.g. `../API/Backend/Utils/deploymentMode` from `adjacent-servers/`).
+- **The env "allowlist" is the `raw` object** in `configuration/env.js` — add the new keys there.
+- **Speculative scope — don't add without a consumer** (none of the 13 PRs use these):
+  - `STATIC_MISSION_NAME` — **no consumer.** PR 7's LandingPage deeplink override keys off the existing `MAIN_MISSION` var. Drop unless a later flow needs it. (Contrast `STATIC_MODE`, which **is** used — PR 8 builds with `STATIC_MODE=true`.)
+  - `assertLean()` — exported from the helper but unused by any PR. Add only if a future consumer is planned.
+  - `src/pre/deploymentMode.js` (client helper) + `src/essence/Basics/mode.js` (shim) — **no importer.** PR 7 branches directly on `mmgisglobal.SERVER`. Add only when something imports them.

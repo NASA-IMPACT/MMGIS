@@ -1,8 +1,8 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`./00-overview.md`](./00-overview.md). Draft; verify against current code before acting.
 
 # PR 8 — Publish flow: backend + Deployments Configure page
 
-**Maps to:** Phase 7. **Depends on:** PR 3 (mode flag), PR 7 (static build). **Blocks:** PR 9, PR 11.
+**Depends on:** PR 3 (mode flag), PR 7 (static build). **Blocks:** PR 11.
 
 **Goal:** Add the admin-only Publish/Update/Delete/list flow — a new `Deployments` backend module (model in both modes, routes gated to lean), the ECS publish-task scripts that build the static bundle and provision a per-dashboard CloudFormation stack, and a Configure page to drive it all.
 
@@ -71,6 +71,10 @@ One more thing worth stating plainly: the outbound notification feature ("webhoo
 
 11. **Modern-interface boot check.** A baked mission with `msv.mode: "modern"` boots through `src/essence/modern.js` / `PanelManager_` (both verified present), not the classic interface. The static publish bundle (PR 7) must support that path. Add an e2e check: publish a `modern`-mode mission and confirm the dashboard renders panels.
 
+12. **Unsupported layer types at bake time (gate-by-default).** Lean's default disposition for the two capabilities feature-gaps frames as "open" is to **gate** them (decided 2026-06-09); a mission that needs them references an external URL instead. The publish bake does not special-case their data, but it should avoid shipping dead UI:
+    - **Time-windowed `_time_` layers.** Their tiles can't resolve in a backend-less dashboard. Default: don't add a substitute. To avoid a scrubber that goes nowhere, set `config.time.enabled = false` in the baked config when no resolvable time-enabled layer remains. (The time-slider histogram is separately disabled by PR 9; scrubbing/animation on any *externally*-served time layer still works.)
+    - **Geodataset / dataset / tipg-backed layers.** The `Datasets`/`Geodatasets` modules are gated out (PR 3) and the `datasets_*`/`geodatasets_*` dispatcher calls Drop (PR 7), so these layers load empty in a dashboard. Default: the mission omits them or points the layer URL at an external OGC/MVT/JSON service; the bake performs no URL rewrite. No publish-time code is required beyond the `time.enabled` guard above.
+
 ## Verification
 
 - `MMGIS_DEPLOYMENT_MODE=lean`, admin deploy: the Deployments nav button appears; Publish runs end-to-end (stack reaches `CREATE_COMPLETE`, bundle uploads, row reaches `published` with a `cloudfront_url`); the returned URL loads the frozen single-mission app with no `/api/*` calls; Update republishes to the same URL; Delete returns immediately and the row reaches `deleted` once `DescribeStacks` 404s.
@@ -82,8 +86,8 @@ One more thing worth stating plainly: the outbound notification feature ("webhoo
 
 `git revert` the PR. Default-`full` deployments are unaffected (routes never mounted; the empty `deployments` table is benign, no FK pressure — leave or drop manually). Any stacks already created need manual cleanup via the AWS console: list and delete stacks under the `mmgis-dashboard-*` prefix.
 
-## Discrepancies vs plan
+## Implementation notes & gotchas
 
-- **"Dashboards" naming collision (resolved):** the modern-ui `Dashboard*` symbols stay as-is and this feature is named "Deployments" across module, table, routes, and Configure page, so there is no symbol clash.
-- The plan references `configure/src/components/Panel/Panel.js` for the nav gate and `Main.js` for page dispatch — both confirmed; the conditional-tab pattern to copy is the `WITH_STAC` check at `Panel.js` L343, reading `window.mmgisglobal` directly (no Redux). `core/Configure.js` is layout, not a route table.
-- The mode flag (`DEPLOYMENT_MODE`) is **not yet** present in `configure/public/index.html` / the `Config/setup.js` render block — it is introduced by PR 3. This PR depends on that and only reads the flag; if PR 3 has not landed, the nav gate has nothing to read.
+- **"Dashboards" naming collision.** The modern-ui `Dashboard*` symbols stay as-is; this feature is named "Deployments" across module, table, routes, and Configure page, so there is no symbol clash.
+- **Nav gate + page dispatch.** Copy the conditional-tab pattern from the `WITH_STAC` check at `Panel.js` L343 (reads `window.mmgisglobal` directly, no Redux); page dispatch is in `Main.js`. `core/Configure.js` is layout, not a route table.
+- **`DEPLOYMENT_MODE` comes from PR 3.** The flag is introduced into `configure/public/index.html` / the `Config/setup.js` render block by PR 3; this PR only reads it. If PR 3 hasn't landed, the nav gate has nothing to read.

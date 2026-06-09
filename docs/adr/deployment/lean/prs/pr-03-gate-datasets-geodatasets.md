@@ -1,8 +1,8 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`./00-overview.md`](./00-overview.md). Draft; verify against current code before acting.
 
 # PR 3 — Gate Datasets & Geodatasets + Configure mode flag
 
-**Maps to:** Phase 3 core (plan ~L85–96, L108–117). **Depends on:** PR 1. **Blocks:** PR 6 and PR 8 — both reuse the `DEPLOYMENT_MODE` flag this PR plumbs into the Configure SPA.
+**Depends on:** PR 1. **Blocks:** PR 6 and PR 8 — both reuse the `DEPLOYMENT_MODE` flag this PR plumbs into the Configure SPA.
 
 **Goal:** In `lean` mode, stop mounting the Datasets and Geodatasets API modules and hide their Configure nav tabs, and install the `DEPLOYMENT_MODE` plumbing (Pug shell → `window.mmgisglobal`) that later Configure PRs key off of.
 
@@ -21,10 +21,10 @@ It also installs a small piece of wiring: a signal that tells the admin web inte
 | `API/Backend/Datasets/setup.js` | Wrap the `onceInit` route mount in `if (isFull())`. Model sync is unaffected (this module's `onceSynced` is empty). | Verified: `onceInit` is the only mount; the `/api/datasets` `app.use` is the whole gate target. |
 | `API/Backend/Geodatasets/setup.js` | Wrap the `onceInit` route mount in `if (isFull())`. Leave `onceSynced` (which calls `geodatasets.up()`) running in both modes so the table still syncs. | Verified: `onceSynced` calls `geodatasets.up()`; keep it unconditional so a later mode flip needs no migration. |
 | `API/Backend/Config/setup.js` | Add `DEPLOYMENT_MODE` to the `res.render('../configure/build/index.pug', {...})` flag block, alongside the existing `WITH_*` flags. Source it from the backend `deploymentMode` helper, not raw `process.env`. | Verified: this render call is where `WITH_STAC`/`WITH_TIPG`/… are passed (L38–41). Same mechanism, one new key. |
-| `configure/public/index.html` | Add `mmgisglobal.DEPLOYMENT_MODE = "#{DEPLOYMENT_MODE}";` to the `mmgisglobal` script block. | Verified: this is the actual template (Pug `#{...}` interpolation) where `WITH_STAC` etc. become `window.mmgisglobal.*` (L27–30). **Not a Redux store** — see Discrepancies. |
+| `configure/public/index.html` | Add `mmgisglobal.DEPLOYMENT_MODE = "#{DEPLOYMENT_MODE}";` to the `mmgisglobal` script block. | Verified: this is the actual template (Pug `#{...}` interpolation) where `WITH_STAC` etc. become `window.mmgisglobal.*` (L27–30). **Not a Redux store** — see notes below. |
 | `configure/src/components/Panel/Panel.js` | Wrap the Datasets and GeoDatasets nav `<Button>`s in `window.mmgisglobal.DEPLOYMENT_MODE !== 'lean'`, mirroring the existing `WITH_STAC === "true"` conditional one button over. | Verified: GeoDatasets button L318–329, Datasets button L330–341; STAC button at L343–355 already shows the exact conditional pattern to copy. |
 | `configure/src/components/Main/Main.js` | Optional defense-in-depth: no change required (pages are unreachable once the nav buttons are hidden). If gating, guard the `case "datasets"` / `case "geodatasets"` in the `switch (page)`. | Verified: page dispatch is `switch (page)` on `state.core.page` (L219–241). Hiding the nav is sufficient; the case-guard is optional. |
-| `configure/src/core/calls.js` | No change. | Plan note: the call defs target routes that won't mount in lean; harmless dead code. |
+| `configure/src/core/calls.js` | No change. | The call defs target routes that won't mount in lean; harmless dead code. |
 
 ## Implementation steps
 
@@ -46,8 +46,8 @@ It also installs a small piece of wiring: a signal that tells the admin web inte
 
 Revert the two `setup.js` gates, the `Config/setup.js` + `index.html` flag additions, and the Panel.js edits; default `full` means existing deployments are unaffected regardless.
 
-## Discrepancies vs plan
+## Implementation notes & gotchas
 
-- **"Redux store at boot" is inaccurate.** The plan (L95, L110) says to plumb `DEPLOYMENT_MODE` "into the SPA's Redux store." The actual, verified convention is the Pug-rendered `window.mmgisglobal` global: `WITH_STAC`/`WITH_TIPG`/`WITH_TITILER`/`WITH_TITILER_PGSTAC` flow env → `API/Backend/Config/setup.js` `res.render` → `#{...}` in `configure/public/index.html` → `window.mmgisglobal.*`, and Panel.js/APIs.js read them directly off `window.mmgisglobal`. Follow that path for `DEPLOYMENT_MODE`; do **not** add a new Redux slice.
-- **Pug template path.** The plan implies a standalone Pug shell; the file is `configure/public/index.html` (a CRA `public/index.html` that `API/Backend/Config/setup.js` renders via Pug `#{...}` interpolation, output to `configure/build/index.pug`). Edit the source `public/index.html`.
-- **Datasets `setup.js` has no model sync to preserve.** The plan (L92) says "the model still syncs in both modes." For Datasets that is moot — its `onceSynced` is empty (no `.up()` call); only Geodatasets has a `geodatasets.up()` in `onceSynced` to keep unconditional.
+- **Use `window.mmgisglobal`, not Redux.** `DEPLOYMENT_MODE` rides the same path as the `WITH_*` flags: env → `API/Backend/Config/setup.js` `res.render` → `#{...}` in `configure/public/index.html` → `window.mmgisglobal.*`, read directly off `window.mmgisglobal` by Panel.js/APIs.js. Do **not** add a new Redux slice.
+- **Pug template path.** Edit the source `configure/public/index.html` (a CRA `public/index.html` that `API/Backend/Config/setup.js` renders via Pug `#{...}` interpolation, output to `configure/build/index.pug`).
+- **Datasets `setup.js` has no model sync to preserve** — its `onceSynced` is empty (no `.up()` call). Only Geodatasets has a `geodatasets.up()` in `onceSynced` to keep unconditional.

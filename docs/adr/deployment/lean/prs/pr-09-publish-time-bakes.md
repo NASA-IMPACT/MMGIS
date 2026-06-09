@@ -1,8 +1,8 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`./00-overview.md`](./00-overview.md). Draft; verify against current code before acting.
 
 # PR 9 — Static-mode COG range, projection WKT & time-histogram disable
 
-**Maps to:** Phase 6 (the "Additional publish-time bakes" block — superseded for two of three items per the decisions below). **Depends on:** PR 7 (static-mode `ServiceUrls` + dispatcher). **Blocks:** none.
+**Depends on:** PR 7 (static-mode `ServiceUrls` + dispatcher). **Blocks:** none.
 
 **Goal:** In static/lean dashboards, source the single-band COG color range from the external TiTiler, compute the shapefile projection WKT in the browser, and disable the (unneeded) time-slider histogram — so none of the three dropped server calls is reached, with no publish-time generation required.
 
@@ -24,7 +24,7 @@ This PR is **frontend-only** static-mode call-site edits — there is no publish
 
 | File | Change | Disposition | Notes (verified against code) |
 |---|---|---|---|
-| `src/essence/Basics/Map_/Map_.js` | Single-band COG branch: in static mode, instead of the `calls.getminmax` AJAX, fetch the band's min/max from the layer's external TiTiler (e.g. `<titilerUrl>/cog/statistics?url=<cogUrl>`), with the TiTiler base resolved via `ServiceUrls` (PR 7). Keep the existing prefer-`cogMin`/`cogMax`-from-config path and the `console.warn` fallback. | **Reroute → external TiTiler** | `calls.getminmax` is a **direct `$.ajax`** at **L2018–2019** inside the `georaster.numberOfRasters === 1` block (L2008), guarded by `isNaN(parseFloat(layerObj.cogMin/Max))` (L2012–2015). It bypasses the `calls.js` dispatcher, so this is a call-site edit (the "direct-`$.ajax` bypass" PR 7 flagged). |
+| `src/essence/Basics/Map_/Map_.js` | Single-band COG branch: in static mode, instead of the `calls.getminmax` AJAX, fetch the band's min/max from the layer's external TiTiler (e.g. `<titilerUrl>/cog/statistics?url=<cogUrl>`), with the TiTiler base resolved via `ServiceUrls` (PR 7). Keep the existing prefer-`cogMin`/`cogMax`-from-config path and the `console.warn` fallback. | **Reroute → external TiTiler** | `calls.getminmax` is a **direct `$.ajax`** at ~L2074–2075 inside the `georaster.numberOfRasters === 1` block (~L2064), guarded by `isNaN(parseFloat(layerObj.cogMin/Max))` (~L2069–2070). It bypasses the `calls.js` dispatcher, so this is a call-site edit (the "direct-`$.ajax` bypass" PR 7 flagged). Line numbers are approximate — re-grep `calls.getminmax`. |
 | `src/essence/Tools/Layers/LayersTool.js` | Shapefile (`'shp'`) export: in static mode compute the WKT from `window.mmgisglobal.customCRS.projString` via `proj4js` (already bundled) instead of the `calls.api('proj42wkt', …)` round-trip; pass it as `shpwrite.zip(…, { prj })`. | **Compute (client-side)** | `calls.api('proj42wkt', { proj4: … }, …)` at **L1959–1984**; result passed as `prj: data`. `proj4` is already a dependency. |
 | `src/essence/Basics/TimeControl_/TimeUI.js` | `_makeHistogram`: in static mode short-circuit to a no-op (and hide `#mmgisTimeUITimelineHisto`) so the `calls.api('query_tileset_times', …)` loop never runs. The rest of the time slider is untouched. | **Drop** | `_makeHistogram` at **L2835**; `calls.api('query_tileset_times', …)` at **L2896–2898** inside `sparklineLayers.forEach`. Senior-dev decision (2026-06-08): the histogram is not needed in lean. |
 
@@ -32,7 +32,7 @@ This PR is **frontend-only** static-mode call-site edits — there is no publish
 
 ## Implementation steps
 
-1. **COG min/max — `Map_.js` (Reroute to TiTiler).** In the single-band branch, keep preferring `layerObj.cogMin/cogMax` when present (L2009–2010). When absent in static mode, replace the `calls.getminmax` `$.ajax` (L2017–2051) with a fetch to the layer's external TiTiler statistics endpoint (e.g. `/cog/statistics`), resolving the TiTiler base through `ServiceUrls` (PR 7) and the COG URL from the layer config. Parse the band's min/max from the response into the same `min`/`max` variables. Keep the existing `console.warn` fallback so a failed fetch leaves the layer drawing (range stays NaN) rather than crashing. *(In lean, COG is always served by an external TiTiler, so this source is always available.)*
+1. **COG min/max — `Map_.js` (Reroute to TiTiler).** In the single-band branch, keep preferring `layerObj.cogMin/cogMax` when present (~L2065–2066). When absent in static mode, replace the `calls.getminmax` `$.ajax` (~L2073–2107; re-grep `calls.getminmax`) with a fetch to the layer's external TiTiler statistics endpoint (e.g. `/cog/statistics`), resolving the TiTiler base through `ServiceUrls` (PR 7) and the COG URL from the layer config. Parse the band's min/max from the response into the same `min`/`max` variables. Keep the existing `console.warn` fallback so a failed fetch leaves the layer drawing (range stays NaN) rather than crashing. *(In lean, COG is always served by an external TiTiler, so this source is always available.)*
 2. **Projection WKT — `LayersTool.js` (client compute).** In the `'shp'` case (L1956–1985), in static mode convert `window.mmgisglobal.customCRS.projString` to WKT with `proj4js` and pass it as `shpwrite.zip(…, { prj })`. Preserve the existing failure `CursorInfo.update` message (L1975–1982) so a missing/failed WKT degrades gracefully (zip without `.prj`).
 3. **Time histogram — `TimeUI.js` (Drop).** Guard `_makeHistogram` (L2835) to no-op in static mode — return early and hide `#mmgisTimeUITimelineHisto` so the `query_tileset_times` loop (L2896+) never runs. No `times.json`, no baked counts. Verify the rest of `TimeUI` (scrubbing, play/animation) does not depend on the histogram bins.
 
@@ -47,11 +47,11 @@ This PR is **frontend-only** static-mode call-site edits — there is no publish
 
 Revert the three static-mode guards. In `full` mode there is zero impact. In `lean`/static mode it degrades to today's behavior: NaN color range falls back via the existing warn path, shapefile export emits no `.prj`, and the histogram simply stays absent — none of which crash the dashboard.
 
-## Discrepancies vs plan
+## Implementation notes & gotchas
 
-- **Scope changed by senior-dev decision (2026-06-08).** The plan framed all three as publish-time **bakes** with a "GDAL/Python-at-publish vs client-side" posture choice. That's superseded:
-  - **Time histogram → Drop.** Disabled in lean (not needed); this removes the `times.json` bake **and** its unresolved per-bin count-source question entirely.
-  - **COG min/max → Reroute to the external TiTiler.** Lean always serves COG via an external TiTiler, so the band statistics come from it directly (e.g. `/cog/statistics`) instead of being baked or read from the COG IFD.
-  - Only the **projection WKT** remains, and it's a trivial client-side `proj4js` compute (already bundled) — not a publish-time bake.
-- **No publish-time generation → dependency narrowed.** With nothing baked, this PR no longer adds generators to `scripts/publish-static.js`; it depends only on **PR 7** (static-mode `ServiceUrls` for the TiTiler URL), not PR 8.
-- **`getminmax` is a direct `$.ajax`** (`Map_.js:2018–2019`), bypassing the `calls.js` dispatcher — so its reroute is a call-site edit, not a `STATIC_HANDLERS` entry. (Same bypass PR 7 flagged.)
+- **Three dispositions (decided 2026-06-08) — none is a publish-time bake:**
+  - **Time histogram → Drop.** Disabled in lean (not needed); no `times.json`, no per-bin count source.
+  - **COG min/max → Reroute to the external TiTiler.** Lean always serves COG via an external TiTiler, so the band statistics come from it directly (e.g. `/cog/statistics`) rather than a bake or COG-IFD read.
+  - **Projection WKT → client-side compute** via `proj4js` (already bundled).
+- **No publish-time generation.** Nothing is baked, so this PR adds no generators to `scripts/publish-static.js` and depends only on **PR 7** (static-mode `ServiceUrls` for the TiTiler URL), not PR 8.
+- **`getminmax` is a direct `$.ajax`** (`Map_.js:~2074–2075`), bypassing the `calls.js` dispatcher — so its reroute is a call-site edit, not a `STATIC_HANDLERS` entry. (Same bypass PR 7 flags.)

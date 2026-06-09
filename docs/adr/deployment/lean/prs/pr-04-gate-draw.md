@@ -1,8 +1,8 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`./00-overview.md`](./00-overview.md). Draft; verify against current code before acting.
 
 # PR 4 — Gate Draw
 
-**Maps to:** Phase 3 (Draw portion). **Depends on:** PR 1 (the `isFull()`/`isLean()` helper; the Configure side reuses PR 3's mode flag). **Blocks:** none.
+**Depends on:** PR 1 (the `isFull()`/`isLean()` helper; the Configure side reuses PR 3's mode flag). **Blocks:** none.
 
 **Goal:** Gate Draw out of the lean deployment entirely — its server endpoints don't mount and the tool disappears from both the admin (Configure) and published dashboards — while leaving all Draw code in place so `full` mode is unchanged (ADR decision D2 = keep, env-gated).
 
@@ -42,8 +42,8 @@ The `draw_*` and `files_*` frontend dispatcher entries become **Drop** per [`../
 
 Revert the `setup.js` and `updateTools.js` edits and regenerate. Default mode is `full`, so behavior returns to today's regardless.
 
-## Discrepancies vs plan
+## Implementation notes & gotchas
 
-- **`files.js` is metadata, not uploads — confirmed.** `API/Backend/Draw/routes/files.js` has no `busboy`/`multipart`/`multer`/`formidable`/`createWriteStream` (grep-verified); it manages drawing-file metadata records in Postgres. It is correctly gated as part of Draw, not as an asset-upload route. (Asset upload is the separate `API/Backend/Upload` module, handled in PR 10.)
+- **`files.js` is metadata, not uploads.** `API/Backend/Draw/routes/files.js` has no `busboy`/`multipart`/`multer`/`formidable`/`createWriteStream` (grep-verified); it manages drawing-file metadata records in Postgres. It is correctly gated as part of Draw, not as an asset-upload route. (Asset upload is the separate `API/Backend/Upload` module, handled in PR 10.)
 - **Cross-tool runtime coupling — risk to flag, no fix in this PR.** Tools that *do* ship in lean reference Draw by name and would fault if those specific code paths execute without Draw loaded: `src/essence/Tools/Kinds/Kinds.js:341` calls `TC_.getTool('DrawTool').showContextMenu(...)` for the `draw_tool` kind (a `getTool` that now returns null), and `src/essence/Tools/Shade/ShadeTool.js:1752–1769` references a module-global `DrawTool` (`cmLayerDown`/`cmLayerUp`/`cmLayerMove`/`indicatorLastDragPoint`) during indicator-drag. These only trigger on specific user actions (a mission configuring a `draw_tool` click behavior; Shade indicator drag) and are not exercised by a default lean dashboard, but they are latent `null`/undefined-reference hazards. Out of scope for this PR's gating mechanics; worth a guard in a hardening pass if those flows are reachable in lean.
 - **Harmless dead reference, no edit needed.** `scripts/server.js:240` whitelists `/api/files/getfile` in `stopGuests`; once the `/api/files` mount is gated the path simply isn't reachable in lean, so the whitelist entry is inert.
