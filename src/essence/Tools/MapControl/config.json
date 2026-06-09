@@ -11,6 +11,10 @@
     "paths": {
         "MapControlTool": "essence/Tools/MapControl/MapControlTool"
     },
+    "metadata": {
+        "icon": "layers",
+        "modernLayoutSupport": true
+    },
     "config": {
         "rows": [
             {
