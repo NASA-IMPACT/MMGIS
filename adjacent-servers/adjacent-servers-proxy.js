@@ -4,8 +4,18 @@ const {
 } = require("http-proxy-middleware");
 
 const logger = require("../API/logger");
+const { isFull } = require("../API/Backend/Utils/deploymentMode");
 
 function initAdjacentServersProxy(app, isDocker, ensureAdmin) {
+  if (!isFull()) {
+    logger(
+      "info",
+      "adjacent-servers proxy disabled (deployment mode = lean)",
+      "adjacent-servers"
+    );
+    return;
+  }
+
   ///////////////////////////
   // Proxies
   //// STAC
