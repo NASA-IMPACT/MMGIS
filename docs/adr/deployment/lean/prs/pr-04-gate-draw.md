@@ -1,4 +1,4 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../implementation-plan-keep.md`](../implementation-plan-keep.md) Phase 3 (Draw portion) and [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
 
 # PR 4 — Gate Draw
 
@@ -18,10 +18,10 @@ One detail worth calling out: one of Draw's backend files is named "files," but 
 
 ## Scope / files
 
-| File | Change | Plan ref | Notes (verified against code) |
-|---|---|---|---|
-| `API/Backend/Draw/setup.js` | Import the PR-1 helper and wrap the three `onceInit` route mounts — `/api/files` (routerFiles), `/api/draw` (routerDraw), and `/api/draw` (routerAggregations) — in `if (isFull()) { ... }`. Leave `onceSynced` (model `.up()` calls + `makeMasterFiles(...)`) running in both modes so the Sequelize tables still sync. | Ph3 Draw | **Verified.** `setup.js` `onceInit` mounts all three; `/api/draw` and `/api/files` are **both** mounted here (no other mount site). Backend setups are auto-discovered by directory (`API/setups.js` scans `API/Backend/*/setup.js` and calls `onceInit`), so the gate must live **inside this `setup.js`**, not in `scripts/server.js`. Import PR 1's helper: `require("../../Utils/deploymentMode")` (canonical `API/Backend/Utils/deploymentMode.js`). |
-| `API/updateTools.js` | In `updateTools()`, skip the `src/essence/Tools/Draw` directory when `isLean()` so the generated `src/pre/tools.js` (Essence bundle) and `configure/public/toolConfigs.json` (Configure tool list) both omit Draw. | Ph3 Draw | **Verified.** `updateTools()` auto-discovers tools by scanning `src/essence/Tools/<Name>/config.json` and writes both generated files. It runs at build (`scripts/build.js:57`) **and** at server boot (`scripts/server.js:694`), so `process.env.MMGIS_DEPLOYMENT_MODE` is available when it runs — this single skip drops Draw from the Essence bundle *and* Configure in one place. Import the PR-1 backend helper (Node context). |
+| File | Change | Notes (verified against code) |
+|---|---|---|
+| `API/Backend/Draw/setup.js` | Import the PR-1 helper and wrap the three `onceInit` route mounts — `/api/files` (routerFiles), `/api/draw` (routerDraw), and `/api/draw` (routerAggregations) — in `if (isFull()) { ... }`. Leave `onceSynced` (model `.up()` calls + `makeMasterFiles(...)`) running in both modes so the Sequelize tables still sync. | **Verified.** `setup.js` `onceInit` mounts all three; `/api/draw` and `/api/files` are **both** mounted here (no other mount site). Backend setups are auto-discovered by directory (`API/setups.js` scans `API/Backend/*/setup.js` and calls `onceInit`), so the gate must live **inside this `setup.js`**, not in `scripts/server.js`. Import PR 1's helper: `require("../../Utils/deploymentMode")` (canonical `API/Backend/Utils/deploymentMode.js`). |
+| `API/updateTools.js` | In `updateTools()`, skip the `src/essence/Tools/Draw` directory when `isLean()` so the generated `src/pre/tools.js` (Essence bundle) and `configure/public/toolConfigs.json` (Configure tool list) both omit Draw. | **Verified.** `updateTools()` auto-discovers tools by scanning `src/essence/Tools/<Name>/config.json` and writes both generated files. It runs at build (`scripts/build.js:57`) **and** at server boot (`scripts/server.js:694`), so `process.env.MMGIS_DEPLOYMENT_MODE` is available when it runs — this single skip drops Draw from the Essence bundle *and* Configure in one place. Import the PR-1 backend helper (Node context). |
 
 The `draw_*` and `files_*` frontend dispatcher entries become **Drop** per [`../api.md`](../api.md). No source edit is required for that in this PR: those entries are handled by PR 7's static dispatcher (`src/pre/calls.js` `STATIC_HANDLERS` table). This PR only ensures the Draw tool that would *issue* those calls is not in the bundle.
 

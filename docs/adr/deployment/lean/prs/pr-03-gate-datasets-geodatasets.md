@@ -1,4 +1,4 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../implementation-plan-keep.md`](../implementation-plan-keep.md) Phase 3 (core) and [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
 
 # PR 3 — Gate Datasets & Geodatasets + Configure mode flag
 
@@ -16,15 +16,15 @@ It also installs a small piece of wiring: a signal that tells the admin web inte
 
 ## Scope / files
 
-| File | Change | Plan ref | Notes (verified against code) |
-|---|---|---|---|
-| `API/Backend/Datasets/setup.js` | Wrap the `onceInit` route mount in `if (isFull())`. Model sync is unaffected (this module's `onceSynced` is empty). | Ph3 Files | Verified: `onceInit` is the only mount; the `/api/datasets` `app.use` is the whole gate target. |
-| `API/Backend/Geodatasets/setup.js` | Wrap the `onceInit` route mount in `if (isFull())`. Leave `onceSynced` (which calls `geodatasets.up()`) running in both modes so the table still syncs. | Ph3 Files | Verified: `onceSynced` calls `geodatasets.up()`; keep it unconditional so a later mode flip needs no migration. |
-| `API/Backend/Config/setup.js` | Add `DEPLOYMENT_MODE` to the `res.render('../configure/build/index.pug', {...})` flag block, alongside the existing `WITH_*` flags. Source it from the backend `deploymentMode` helper, not raw `process.env`. | Ph3 Ops 2 | Verified: this render call is where `WITH_STAC`/`WITH_TIPG`/… are passed (L38–41). Same mechanism, one new key. |
-| `configure/public/index.html` | Add `mmgisglobal.DEPLOYMENT_MODE = "#{DEPLOYMENT_MODE}";` to the `mmgisglobal` script block. | Ph3 Ops 2 | Verified: this is the actual template (Pug `#{...}` interpolation) where `WITH_STAC` etc. become `window.mmgisglobal.*` (L27–30). **Not a Redux store** — see Discrepancies. |
-| `configure/src/components/Panel/Panel.js` | Wrap the Datasets and GeoDatasets nav `<Button>`s in `window.mmgisglobal.DEPLOYMENT_MODE !== 'lean'`, mirroring the existing `WITH_STAC === "true"` conditional one button over. | Ph3 Files/Ops 3 | Verified: GeoDatasets button L318–329, Datasets button L330–341; STAC button at L343–355 already shows the exact conditional pattern to copy. |
-| `configure/src/components/Main/Main.js` | Optional defense-in-depth: no change required (pages are unreachable once the nav buttons are hidden). If gating, guard the `case "datasets"` / `case "geodatasets"` in the `switch (page)`. | Ph3 Files | Verified: page dispatch is `switch (page)` on `state.core.page` (L219–241). Hiding the nav is sufficient; the case-guard is optional. |
-| `configure/src/core/calls.js` | No change. | Ph3 Files | Plan note: the call defs target routes that won't mount in lean; harmless dead code. |
+| File | Change | Notes (verified against code) |
+|---|---|---|
+| `API/Backend/Datasets/setup.js` | Wrap the `onceInit` route mount in `if (isFull())`. Model sync is unaffected (this module's `onceSynced` is empty). | Verified: `onceInit` is the only mount; the `/api/datasets` `app.use` is the whole gate target. |
+| `API/Backend/Geodatasets/setup.js` | Wrap the `onceInit` route mount in `if (isFull())`. Leave `onceSynced` (which calls `geodatasets.up()`) running in both modes so the table still syncs. | Verified: `onceSynced` calls `geodatasets.up()`; keep it unconditional so a later mode flip needs no migration. |
+| `API/Backend/Config/setup.js` | Add `DEPLOYMENT_MODE` to the `res.render('../configure/build/index.pug', {...})` flag block, alongside the existing `WITH_*` flags. Source it from the backend `deploymentMode` helper, not raw `process.env`. | Verified: this render call is where `WITH_STAC`/`WITH_TIPG`/… are passed (L38–41). Same mechanism, one new key. |
+| `configure/public/index.html` | Add `mmgisglobal.DEPLOYMENT_MODE = "#{DEPLOYMENT_MODE}";` to the `mmgisglobal` script block. | Verified: this is the actual template (Pug `#{...}` interpolation) where `WITH_STAC` etc. become `window.mmgisglobal.*` (L27–30). **Not a Redux store** — see Discrepancies. |
+| `configure/src/components/Panel/Panel.js` | Wrap the Datasets and GeoDatasets nav `<Button>`s in `window.mmgisglobal.DEPLOYMENT_MODE !== 'lean'`, mirroring the existing `WITH_STAC === "true"` conditional one button over. | Verified: GeoDatasets button L318–329, Datasets button L330–341; STAC button at L343–355 already shows the exact conditional pattern to copy. |
+| `configure/src/components/Main/Main.js` | Optional defense-in-depth: no change required (pages are unreachable once the nav buttons are hidden). If gating, guard the `case "datasets"` / `case "geodatasets"` in the `switch (page)`. | Verified: page dispatch is `switch (page)` on `state.core.page` (L219–241). Hiding the nav is sufficient; the case-guard is optional. |
+| `configure/src/core/calls.js` | No change. | Plan note: the call defs target routes that won't mount in lean; harmless dead code. |
 
 ## Implementation steps
 

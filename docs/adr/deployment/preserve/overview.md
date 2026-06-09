@@ -52,7 +52,6 @@ This work is split across two ADRs:
 Supporting documents:
 
 - **`features.md`** — per-feature disposition matrix (admin vs dashboard, with AWS implementation notes).
-- **`detailed-implementation-plan.md`** — phase-by-phase implementation breakdown.
 
 ## How the ADRs interact
 

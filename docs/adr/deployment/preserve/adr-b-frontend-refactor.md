@@ -7,7 +7,7 @@
 
 This ADR covers the changes to the MMGIS frontend codebase that make dashboard mode possible: a small set of seams where the runtime branches between "running inside the admin stack" (today's behavior) and "running as a published dashboard" (no backend, no database, no WebSocket).
 
-AWS infrastructure decisions — admin compute, URL topology, the publish flow, sidecar hosting — are in [ADR-A](./adr-a-aws-deployment.md). Per-feature drop/survive disposition with implementation notes is in [`features.md`](../shared/features.md). The stakeholder-given intent and requirements are in the [overview](./overview-new.md).
+AWS infrastructure decisions — admin compute, URL topology, the publish flow, sidecar hosting — are in [ADR-A](./adr-a-aws-deployment.md). Per-feature drop/survive disposition with implementation notes is in [`features.md`](../shared/features.md). The stakeholder-given intent and requirements are in the [overview](./overview.md).
 
 The high-level shape: dashboard mode is selected by a build-time flag. The codebase has one branch; the bundle is built twice (once for admin, once per dashboard) from the same source. Almost the entire frontend is unchanged in dashboard mode — the map engines, the tools, the chrome, and the embed API all run as-is. The work is concentrated at the five seams in §2.
 

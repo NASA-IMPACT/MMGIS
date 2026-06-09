@@ -4,7 +4,7 @@ This is an LLM artifact. It was used during the creation of the ADR to document 
 
 **Status:** Draft
 **Last updated:** 2026-05-20
-**Companion to:** [`adr.md`](./adr.md) (D2 = keep, env-gated). Parallel structure to [`implementation-plan-burn.md`](./implementation-plan-burn.md) — same phase numbering, so the two can be diffed.
+**Companion to:** [`adr.md`](./adr.md) (D2 = keep, env-gated).
 
 This plan leaves the existing surfaces in the codebase and gates each on a deployment-mode environment variable. After this plan, the original NASA-AMMOS deployment continues to work with `MMGIS_DEPLOYMENT_MODE` unset (or `=full`); the lean deployment sets `MMGIS_DEPLOYMENT_MODE=lean` and gets the smaller surface.
 
@@ -18,7 +18,7 @@ Conventions:
 - Two valid values: `full` (default, preserves today's behavior) and `lean` (the lean mode). The default must remain `full` so upstream users see no change.
 - A central helper `API/utils/deploymentMode.js` exports `isLean()`, `isFull()`, `assertLean()`, etc. Use it instead of reading `process.env.MMGIS_DEPLOYMENT_MODE` directly.
 
-> **Post-merge baseline (development `4f44d840`).** This plan was re-baselined after merging `development`. See [`merge-impact.md`](./merge-impact.md) for the full delta. Headlines: Phase 6's central URL helper **already exists** as `src/essence/Basics/ServiceUrls/ServiceUrls.js` (#63) — consume it, don't build a new one; the build pipeline now emits themes to `dist/` and `InterpolateHtmlPlugin` is already wired (Phases 1/6/8); the new `modern-ui` code uses "Dashboard" internally, colliding with Phase 7's "Dashboards" page; the dispatcher count in `calls.js` is **40** (unchanged — the plan's existing count is correct). All backend gating targets (Phases 2, 3-backend, 4, 5, 7-backend, 9) were untouched by the merge.
+> **Post-merge baseline (development `4f44d840`).** This plan was re-baselined after merging `development`. Headlines: Phase 6's central URL helper **already exists** as `src/essence/Basics/ServiceUrls/ServiceUrls.js` (#63) — consume it, don't build a new one; the build pipeline now emits themes to `dist/` and `InterpolateHtmlPlugin` is already wired (Phases 1/6/8); the new `modern-ui` code uses "Dashboard" internally — Phase 7's publish feature is named "Deployments" to avoid colliding with it; the dispatcher count in `calls.js` is **40** (unchanged — the plan's existing count is correct). All backend gating targets (Phases 2, 3-backend, 4, 5, 7-backend, 9) were untouched by the merge.
 
 ---
 
@@ -122,7 +122,7 @@ This mirrors the whole-module gating pattern Phase 5 uses for Shortener. Decisio
 
 **Goal:** In `lean` mode, the admin does not mount the `Missions/` static *serving* middleware or the `_time_` compositor. In `full` mode the existing 3-middleware stack is unchanged. (#26 in `features.md`.) The compositor logic is preserved for the upstream team and for any future opt-in.
 
-Static-asset **upload** is *not* dropped — it is repointed. The core `API/Backend/Upload` module (`createUploadRouter`, #103) writes to `Missions/<mission>/<subdir>/uploads/` on disk today; in lean that storage backend swaps to the S3 asset bucket and the route returns an absolute S3/CloudFront URL instead of a mission-relative path. This is the single swap seam (`uploadRouter.js`); its image-only / 5 MB / no-SVG / path-traversal validators stay as-is. **Dependency:** the `Upload` module lives on `feature/103-card-plugin` and is not yet on `development` — this item is blocked until #103 merges.
+Static-asset **upload** is *not* dropped — it is repointed. The core `API/Backend/Upload` module (`createUploadRouter`, #103) writes to `Missions/<mission>/<subdir>/uploads/` on disk today; in lean that storage backend swaps to the S3 asset bucket and the route returns an absolute S3/CloudFront URL instead of a mission-relative path. This is the single swap seam (`uploadRouter.js`); its image-only / 5 MB / path-traversal validators stay as-is. **SVG allowed (decided 2026-06-08):** the #103 validator *allows* `image/svg+xml` and that's kept — uploaders are trusted admins. In lean the asset is served behind the same gate as the rest of the deployment, so the residual risk is unchanged from on-disk. **Dependency:** the `Upload` module lives on `feature/103-card-plugin` and is not yet on `development` — this item is blocked until #103 merges.
 
 This is the surface slesa flagged at "section 3.2 Time-composited layers in dashboards" — the keep variant preserves the code so the discussion can be revisited.
 
@@ -153,7 +153,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 **Goal:** The link shortener has no meaningful role in the lean deployment; gate its route mounting on `full` mode so the admin URL surface is smaller in `lean`.
 
-**Webhooks is kept** in lean (decision reversed from the original draft). Reasons: Config already fires webhooks (Draw's webhook calls go dark with Draw gated out); the new Dashboards publish/update/delete flow is the most operationally relevant outbound-event source for lean (external CI/CD, monitoring, audit systems often want to know). Phase 7 wires the Dashboards routes to `triggerWebhooks`. No webhook code is gated.
+**Webhooks is kept** in lean (decision reversed from the original draft). Reasons: Config already fires webhooks (Draw's webhook calls go dark with Draw gated out); the new Deployments publish/update/delete flow is the most operationally relevant outbound-event source for lean (external CI/CD, monitoring, audit systems often want to know). Phase 7 wires the Deployments routes to `triggerWebhooks`. No webhook code is gated.
 
 **Files (link shortener, #34):**
 - Edit: `API/Backend/Shortener/setup.js` — wrap the route mount in `if (isFull())`. The model and routes remain in the repo.
@@ -197,23 +197,18 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 - Edit: `src/essence/Basics/Viewer_/Viewer_.js` — flip `ajaxWithCredentials` to `false` in static mode for OpenSeadragon image-pyramid loads. Anonymous S3 reads fail with credentials on.
 - Edit: `scripts/publish-static.js` (Phase 7) — copy the mission's `Missions/<mission>/Data/mosaic_parameters.csv` to the dashboard's S3 bucket root. Photosphere and ModelViewer fetch this path directly without URL templating; absent it, both panes fail silently. Skipped if the mission doesn't use Photosphere or ModelViewer.
 
-**Additional publish-time bakes** (substitute values for dispatcher calls that drop in dashboards):
+**Static-mode value sourcing** (substitute values for dispatcher calls that drop in dashboards). The original "bake all three via GDAL/Python-or-client-side" framing is superseded by two decisions (2026-06-08) — see [PR 9](./prs/pr-09-publish-time-bakes.md). Net: nothing is generated at publish time; all three are frontend static-mode call-site edits.
 
-- **Bake `cogMin` / `cogMax` per single-band COG layer.** `getminmax` is dropped; single-band COG layers render NaN colormap range without baked values. Two implementation paths:
-  - *Server-side at publish:* run `gdalinfo` once per `type === 'image'` layer with a `.tif`-style URL; write `cogMin` / `cogMax` into the layer's baked config. Skip if both present. Requires GDAL in the publish-task image (in burn this conflicts with the Dockerfile strip — Phase 8 needs to retain GDAL or pick the client-side path).
-  - *Client-side at runtime:* if every COG in scope is generated with `-co STATISTICS=YES`, `geotiff.js` can read per-band stats from the IFD without GDAL. Requires authoring discipline on COG generation; removes the image-trim conflict.
-  - Mission-config call site to silence either way: the `getminmax` call in `src/essence/Basics/Map_/Map_.js` (search for `getminmax`; the previous spec cited lines 2008–2042 — re-grep).
+- **`cogMin` / `cogMax` per single-band COG layer — Reroute to the external TiTiler.** `getminmax` is dropped, but lean always serves COG via an external TiTiler, so the band statistics come from it directly (e.g. `<titilerUrl>/cog/statistics?url=<cogUrl>`, TiTiler base resolved via `ServiceUrls`). The single-band branch still prefers `layerObj.cogMin/cogMax` when present; otherwise it fetches from TiTiler instead of baking. No GDAL, no `geotiff.js` IFD read, no publish-time generation.
+  - Call site: the `getminmax` `$.ajax` in `src/essence/Basics/Map_/Map_.js` (~L2018; a **direct `$.ajax`**, outside the dispatcher).
 
-- **Bake the projection WKT per mission CRS.** `proj42wkt` is dropped; shapefile export in the Layers tool fails to emit `.prj` (Draw's export path is gone with Draw gated out). Two implementation paths:
-  - *Server-side at publish:* run `proj42wkt.py` once on the mission's proj4 string and bake the WKT into the mission config. Same GDAL/Python dependency concern as cogMin/cogMax.
-  - *Client-side at runtime:* `proj4js` (already a dependency) supports proj4 → WKT conversion; do the conversion in the export handler in static mode.
+- **Projection WKT per mission CRS — compute client-side.** `proj42wkt` is dropped; shapefile export in the Layers tool needs the `.prj`. `proj4js` (already a dependency) does proj4 → WKT in the export handler in static mode. Trivial; no publish-time step.
   - Call site: shapefile export in `src/essence/Tools/Layers/LayersTool.js` (grep for `proj42wkt`). The `src/essence/Tools/Draw/DrawTool_Files.js` call site is moot — Draw is gated out.
 
-- **Bake `times.json` per time-enabled tile layer.** `query_tileset_times` is dropped; the TimeUI sparkline histogram bars don't render without the count data. At publish, emit a static `times.json` per time-enabled layer listing per-bin tile counts. In static mode, `TimeUI._makeHistogram` reads from that path instead of calling the endpoint.
-  - **Open question for this item:** where does the count data come from at publish time? Today's endpoint reads `Missions/<mission>/Layers/<layer>/<time>/` directory listings. In lean the tile pyramid is external. Three options to pick from before this item is implementable: (a) list the external bucket/prefix at publish time (requires bucket-read perms; works only for S3-hosted pyramids); (b) read a manifest the mission owner provides (push the work upstream to mission authoring); (c) derive from explicit time settings in the mission config if those carry enough information. None of these is settled — flag for the implementer or whoever owns mission authoring conventions.
-  - Call site to silence: `src/essence/Basics/TimeControl_/TimeUI.js` `_makeHistogram` (grep for `query_tileset_times` or `_makeHistogram`).
+- **Time-slider histogram — dropped in lean.** `query_tileset_times` is dropped and the TimeUI sparkline histogram is **disabled** in lean (senior-dev decision: not needed). `TimeUI._makeHistogram` no-ops in static mode; the time slider's scrubbing/animation is unaffected. This removes the former `times.json` bake and its unresolved count-source question entirely.
+  - Call site: `src/essence/Basics/TimeControl_/TimeUI.js` `_makeHistogram` (grep for `query_tileset_times` or `_makeHistogram`).
 
-**Posture for the three items above:** all three have a "GDAL/Python at publish" vs "compute client-side" choice. The plan does not pre-pick; implementer should make a single decision for all three to keep the image story coherent. If client-side wins, Phase 8's `Dockerfile` strip can stay aggressive in burn and the keep image trim is feasible too. If server-side wins, both Phase 8 plans must retain GDAL/Python in the publish-task image.
+**Image impact:** none of these require GDAL/Python in the publish-task image, so the Phase 8 image strip can stay aggressive.
 
 **Additional frontend behavior in static mode:**
 
@@ -248,35 +243,35 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 ## Phase 7 — Publish flow: backend module + spawned ECS task + CloudFormation template
 
-**Goal:** Add the admin's Publish and Delete endpoints, the spawned-ECS-task that runs the static build and provisions a per-dashboard CloudFormation stack, and the new `dashboards` Postgres table. (#53, #54, #55 in `features.md`.)
+**Goal:** Add the admin's Publish and Delete endpoints, the spawned-ECS-task that runs the static build and provisions a per-dashboard CloudFormation stack, and the new `deployments` Postgres table. (#53, #54, #55 in `features.md`.)
 
-**Note:** This phase is mode-aware. The Dashboards backend module is always loaded but the route mounts are gated on `isLean()` — full deployments do not need or expose the publish endpoints because they're not the deployment that publishes dashboards. The model and migrations still run in both modes (so a full admin can adopt `lean` mode later without a schema migration step).
+**Note:** This phase is mode-aware. The Deployments backend module is always loaded but the route mounts are gated on `isLean()` — full deployments do not need or expose the publish endpoints because they're not the deployment that publishes dashboards. The model and migrations still run in both modes (so a full admin can adopt `lean` mode later without a schema migration step).
 
-> **Post-merge note — "Dashboards" naming collision (decide before building this page).** The merged `modern-ui` work uses "Dashboard" *internally* for its panel-layout config: `src/essence/Validators/DashboardConfigValidator.js`, `src/essence/Basics/PanelManager_/DashboardConfigFactory.js`, `src/essence/types/dashboard.ts`. User-facing modern-ui copy was already renamed to "Interface," but the code symbols remain. This phase introduces an unrelated "Dashboards" concept (the publish/S3 page, the `dashboards` table, `API/Backend/Dashboards/`). **Open decision:** (a) name the lean publish concept something distinct — "Publish" / "Deployments" / "Published Apps" — and leave modern-ui untouched (lower risk; no churn in freshly merged code), or (b) rename modern-ui's `Dashboard*` symbols to `PanelConfig*` and keep "Dashboards" for this page. Recommend (a).
+> **Post-merge note — "Dashboards" naming collision (resolved).** The merged `modern-ui` work uses "Dashboard" *internally* for its panel-layout config: `src/essence/Validators/DashboardConfigValidator.js`, `src/essence/Basics/PanelManager_/DashboardConfigFactory.js`, `src/essence/types/dashboard.ts`. User-facing modern-ui copy was already renamed to "Interface," but the code symbols remain. To avoid colliding with those symbols, this phase's lean publish feature is named **"Deployments"** (the page, the `deployments` table, `API/Backend/Deployments/`). The modern-ui `Dashboard*` symbols are left untouched — no churn in freshly merged code. "Dashboard" is retained only for the published artifact in prose (the dashboard's bucket, the published dashboard, etc.).
 >
 > **Post-merge note — published dashboards must boot the modern interface.** A baked mission with `msv.mode: "modern"` boots through `src/essence/modern.js` / `PanelManager_`, not the classic interface. The `static`-mode publish bundle (Phase 6) must support the modern layout path, not only classic. Add an end-to-end check: publish a `modern`-mode mission and confirm the dashboard renders panels.
 
 **Files:**
-- New: `API/Backend/Dashboards/setup.js` — `onceSynced`/`onceInit` lifecycle. The `synced` step (Sequelize sync) runs in both modes; the `init` step (route mounting) gates on `isLean()`.
-- New: `API/Backend/Dashboards/models/dashboard.js` — Sequelize model. Columns as in burn-variant Phase 7: `id`, `name`, `mission`, `created_by`, `status`, `stack_arn`, `stack_name`, `cloudfront_url` (cached), `settings`, `last_error`, timestamps. Stack outputs come from `DescribeStacks` at read time, not from the row.
-- New: `API/Backend/Dashboards/routes/dashboards.js` — endpoints: `POST /api/dashboards/publish`, `POST /api/dashboards/:id/update`, `DELETE /api/dashboards/:id`, `GET /api/dashboards`, `GET /api/dashboards/:id`. All admin-only via `s.ensureAdmin()`. Mounted only when `isLean()`. The Update endpoint re-bakes the bundle from the current mission config and PutObjects new assets to the existing bucket; the CloudFront distribution is not replaced. `GET` paths merge Postgres rows with `DescribeStacks` live state. **Fire `triggerWebhooks(...)` from the Publish, Update, and Delete handlers** after the terminal row update — this is the most operationally relevant outbound-event source in lean (external CI/CD, monitoring, audit systems often want to know when dashboards change). Use the same call shape as the existing call sites in `API/Backend/Config/setup.js` and `API/Backend/Draw/routes/draw.js` — `require('../../Webhooks/processes/triggerwebhooks')` then call with an event-type and payload.
-- New: `scripts/publish-static.js`, `scripts/lib/cfn-template.js`, `scripts/lib/aws-provision.js` — same as burn variant. The publish task calls `CreateStack` and polls `DescribeStacks` until terminal state, then uploads the bundle. `DeleteStack` is called inline from the admin's `DELETE` handler (no separate teardown script).
-- New: `configure/src/pages/Dashboards/Dashboards.js` (Configure SPA convention is `pages/<Name>/<Name>.js` per directory) — admin UI. The Dashboards tab is hidden from the SPA's nav (`configure/src/components/Panel/Panel.js`) when `DEPLOYMENT_MODE === 'full'`; page dispatch is in `configure/src/components/Main/Main.js`.
-- Edit: `configure/src/core/calls.js` — add `getDashboards`, `publishDashboard`, `deleteDashboard`, `getDashboard` entries.
-- Edit: `configure/src/components/Main/Main.js` (page-switch dispatch) and `configure/src/components/Panel/Panel.js` (nav buttons) — register the Dashboards page. Note: `configure/src/core/Configure.js` is a layout component, not the route table.
+- New: `API/Backend/Deployments/setup.js` — `onceSynced`/`onceInit` lifecycle. The `synced` step (Sequelize sync) runs in both modes; the `init` step (route mounting) gates on `isLean()`.
+- New: `API/Backend/Deployments/models/deployment.js` — Sequelize model. Columns: `id`, `name`, `mission`, `created_by`, `status`, `stack_arn`, `stack_name`, `cloudfront_url` (cached), `settings`, `last_error`, timestamps. Stack outputs come from `DescribeStacks` at read time, not from the row.
+- New: `API/Backend/Deployments/routes/deployments.js` — endpoints: `POST /api/deployments/publish`, `POST /api/deployments/:id/update`, `DELETE /api/deployments/:id`, `GET /api/deployments`, `GET /api/deployments/:id`. All admin-only via `s.ensureAdmin()`. Mounted only when `isLean()`. The Update endpoint re-bakes the bundle from the current mission config and PutObjects new assets to the existing bucket; the CloudFront distribution is not replaced. `GET` paths merge Postgres rows with `DescribeStacks` live state. **Fire `triggerWebhooks(...)` from the Publish, Update, and Delete handlers** after the terminal row update — this is the most operationally relevant outbound-event source in lean (external CI/CD, monitoring, audit systems often want to know when dashboards change). Use the same call shape as the existing call sites in `API/Backend/Config/setup.js` and `API/Backend/Draw/routes/draw.js` — `require('../../Webhooks/processes/triggerwebhooks')` then call with an event-type and payload.
+- New: `scripts/publish-static.js`, `scripts/lib/cfn-template.js`, `scripts/lib/aws-provision.js`. The publish task calls `CreateStack` and polls `DescribeStacks` until terminal state, then uploads the bundle. `DeleteStack` is called inline from the admin's `DELETE` handler (no separate teardown script).
+- New: `configure/src/pages/Deployments/Deployments.js` (Configure SPA convention is `pages/<Name>/<Name>.js` per directory) — admin UI. The Deployments tab is hidden from the SPA's nav (`configure/src/components/Panel/Panel.js`) when `DEPLOYMENT_MODE === 'full'`; page dispatch is in `configure/src/components/Main/Main.js`.
+- Edit: `configure/src/core/calls.js` — add `getDeployments`, `publishDeployment`, `updateDeployment`, `deleteDeployment`, `getDeployment` entries.
+- Edit: `configure/src/components/Main/Main.js` (page-switch dispatch) and `configure/src/components/Panel/Panel.js` (nav buttons) — register the Deployments page. Note: `configure/src/core/Configure.js` is a layout component, not the route table.
 
 **Operations:**
 1. Implement the model. `setups.synced(s)` syncs on boot in both modes — keep the model passive in full mode (the table is created, but nothing writes to it).
 2. Implement the router with the `isLean()` mount gate.
 3. Implement the CloudFormation template renderer (`cfn-template.js`) and the publish wiring (`publish-static.js`, `aws-provision.js`). The publish task lives for the ~10 min `CreateStack` → `CREATE_COMPLETE` → upload sequence. The `DELETE` handler empties the bucket, calls `DeleteStack`, and returns immediately.
-4. Plumb `DEPLOYMENT_MODE` through Configure as a Pug-rendered flag (already added in Phase 3); hide the Dashboards tab in full mode.
+4. Plumb `DEPLOYMENT_MODE` through Configure as a Pug-rendered flag (already added in Phase 3); hide the Deployments tab in full mode.
 5. Render the CloudFront Function source into the template body with the password baked in as a base64-encoded constant (not as a CFN parameter, which would surface in `DescribeStacks`).
 
 **Verification:**
-- `MMGIS_DEPLOYMENT_MODE=lean` + admin deploy: Dashboards page appears, Publish works end-to-end (stack reaches `CREATE_COMPLETE`, bundle uploads, row reaches `published`), Delete works (`DeleteStack` returns immediately, row reaches `deleted` on the next read once `DescribeStacks` returns "no such stack").
-- `MMGIS_DEPLOYMENT_MODE=full`: Dashboards tab not visible, `/api/dashboards/*` returns 404, but the `dashboards` table exists in Postgres (silently) so a mode flip later doesn't need a migration.
+- `MMGIS_DEPLOYMENT_MODE=lean` + admin deploy: Deployments page appears, Publish works end-to-end (stack reaches `CREATE_COMPLETE`, bundle uploads, row reaches `published`), Delete works (`DeleteStack` returns immediately, row reaches `deleted` on the next read once `DescribeStacks` returns "no such stack").
+- `MMGIS_DEPLOYMENT_MODE=full`: Deployments tab not visible, `/api/deployments/*` returns 404, but the `deployments` table exists in Postgres (silently) so a mode flip later doesn't need a migration.
 
-**Rollback:** `git revert` the phase. Existing stacks need manual cleanup via the AWS console (list stacks under the `mmgis-dashboard-*` prefix, delete each); the `dashboards` table is benign (no FK pressure) and can be left or dropped manually.
+**Rollback:** `git revert` the phase. Existing stacks need manual cleanup via the AWS console (list stacks under the `mmgis-dashboard-*` prefix, delete each); the `deployments` table is benign (no FK pressure) and can be left or dropped manually.
 
 ---
 
@@ -295,7 +290,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
   - **Task execution role** — used by ECS itself to pull the image, write log streams, and inject env vars from Secrets Manager. Permissions: `ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`, `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `logs:CreateLogStream`, `logs:PutLogEvents`, `secretsmanager:GetSecretValue` on the DB-credentials and session-secret secrets.
   - **Task role** — used by code in the container for SDK calls. Permissions vary per task; listed below.
 - **Resource ARNs.** Permissions below describe *intent*. At implementation time, write explicit ARN templates: `arn:aws:ecs:<region>:<account>:task-definition/<family>:*`, `arn:aws:cloudformation:<region>:<account>:stack/mmgis-dashboard-*/*`, `arn:aws:s3:::mmgis-dashboard-*` (and `/*` variant for object actions).
-- **Outbound HTTPS egress.** The admin ECS task fires `triggerWebhooks(...)` to user-configured external URLs (Config saves and the new Dashboards Publish/Update/Delete events per Phase 7; Draw events don't fire — Draw is gated out). If the ECS task runs in a private subnet (the standard pattern when CloudFront fronts the ALB), it needs **either a NAT gateway in the VPC, or VPC endpoints for whatever destinations webhooks will fire at**. Without this, webhook calls hang and time out silently — a common "wait, why aren't my webhooks firing" production bug.
+- **Outbound HTTPS egress.** The admin ECS task fires `triggerWebhooks(...)` to user-configured external URLs (Config saves and the new Deployments Publish/Update/Delete events per Phase 7; Draw events don't fire — Draw is gated out). If the ECS task runs in a private subnet (the standard pattern when CloudFront fronts the ALB), it needs **either a NAT gateway in the VPC, or VPC endpoints for whatever destinations webhooks will fire at**. Without this, webhook calls hang and time out silently — a common "wait, why aren't my webhooks firing" production bug.
 
 **Files:**
 
@@ -325,7 +320,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 
 **Verification:**
 - Deploy to a staging AWS account with `MMGIS_DEPLOYMENT_MODE=lean`. Hit the admin URL; login; configure a mission referencing a public COG URL; publish a dashboard; open the dashboard URL.
-- On the same admin image, locally run `MMGIS_DEPLOYMENT_MODE=full npm start` and confirm all sidecar proxies, upload routes, Missions middleware, and dashboards-route 404 behave per the full contract.
+- On the same admin image, locally run `MMGIS_DEPLOYMENT_MODE=full npm start` and confirm all sidecar proxies, upload routes, Missions middleware, and deployments-route 404 behave per the full contract.
 
 **Rollback:** Tear down the staging environment.
 
@@ -356,7 +351,7 @@ This is the surface slesa flagged at "section 3.2 Time-composited layers in dash
 - Open the admin, leave Configure idle for 10+ minutes behind the ALB. WS stays connected; no "Websocket disconnected" banner; Essence's `LayerUpdatedControl` does not enter the `DISCONNECTED` state. ALB CloudWatch `IdleTimeoutClosedConnectionCount` does not increment for the admin target group on the WS path.
 - Local repro behind a deliberate 60s-idle reverse proxy (e.g. nginx with `proxy_read_timeout 60s`): the heartbeat keeps the connection alive across the 60s window.
 
-**On stuck stacks.** Same as burn variant: failed publishes (`CREATE_FAILED`, `ROLLBACK_COMPLETE`) and failed deletes (`DELETE_FAILED`) surface in the Dashboards page via the live-state pattern from Phase 7. The default escape hatch is the Delete affordance, which retries `DeleteStack`. If failures recur, follow up with a stack-events-via-SNS update path (out of scope for this plan).
+**On stuck stacks.** Failed publishes (`CREATE_FAILED`, `ROLLBACK_COMPLETE`) and failed deletes (`DELETE_FAILED`) surface in the Deployments page via the live-state pattern from Phase 7. The default escape hatch is the Delete affordance, which retries `DeleteStack`. If failures recur, follow up with a stack-events-via-SNS update path (out of scope for this plan).
 
 **Rollback:** `git revert` the phase.
 

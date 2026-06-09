@@ -1,4 +1,4 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../implementation-plan-keep.md`](../implementation-plan-keep.md) Phase 6 (the "Additional publish-time bakes" block) and [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
 
 # PR 9 — Static-mode COG range, projection WKT & time-histogram disable
 

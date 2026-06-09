@@ -85,7 +85,7 @@ Cases where the trade-offs are real and the choice affects how many missions are
 - **Geodatasets** (`/api/geodatasets/*`) — PostGIS spatial tables served as GeoJSON or MVT. Primary layer source for many missions; powers filtering, aggregations, and the server-side path of Search.
 - **tipg** (`/tipg/...` proxy) — Python sidecar serving OGC features and MVT directly from PostGIS, referenced via mission-configured layer URLs (no inline code construction).
 
-**Why lean breaks it.** All three depend on the admin's Postgres + sidecar stack, and the implementation plans drop the Datasets and Geodatasets modules entirely in lean. In a dashboard, every `geodatasets:`-prefixed layer fails to load (vector or vectortile), dataset-link popups silently lose joined fields, filters and aggregations 404, and any `/tipg/...` mission URL 404s.
+**Why lean breaks it.** All three depend on the admin's Postgres + sidecar stack, and lean drops the Datasets and Geodatasets modules entirely. In a dashboard, every `geodatasets:`-prefixed layer fails to load (vector or vectortile), dataset-link popups silently lose joined fields, filters and aggregations 404, and any `/tipg/...` mission URL 404s.
 
 **The core decision is A vs B: where does the data live for a dashboard?** Both are principle-compatible — the `Missions/` settled-drops bullet already permits S3-baked content alongside externally hosted content. The choice is driven by data size, mission owner capacity, and bundle-budget. C and D are accommodations for the cases where neither A nor B applies cleanly.
 

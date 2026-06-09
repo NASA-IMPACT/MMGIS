@@ -183,7 +183,7 @@ Delete the unused surfaces from the codebase. Each file or middleware that exist
 
 - An upstream contribution path to the original NASA-AMMOS MMGIS repository becomes painful. Our fork diverges meaningfully on the first burn pass; subsequent merges back from upstream require resolving deletions against ongoing changes there.
 - If the team's posture shifts ("we do want sidecars after all"), the code has to be re-introduced or reanimated from git history.
-- `implementation-plan-burn.md` lists a wide set of file deletions; some of those touch shared utilities or middleware-loading code that the kept surfaces still use. The boundary is not perfectly clean — see the burn plan's notes on the ambiguous surfaces.
+- `implementation-plan-burn.md` (removed; available in git history) listed a wide set of file deletions; some of those touch shared utilities or middleware-loading code that the kept surfaces still use. The boundary is not perfectly clean — see that burn plan's notes on the ambiguous surfaces.
 
 #### Option B — Keep, env-gated
 
@@ -202,13 +202,13 @@ Leave the unused surfaces in place. Add a deployment-mode environment variable (
 - Future refactors and code clean up are harder.
 - The env-gating itself is surface area. The gates have to be tested in both modes, and a missed gate is a production-affecting bug (e.g. an upload route accidentally mounted in lean mode). Can introduce fragility.
 
-**Decision: Option B — keep, env-gated** (reviewer pick, 2026-06-05). See [`implementation-plan-keep.md`](./implementation-plan-keep.md).
+**Decision: Option B — keep, env-gated** (reviewer pick, 2026-06-05). See the per-PR implementation docs in [`prs/`](./prs/) (sequenced in [`pr-breakdown.md`](./pr-breakdown.md)).
 
 
 ## Companion documents
 
 - [`../shared/features.md`](../shared/features.md) — per-feature inventory and disposition matrix.
 - [`feature-gaps.md`](./feature-gaps.md) — capabilities lean drops or only delivers through new work, with per-gap options.
-- [`implementation-plan-burn.md`](./implementation-plan-burn.md) — implementation plan for D2 = burn.
-- [`implementation-plan-keep.md`](./implementation-plan-keep.md) — implementation plan for D2 = keep.
+- [`implementation-plan-keep.md`](./implementation-plan-keep.md) — phase-by-phase implementation plan for D2 = keep (env-gated).
+- [`prs/`](./prs/) — the D2 = keep implementation, as per-PR docs (sequenced in [`pr-breakdown.md`](./pr-breakdown.md)).
 - [`../preserve/`](../preserve/) — the prior angle's documents, retained for reference.

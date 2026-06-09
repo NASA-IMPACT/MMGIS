@@ -30,7 +30,7 @@ This file covers two related but distinct surfaces:
 | `/api/webhooks` | **Keep** | Outbound-event channel: lets external systems react to Config (and future Dashboards) events. Used by features lean keeps. |
 | `/api/testwebhooks` | **Keep** (dev-only) | Already gated on `NODE_ENV === 'development'` regardless of deployment mode. |
 | `/api/shortener` | **Gate (whole module)** | Already gated per Phase 5. |
-| `API/Backend/Upload` (`createUploadRouter`, #103) | **Keep — repoint to S3** | `setup.js` mounts a single admin route (`/api/upload`, `ensureAdmin`); `createUploadRouter` is the factory behind it. In lean its storage backend swaps from `Missions/<mission>/...` on disk to the S3 asset bucket, returning an absolute URL. Image-only / 5 MB / path-traversal validators unchanged. **Note:** the #103 validator currently *allows* `image/svg+xml`; whether to keep allowing SVG is an open security decision (stored-XSS risk, amplified in lean because the asset moves from an admin-gated `Missions/` path to a public CloudFront URL) — flag for #103 / a security review. Depends on #103 merging. |
+| `API/Backend/Upload` (`createUploadRouter`, #103) | **Keep — repoint to S3** | `setup.js` mounts a single admin route (`/api/upload`, `ensureAdmin`); `createUploadRouter` is the factory behind it. In lean its storage backend swaps from `Missions/<mission>/...` on disk to the S3 asset bucket, returning a root-relative `/assets/…` path (served same-origin per deployment; see PR 10). Image-only / 5 MB / path-traversal validators unchanged; the validator allows `image/svg+xml` — intentional (trusted admins). Depends on #103 merging. |
 
 Non-`/api/` mounts worth noting:
 
@@ -87,7 +87,7 @@ The table describes **runtime dashboard behavior** and is variant-invariant. Bur
 | `login` | `/api/users/login` | Drop | Dashboards are anonymous read-only; CloudFront Function gates access. |
 | `signup` | `/api/users/signup` | Drop | No user management in dashboards. |
 | `logout` | `/api/users/logout` | Drop | No session to clear. |
-| `getbands` | `/api/utils/getbands` | Drop | Plain-`.tif` pixel queries; Identifier forces `trueValue=false` in static mode, falling back to legend-matched RGB (per Phase 6 of the implementation plans). |
+| `getbands` | `/api/utils/getbands` | Drop | Plain-`.tif` pixel queries; Identifier forces `trueValue=false` in static mode, falling back to legend-matched RGB (see PR 7). |
 | `getprofile` | `/api/utils/getprofile` | Drop | Elevation profile; UI hides by default (see feature-gaps *Default disposition: Elevation profile*). |
 | `getminmax` | `/api/utils/getminmax` | Reroute | Band min/max fetched from the external TiTiler (e.g. `/cog/statistics`); lean always serves COG via an external TiTiler. Direct `$.ajax` in `Map_.js`, so it's a call-site reroute, not a dispatcher entry. |
 | `ll2aerll` | `/api/utils/ll2aerll` | Drop | SPICE sun-geometry compute; feature-gaps *Default disposition: Sun-angle compute*. |
@@ -135,5 +135,4 @@ Only `proj42wkt` remains a `Compute` entry — a trivial client-side proj4→WKT
 
 - [`adr.md`](./adr.md) — full ADR, the Known constraints section enumerates what's dropped.
 - [`feature-gaps.md`](./feature-gaps.md) — what each dropped call meant for the user and how dashboards handle the loss. Organized into *Default disposition* (hide-by-default features with documented escape hatches) and *Real architectural decisions* (the three genuinely open product/architecture choices).
-- [`implementation-plan-keep.md`](./implementation-plan-keep.md) — Phase 3 implements the Datasets/Geodatasets gating; Phase 5 implements Shortener gating; Phase 6 covers the dispatcher table.
-- [`implementation-plan-burn.md`](./implementation-plan-burn.md) — same numbering, equivalent edits via deletion instead of gating.
+- [`prs/`](./prs/) — per-PR implementation docs (sequenced in [`pr-breakdown.md`](./pr-breakdown.md)): PRs 3–4 gate Datasets/Geodatasets/Draw, PR 5 gates the Shortener, and PR 7 wires the dispatcher table.

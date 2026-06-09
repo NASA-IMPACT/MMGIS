@@ -10,7 +10,7 @@ Capability-grouped inventory of MMGIS features whose deployment story is decided
 - **Dashboard** — presence in dashboards: `yes` / `no` / `open` / `N/A`. `open` means the disposition is gated by an open question tracked in the ADRs.
 - **AWS** — implementation strategy. First option is the recommended default; alternatives follow.
 
-Open questions affecting these dispositions live in **ADR-A §8** (AWS-infra-scope) and **ADR-B §5** (frontend-scope). Cross-cutting infra questions not yet owned by an ADR are in `overview-new.md`.
+Open questions affecting these dispositions live in **ADR-A §8** (AWS-infra-scope) and **ADR-B §5** (frontend-scope). Cross-cutting infra questions not yet owned by an ADR are in [`../preserve/overview.md`](../preserve/overview.md).
 
 ## Frontend capabilities (in browser bundle)
 
@@ -102,7 +102,7 @@ Net-new surface introduced by the AWS deployment refactor. Doesn't exist in the 
 | --- | --- | --- | --- | --- | --- | --- |
 | 53 | Dashboard publishing pipeline | Publish/teardown Express handler + spawned bake-and-provision task + IAM-scoped SDK calls | ECS RunTask + AWS SDK + admin Postgres | yes (net-new) | N/A | Spawned ECS task per publish (ADR-A §5.1) |
 | 54 | Per-dashboard runtime resources | S3 bucket + CloudFront distribution + CloudFront Function (password gate) + DNS record, one set per dashboard | AWS S3, CloudFront, Route 53 | N/A | yes (net-new) | One set per dashboard, provisioned at publish time (ADR-A §3.1) |
-| 55 | Dashboards admin UI + registry | New `dashboards` table on admin Postgres + a Dashboards page in Configure with async-job status polling | Configure SPA + admin Postgres | yes (net-new) | N/A | New Configure page + new Postgres table (ADR-A §5.3) |
+| 55 | Deployments admin UI + registry | New `deployments` table on admin Postgres + a Deployments page in Configure with async-job status polling | Configure SPA + admin Postgres | yes (net-new) | N/A | New Configure page + new Postgres table (ADR-A §5.3) |
 
 ## Conventions
 

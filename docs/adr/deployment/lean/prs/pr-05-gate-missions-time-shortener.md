@@ -1,4 +1,4 @@
-This is an LLM artifact — a per-PR implementation doc derived from [`../implementation-plan-keep.md`](../implementation-plan-keep.md) Phases 4 (gating portion only) and 5, and [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
+This is an LLM artifact — a per-PR implementation doc derived from [`../pr-breakdown.md`](../pr-breakdown.md). Draft; verify against current code before acting.
 
 # PR 5 — Gate Missions middleware, `_time_` compositor & link shortener
 
@@ -20,12 +20,12 @@ One thing this PR deliberately leaves alone: the ability to *upload* a static mi
 
 ## Scope / files
 
-| File | Change | Plan ref | Notes (verified against code) |
-|---|---|---|---|
-| `scripts/server.js` | Wrap the `${ROOT_PATH}/Missions` mount — the three-piece stack `app.use(..., ensureUser(), middleware.missions(ROOT_PATH), express.static('Missions'))` (L643–648) — in `if (isFull()) { ... }`. | Ph4 Files | Verified at L643–648. This single mount is the only place `middleware.missions` and the `Missions` static dir are served, so gating it disables the `_time_` compositor too (see next row). The other `express.static` mounts (build, docs, configure, public — L612–642) are **not** touched. |
-| `scripts/middleware.js` | **No edit.** The `missions(ROOT_PATH)` factory (L155+) — which contains the `_time_`/`sharp` compositing branch (L169+, `sharp` required L3) — stays as-is; it's simply never mounted in lean because the server.js mount above is gated. | Ph4 Files | Verified. The `_time_` logic lives inside `middleware.missions`, reached only through the gated mount. No standalone `_time_` route exists elsewhere. |
-| `API/Backend/Shortener/setup.js` | Wrap the route mount in `onceInit` — `s.app.use(s.ROOT_PATH + "/api/shortener", ...)` (L6–13) — in `if (isFull()) { ... }`. Model/routes remain in the repo. | Ph5 Files | Verified. Backend setups are auto-discovered by directory (`API/setups.js`), so the gate must live **inside** this `setup.js`, not in `scripts/server.js`. Import the PR-1 helper here (e.g. `require("../Utils/deploymentMode")` — match PR 1's canonical path). |
-| `package.json` | **No edit** — `sharp` (L163, `^0.31.2`) stays in dependencies; the full-mode `_time_` compositor uses it. | Ph4 Files | Verified `sharp` present at L163. |
+| File | Change | Notes (verified against code) |
+|---|---|---|
+| `scripts/server.js` | Wrap the `${ROOT_PATH}/Missions` mount — the three-piece stack `app.use(..., ensureUser(), middleware.missions(ROOT_PATH), express.static('Missions'))` (L643–648) — in `if (isFull()) { ... }`. | Verified at L643–648. This single mount is the only place `middleware.missions` and the `Missions` static dir are served, so gating it disables the `_time_` compositor too (see next row). The other `express.static` mounts (build, docs, configure, public — L612–642) are **not** touched. |
+| `scripts/middleware.js` | **No edit.** The `missions(ROOT_PATH)` factory (L155+) — which contains the `_time_`/`sharp` compositing branch (L169+, `sharp` required L3) — stays as-is; it's simply never mounted in lean because the server.js mount above is gated. | Verified. The `_time_` logic lives inside `middleware.missions`, reached only through the gated mount. No standalone `_time_` route exists elsewhere. |
+| `API/Backend/Shortener/setup.js` | Wrap the route mount in `onceInit` — `s.app.use(s.ROOT_PATH + "/api/shortener", ...)` (L6–13) — in `if (isFull()) { ... }`. Model/routes remain in the repo. | Verified. Backend setups are auto-discovered by directory (`API/setups.js`), so the gate must live **inside** this `setup.js`, not in `scripts/server.js`. Import the PR-1 helper here (e.g. `require("../Utils/deploymentMode")` — match PR 1's canonical path). |
+| `package.json` | **No edit** — `sharp` (L163, `^0.31.2`) stays in dependencies; the full-mode `_time_` compositor uses it. | Verified `sharp` present at L163. |
 
 ## Implementation steps
 
@@ -48,6 +48,6 @@ Revert the two gate edits (`scripts/server.js` Missions mount and `API/Backend/S
 
 ## Discrepancies vs plan
 
-- **The `_time_` compositor needs no separate gate.** Phase 4 lists the compositor as its own concern, but the `sharp` `_time_` logic lives entirely inside `middleware.missions` (`scripts/middleware.js` L169+), which is only reached through the gated `Missions` mount. Gating that one mount in `scripts/server.js` disables the compositor — no second edit. The plan's "`scripts/middleware.js` — unchanged" note is consistent with this.
+- **The `_time_` compositor needs no separate gate.** An earlier draft listed the compositor as its own concern, but the `sharp` `_time_` logic lives entirely inside `middleware.missions` (`scripts/middleware.js` L169+), which is only reached through the gated `Missions` mount. Gating that one mount in `scripts/server.js` disables the compositor — no second edit. An earlier draft's "`scripts/middleware.js` — unchanged" note is consistent with this.
 - **A second `_time_` surface is intentionally NOT gated here.** Beyond the `Missions`-mount tile-image compositor this PR gates, `API/Backend/Utils/routes/utils.js` exposes `/api/utils/queryTilesetTimes` (route ~L229; handler `queryTilesetTimesDir` ~L48) which reads on-disk `Missions/<…>/_time_/` directory **listings**. It is mounted under the **Utils** stack, not the gated `Missions` mount, so it stays MOUNTED in lean. Its frontend consumer (`query_tileset_times` in `TimeUI._makeHistogram`) and the times.json bake that replaces it are owned by **PR 9** — left untouched here by design.
-- **The shortener gate must live in its own `setup.js`, not `scripts/server.js`.** Backend modules are auto-discovered and mounted via `API/setups.js`'s directory scan, so the mount conditional belongs inside `API/Backend/Shortener/setup.js`'s `onceInit` (as the plan states). Flagged to prevent anyone hunting for a shortener mount line in `scripts/server.js` — there isn't one.
+- **The shortener gate must live in its own `setup.js`, not `scripts/server.js`.** Backend modules are auto-discovered and mounted via `API/setups.js`'s directory scan, so the mount conditional belongs inside `API/Backend/Shortener/setup.js`'s `onceInit` (as an earlier draft states). Flagged to prevent anyone hunting for a shortener mount line in `scripts/server.js` — there isn't one.
