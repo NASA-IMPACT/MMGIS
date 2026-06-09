@@ -24,7 +24,8 @@
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `create.sh`: "mmgis_golden does not exist" | Baseline never created | `refresh-golden.sh` (snapshots `mmgis` by default) |
+| `create.sh`: "mmgis_golden does not exist" | Baseline never created on this machine | `seed-golden.sh` (builds from the committed seed — works on a fresh machine) or `refresh-golden.sh` (snapshots a live `mmgis`) |
+| Basemap blank in a fresh deployment | Golden was seeded without `MAPBOX_TOKEN` | Set `MAPBOX_TOKEN` and `seed-golden.sh --force`, or paste a token into the mission's basemap settings in Configure |
 | Clone fails: "source database is being accessed by other users" | Tried to use a live DB as a TEMPLATE | Clone only from frozen `mmgis_golden`, never from `mmgis`; if refreshing golden, the dump/restore path avoids this |
 | New deployment opens to an empty landing page | DB cloned from a golden that had no mission, or `first_signup` not done | Refresh golden from a DB that has the mission, or sign up the first admin and build a mission |
 | `DROP DATABASE` fails: in use | Server still connected | `stop.sh <dir>` first; `teardown.sh` stops the server before dropping |

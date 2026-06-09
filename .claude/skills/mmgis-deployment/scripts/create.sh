@@ -69,7 +69,7 @@ fi
 if mw_db_exists "$dbname"; then
   mw_info "database $dbname already exists (skipping clone)"
 else
-  mw_db_exists mmgis_golden || mw_die "mmgis_golden does not exist — run refresh-golden.sh first"
+  mw_db_exists mmgis_golden || mw_die "mmgis_golden does not exist — run seed-golden.sh (builds it from the committed baseline) or refresh-golden.sh (snapshots a live DB)"
   mw_psql postgres "CREATE DATABASE \"$dbname\" TEMPLATE mmgis_golden"
   mw_info "cloned mmgis_golden -> $dbname"
 fi

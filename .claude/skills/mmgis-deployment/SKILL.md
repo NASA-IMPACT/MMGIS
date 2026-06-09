@@ -16,7 +16,7 @@ To understand the internals (the single-instance deploy and the multi-instance p
 ## Prerequisites
 
 - The shared DB container must be running. From the main checkout: `npm run db:start`.
-- `mmgis_golden` must exist. If `scripts/list.sh` shows `DB? no` everywhere or `create.sh` complains, run `scripts/refresh-golden.sh` once.
+- `mmgis_golden` must exist. On a fresh machine run `scripts/seed-golden.sh` once — it builds the baseline (admin/admin + the `arst` mission) from the committed seed via a temporary server; no existing database needed. Set `MAPBOX_TOKEN` (env or main `.env`) first if you want basemaps to render — tokens are never committed to git. `scripts/refresh-golden.sh` instead re-snapshots the baseline from a live database you already have.
 
 ## Routing — which script for which intent
 
@@ -32,18 +32,19 @@ Scripts live in `scripts/` next to this file. Invoke them by path; each takes a 
 | Diagnose a sick deployment | `scripts/doctor.sh <dir>` |
 | Run tests | `scripts/test.sh <dir> [unit\|e2e\|all]` |
 | Remove a deployment | `scripts/teardown.sh <name\|dir>` |
-| Update the baseline | `scripts/refresh-golden.sh [source-db]` |
+| Bootstrap the baseline on a fresh machine | `scripts/seed-golden.sh` |
+| Re-baseline from a live DB | `scripts/refresh-golden.sh [source-db]` |
 
 A typical new-feature flow: `create.sh <name>` → `start.sh <dir>` → open the dashboard URL. When done: `teardown.sh <name>`.
 
 ## Autonomy and safety
 
-Run these **autonomously** when the user's intent is clear: `create`, `start`, `stop`, `list`, `doctor`, `test`.
+Run these **autonomously** when the user's intent is clear: `create`, `start`, `stop`, `list`, `doctor`, `test`, and `seed-golden` when no golden exists (it refuses to overwrite one without `--force`).
 
 **Confirm with the user first** — show exactly what will change, then wait for explicit approval — before:
 
 - `teardown.sh` — drops a database and removes a worktree. It refuses when the deployment has uncommitted or unpushed work unless `--force`; never bypass that for the user without surfacing the warning. Show its printed plan and get a yes.
-- `refresh-golden.sh` — overwrites the baseline all future deployments clone from.
+- `refresh-golden.sh`, or `seed-golden.sh --force` — both overwrite the baseline all future deployments clone from.
 
 ## Common mistakes
 
