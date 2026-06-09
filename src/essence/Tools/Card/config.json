@@ -1,0 +1,81 @@
+{
+    "defaultIcon": "card-text-outline",
+    "description": "Displays a configurable list of cards (image, title, subtitle, link) in a sidebar.",
+    "descriptionFull": {
+        "title": "Renders a list of cards in a sidebar panel. Each card shows a square-cropped image, a title, a subtitle, and links to a URL. Images are uploaded per-mission to Missions/<mission>/CardPlugin/uploads/.",
+        "example": {
+            "cards": [
+                {
+                    "image": "CardPlugin/uploads/example.png",
+                    "title": "Seeing Beyond the Flames",
+                    "subtitle": "Mapping Wildfire Impacts in Southern California",
+                    "linkUrl": "https://example.com/story"
+                }
+            ]
+        }
+    },
+    "hasVars": true,
+    "name": "Card",
+    "toolbarPriority": 3,
+    "width": 368,
+    "height": 0,
+    "paths": {
+        "CardTool": "essence/Tools/Card/CardTool"
+    },
+    "expandable": true,
+    "metadata": {
+        "icon": "card-text-outline",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": ["left", "right"],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 368,
+        "height": 0
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.cards",
+                        "name": "Cards",
+                        "description": "The list of cards to display in the sidebar.",
+                        "type": "objectarray",
+                        "width": 12,
+                        "object": [
+                            {
+                                "field": "image",
+                                "name": "Image",
+                                "description": "Upload an image (png/jpg/webp/gif/svg, &le;5MB). It is cropped to a square in the card.",
+                                "type": "upload",
+                                "subdir": "CardPlugin",
+                                "width": 12
+                            },
+                            {
+                                "field": "title",
+                                "name": "Title",
+                                "description": "Card title.",
+                                "type": "text",
+                                "width": 12
+                            },
+                            {
+                                "field": "subtitle",
+                                "name": "Subtitle",
+                                "description": "Card subtitle.",
+                                "type": "text",
+                                "width": 12
+                            },
+                            {
+                                "field": "linkUrl",
+                                "name": "Link URL",
+                                "description": "Link opened when the card is clicked. Use a full https:// URL for external sites, or start with / for a page in this site.",
+                                "type": "text",
+                                "width": 12
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}
