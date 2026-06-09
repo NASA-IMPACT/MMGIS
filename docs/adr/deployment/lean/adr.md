@@ -34,12 +34,12 @@ Settled commitments. Open decisions are in another section.
 2. **The admin is the only deployable with compute.** Dashboards are S3 + CloudFront + a CloudFront Function. No Lambda, no ECS, no Fargate per dashboard.
 3. **No sidecars deploy as part of MMGIS.** Today's deployment ships five sidecar services that MMGIS proxies to: four Python services with source under `adjacent-servers/` (TiTiler, TiTiler-pgSTAC, STAC, tipg), and one NASA-AMMOS Docker image (Veloserver). None of the five deploy in lean. Their proxy routes (`/titiler`, `/titilerpgstac`, `/stac`, `/tipg`, `/veloserver`) are not exposed from production. If a mission needs functionality these services provide, its layer configs reference an externally hosted instance directly (VEDA's TiTiler, a public STAC catalog, etc.).
 4. **No geodata upload through the admin in production.** Datasets, geodatasets, tile pyramids — none of these are ingested; mission configurations reference external URLs for all geospatial data. Static mission assets (images, icons) can still be uploaded; they go to S3.
-5. **Dashboard URLs are bare CloudFront distribution names.** Each dashboard is reachable at its distribution's default domain name (`d<n>.cloudfront.net`). The admin records this URL in its registry and returns it to the publisher. If the eventual owner wants a friendly hostname, they CNAME their own DNS at the distribution; the admin does not manage DNS for dashboards.
+5. **Dashboard URLs are bare CloudFront distribution names.** Each dashboard is reachable at its distribution's default domain name (`d<n>.cloudfront.net`). The admin records this URL in its registry and returns it to the publisher. If the eventual owner wants a friendly hostname, they CNAME their own DNS at the distribution; the admin does not manage DNS for dashboards. The bundle and uploaded assets are referenced origin-relative (`/assets/…`), so that hostname change needs no rebake.
 6. **Single-mission-per-dashboard.** A published dashboard always loads exactly one mission. No mission picker, no `?mission=` switching in dashboards.
 7. **Admin URL is a dedicated subdomain or its own `.gov` URL.** CloudFront in front of the admin ALB.
 8. **Dashboard auth is one shared password across all dashboards.** A single value, edge-evaluated by a CloudFront Function. Per-dashboard passwords are out of scope until a production audience needs it.
 9. **Admin auth mirrors today's MMGIS** — local accounts with Postgres-backed sessions, optional SSO, the same `111`/`110`/`001`/`000` permission codes. No change.
-10. **PostGIS Postgres for the admin.** One managed instance, both the main MMGIS database and the dashboards-registry table on it. The STAC database (`mmgis-stac`) is not created because the STAC sidecar is not deployed.
+10. **PostGIS Postgres for the admin.** One managed instance, both the main MMGIS database and the `deployments` registry table on it. The STAC database (`mmgis-stac`) is not created because the STAC sidecar is not deployed.
 11. **Deploys into an existing VPC** in the AWS account. No net-new VPC.
 12. **CI/CD via GitHub Actions.**
 
@@ -51,10 +51,10 @@ A single AWS-managed container running today's MMGIS image. Express serves the m
 
 Persistence:
 
-- **One managed Postgres.** Users, sessions, mission configs, long-term tokens, webhooks, and the new `dashboards` registry. Draw is gated out in lean (D2), so its tables and PostGIS geometry go unused.
+- **One managed Postgres.** Users, sessions, mission configs, long-term tokens, webhooks, and the new `deployments` registry. Draw is gated out in lean (D2), so its tables and PostGIS geometry go unused.
 - **Sessions stay Postgres-backed** via `connect-pg-simple`. The same restart-survives-sessions behavior we have today.
 - **No `mmgis-stac` database**, since STAC isn't deployed.
-- **One S3 asset bucket** for admin-uploaded static mission assets, served via CloudFront.
+- **One S3 asset bucket** for admin-uploaded static mission assets, served same-origin via CloudFront under `/assets/…`.
 - **No `Missions/` filesystem.** The asset-serving middleware is unmounted (codebase fate per D2); uploads go to the S3 asset bucket instead.
 
 Networking:
@@ -73,7 +73,7 @@ Auth:
 
 Each published dashboard is provisioned as a **CloudFormation stack**, created by a one-off ECS task spawned per publish. The stack declares:
 
-- **One S3 bucket.** Holds the dashboard's JS bundle and the baked mission config. Nothing else — no per-dashboard layer data, because layer data resolves to external URLs.
+- **One S3 bucket.** Holds the dashboard's JS bundle, the baked mission config, and a copy of the mission's static assets (images, icons) — copied at publish from the shared admin asset bucket and served same-origin under `/assets/…`, so the dashboard is self-contained. No per-dashboard *layer data* (tiles, COGs, DEMs): that resolves to external URLs.
 - **One CloudFront distribution.** Default origin is the bucket. The distribution's default domain name (`d<n>.cloudfront.net`) is the dashboard's URL.
 - **One CloudFront Function** attached to the viewer-request event. JavaScript that checks the `Authorization: Basic` header against a baked password and returns `401` on mismatch. The password value is the same across every dashboard.
 - **No Route 53 record.** The dashboard is reachable at its CloudFront default name. If the eventual owner wants a friendly hostname, they CNAME their own DNS at the distribution as a separate, out-of-MMGIS step.
@@ -86,10 +86,10 @@ Each published dashboard is provisioned as a **CloudFormation stack**, created b
 
 ### Publish flow
 
-Publish, Update, and Delete actions live on a new Dashboards page in `/configure`.
+Publish, Update, and Delete actions live on a new Deployments page in `/configure`.
 
-1. Admin clicks **Publish** in new Dashboards page; `/api/publish` receives `{ mission, dashboard_name }`.
-2. Admin server inserts a `provisioning` row in the new `dashboards` table, spawns an ECS RunTask, returns `{ dashboard_id, status }`.
+1. Admin clicks **Publish** in new Deployments page; `/api/deployments/publish` receives `{ mission, name }`.
+2. Admin server inserts a `provisioning` row in the new `deployments` table, spawns an ECS RunTask, returns `{ deployment_id, status }`.
 3. Task reads the mission config from Postgres, bakes it into a source file, runs the theme build (`npm run build:themes`, which emits `dist/` CSS + fonts), then Webpack (`STATIC_MODE=true`) to create the bundle. The `dist/` assets are baked in so themed dashboards render with their CSS/fonts.
 4. Task calls CFN `CreateStack` with a rendered template (bucket + distribution + Function, password baked into the Function source). Stack name encodes the dashboard ID for idempotency.
 5. Task polls `DescribeStacks` until `CREATE_COMPLETE` (~5–10 min; distribution provisioning dominates).
@@ -97,16 +97,16 @@ Publish, Update, and Delete actions live on a new Dashboards page in `/configure
 7. Task updates the row to `published` with `stack_arn` and `cloudfront_url`. Exits.
 8. SPA polling sees `published`, surfaces the URL.
 
-**Update:** `POST /api/dashboards/:id/update` re-bakes the bundle from the current mission config and PutObjects the new assets to the existing bucket. The CloudFront distribution is not replaced — same `dashboard_id`, same stack, same URL. The row's `updated_at` reflects the latest republish. The same ECS RunTask shape as Publish, minus the CFN `CreateStack` + polling.
+**Update:** `POST /api/deployments/:id/update` re-bakes the bundle from the current mission config and PutObjects the new assets to the existing bucket. The CloudFront distribution is not replaced — same `deployment_id`, same stack, same URL. The row's `updated_at` reflects the latest republish. The same ECS RunTask shape as Publish, minus the CFN `CreateStack` + polling.
 
-**Delete:** `DELETE /api/dashboards/:id` marks the row `deleting` and calls `DeleteStack`. CFN handles the 15–30 min teardown. The row flips to `deleted` on the next read where `DescribeStacks` 404s.
+**Delete:** `DELETE /api/deployments/:id` marks the row `deleting` and calls `DeleteStack`. CFN handles the 15–30 min teardown. The row flips to `deleted` on the next read where `DescribeStacks` 404s.
 
-**Live state:** `GET /api/dashboards*` joins each row's `stack_arn` with `DescribeStacks`. The row holds identity (id, mission, owner, stack ARN); CFN holds status. No reconcile job.
+**Live state:** `GET /api/deployments*` joins each row's `stack_arn` with `DescribeStacks`. The row holds identity (id, mission, owner, stack ARN); CFN holds status. No reconcile job.
 
 ### What dashboards read at runtime
 
 - **Mission config** — JS module generated at publish time, imported by the bundle.
-- **Everything else** (tiles, COGs, STAC, vector tiles, geodata, DEMs, basemaps, attached media) are served by external URLs baked into the config. The admin copies URLs at publish; it does not host any data.
+- **Everything else** (tiles, COGs, STAC, vector tiles, geodata, DEMs, basemaps, externally-attached media) is served by external URLs baked into the config; the admin copies URLs at publish and hosts none of it. Uploaded static assets are the exception — same-origin from the dashboard bucket under `/assets/…` (per above).
 
 Dashboards never call the admin server, never call a sidecar, never connect to Postgres.
 

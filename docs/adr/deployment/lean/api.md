@@ -30,7 +30,7 @@ This file covers two related but distinct surfaces:
 | `/api/webhooks` | **Keep** | Outbound-event channel: lets external systems react to Config (and future Dashboards) events. Used by features lean keeps. |
 | `/api/testwebhooks` | **Keep** (dev-only) | Already gated on `NODE_ENV === 'development'` regardless of deployment mode. |
 | `/api/shortener` | **Gate (whole module)** | Already gated per Phase 5. |
-| `API/Backend/Upload` (`createUploadRouter`, #103) | **Keep — repoint to S3** | Shared asset-upload factory; registers no routes itself (consumers mount it). In lean its storage backend swaps from `Missions/<mission>/...` on disk to the S3 asset bucket, returning an absolute URL. Image-only / 5 MB / no-SVG validators unchanged. Depends on #103 merging. |
+| `API/Backend/Upload` (`createUploadRouter`, #103) | **Keep — repoint to S3** | `setup.js` mounts a single admin route (`/api/upload`, `ensureAdmin`); `createUploadRouter` is the factory behind it. In lean its storage backend swaps from `Missions/<mission>/...` on disk to the S3 asset bucket, returning an absolute URL. Image-only / 5 MB / path-traversal validators unchanged. **Note:** the #103 validator currently *allows* `image/svg+xml`; whether to keep allowing SVG is an open security decision (stored-XSS risk, amplified in lean because the asset moves from an admin-gated `Missions/` path to a public CloudFront URL) — flag for #103 / a security review. Depends on #103 merging. |
 
 Non-`/api/` mounts worth noting:
 
@@ -71,7 +71,7 @@ The only structural exception is `/api/utils`, which is heterogeneous enough to 
 The dashboard frontend uses the same `src/pre/calls.js` dispatcher as the admin. With `mmgisglobal.SERVER = 'static'` (vs `'node'`), the dispatcher's static branch activates and routes each named call into one of four handlers:
 
 - **Bake** — answer frozen into the bundle at publish, served from `STATIC_MISSION_CONFIG`.
-- **Reroute** — point at an external URL supplied by the mission config. No default-Reroute entries below; sidecar URL substitution happens in `serviceUrls.js`, not the dispatcher.
+- **Reroute** — point at an external URL supplied by the mission config. `getminmax` reroutes to the external TiTiler (a call-site reroute — it's a direct `$.ajax` outside the dispatcher); general sidecar URL substitution happens in `serviceUrls.js`.
 - **Compute** — answer computed client-side, typically from values baked into the mission config at publish or read directly from the COG/data file.
 - **Drop** — return a graceful error or no-op. Used for write paths, auth, anything tied to dropped modules.
 
@@ -89,7 +89,7 @@ The table describes **runtime dashboard behavior** and is variant-invariant. Bur
 | `logout` | `/api/users/logout` | Drop | No session to clear. |
 | `getbands` | `/api/utils/getbands` | Drop | Plain-`.tif` pixel queries; Identifier forces `trueValue=false` in static mode, falling back to legend-matched RGB (per Phase 6 of the implementation plans). |
 | `getprofile` | `/api/utils/getprofile` | Drop | Elevation profile; UI hides by default (see feature-gaps *Default disposition: Elevation profile*). |
-| `getminmax` | `/api/utils/getminmax` | Compute | `cogMin`/`cogMax` baked into mission config or read from COG IFD via `geotiff.js`. |
+| `getminmax` | `/api/utils/getminmax` | Reroute | Band min/max fetched from the external TiTiler (e.g. `/cog/statistics`); lean always serves COG via an external TiTiler. Direct `$.ajax` in `Map_.js`, so it's a call-site reroute, not a dispatcher entry. |
 | `ll2aerll` | `/api/utils/ll2aerll` | Drop | SPICE sun-geometry compute; feature-gaps *Default disposition: Sun-angle compute*. |
 | `chronice` | `/api/utils/chronice` | Drop | SPICE LMST conversion; feature-gaps *Default disposition: Sun-angle compute*. |
 | `proj42wkt` | `/api/utils/proj42wkt` | Compute | WKT baked into mission config or converted via `proj4js` at runtime. |
@@ -120,12 +120,12 @@ The table describes **runtime dashboard behavior** and is variant-invariant. Bur
 | `geodatasets_aggregations` | `/api/geodatasets/aggregations` | Drop | Geodatasets module dropped; see feature-gaps decision §2. |
 | `geodatasets_search` | `/api/geodatasets/search` | Drop | Geodatasets module dropped; UI hides search box when no in-memory vector layer is searchable (feature-gaps *Default disposition: Search*). |
 | `spatial_published` | `/api/spatial/published` | Drop | Response is `console.log`'d and never consumed (dead path). |
-| `query_tileset_times` | `/api/utils/queryTilesetTimes` | Compute | Baked `times.json` per time-enabled tile layer. |
+| `query_tileset_times` | `/api/utils/queryTilesetTimes` | Drop | Time-slider histogram is disabled in lean (not needed); `_makeHistogram` no-ops in static mode. Time scrubbing/animation unaffected. |
 
 
 The `Drop` entries cluster around two root causes: (a) write paths and auth flows that have no place in an anonymous read-only dashboard, (b) calls against admin-only modules (Draw, Datasets, Geodatasets, Shortener, plugin-provided endpoints) that don't ship in lean.
 
-The `Compute` entries (`getminmax`, `proj42wkt`, `query_tileset_times`) share a server-side-at-publish vs client-side-at-runtime choice. See the "publish-time bakes" block in Phase 6 of either implementation plan for the trade-offs.
+Only `proj42wkt` remains a `Compute` entry — a trivial client-side proj4→WKT conversion (`proj4js` is already bundled). `getminmax` reroutes to the external TiTiler's statistics endpoint (lean always serves COG externally), and `query_tileset_times` is dropped (the time-slider histogram is disabled in lean). See [PR 9](./prs/pr-09-publish-time-bakes.md) for the call-site details.
 
 ## Genuine open questions
 
