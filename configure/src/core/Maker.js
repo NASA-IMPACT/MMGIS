@@ -559,6 +559,13 @@ const getComponent = (
         </div>
       );
     case "button":
+      // The populate-from-COG/XML button calls the local /titiler proxy and
+      // reads tilemapresource.xml from Missions/ — both absent in lean.
+      if (
+        com.action === "tile-populate-from-x" &&
+        window.mmgisglobal.DEPLOYMENT_MODE === "lean"
+      )
+        return null;
       inner = (
         <Button
           className={c.button}
