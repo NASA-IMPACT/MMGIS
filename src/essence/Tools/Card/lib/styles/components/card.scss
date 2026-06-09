@@ -1,0 +1,42 @@
+.blocks-card {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--theme-spacing-105, 0.75rem);
+    padding: var(--theme-spacing-2, 1rem);
+    background: var(--theme-color-base-lightest, #f2f5f7);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    text-decoration: none;
+    width: 100%;
+    font-family: var(--theme-font-sans, 'Public Sans', sans-serif);
+
+    &__image {
+        flex: none;
+        width: 65px;
+        height: 65px;
+        object-fit: cover;
+        background: var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    &__body {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    &__title {
+        font-size: var(--theme-font-size-sm, 0.875rem);
+        font-weight: var(--theme-font-weight-normal, 400);
+        line-height: 160%;
+        color: var(--theme-color-ink, #0d313d);
+    }
+
+    &__subtitle {
+        font-size: var(--theme-font-size-2xs, 0.75rem);
+        font-weight: var(--theme-font-weight-normal, 400);
+        line-height: 160%;
+        color: var(--theme-color-base-dark, #565c65);
+    }
+}

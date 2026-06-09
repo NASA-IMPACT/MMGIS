@@ -1,0 +1,54 @@
+import { test, expect } from '@playwright/test'
+import { uploadImage } from '../../../configure/src/core/upload.js'
+
+const installFetchMock = (impl) => {
+    global.window = global.window || {}
+    global.window.mmgisglobal = { NODE_ENV: 'production', ROOT_PATH: '' }
+    global.fetch = impl
+    if (!global.FormData) {
+        // Minimal FormData stand-in for the Node test env.
+        global.FormData = class {
+            constructor() {
+                this._d = {}
+            }
+            append(k, v) {
+                this._d[k] = v
+            }
+        }
+    }
+}
+
+test.describe('uploadImage', () => {
+    test('POSTs to the upload route and returns the path', async () => {
+        let calledUrl = null
+        let calledInit = null
+        installFetchMock(async (url, init) => {
+            calledUrl = url
+            calledInit = init
+            return {
+                ok: true,
+                json: async () => ({
+                    status: 'success',
+                    path: 'CardPlugin/uploads/x.png',
+                }),
+            }
+        })
+        const path = await uploadImage({ name: 'x.png' }, 'MSL', 'CardPlugin')
+        expect(path).toBe('CardPlugin/uploads/x.png')
+        expect(calledUrl).toBe('api/upload?mission=MSL&subdir=CardPlugin')
+        expect(calledInit.method).toBe('POST')
+    })
+
+    test('throws on a failure response', async () => {
+        installFetchMock(async () => ({
+            ok: false,
+            json: async () => ({
+                status: 'failure',
+                message: 'Unsupported image type',
+            }),
+        }))
+        await expect(
+            uploadImage({ name: 'x.svg' }, 'MSL', 'CardPlugin'),
+        ).rejects.toThrow('Unsupported image type')
+    })
+})

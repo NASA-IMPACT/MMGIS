@@ -1,4 +1,4 @@
-import { mmgisRequest, mmgisEmit } from './mmgisAPI'
+import { mmgisRequest, mmgisEmit } from '../../_shared/adapters/mmgisAPI'
 
 type Refresh = () => Promise<void> | void
 
