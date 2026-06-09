@@ -1,0 +1,77 @@
+{
+    "defaultIcon": "selection-drag",
+    "description": "Select an Area of Interest by search, click, drawing, or upload.",
+    "descriptionFull": {
+        "title": "Pick an Area of Interest (AOI) on the map. Choose a state, county, or city from a preset list, click an administrative boundary, draw a shape, or upload a GeoJSON / KML. When a layer with timeseries analysis is active, an Analyze area action becomes available; the analysis itself is rendered by a separate Analysis plugin via the mmgisAPI event bus.",
+        "example": {
+            "boundaries": {
+                "states": "(str) mission-relative path to states.geojson",
+                "counties": "(str) mission-relative path to counties.geojson",
+                "cities": "(str) mission-relative path to cities.geojson"
+            }
+        }
+    },
+    "hasVars": true,
+    "name": "AOI",
+    "toolbarPriority": 5,
+    "separatedTool": true,
+    "paths": {
+        "AOITool": "essence/Tools/AOI/AOITool"
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "separatedTool",
+                        "name": "Separated Tool",
+                        "description": "If true, this tool lives outside the left-hand toolbar and floats over the map (matches the Figma design).",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.justification",
+                        "name": "Justification",
+                        "description": "Where the floating panel anchors. 'right' matches the Figma; 'left' or unset places it center / left.",
+                        "type": "dropdown",
+                        "width": 3,
+                        "options": ["left", "right"]
+                    },
+                    {
+                        "field": "variables.drawShapes",
+                        "name": "Draw Shapes",
+                        "description": "Which shapes appear in the Draw tab. Comma-separated subset of: point, linestring, polygon, rectangle, circle. If empty, defaults to polygon, rectangle, circle.",
+                        "type": "textarray",
+                        "width": 6
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
+                        "field": "variables.boundaries.states",
+                        "name": "States GeoJSON",
+                        "description": "Mission-relative path to a GeoJSON FeatureCollection of state polygons. If empty, the plugin falls back to the bundled defaults under Tools/AOI/assets.",
+                        "type": "text",
+                        "width": 12
+                    },
+                    {
+                        "field": "variables.boundaries.counties",
+                        "name": "Counties GeoJSON",
+                        "description": "Mission-relative path to a GeoJSON FeatureCollection of county polygons.",
+                        "type": "text",
+                        "width": 12
+                    },
+                    {
+                        "field": "variables.boundaries.cities",
+                        "name": "Cities GeoJSON",
+                        "description": "Mission-relative path to a GeoJSON FeatureCollection of city points or polygons.",
+                        "type": "text",
+                        "width": 12
+                    }
+                ]
+            }
+        ]
+    }
+}
