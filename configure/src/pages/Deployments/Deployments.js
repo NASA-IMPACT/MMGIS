@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { STATUS } from "../../core/deploymentStatus";
 import { useSelector, useDispatch } from "react-redux";
 import { makeStyles } from "@mui/styles";
 
@@ -325,7 +326,7 @@ export default function Deployments() {
                 </div>
                 <div
                   className={clsx(c.colStatus, {
-                    [c.statusError]: d.status === "failed",
+                    [c.statusError]: d.status === STATUS.FAILED,
                   })}
                   title={d.stack_status_reason || d.stack_status || d.status}
                 >

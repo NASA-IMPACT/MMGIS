@@ -1,4 +1,5 @@
 import $ from 'jquery'
+import { isStaticBuild } from './capabilities'
 import STATIC_HANDLERS from './staticHandlers'
 
 const c = {
@@ -172,7 +173,7 @@ function api(call, data, success, error) {
         if (typeof error === 'function') error()
         return
     }
-    if (window.mmgisglobal.SERVER != 'node') {
+    if (isStaticBuild()) {
         // Static builds answer from baked config or fail gracefully
         STATIC_HANDLERS[call](data, success, error)
         return

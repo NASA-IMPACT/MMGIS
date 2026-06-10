@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { isLeanMode } from "../../core/capabilities";
+import { STATUS } from "../../core/deploymentStatus";
 import { useSelector, useDispatch } from "react-redux";
 import {} from "./SaveBarSlice";
 import { makeStyles } from "@mui/styles";
@@ -90,7 +92,7 @@ export default function SaveBar() {
       {},
       (res) => {
         const existing = (res?.body?.deployments || []).find(
-          (d) => d.mission === mission && d.status !== "deleted"
+          (d) => d.mission === mission && d.status !== STATUS.DELETED
         );
         const call = existing != null ? "updateDeployment" : "publishDeployment";
         const data =
@@ -250,7 +252,7 @@ export default function SaveBar() {
         >
           Save Changes
         </Button>
-        {window.mmgisglobal.DEPLOYMENT_MODE === "lean" ? (
+        {isLeanMode() ? (
           <Button
             className={clsx(c.save, { [c.saveDisabled]: lockConfig })}
             variant="contained"

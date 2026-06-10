@@ -282,8 +282,8 @@ test.describe('runPublishTask', () => {
             ['subnet-1', 'subnet-2']
         )
         const env = input.overrides.containerOverrides[0].environment
-        expect(env).toContainEqual({ name: 'DEPLOYMENT_ID', value: '7' })
-        expect(env).toContainEqual({ name: 'DEPLOYMENT_ACTION', value: 'update' })
+        expect(env).toContainEqual({ name: 'MMGIS_DEPLOYMENT_ID', value: '7' })
+        expect(env).toContainEqual({ name: 'MMGIS_DEPLOYMENT_ACTION', value: 'update' })
     })
 
     test('throws when RunTask reports failures', async () => {

@@ -1,5 +1,6 @@
 //Depends on a div with id 'topBar'
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import L_ from '../../Basics/Layers_/Layers_'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
@@ -66,7 +67,7 @@ var Login = {
     init: function () {
         if (window.mmgisglobal.AUTH == 'off') return
         // Static builds have no auth backend; dashboards are anonymous
-        if (window.mmgisglobal.SERVER != 'node') return
+        if (isStaticBuild()) return
         if (
             (window.mmgisglobal.AUTH === 'csso' ||
                 window.mmgisglobal.AUTH === 'none' ||
