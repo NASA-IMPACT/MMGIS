@@ -1,31 +1,23 @@
 {
   "CallerReference": "mmgis-admin-cloudfront",
-  "Comment": "MMGIS lean admin distribution: default behavior forwards everything to the admin ALB and caches nothing (AllViewer + CachingDisabled); /assets/* serves the shared asset bucket same-origin.",
+  "Comment": "MMGIS lean admin distribution (bare-CloudFront posture: default *.cloudfront.net viewer cert, no Aliases). Default behavior reaches the Express Mode service's INTERNAL ALB through a CloudFront VPC origin; the origin DomainName must be the service's on.aws endpoint name (it satisfies the ALB's SNI cert AND its host-header listener rule) and the origin-request policy must be AllViewerExceptHostHeader (forwarding the viewer Host would miss that host rule and hit the listener's fixed-response default). CachingDisabled keeps auth/sessions correct. /assets/* serves the shared asset bucket same-origin.",
   "Enabled": true,
   "HttpVersion": "http2",
   "Aliases": {
-    "Quantity": 1,
-    "Items": ["<ADMIN_HOSTNAME>"]
+    "Quantity": 0
   },
   "ViewerCertificate": {
-    "ACMCertificateArn": "<ACM_CERTIFICATE_ARN>",
-    "SSLSupportMethod": "sni-only",
-    "MinimumProtocolVersion": "TLSv1.2_2021"
+    "CloudFrontDefaultCertificate": true,
+    "MinimumProtocolVersion": "TLSv1"
   },
   "Origins": {
     "Quantity": 2,
     "Items": [
       {
-        "Id": "AdminAlbOrigin",
-        "DomainName": "<ADMIN_ALB_DNS_NAME>",
-        "CustomOriginConfig": {
-          "HTTPPort": 80,
-          "HTTPSPort": 443,
-          "OriginProtocolPolicy": "https-only",
-          "OriginSslProtocols": {
-            "Quantity": 1,
-            "Items": ["TLSv1.2"]
-          }
+        "Id": "AdminExpressVpcOrigin",
+        "DomainName": "<EXPRESS_ONAWS_ENDPOINT>",
+        "VpcOriginConfig": {
+          "VpcOriginId": "<VPC_ORIGIN_ID>"
         }
       },
       {
@@ -39,7 +31,7 @@
     ]
   },
   "DefaultCacheBehavior": {
-    "TargetOriginId": "AdminAlbOrigin",
+    "TargetOriginId": "AdminExpressVpcOrigin",
     "ViewerProtocolPolicy": "redirect-to-https",
     "AllowedMethods": {
       "Quantity": 7,
@@ -51,7 +43,7 @@
     },
     "Compress": true,
     "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
-    "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3"
+    "OriginRequestPolicyId": "b689b0a8-53d0-40ab-baf2-68738e2966ac"
   },
   "CacheBehaviors": {
     "Quantity": 1,
