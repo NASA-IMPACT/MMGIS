@@ -24,10 +24,10 @@
           "Version": "2012-10-17",
           "Statement": [
             {
-              "Sid": "EcrAuth",
+              "Sid": "EcrAuthTokenNoResourceScoping",
               "Effect": "Allow",
               "Action": ["ecr:GetAuthorizationToken"],
-              "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:*"
+              "Resource": "*"
             },
             {
               "Sid": "EcrPullImage",

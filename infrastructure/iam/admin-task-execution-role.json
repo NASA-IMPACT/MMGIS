@@ -24,10 +24,10 @@
           "Version": "2012-10-17",
           "Statement": [
             {
-              "Sid": "EcrAuth",
+              "Sid": "EcrAuthTokenNoResourceScoping",
               "Effect": "Allow",
               "Action": ["ecr:GetAuthorizationToken"],
-              "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:*"
+              "Resource": "*"
             },
             {
               "Sid": "EcrPullImage",
@@ -53,8 +53,7 @@
                 "<DB_SECRET_ARN>",
                 "<SESSION_SECRET_ARN>",
                 "<SEED_SUPERADMIN_USERNAME_SECRET_ARN>",
-                "<SEED_SUPERADMIN_PASSWORD_SECRET_ARN>",
-                "<DASHBOARDS_PASSWORD_SECRET_ARN>"
+                "<SEED_SUPERADMIN_PASSWORD_SECRET_ARN>"
               ]
             }
           ]

@@ -2,11 +2,14 @@ import { test, expect } from '@playwright/test'
 
 // Tests for the lean deployment's AWS recipes in infrastructure/.
 // These are static checks: every JSON file must parse, the IAM must stay
-// least-privilege (no `Resource: "*"`, dashboard grants pinned to the
-// mmgis-dashboard-* prefix, PassRole for both publish roles), the admin
-// task definition must carry every env var the publish flow's code
-// actually reads, and the password-gate Function reference must stay in
-// sync with the generator in scripts/lib/cfn-template.js.
+// least-privilege (no `Resource: "*"` except the unscopeable
+// ecr:GetAuthorizationToken, dashboard grants pinned to the
+// mmgis-dashboard-* prefix, PassRole for both publish roles), the task
+// definitions must carry every env var the publish flow's code actually
+// reads (publish-only vars like MMGIS_DASHBOARDS_PASSWORD on the publish
+// task, the rest on the admin task), and the password-gate Function
+// reference must stay in sync with the generator in
+// scripts/lib/cfn-template.js.
 
 const fs = require('fs')
 const path = require('path')
@@ -69,12 +72,37 @@ test.describe('infrastructure/ JSON recipes', () => {
         }
     })
 
-    test('no IAM statement uses Resource: "*"', () => {
+    test('no IAM statement uses Resource: "*" (except ecr:GetAuthorizationToken)', () => {
+        // Single documented exception: ecr:GetAuthorizationToken supports NO
+        // resource-level permissions, so a statement whose ONLY action is
+        // that one MUST use Resource: "*" (anything narrower is an implicit
+        // deny that fails every Fargate image pull). This matches AWS's own
+        // AmazonECSTaskExecutionRolePolicy.
         for (const file of IAM_FILES) {
-            const resources = collectResources(readJson(file))
-            expect(resources.length).toBeGreaterThan(0)
-            for (const resource of resources) {
-                expect(resource, `${file} pins every Resource`).not.toBe('*')
+            const statements = statementsOf(readJson(file))
+            expect(statements.length).toBeGreaterThan(0)
+            for (const statement of statements) {
+                const actions = Array.isArray(statement.Action)
+                    ? statement.Action
+                    : [statement.Action]
+                if (
+                    actions.length === 1 &&
+                    actions[0] === 'ecr:GetAuthorizationToken'
+                ) {
+                    expect(
+                        collectResources(statement),
+                        `${file} '${statement.Sid}' must NOT pin the token call`
+                    ).toEqual(['*'])
+                    continue
+                }
+                const resources = collectResources(statement)
+                expect(resources.length).toBeGreaterThan(0)
+                for (const resource of resources) {
+                    expect(
+                        resource,
+                        `${file} '${statement.Sid}' pins every Resource`
+                    ).not.toBe('*')
+                }
             }
         }
     })
@@ -92,6 +120,8 @@ test.describe('infrastructure/ JSON recipes', () => {
             [adminRole, 'DashboardStackReadDelete', ':stack/mmgis-dashboard-'],
             [adminRole, 'EmptyDashboardBuckets', 'arn:aws:s3:::mmgis-dashboard-'],
             [adminRole, 'ListDashboardBuckets', 'arn:aws:s3:::mmgis-dashboard-'],
+            [adminRole, 'TeardownDashboardBuckets', 'arn:aws:s3:::mmgis-dashboard-'],
+            [adminRole, 'TeardownDashboardAuthFunctions', ':function/mmgis-dashboard-'],
             [publishRole, 'DashboardStackLifecycle', ':stack/mmgis-dashboard-'],
             [publishRole, 'DashboardBucketLifecycle', 'arn:aws:s3:::mmgis-dashboard-'],
             [publishRole, 'DashboardBucketWriteObjects', 'arn:aws:s3:::mmgis-dashboard-'],
@@ -105,6 +135,31 @@ test.describe('infrastructure/ JSON recipes', () => {
                     prefix
                 )
             }
+        }
+    })
+
+    test('admin task role can complete inline DeleteStack teardown', () => {
+        // The DELETE handler calls DeleteStack with no CloudFormation
+        // service role, so CloudFormation deletes the dashboard's S3 bucket
+        // and CloudFront distribution with the ADMIN task role's
+        // credentials. The role must hold those teardown actions, pinned to
+        // the mmgis-dashboard-* prefix (buckets) or the account's
+        // distribution ARN space (ids are random, so no name pin possible).
+        const adminRole = readJson('iam/admin-task-role.json')
+
+        const buckets = statementBySid(adminRole, 'TeardownDashboardBuckets')
+        expect(buckets.Action).toContain('s3:DeleteBucket')
+        for (const resource of collectResources(buckets)) {
+            expect(resource).toContain('arn:aws:s3:::mmgis-dashboard-')
+        }
+
+        const distributions = statementBySid(
+            adminRole,
+            'TeardownDashboardDistributions'
+        )
+        expect(distributions.Action).toContain('cloudfront:DeleteDistribution')
+        for (const resource of collectResources(distributions)) {
+            expect(resource).toContain('<ACCOUNT_ID>:distribution/')
         }
     })
 
@@ -129,7 +184,7 @@ test.describe('infrastructure/ JSON recipes', () => {
         }
     })
 
-    test('admin task def covers every env var the publish-flow code reads', () => {
+    test('task defs cover every env var the publish-flow code reads', () => {
         // Env names the code actually reads, greppable from
         // requireEnv("...") and process.env.MMGIS_* / process.env.AWS_REGION.
         const sourceFiles = fs
@@ -142,6 +197,11 @@ test.describe('infrastructure/ JSON recipes', () => {
         // definition: runPublishTask() supplies them per run via RunTask
         // container overrides (see infrastructure/README.md).
         const RUN_TASK_OVERRIDES = ['DEPLOYMENT_ID', 'DEPLOYMENT_ACTION']
+
+        // Vars only the publish-side code (scripts/publish-static.js and the
+        // template renderer it calls) reads. They ride the PUBLISH task
+        // definition; the admin task deliberately does not carry them.
+        const PUBLISH_ONLY = ['MMGIS_DASHBOARDS_PASSWORD']
 
         const wanted = new Set()
         const pattern =
@@ -161,15 +221,31 @@ test.describe('infrastructure/ JSON recipes', () => {
         // Sanity: the grep found the publish-flow configuration set.
         expect(wanted.size).toBeGreaterThanOrEqual(8)
 
-        const container = readJson('ecs/admin-task.json').containerDefinitions[0]
-        const provided = new Set([
-            ...(container.environment || []).map((e) => e.name),
-            ...(container.secrets || []).map((s) => s.name),
-        ])
+        function providedBy(taskDefFile) {
+            const container = readJson(taskDefFile).containerDefinitions[0]
+            return new Set([
+                ...(container.environment || []).map((e) => e.name),
+                ...(container.secrets || []).map((s) => s.name),
+            ])
+        }
+        const adminProvided = providedBy('ecs/admin-task.json')
+        const publishProvided = providedBy('ecs/publish-task.json')
         for (const name of wanted) {
-            expect(provided.has(name), `admin task def provides ${name}`).toBe(
-                true
-            )
+            if (PUBLISH_ONLY.includes(name)) {
+                expect(
+                    publishProvided.has(name),
+                    `publish task def provides ${name}`
+                ).toBe(true)
+                expect(
+                    adminProvided.has(name),
+                    `admin task def omits publish-only ${name}`
+                ).toBe(false)
+            } else {
+                expect(
+                    adminProvided.has(name),
+                    `admin task def provides ${name}`
+                ).toBe(true)
+            }
         }
     })
 

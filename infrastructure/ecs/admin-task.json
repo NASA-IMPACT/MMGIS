@@ -49,10 +49,6 @@
         {
           "name": "SEED_SUPERADMIN_PASSWORD",
           "valueFrom": "<SEED_SUPERADMIN_PASSWORD_SECRET_ARN>"
-        },
-        {
-          "name": "MMGIS_DASHBOARDS_PASSWORD",
-          "valueFrom": "<DASHBOARDS_PASSWORD_SECRET_ARN>"
         }
       ],
       "logConfiguration": {
