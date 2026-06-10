@@ -7,6 +7,7 @@ const router = express.Router();
 
 const logger = require("../../../logger");
 const Deployments = require("../models/deployment");
+const STATUS = Deployments.STATUS;
 
 const triggerWebhooks = require("../../Webhooks/processes/triggerwebhooks");
 
@@ -31,6 +32,8 @@ async function withLiveStatus(deployment) {
   const row = deployment.toJSON();
   row.stack_status = null;
   if (row.stack_name == null) return row;
+  // Deleted rows are history — never describe their (long-gone) stacks.
+  if (row.status === STATUS.DELETED) return row;
   try {
     const stack = await provision.describeStack({
       stackName: row.stack_name,
@@ -39,9 +42,9 @@ async function withLiveStatus(deployment) {
       row.stack_status = stack.StackStatus;
       if (stack.StackStatusReason != null)
         row.stack_status_reason = stack.StackStatusReason;
-    } else if (row.status === "deleting") {
-      await deployment.update({ status: "deleted" });
-      row.status = "deleted";
+    } else if (row.status === STATUS.DELETING) {
+      await deployment.update({ status: STATUS.DELETED });
+      row.status = STATUS.DELETED;
     }
   } catch (err) {
     // Live status is best-effort; report the failure rather than erroring
@@ -68,7 +71,7 @@ router.post("/publish", async function (req, res) {
       name: name != null && name !== "" ? name : mission,
       mission: mission,
       created_by: req.user || null,
-      status: "provisioning",
+      status: STATUS.PROVISIONING,
     });
     await deployment.update({
       stack_name: stackNameForDeployment(deployment.id),
@@ -88,7 +91,7 @@ router.post("/publish", async function (req, res) {
         );
         Deployments.update(
           {
-            status: "failed",
+            status: STATUS.FAILED,
             last_error: `Failed to start publish task: ${err.message}`,
           },
           { where: { id: deployment.id } }
@@ -119,7 +122,7 @@ router.post("/:id/update", async function (req, res) {
       return;
     }
 
-    await deployment.update({ status: "updating", last_error: null });
+    await deployment.update({ status: STATUS.UPDATING, last_error: null });
 
     provision
       .runPublishTask({ deploymentId: deployment.id, action: "update" })
@@ -133,7 +136,7 @@ router.post("/:id/update", async function (req, res) {
         );
         Deployments.update(
           {
-            status: "failed",
+            status: STATUS.FAILED,
             last_error: `Failed to start update task: ${err.message}`,
           },
           { where: { id: deployment.id } }
@@ -167,7 +170,7 @@ router.delete("/:id", async function (req, res) {
       return;
     }
 
-    await deployment.update({ status: "deleting", last_error: null });
+    await deployment.update({ status: STATUS.DELETING, last_error: null });
 
     // Teardown continues after the response; failures land in last_error
     // and the Delete affordance retries.

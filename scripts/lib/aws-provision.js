@@ -205,6 +205,10 @@ async function uploadDirectory({ bucket, dir, prefix = "", concurrency = 8 }) {
           Bucket: bucket,
           Key: `${prefix}${file.key}`,
           Body: fs.createReadStream(file.absolute),
+          // An explicit length keeps the streaming PUT retryable by the
+          // SDK (an unknown-length stream is sent unsigned/non-retryable,
+          // so one network blip would fail the whole publish).
+          ContentLength: fs.statSync(file.absolute).size,
           ContentType: contentTypeForFile(file.absolute),
         })
       );
@@ -387,5 +391,6 @@ module.exports = {
   copyPrefix,
   copyObjectIfExists,
   emptyBucket,
+  requireEnv,
   runPublishTask,
 };

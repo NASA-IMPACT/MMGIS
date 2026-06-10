@@ -32,17 +32,10 @@ const { applyTimeBakeGuard } = require("./lib/bake-guards");
 const DEPLOYMENT_ID = process.env.DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.DEPLOYMENT_ACTION || process.argv[3] || "publish";
 
+const { requireEnv } = provision;
+
 function log(message) {
   console.log(`[publish-static] ${message}`);
-}
-
-function requireEnv(name) {
-  const value = process.env[name];
-  if (value == null || value === "")
-    throw new Error(
-      `Missing required environment variable '${name}' (lean publish flow; see sample.env)`
-    );
-  return value;
 }
 
 // Runs an npm script synchronously from the repo root; throws on failure.
@@ -133,11 +126,21 @@ async function main() {
     // 3. Provision (publish) or look up (update) the dashboard stack
     let stack;
     if (ACTION === "publish") {
-      const templateBody = renderCfnTemplate({
-        password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
-      });
-      log(`Creating stack '${stackName}'...`);
-      await provision.createStack({ stackName, templateBody });
+      // Idempotent re-run: a previous attempt may have created the stack
+      // and failed later (e.g. mid-upload) — reuse it instead of dying on
+      // CloudFormation's AlreadyExistsException.
+      const existing = await provision.describeStack({ stackName });
+      if (existing == null) {
+        const templateBody = renderCfnTemplate({
+          password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
+        });
+        log(`Creating stack '${stackName}'...`);
+        await provision.createStack({ stackName, templateBody });
+      } else {
+        log(
+          `Stack '${stackName}' already exists (${existing.StackStatus}); skipping CreateStack.`
+        );
+      }
       stack = await provision.waitForStack({ stackName });
       log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     } else {
@@ -192,7 +195,7 @@ async function main() {
         ? `https://${outputs.DistributionDomainName}`
         : deployment.cloudfront_url;
     await deployment.update({
-      status: "published",
+      status: Deployments.STATUS.PUBLISHED,
       stack_arn: stack.StackId,
       stack_name: stackName,
       cloudfront_url: cloudfrontUrl,
@@ -208,7 +211,7 @@ async function main() {
     console.error(err);
     await deployment
       .update({
-        status: "failed",
+        status: Deployments.STATUS.FAILED,
         last_error: err.message || String(err),
       })
       .catch(() => {});
