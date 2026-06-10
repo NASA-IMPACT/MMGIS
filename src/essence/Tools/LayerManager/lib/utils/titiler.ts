@@ -1,9 +1,10 @@
+import { isStaticBuild } from '../../../../../pre/capabilities'
 import ServiceUrls from '../../../../Basics/ServiceUrls/ServiceUrls'
 
 export const getTiTilerBaseUrl = (): string | null => {
     // Static builds have no same-origin /titiler proxy; resolve the
     // configured external TiTiler (null when none is configured)
-    if ((window as any).mmgisglobal?.SERVER !== 'node') {
+    if (isStaticBuild()) {
         return ServiceUrls.getTiTilerUrl()
     }
     const pathname = (window.location.pathname || '').replace(/\/$/, '')

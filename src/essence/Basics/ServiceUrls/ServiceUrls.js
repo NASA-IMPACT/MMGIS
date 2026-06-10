@@ -38,7 +38,7 @@ const getLocalBaseUrl = () => {
  * Static builds have no same-origin service proxies to fall back to.
  * @returns {boolean}
  */
-const isStaticBuild = () => window.mmgisglobal?.SERVER !== 'node'
+import { isStaticBuild } from '../../../pre/capabilities'
 
 /**
  * Factory function to get a service URL

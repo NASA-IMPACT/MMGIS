@@ -14,6 +14,7 @@ import {
   setSnackBarText,
 } from "../../core/ConfigureStore";
 import { calls } from "../../core/calls";
+import { isLeanMode } from "../../core/capabilities";
 
 import NewMissionModal from "./Modals/NewMissionModal/NewMissionModal";
 
@@ -316,7 +317,7 @@ export default function Panel() {
           </ul>
         </div>
         <div className={c.pages}>
-          {window.mmgisglobal.DEPLOYMENT_MODE !== "lean" ? (
+          {!isLeanMode() ? (
             <Button
               className={c.pageButton}
               variant="contained"
@@ -330,7 +331,7 @@ export default function Panel() {
               GeoDatasets
             </Button>
           ) : null}
-          {window.mmgisglobal.DEPLOYMENT_MODE !== "lean" ? (
+          {!isLeanMode() ? (
             <Button
               className={c.pageButton}
               variant="contained"
