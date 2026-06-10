@@ -26,6 +26,10 @@ const {
   DeleteObjectsCommand,
 } = require("@aws-sdk/client-s3");
 const { ECSClient, RunTaskCommand } = require("@aws-sdk/client-ecs");
+const {
+  CloudFrontClient,
+  CreateInvalidationCommand,
+} = require("@aws-sdk/client-cloudfront");
 
 let _clients = null;
 
@@ -36,12 +40,13 @@ function getClients() {
       cfn: new CloudFormationClient({ region }),
       s3: new S3Client({ region }),
       ecs: new ECSClient({ region }),
+      cloudfront: new CloudFrontClient({ region }),
     };
   }
   return _clients;
 }
 
-// Test seam: inject mock clients ({ cfn, s3, ecs }), or null to reset.
+// Test seam: inject mock clients ({ cfn, s3, ecs, cloudfront }), or null to reset.
 function setClients(clients) {
   _clients = clients;
 }
@@ -234,6 +239,22 @@ async function uploadFile({ bucket, key, filePath }) {
   );
 }
 
+// Invalidates CloudFront paths so an updated dashboard is served
+// immediately (the distribution caches aggressively; hashed bundle
+// names dodge it but index.html, config.json, and assets do not).
+async function createInvalidation({ distributionId, paths = ["/*"] }) {
+  const { cloudfront } = getClients();
+  await cloudfront.send(
+    new CreateInvalidationCommand({
+      DistributionId: distributionId,
+      InvalidationBatch: {
+        CallerReference: `mmgis-publish-${Date.now()}`,
+        Paths: { Quantity: paths.length, Items: paths },
+      },
+    })
+  );
+}
+
 // Same-key copies every object under `prefix` from sourceBucket into
 // destBucket. Returns the number of objects copied.
 async function copyPrefix({ sourceBucket, destBucket, prefix }) {
@@ -403,6 +424,7 @@ module.exports = {
   contentTypeForFile,
   uploadDirectory,
   uploadFile,
+  createInvalidation,
   copyPrefix,
   copyObjectIfExists,
   emptyBucket,
