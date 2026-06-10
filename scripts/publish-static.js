@@ -191,6 +191,45 @@ async function main() {
       log("MMGIS_SHARED_ASSET_BUCKET not set; skipping mission asset copy.");
     }
 
+    // 4.5 Interpolate the Pug placeholders in the built index. In server
+    // mode Express renders build/index.pug per request, filling globals
+    // like FORCE_CONFIG_PATH and MAIN_MISSION; a dashboard has no server,
+    // so bake the static equivalents here (unknown placeholders become
+    // empty strings — the same as unset env vars under Pug).
+    const indexPath = path.join(rootDir, "build", "index.html");
+    const packagejson = require(path.join(rootDir, "package.json"));
+    const staticGlobals = {
+      user: "",
+      permission: "000",
+      groups: "[]",
+      AUTH: "off",
+      NODE_ENV: "production",
+      VERSION: packagejson.version,
+      FORCE_CONFIG_PATH: "",
+      CLEARANCE_NUMBER: "",
+      LINK_PREVIEW_TITLE: deployment.name || mission,
+      LINK_PREVIEW_DESCRIPTION: `MMGIS dashboard for ${mission}`,
+      ENABLE_MMGIS_WEBSOCKETS: "false",
+      MAIN_MISSION: mission,
+      IS_DOCKER: "false",
+      SKIP_CLIENT_INITIAL_LOGIN: "true",
+      THIRD_PARTY_COOKIES: "false",
+      PORT: "",
+      ROOT_PATH: "",
+      WEBSOCKET_ROOT_PATH: "",
+      WITH_TITILER: "false",
+      HOSTS: "{}",
+    };
+    fs.writeFileSync(
+      indexPath,
+      fs
+        .readFileSync(indexPath, "utf8")
+        .replace(/#\{([A-Za-z_]+)\}/g, (m, key) =>
+          staticGlobals[key] != null ? staticGlobals[key] : ""
+        )
+    );
+    log("Interpolated static globals into index.html.");
+
     // 5. Upload the bundle. The static index references ./build/... and
     // public/... — the same paths Express mounts in server mode — so the
     // bucket must mirror that layout: the webpack output under build/,
