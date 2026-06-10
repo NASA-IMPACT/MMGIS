@@ -205,7 +205,8 @@ var Viewer_ = {
             navigatorWidth: '128px',
             minZoomLevel: 0.5,
             maxZoomLevel: 12,
-            ajaxWithCredentials: true,
+            // Static builds read public files anonymously
+            ajaxWithCredentials: window.mmgisglobal.SERVER === 'node',
             //zoomPerClick: 1, //disables click to zoom for tools...
             imageSmoothingEnabled: false,
         })

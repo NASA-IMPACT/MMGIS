@@ -597,6 +597,9 @@ const Coordinates = {
     getElevation: function () {
         clearTimeout(Coordinates.elevationTimeout)
 
+        // Static builds have no getbands backend; elevation stays hidden
+        if (window.mmgisglobal.SERVER != 'node') return
+
         if (
             L_.configData.coordinates == null ||
             L_.configData.coordinates.coordelevurl == null
@@ -650,6 +653,7 @@ const Coordinates = {
         $('#mouseElev').css({ display: 'none' })
     },
     showElevation: function () {
+        if (window.mmgisglobal.SERVER != 'node') return
         $('#mouseElev').css({ display: 'block' })
     },
     remove: function () {

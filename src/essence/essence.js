@@ -412,6 +412,7 @@ var essence = {
 
         // Enable MMGIS backend websockets
         if (
+            window.mmgisglobal.SERVER === 'node' &&
             window.mmgisglobal.PORT &&
             window.mmgisglobal.ENABLE_MMGIS_WEBSOCKETS === 'true'
         ) {

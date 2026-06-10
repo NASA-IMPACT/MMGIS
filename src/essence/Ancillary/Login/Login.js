@@ -65,6 +65,8 @@ var Login = {
     beganLoggedIn: false,
     init: function () {
         if (window.mmgisglobal.AUTH == 'off') return
+        // Static builds have no auth backend; dashboards are anonymous
+        if (window.mmgisglobal.SERVER != 'node') return
         if (
             (window.mmgisglobal.AUTH === 'csso' ||
                 window.mmgisglobal.AUTH === 'none' ||

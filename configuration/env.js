@@ -116,6 +116,9 @@ function getClientEnvironment(publicUrl) {
         MMGIS_DEPLOYMENT_MODE: process.env.MMGIS_DEPLOYMENT_MODE || "full",
         // 'true' when building a statically-deployable bundle
         STATIC_MODE: process.env.STATIC_MODE,
+        // Frontend personality: 'node' talks to a live backend; 'static'
+        // answers calls from baked config (substitutes %SERVER% in index.html)
+        SERVER: process.env.SERVER || "node",
       }
     );
   // Stringify all values so we can feed into webpack DefinePlugin

@@ -520,7 +520,13 @@ var IdentifierTool = {
             true
         )
 
-        if (!trueValue && !selfish) {
+        // Static builds have no getbands backend; skip the trueValue requery
+        // so the legend-RGB readout is preserved
+        if (
+            !trueValue &&
+            !selfish &&
+            window.mmgisglobal.SERVER === 'node'
+        ) {
             IdentifierTool.mousemoveTimeout = setTimeout(function () {
                 IdentifierTool.idPixel(e, lnglatzoom, true, true)
             }, 150)
@@ -798,6 +804,9 @@ function queryDataValue(url, lng, lat, numBands, layerUUID, callback) {
     }
 
     dataPath = IdentifierTool.fillURLParameters(dataPath, layerUUID)
+
+    // Static builds have no getbands backend; keep the legend-RGB readout
+    if (window.mmgisglobal.SERVER != 'node') return
 
     calls.api(
         'getbands',

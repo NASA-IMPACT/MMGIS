@@ -57,6 +57,27 @@ export default {
             if (missions.length == 1 && !forceLanding) missionUrl = missions[0]
         }
 
+        // Static dashboards only ever show their baked mission: ignore
+        // ?mission=/?forcelanding= deeplinks and strip them from the URL
+        if (
+            window.mmgisglobal.SERVER != 'node' &&
+            typeof mmgisglobal.MAIN_MISSION === 'string' &&
+            mmgisglobal.MAIN_MISSION.length > 0 &&
+            mmgisglobal.MAIN_MISSION != 'undefined'
+        ) {
+            missionUrl = mmgisglobal.MAIN_MISSION
+            forceLanding = false
+            if (
+                QueryURL.getSingleQueryVariable('mission') ||
+                QueryURL.getSingleQueryVariable('forcelanding')
+            ) {
+                const strippedUrl = new URL(window.location)
+                strippedUrl.searchParams.delete('mission')
+                strippedUrl.searchParams.delete('forcelanding')
+                history.replaceState(null, '', strippedUrl)
+            }
+        }
+
         if (
             missionUrl == false &&
             !forceLanding &&

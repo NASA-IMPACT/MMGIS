@@ -281,6 +281,12 @@ const Measure = () => {
             </div>
             <div
                 id='measureGraph'
+                style={
+                    // No elevation profile without a getprofile backend
+                    window.mmgisglobal.SERVER != 'node'
+                        ? { display: 'none' }
+                        : null
+                }
                 onMouseLeave={() => {
                     MeasureTool.clearFocusPoint()
 
@@ -1451,6 +1457,10 @@ function makeMeasureToolLayer() {
     makeGlobePolyline(polylinePoints)
 }
 function makeProfile() {
+    // Static builds have no getprofile backend; the elevation profile is
+    // disabled and Measure stays distance-only
+    if (window.mmgisglobal.SERVER != 'node') return
+
     var numOfPts = clickedLatLngs.length
     const path = MeasureTool.dems[MeasureTool.activeDemIdx].path
     if (numOfPts > 1 && path && path != 'none' && path != 'undefined') {
@@ -1594,6 +1604,9 @@ function makeProfile() {
     }
 }
 function makeBandProfile(xy) {
+    // Static builds have no getbands backend
+    if (window.mmgisglobal.SERVER != 'node') return
+
     $.ajax({
         type: calls.getbands.type,
         url: calls.getbands.url,
