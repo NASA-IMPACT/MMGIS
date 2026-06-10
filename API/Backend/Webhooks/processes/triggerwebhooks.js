@@ -60,6 +60,21 @@ function triggerWebhooks(action, payload) {
           drawFileDelete(wh, payload);
         }
         break;
+      case "DeploymentPublish":
+        if (action === "deploymentPublish") {
+          deploymentEvent(wh, payload);
+        }
+        break;
+      case "DeploymentUpdate":
+        if (action === "deploymentUpdate") {
+          deploymentEvent(wh, payload);
+        }
+        break;
+      case "DeploymentDelete":
+        if (action === "deploymentDelete") {
+          deploymentEvent(wh, payload);
+        }
+        break;
       default:
         break;
     }
@@ -134,6 +149,41 @@ function drawFileDelete(webhook, payload) {
   };
 
   getfile(data, response);
+}
+
+// Deployments (lean publish flow): pushes the deployment payload to the
+// configured remote. Injectable variables: {deployment_id}, {name},
+// {mission}, {status}, {cloudfront_url}.
+function deploymentEvent(webhook, payload) {
+  try {
+    const webhookHeader = JSON.parse(webhook.header);
+    const webhookBody = JSON.parse(webhook.body);
+
+    const injectableVariables = {
+      deployment_id: payload.id,
+      name: payload.name,
+      mission: payload.mission,
+      status: payload.status,
+      cloudfront_url: payload.cloudfront_url,
+    };
+
+    // Build the body
+    buildBody(webhookBody, injectableVariables);
+
+    // Build the url
+    const url = buildUrl(webhook.url, injectableVariables);
+
+    // Push to the remote webhook
+    pushToRemote(url, webhook.type, webhookHeader, webhookBody);
+  } catch (err) {
+    logger(
+      "error",
+      "Failed to trigger deployment webhook",
+      "TriggerWebhooks",
+      null,
+      err
+    );
+  }
 }
 
 function getInjectableVariables(type, file, res) {

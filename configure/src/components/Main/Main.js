@@ -43,6 +43,7 @@ import APITokens from "../../pages/APITokens/APITokens";
 import GeoDatasets from "../../pages/GeoDatasets/GeoDatasets";
 import Datasets from "../../pages/Datasets/Datasets";
 import WebHooks from "../../pages/WebHooks/WebHooks";
+import Deployments from "../../pages/Deployments/Deployments";
 import APIs from "../../pages/APIs/APIs";
 import STAC from "../../pages/STAC/STAC";
 import GeneralOptions from "../../pages/GeneralOptions/GeneralOptions";
@@ -228,6 +229,9 @@ export default function Main() {
       break;
     case "webhooks":
       Page = <WebHooks />;
+      break;
+    case "deployments":
+      Page = <Deployments />;
       break;
     case "apis":
       Page = <APIs />;

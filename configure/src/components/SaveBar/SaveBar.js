@@ -19,6 +19,7 @@ import Button from "@mui/material/Button";
 
 import PreviewIcon from "@mui/icons-material/Preview";
 import SaveIcon from "@mui/icons-material/Save";
+import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 
 import PreviewModal from "./Modals/PreviewModal/PreviewModal";
 
@@ -70,6 +71,89 @@ export default function SaveBar() {
   const lockConfig = useSelector((state) => state.core.lockConfig);
   const validationErrors = useSelector((state) => state.core.validationErrors);
   const hasValidationErrors = validationErrors && validationErrors.length > 0;
+
+  // Lean publish flow: publish this mission as a standalone dashboard (or
+  // update its existing one — lean is 1:1, a mission is a dashboard).
+  // Publishing is a background job; the Deployments page shows live status.
+  const publishMission = () => {
+    if (mission == null) return;
+    calls.api(
+      "getDeployments",
+      {},
+      (res) => {
+        const existing = (res?.body?.deployments || []).find(
+          (d) => d.mission === mission && d.status !== "deleted"
+        );
+        const call = existing != null ? "updateDeployment" : "publishDeployment";
+        const data =
+          existing != null
+            ? { urlReplacements: { id: existing.id } }
+            : { mission: mission, name: mission };
+        calls.api(
+          call,
+          data,
+          () => {
+            dispatch(
+              setSnackBarText({
+                text: "Publishing… — see Deployments for live status.",
+                severity: "success",
+              })
+            );
+          },
+          (res) => {
+            dispatch(
+              setSnackBarText({
+                text: res?.message || "Failed to publish.",
+                severity: "error",
+              })
+            );
+          }
+        );
+      },
+      (res) => {
+        dispatch(
+          setSnackBarText({
+            text: res?.message || "Failed to query deployments.",
+            severity: "error",
+          })
+        );
+      }
+    );
+  };
+
+  const saveAndPublish = () => {
+    dispatch(
+      saveConfiguration({
+        cb: (status, resp) => {
+          if (status === "success") {
+            if (mission != null) {
+              calls.api(
+                "get",
+                { mission: mission },
+                (res) => {
+                  dispatch(setConfiguration(res));
+                  dispatch(clearLockConfig({}));
+                },
+                () => {}
+              );
+            }
+            publishMission();
+          } else {
+            dispatch(
+              setSnackBarText({
+                text:
+                  "Failed to save configuration!" +
+                  (resp?.errors?.[0]?.reason
+                    ? ` — ${resp?.errors?.[0]?.reason}`
+                    : ""),
+                severity: status,
+              })
+            );
+          }
+        },
+      })
+    );
+  };
 
   return (
     <>
@@ -132,6 +216,19 @@ export default function SaveBar() {
         >
           Save Changes
         </Button>
+        {window.mmgisglobal.DEPLOYMENT_MODE === "lean" ? (
+          <Button
+            className={clsx(c.save, { [c.saveDisabled]: lockConfig })}
+            variant="contained"
+            startIcon={
+              hasValidationErrors ? <span className={c.errorIndicator} /> : null
+            }
+            endIcon={<RocketLaunchIcon />}
+            onClick={saveAndPublish}
+          >
+            Publish
+          </Button>
+        ) : null}
       </div>
       <PreviewModal />
     </>
