@@ -71,7 +71,8 @@
                 "cloudfront:DeleteDistribution",
                 "cloudfront:TagResource",
                 "cloudfront:UntagResource",
-                "cloudfront:ListTagsForResource"
+                "cloudfront:ListTagsForResource",
+                "cloudfront:CreateInvalidation"
               ],
               "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:distribution/*"
             },
