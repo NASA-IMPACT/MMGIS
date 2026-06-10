@@ -21,6 +21,7 @@
 require("dotenv").config();
 
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
@@ -250,6 +251,20 @@ async function main() {
       key: "index.html",
       filePath: path.join(rootDir, "build", "index.html"),
     });
+    // LandingPage's static branch fetches Missions/<mission>/config.json
+    // directly (the legacy static-hosting convention; not routed through
+    // the dispatcher), so the baked config must also live at that key.
+    const bakedConfigPath = path.join(
+      os.tmpdir(),
+      `mmgis-baked-config-${deployment.id}.json`
+    );
+    fs.writeFileSync(bakedConfigPath, JSON.stringify(baked.get));
+    await provision.uploadFile({
+      bucket,
+      key: `Missions/${mission}/config.json`,
+      filePath: bakedConfigPath,
+    });
+    fs.unlinkSync(bakedConfigPath);
     log(
       `Uploaded ${uploadedBuild} build and ${uploadedPublic} public file(s) to ${bucket}.`
     );
