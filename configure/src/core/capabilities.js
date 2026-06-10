@@ -5,6 +5,11 @@
 // The mapping from deployment mode to capabilities lives here, in one place,
 // so the form engine never needs to know about specific fields or modes.
 
+const currentMode = () => (window.mmgisglobal || {}).DEPLOYMENT_MODE || "full";
+
+// The one mode predicate — consumers ask this instead of comparing strings.
+export const isLeanMode = () => currentMode() === "lean";
+
 const CAPABILITY_RULES = {
   // Anything served by the local sidecar proxies (/titiler, /stac, …) or the
   // on-disk Missions/ tree — both absent in lean deployments.
@@ -19,6 +24,5 @@ export const isCapabilityEnabled = (capability) => {
     );
     return false;
   }
-  const mode = (window.mmgisglobal || {}).DEPLOYMENT_MODE || "full";
-  return rule(mode);
+  return rule(currentMode());
 };
