@@ -20,6 +20,7 @@
 
 require("dotenv").config();
 
+const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
@@ -116,8 +117,16 @@ async function main() {
     const { bakeStaticConfig } = require("../API/updateTools");
     bakeStaticConfig(baked);
 
-    // 2. Build the static bundle
-    run("npm", ["run", "build:themes"]);
+    // 2. Build the static bundle. Theme assets (dist/) are baked into the
+    // image at image-build time (deploy-lean.yml runs build:themes before
+    // docker build), and build-assets.sh needs tools absent from the slim
+    // runtime image (rsync) — so only build themes when they're missing.
+    const distDir = path.join(__dirname, "..", "dist");
+    if (fs.existsSync(distDir) && fs.readdirSync(distDir).length > 0) {
+      log("Theme assets already present (dist/), skipping build:themes.");
+    } else {
+      run("npm", ["run", "build:themes"]);
+    }
     run("npm", ["run", "build"], {
       SERVER: "static",
       STATIC_MODE: "true",
