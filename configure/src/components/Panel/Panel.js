@@ -315,30 +315,34 @@ export default function Panel() {
           </ul>
         </div>
         <div className={c.pages}>
-          <Button
-            className={c.pageButton}
-            variant="contained"
-            disableElevation
-            startIcon={<ShapeLineIcon size="small" />}
-            onClick={() => {
-              dispatch(setMission(null));
-              dispatch(setPage({ page: "geodatasets" }));
-            }}
-          >
-            GeoDatasets
-          </Button>
-          <Button
-            className={c.pageButton}
-            variant="contained"
-            disableElevation
-            startIcon={<TextSnippetIcon size="small" />}
-            onClick={() => {
-              dispatch(setMission(null));
-              dispatch(setPage({ page: "datasets" }));
-            }}
-          >
-            Datasets
-          </Button>
+          {window.mmgisglobal.DEPLOYMENT_MODE !== "lean" ? (
+            <Button
+              className={c.pageButton}
+              variant="contained"
+              disableElevation
+              startIcon={<ShapeLineIcon size="small" />}
+              onClick={() => {
+                dispatch(setMission(null));
+                dispatch(setPage({ page: "geodatasets" }));
+              }}
+            >
+              GeoDatasets
+            </Button>
+          ) : null}
+          {window.mmgisglobal.DEPLOYMENT_MODE !== "lean" ? (
+            <Button
+              className={c.pageButton}
+              variant="contained"
+              disableElevation
+              startIcon={<TextSnippetIcon size="small" />}
+              onClick={() => {
+                dispatch(setMission(null));
+                dispatch(setPage({ page: "datasets" }));
+              }}
+            >
+              Datasets
+            </Button>
+          ) : null}
 
           {window.mmgisglobal.WITH_STAC === "true" ? (
             <Button
