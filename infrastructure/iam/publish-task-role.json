@@ -69,7 +69,9 @@
                 "cloudfront:GetDistribution",
                 "cloudfront:UpdateDistribution",
                 "cloudfront:DeleteDistribution",
-                "cloudfront:TagResource"
+                "cloudfront:TagResource",
+                "cloudfront:UntagResource",
+                "cloudfront:ListTagsForResource"
               ],
               "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:distribution/*"
             },
@@ -82,7 +84,9 @@
                 "cloudfront:DescribeFunction",
                 "cloudfront:DeleteFunction",
                 "cloudfront:GetFunction",
-                "cloudfront:TagResource"
+                "cloudfront:TagResource",
+                "cloudfront:UntagResource",
+                "cloudfront:ListTagsForResource"
               ],
               "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:function/mmgis-dashboard-*"
             },
