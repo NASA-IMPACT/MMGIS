@@ -66,6 +66,11 @@ export default function DeploymentsWatcher() {
       byId[d.id] = d;
     });
 
+    // Collected through both passes below and dispatched once at the end —
+    // the snackbar has a single slot, so simultaneous finishes get one
+    // combined message instead of silently dropping all but the last.
+    const toasts = [];
+
     deployments.forEach((d) => {
       const watched = deploymentsWatch[d.id];
       if (TRANSITIONAL_STATUSES.includes(d.status)) {
@@ -75,27 +80,23 @@ export default function DeploymentsWatcher() {
           );
       } else if (watched != null) {
         if (d.status === "published")
-          dispatch(
-            setSnackBarText({
-              text: `'${d.name}' published —`,
-              severity: "success",
-              link: d.cloudfront_url,
-            })
-          );
+          toasts.push({
+            text: d.cloudfront_url
+              ? `'${d.name}' published —`
+              : `'${d.name}' published.`,
+            severity: "success",
+            link: d.cloudfront_url,
+          });
         else if (d.status === "failed")
-          dispatch(
-            setSnackBarText({
-              text: `'${d.name}' publish failed — see Deployments.`,
-              severity: "error",
-            })
-          );
+          toasts.push({
+            text: `'${d.name}' publish failed — see Deployments.`,
+            severity: "error",
+          });
         else if (d.status === "deleted")
-          dispatch(
-            setSnackBarText({
-              text: `'${d.name}' deleted.`,
-              severity: "info",
-            })
-          );
+          toasts.push({
+            text: `'${d.name}' deleted.`,
+            severity: "info",
+          });
         dispatch(unwatchDeployment({ id: d.id }));
       }
     });
@@ -111,15 +112,22 @@ export default function DeploymentsWatcher() {
       Object.keys(deploymentsWatch).forEach((id) => {
         if (byId[id] == null) {
           if (deploymentsWatch[id].status === "deleting")
-            dispatch(
-              setSnackBarText({
-                text: `'${deploymentsWatch[id].name}' deleted.`,
-                severity: "info",
-              })
-            );
+            toasts.push({
+              text: `'${deploymentsWatch[id].name}' deleted.`,
+              severity: "info",
+            });
           dispatch(unwatchDeployment({ id: id }));
         }
       });
+
+    if (toasts.length === 1) dispatch(setSnackBarText(toasts[0]));
+    else if (toasts.length > 1)
+      dispatch(
+        setSnackBarText({
+          text: `${toasts.length} deployments finished — see Deployments.`,
+          severity: "info",
+        })
+      );
   }, [deployments, deploymentsWatch, dispatch, isLean]);
 
   // Poll while any watch is open. Keyed on the boolean so watch-set churn

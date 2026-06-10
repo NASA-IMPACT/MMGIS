@@ -44,7 +44,9 @@ const SnackBar = (props) => {
         horizontal: "right",
       }}
       open={openSnackbar}
-      autoHideDuration={5000}
+      // A toast carrying a link (e.g. a freshly published dashboard URL)
+      // stays until dismissed; plain toasts auto-hide.
+      autoHideDuration={snackBarText.link ? null : 5000}
       onClose={handleCloseSnackbar}
     >
       <MuiAlert
