@@ -346,7 +346,7 @@ export default function Panel() {
             </Button>
           ) : null}
 
-          {window.mmgisglobal.DEPLOYMENT_MODE === "lean" ? (
+          {isLeanMode() ? (
             <Button
               className={c.pageButton}
               variant="contained"
