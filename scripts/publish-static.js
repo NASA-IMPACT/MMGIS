@@ -171,17 +171,22 @@ async function main() {
     //    inherit the dashboard's password gate as ordinary bundle content.
     const sharedBucket = process.env.MMGIS_SHARED_ASSET_BUCKET;
     if (sharedBucket != null && sharedBucket !== "") {
+      // Uploads are keyed by the mission's FOLDER name (msv.missionFolderName,
+      // falling back to msv.mission — the same name the full-mode disk path
+      // uses), not the registry name. The bake already normalized it.
+      const missionFolderName =
+        (baked.get.msv && baked.get.msv.missionFolderName) || mission;
       const copied = await provision.copyPrefix({
         sourceBucket: sharedBucket,
         destBucket: bucket,
-        prefix: `assets/${mission}/`,
+        prefix: `assets/${missionFolderName}/`,
       });
       log(`Copied ${copied} mission asset(s) from ${sharedBucket}.`);
 
       // Viewer-panel mosaic file (conditional): the Photosphere/ModelViewer
       // panes fetch this hardcoded same-origin path. Copy it when present;
       // when absent the panes fail silently rather than erroring.
-      const mosaicKey = `Missions/${mission}/Data/mosaic_parameters.csv`;
+      const mosaicKey = `Missions/${missionFolderName}/Data/mosaic_parameters.csv`;
       const mosaicCopied = await provision.copyObjectIfExists({
         sourceBucket: sharedBucket,
         destBucket: bucket,
