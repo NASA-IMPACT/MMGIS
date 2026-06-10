@@ -220,6 +220,20 @@ async function uploadDirectory({ bucket, dir, prefix = "", concurrency = 8 }) {
   return files.length;
 }
 
+// Uploads a single local file to an exact key.
+async function uploadFile({ bucket, key, filePath }) {
+  const { s3 } = getClients();
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      Body: fs.createReadStream(filePath),
+      ContentLength: fs.statSync(filePath).size,
+      ContentType: contentTypeForFile(filePath),
+    })
+  );
+}
+
 // Same-key copies every object under `prefix` from sourceBucket into
 // destBucket. Returns the number of objects copied.
 async function copyPrefix({ sourceBucket, destBucket, prefix }) {
@@ -388,6 +402,7 @@ module.exports = {
   deleteStack,
   contentTypeForFile,
   uploadDirectory,
+  uploadFile,
   copyPrefix,
   copyObjectIfExists,
   emptyBucket,
