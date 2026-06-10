@@ -44,7 +44,6 @@ nul
 !/Missions/spice-kernels-conf.example*json
 
 /build/*
-/build-static/
 /data/*
 *__pycache__
 
