@@ -19,6 +19,8 @@
       "environment": [
         { "name": "MMGIS_DEPLOYMENT_MODE", "value": "lean" },
         { "name": "NODE_ENV", "value": "production" },
+        { "name": "DB_SSL", "value": "true" },
+        { "name": "DB_SSL_CERT_BASE64", "value": "<RDS_REGIONAL_CA_BUNDLE_BASE64>" },
         { "name": "AWS_REGION", "value": "<REGION>" },
         { "name": "MMGIS_SHARED_ASSET_BUCKET", "value": "<ASSET_BUCKET_NAME>" }
       ],

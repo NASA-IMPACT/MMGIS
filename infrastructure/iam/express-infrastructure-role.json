@@ -1,0 +1,24 @@
+{
+  "Type": "AWS::IAM::Role",
+  "Properties": {
+    "RoleName": "mmgis-express-infrastructure-role",
+    "Description": "Infrastructure role REQUIRED by `aws ecs create-express-gateway-service` (--infrastructure-role-arn): ECS assumes it to provision and manage the service's ALB, security groups, and certificates. Trust-only plus the AWS managed policy below — NO inline policy. It cannot be modified after service creation. Lean deployment only.",
+    "AssumeRolePolicyDocument": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "AllowEcsServiceAssume",
+          "Effect": "Allow",
+          "Principal": { "Service": "ecs.amazonaws.com" },
+          "Action": "sts:AssumeRole",
+          "Condition": {
+            "StringEquals": { "aws:SourceAccount": "<ACCOUNT_ID>" }
+          }
+        }
+      ]
+    },
+    "ManagedPolicyArns": [
+      "arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices"
+    ]
+  }
+}

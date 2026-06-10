@@ -2,17 +2,21 @@
   "Type": "AWS::IAM::Role",
   "Properties": {
     "RoleName": "mmgis-publish-task-role",
-    "Description": "Runtime role for the mmgis-publish container code (scripts/publish-static.js): create/describe/delete the mmgis-dashboard-* CloudFormation stacks and the S3/CloudFront resources CloudFormation manages on its behalf, and read the shared asset bucket to copy mission assets. The dashboards password arrives as the MMGIS_DASHBOARDS_PASSWORD env var via the EXECUTION role's secrets[] injection — the container code never reads Secrets Manager at runtime. No rds-db:connect — the code uses password auth (DB_USER/DB_PASS). Lean deployment only.",
+    "Description": "Runtime role for the mmgis-publish container code (scripts/publish-static.js): create/describe/delete the mmgis-dashboard-* CloudFormation stacks and the S3/CloudFront resources CloudFormation manages on its behalf, and read the shared asset bucket to copy mission assets. The dashboards password arrives as the MMGIS_DASHBOARDS_PASSWORD env var via the EXECUTION role's secrets[] injection \u2014 the container code never reads Secrets Manager at runtime. No rds-db:connect \u2014 the code uses password auth (DB_USER/DB_PASS). Lean deployment only.",
     "AssumeRolePolicyDocument": {
       "Version": "2012-10-17",
       "Statement": [
         {
           "Sid": "AllowEcsTasksAssume",
           "Effect": "Allow",
-          "Principal": { "Service": "ecs-tasks.amazonaws.com" },
+          "Principal": {
+            "Service": "ecs-tasks.amazonaws.com"
+          },
           "Action": "sts:AssumeRole",
           "Condition": {
-            "StringEquals": { "aws:SourceAccount": "<ACCOUNT_ID>" }
+            "StringEquals": {
+              "aws:SourceAccount": "<ACCOUNT_ID>"
+            }
           }
         }
       ]
@@ -52,7 +56,9 @@
             {
               "Sid": "DashboardBucketWriteObjects",
               "Effect": "Allow",
-              "Action": ["s3:PutObject"],
+              "Action": [
+                "s3:PutObject"
+              ],
               "Resource": "arn:aws:s3:::mmgis-dashboard-*/*"
             },
             {
@@ -75,7 +81,8 @@
                 "cloudfront:PublishFunction",
                 "cloudfront:DescribeFunction",
                 "cloudfront:DeleteFunction",
-                "cloudfront:GetFunction"
+                "cloudfront:GetFunction",
+                "cloudfront:TagResource"
               ],
               "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:function/mmgis-dashboard-*"
             },
@@ -92,13 +99,17 @@
             {
               "Sid": "ReadSharedAssetObjects",
               "Effect": "Allow",
-              "Action": ["s3:GetObject"],
+              "Action": [
+                "s3:GetObject"
+              ],
               "Resource": "arn:aws:s3:::<ASSET_BUCKET_NAME>/*"
             },
             {
               "Sid": "ListSharedAssetBucket",
               "Effect": "Allow",
-              "Action": ["s3:ListBucket"],
+              "Action": [
+                "s3:ListBucket"
+              ],
               "Resource": "arn:aws:s3:::<ASSET_BUCKET_NAME>"
             }
           ]
