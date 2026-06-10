@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import {} from "./SaveBarSlice";
 import { makeStyles } from "@mui/styles";
@@ -72,11 +72,18 @@ export default function SaveBar() {
   const validationErrors = useSelector((state) => state.core.validationErrors);
   const hasValidationErrors = validationErrors && validationErrors.length > 0;
 
+  // True while a save-and-publish round trip is in flight; disables the
+  // Publish button so a double-click can't start duplicate publish tasks.
+  const [publishing, setPublishing] = useState(false);
+
   // Lean publish flow: publish this mission as a standalone dashboard (or
   // update its existing one — lean is 1:1, a mission is a dashboard).
   // Publishing is a background job; the Deployments page shows live status.
   const publishMission = () => {
-    if (mission == null) return;
+    if (mission == null) {
+      setPublishing(false);
+      return;
+    }
     calls.api(
       "getDeployments",
       {},
@@ -93,6 +100,7 @@ export default function SaveBar() {
           call,
           data,
           () => {
+            setPublishing(false);
             dispatch(
               setSnackBarText({
                 text: "Publishing… — see Deployments for live status.",
@@ -101,6 +109,7 @@ export default function SaveBar() {
             );
           },
           (res) => {
+            setPublishing(false);
             dispatch(
               setSnackBarText({
                 text: res?.message || "Failed to publish.",
@@ -111,6 +120,7 @@ export default function SaveBar() {
         );
       },
       (res) => {
+        setPublishing(false);
         dispatch(
           setSnackBarText({
             text: res?.message || "Failed to query deployments.",
@@ -122,6 +132,8 @@ export default function SaveBar() {
   };
 
   const saveAndPublish = () => {
+    if (publishing) return;
+    setPublishing(true);
     dispatch(
       saveConfiguration({
         cb: (status, resp) => {
@@ -134,11 +146,21 @@ export default function SaveBar() {
                   dispatch(setConfiguration(res));
                   dispatch(clearLockConfig({}));
                 },
-                () => {}
+                (res) => {
+                  dispatch(
+                    setSnackBarText({
+                      text:
+                        res?.message ||
+                        "Failed to get configuration for mission.",
+                      severity: "error",
+                    })
+                  );
+                }
               );
             }
             publishMission();
           } else {
+            setPublishing(false);
             dispatch(
               setSnackBarText({
                 text:
@@ -220,13 +242,14 @@ export default function SaveBar() {
           <Button
             className={clsx(c.save, { [c.saveDisabled]: lockConfig })}
             variant="contained"
+            disabled={publishing}
             startIcon={
               hasValidationErrors ? <span className={c.errorIndicator} /> : null
             }
             endIcon={<RocketLaunchIcon />}
             onClick={saveAndPublish}
           >
-            Publish
+            {publishing ? "Publishing…" : "Publish"}
           </Button>
         ) : null}
       </div>

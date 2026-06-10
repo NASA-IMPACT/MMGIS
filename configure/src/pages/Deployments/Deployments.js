@@ -2,8 +2,12 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { makeStyles } from "@mui/styles";
 
+import clsx from "clsx";
+
 import { calls } from "../../core/calls";
-import { setSnackBarText } from "../../core/ConfigureStore";
+import { setModal, setSnackBarText } from "../../core/ConfigureStore";
+
+import DeleteDeploymentModal from "./Modals/DeleteDeploymentModal/DeleteDeploymentModal";
 
 import Button from "@mui/material/Button";
 import IconButton from "@mui/material/IconButton";
@@ -236,27 +240,15 @@ export default function Deployments() {
     );
   };
 
+  // Deletion is destructive (tears down the dashboard's hosting), so it
+  // goes through an explicit type-the-name confirmation modal; the modal
+  // owns the DELETE call.
   const remove = (deployment) => {
-    calls.api(
-      "deleteDeployment",
-      { urlReplacements: { id: deployment.id } },
-      () => {
-        dispatch(
-          setSnackBarText({
-            text: `Deleting '${deployment.name}'…`,
-            severity: "success",
-          })
-        );
-        queryDeployments();
-      },
-      (res) => {
-        dispatch(
-          setSnackBarText({
-            text: res?.message || "Failed to delete.",
-            severity: "error",
-          })
-        );
-      }
+    dispatch(
+      setModal({
+        name: "deleteDeployment",
+        deployment: deployment,
+      })
     );
   };
 
@@ -338,7 +330,9 @@ export default function Deployments() {
                   {d.mission}
                 </div>
                 <div
-                  className={c.colStatus}
+                  className={clsx(c.colStatus, {
+                    [c.statusError]: d.status === "failed",
+                  })}
                   title={d.stack_status_reason || d.stack_status || d.status}
                 >
                   {d.status}
@@ -385,6 +379,7 @@ export default function Deployments() {
           ))
         )}
       </div>
+      <DeleteDeploymentModal queryDeployments={queryDeployments} />
     </div>
   );
 }

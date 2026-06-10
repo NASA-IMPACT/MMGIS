@@ -50,6 +50,7 @@ export const ConfigureStore = createSlice({
       deleteUser: false,
       newUser: false,
       resetPassword: false,
+      deleteDeployment: false,
     },
     snackBarText: false,
     lockConfig: false,

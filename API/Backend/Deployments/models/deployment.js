@@ -4,6 +4,18 @@
 const Sequelize = require("sequelize");
 const { sequelize } = require("../../../connection");
 
+// Canonical deployment lifecycle statuses (the `status` column). Server-side
+// code (routes, publish task) must use these constants; the Configure UI keeps
+// its display literals.
+const STATUS = Object.freeze({
+  PROVISIONING: "provisioning",
+  PUBLISHED: "published",
+  UPDATING: "updating",
+  DELETING: "deleting",
+  DELETED: "deleted",
+  FAILED: "failed",
+});
+
 // One row per published dashboard (a standalone, statically-hosted copy of a
 // mission). Identity lives here; live stack status comes from CloudFormation
 // DescribeStacks at read time, not from this row.
@@ -24,11 +36,12 @@ var Deployments = sequelize.define(
       type: Sequelize.STRING,
       allowNull: true,
     },
-    // provisioning | published | updating | deleting | deleted | failed
+    // One of STATUS (provisioning | published | updating | deleting |
+    // deleted | failed)
     status: {
       type: Sequelize.STRING,
       allowNull: false,
-      defaultValue: "provisioning",
+      defaultValue: STATUS.PROVISIONING,
     },
     stack_arn: {
       type: Sequelize.STRING,
@@ -58,6 +71,8 @@ var Deployments = sequelize.define(
     timestamps: true,
   }
 );
+
+Deployments.STATUS = STATUS;
 
 // export Deployments model for use in other files.
 module.exports = Deployments;
