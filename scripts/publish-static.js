@@ -191,12 +191,29 @@ async function main() {
       log("MMGIS_SHARED_ASSET_BUCKET not set; skipping mission asset copy.");
     }
 
-    // 5. Upload the bundle
-    const uploaded = await provision.uploadDirectory({
+    // 5. Upload the bundle. The static index references ./build/... and
+    // public/... — the same paths Express mounts in server mode — so the
+    // bucket must mirror that layout: the webpack output under build/,
+    // the repo's public/ assets under public/, and index.html at the
+    // root (the distribution's default root object).
+    const uploadedBuild = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "build"),
+      prefix: "build/",
     });
-    log(`Uploaded ${uploaded} bundle file(s) to ${bucket}.`);
+    const uploadedPublic = await provision.uploadDirectory({
+      bucket,
+      dir: path.join(rootDir, "public"),
+      prefix: "public/",
+    });
+    await provision.uploadFile({
+      bucket,
+      key: "index.html",
+      filePath: path.join(rootDir, "build", "index.html"),
+    });
+    log(
+      `Uploaded ${uploadedBuild} build and ${uploadedPublic} public file(s) to ${bucket}.`
+    );
 
     // 6. Terminal row update
     const cloudfrontUrl =
