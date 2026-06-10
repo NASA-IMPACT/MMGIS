@@ -2850,6 +2850,13 @@ const TimeUI = {
         }
     },
     _makeHistogram() {
+        // Static builds drop the histogram (no backend to count tile times);
+        // the slider itself still scrubs and animates without it
+        if (window.mmgisglobal.SERVER !== 'node') {
+            $('#mmgisTimeUITimelineHisto').hide()
+            return
+        }
+
         const startTimestamp = TimeUI.removeOffset(
             TimeUI._timelineStartTimestamp
         )

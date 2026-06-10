@@ -7,6 +7,8 @@
 //   Drop    - graceful error/no-op (write paths, auth, dropped modules)
 // Reroutes happen at direct-$.ajax call sites (PR 9), never in this table.
 
+import projStringToWkt from './projStringToWkt'
+
 // Lazy require: webpack resolves the STATIC_MISSION_CONFIG alias at bundle
 // time, but deferring to first use lets Node-side transforms (unit tests)
 // load this module without resolving the alias.
@@ -39,14 +41,29 @@ const drop = () =>
         if (typeof error === 'function') error()
     }
 
+// Client-side computes answer with fn(data); a null/thrown result follows
+// the same error path a failed backend call would
+const compute = (fn) =>
+    function (data, success, error) {
+        let result = null
+        try {
+            result = fn(data)
+        } catch (e) {
+            console.warn('Static build: compute handler failed', e)
+        }
+        if (result != null) {
+            if (typeof success === 'function') success(result)
+        } else if (typeof error === 'function') error()
+    }
+
 const STATIC_HANDLERS = {
     // Bake — answered from the published mission config
     get: bake('get'),
     get_generaloptions: bake('get_generaloptions'),
     missions: bake('missions'),
-    // Compute — client-side proj4->WKT conversion lands with PR 9;
-    // graceful no-op until then
-    proj42wkt: drop(),
+    // Compute — proj4->WKT1 conversion runs in the browser, standing in
+    // for the backend's GDAL endpoint (shapefile-export .prj)
+    proj42wkt: compute((data) => projStringToWkt(data?.proj4)),
     // Drop — auth has no backend in a static dashboard
     login: drop(),
     signup: drop(),
@@ -90,7 +107,8 @@ const STATIC_HANDLERS = {
     geodatasets_aggregations: drop(),
     geodatasets_search: drop(),
     spatial_published: drop(),
-    // Drop — time-slider histogram is disabled in lean (PR 9)
+    // Drop — the time-slider histogram is disabled in static builds
+    // (TimeUI._makeHistogram no-ops first, so this is defensive)
     query_tileset_times: drop(),
 }
 
