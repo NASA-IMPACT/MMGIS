@@ -44,6 +44,7 @@ import {
   isUrlAbsolute,
 } from "./utils";
 import { isFieldRequired } from "./validators";
+import { isCapabilityEnabled } from "./capabilities";
 
 import Map from "../components/Map/Map";
 import VideoPreview from "../components/VideoPreview/VideoPreview";
@@ -385,6 +386,10 @@ const getComponent = (
   dispatch,
   fieldDefaults
 ) => {
+  // Metaconfigs may declare a capability the deployment must support
+  if (com.requiresCapability && !isCapabilityEnabled(com.requiresCapability))
+    return null;
+
   const directConf =
     layer == null ? (tool == null ? (component == null ? configuration : component) : tool) : layer;
   
@@ -559,13 +564,6 @@ const getComponent = (
         </div>
       );
     case "button":
-      // The populate-from-COG/XML button calls the local /titiler proxy and
-      // reads tilemapresource.xml from Missions/ — both absent in lean.
-      if (
-        com.action === "tile-populate-from-x" &&
-        window.mmgisglobal.DEPLOYMENT_MODE === "lean"
-      )
-        return null;
       inner = (
         <Button
           className={c.button}
