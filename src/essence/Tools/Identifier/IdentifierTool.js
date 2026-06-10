@@ -1,6 +1,7 @@
 //Finds the tile png under the mouse of all active tile layers
 //Draws those tiles their owns canvases and get the appropriate pixel value
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import { utcFormat } from 'd3-time-format'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import L_ from '../../Basics/Layers_/Layers_'
@@ -525,7 +526,7 @@ var IdentifierTool = {
         if (
             !trueValue &&
             !selfish &&
-            window.mmgisglobal.SERVER === 'node'
+            !isStaticBuild()
         ) {
             IdentifierTool.mousemoveTimeout = setTimeout(function () {
                 IdentifierTool.idPixel(e, lnglatzoom, true, true)
@@ -806,7 +807,7 @@ function queryDataValue(url, lng, lat, numBands, layerUUID, callback) {
     dataPath = IdentifierTool.fillURLParameters(dataPath, layerUUID)
 
     // Static builds have no getbands backend; keep the legend-RGB readout
-    if (window.mmgisglobal.SERVER != 'node') return
+    if (isStaticBuild()) return
 
     calls.api(
         'getbands',

@@ -5,14 +5,14 @@
  * image as the admin app — PR 11 provisions the task definition).
  *
  * Driven by environment:
- *   DEPLOYMENT_ID     - the deployments row to publish (required)
- *   DEPLOYMENT_ACTION - "publish" (default) creates the CloudFormation
+ *   MMGIS_DEPLOYMENT_ID     - the deployments row to publish (required)
+ *   MMGIS_DEPLOYMENT_ACTION - "publish" (default) creates the CloudFormation
  *                       stack first; "update" reuses the existing stack
  *                       and just re-bakes + re-uploads (same URL).
  *
  * Flow: read the mission config from Postgres → apply bake guards → bake
  * via bakeStaticConfig → build themes + static webpack bundle
- * (SERVER=static STATIC_MODE=true) → CreateStack + poll to CREATE_COMPLETE
+ * (SERVER=static) → CreateStack + poll to CREATE_COMPLETE
  * (publish only) → same-key copy the mission's assets from the shared
  * admin bucket → upload the bundle → mark the row `published`.
  * Any failure marks the row `failed` with last_error.
@@ -20,6 +20,8 @@
 
 require("dotenv").config();
 
+const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
 
@@ -29,8 +31,8 @@ const provision = require("./lib/aws-provision");
 const { renderCfnTemplate, stackNameForDeployment } = require("./lib/cfn-template");
 const { applyTimeBakeGuard } = require("./lib/bake-guards");
 
-const DEPLOYMENT_ID = process.env.DEPLOYMENT_ID || process.argv[2];
-const ACTION = process.env.DEPLOYMENT_ACTION || process.argv[3] || "publish";
+const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
+const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
 
 const { requireEnv } = provision;
 
@@ -96,7 +98,7 @@ async function buildBakedConfig(mission) {
 
 async function main() {
   if (DEPLOYMENT_ID == null || DEPLOYMENT_ID === "")
-    throw new Error("DEPLOYMENT_ID is required (env or first argument)");
+    throw new Error("MMGIS_DEPLOYMENT_ID is required (env or first argument)");
   if (ACTION !== "publish" && ACTION !== "update")
     throw new Error(`Unknown DEPLOYMENT_ACTION '${ACTION}'`);
 
@@ -116,11 +118,18 @@ async function main() {
     const { bakeStaticConfig } = require("../API/updateTools");
     bakeStaticConfig(baked);
 
-    // 2. Build the static bundle
-    run("npm", ["run", "build:themes"]);
+    // 2. Build the static bundle. Theme assets (dist/) are baked into the
+    // image at image-build time (deploy-lean.yml runs build:themes before
+    // docker build), and build-assets.sh needs tools absent from the slim
+    // runtime image (rsync) — so only build themes when they're missing.
+    const distDir = path.join(__dirname, "..", "dist");
+    if (fs.existsSync(distDir) && fs.readdirSync(distDir).length > 0) {
+      log("Theme assets already present (dist/), skipping build:themes.");
+    } else {
+      run("npm", ["run", "build:themes"]);
+    }
     run("npm", ["run", "build"], {
       SERVER: "static",
-      STATIC_MODE: "true",
     });
 
     // 3. Provision (publish) or look up (update) the dashboard stack
@@ -161,17 +170,22 @@ async function main() {
     //    inherit the dashboard's password gate as ordinary bundle content.
     const sharedBucket = process.env.MMGIS_SHARED_ASSET_BUCKET;
     if (sharedBucket != null && sharedBucket !== "") {
+      // Uploads are keyed by the mission's FOLDER name (msv.missionFolderName,
+      // falling back to msv.mission — the same name the full-mode disk path
+      // uses), not the registry name. The bake already normalized it.
+      const missionFolderName =
+        (baked.get.msv && baked.get.msv.missionFolderName) || mission;
       const copied = await provision.copyPrefix({
         sourceBucket: sharedBucket,
         destBucket: bucket,
-        prefix: `assets/${mission}/`,
+        prefix: `assets/${missionFolderName}/`,
       });
       log(`Copied ${copied} mission asset(s) from ${sharedBucket}.`);
 
       // Viewer-panel mosaic file (conditional): the Photosphere/ModelViewer
       // panes fetch this hardcoded same-origin path. Copy it when present;
       // when absent the panes fail silently rather than erroring.
-      const mosaicKey = `Missions/${mission}/Data/mosaic_parameters.csv`;
+      const mosaicKey = `Missions/${missionFolderName}/Data/mosaic_parameters.csv`;
       const mosaicCopied = await provision.copyObjectIfExists({
         sourceBucket: sharedBucket,
         destBucket: bucket,
@@ -182,12 +196,95 @@ async function main() {
       log("MMGIS_SHARED_ASSET_BUCKET not set; skipping mission asset copy.");
     }
 
-    // 5. Upload the bundle
-    const uploaded = await provision.uploadDirectory({
+    // 4.5 Interpolate the Pug placeholders in the built index. In server
+    // mode Express renders build/index.pug per request, filling globals
+    // like FORCE_CONFIG_PATH and MAIN_MISSION; a dashboard has no server,
+    // so bake the static equivalents here (unknown placeholders become
+    // empty strings — the same as unset env vars under Pug).
+    const indexPath = path.join(rootDir, "build", "index.html");
+    const packagejson = require(path.join(rootDir, "package.json"));
+    const staticGlobals = {
+      user: "",
+      permission: "000",
+      groups: "[]",
+      AUTH: "off",
+      NODE_ENV: "production",
+      VERSION: packagejson.version,
+      FORCE_CONFIG_PATH: "",
+      CLEARANCE_NUMBER: "",
+      LINK_PREVIEW_TITLE: deployment.name || mission,
+      LINK_PREVIEW_DESCRIPTION: `MMGIS dashboard for ${mission}`,
+      ENABLE_MMGIS_WEBSOCKETS: "false",
+      MAIN_MISSION: mission,
+      IS_DOCKER: "false",
+      SKIP_CLIENT_INITIAL_LOGIN: "true",
+      THIRD_PARTY_COOKIES: "false",
+      PORT: "",
+      ROOT_PATH: "",
+      WEBSOCKET_ROOT_PATH: "",
+      WITH_TITILER: "false",
+      HOSTS: "{}",
+    };
+    fs.writeFileSync(
+      indexPath,
+      fs
+        .readFileSync(indexPath, "utf8")
+        .replace(/#\{([A-Za-z_]+)\}/g, (m, key) =>
+          staticGlobals[key] != null ? staticGlobals[key] : ""
+        )
+    );
+    log("Interpolated static globals into index.html.");
+
+    // 5. Upload the bundle. The static index references ./build/... and
+    // public/... — the same paths Express mounts in server mode — so the
+    // bucket must mirror that layout: the webpack output under build/,
+    // the repo's public/ assets under public/, and index.html at the
+    // root (the distribution's default root object).
+    const uploadedBuild = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "build"),
+      prefix: "build/",
     });
-    log(`Uploaded ${uploaded} bundle file(s) to ${bucket}.`);
+    const uploadedPublic = await provision.uploadDirectory({
+      bucket,
+      dir: path.join(rootDir, "public"),
+      prefix: "public/",
+    });
+    await provision.uploadFile({
+      bucket,
+      key: "index.html",
+      filePath: path.join(rootDir, "build", "index.html"),
+    });
+    // LandingPage's static branch fetches Missions/<mission>/config.json
+    // directly (the legacy static-hosting convention; not routed through
+    // the dispatcher), so the baked config must also live at that key.
+    const bakedConfigPath = path.join(
+      os.tmpdir(),
+      `mmgis-baked-config-${deployment.id}.json`
+    );
+    fs.writeFileSync(bakedConfigPath, JSON.stringify(baked.get));
+    await provision.uploadFile({
+      bucket,
+      key: `Missions/${mission}/config.json`,
+      filePath: bakedConfigPath,
+    });
+    fs.unlinkSync(bakedConfigPath);
+    log(
+      `Uploaded ${uploadedBuild} build and ${uploadedPublic} public file(s) to ${bucket}.`
+    );
+
+    // 5.5 Bust the CDN so the refreshed bundle/config/assets serve
+    // immediately — the distribution caches aggressively, and only the
+    // hashed bundle filenames are naturally cache-safe. A brand-new
+    // distribution has nothing cached, so doing this unconditionally
+    // keeps publish and update on one path.
+    if (outputs.DistributionId) {
+      await provision.createInvalidation({
+        distributionId: outputs.DistributionId,
+        paths: ["/*"],
+      });
+      log("Created CloudFront invalidation (/*).");
+    }
 
     // 6. Terminal row update
     const cloudfrontUrl =

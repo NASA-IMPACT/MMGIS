@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { isLeanMode } from "../../core/capabilities";
+import { STATUS } from "../../core/deploymentStatus";
 import { useSelector, useDispatch } from "react-redux";
 import {} from "./SaveBarSlice";
 import { makeStyles } from "@mui/styles";
@@ -13,6 +15,7 @@ import {
   clearLockConfig,
   saveConfiguration,
   setSnackBarText,
+  watchDeployment,
 } from "../../core/ConfigureStore";
 
 import Button from "@mui/material/Button";
@@ -89,7 +92,7 @@ export default function SaveBar() {
       {},
       (res) => {
         const existing = (res?.body?.deployments || []).find(
-          (d) => d.mission === mission && d.status !== "deleted"
+          (d) => d.mission === mission && d.status !== STATUS.DELETED
         );
         const call = existing != null ? "updateDeployment" : "publishDeployment";
         const data =
@@ -99,11 +102,22 @@ export default function SaveBar() {
         calls.api(
           call,
           data,
-          () => {
+          (res) => {
             setPublishing(false);
+            // Hand the in-flight deployment to DeploymentsWatcher, which
+            // polls and raises a snackbar when the publish completes.
+            const deployment = res?.body?.deployment;
+            if (deployment != null)
+              dispatch(
+                watchDeployment({
+                  id: deployment.id,
+                  name: deployment.name,
+                  status: deployment.status,
+                })
+              );
             dispatch(
               setSnackBarText({
-                text: "Publishing… — see Deployments for live status.",
+                text: "Publishing… — you'll be notified here when it finishes.",
                 severity: "success",
               })
             );
@@ -238,7 +252,7 @@ export default function SaveBar() {
         >
           Save Changes
         </Button>
-        {window.mmgisglobal.DEPLOYMENT_MODE === "lean" ? (
+        {isLeanMode() ? (
           <Button
             className={clsx(c.save, { [c.saveDisabled]: lockConfig })}
             variant="contained"

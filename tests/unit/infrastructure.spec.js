@@ -193,10 +193,10 @@ test.describe('infrastructure/ JSON recipes', () => {
             .map((f) => path.join(ROOT, 'scripts', 'lib', f))
         sourceFiles.push(path.join(ROOT, 'scripts', 'publish-static.js'))
 
-        // DEPLOYMENT_ID / DEPLOYMENT_ACTION are deliberately NOT in any task
+        // MMGIS_DEPLOYMENT_ID / MMGIS_DEPLOYMENT_ACTION are deliberately NOT in any task
         // definition: runPublishTask() supplies them per run via RunTask
         // container overrides (see infrastructure/README.md).
-        const RUN_TASK_OVERRIDES = ['DEPLOYMENT_ID', 'DEPLOYMENT_ACTION']
+        const RUN_TASK_OVERRIDES = ['MMGIS_DEPLOYMENT_ID', 'MMGIS_DEPLOYMENT_ACTION']
 
         // Vars only the publish-side code (scripts/publish-static.js and the
         // template renderer it calls) reads. They ride the PUBLISH task
@@ -309,7 +309,7 @@ test.describe('infrastructure/ JSON recipes', () => {
         expect(baked).toBe(renderAuthFunctionCode(password))
     })
 
-    test('admin CloudFront uses AllViewer + CachingDisabled and serves /assets/*', () => {
+    test('admin CloudFront uses AllViewerExceptHostHeader + CachingDisabled and serves /assets/*', () => {
         const distribution = readJson('cloudfront-admin.json')
         const defaultBehavior = distribution.DefaultCacheBehavior
         // AWS managed policy ids (documented in infrastructure/README.md):
@@ -318,7 +318,7 @@ test.describe('infrastructure/ JSON recipes', () => {
             '4135ea2d-6df8-44a3-9df3-4b5a84be39ad'
         )
         expect(defaultBehavior.OriginRequestPolicyId).toBe(
-            '216adef6-5c7f-47e4-b989-5492eafa07d3'
+            'b689b0a8-53d0-40ab-baf2-68738e2966ac'
         )
 
         const assetBehavior = distribution.CacheBehaviors.Items.find(

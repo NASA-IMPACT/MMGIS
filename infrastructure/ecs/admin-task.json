@@ -24,9 +24,13 @@
       "environment": [
         { "name": "MMGIS_DEPLOYMENT_MODE", "value": "lean" },
         { "name": "DISABLE_FIRST_SIGNUP", "value": "true" },
+        { "name": "ENABLE_MMGIS_WEBSOCKETS", "value": "true" },
+        { "name": "ENABLE_CONFIG_WEBSOCKETS", "value": "true" },
         { "name": "NODE_ENV", "value": "production" },
         { "name": "PORT", "value": "8888" },
         { "name": "AUTH", "value": "local" },
+        { "name": "DB_SSL", "value": "true" },
+        { "name": "DB_SSL_CERT_BASE64", "value": "<RDS_REGIONAL_CA_BUNDLE_BASE64>" },
         { "name": "AWS_REGION", "value": "<REGION>" },
         { "name": "MMGIS_PUBLISH_ECS_CLUSTER", "value": "<ECS_CLUSTER_NAME>" },
         { "name": "MMGIS_PUBLISH_TASK_DEFINITION", "value": "mmgis-publish" },

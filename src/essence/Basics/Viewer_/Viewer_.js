@@ -1,4 +1,5 @@
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 
@@ -206,7 +207,7 @@ var Viewer_ = {
             minZoomLevel: 0.5,
             maxZoomLevel: 12,
             // Static builds read public files anonymously
-            ajaxWithCredentials: window.mmgisglobal.SERVER === 'node',
+            ajaxWithCredentials: !isStaticBuild(),
             //zoomPerClick: 1, //disables click to zoom for tools...
             imageSmoothingEnabled: false,
         })
