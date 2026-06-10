@@ -193,10 +193,10 @@ test.describe('infrastructure/ JSON recipes', () => {
             .map((f) => path.join(ROOT, 'scripts', 'lib', f))
         sourceFiles.push(path.join(ROOT, 'scripts', 'publish-static.js'))
 
-        // DEPLOYMENT_ID / DEPLOYMENT_ACTION are deliberately NOT in any task
+        // MMGIS_DEPLOYMENT_ID / MMGIS_DEPLOYMENT_ACTION are deliberately NOT in any task
         // definition: runPublishTask() supplies them per run via RunTask
         // container overrides (see infrastructure/README.md).
-        const RUN_TASK_OVERRIDES = ['DEPLOYMENT_ID', 'DEPLOYMENT_ACTION']
+        const RUN_TASK_OVERRIDES = ['MMGIS_DEPLOYMENT_ID', 'MMGIS_DEPLOYMENT_ACTION']
 
         // Vars only the publish-side code (scripts/publish-static.js and the
         // template renderer it calls) reads. They ride the PUBLISH task
