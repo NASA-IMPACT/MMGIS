@@ -13,6 +13,7 @@ import {
   clearLockConfig,
   saveConfiguration,
   setSnackBarText,
+  watchDeployment,
 } from "../../core/ConfigureStore";
 
 import Button from "@mui/material/Button";
@@ -99,11 +100,22 @@ export default function SaveBar() {
         calls.api(
           call,
           data,
-          () => {
+          (res) => {
             setPublishing(false);
+            // Hand the in-flight deployment to DeploymentsWatcher, which
+            // polls and raises a snackbar when the publish completes.
+            const deployment = res?.body?.deployment;
+            if (deployment != null)
+              dispatch(
+                watchDeployment({
+                  id: deployment.id,
+                  name: deployment.name,
+                  status: deployment.status,
+                })
+              );
             dispatch(
               setSnackBarText({
-                text: "Publishing… — see Deployments for live status.",
+                text: "Publishing… — you'll be notified here when it finishes.",
                 severity: "success",
               })
             );

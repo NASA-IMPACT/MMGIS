@@ -16,6 +16,12 @@ export const ConfigureStore = createSlice({
     componentConfiguration: {},
     geodatasets: [],
     datasets: [],
+    deployments: [],
+    // Deployments currently in a transitional status (provisioning, updating,
+    // deleting) being watched for completion: { [id]: { name, status } }.
+    // DeploymentsWatcher polls while this is non-empty and raises a snackbar
+    // on each watched deployment's terminal transition.
+    deploymentsWatch: {},
     stacCollections: [],
     userEntries: [],
     page: null,
@@ -86,6 +92,18 @@ export const ConfigureStore = createSlice({
     setDatasets: (state, action) => {
       state.datasets = action.payload;
     },
+    setDeployments: (state, action) => {
+      state.deployments = action.payload;
+    },
+    watchDeployment: (state, action) => {
+      state.deploymentsWatch[action.payload.id] = {
+        name: action.payload.name,
+        status: action.payload.status,
+      };
+    },
+    unwatchDeployment: (state, action) => {
+      delete state.deploymentsWatch[action.payload.id];
+    },
     setStacCollections: (state, action) => {
       state.stacCollections = action.payload;
     },
@@ -116,6 +134,7 @@ export const ConfigureStore = createSlice({
         state.snackBarText = {
           text: String(action.payload.text),
           severity: action.payload.severity,
+          link: action.payload.link != null ? String(action.payload.link) : null,
         };
     },
     setValidationErrors: (state, action) => {
@@ -221,6 +240,9 @@ export const {
   setComponentConfiguration,
   setGeodatasets,
   setDatasets,
+  setDeployments,
+  watchDeployment,
+  unwatchDeployment,
   setStacCollections,
   setUserEntries,
   setPage,
