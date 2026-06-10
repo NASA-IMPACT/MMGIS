@@ -393,8 +393,8 @@ async function runPublishTask({ deploymentId, action }) {
             name: containerName,
             command: ["node", "scripts/publish-static.js"],
             environment: [
-              { name: "DEPLOYMENT_ID", value: `${deploymentId}` },
-              { name: "DEPLOYMENT_ACTION", value: action },
+              { name: "MMGIS_DEPLOYMENT_ID", value: `${deploymentId}` },
+              { name: "MMGIS_DEPLOYMENT_ACTION", value: action },
             ],
           },
         ],

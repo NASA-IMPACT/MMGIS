@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { isLeanMode } from "../../core/capabilities";
+import { STATUS, TRANSITIONAL_STATUSES } from "../../core/deploymentStatus";
 import { useSelector, useDispatch } from "react-redux";
 
 import { calls } from "../../core/calls";
@@ -10,7 +12,6 @@ import {
 } from "../../core/ConfigureStore";
 
 const POLL_INTERVAL_MS = 15000;
-const TRANSITIONAL_STATUSES = ["provisioning", "updating", "deleting"];
 
 // The one shared deployments fetch — every reader (the Deployments page,
 // this watcher's poll) goes through here and subscribes to
@@ -53,7 +54,7 @@ export default function DeploymentsWatcher() {
   const inFlightRef = useRef(false);
   const lastDiffedRef = useRef(null);
 
-  const isLean = window.mmgisglobal.DEPLOYMENT_MODE === "lean";
+  const isLean = isLeanMode();
   const isWatching = Object.keys(deploymentsWatch).length > 0;
 
   // Diff each deployments list against the watch set: auto-watch
@@ -79,7 +80,7 @@ export default function DeploymentsWatcher() {
             watchDeployment({ id: d.id, name: d.name, status: d.status })
           );
       } else if (watched != null) {
-        if (d.status === "published")
+        if (d.status === STATUS.PUBLISHED)
           toasts.push({
             text: d.cloudfront_url
               ? `'${d.name}' published —`
@@ -87,12 +88,12 @@ export default function DeploymentsWatcher() {
             severity: "success",
             link: d.cloudfront_url,
           });
-        else if (d.status === "failed")
+        else if (d.status === STATUS.FAILED)
           toasts.push({
             text: `'${d.name}' publish failed — see Deployments.`,
             severity: "error",
           });
-        else if (d.status === "deleted")
+        else if (d.status === STATUS.DELETED)
           toasts.push({
             text: `'${d.name}' deleted.`,
             severity: "info",
@@ -111,7 +112,7 @@ export default function DeploymentsWatcher() {
     if (listIsFresh)
       Object.keys(deploymentsWatch).forEach((id) => {
         if (byId[id] == null) {
-          if (deploymentsWatch[id].status === "deleting")
+          if (deploymentsWatch[id].status === STATUS.DELETING)
             toasts.push({
               text: `'${deploymentsWatch[id].name}' deleted.`,
               severity: "info",

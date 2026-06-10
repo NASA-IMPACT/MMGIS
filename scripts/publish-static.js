@@ -5,14 +5,14 @@
  * image as the admin app — PR 11 provisions the task definition).
  *
  * Driven by environment:
- *   DEPLOYMENT_ID     - the deployments row to publish (required)
- *   DEPLOYMENT_ACTION - "publish" (default) creates the CloudFormation
+ *   MMGIS_DEPLOYMENT_ID     - the deployments row to publish (required)
+ *   MMGIS_DEPLOYMENT_ACTION - "publish" (default) creates the CloudFormation
  *                       stack first; "update" reuses the existing stack
  *                       and just re-bakes + re-uploads (same URL).
  *
  * Flow: read the mission config from Postgres → apply bake guards → bake
  * via bakeStaticConfig → build themes + static webpack bundle
- * (SERVER=static STATIC_MODE=true) → CreateStack + poll to CREATE_COMPLETE
+ * (SERVER=static) → CreateStack + poll to CREATE_COMPLETE
  * (publish only) → same-key copy the mission's assets from the shared
  * admin bucket → upload the bundle → mark the row `published`.
  * Any failure marks the row `failed` with last_error.
@@ -31,8 +31,8 @@ const provision = require("./lib/aws-provision");
 const { renderCfnTemplate, stackNameForDeployment } = require("./lib/cfn-template");
 const { applyTimeBakeGuard } = require("./lib/bake-guards");
 
-const DEPLOYMENT_ID = process.env.DEPLOYMENT_ID || process.argv[2];
-const ACTION = process.env.DEPLOYMENT_ACTION || process.argv[3] || "publish";
+const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
+const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
 
 const { requireEnv } = provision;
 
@@ -98,7 +98,7 @@ async function buildBakedConfig(mission) {
 
 async function main() {
   if (DEPLOYMENT_ID == null || DEPLOYMENT_ID === "")
-    throw new Error("DEPLOYMENT_ID is required (env or first argument)");
+    throw new Error("MMGIS_DEPLOYMENT_ID is required (env or first argument)");
   if (ACTION !== "publish" && ACTION !== "update")
     throw new Error(`Unknown DEPLOYMENT_ACTION '${ACTION}'`);
 
@@ -130,7 +130,6 @@ async function main() {
     }
     run("npm", ["run", "build"], {
       SERVER: "static",
-      STATIC_MODE: "true",
     });
 
     // 3. Provision (publish) or look up (update) the dashboard stack
