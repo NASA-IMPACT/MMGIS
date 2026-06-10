@@ -1,0 +1,115 @@
+{
+  "Type": "AWS::IAM::Role",
+  "Properties": {
+    "RoleName": "mmgis-publish-task-role",
+    "Description": "Runtime role for the mmgis-publish container code (scripts/publish-static.js): create/describe/delete the mmgis-dashboard-* CloudFormation stacks and the S3/CloudFront resources CloudFormation manages on its behalf, read the shared asset bucket to copy mission assets, and read the dashboards-shared-password secret. No rds-db:connect — the code uses password auth (DB_USER/DB_PASS). Lean deployment only.",
+    "AssumeRolePolicyDocument": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "AllowEcsTasksAssume",
+          "Effect": "Allow",
+          "Principal": { "Service": "ecs-tasks.amazonaws.com" },
+          "Action": "sts:AssumeRole",
+          "Condition": {
+            "StringEquals": { "aws:SourceAccount": "<ACCOUNT_ID>" }
+          }
+        }
+      ]
+    },
+    "Policies": [
+      {
+        "PolicyName": "mmgis-publish-task",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DashboardStackLifecycle",
+              "Effect": "Allow",
+              "Action": [
+                "cloudformation:CreateStack",
+                "cloudformation:DescribeStacks",
+                "cloudformation:DescribeStackEvents",
+                "cloudformation:DeleteStack"
+              ],
+              "Resource": "arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/mmgis-dashboard-*/*"
+            },
+            {
+              "Sid": "DashboardBucketLifecycle",
+              "Effect": "Allow",
+              "Action": [
+                "s3:CreateBucket",
+                "s3:DeleteBucket",
+                "s3:GetBucketLocation",
+                "s3:PutBucketPolicy",
+                "s3:DeleteBucketPolicy",
+                "s3:PutBucketPublicAccessBlock",
+                "s3:PutEncryptionConfiguration",
+                "s3:PutBucketTagging"
+              ],
+              "Resource": "arn:aws:s3:::mmgis-dashboard-*"
+            },
+            {
+              "Sid": "DashboardBucketWriteObjects",
+              "Effect": "Allow",
+              "Action": ["s3:PutObject"],
+              "Resource": "arn:aws:s3:::mmgis-dashboard-*/*"
+            },
+            {
+              "Sid": "DashboardDistributionLifecycle",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:CreateDistribution",
+                "cloudfront:GetDistribution",
+                "cloudfront:UpdateDistribution",
+                "cloudfront:DeleteDistribution",
+                "cloudfront:TagResource"
+              ],
+              "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:distribution/*"
+            },
+            {
+              "Sid": "DashboardAuthFunctionLifecycle",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:CreateFunction",
+                "cloudfront:PublishFunction",
+                "cloudfront:DescribeFunction",
+                "cloudfront:DeleteFunction",
+                "cloudfront:GetFunction"
+              ],
+              "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:function/mmgis-dashboard-*"
+            },
+            {
+              "Sid": "DashboardOriginAccessControlLifecycle",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:CreateOriginAccessControl",
+                "cloudfront:GetOriginAccessControl",
+                "cloudfront:DeleteOriginAccessControl"
+              ],
+              "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:origin-access-control/*"
+            },
+            {
+              "Sid": "ReadSharedAssetObjects",
+              "Effect": "Allow",
+              "Action": ["s3:GetObject"],
+              "Resource": "arn:aws:s3:::<ASSET_BUCKET_NAME>/*"
+            },
+            {
+              "Sid": "ListSharedAssetBucket",
+              "Effect": "Allow",
+              "Action": ["s3:ListBucket"],
+              "Resource": "arn:aws:s3:::<ASSET_BUCKET_NAME>"
+            },
+            {
+              "Sid": "ReadDashboardsPasswordSecret",
+              "Effect": "Allow",
+              "Action": ["secretsmanager:GetSecretValue"],
+              "Resource": "<DASHBOARDS_PASSWORD_SECRET_ARN>"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

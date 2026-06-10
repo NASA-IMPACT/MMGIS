@@ -1,0 +1,132 @@
+name: Deploy lean (AWS ECS Express Mode)
+
+# Lean-deployment pipeline (see infrastructure/README.md):
+#   build theme assets -> build image -> push to ECR -> register new
+#   mmgis-admin + mmgis-publish task-definition revisions -> trigger the
+#   ECS Express Mode managed rollout of the admin service.
+#
+# Per the D1 decision, ECS Express Mode owns the ALB, target groups,
+# rollout strategy, and scaling — this workflow deliberately defines and
+# touches none of them; it only registers task-definition revisions and
+# asks the managed service to roll.
+#
+# Repository configuration:
+#   vars:    AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE
+#   secrets: AWS_DEPLOY_ROLE_ARN (OIDC-assumable deploy role; no
+#            long-lived keys)
+#
+# The full/upstream deployment does not use this workflow
+# (docker-build.yml continues to publish the GHCR image).
+
+# limit concurrency
+concurrency: deploy_lean_mmgis
+
+on:
+  # Deploy on final releases (same release convention as docker-build.yml)
+  release:
+    types: [published]
+
+  # Plus manual rollouts
+  workflow_dispatch:
+
+permissions:
+  # OIDC token for aws-actions/configure-aws-credentials
+  id-token: write
+  contents: read
+
+env:
+  ADMIN_TASK_FAMILY: mmgis-admin
+  PUBLISH_TASK_FAMILY: mmgis-publish
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The Dockerfile's `npm run build` does NOT run build:themes; the
+      # generated public/ CSS + fonts must exist in the build context
+      # (COPY . .) or themed missions/dashboards render unstyled.
+      - name: Build theme assets
+        run: |
+          npm install --force
+          npm run build:themes
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker build and push
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          # Tag with the release tag (or the short SHA for manual runs)
+          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+          [ "${{ github.event_name }}" == "workflow_dispatch" ] && VERSION=$(git rev-parse --short HEAD)
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
+
+          docker build \
+            --tag $IMAGE_URI \
+            --no-cache \
+            .
+          docker push $IMAGE_URI
+
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      # Register new revisions of both families pointing at the new image.
+      # The two families share the image (the publish task only overrides
+      # `command`); registering mmgis-publish is enough to roll it because
+      # RunTask resolves the bare family name to its latest revision.
+      - name: Register new task-definition revisions
+        id: register
+        env:
+          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+        run: |
+          register_revision() {
+            local family=$1
+            aws ecs describe-task-definition \
+              --task-definition "$family" \
+              --query taskDefinition \
+              --output json \
+            | jq --arg IMAGE "$IMAGE_URI" '
+                .containerDefinitions[0].image = $IMAGE
+                | del(.taskDefinitionArn, .revision, .status,
+                      .requiresAttributes, .compatibilities,
+                      .registeredAt, .registeredBy, .deregisteredAt)
+              ' > /tmp/$family.json
+            aws ecs register-task-definition \
+              --cli-input-json file:///tmp/$family.json \
+              --query taskDefinition.taskDefinitionArn \
+              --output text
+          }
+
+          ADMIN_TASK_DEF_ARN=$(register_revision "$ADMIN_TASK_FAMILY")
+          PUBLISH_TASK_DEF_ARN=$(register_revision "$PUBLISH_TASK_FAMILY")
+          echo "Registered $ADMIN_TASK_DEF_ARN"
+          echo "Registered $PUBLISH_TASK_DEF_ARN"
+          echo "ADMIN_TASK_DEF_ARN=$ADMIN_TASK_DEF_ARN" >> $GITHUB_OUTPUT
+
+      # Express Mode handles the rollout choreography from here.
+      - name: Trigger ECS Express Mode rollout
+        run: |
+          aws ecs update-service \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --service "${{ vars.ECS_SERVICE }}" \
+            --task-definition "${{ steps.register.outputs.ADMIN_TASK_DEF_ARN }}"
+          aws ecs wait services-stable \
+            --cluster "${{ vars.ECS_CLUSTER }}" \
+            --services "${{ vars.ECS_SERVICE }}"
