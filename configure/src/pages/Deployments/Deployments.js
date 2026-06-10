@@ -6,6 +6,7 @@ import clsx from "clsx";
 
 import { calls } from "../../core/calls";
 import { setModal, setSnackBarText } from "../../core/ConfigureStore";
+import { queryDeployments as queryDeploymentsCall } from "../../components/DeploymentsWatcher/DeploymentsWatcher";
 
 import DeleteDeploymentModal from "./Modals/DeleteDeploymentModal/DeleteDeploymentModal";
 
@@ -156,26 +157,18 @@ export default function Deployments() {
 
   const missions = useSelector((state) => state.core.missions);
 
-  const [deployments, setDeployments] = useState([]);
+  // The list lives in the store and is shared with DeploymentsWatcher,
+  // which polls every 15s while any row is transitional — so this page
+  // auto-refreshes through the same single request stream (one shared
+  // poller, no page-local interval). Manual refreshes here are one-shot
+  // fetches through the same helper.
+  const deployments = useSelector((state) => state.core.deployments);
+
   const [publishMission, setPublishMission] = useState("");
   const [publishName, setPublishName] = useState("");
 
   const queryDeployments = useCallback(() => {
-    calls.api(
-      "getDeployments",
-      {},
-      (res) => {
-        setDeployments(res?.body?.deployments || []);
-      },
-      (res) => {
-        dispatch(
-          setSnackBarText({
-            text: res?.message || "Failed to get deployments.",
-            severity: "error",
-          })
-        );
-      }
-    );
+    queryDeploymentsCall(dispatch);
   }, [dispatch]);
 
   useEffect(() => {
@@ -198,7 +191,7 @@ export default function Deployments() {
       () => {
         dispatch(
           setSnackBarText({
-            text: "Publishing… This runs in the background; refresh for live status.",
+            text: "Publishing… This runs in the background; status refreshes automatically.",
             severity: "success",
           })
         );
@@ -274,7 +267,8 @@ export default function Deployments() {
       <div className={c.content}>
         <Typography className={c.subtitle}>
           Publish a mission as a standalone, statically-hosted dashboard.
-          Status is read live from CloudFormation on every refresh.
+          Status is read live from CloudFormation and refreshes automatically
+          while a publish, update or delete is in flight.
         </Typography>
         <div className={c.publishForm}>
           <FormControl className={c.missionSelect} size="small">
