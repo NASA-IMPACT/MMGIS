@@ -1,4 +1,5 @@
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
@@ -2069,7 +2070,7 @@ function makeImageLayer(layerObj, mapContext = null) {
                     isNaN(parseFloat(layerObj.cogMin)) ||
                     isNaN(parseFloat(layerObj.cogMax))
                 ) {
-                    if (window.mmgisglobal.SERVER !== 'node') {
+                    if (isStaticBuild()) {
                         // Static builds have no gdal backend; ask the layer's
                         // external TiTiler for the band's statistics instead
                         const titilerBase = ServiceUrls.getTiTilerUrl(layerObj)
