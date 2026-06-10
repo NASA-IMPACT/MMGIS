@@ -1,4 +1,5 @@
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import { curveLinearClosed } from 'd3-shape'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import L_ from '../../Basics/Layers_/Layers_'
@@ -283,7 +284,7 @@ const Measure = () => {
                 id='measureGraph'
                 style={
                     // No elevation profile without a getprofile backend
-                    window.mmgisglobal.SERVER != 'node'
+                    isStaticBuild()
                         ? { display: 'none' }
                         : null
                 }
@@ -1459,7 +1460,7 @@ function makeMeasureToolLayer() {
 function makeProfile() {
     // Static builds have no getprofile backend; the elevation profile is
     // disabled and Measure stays distance-only
-    if (window.mmgisglobal.SERVER != 'node') return
+    if (isStaticBuild()) return
 
     var numOfPts = clickedLatLngs.length
     const path = MeasureTool.dems[MeasureTool.activeDemIdx].path
@@ -1605,7 +1606,7 @@ function makeProfile() {
 }
 function makeBandProfile(xy) {
     // Static builds have no getbands backend
-    if (window.mmgisglobal.SERVER != 'node') return
+    if (isStaticBuild()) return
 
     $.ajax({
         type: calls.getbands.type,
