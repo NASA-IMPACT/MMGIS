@@ -274,6 +274,19 @@ async function main() {
       `Uploaded ${uploadedBuild} build and ${uploadedPublic} public file(s) to ${bucket}.`
     );
 
+    // 5.5 Bust the CDN so the refreshed bundle/config/assets serve
+    // immediately — the distribution caches aggressively, and only the
+    // hashed bundle filenames are naturally cache-safe. A brand-new
+    // distribution has nothing cached, so doing this unconditionally
+    // keeps publish and update on one path.
+    if (outputs.DistributionId) {
+      await provision.createInvalidation({
+        distributionId: outputs.DistributionId,
+        paths: ["/*"],
+      });
+      log("Created CloudFront invalidation (/*).");
+    }
+
     // 6. Terminal row update
     const cloudfrontUrl =
       outputs.DistributionDomainName != null
