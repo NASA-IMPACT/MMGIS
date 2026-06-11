@@ -1,0 +1,114 @@
+{
+  "Type": "AWS::IAM::Role",
+  "Properties": {
+    "RoleName": "mmgis-admin-task-role",
+    "Description": "Runtime role for the mmgis-admin container code: start the publish task (RunTask + PassRole of both publish roles), merge/delete dashboard stacks from the Deployments page, empty dashboard buckets before delete, and upload admin assets to the shared asset bucket. Because the DELETE handler calls DeleteStack inline with NO CloudFormation service role, CloudFormation tears down the stack's S3/CloudFront resources with THIS role's credentials, so it also carries the mmgis-dashboard-* teardown grants. Everything is pinned to the mmgis-dashboard-* prefix, the account's distribution/OAC ARN space (their ids are random), or the shared asset bucket. Lean deployment only.",
+    "AssumeRolePolicyDocument": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "AllowEcsTasksAssume",
+          "Effect": "Allow",
+          "Principal": { "Service": "ecs-tasks.amazonaws.com" },
+          "Action": "sts:AssumeRole",
+          "Condition": {
+            "StringEquals": { "aws:SourceAccount": "<ACCOUNT_ID>" }
+          }
+        }
+      ]
+    },
+    "Policies": [
+      {
+        "PolicyName": "mmgis-admin-task",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "RunPublishTask",
+              "Effect": "Allow",
+              "Action": ["ecs:RunTask"],
+              "Resource": "arn:aws:ecs:<REGION>:<ACCOUNT_ID>:task-definition/mmgis-publish:*"
+            },
+            {
+              "Sid": "PassBothPublishRoles",
+              "Effect": "Allow",
+              "Action": ["iam:PassRole"],
+              "Resource": [
+                "arn:aws:iam::<ACCOUNT_ID>:role/mmgis-publish-task-execution-role",
+                "arn:aws:iam::<ACCOUNT_ID>:role/mmgis-publish-task-role"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "iam:PassedToService": "ecs-tasks.amazonaws.com"
+                }
+              }
+            },
+            {
+              "Sid": "DashboardStackReadDelete",
+              "Effect": "Allow",
+              "Action": [
+                "cloudformation:DescribeStacks",
+                "cloudformation:DeleteStack"
+              ],
+              "Resource": "arn:aws:cloudformation:<REGION>:<ACCOUNT_ID>:stack/mmgis-dashboard-*/*"
+            },
+            {
+              "Sid": "EmptyDashboardBuckets",
+              "Effect": "Allow",
+              "Action": ["s3:DeleteObject"],
+              "Resource": "arn:aws:s3:::mmgis-dashboard-*/*"
+            },
+            {
+              "Sid": "ListDashboardBuckets",
+              "Effect": "Allow",
+              "Action": ["s3:ListBucket"],
+              "Resource": "arn:aws:s3:::mmgis-dashboard-*"
+            },
+            {
+              "Sid": "TeardownDashboardBuckets",
+              "Effect": "Allow",
+              "Action": ["s3:DeleteBucket", "s3:DeleteBucketPolicy"],
+              "Resource": "arn:aws:s3:::mmgis-dashboard-*"
+            },
+            {
+              "Sid": "TeardownDashboardDistributions",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:GetDistribution",
+                "cloudfront:GetDistributionConfig",
+                "cloudfront:UpdateDistribution",
+                "cloudfront:DeleteDistribution"
+              ],
+              "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:distribution/*"
+            },
+            {
+              "Sid": "TeardownDashboardAuthFunctions",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:DescribeFunction",
+                "cloudfront:GetFunction",
+                "cloudfront:DeleteFunction"
+              ],
+              "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:function/mmgis-dashboard-*"
+            },
+            {
+              "Sid": "TeardownDashboardOriginAccessControls",
+              "Effect": "Allow",
+              "Action": [
+                "cloudfront:GetOriginAccessControl",
+                "cloudfront:DeleteOriginAccessControl"
+              ],
+              "Resource": "arn:aws:cloudfront::<ACCOUNT_ID>:origin-access-control/*"
+            },
+            {
+              "Sid": "UploadAdminAssets",
+              "Effect": "Allow",
+              "Action": ["s3:PutObject"],
+              "Resource": "arn:aws:s3:::<ASSET_BUCKET_NAME>/*"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "Type": "AWS::IAM::Role",
+  "Properties": {
+    "RoleName": "mmgis-publish-task-execution-role",
+    "Description": "ECS-side role for the mmgis-publish task: pull the image from ECR, write CloudWatch Logs, and inject the secrets[] entries of infrastructure/ecs/publish-task.json. Lean deployment only.",
+    "AssumeRolePolicyDocument": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "AllowEcsTasksAssume",
+          "Effect": "Allow",
+          "Principal": { "Service": "ecs-tasks.amazonaws.com" },
+          "Action": "sts:AssumeRole",
+          "Condition": {
+            "StringEquals": { "aws:SourceAccount": "<ACCOUNT_ID>" }
+          }
+        }
+      ]
+    },
+    "Policies": [
+      {
+        "PolicyName": "mmgis-publish-task-execution",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "EcrAuthTokenNoResourceScoping",
+              "Effect": "Allow",
+              "Action": ["ecr:GetAuthorizationToken"],
+              "Resource": "*"
+            },
+            {
+              "Sid": "EcrPullImage",
+              "Effect": "Allow",
+              "Action": [
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage"
+              ],
+              "Resource": "arn:aws:ecr:<REGION>:<ACCOUNT_ID>:repository/<ECR_REPOSITORY_NAME>"
+            },
+            {
+              "Sid": "CloudWatchLogsWrite",
+              "Effect": "Allow",
+              "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+              "Resource": "arn:aws:logs:<REGION>:<ACCOUNT_ID>:log-group:/ecs/mmgis-publish:*"
+            },
+            {
+              "Sid": "InjectPublishTaskSecrets",
+              "Effect": "Allow",
+              "Action": ["secretsmanager:GetSecretValue"],
+              "Resource": ["<DB_SECRET_ARN>", "<DASHBOARDS_PASSWORD_SECRET_ARN>"]
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

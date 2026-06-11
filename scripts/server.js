@@ -509,8 +509,8 @@ let s = {
   ROOT_PATH,
 };
 
-// Trust first proxy
-app.set("trust proxy", 1);
+// Trust two proxy hops (lean deployment topology: CloudFront -> ALB -> ECS)
+app.set("trust proxy", 2);
 
 app.use("/api/", apilimiter);
 
