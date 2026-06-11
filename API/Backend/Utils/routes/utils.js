@@ -385,18 +385,22 @@ if (isFull()) {
   });
 }
 
-//utils chronos (spice time converter)
-router.get("/proj42wkt", function (req, res) {
-  const proj4 = encodeURIComponent(req.query.proj4);
+// proj4 -> WKT via a Python shellout; lean containers ship no Python, and
+// the frontend computes this client-side in every mode (PR 9), so no
+// first-party caller remains. Kept mounted in full for API compatibility.
+if (isFull()) {
+  router.get("/proj42wkt", function (req, res) {
+    const proj4 = encodeURIComponent(req.query.proj4);
 
-  execFile(
-    "python",
-    ["private/api/proj42wkt.py", proj4],
-    function (error, stdout, stderr) {
-      if (error) logger("error", "proj42wkt failure:", "server", null, error);
-      res.send(stdout);
-    }
-  );
-});
+    execFile(
+      "python",
+      ["private/api/proj42wkt.py", proj4],
+      function (error, stdout, stderr) {
+        if (error) logger("error", "proj42wkt failure:", "server", null, error);
+        res.send(stdout);
+      }
+    );
+  });
+}
 
 module.exports = router;
