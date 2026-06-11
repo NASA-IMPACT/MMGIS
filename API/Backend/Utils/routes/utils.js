@@ -227,14 +227,6 @@ function queryTilesetTimesStac(req, res) {
   });
 }
 
-// Reads the on-disk Missions/<...>/_time_/ tree; not registered in lean mode
-if (isFull()) {
-  router.get("/queryTilesetTimes", function (req, res) {
-    if (req.query.stacCollection != null) queryTilesetTimesStac(req, res);
-    else queryTilesetTimesDir(req, res);
-  });
-}
-
 // API
 // TODO: move to API/Backend
 //TEST
@@ -244,9 +236,17 @@ router.get("/healthcheck", function (req, res) {
 
 // TODO: Remove or move to Setup structure. Some are definitely still used.
 
-// These endpoints read the on-disk Missions/ tree (GDAL shellouts) or local
-// SPICE data; they are not registered in lean mode
+// Every route below is gated out of lean: each one reads the on-disk
+// Missions/ tree, local SPICE data, or shells out to Python — none of which
+// exist in a lean container. healthcheck (above) is the only utils route
+// lean serves.
 if (isFull()) {
+  // Reads the on-disk Missions/<...>/_time_/ tree
+  router.get("/queryTilesetTimes", function (req, res) {
+    if (req.query.stacCollection != null) queryTilesetTimesStac(req, res);
+    else queryTilesetTimesDir(req, res);
+  });
+
   //utils getprofile
   router.post("/getprofile", function (req, res) {
     const path = encodeURIComponent(req.body.path);
@@ -383,20 +383,22 @@ if (isFull()) {
       }
     );
   });
-}
 
-//utils chronos (spice time converter)
-router.get("/proj42wkt", function (req, res) {
-  const proj4 = encodeURIComponent(req.query.proj4);
+  // proj4 -> WKT via a Python shellout; the frontend computes this
+  // client-side in every mode (PR 9), so no first-party caller remains.
+  // Kept mounted in full for API compatibility.
+  router.get("/proj42wkt", function (req, res) {
+    const proj4 = encodeURIComponent(req.query.proj4);
 
-  execFile(
-    "python",
-    ["private/api/proj42wkt.py", proj4],
-    function (error, stdout, stderr) {
-      if (error) logger("error", "proj42wkt failure:", "server", null, error);
-      res.send(stdout);
-    }
-  );
-});
+    execFile(
+      "python",
+      ["private/api/proj42wkt.py", proj4],
+      function (error, stdout, stderr) {
+        if (error) logger("error", "proj42wkt failure:", "server", null, error);
+        res.send(stdout);
+      }
+    );
+  });
+} // if (isFull()) — full-only utils routes
 
 module.exports = router;

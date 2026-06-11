@@ -90,9 +90,12 @@ function setupLogin() {
         document.getElementById("msg").style.opacity = 1;
       }
     },
-    error: function () {
+    error: function (xhr) {
       //error
-      document.getElementById("msg").innerHTML = "Server error.";
+      document.getElementById("msg").innerHTML =
+        xhr && xhr.status === 404
+          ? "First-time signup is disabled."
+          : "Server error.";
       document.getElementById("msg").style.opacity = 1;
     },
   });
@@ -111,7 +114,9 @@ $(document).ready(function () {
     data: {},
     success: function (data) {
       if (data.status == "success") {
-        if (data.has == false) {
+        // When first-time signup is disabled, the first admin is expected
+        // to be seeded server-side, so never offer the setup path.
+        if (data.has == false && window.DISABLE_FIRST_SIGNUP !== true) {
           setup = true;
           $("#setup").css("opacity", "1");
           $(".container").css("height", "520px");
