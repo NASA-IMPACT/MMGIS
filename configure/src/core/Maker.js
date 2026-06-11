@@ -44,6 +44,7 @@ import {
   isUrlAbsolute,
 } from "./utils";
 import { isFieldRequired } from "./validators";
+import { isCapabilityEnabled } from "./capabilities";
 
 import Map from "../components/Map/Map";
 import VideoPreview from "../components/VideoPreview/VideoPreview";
@@ -385,6 +386,10 @@ const getComponent = (
   dispatch,
   fieldDefaults
 ) => {
+  // Metaconfigs may declare a capability the deployment must support
+  if (com.requiresCapability && !isCapabilityEnabled(com.requiresCapability))
+    return null;
+
   const directConf =
     layer == null ? (tool == null ? (component == null ? configuration : component) : tool) : layer;
   
