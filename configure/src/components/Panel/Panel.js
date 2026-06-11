@@ -30,6 +30,7 @@ import ApiIcon from "@mui/icons-material/Api";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import HorizontalSplitIcon from "@mui/icons-material/HorizontalSplit";
 import AccountBoxIcon from "@mui/icons-material/AccountBox";
+import RocketLaunchIcon from "@mui/icons-material/RocketLaunch";
 import WarningIcon from "@mui/icons-material/Warning";
 
 const useStyles = makeStyles((theme) => ({
@@ -342,6 +343,21 @@ export default function Panel() {
               }}
             >
               Datasets
+            </Button>
+          ) : null}
+
+          {isLeanMode() ? (
+            <Button
+              className={c.pageButton}
+              variant="contained"
+              disableElevation
+              startIcon={<RocketLaunchIcon size="small" />}
+              onClick={() => {
+                dispatch(setMission(null));
+                dispatch(setPage({ page: "deployments" }));
+              }}
+            >
+              Deployments
             </Button>
           ) : null}
 

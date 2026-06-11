@@ -5,6 +5,7 @@ import { makeStyles } from "@mui/styles";
 
 import Main from "../components/Main/Main";
 import Panel from "../components/Panel/Panel";
+import DeploymentsWatcher from "../components/DeploymentsWatcher/DeploymentsWatcher";
 
 import { calls } from "../core/calls";
 import { setMissions, setSnackBarText } from "./ConfigureStore";
@@ -63,6 +64,7 @@ export default function Configure() {
         <Main />
       </div>
       <Websocket />
+      <DeploymentsWatcher />
     </div>
   );
 }
