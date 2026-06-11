@@ -17,6 +17,7 @@ import LegendTool from '../Legend/LegendTool.js'
 import tippy from 'tippy.js'
 import 'markjs'
 import calls from '../../../pre/calls'
+import projStringToWkt from '../../../pre/projStringToWkt'
 import * as tokml from '@maphubs/tokml'
 import shpwrite from '@mapbox/shp-write'
 
@@ -1956,32 +1957,30 @@ function interfaceWithMMGIS(fromInit) {
                 case 'shp':
                     const folder = filename
 
-                    calls.api(
-                        'proj42wkt',
-                        {
-                            proj4: window.mmgisglobal.customCRS.projString,
-                        },
-                        (data) => {
-                            shpwrite
-                                .zip(geojson, {
-                                    outputType: 'blob',
-                                    prj: data,
-                                })
-                                .then((content) => {
-                                    saveAs(content, `${folder}.zip`)
-                                })
-                        },
-                        function (err) {
-                            CursorInfo.update(
-                                `Failed to generate shapefile's .prj.`,
-                                6000,
-                                true,
-                                { x: 385, y: 6 },
-                                '#e9ff26',
-                                'black'
-                            )
-                        }
+                    // Computed in the browser in every mode; the backend
+                    // /api/utils/proj42wkt Python route is no longer called.
+                    const prj = projStringToWkt(
+                        window.mmgisglobal.customCRS.projString
                     )
+                    if (prj != null) {
+                        shpwrite
+                            .zip(geojson, {
+                                outputType: 'blob',
+                                prj: prj,
+                            })
+                            .then((content) => {
+                                saveAs(content, `${folder}.zip`)
+                            })
+                    } else {
+                        CursorInfo.update(
+                            `Failed to generate shapefile's .prj.`,
+                            6000,
+                            true,
+                            { x: 385, y: 6 },
+                            '#e9ff26',
+                            'black'
+                        )
+                    }
                     break
                 default:
             }
