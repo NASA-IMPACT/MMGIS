@@ -52,7 +52,7 @@ Utils is a grab-bag. Per-endpoint:
 | `POST /getminmax` | **Gate** | Python+GDAL shellout against a local raster in `Missions/`. |
 | `POST /ll2aerll` | **Gate** | Python coord-transform script; no caller without local data. |
 | `POST /chronice` | **Gate** | Python time-op script; no caller in lean. |
-| `GET /proj42wkt` | **Keep** (optional) | Pure compute (proj4 → WKT). Harmless either way. |
+| `GET /proj42wkt` | **Gate** | Python shellout (`private/api/proj42wkt.py`) — not pure compute as first classified (review catch, 2026-06-11). The frontend computes WKT client-side in **every** mode (PR 9), so no first-party caller remains; full keeps the route for API compatibility only. |
 
 ## Server-side patterns
 

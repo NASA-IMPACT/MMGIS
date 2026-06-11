@@ -58,6 +58,8 @@ const createDevServerConfig = require("../configuration/webpackDevServer.config"
 
 const middleware = require("./middleware").middleware;
 
+const { isFull } = require("../API/Backend/Utils/deploymentMode");
+
 const isDevEnv = process.env.NODE_ENV === "development";
 
 //Username to use when not logged in
@@ -641,12 +643,14 @@ setups.getBackendSetups(function (setups) {
       express.static(path.join(rootDir, "/examples"))
     );
   app.use(`${ROOT_PATH}/public`, express.static(path.join(rootDir, "/public")));
-  app.use(
-    `${ROOT_PATH}/Missions`,
-    ensureUser(),
-    middleware.missions(ROOT_PATH),
-    express.static(path.join(rootDir, "/Missions"))
-  );
+  if (isFull()) {
+    app.use(
+      `${ROOT_PATH}/Missions`,
+      ensureUser(),
+      middleware.missions(ROOT_PATH),
+      express.static(path.join(rootDir, "/Missions"))
+    );
+  }
   app.get(s.ROOT_PATH + "/resetPassword", (req, res) => {
     const user = process.env.AUTH === "csso" ? req.user : req.user || "";
     res.render("../views/resetpassword.pug", {

@@ -14,6 +14,7 @@ import {
   setSnackBarText,
 } from "../../core/ConfigureStore";
 import { calls } from "../../core/calls";
+import { isLeanMode } from "../../core/capabilities";
 
 import NewMissionModal from "./Modals/NewMissionModal/NewMissionModal";
 
@@ -315,30 +316,34 @@ export default function Panel() {
           </ul>
         </div>
         <div className={c.pages}>
-          <Button
-            className={c.pageButton}
-            variant="contained"
-            disableElevation
-            startIcon={<ShapeLineIcon size="small" />}
-            onClick={() => {
-              dispatch(setMission(null));
-              dispatch(setPage({ page: "geodatasets" }));
-            }}
-          >
-            GeoDatasets
-          </Button>
-          <Button
-            className={c.pageButton}
-            variant="contained"
-            disableElevation
-            startIcon={<TextSnippetIcon size="small" />}
-            onClick={() => {
-              dispatch(setMission(null));
-              dispatch(setPage({ page: "datasets" }));
-            }}
-          >
-            Datasets
-          </Button>
+          {!isLeanMode() ? (
+            <Button
+              className={c.pageButton}
+              variant="contained"
+              disableElevation
+              startIcon={<ShapeLineIcon size="small" />}
+              onClick={() => {
+                dispatch(setMission(null));
+                dispatch(setPage({ page: "geodatasets" }));
+              }}
+            >
+              GeoDatasets
+            </Button>
+          ) : null}
+          {!isLeanMode() ? (
+            <Button
+              className={c.pageButton}
+              variant="contained"
+              disableElevation
+              startIcon={<TextSnippetIcon size="small" />}
+              onClick={() => {
+                dispatch(setMission(null));
+                dispatch(setPage({ page: "datasets" }));
+              }}
+            >
+              Datasets
+            </Button>
+          ) : null}
 
           {window.mmgisglobal.WITH_STAC === "true" ? (
             <Button

@@ -4,6 +4,7 @@ const logger = require("../API/logger");
 const utils = require("../API/utils");
 const execSync = require("child_process").execSync;
 require("dotenv").config({ path: __dirname + "/../.env" });
+const { isFull } = require("../API/Backend/Utils/deploymentMode");
 const {
   isRetryableConnectionError,
   authenticateWithRetry,
@@ -167,9 +168,10 @@ async function initializeDatabase() {
       });
 
     if (
-      process.env.WITH_STAC === "true" ||
-      process.env.WITH_TIPG === "true" ||
-      process.env.WITH_TITILER_PGSTAC === "true"
+      (process.env.WITH_STAC === "true" ||
+        process.env.WITH_TIPG === "true" ||
+        process.env.WITH_TITILER_PGSTAC === "true") &&
+      isFull()
     ) {
       // mmgis-stac
       await baseSequelize

@@ -1,6 +1,7 @@
 //Finds the tile png under the mouse of all active tile layers
 //Draws those tiles their owns canvases and get the appropriate pixel value
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import { utcFormat } from 'd3-time-format'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import L_ from '../../Basics/Layers_/Layers_'
@@ -520,7 +521,13 @@ var IdentifierTool = {
             true
         )
 
-        if (!trueValue && !selfish) {
+        // Static builds have no getbands backend; skip the trueValue requery
+        // so the legend-RGB readout is preserved
+        if (
+            !trueValue &&
+            !selfish &&
+            !isStaticBuild()
+        ) {
             IdentifierTool.mousemoveTimeout = setTimeout(function () {
                 IdentifierTool.idPixel(e, lnglatzoom, true, true)
             }, 150)
@@ -798,6 +805,9 @@ function queryDataValue(url, lng, lat, numBands, layerUUID, callback) {
     }
 
     dataPath = IdentifierTool.fillURLParameters(dataPath, layerUUID)
+
+    // Static builds have no getbands backend; keep the legend-RGB readout
+    if (isStaticBuild()) return
 
     calls.api(
         'getbands',
