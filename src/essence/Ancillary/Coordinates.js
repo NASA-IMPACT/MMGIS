@@ -1,5 +1,6 @@
 //Coordinates sets up a div that displays the cursor's lng lat
 import $ from 'jquery'
+import { isStaticBuild } from '../../pre/capabilities'
 import F_ from '../Basics/Formulae_/Formulae_'
 import Map_ from '../Basics/Map_/Map_'
 import L_ from '../Basics/Layers_/Layers_'
@@ -597,6 +598,9 @@ const Coordinates = {
     getElevation: function () {
         clearTimeout(Coordinates.elevationTimeout)
 
+        // Static builds have no getbands backend; elevation stays hidden
+        if (isStaticBuild()) return
+
         if (
             L_.configData.coordinates == null ||
             L_.configData.coordinates.coordelevurl == null
@@ -650,6 +654,7 @@ const Coordinates = {
         $('#mouseElev').css({ display: 'none' })
     },
     showElevation: function () {
+        if (isStaticBuild()) return
         $('#mouseElev').css({ display: 'block' })
     },
     remove: function () {

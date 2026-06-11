@@ -1,4 +1,5 @@
 import s from '../essence'
+import { isStaticBuild } from '../../pre/capabilities'
 import modern from '../modern'
 import $ from 'jquery'
 import QueryURL from '../Ancillary/QueryURL'
@@ -55,6 +56,27 @@ export default {
 
             //If there's only one mission, go straight to it
             if (missions.length == 1 && !forceLanding) missionUrl = missions[0]
+        }
+
+        // Static dashboards only ever show their baked mission: ignore
+        // ?mission=/?forcelanding= deeplinks and strip them from the URL
+        if (
+            isStaticBuild() &&
+            typeof mmgisglobal.MAIN_MISSION === 'string' &&
+            mmgisglobal.MAIN_MISSION.length > 0 &&
+            mmgisglobal.MAIN_MISSION != 'undefined'
+        ) {
+            missionUrl = mmgisglobal.MAIN_MISSION
+            forceLanding = false
+            if (
+                QueryURL.getSingleQueryVariable('mission') ||
+                QueryURL.getSingleQueryVariable('forcelanding')
+            ) {
+                const strippedUrl = new URL(window.location)
+                strippedUrl.searchParams.delete('mission')
+                strippedUrl.searchParams.delete('forcelanding')
+                history.replaceState(null, '', strippedUrl)
+            }
         }
 
         if (
@@ -177,7 +199,7 @@ export default {
                             function () {
                                 $(this).remove()
                                 //Load the config file and initialize
-                                if (window.mmgisglobal.SERVER == 'node') {
+                                if (!isStaticBuild()) {
                                     calls.api(
                                         'get',
                                         {
@@ -244,7 +266,7 @@ export default {
                 background.append(configIcon)
 
                 $('#configIcon').on('click', function () {
-                    if (window.mmgisglobal.SERVER === 'node')
+                    if (!isStaticBuild())
                         window.location.href =
                             window.location.href.split('?')[0] + 'configure'
                     else
@@ -362,7 +384,7 @@ export default {
                     makeErrorScreen('Mission Not Found', 'The requested mission could not be found or failed to load.')
                 })
             } else {
-                if (window.mmgisglobal.SERVER == 'node') {
+                if (!isStaticBuild()) {
                     calls.api(
                         'get',
                         {
