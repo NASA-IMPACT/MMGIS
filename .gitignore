@@ -35,6 +35,9 @@ nul
 /src/pre/tools.js
 /src/pre/components.js
 
+# Baked mission config stub (overwritten by the static publish flow)
+/src/pre/staticConfig.js
+
 /spice/kernels/*
 !/spice/kernels/.gitkeep
 /Missions/spice-kernels-conf.json
