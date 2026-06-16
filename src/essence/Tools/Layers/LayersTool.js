@@ -17,6 +17,7 @@ import LegendTool from '../Legend/LegendTool.js'
 import tippy from 'tippy.js'
 import 'markjs'
 import calls from '../../../pre/calls'
+import projStringToWkt from '../../../pre/projStringToWkt'
 import * as tokml from '@maphubs/tokml'
 import shpwrite from '@mapbox/shp-write'
 
@@ -1958,24 +1959,16 @@ function interfaceWithMMGIS(fromInit) {
                 case 'shp':
                     const folder = filename
 
-                    // Convert the projection to WKT for the .prj. Routed
-                    // through calls.api so a full deployment uses the GDAL
-                    // backend (all projections) and a static dashboard falls
-                    // back to the in-browser projStringToWkt converter.
-                    calls.api(
-                        'proj42wkt',
-                        { proj4: window.mmgisglobal.customCRS.projString },
-                        (prj) => {
-                            shpwrite
-                                .zip(geojson, {
-                                    outputType: 'blob',
-                                    prj: prj,
-                                })
-                                .then((content) => {
-                                    saveAs(content, `${folder}.zip`)
-                                })
-                        },
-                        () => {
+                    // Prefer the in-browser proj4->WKT converter (covers common
+                    // projections, no round-trip, works in every deployment);
+                    // fall back to the GDAL backend via calls.api only when it
+                    // can't handle the projection. Full admin has GDAL;
+                    // lean/static don't, so an unsupported projection fails
+                    // gracefully there.
+                    const projString =
+                        window.mmgisglobal.customCRS.projString
+                    const applyPrj = (prj) => {
+                        if (prj == null) {
                             CursorInfo.update(
                                 `Failed to generate shapefile's .prj.`,
                                 6000,
@@ -1984,8 +1977,26 @@ function interfaceWithMMGIS(fromInit) {
                                 '#e9ff26',
                                 'black'
                             )
+                            return
                         }
-                    )
+                        shpwrite
+                            .zip(geojson, {
+                                outputType: 'blob',
+                                prj: prj,
+                            })
+                            .then((content) => {
+                                saveAs(content, `${folder}.zip`)
+                            })
+                    }
+                    const localPrj = projStringToWkt(projString)
+                    if (localPrj != null) applyPrj(localPrj)
+                    else
+                        calls.api(
+                            'proj42wkt',
+                            { proj4: projString },
+                            applyPrj,
+                            () => applyPrj(null)
+                        )
                     break
                 default:
             }
