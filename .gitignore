@@ -51,7 +51,8 @@ sessions
 
 .mcp.json
 .serena
-.claude
+.claude/*
+!.claude/skills/
 .playwright-mcp
 
 # Playwright Test Artifacts
