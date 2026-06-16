@@ -156,6 +156,45 @@ router.post("/:id/update", async function (req, res) {
   }
 });
 
+// Empties the deployment's bucket (if any) and issues DeleteStack.
+// Best-effort and not awaited by the route: failures are logged and recorded
+// in last_error so the Delete affordance can retry.
+//
+// The publish task writes settings.bucket only at the very end, so a delete
+// fired after CREATE_COMPLETE but before that write would otherwise skip
+// emptyBucket and leave a non-empty bucket that blocks DeleteStack
+// (CloudFormation can't remove a non-empty bucket). Fall back to the stack's
+// BucketName output, which is the source of truth and is populated exactly in
+// that window.
+async function teardownDeployment(deployment) {
+  try {
+    let bucket =
+      deployment.settings != null ? deployment.settings.bucket : null;
+    if (bucket == null && deployment.stack_name != null) {
+      const stack = await provision.describeStack({
+        stackName: deployment.stack_name,
+      });
+      if (stack != null)
+        bucket = provision.getStackOutputs(stack).BucketName || null;
+    }
+    if (bucket != null) await provision.emptyBucket({ bucket });
+    if (deployment.stack_name != null)
+      await provision.deleteStack({ stackName: deployment.stack_name });
+  } catch (err) {
+    logger(
+      "error",
+      `Failed to tear down deployment ${deployment.id}.`,
+      "deployments",
+      null,
+      err
+    );
+    Deployments.update(
+      { last_error: `Teardown failed: ${err.message}` },
+      { where: { id: deployment.id } }
+    ).catch(() => {});
+  }
+}
+
 // DELETE /api/deployments/:id
 // Marks the row `deleting`, then inline (no spawned task) empties the
 // bucket and issues DeleteStack, returning immediately — CloudFormation
@@ -174,27 +213,7 @@ router.delete("/:id", async function (req, res) {
 
     // Teardown continues after the response; failures land in last_error
     // and the Delete affordance retries.
-    (async () => {
-      try {
-        const bucket =
-          deployment.settings != null ? deployment.settings.bucket : null;
-        if (bucket != null) await provision.emptyBucket({ bucket });
-        if (deployment.stack_name != null)
-          await provision.deleteStack({ stackName: deployment.stack_name });
-      } catch (err) {
-        logger(
-          "error",
-          `Failed to tear down deployment ${deployment.id}.`,
-          "deployments",
-          null,
-          err
-        );
-        Deployments.update(
-          { last_error: `Teardown failed: ${err.message}` },
-          { where: { id: deployment.id } }
-        ).catch(() => {});
-      }
-    })();
+    teardownDeployment(deployment);
 
     triggerWebhooks("deploymentDelete", webhookPayload(deployment));
 
@@ -240,4 +259,4 @@ router.get("/:id", async function (req, res) {
   }
 });
 
-module.exports = { router };
+module.exports = { router, teardownDeployment };
