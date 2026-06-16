@@ -15,7 +15,6 @@ import shpwrite from '@mapbox/shp-write'
 import { saveAs } from 'file-saver'
 
 import calls from '../../../pre/calls'
-import projStringToWkt from '../../../pre/projStringToWkt'
 
 var DrawTool = null
 var Files = {
@@ -714,31 +713,38 @@ var Files = {
                                 d.file[0].id +
                                 '_' +
                                 d.file[0].file_owner
-                            // Computed in the browser in every mode; the
-                            // backend /api/utils/proj42wkt Python route is
-                            // no longer called.
-                            const prj = projStringToWkt(
-                                window.mmgisglobal.customCRS.projString
+                            // Convert the projection to WKT for the .prj.
+                            // Routed through calls.api so a full deployment
+                            // uses the GDAL backend (all projections) and a
+                            // static dashboard falls back to the in-browser
+                            // projStringToWkt converter via STATIC_HANDLERS.
+                            calls.api(
+                                'proj42wkt',
+                                {
+                                    proj4: window.mmgisglobal.customCRS
+                                        .projString,
+                                },
+                                (prj) => {
+                                    shpwrite
+                                        .zip(geojson, {
+                                            outputType: 'blob',
+                                            prj: prj,
+                                        })
+                                        .then((content) => {
+                                            saveAs(content, `${folder}.zip`)
+                                        })
+                                },
+                                () => {
+                                    CursorInfo.update(
+                                        `Failed to generate shapefile's .prj.`,
+                                        6000,
+                                        true,
+                                        { x: 305, y: 6 },
+                                        '#e9ff26',
+                                        'black'
+                                    )
+                                }
                             )
-                            if (prj != null) {
-                                shpwrite
-                                    .zip(geojson, {
-                                        outputType: 'blob',
-                                        prj: prj,
-                                    })
-                                    .then((content) => {
-                                        saveAs(content, `${folder}.zip`)
-                                    })
-                            } else {
-                                CursorInfo.update(
-                                    `Failed to generate shapefile's .prj.`,
-                                    6000,
-                                    true,
-                                    { x: 305, y: 6 },
-                                    '#e9ff26',
-                                    'black'
-                                )
-                            }
                             break
                         default:
                     }
