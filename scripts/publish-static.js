@@ -234,9 +234,8 @@ async function main() {
       "LINK_PREVIEW_DESCRIPTION",
     ]);
     // Escape for a double-quoted JS string literal. JSON.stringify handles
-    // backslashes, quotes and control chars; escaping every "<" to its
-    // < form stops a value containing "</script>" from closing the
-    // inline <script> element.
+    // backslashes, quotes and control chars; the extra escaping of every "<"
+    // stops a value containing "</script>" from closing the inline <script>.
     const escapeForJsString = (value) =>
       JSON.stringify(String(value))
         .slice(1, -1)
