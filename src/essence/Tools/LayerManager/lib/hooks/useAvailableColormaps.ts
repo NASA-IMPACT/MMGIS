@@ -38,6 +38,11 @@ export const useAvailableColormaps = (layerConfig: Options = null): Result => {
                 const baseUrl = titilerUrl
                     ? titilerUrl.replace(/\/$/, '')
                     : getTiTilerBaseUrl()
+                if (baseUrl == null) {
+                    // No TiTiler available (static build without one configured)
+                    setColormaps(null)
+                    return
+                }
                 const response = await fetch(`${baseUrl}/colorMaps`)
                 if (!response.ok) throw new Error(`Failed to fetch colormaps: ${response.status}`)
                 const data = (await response.json()) as { colorMaps?: string[] }

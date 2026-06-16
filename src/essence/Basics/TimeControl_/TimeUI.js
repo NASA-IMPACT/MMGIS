@@ -5,6 +5,7 @@
   Modal.remove() programmatically removes it.
 */
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import * as moment from 'moment'
 import F_ from '../Formulae_/Formulae_'
 import Map_ from '../Map_/Map_'
@@ -2850,6 +2851,13 @@ const TimeUI = {
         }
     },
     _makeHistogram() {
+        // Static builds drop the histogram (no backend to count tile times);
+        // the slider itself still scrubs and animates without it
+        if (isStaticBuild()) {
+            $('#mmgisTimeUITimelineHisto').hide()
+            return
+        }
+
         const startTimestamp = TimeUI.removeOffset(
             TimeUI._timelineStartTimestamp
         )

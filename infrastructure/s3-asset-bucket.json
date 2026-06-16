@@ -1,0 +1,65 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "MMGIS lean shared admin asset bucket: one private bucket holding every admin-uploaded mission asset (/assets/<mission>/...), served same-origin through the admin CloudFront distribution's /assets/* behavior. The publish task same-key copies a mission's assets out of this bucket into that dashboard's own mmgis-dashboard-* bucket at publish time. Lean deployment only.",
+  "Resources": {
+    "SharedAssetBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": "<ASSET_BUCKET_NAME>",
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "BlockPublicPolicy": true,
+          "IgnorePublicAcls": true,
+          "RestrictPublicBuckets": true
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "AES256"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "SharedAssetBucketPolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": { "Ref": "SharedAssetBucket" },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowAdminCloudFrontReadOnly",
+              "Effect": "Allow",
+              "Principal": { "Service": "cloudfront.amazonaws.com" },
+              "Action": "s3:GetObject",
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [{ "Fn::GetAtt": ["SharedAssetBucket", "Arn"] }, "/*"]
+                ]
+              },
+              "Condition": {
+                "StringEquals": {
+                  "AWS:SourceArn": "arn:aws:cloudfront::<ACCOUNT_ID>:distribution/<ADMIN_DISTRIBUTION_ID>"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "AssetBucketName": {
+      "Description": "Set MMGIS_SHARED_ASSET_BUCKET to this value on both task definitions",
+      "Value": { "Ref": "SharedAssetBucket" }
+    },
+    "AssetBucketArn": {
+      "Description": "Referenced by the admin task role (PutObject) and the publish task role (GetObject/ListBucket)",
+      "Value": { "Fn::GetAtt": ["SharedAssetBucket", "Arn"] }
+    }
+  }
+}

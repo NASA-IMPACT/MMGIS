@@ -3,6 +3,9 @@
 .env
 nul
 
+# mmgis-deployment skill: per-deployment runtime files (server log)
+.mmgis/
+
 /node_modules/
 /dist/
 /ssl/*
@@ -31,6 +34,9 @@ nul
 
 /src/pre/tools.js
 /src/pre/components.js
+
+# Baked mission config stub (overwritten by the static publish flow)
+/src/pre/staticConfig.js
 
 /spice/kernels/*
 !/spice/kernels/.gitkeep

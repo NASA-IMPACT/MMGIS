@@ -35,7 +35,14 @@ const config = {
                 "Which action upon which to trigger the webhook request.",
               type: "dropdown",
               width: 2,
-              options: ["DrawFileAdd", "DrawFileChange", "DrawFileDelete"],
+              options: [
+                "DrawFileAdd",
+                "DrawFileChange",
+                "DrawFileDelete",
+                "DeploymentPublish",
+                "DeploymentUpdate",
+                "DeploymentDelete",
+              ],
             },
             {
               field: "type",

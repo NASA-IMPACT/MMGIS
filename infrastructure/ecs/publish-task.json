@@ -1,0 +1,48 @@
+{
+  "family": "mmgis-publish",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "2048",
+  "memory": "8192",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/mmgis-publish-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/mmgis-publish-task-role",
+  "containerDefinitions": [
+    {
+      "name": "mmgis",
+      "image": "<ECR_IMAGE_URI>",
+      "essential": true,
+      "command": ["node", "scripts/publish-static.js"],
+      "environment": [
+        { "name": "MMGIS_DEPLOYMENT_MODE", "value": "lean" },
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "DB_SSL", "value": "true" },
+        { "name": "DB_SSL_CERT_BASE64", "value": "<RDS_REGIONAL_CA_BUNDLE_BASE64>" },
+        { "name": "AWS_REGION", "value": "<REGION>" },
+        { "name": "MMGIS_SHARED_ASSET_BUCKET", "value": "<ASSET_BUCKET_NAME>" }
+      ],
+      "secrets": [
+        { "name": "DB_HOST", "valueFrom": "<DB_SECRET_ARN>:DB_HOST::" },
+        { "name": "DB_PORT", "valueFrom": "<DB_SECRET_ARN>:DB_PORT::" },
+        { "name": "DB_NAME", "valueFrom": "<DB_SECRET_ARN>:DB_NAME::" },
+        { "name": "DB_USER", "valueFrom": "<DB_SECRET_ARN>:DB_USER::" },
+        { "name": "DB_PASS", "valueFrom": "<DB_SECRET_ARN>:DB_PASS::" },
+        {
+          "name": "MMGIS_DASHBOARDS_PASSWORD",
+          "valueFrom": "<DASHBOARDS_PASSWORD_SECRET_ARN>"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/mmgis-publish",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "mmgis-publish"
+        }
+      }
+    }
+  ]
+}

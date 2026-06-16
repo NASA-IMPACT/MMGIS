@@ -174,6 +174,26 @@ const c = {
     type: "POST",
     url: "api/webhooks/config",
   },
+  getDeployments: {
+    type: "GET",
+    url: "api/deployments",
+  },
+  getDeployment: {
+    type: "GET",
+    url: "api/deployments/:id",
+  },
+  publishDeployment: {
+    type: "POST",
+    url: "api/deployments/publish",
+  },
+  updateDeployment: {
+    type: "POST",
+    url: "api/deployments/:id/update",
+  },
+  deleteDeployment: {
+    type: "DELETE",
+    url: "api/deployments/:id",
+  },
   titiler_tileMatrixSets: {
     type: "GET",
     url: "titiler/tileMatrixSets",
