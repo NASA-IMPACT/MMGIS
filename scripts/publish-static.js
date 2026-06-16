@@ -225,13 +225,40 @@ async function main() {
       WITH_TITILER: "false",
       HOSTS: "{}",
     };
+    // Escape per placeholder context so values like a mission named
+    // `Jezero "Delta"` can't break the inline <script> or the <title>.
+    // LINK_PREVIEW_* sit in HTML (title text / meta attribute); every other
+    // placeholder sits in a double-quoted JS string in the production branch.
+    const htmlContextKeys = new Set([
+      "LINK_PREVIEW_TITLE",
+      "LINK_PREVIEW_DESCRIPTION",
+    ]);
+    // Escape for a double-quoted JS string literal. JSON.stringify handles
+    // backslashes, quotes and control chars; escaping every "<" to its
+    // < form stops a value containing "</script>" from closing the
+    // inline <script> element.
+    const escapeForJsString = (value) =>
+      JSON.stringify(String(value))
+        .slice(1, -1)
+        .replace(/</g, "\\u003c");
+    const escapeForHtml = (value) =>
+      String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
     fs.writeFileSync(
       indexPath,
       fs
         .readFileSync(indexPath, "utf8")
-        .replace(/#\{([A-Za-z_]+)\}/g, (m, key) =>
-          staticGlobals[key] != null ? staticGlobals[key] : ""
-        )
+        .replace(/#\{([A-Za-z_]+)\}/g, (m, key) => {
+          const value = staticGlobals[key];
+          if (value == null) return "";
+          return htmlContextKeys.has(key)
+            ? escapeForHtml(value)
+            : escapeForJsString(value);
+        })
     );
     log("Interpolated static globals into index.html.");
 
