@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from 'vitest';
 import { validateModernConfig, sanitizeText } from '../../src/essence/Validators/DashboardConfigValidator.js';
 
 test.describe('DashboardConfigValidator', () => {

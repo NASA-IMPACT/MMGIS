@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import { buildLayerLegendData } from '../../../src/essence/Tools/LayerManager/adapters/buildLayerLegendData.ts'
 
 test.describe('buildLayerLegendData', () => {

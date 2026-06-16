@@ -33,11 +33,17 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
           cache: "npm"
 
       - name: Install dependencies
         run: npm ci
+
+      # Unit tests run under Vitest in a jsdom environment — hermetic, so they
+      # need neither the database nor a browser. Run them before the e2e-only
+      # setup so a DB/browser problem can't mask a unit result.
+      - name: Run Unit Tests
+        run: npx vitest run
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
@@ -59,9 +65,6 @@ jobs:
 
       - name: Initialize Database
         run: node scripts/init-db.js
-
-      - name: Run Unit Tests
-        run: npx playwright test tests/unit --project=chromium
 
       - name: Run E2E Tests
         run: npx playwright test tests/e2e --project=chromium

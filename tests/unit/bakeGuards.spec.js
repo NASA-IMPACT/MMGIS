@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 
 // Tests for the static-bake config guards (scripts/lib/bake-guards.js):
 // a published dashboard has no backend, so config.time.enabled is baked
