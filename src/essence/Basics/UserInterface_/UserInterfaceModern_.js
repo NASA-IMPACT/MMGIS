@@ -83,6 +83,87 @@ const _createPanelHeader = (panel) => {
     return header
 }
 
+const FLOAT_POSITIONS = new Set([
+    'float-top-left',
+    'float-top-center',
+    'float-top-right',
+    'float-bottom-left',
+    'float-bottom-center',
+    'float-bottom-right',
+])
+
+// Converts a dimension value to a CSS string.
+// Numbers are treated as px; strings are passed through as-is (e.g. "40%", "50vh").
+const _toCssValue = (v) => (typeof v === 'number' ? v + 'px' : v)
+
+const _renderFloatRegions = (floatPanels) => {
+    if (!floatPanels || floatPanels.length === 0) return null
+
+    const fragment = $('<div class="ui-float-regions"></div>')
+
+    // Group panels by their float position (validator enforces at most one per position)
+    const byPosition = {}
+    floatPanels.forEach(panel => {
+        const pos = panel.config.position
+        if (!byPosition[pos]) byPosition[pos] = []
+        byPosition[pos].push(panel)
+    })
+
+    Object.entries(byPosition).forEach(([position, positionPanels]) => {
+        const suffix = position.replace('float-', '')
+        const zone = $(`<div class="ui-float-zone ui-float-zone-${suffix}"></div>`)
+
+        positionPanels.forEach(panel => {
+            const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+            if (toolsMetadata.length === 0) return
+
+            // One panel card per float zone — all tools stack inside it
+            const panelDiv = $('<div class="ui-panel ui-float-panel"></div>')
+                .attr('id', panel.containerId)
+                .attr('data-panel-id', panel.containerId)
+                .attr('data-panel-state', panel.state)
+
+            const dims = panel.config.dimensions || {}
+
+            // Width constraints go on the panel container
+            const panelCss = {}
+            if (dims.defaultWidth)  panelCss['width']     = _toCssValue(dims.defaultWidth)
+            if (dims.minWidth)      panelCss['min-width'] = _toCssValue(dims.minWidth)
+            if (dims.maxWidth)      panelCss['max-width'] = _toCssValue(dims.maxWidth)
+            if (Object.keys(panelCss).length) panelDiv.css(panelCss)
+
+            if (panel.config.hasHeader) {
+                panelDiv.append(_createPanelHeader(panel))
+            }
+
+            // Body holds all tool cards stacked vertically with gaps
+            const body = $('<div class="ui-float-panel-body"></div>')
+
+            // Height constraints go on the body so overflow-y: auto can trigger correctly.
+            // Applying max-height only to the panel won't constrain the flex body's actual height,
+            // so the body scroll never fires; setting it on the body directly fixes this.
+            const bodyCss = {}
+            if (dims.defaultHeight) bodyCss['height']     = _toCssValue(dims.defaultHeight)
+            if (dims.minHeight)     bodyCss['min-height'] = _toCssValue(dims.minHeight)
+            if (dims.maxHeight)     bodyCss['max-height'] = _toCssValue(dims.maxHeight)
+            if (Object.keys(bodyCss).length) body.css(bodyCss)
+            toolsMetadata.forEach(toolMetadata => {
+                const { toolCard, loadTool } = UserInterfaceModern_.createToolCard(toolMetadata, panel.containerId)
+                toolCard.addClass('active')
+                body.append(toolCard)
+                toolLoadQueue.push(loadTool)
+            })
+
+            panelDiv.append(body)
+            zone.append(panelDiv)
+        })
+
+        fragment.append(zone)
+    })
+
+    return fragment
+}
+
 const _renderRegion = (regionName, regionPanels) => {
     if (!regionPanels || regionPanels.length === 0) return null
     
@@ -356,17 +437,20 @@ const UserInterfaceModern_ = {
             gridWrapper.addClass('ui-layout-compact')
         }
 
-        // Group panels by position
+        // Group panels by position — float positions go into a separate bucket
         const layoutRegions = {
             top: [],
             left: [],
             right: [],
             bottom: []
         }
+        const floatPanels = []
 
         panels.forEach(p => {
             const pos = p.config?.position
-            if (layoutRegions[pos]) {
+            if (FLOAT_POSITIONS.has(pos)) {
+                floatPanels.push(p)
+            } else if (layoutRegions[pos]) {
                 layoutRegions[pos].push(p)
             }
         })
@@ -413,6 +497,11 @@ const UserInterfaceModern_ = {
             }
         }
 
+        const floatRegions = _renderFloatRegions(floatPanels)
+        if (floatRegions) {
+            centralArea.append(floatRegions)
+        }
+
         gridWrapper.append(_renderRegion('left', layoutRegions.left))
         gridWrapper.append(_renderRegion('right', layoutRegions.right))
         gridWrapper.append(_renderRegion('bottom', layoutRegions.bottom))
@@ -452,7 +541,12 @@ const UserInterfaceModern_ = {
         }
 
         panels.forEach(panel => {
-            const $panel = $(document.getElementById(panel.containerId))
+            const isFloat = FLOAT_POSITIONS.has(panel.config?.position)
+
+            // Float panel tool cards use data-panel-id; edge panels use their containerId directly
+            const $panel = isFloat
+                ? $(`[data-panel-id="${panel.containerId}"]`)
+                : $(document.getElementById(panel.containerId))
             if ($panel.length === 0) return
 
             $panel.attr('data-panel-state', panel.state)

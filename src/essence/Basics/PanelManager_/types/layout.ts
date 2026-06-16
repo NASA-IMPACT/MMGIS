@@ -6,8 +6,27 @@ export const PANEL_POSITION = {
     LEFT: 'left',
     RIGHT: 'right',
     BOTTOM: 'bottom',
+    FLOAT_TOP_LEFT: 'float-top-left',
+    FLOAT_TOP_CENTER: 'float-top-center',
+    FLOAT_TOP_RIGHT: 'float-top-right',
+    FLOAT_BOTTOM_LEFT: 'float-bottom-left',
+    FLOAT_BOTTOM_CENTER: 'float-bottom-center',
+    FLOAT_BOTTOM_RIGHT: 'float-bottom-right',
 } as const
 export type PanelPosition = (typeof PANEL_POSITION)[keyof typeof PANEL_POSITION]
+
+/**
+ * Set of all float positions for quick membership checks.
+ * Float panels render inside the center map area as overlays.
+ */
+export const FLOAT_POSITIONS = new Set([
+    PANEL_POSITION.FLOAT_TOP_LEFT,
+    PANEL_POSITION.FLOAT_TOP_CENTER,
+    PANEL_POSITION.FLOAT_TOP_RIGHT,
+    PANEL_POSITION.FLOAT_BOTTOM_LEFT,
+    PANEL_POSITION.FLOAT_BOTTOM_CENTER,
+    PANEL_POSITION.FLOAT_BOTTOM_RIGHT,
+] as const)
 
 /**
  * Visual states of a panel:

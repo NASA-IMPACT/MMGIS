@@ -12,7 +12,7 @@
  * @typedef {import('../types/dashboard').ValidationResult} ValidationResult
  */
 
-import { PANEL_POSITION, PANEL_STATE, PANEL_LAYOUT_TYPE } from '../Basics/PanelManager_/types/layout'
+import { PANEL_POSITION, PANEL_STATE, PANEL_LAYOUT_TYPE, FLOAT_POSITIONS } from '../Basics/PanelManager_/types/layout'
 import { TOOL_ORIENTATION } from '../Basics/ToolController_/types/tool'
 import { VALID_MODES, VALID_LAYOUT_STYLES } from '../types/dashboard'
 
@@ -78,10 +78,9 @@ export function validateModernConfig(config) {
     // Validate each panel
     const panelIds = new Set()
     panelSettings.panels.forEach((panel, index) => {
-        const panelErrors = validatePanelConfig(panel, index)
+        const panelErrors = validatePanelConfig(panel, index, false)
         errors.push(...panelErrors)
 
-        // Check for duplicate panel IDs
         if (panel.id) {
             if (panelIds.has(panel.id)) {
                 errors.push(`Duplicate panel ID: "${panel.id}"`)
@@ -89,6 +88,33 @@ export function validateModernConfig(config) {
             panelIds.add(panel.id)
         }
     })
+
+    // Validate optional floatingPanels array
+    if (panelSettings.floatingPanels !== undefined) {
+        if (!Array.isArray(panelSettings.floatingPanels)) {
+            errors.push('panelSettings.floatingPanels must be an array')
+        } else {
+            const floatPositions = new Set()
+            panelSettings.floatingPanels.forEach((panel, index) => {
+                const panelErrors = validatePanelConfig(panel, index, true)
+                errors.push(...panelErrors)
+
+                if (panel.id) {
+                    if (panelIds.has(panel.id)) {
+                        errors.push(`Duplicate panel ID: "${panel.id}"`)
+                    }
+                    panelIds.add(panel.id)
+                }
+
+                if (panel.position && FLOAT_POSITIONS.has(panel.position)) {
+                    if (floatPositions.has(panel.position)) {
+                        errors.push(`Duplicate floating panel position: "${panel.position}" — each float zone can only have one panel`)
+                    }
+                    floatPositions.add(panel.position)
+                }
+            })
+        }
+    }
 
     // Validate tools array (optional)
     if (config.tools && !Array.isArray(config.tools)) {
@@ -125,11 +151,12 @@ export function validateModernConfig(config) {
  *
  * @param {PanelConfig} panel - The panel config to validate
  * @param {number} index - Index in the panels array (for error messages)
+ * @param {boolean} isFloat - Whether this is a floating panel (relaxes layoutType/priority requirements)
  * @returns {string[]} - Array of error messages
  */
-function validatePanelConfig(panel, index) {
+function validatePanelConfig(panel, index, isFloat = false) {
     const errors = []
-    const prefix = `Panel[${index}]`
+    const prefix = isFloat ? `FloatingPanel[${index}]` : `Panel[${index}]`
 
     if (!panel || typeof panel !== 'object') {
         errors.push(`${prefix}: Must be an object`)
@@ -150,23 +177,39 @@ function validatePanelConfig(panel, index) {
         errors.push(
             `${prefix}: Must have a valid "position" (${VALID_POSITIONS.join(', ')})`
         )
+    } else if (isFloat && !FLOAT_POSITIONS.has(panel.position)) {
+        errors.push(
+            `${prefix}: Floating panel position must be one of the float positions (float-top-left, float-top-center, etc.)`
+        )
     }
 
-    // Validate priority - try to convert if string
-    if (panel.priority === undefined || panel.priority === null) {
-        errors.push(`${prefix}: Must have a "priority"`)
-    } else {
+    // Validate priority - optional for float panels
+    if (!isFloat) {
+        if (panel.priority === undefined || panel.priority === null) {
+            errors.push(`${prefix}: Must have a "priority"`)
+        } else {
+            const priorityNum = Number(panel.priority)
+            if (isNaN(priorityNum)) {
+                errors.push(`${prefix}: "priority" must be a valid number (got "${panel.priority}")`)
+            } else if (priorityNum < 0) {
+                errors.push(`${prefix}: "priority" must be non-negative`)
+            }
+        }
+    } else if (panel.priority !== undefined && panel.priority !== null) {
         const priorityNum = Number(panel.priority)
-        if (isNaN(priorityNum)) {
-            errors.push(`${prefix}: "priority" must be a valid number (got "${panel.priority}")`)
-        } else if (priorityNum < 0) {
-            errors.push(`${prefix}: "priority" must be non-negative`)
+        if (isNaN(priorityNum) || priorityNum < 0) {
+            errors.push(`${prefix}: "priority" must be a non-negative number when provided`)
         }
     }
 
-    if (!panel.layoutType || !VALID_LAYOUT_TYPES.includes(panel.layoutType)) {
+    // layoutType is required for edge panels, optional for float panels
+    if (!isFloat && (!panel.layoutType || !VALID_LAYOUT_TYPES.includes(panel.layoutType))) {
         errors.push(
             `${prefix}: Must have a valid "layoutType" (${VALID_LAYOUT_TYPES.join(', ')})`
+        )
+    } else if (isFloat && panel.layoutType && !VALID_LAYOUT_TYPES.includes(panel.layoutType)) {
+        errors.push(
+            `${prefix}: "layoutType" must be one of: ${VALID_LAYOUT_TYPES.join(', ')}`
         )
     }
 
@@ -273,9 +316,33 @@ function validatePanelConfig(panel, index) {
                 }
             }
         }
+
+        // CSS dimension fields for floating panels (number or CSS string e.g. "50%", "40vh")
+        // Empty strings are treated as "not provided" and skipped.
+        const cssDimFields = ['defaultWidth', 'defaultHeight', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight']
+        cssDimFields.forEach(field => {
+            const val = dim[field]
+            if (val !== undefined && val !== '' && !isValidCssDimension(val)) {
+                errors.push(
+                    `${prefix}.dimensions: "${field}" must be a number (px) or a CSS string with a unit (px, %, vh, vw, rem, em) — got "${val}"`
+                )
+            }
+        })
     }
 
     return errors
+}
+
+/**
+ * Returns true if v is a valid CSS dimension value: a number (treated as px)
+ * or a string with a number followed by a recognised CSS unit.
+ * @param {*} v
+ * @returns {boolean}
+ */
+function isValidCssDimension(v) {
+    if (typeof v === 'number') return true
+    if (typeof v === 'string') return /^\d+(\.\d+)?(px|%|vh|vw|svh|dvh|rem|em)$/.test(v)
+    return false
 }
 
 /**

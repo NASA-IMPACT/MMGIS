@@ -109,6 +109,37 @@ Determines where the panel is located:
 - **`"left"`**: Vertical panel on the left side
 - **`"right"`**: Vertical panel on the right side
 
+**Floating positions** (render inside the center map area as overlays):
+
+- **`"float-top-left"`**: Floats in the top-left corner of the map
+- **`"float-top-center"`**: Floats at the top-center of the map
+- **`"float-top-right"`**: Floats in the top-right corner of the map
+- **`"float-bottom-left"`**: Floats in the bottom-left corner of the map
+- **`"float-bottom-center"`**: Floats at the bottom-center of the map
+- **`"float-bottom-right"`**: Floats in the bottom-right corner of the map
+
+**Floating panel rules**:
+- Multiple tools can be assigned to one floating panel — each tool renders as its own card with a gap between cards
+- Multiple floating panels at the same position stack **vertically** in declaration order
+- Supported states: `"collapsed"` and `"expanded"` only (`"iconified"` and `"focused"` are not supported)
+- `layoutType` is ignored for floating panels
+- `capabilities.resizable` is not supported for floating panels
+- In `overlay` layout style the panel has rounded corners; in `compact` layout style it has sharp corners
+- A gap between cards is applied automatically; no outer gap is added in overlay mode (the panel's own margin handles it)
+
+**Floating panel `dimensions` fields**:
+
+All values accept any CSS unit string (e.g. `"40%"`, `"50vh"`, `"300px"`) or a plain number (treated as `px`). Dimensions apply to each individual tool card.
+
+| Field | Description |
+|---|---|
+| `defaultWidth` | Initial width (omit to size to content) |
+| `defaultHeight` | Initial height (omit to size to content) |
+| `minWidth` | Minimum width |
+| `maxWidth` | Maximum width |
+| `minHeight` | Minimum height |
+| `maxHeight` | Maximum height — useful for capping top/bottom float zones so they never overlap (e.g. top panel `maxHeight: "40%"`, bottom panel `maxHeight: "50%"` leaves a 10% gap) |
+
 ### priority
 
 Controls the order in which panels claim viewport space:
@@ -441,6 +472,28 @@ Full mission configuration with four panels:
           "expandedSize": 300
         },
         "tools": ["Draw", "RasterTile", "Identifier"]
+      },
+      {
+        "id": "timeline-panel",
+        "position": "float-bottom-center",
+        "priority": 0,
+        "layoutType": "stacked",
+        "stateConstraints": {
+          "allowedStates": ["collapsed", "expanded"],
+          "defaultState": "expanded"
+        },
+        "tools": ["Timeline"]
+      },
+      {
+        "id": "legend-float-panel",
+        "position": "float-bottom-right",
+        "priority": 0,
+        "layoutType": "stacked",
+        "stateConstraints": {
+          "allowedStates": ["collapsed", "expanded"],
+          "defaultState": "expanded"
+        },
+        "tools": ["Legend"]
       }
     ]
   },
