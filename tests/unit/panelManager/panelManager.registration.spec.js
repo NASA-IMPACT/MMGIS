@@ -1,12 +1,9 @@
 import { test, expect, vi } from 'vitest'
 
 // PanelManager_ imports mmgisAPI, which transitively pulls in the entire Map_
-// rendering stack. These specs only exercise panel logic, so mock the API to a
-// no-op event emitter and keep the chain (and the import graph) light.
-vi.mock('../../../src/essence/mmgisAPI/mmgisAPI', () => ({
-    mmgisAPI: { emit: () => {} },
-    mmgisAPI_: {},
-}))
+// rendering stack. These specs only exercise panel logic, so mock it out (the
+// adjacent __mocks__ stub) to keep the import graph light.
+vi.mock('../../../src/essence/mmgisAPI/mmgisAPI')
 import { PanelManager } from '../../../src/essence/Basics/PanelManager_/PanelManager_.ts'
 import { PANEL_STATE } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
 import { createMockPanelConfig, mockWindowDispatchEvent, setupWindowEnvironment } from './testHelpers.js'
