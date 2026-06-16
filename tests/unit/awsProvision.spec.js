@@ -168,6 +168,7 @@ test.describe('copyPrefix', () => {
                         Contents: [
                             { Key: 'assets/TestMission/icon.png' },
                             { Key: 'assets/TestMission/photo.jpg' },
+                            { Key: 'assets/TestMission/with space.png' },
                         ],
                         IsTruncated: false,
                     }
@@ -184,12 +185,19 @@ test.describe('copyPrefix', () => {
             destBucket: 'dash',
             prefix: 'assets/TestMission/',
         })
-        expect(count).toBe(2)
+        expect(count).toBe(3)
         // Same keys in the destination bucket
         expect(copies[0].Bucket).toBe('dash')
         expect(copies[0].Key).toBe('assets/TestMission/icon.png')
-        expect(decodeURIComponent(copies[0].CopySource)).toBe(
-            'shared/assets/TestMission/icon.png'
+        // CopySource is "bucket/key" with the separators left intact —
+        // NOT encodeURIComponent of the whole string (that would turn the
+        // slashes into %2F and break the copy).
+        expect(copies[0].CopySource).toBe('shared/assets/TestMission/icon.png')
+        // Special chars inside a segment are encoded; the "/" separators
+        // and the bucket/key boundary are preserved.
+        expect(copies[2].Key).toBe('assets/TestMission/with space.png')
+        expect(copies[2].CopySource).toBe(
+            'shared/assets/TestMission/with%20space.png'
         )
     })
 })

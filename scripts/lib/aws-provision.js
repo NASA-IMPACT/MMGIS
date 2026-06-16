@@ -255,6 +255,16 @@ async function createInvalidation({ distributionId, paths = ["/*"] }) {
   );
 }
 
+// Builds an S3 CopySource ("bucket/key") with each path segment percent-
+// encoded but the "/" separators preserved. encodeURIComponent over the
+// whole string would also encode the bucket/key boundary and intra-key
+// slashes into %2F, which S3 reads as one literal bucket name -> the copy
+// fails with NoSuchBucket/InvalidArgument.
+function buildCopySource(bucket, key) {
+  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+  return `${bucket}/${encodedKey}`;
+}
+
 // Same-key copies every object under `prefix` from sourceBucket into
 // destBucket. Returns the number of objects copied.
 async function copyPrefix({ sourceBucket, destBucket, prefix }) {
@@ -274,7 +284,7 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
         new CopyObjectCommand({
           Bucket: destBucket,
           Key: obj.Key,
-          CopySource: encodeURIComponent(`${sourceBucket}/${obj.Key}`),
+          CopySource: buildCopySource(sourceBucket, obj.Key),
         })
       );
       copied++;
@@ -295,7 +305,7 @@ async function copyObjectIfExists({ sourceBucket, destBucket, key }) {
       new CopyObjectCommand({
         Bucket: destBucket,
         Key: key,
-        CopySource: encodeURIComponent(`${sourceBucket}/${key}`),
+        CopySource: buildCopySource(sourceBucket, key),
       })
     );
     return true;
