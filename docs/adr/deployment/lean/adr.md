@@ -80,8 +80,8 @@ Each published dashboard is provisioned as a **CloudFormation stack**, created b
 
 **Why CloudFormation rather than direct SDK calls:**
 
-- CloudFront's multi-step teardown (disable distribution, wait for propagation, delete distribution, delete Function, empty and delete bucket) is CFN's problem, not ours.
-- Failed creates roll back automatically. No partial-state cleanup code to write or maintain.
+- CloudFront's multi-step teardown (disable distribution, wait for propagation, delete distribution, delete Function, delete bucket) is CFN's problem, not ours; the handler only empties the bucket first, since CFN won't delete a non-empty one.
+- Failed creates roll back automatically. No create-path cleanup code to write or maintain.
 - One stack ARN is the handle for everything a dashboard owns. Bookkeeping is one foreign key, not five.
 
 ### Publish flow
@@ -99,7 +99,7 @@ Publish, Update, and Delete actions live on a new Deployments page in `/configur
 
 **Update:** `POST /api/deployments/:id/update` re-bakes the bundle from the current mission config and PutObjects the new assets to the existing bucket. The CloudFront distribution is not replaced — same `deployment_id`, same stack, same URL. The row's `updated_at` reflects the latest republish. The same ECS RunTask shape as Publish, minus the CFN `CreateStack` + polling.
 
-**Delete:** `DELETE /api/deployments/:id` marks the row `deleting` and calls `DeleteStack`. CFN handles the 15–30 min teardown. The row flips to `deleted` on the next read where `DescribeStacks` 404s.
+**Delete:** `DELETE /api/deployments/:id` marks the row `deleting`, empties the bucket (its name from `settings.bucket`, falling back to the stack's `BucketName` output for a delete mid-provision), then calls `DeleteStack`. CFN handles the 15–30 min teardown. The row flips to `deleted` on the next read where `DescribeStacks` 404s.
 
 **Live state:** `GET /api/deployments*` joins each row's `stack_arn` with `DescribeStacks`. The row holds identity (id, mission, owner, stack ARN); CFN holds status. No reconcile job.
 

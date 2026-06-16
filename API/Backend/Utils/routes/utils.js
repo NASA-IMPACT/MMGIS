@@ -384,9 +384,10 @@ if (isFull()) {
     );
   });
 
-  // proj4 -> WKT via a Python shellout; the frontend computes this
-  // client-side in every mode (PR 9), so no first-party caller remains.
-  // Kept mounted in full for API compatibility.
+  // proj4 -> WKT via a Python shellout (GDAL). DrawTool/LayersTool call
+  // this via calls.api('proj42wkt') only as a fallback, when the in-browser
+  // projStringToWkt can't handle the projection (reachable in full only;
+  // lean/static have no GDAL and fail that case gracefully).
   router.get("/proj42wkt", function (req, res) {
     const proj4 = encodeURIComponent(req.query.proj4);
 

@@ -52,7 +52,7 @@ Utils is a grab-bag. Per-endpoint:
 | `POST /getminmax` | **Gate** | Python+GDAL shellout against a local raster in `Missions/`. |
 | `POST /ll2aerll` | **Gate** | Python coord-transform script; no caller without local data. |
 | `POST /chronice` | **Gate** | Python time-op script; no caller in lean. |
-| `GET /proj42wkt` | **Gate** | Python shellout (`private/api/proj42wkt.py`) — not pure compute as first classified (review catch, 2026-06-11). The frontend computes WKT client-side in **every** mode (PR 9), so no first-party caller remains; full keeps the route for API compatibility only. |
+| `GET /proj42wkt` | **Gate** | Python shellout (`private/api/proj42wkt.py`) — not pure compute as first classified (review catch, 2026-06-11). The shapefile export tries the in-browser WKT converter first and falls back to this route via `calls.api('proj42wkt')` (review, 2026-06-16), so full hits GDAL here for projections the converter can't handle; lean stays gated (404), where only the converter's coverage is available. |
 
 ## Server-side patterns
 
