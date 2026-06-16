@@ -106,6 +106,7 @@ const getVeloserverUrl = createServiceGetter('veloserver')
  */
 const buildTiTilerCogTilesUrl = (cogUrl, layerConfig = null, options = {}) => {
     const baseUrl = getTiTilerUrl(layerConfig)
+    if (baseUrl == null) return null
     const tileMatrixSet = options.tileMatrixSet || layerConfig?.tileMatrixSet || 'WebMercatorQuad'
 
     let url = `${baseUrl}/cog/tiles/${tileMatrixSet}/{z}/{x}/{y}.webp?url=${encodeURIComponent(cogUrl)}`
@@ -132,6 +133,7 @@ const buildTiTilerCogTilesUrl = (cogUrl, layerConfig = null, options = {}) => {
  */
 const buildStacCollectionTilesUrl = (collectionName, layerConfig = null, options = {}) => {
     const baseUrl = getTiTilerPgStacUrl(layerConfig)
+    if (baseUrl == null) return null
     const tileMatrixSet = options.tileMatrixSet || layerConfig?.tileMatrixSet || 'WebMercatorQuad'
     const assets = options.assets || 'asset'
 
@@ -162,6 +164,7 @@ const buildStacCollectionTilesUrl = (collectionName, layerConfig = null, options
  */
 const buildTiTilerPointUrl = (lng, lat, cogUrl, layerConfig = null, params = {}) => {
     const baseUrl = getTiTilerUrl(layerConfig)
+    if (baseUrl == null) return null
     let url = `${baseUrl}/cog/point/${lng},${lat}?assets=asset&url=${encodeURIComponent(cogUrl)}`
 
     Object.entries(params).forEach(([key, value]) => {
@@ -191,6 +194,7 @@ const buildTiTilerPointUrl = (lng, lat, cogUrl, layerConfig = null, params = {})
  */
 const buildStacCollectionPointUrl = (lng, lat, collectionName, layerConfig = null, params = {}) => {
     const baseUrl = getTiTilerPgStacUrl(layerConfig)
+    if (baseUrl == null) return null
     let url = `${baseUrl}/collections/${collectionName}/point/${lng},${lat}?assets=asset`
 
     Object.entries(params).forEach(([key, value]) => {
@@ -218,6 +222,7 @@ const buildStacCollectionPointUrl = (lng, lat, collectionName, layerConfig = nul
 const buildColormapImageUrl = (colormapName, layerConfig = null, format = 'png') => {
     if (!colormapName) return null
     const baseUrl = getTiTilerUrl(layerConfig)
+    if (baseUrl == null) return null
     return `${baseUrl}/colorMaps/${colormapName}?format=${format}`
 }
 
