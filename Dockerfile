@@ -49,7 +49,7 @@ WORKDIR /usr/src/app
 # Copy only python env file first (cached unless this file changes)
 COPY python-environment.yml ./
 RUN if [ "$WITH_STAC" = "true" ]; then \
-        . /root/.bashrc && micromamba env create -y --name mmgis --file=python-environment.yml; \
+        MAMBA_ROOT_PREFIX=/opt/micromamba /opt/micromamba/bin/micromamba env create -y --name mmgis --file=python-environment.yml; \
     else \
         echo "Skipping Python environment creation (WITH_STAC=false)"; \
     fi
@@ -60,10 +60,10 @@ RUN if [ "$WITH_STAC" = "true" ]; then \
 
 # Copy only package files first (cached unless these change)
 COPY package*.json ./
-# --force is required: react-chartjs-2@5 wants chart.js@^4.1.1, but
-# chartjs-plugin-zoom@1.2.1 pins ^3.2.0. Don't use --legacy-peer-deps; in this
-# tree it silently drops @deck.gl/extensions and @deck.gl/mesh-layers.
-RUN npm install --force
+# chart.js@4, chartjs-plugin-zoom@2 and react-chartjs-2@5 all agree on
+# chart.js v4, so peer deps resolve cleanly without --force. Don't use
+# --legacy-peer-deps; it silently drops @deck.gl/extensions and mesh-layers.
+RUN npm install
 
 #############################
 # MMGIS Configure Dependencies
