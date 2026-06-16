@@ -1705,55 +1705,57 @@ function interfaceWithMMGIS(fromInit) {
                 // Fetch STAC items (lazy load on first open)
                 const stacUrl = ServiceUrls.buildStacItemsUrl(collectionName, layerData, { limit: 1 })
 
-                fetch(stacUrl)
-                    .then((response) => response.json())
-                    .then((data) => {
-                        if (data.features && data.features.length > 0) {
-                            const assets = data.features[0].assets
-                            const bandList = []
+                if (stacUrl != null) {
+                    fetch(stacUrl)
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if (data.features && data.features.length > 0) {
+                                const assets = data.features[0].assets
+                                const bandList = []
 
-                            // Parse each asset and its bands, combining into asset_band format
-                            for (const [assetName, assetData] of Object.entries(
-                                assets
-                            )) {
-                                const bands = assetData['eo:bands'] || []
+                                // Parse each asset and its bands, combining into asset_band format
+                                for (const [assetName, assetData] of Object.entries(
+                                    assets
+                                )) {
+                                    const bands = assetData['eo:bands'] || []
 
-                                // Combine asset name with band name
-                                if (bands.length > 0) {
-                                    bands.forEach((b) => {
-                                        const fullBandName = `${assetName}_${b.name}`
-                                        const description = b.description
-                                            ? ` (${b.description})`
-                                            : ''
+                                    // Combine asset name with band name
+                                    if (bands.length > 0) {
+                                        bands.forEach((b) => {
+                                            const fullBandName = `${assetName}_${b.name}`
+                                            const description = b.description
+                                                ? ` (${b.description})`
+                                                : ''
+                                            bandList.push(
+                                                `<div class="stac-band-item">${fullBandName}${description}</div>`
+                                            )
+                                        })
+                                    } else {
                                         bandList.push(
-                                            `<div class="stac-band-item">${fullBandName}${description}</div>`
+                                            `<div class="stac-band-item">${assetName} (no band info)</div>`
                                         )
-                                    })
-                                } else {
-                                    bandList.push(
-                                        `<div class="stac-band-item">${assetName} (no band info)</div>`
+                                    }
+                                }
+
+                                // Update the info display
+                                const infoDiv = li.find(
+                                    `.expression-stac-info[data-layername="${layerName}"]`
+                                )
+                                if (bandList.length > 0) {
+                                    infoDiv.html(
+                                        `<div class="stac-header">Available Assets:</div>${bandList.join(
+                                            ''
+                                        )}`
                                     )
+                                    infoDiv.show()
                                 }
                             }
-
-                            // Update the info display
-                            const infoDiv = li.find(
-                                `.expression-stac-info[data-layername="${layerName}"]`
-                            )
-                            if (bandList.length > 0) {
-                                infoDiv.html(
-                                    `<div class="stac-header">Available Assets:</div>${bandList.join(
-                                        ''
-                                    )}`
-                                )
-                                infoDiv.show()
-                            }
-                        }
-                    })
-                    .catch((err) => {
-                        // Silently fail - don't show the section
-                        console.warn('Failed to fetch STAC asset info:', err)
-                    })
+                        })
+                        .catch((err) => {
+                            // Silently fail - don't show the section
+                            console.warn('Failed to fetch STAC asset info:', err)
+                        })
+                }
             }
         }
 

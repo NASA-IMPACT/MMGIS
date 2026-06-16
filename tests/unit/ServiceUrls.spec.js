@@ -21,6 +21,7 @@ test.describe('ServiceUrls builders in a static build with no service configured
         ['buildTiTilerPointUrl', () => ServiceUrls.buildTiTilerPointUrl(1, 2, 's3://bucket/x.tif')],
         ['buildStacCollectionTilesUrl', () => ServiceUrls.buildStacCollectionTilesUrl('collection')],
         ['buildStacCollectionPointUrl', () => ServiceUrls.buildStacCollectionPointUrl(1, 2, 'collection')],
+        ['buildStacItemsUrl', () => ServiceUrls.buildStacItemsUrl('collection', null, { limit: 1 })],
         ['buildColormapImageUrl', () => ServiceUrls.buildColormapImageUrl('viridis')],
     ]
 

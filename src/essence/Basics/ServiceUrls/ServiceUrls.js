@@ -257,6 +257,7 @@ const buildVeloserverUrl = (endpoint = '', layerConfig = null) => {
  */
 const buildStacItemsUrl = (collectionName, layerConfig = null, params = {}) => {
     const baseUrl = getStacUrl(layerConfig)
+    if (baseUrl == null) return null
     let url = `${baseUrl}/collections/${collectionName}/items`
 
     const queryParams = new URLSearchParams()
