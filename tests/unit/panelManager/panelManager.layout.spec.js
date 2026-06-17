@@ -6,7 +6,7 @@ import { test, expect, vi } from 'vitest'
 vi.mock('../../../src/essence/mmgisAPI/mmgisAPI')
 import { PanelManager } from '../../../src/essence/Basics/PanelManager_/PanelManager_.ts'
 import { PANEL_POSITION } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
-import { createMockPanelConfig, mockWindowDispatchEvent, setupWindowEnvironment } from './testHelpers.js'
+import { createMockPanelConfig, mockLayoutChangedEvents, setupWindowEnvironment } from './testHelpers.js'
 
 test.describe('PanelManager - Layout', () => {
     let panelManager
@@ -93,7 +93,7 @@ test.describe('PanelManager - Layout', () => {
             })
             panelManager.registerPanel(config)
 
-            const mock = mockWindowDispatchEvent()
+            const mock = mockLayoutChangedEvents()
 
             panelManager.resizePanel('test-panel', 300)
 
@@ -132,7 +132,7 @@ test.describe('PanelManager - Layout', () => {
 
     test.describe('notifyLayoutChanged', () => {
         test('dispatches custom event with panel data', () => {
-            const mock = mockWindowDispatchEvent()
+            const mock = mockLayoutChangedEvents()
 
             const config = createMockPanelConfig()
             panelManager.registerPanel(config)
@@ -150,7 +150,7 @@ test.describe('PanelManager - Layout', () => {
         })
 
         test('includes all panels sorted by priority in event', () => {
-            const mock = mockWindowDispatchEvent()
+            const mock = mockLayoutChangedEvents()
 
             const config1 = createMockPanelConfig({ id: 'panel-1', priority: 2 })
             const config2 = createMockPanelConfig({ id: 'panel-2', priority: 0 })

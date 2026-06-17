@@ -6,7 +6,7 @@ import { test, expect, vi } from 'vitest'
 vi.mock('../../../src/essence/mmgisAPI/mmgisAPI')
 import { PanelManager } from '../../../src/essence/Basics/PanelManager_/PanelManager_.ts'
 import { PANEL_STATE } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
-import { createMockPanelConfig, createMockToolMetadata, mockWindowDispatchEvent, setupWindowEnvironment } from './testHelpers.js'
+import { createMockPanelConfig, createMockToolMetadata, mockLayoutChangedEvents, setupWindowEnvironment } from './testHelpers.js'
 
 test.describe('PanelManager - State Management', () => {
     let panelManager
@@ -40,7 +40,7 @@ test.describe('PanelManager - State Management', () => {
         })
 
         test('triggers layout recalculation after state change', () => {
-            const mock = mockWindowDispatchEvent()
+            const mock = mockLayoutChangedEvents()
 
             panelManager.setPanelState('test-panel', PANEL_STATE.COLLAPSED)
 
@@ -149,7 +149,7 @@ test.describe('PanelManager - State Management', () => {
         })
 
         test('triggers layout recalculation', () => {
-            const mock = mockWindowDispatchEvent()
+            const mock = mockLayoutChangedEvents()
 
             panelManager.focusTool('test-panel', 'test-tool')
 
