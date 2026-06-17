@@ -17,6 +17,7 @@ import LegendTool from '../Legend/LegendTool.js'
 import tippy from 'tippy.js'
 import 'markjs'
 import calls from '../../../pre/calls'
+import projStringToWkt from '../../../pre/projStringToWkt'
 import * as tokml from '@maphubs/tokml'
 import shpwrite from '@mapbox/shp-write'
 
@@ -1704,55 +1705,57 @@ function interfaceWithMMGIS(fromInit) {
                 // Fetch STAC items (lazy load on first open)
                 const stacUrl = ServiceUrls.buildStacItemsUrl(collectionName, layerData, { limit: 1 })
 
-                fetch(stacUrl)
-                    .then((response) => response.json())
-                    .then((data) => {
-                        if (data.features && data.features.length > 0) {
-                            const assets = data.features[0].assets
-                            const bandList = []
+                if (stacUrl != null) {
+                    fetch(stacUrl)
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if (data.features && data.features.length > 0) {
+                                const assets = data.features[0].assets
+                                const bandList = []
 
-                            // Parse each asset and its bands, combining into asset_band format
-                            for (const [assetName, assetData] of Object.entries(
-                                assets
-                            )) {
-                                const bands = assetData['eo:bands'] || []
+                                // Parse each asset and its bands, combining into asset_band format
+                                for (const [assetName, assetData] of Object.entries(
+                                    assets
+                                )) {
+                                    const bands = assetData['eo:bands'] || []
 
-                                // Combine asset name with band name
-                                if (bands.length > 0) {
-                                    bands.forEach((b) => {
-                                        const fullBandName = `${assetName}_${b.name}`
-                                        const description = b.description
-                                            ? ` (${b.description})`
-                                            : ''
+                                    // Combine asset name with band name
+                                    if (bands.length > 0) {
+                                        bands.forEach((b) => {
+                                            const fullBandName = `${assetName}_${b.name}`
+                                            const description = b.description
+                                                ? ` (${b.description})`
+                                                : ''
+                                            bandList.push(
+                                                `<div class="stac-band-item">${fullBandName}${description}</div>`
+                                            )
+                                        })
+                                    } else {
                                         bandList.push(
-                                            `<div class="stac-band-item">${fullBandName}${description}</div>`
+                                            `<div class="stac-band-item">${assetName} (no band info)</div>`
                                         )
-                                    })
-                                } else {
-                                    bandList.push(
-                                        `<div class="stac-band-item">${assetName} (no band info)</div>`
+                                    }
+                                }
+
+                                // Update the info display
+                                const infoDiv = li.find(
+                                    `.expression-stac-info[data-layername="${layerName}"]`
+                                )
+                                if (bandList.length > 0) {
+                                    infoDiv.html(
+                                        `<div class="stac-header">Available Assets:</div>${bandList.join(
+                                            ''
+                                        )}`
                                     )
+                                    infoDiv.show()
                                 }
                             }
-
-                            // Update the info display
-                            const infoDiv = li.find(
-                                `.expression-stac-info[data-layername="${layerName}"]`
-                            )
-                            if (bandList.length > 0) {
-                                infoDiv.html(
-                                    `<div class="stac-header">Available Assets:</div>${bandList.join(
-                                        ''
-                                    )}`
-                                )
-                                infoDiv.show()
-                            }
-                        }
-                    })
-                    .catch((err) => {
-                        // Silently fail - don't show the section
-                        console.warn('Failed to fetch STAC asset info:', err)
-                    })
+                        })
+                        .catch((err) => {
+                            // Silently fail - don't show the section
+                            console.warn('Failed to fetch STAC asset info:', err)
+                        })
+                }
             }
         }
 
@@ -1956,22 +1959,16 @@ function interfaceWithMMGIS(fromInit) {
                 case 'shp':
                     const folder = filename
 
-                    calls.api(
-                        'proj42wkt',
-                        {
-                            proj4: window.mmgisglobal.customCRS.projString,
-                        },
-                        (data) => {
-                            shpwrite
-                                .zip(geojson, {
-                                    outputType: 'blob',
-                                    prj: data,
-                                })
-                                .then((content) => {
-                                    saveAs(content, `${folder}.zip`)
-                                })
-                        },
-                        function (err) {
+                    // Prefer the in-browser proj4->WKT converter (covers common
+                    // projections, no round-trip, works in every deployment);
+                    // fall back to the GDAL backend via calls.api only when it
+                    // can't handle the projection. Full admin has GDAL;
+                    // lean/static don't, so an unsupported projection fails
+                    // gracefully there.
+                    const projString =
+                        window.mmgisglobal.customCRS.projString
+                    const applyPrj = (prj) => {
+                        if (prj == null) {
                             CursorInfo.update(
                                 `Failed to generate shapefile's .prj.`,
                                 6000,
@@ -1980,8 +1977,26 @@ function interfaceWithMMGIS(fromInit) {
                                 '#e9ff26',
                                 'black'
                             )
+                            return
                         }
-                    )
+                        shpwrite
+                            .zip(geojson, {
+                                outputType: 'blob',
+                                prj: prj,
+                            })
+                            .then((content) => {
+                                saveAs(content, `${folder}.zip`)
+                            })
+                    }
+                    const localPrj = projStringToWkt(projString)
+                    if (localPrj != null) applyPrj(localPrj)
+                    else
+                        calls.api(
+                            'proj42wkt',
+                            { proj4: projString },
+                            applyPrj,
+                            () => applyPrj(null)
+                        )
                     break
                 default:
             }

@@ -1,0 +1,68 @@
+{
+  "family": "mmgis-admin",
+  "requiresCompatibilities": ["FARGATE"],
+  "networkMode": "awsvpc",
+  "cpu": "1024",
+  "memory": "2048",
+  "runtimePlatform": {
+    "cpuArchitecture": "X86_64",
+    "operatingSystemFamily": "LINUX"
+  },
+  "executionRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/mmgis-admin-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::<ACCOUNT_ID>:role/mmgis-admin-task-role",
+  "containerDefinitions": [
+    {
+      "name": "mmgis",
+      "image": "<ECR_IMAGE_URI>",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8888,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "MMGIS_DEPLOYMENT_MODE", "value": "lean" },
+        { "name": "DISABLE_FIRST_SIGNUP", "value": "true" },
+        { "name": "ENABLE_MMGIS_WEBSOCKETS", "value": "true" },
+        { "name": "ENABLE_CONFIG_WEBSOCKETS", "value": "true" },
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "8888" },
+        { "name": "AUTH", "value": "local" },
+        { "name": "DB_SSL", "value": "true" },
+        { "name": "DB_SSL_CERT_BASE64", "value": "<RDS_REGIONAL_CA_BUNDLE_BASE64>" },
+        { "name": "AWS_REGION", "value": "<REGION>" },
+        { "name": "MMGIS_PUBLISH_ECS_CLUSTER", "value": "<ECS_CLUSTER_NAME>" },
+        { "name": "MMGIS_PUBLISH_TASK_DEFINITION", "value": "mmgis-publish" },
+        { "name": "MMGIS_PUBLISH_SUBNETS", "value": "<SUBNET_IDS>" },
+        { "name": "MMGIS_PUBLISH_SECURITY_GROUPS", "value": "<SECURITY_GROUP_IDS>" },
+        { "name": "MMGIS_PUBLISH_CONTAINER_NAME", "value": "mmgis" },
+        { "name": "MMGIS_SHARED_ASSET_BUCKET", "value": "<ASSET_BUCKET_NAME>" }
+      ],
+      "secrets": [
+        { "name": "DB_HOST", "valueFrom": "<DB_SECRET_ARN>:DB_HOST::" },
+        { "name": "DB_PORT", "valueFrom": "<DB_SECRET_ARN>:DB_PORT::" },
+        { "name": "DB_NAME", "valueFrom": "<DB_SECRET_ARN>:DB_NAME::" },
+        { "name": "DB_USER", "valueFrom": "<DB_SECRET_ARN>:DB_USER::" },
+        { "name": "DB_PASS", "valueFrom": "<DB_SECRET_ARN>:DB_PASS::" },
+        { "name": "SECRET", "valueFrom": "<SESSION_SECRET_ARN>" },
+        {
+          "name": "SEED_SUPERADMIN_USERNAME",
+          "valueFrom": "<SEED_SUPERADMIN_USERNAME_SECRET_ARN>"
+        },
+        {
+          "name": "SEED_SUPERADMIN_PASSWORD",
+          "valueFrom": "<SEED_SUPERADMIN_PASSWORD_SECRET_ARN>"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/mmgis-admin",
+          "awslogs-region": "<REGION>",
+          "awslogs-stream-prefix": "mmgis-admin"
+        }
+      }
+    }
+  ]
+}

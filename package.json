@@ -1,6 +1,6 @@
 {
   "name": "mmgis",
-  "version": "4.2.9-20260211",
+  "version": "4.2.11-20260611",
   "description": "A web-based mapping and localization solution for science operation on planetary missions.",
   "homepage": "build",
   "repository": {
@@ -60,6 +60,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-cloudformation": "^3.1065.0",
+    "@aws-sdk/client-cloudfront": "^3.1066.0",
+    "@aws-sdk/client-ecs": "^3.1065.0",
+    "@aws-sdk/client-s3": "^3.1065.0",
     "@azure/ai-agents": "^1.0.0-beta.1",
     "@azure/core-auth": "^1.7.2",
     "@azure/identity": "^4.4.0",
@@ -87,8 +91,8 @@
     "busboy": "1.6",
     "camelcase": "^5.3.1",
     "cesium": "^1.121.0",
-    "chart.js": "^3.6.0",
-    "chartjs-plugin-zoom": "^1.2.1",
+    "chart.js": "^4.4.0",
+    "chartjs-plugin-zoom": "^2.2.0",
     "chroma-js": "^1.4.1",
     "compression": "^1.7.4",
     "connect-pg-simple": "^8.0.0",

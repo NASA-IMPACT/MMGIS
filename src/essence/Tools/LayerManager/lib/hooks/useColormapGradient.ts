@@ -37,6 +37,12 @@ export const useColormapGradient = (
                 const baseUrl = titilerUrl
                     ? titilerUrl.replace(/\/$/, '')
                     : getTiTilerBaseUrl()
+                if (baseUrl == null) {
+                    // No TiTiler available (static build without one configured)
+                    setGradient(null)
+                    setColors(null)
+                    return
+                }
                 const response = await fetch(`${baseUrl}/colorMaps/${colormapName}`)
                 if (!response.ok) throw new Error(`Failed to fetch colormap: ${response.status}`)
                 const data = (await response.json()) as Record<string, [number, number, number, number]>

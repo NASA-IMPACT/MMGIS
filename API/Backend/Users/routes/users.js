@@ -39,6 +39,12 @@ router.post("/has", function (req, res, next) {
 });
 
 router.post("/first_signup", function (req, res, next) {
+  if (process.env.DISABLE_FIRST_SIGNUP === "true") {
+    res
+      .status(404)
+      .send({ status: "failure", message: "First-time signup is disabled." });
+    return;
+  }
   User.count()
     .then((count) => {
       if (count === 0) {

@@ -295,6 +295,12 @@ module.exports = function (webpackEnv) {
         }),
         ...(modules.webpackAliases || {}),
         markjs: "mark.js/dist/jquery.mark.js",
+        // Baked mission config stub for static (lean) deployments.
+        // The publish flow overwrites the target file; it's gitignored.
+        STATIC_MISSION_CONFIG: path.resolve(
+          paths.appSrc,
+          "pre/staticConfig.js"
+        ),
       },
       plugins: [
         // Prevents users from importing files from outside of src/ (or node_modules/).

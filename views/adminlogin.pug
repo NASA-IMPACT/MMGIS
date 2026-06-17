@@ -5,6 +5,8 @@ head
   link(type='text/css' rel='stylesheet' href='public/adminlogin.css')
   link(type='text/css' rel='stylesheet' href='public/fonts/materialdesignicons/css/materialdesignicons.min.css')
   script(type='text/javascript' src='public/jquery.min.js')
+  script(type='text/javascript').
+    window.DISABLE_FIRST_SIGNUP = #{DISABLE_FIRST_SIGNUP === true};
   script(type='text/javascript' src='public/adminlogin.js')
 body.mmgisScrollbar
   #backIcon.mdi.mdi-keyboard-backspace.mdi-18px
