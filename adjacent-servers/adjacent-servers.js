@@ -1,18 +1,10 @@
 require("dotenv").config();
 const logger = require("../API/logger");
 const { spawn } = require("child_process");
-const { isFull } = require("../API/Backend/Utils/deploymentMode");
 
+// Mode-agnostic: the caller (scripts/server.js) gates this behind the
+// `localSidecars` capability. Do not add a mode check here.
 function adjacentServers() {
-  if (!isFull()) {
-    logger(
-      "info",
-      "adjacent-servers spawner disabled (deployment mode = lean)",
-      "adjacent-servers"
-    );
-    return;
-  }
-
   const IS_WINDOWS = /^win/i.test(process.platform) ? true : false;
   const EXT = IS_WINDOWS ? ".bat" : ".sh";
   const CMD = IS_WINDOWS ? "" : "sh ";

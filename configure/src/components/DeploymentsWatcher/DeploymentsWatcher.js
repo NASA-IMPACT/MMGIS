@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { isLeanMode } from "../../core/capabilities";
+import { isCapabilityEnabled } from "../../core/capabilities";
 import { STATUS, TRANSITIONAL_STATUSES } from "../../core/deploymentStatus";
 import { useSelector, useDispatch } from "react-redux";
 
@@ -54,13 +54,13 @@ export default function DeploymentsWatcher() {
   const inFlightRef = useRef(false);
   const lastDiffedRef = useRef(null);
 
-  const isLean = isLeanMode();
+  const hasDeployments = isCapabilityEnabled("deployments");
   const isWatching = Object.keys(deploymentsWatch).length > 0;
 
   // Diff each deployments list against the watch set: auto-watch
   // transitional rows, toast watched rows that reached a terminal status.
   useEffect(() => {
-    if (!isLean) return;
+    if (!hasDeployments) return;
 
     const byId = {};
     deployments.forEach((d) => {
@@ -129,12 +129,12 @@ export default function DeploymentsWatcher() {
           severity: "info",
         })
       );
-  }, [deployments, deploymentsWatch, dispatch, isLean]);
+  }, [deployments, deploymentsWatch, dispatch, hasDeployments]);
 
   // Poll while any watch is open. Keyed on the boolean so watch-set churn
   // doesn't reset the timer's phase.
   useEffect(() => {
-    if (!isLean || !isWatching) return;
+    if (!hasDeployments || !isWatching) return;
 
     const interval = setInterval(() => {
       // Skip the tick if the previous poll hasn't answered yet so a slow
@@ -150,7 +150,7 @@ export default function DeploymentsWatcher() {
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [isWatching, dispatch, isLean]);
+  }, [isWatching, dispatch, hasDeployments]);
 
   return null;
 }

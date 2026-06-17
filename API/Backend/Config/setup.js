@@ -1,7 +1,8 @@
 const router = require("./routes/configs");
 const triggerWebhooks = require("../Webhooks/processes/triggerwebhooks.js");
 const configurePackageJson = require("../../../configure/package.json");
-const { MODE, isLean } = require("../Utils/deploymentMode");
+const { MODE } = require("../Utils/deploymentMode");
+const { enabled } = require("../Utils/capabilities");
 
 let setup = {
   //Once the app initializes
@@ -36,12 +37,18 @@ let setup = {
                 ? ""
                 : process.env.WEBSOCKET_ROOT_PATH || "",
             IS_DOCKER: process.env.IS_DOCKER,
-            WITH_STAC: isLean() ? "false" : process.env.WITH_STAC,
-            WITH_TIPG: isLean() ? "false" : process.env.WITH_TIPG,
-            WITH_TITILER: isLean() ? "false" : process.env.WITH_TITILER,
-            WITH_TITILER_PGSTAC: isLean()
-              ? "false"
-              : process.env.WITH_TITILER_PGSTAC,
+            WITH_STAC: enabled("localSidecars")
+              ? process.env.WITH_STAC
+              : "false",
+            WITH_TIPG: enabled("localSidecars")
+              ? process.env.WITH_TIPG
+              : "false",
+            WITH_TITILER: enabled("localSidecars")
+              ? process.env.WITH_TITILER
+              : "false",
+            WITH_TITILER_PGSTAC: enabled("localSidecars")
+              ? process.env.WITH_TITILER_PGSTAC
+              : "false",
             DEPLOYMENT_MODE: MODE,
           });
         }

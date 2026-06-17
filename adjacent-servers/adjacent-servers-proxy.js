@@ -4,18 +4,10 @@ const {
 } = require("http-proxy-middleware");
 
 const logger = require("../API/logger");
-const { isFull } = require("../API/Backend/Utils/deploymentMode");
 
+// Mode-agnostic: the caller (scripts/server.js) gates this behind the
+// `localSidecars` capability. Do not add a mode check here.
 function initAdjacentServersProxy(app, isDocker, ensureAdmin) {
-  if (!isFull()) {
-    logger(
-      "info",
-      "adjacent-servers proxy disabled (deployment mode = lean)",
-      "adjacent-servers"
-    );
-    return;
-  }
-
   ///////////////////////////
   // Proxies
   //// STAC

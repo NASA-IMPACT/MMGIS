@@ -1,17 +1,17 @@
 const router = require("./routes/datasets");
-const { isFull } = require("../Utils/deploymentMode");
 let setup = {
+  // Gated off in lean. The discovery seam (API/setups.js) skips the
+  // feature-presence hooks when this capability is disabled.
+  capability: "datasets",
   //Once the app initializes
   onceInit: (s) => {
-    if (isFull()) {
-      s.app.use(
-        s.ROOT_PATH + "/api/datasets",
-        s.ensureAdmin(),
-        s.checkHeadersCodeInjection,
-        s.setContentType,
-        router
-      );
-    }
+    s.app.use(
+      s.ROOT_PATH + "/api/datasets",
+      s.ensureAdmin(),
+      s.checkHeadersCodeInjection,
+      s.setContentType,
+      router
+    );
   },
   //Once the server starts
   onceStarted: (s) => {},

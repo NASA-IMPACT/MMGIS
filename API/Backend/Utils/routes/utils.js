@@ -12,7 +12,7 @@ const execFile = require("child_process").execFile;
 const Sequelize = require("sequelize");
 const { sequelizeSTAC } = require("../../../connection");
 const logger = require("../../../logger");
-const { isFull } = require("../deploymentMode");
+const { enabled } = require("../capabilities");
 
 const rootDir = `${__dirname}/../../../..`;
 
@@ -240,7 +240,7 @@ router.get("/healthcheck", function (req, res) {
 // Missions/ tree, local SPICE data, or shells out to Python — none of which
 // exist in a lean container. healthcheck (above) is the only utils route
 // lean serves.
-if (isFull()) {
+if (enabled("localMissions")) {
   // Reads the on-disk Missions/<...>/_time_/ tree
   router.get("/queryTilesetTimes", function (req, res) {
     if (req.query.stacCollection != null) queryTilesetTimesStac(req, res);
@@ -400,6 +400,6 @@ if (isFull()) {
       }
     );
   });
-} // if (isFull()) — full-only utils routes
+} // if (enabled("localMissions")) — full-only utils routes
 
 module.exports = router;

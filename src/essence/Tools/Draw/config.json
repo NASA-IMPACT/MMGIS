@@ -1,4 +1,5 @@
 {
+    "capability": "draw",
     "defaultIcon": "pencil",
     "description": "Advanced and collaborative map drawing.",
     "descriptionFull": {

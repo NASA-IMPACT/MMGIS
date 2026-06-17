@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { isLeanMode } from "../../core/capabilities";
+import { isCapabilityEnabled } from "../../core/capabilities";
 import { STATUS } from "../../core/deploymentStatus";
 import { useSelector, useDispatch } from "react-redux";
 import {} from "./SaveBarSlice";
@@ -252,7 +252,7 @@ export default function SaveBar() {
         >
           Save Changes
         </Button>
-        {isLeanMode() ? (
+        {isCapabilityEnabled("deployments") ? (
           <Button
             className={clsx(c.save, { [c.saveDisabled]: lockConfig })}
             variant="contained"
