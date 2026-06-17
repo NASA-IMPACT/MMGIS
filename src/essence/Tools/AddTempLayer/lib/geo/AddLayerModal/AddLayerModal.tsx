@@ -52,7 +52,7 @@ export function AddLayerModal({
 
                 <div className="blocks-add-layer-modal__body">
                     <p className="blocks-add-layer-modal__help">
-                        Provide a WMS, WMTS, or GeoJSON link to add to your layer gallery.
+                        Paste a layer URL to add it to your layer gallery.
                     </p>
 
                     <label className="blocks-add-layer-modal__field">

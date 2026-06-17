@@ -18,25 +18,18 @@ export function validateUrl(url: string): boolean {
 }
 
 /**
- * Best-effort detect the layer type from a URL. Returns null if unrecognised.
- * Checked most-specific first: templated XYZ, then OGC services, then GeoJSON.
+ * Stage 1 — detect which supported type a URL is, so we can build the right
+ * layerObj. Returns null when it's none of our supported types, in which case
+ * the caller tells the user we only support XYZ / WMS / WMTS / GeoJSON.
+ *
+ * Detection only classifies; it does not check that the URL is well-formed for
+ * its type — that's `validateForType` (stage 2). Checked most-specific first.
  */
 export function detectLayerType(url: string): TempLayerType | null {
     const u = (url || '').trim().toLowerCase()
     if (u.length === 0) return null
 
-    // Templated raster tiles: must contain {z}/{x}/{y}
-    if (u.includes('{z}') && u.includes('{x}') && u.includes('{y}')) return 'xyz'
-
-    // OGC services, detected by query params or path
-    if (u.includes('service=wmts') || u.includes('request=gettile') || /\bwmts\b/.test(u)) {
-        return 'wmts'
-    }
-    if (u.includes('service=wms') || u.includes('request=getmap')) {
-        return 'wms'
-    }
-
-    // GeoJSON by extension or output format (.json is a weaker fallback)
+    // GeoJSON — by extension or output format (.json is a weaker fallback)
     if (
         /\.geojson(\?|$)/.test(u) ||
         u.includes('f=geojson') ||
@@ -46,5 +39,63 @@ export function detectLayerType(url: string): TempLayerType | null {
         return 'geojson'
     }
 
+    // WMTS — OGC KVP markers
+    if (u.includes('service=wmts') || u.includes('request=gettile')) {
+        return 'wmts'
+    }
+
+    // WMS — OGC KVP markers
+    if (u.includes('service=wms') || u.includes('request=getmap')) {
+        return 'wms'
+    }
+
+    // XYZ — a templated raster-tile URL
+    if (u.includes('{z}') && u.includes('{x}') && u.includes('{y}')) {
+        return 'xyz'
+    }
+
+    // None of the supported types.
     return null
+}
+
+/** Result of stage-2 structural validation. `message` is user-facing on failure. */
+export interface ValidationResult {
+    ok: boolean
+    message?: string
+}
+
+/**
+ * Stage 2 — once the type is known, check the URL is structurally usable for
+ * that type (the URL is never modified; it must already be in a usable form).
+ *
+ *   xyz / wmts → must be a tile template containing {z}/{x}/{y}
+ *   wms        → must carry a LAYERS parameter
+ *   geojson    → nothing to check; identity is the response body, not the URL
+ */
+export function validateForType(
+    type: TempLayerType,
+    url: string,
+): ValidationResult {
+    const u = (url || '').trim().toLowerCase()
+
+    if (type === 'geojson') {
+        return { ok: true }
+    }
+
+    if (type === 'wms') {
+        if (!/[?&]layers=[^&]+/.test(u)) {
+            return { ok: false, message: 'WMS URL is missing a LAYERS parameter.' }
+        }
+        return { ok: true }
+    }
+
+    // xyz / wmts — both render through the template-tile path, so the URL must
+    // already contain the {z}/{x}/{y} placeholders the engine fills per tile.
+    if (!(u.includes('{z}') && u.includes('{x}') && u.includes('{y}'))) {
+        return {
+            ok: false,
+            message: 'Tile URL must be a template containing {z}/{x}/{y}.',
+        }
+    }
+    return { ok: true }
 }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import type { AddTempLayerInput } from '../../types'
-import { validateUrl, detectLayerType } from '../../utils/url'
+import { validateUrl, detectLayerType, validateForType } from '../../utils/url'
 import { PlusIcon } from '../../utils/icons'
 import { AddLayerModal } from '../AddLayerModal/AddLayerModal'
 
@@ -29,14 +29,23 @@ export function AddTempLayerPanel({ onAddLayer }: AddTempLayerPanelProps) {
 
     function handleAdd() {
         const trimmedUrl = url.trim()
+        // Basic URL sanity.
         if (!validateUrl(trimmedUrl)) {
             setError('Please enter a valid http(s) URL.')
             return
         }
-        if (!detectLayerType(trimmedUrl)) {
+        // Stage 1 — detect the type, or reject as an unsupported kind of URL.
+        const type = detectLayerType(trimmedUrl)
+        if (!type) {
             setError(
-                'This link is not supported. Please paste a valid WMS, WMTS, or GeoJSON URL.',
+                'We can’t add that layer — this URL isn’t supported. We support XYZ, WMS, WMTS, and GeoJSON.',
             )
+            return
+        }
+        // Stage 2 — validate the URL is structurally usable for that type.
+        const result = validateForType(type, trimmedUrl)
+        if (!result.ok) {
+            setError(result.message || 'This URL isn’t valid for its type.')
             return
         }
 
@@ -45,6 +54,7 @@ export function AddTempLayerPanel({ onAddLayer }: AddTempLayerPanelProps) {
         Promise.resolve(
             onAddLayer?.({
                 url: trimmedUrl,
+                type,
                 displayName: displayName.trim() || undefined,
             }),
         )
