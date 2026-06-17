@@ -83,11 +83,29 @@ test.describe('AddTempLayer url utils', () => {
             })
         }
 
-        test('failures carry a message', () => {
+        test('xyz failure message includes a working {z}/{x}/{y} example', () => {
             const r = validateForType('xyz', 'https://h/5/12/20.png')
             expect(r.ok).toBe(false)
-            expect(typeof r.message).toBe('string')
-            expect(r.message.length).toBeGreaterThan(0)
+            expect(r.message).toContain('XYZ')
+            expect(r.message).toContain('Example:')
+            expect(r.message).toContain('{z}/{x}/{y}')
+        })
+
+        test('wmts failure message gives a WMTS example (not the XYZ one)', () => {
+            const r = validateForType(
+                'wmts',
+                'https://h/x?service=WMTS&request=GetTile&tilematrix=5',
+            )
+            expect(r.ok).toBe(false)
+            expect(r.message).toContain('WMTS')
+            expect(r.message.toLowerCase()).toContain('service=wmts')
+        })
+
+        test('wms failure message gives a WMS example with LAYERS', () => {
+            const r = validateForType('wms', 'https://h/wms?service=WMS')
+            expect(r.ok).toBe(false)
+            expect(r.message).toContain('LAYERS')
+            expect(r.message.toLowerCase()).toContain('service=wms')
         })
     })
 

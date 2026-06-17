@@ -64,9 +64,18 @@ export interface ValidationResult {
     message?: string
 }
 
+/** A working example URL per type, shown in the error when validation fails. */
+const SAMPLE_URLS = {
+    xyz: 'https://host/tiles/{z}/{x}/{y}.png',
+    wms: 'https://host/wms?SERVICE=WMS&REQUEST=GetMap&LAYERS=name',
+    wmts: 'https://host/wmts?SERVICE=WMTS&REQUEST=GetTile&LAYER=name&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
+}
+
 /**
  * Stage 2 — once the type is known, check the URL is structurally usable for
  * that type (the URL is never modified; it must already be in a usable form).
+ * On failure the message names the problem and gives a working example for that
+ * specific type.
  *
  *   xyz / wmts → must be a tile template containing {z}/{x}/{y}
  *   wms        → must carry a LAYERS parameter
@@ -84,7 +93,10 @@ export function validateForType(
 
     if (type === 'wms') {
         if (!/[?&]layers=[^&]+/.test(u)) {
-            return { ok: false, message: 'WMS URL is missing a LAYERS parameter.' }
+            return {
+                ok: false,
+                message: `We can’t add this layer — the WMS URL needs a LAYERS parameter. Example: ${SAMPLE_URLS.wms}`,
+            }
         }
         return { ok: true }
     }
@@ -92,9 +104,10 @@ export function validateForType(
     // xyz / wmts — both render through the template-tile path, so the URL must
     // already contain the {z}/{x}/{y} placeholders the engine fills per tile.
     if (!(u.includes('{z}') && u.includes('{x}') && u.includes('{y}'))) {
+        const kind = type === 'wmts' ? 'WMTS' : 'XYZ'
         return {
             ok: false,
-            message: 'Tile URL must be a template containing {z}/{x}/{y}.',
+            message: `We can’t add this layer — the ${kind} URL needs a {z}/{x}/{y} template. Example: ${SAMPLE_URLS[type]}`,
         }
     }
     return { ok: true }
