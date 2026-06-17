@@ -7,9 +7,43 @@ on:
     branches: [master, main, development]
 
 jobs:
+  # Unit tests run once, outside the deployment-mode matrix. They are hermetic
+  # (Vitest + jsdom, no DB/browser) and already cover BOTH modes within a single
+  # run by busting the require cache per-test (see tests/unit/deploymentMode.spec.js
+  # and bakeGuards.spec.js). Matrixing them would just waste CI time.
+  unit:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Unit Tests
+        run: npx vitest run
+
+  # The e2e / app-boot leg runs once per deployment shape. The mode is resolved
+  # once at process start (deploymentMode.js), so each shape needs its own boot —
+  # hence the matrix. MMGIS_DEPLOYMENT_MODE is written into .env in the setup
+  # step below and read by both the server and the present/absent e2e test.
   test:
+    name: e2e (${{ matrix.mode }})
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    needs: unit
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [full, lean]
 
     services:
       postgres:
@@ -39,12 +73,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Unit tests run under Vitest in a jsdom environment — hermetic, so they
-      # need neither the database nor a browser. Run them before the e2e-only
-      # setup so a DB/browser problem can't mask a unit result.
-      - name: Run Unit Tests
-        run: npx vitest run
-
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
 
@@ -62,19 +90,58 @@ jobs:
           echo "ENABLE_MMGIS_WEBSOCKETS=false" >> .env
           echo "ENABLE_CONFIG_WEBSOCKETS=false" >> .env
           echo "HIDE_CONFIG=true" >> .env
+          echo "MMGIS_DEPLOYMENT_MODE=${{ matrix.mode }}" >> .env
 
+      # The lean leg must boot WITHOUT the sidecar services it doesn't deploy.
+      # sample.env ships several WITH_* sidecars on (TIPG/TITILER/TITILER_PGSTAC/
+      # VELOSERVER); leaving them on in lean would have init-db try to create the
+      # mmgis-stac catalog DB and run pypgstac — neither exists in the lean
+      # topology. deploymentMode/init-db already gate the STAC DB on isFull(),
+      # but we also turn the WITH_* flags off here so the lean leg's env honestly
+      # reflects a lean deployment (no sidecars, no spatial-catalog DB).
+      - name: Disable sidecar services for the lean leg
+        if: matrix.mode == 'lean'
+        run: |
+          echo "WITH_STAC=false" >> .env
+          echo "WITH_TIPG=false" >> .env
+          echo "WITH_TITILER=false" >> .env
+          echo "WITH_TITILER_PGSTAC=false" >> .env
+          echo "WITH_VELOSERVER=false" >> .env
+
+      # init-db must succeed under the running mode. In lean this also proves the
+      # spatial-catalog (mmgis-stac) DB is NOT created (it's gated on isFull()).
       - name: Initialize Database
         run: node scripts/init-db.js
 
-      - name: Run E2E Tests
-        run: npx playwright test tests/e2e --project=chromium
+      # Acceptance #4: features gated OFF in lean must still have their DB tables
+      # (model sync runs unconditionally; only route mounts are gated), so a
+      # later mode flip needs no data migration. This step boots the app once
+      # (which runs sequelize.sync()) and then asserts the gated tables exist.
+      # No continue-on-error: a missing table fails the leg.
+      - name: Assert gated tables exist
+        run: node tests/ci/assert-gated-tables.js
+
+      # Legacy smoke / event-bus e2e tests. These boot the full SPA and have
+      # historically been allowed to not block the build (continue-on-error),
+      # so a genuinely-flaky legacy assertion doesn't turn the leg red. Kept
+      # non-gating here to preserve that behavior; the gating happens in the
+      # mode-shape step below.
+      - name: Run legacy E2E Tests (non-gating)
+        run: npx playwright test tests/e2e/smoke.spec.js tests/e2e/eventbus-integration.spec.js --project=chromium
         continue-on-error: true
+
+      # Acceptance #1 + #5: the deployment-mode present/absent check MUST fail
+      # CI when a shape breaks. NO continue-on-error here — a mis-gated feature
+      # (wrongly on in lean, or wrongly off in full) turns this leg red. This is
+      # the step that makes "a breaking change to either shape fails CI" real.
+      - name: Run deployment-mode shape check (gating)
+        run: npx playwright test tests/e2e/deployment-mode.spec.js --project=chromium
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.mode }}
           path: playwright-report/
           retention-days: 30
 
@@ -82,6 +149,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ matrix.mode }}
           path: test-results/
           retention-days: 7

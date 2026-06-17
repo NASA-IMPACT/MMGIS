@@ -9,6 +9,15 @@
 Use MCP tools when possible for code analysis, symbol navigation, and code modifications.
 Local development uses hot-reloading and therefore there is little reason to run `npm run build` for the user.
 
+## Deployment modes (two shapes from one codebase)
+
+MMGIS deploys in two shapes selected by `MMGIS_DEPLOYMENT_MODE` (resolved once at startup in `API/Backend/Utils/deploymentMode.js`):
+
+- **`full`** (default) — the complete application as shipped today.
+- **`lean`** — a gated-down deployment: geodata management, the bundled sidecar services/proxy, the on-disk mission filesystem, the link shortener, and server-side raster utilities are turned OFF; the dashboard publish flow (Deployments) is turned ON. Models still sync in both modes, so the gated-off tables exist regardless of mode (no migration needed to flip modes).
+
+Contributor rule: **author your change for the full app first, then confirm lean still passes.** CI runs the e2e/boot suite once per mode (`.github/workflows/playwright-tests.yml`), with a present/absent check (`tests/e2e/deployment-mode.spec.js`) whose expected on/off mapping is hand-written from the feature inventory — keep it independent of any capability table.
+
 ## Project Overview
 
 **MMGIS** is a web-based mapping and localization solution for science operations on planetary missions, developed by NASA-AMMOS. It provides spatial data infrastructure for mission-critical geospatial visualization and collaboration, supporting both 2D (Leaflet) and 3D (Cesium) mapping with real-time multi-user collaboration.

@@ -36,6 +36,17 @@
 
 ---
 
+## Deployment modes
+
+MMGIS builds from one codebase into two deployment shapes, selected by the `MMGIS_DEPLOYMENT_MODE` environment variable:
+
+- **`full`** (default) — the complete MMGIS application as shipped today. Used when the variable is unset.
+- **`lean`** — a lighter, smaller-footprint deployment that deliberately turns a set of server features off (geodata management, the bundled sidecar services/proxy, the on-disk mission filesystem, the link shortener, server-side raster utilities) and turns on the dashboard publish flow. Database tables for the gated-off features are still created, so switching a deployment from one mode to the other needs no data migration.
+
+CI runs the end-to-end / boot suite once per mode. Contributors should author changes for the full app first, then confirm lean still passes.
+
+---
+
 ## Installation
 
 ---
