@@ -241,7 +241,7 @@
         {
           "field": "panelSettings.floatingPanels",
           "name": "Floating Panels",
-          "description": "Panels that float over the center map area. Each floating panel wraps a single tool and is positioned at one of six anchor points. Multiple panels at the same position stack vertically.",
+          "description": "Panels that float over the center map area. Each floating panel is anchored to one of six positions. At most one panel per position is allowed.",
           "type": "objectarray",
           "width": 24,
           "object": [
@@ -267,15 +267,6 @@
               ],
               "default": "float-bottom-center",
               "width": 6
-            },
-            {
-              "field": "priority",
-              "name": "Priority",
-              "description": "Stacking order when multiple panels share the same position (lower number appears first/top).",
-              "type": "number",
-              "default": 0,
-              "width": 4,
-              "min": 0
             },
             {
               "field": "hasHeader",

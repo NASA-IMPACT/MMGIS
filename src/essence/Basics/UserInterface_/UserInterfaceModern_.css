@@ -510,15 +510,19 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     background-color: transparent;
 }
 
-/* Overlay layout: rounded corners (inherits from .ui-panel — kept explicit for clarity) */
-.ui-modern-grid:not(.ui-layout-compact) .ui-float-panel {
+/* Compact layout: no margin */
+.ui-modern-grid.ui-layout-compact .ui-float-panel {
+    margin: 0;
+}
+
+/* Overlay mode: tool cards have rounded corners (panel container is transparent) */
+.ui-modern-grid:not(.ui-layout-compact) .ui-float-panel .ui-tool-card {
     border-radius: var(--theme-radius-md, 8px);
 }
 
-/* Compact layout: no rounded corners, no margin */
-.ui-modern-grid.ui-layout-compact .ui-float-panel {
+/* Compact mode: tool cards are square */
+.ui-modern-grid.ui-layout-compact .ui-float-panel .ui-tool-card {
     border-radius: 0;
-    margin: 0;
 }
 
 /* Collapsed float panels are hidden */
@@ -545,6 +549,6 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
 .ui-float-panel .ui-tool-card {
     display: flex;
     flex-shrink: 0;
+    padding: 2px;
+    overflow: hidden;
 }
-
-/* Z-index management (no longer needed as variables, kept for reference) */

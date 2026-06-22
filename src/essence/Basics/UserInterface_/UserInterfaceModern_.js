@@ -4,6 +4,7 @@ import { mmgisAPI } from '../../mmgisAPI/mmgisAPI'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
+import { FLOAT_POSITIONS } from '../PanelManager_/types/layout'
 import './UserInterfaceModern_.css'
 
 const logger = createLogger('UserInterfaceModern')
@@ -82,15 +83,6 @@ const _createPanelHeader = (panel) => {
     header.append(title).append(headerButtons)
     return header
 }
-
-const FLOAT_POSITIONS = new Set([
-    'float-top-left',
-    'float-top-center',
-    'float-top-right',
-    'float-bottom-left',
-    'float-bottom-center',
-    'float-bottom-right',
-])
 
 // Converts a dimension value to a CSS string.
 // Numbers are treated as px; strings are passed through as-is (e.g. "40%", "50vh").
