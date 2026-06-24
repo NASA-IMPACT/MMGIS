@@ -132,6 +132,18 @@
                         "width": 3
                     }
                 ]
+            },
+            {
+                "components": [
+                    {
+                        "field": "variables.themes",
+                        "name": "Themes & filters (JSON)",
+                        "description": "The two-step filter config. Each theme: { id, label, icon, title, description, filters: [ { id, label, property, type: \"select\", allLabel, options: [ { value, label } ] } ] }. `property` is the layer.properties key the filter matches against; `icon` is an MDI name (e.g. \"flash-outline\").",
+                        "type": "json",
+                        "width": 12,
+                        "height": "440px"
+                    }
+                ]
             }
         ]
     }
