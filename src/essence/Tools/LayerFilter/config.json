@@ -1,0 +1,138 @@
+{
+    "name": "LayerFilter",
+    "defaultIcon": "filter-outline",
+    "description": "Two-step, configurable layer filter. Step 1 picks a theme; step 2 shows that theme's filters. Emits the matched layer set on the event bus (does not change layers itself).",
+    "hasVars": true,
+    "width": 320,
+    "height": 0,
+    "paths": {
+        "LayerFilterTool": "essence/Tools/LayerFilter/LayerFilterTool"
+    },
+    "metadata": {
+        "icon": "filter-outline",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": ["left", "right"],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 320,
+        "height": 0
+    },
+    "variables": {
+        "themeProperty": "theme",
+        "defaultThemeId": "need",
+        "themes": [
+            {
+                "id": "need",
+                "label": "Need",
+                "icon": "satellite-variant",
+                "title": "Need",
+                "description": "Filter by sector to explore Earth-science datasets relevant to your operational needs.",
+                "filters": [
+                    {
+                        "id": "sector",
+                        "label": "Sector",
+                        "property": "sector",
+                        "type": "select",
+                        "allLabel": "All Sectors",
+                        "options": [
+                            { "value": "agriculture", "label": "Agriculture" },
+                            { "value": "water", "label": "Water Resources" },
+                            { "value": "energy", "label": "Energy" },
+                            { "value": "public_health", "label": "Public Health" }
+                        ]
+                    }
+                ]
+            },
+            {
+                "id": "hazard",
+                "label": "Hazard",
+                "icon": "flash-outline",
+                "title": "Hazard",
+                "description": "Explore datasets by hazard type to understand conditions, impacts, and response context.",
+                "filters": [
+                    {
+                        "id": "hazard",
+                        "label": "Hazard",
+                        "property": "hazard",
+                        "type": "select",
+                        "allLabel": "All Hazards",
+                        "options": [
+                            { "value": "flood", "label": "Flood" },
+                            { "value": "fire", "label": "Fire" },
+                            { "value": "storm", "label": "Storm" },
+                            { "value": "earthquake", "label": "Earthquake" }
+                        ]
+                    }
+                ]
+            },
+            {
+                "id": "event",
+                "label": "Event",
+                "icon": "calendar-outline",
+                "title": "Event",
+                "description": "Filter the activation catalogue by hazard, location and year. The count below updates as you narrow the list.",
+                "filters": [
+                    {
+                        "id": "hazardType",
+                        "label": "Hazard type",
+                        "property": "hazard",
+                        "type": "select",
+                        "allLabel": "All Hazards",
+                        "options": [
+                            { "value": "flood", "label": "Flood" },
+                            { "value": "fire", "label": "Fire" },
+                            { "value": "storm", "label": "Storm" }
+                        ]
+                    },
+                    {
+                        "id": "location",
+                        "label": "Location",
+                        "property": "location",
+                        "type": "select",
+                        "allLabel": "All Locations",
+                        "options": [
+                            { "value": "north_america", "label": "North America" },
+                            { "value": "south_america", "label": "South America" },
+                            { "value": "europe", "label": "Europe" },
+                            { "value": "asia", "label": "Asia" }
+                        ]
+                    },
+                    {
+                        "id": "year",
+                        "label": "Year",
+                        "property": "year",
+                        "type": "select",
+                        "allLabel": "All Years",
+                        "options": [
+                            { "value": "2025", "label": "2025" },
+                            { "value": "2024", "label": "2024" },
+                            { "value": "2023", "label": "2023" }
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.themeProperty",
+                        "name": "Theme property",
+                        "description": "The layer.properties key that holds a layer's theme id.",
+                        "type": "text",
+                        "width": 3
+                    },
+                    {
+                        "field": "variables.defaultThemeId",
+                        "name": "Default theme",
+                        "description": "Theme id selected on load.",
+                        "type": "text",
+                        "width": 3
+                    }
+                ]
+            }
+        ]
+    }
+}
