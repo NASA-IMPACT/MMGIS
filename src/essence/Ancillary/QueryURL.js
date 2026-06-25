@@ -277,8 +277,10 @@ var QueryURL = {
     tools
       "tools=camp$1.3.4,"
     */
+    // Builds and returns the full, self-contained view URL synchronously. This
+    // is the canonical share-link method (exposed publicly via
+    // mmgisAPI.writeCoordinateURL). It makes no backend call.
     writeCoordinateURL: function (
-        shortenURL = true,
         mapLon,
         mapLat,
         mapZoom,
@@ -287,12 +289,6 @@ var QueryURL = {
         globeZoom
     ) {
         L_.Viewer_.getLocation()
-
-        var callback
-        if (typeof mapLon === 'function') {
-            callback = mapLon
-            mapLon = undefined
-        }
 
         //Defaults
         if (mapLon == undefined) mapLon = L_.Map_.map.getCenter().lng
@@ -426,28 +422,6 @@ var QueryURL = {
         }
 
         var url = encodeURI(urlAppendage)
-
-        if (shortenURL) {
-            calls.api(
-                'shortener_shorten',
-                {
-                    url: url,
-                },
-                function (s) {
-                    //Set and update the short url
-                    L_.url =
-                        window.location.href.split('?')[0] + '?s=' + s.body.url
-                    window.history.replaceState('', '', L_.url)
-                    if (typeof callback === 'function') callback()
-                },
-                function (e) {
-                    //Set and update the full url
-                    L_.url = window.location.href.split('?')[0] + url
-                    window.history.replaceState('', '', L_.url)
-                    if (typeof callback === 'function') callback()
-                }
-            )
-        }
 
         return window.location.href.split('?')[0] + url
     },

@@ -5,6 +5,7 @@ import QueryURL from '../Ancillary/QueryURL'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import Login from '../Ancillary/Login/Login'
 import LegendTool from '../Tools/Legend/LegendTool.js'
+import { getMapScreenshot } from '../Basics/UserInterface_/ScreenshotUtils'
 import mitt from 'mitt'
 
 import $ from 'jquery'
@@ -438,7 +439,10 @@ var mmgisAPI_ = {
         return validEvents.includes(eventName)
     },
     writeCoordinateURL: function () {
-        return QueryURL.writeCoordinateURL(false)
+        return QueryURL.writeCoordinateURL()
+    },
+    getMapScreenshot: function () {
+        return getMapScreenshot()
     },
     onLoadCallback: null,
     onLoaded: function (onLoadCallback) {
@@ -722,6 +726,14 @@ var mmgisAPI = {
      * @returns {string} - a string containing the current view as a url
      */
     writeCoordinateURL: mmgisAPI_.writeCoordinateURL,
+
+    /** getMapScreenshot - captures a PNG screenshot of the current 2D map.
+     * Hides UI chrome (zoom controls, compass, scale factor) during capture and
+     * restores it afterwards. The capture is rasterized with html2canvas, so this
+     * is asynchronous and requires no backend call.
+     * @returns {Promise<string>} - resolves to a PNG image as a data URL string (e.g. 'data:image/png;base64,...'). The data URL form can be used to trigger a download or to embed the image (e.g. into a PDF).
+     */
+    getMapScreenshot: mmgisAPI_.getMapScreenshot,
 
     /** onLoaded - calls onLoadCallback as a function once MMGIS has finished loading.
      * @param {function} - onLoadCallback - function reference to function that is called when MMGIS is finished loading
