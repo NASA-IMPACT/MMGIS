@@ -1,0 +1,37 @@
+[
+  {
+    "pr": 134,
+    "thread_id": "inline-3391079811",
+    "source": "inline",
+    "resolved": false,
+    "outdated": true,
+    "path": "configure/src/core/Maker.js",
+    "line": 568,
+    "commit": "b254d30c041d5f91c98e36cc5f91f48d70829d39",
+    "diff_hunk": "@@ -559,6 +559,13 @@ const getComponent = (\n         </div>\n       );\n     case \"button\":\n+      // The populate-from-COG/XML button calls the local /titiler proxy and\n+      // reads tilemapresource.xml from Missions/ — both absent in lean.\n+      if (\n+        com.action === \"tile-populate-from-x\" &&\n+        window.mmgisglobal.DEPLOYMENT_MODE === \"lean\"\n+      )\n+        return null;",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/134#discussion_r3391079811",
+    "comments": [
+      {
+        "author": "slesaad",
+        "body": "i dont like the way this is done. maybe there's a better way",
+        "createdAt": "2026-06-10T19:47:29Z"
+      },
+      {
+        "author": "CarsonDavis",
+        "body": "Reworked in e9bdff39 — the engine-level special case is gone. Components now declare `requiresCapability` in their metaconfig entry, and Maker honors it generically (mode→capability mapping in one new `core/capabilities.js`). Same behavior in both modes; the next gated affordance is a one-line metaconfig edit.",
+        "createdAt": "2026-06-10T21:29:11Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "   518            )}\n   519          </div>\n   520        );\n   521      case \"textnotrim\":\n   522        inner = (\n   523          <TextField\n   524            className={c.text}\n   525            label={com.name}\n   526            variant=\"filled\"\n   527            size=\"small\"\n   528            disabled={disabled}\n   529            required={isRequired}\n   530            error={hasError}\n   531            helperText={hasError ? \"This field is required\" : \"\"}\n   532            FormHelperTextProps={{\n   533              className: c.noMarginHelperText\n   534            }}\n   535            inputProps={{\n   536              autoComplete: \"off\",\n   537            }}\n   538            value={fieldValue}\n   539            onChange={(e) => {\n   540              updateConfiguration(forceField || com.field, e.target.value, layer);\n   541            }}\n   542          />\n   543        );\n   544        return (\n   545          <div>\n   546            {inlineHelp ? (\n   547              <>\n   548                {inner}\n   549                <div\n   550                  className={c.subtitle2}\n   551                  dangerouslySetInnerHTML={{ __html: com.description || \"\" }}\n   552                ></div>\n   553              </>\n   554            ) : (\n   555              <Tooltip title={com.description || \"\"} placement=\"top\" arrow>\n   556                {inner}\n   557              </Tooltip>\n   558            )}\n   559          </div>\n   560        );\n   561      case \"button\":\n   562        // The populate-from-COG/XML button calls the local /titiler proxy and\n   563        // reads tilemapresource.xml from Missions/ — both absent in lean.\n   564        if (\n   565          com.action === \"tile-populate-from-x\" &&\n   566          window.mmgisglobal.DEPLOYMENT_MODE === \"lean\"\n   567        )\n   568          return null;\n   569        inner = (\n   570          <Button\n   571            className={c.button}\n   572            variant=\"outlined\"\n   573            disabled={isDisabled}\n   574            startIcon={<PrecisionManufacturingIcon />}\n   575            disabled={disabled}\n   576            onClick={() => {\n   577              if (isDisabled) return;\n   578              if (com.action === \"tile-populate-from-x\") {\n   579                tilePopulateFromX(\n   580                  layer.type,\n   581                  layer.url,\n   582                  layer.demtileurl,\n   583                  `Missions/${configuration.msv.mission}/`,\n   584                  layer.throughTileServer === true,\n   585                  (minZoom, maxNativeZoom, boundingBox) => {\n   586                    let conf = updateConfiguration(\n   587                      \"minZoom\",\n   588                      minZoom,\n   589                      layer,\n   590                      true\n   591                    );\n   592                    conf = updateConfiguration(\n   593                      \"maxNativeZoom\",\n   594                      maxNativeZoom,\n   595                      layer,\n   596                      true,\n   597                      conf\n   598                    );\n   599  \n   600                    conf = updateConfiguration(\n   601                      \"maxZoom\",\n   602                      maxNativeZoom,\n   603                      layer,\n   604                      true,\n   605                      conf\n   606                    );\n   607                    updateConfiguration(\n   608                      \"boundingBox\",\n   609                      boundingBox,\n   610                      layer,\n   611                      false,\n   612                      conf\n   613                    );\n   614  \n   615                    dispatch(\n   616                      setSnackBarText({\n   617                        text: \"Successfully populated fields from XML or from cog/info.\",\n   618                        severity: \"success\",",
+    "post_comment_delta": "diff --git a/configure/src/core/Maker.js b/configure/src/core/Maker.js\nindex b21644d8..93a2f166 100644\n--- a/configure/src/core/Maker.js\n+++ b/configure/src/core/Maker.js\n@@ -44,6 +44,7 @@ import {\n   isUrlAbsolute,\n } from \"./utils\";\n import { isFieldRequired } from \"./validators\";\n+import { isCapabilityEnabled } from \"./capabilities\";\n \n import Map from \"../components/Map/Map\";\n import VideoPreview from \"../components/VideoPreview/VideoPreview\";\n@@ -385,6 +386,10 @@ const getComponent = (\n   dispatch,\n   fieldDefaults\n ) => {\n+  // Metaconfigs may declare a capability the deployment must support\n+  if (com.requiresCapability && !isCapabilityEnabled(com.requiresCapability))\n+    return null;\n+\n   const directConf =\n     layer == null ? (tool == null ? (component == null ? configuration : component) : tool) : layer;\n   \n@@ -559,13 +564,6 @@ const getComponent = (\n         </div>\n       );\n     case \"button\":\n-      // The populate-from-COG/XML button calls the local /titiler proxy and\n-      // reads tilemapresource.xml from Missions/ — both absent in lean.\n-      if (\n-        com.action === \"tile-populate-from-x\" &&\n-        window.mmgisglobal.DEPLOYMENT_MODE === \"lean\"\n-      )\n-        return null;\n       inner = (\n         <Button\n           className={c.button}",
+    "renamed_to": null,
+    "delta_truncated": false,
+    "pr_commits_after": [
+      "e9bdff39  Gate Configure components by declared capability, not hardcoded action",
+      "3721f297  Merge branch 'lean/pr-03-datasets-geodatasets' into lean/pr-06-configure-polish",
+      "625e53cb  Merge branch 'lean/pr-03-datasets-geodatasets' into lean/pr-06-configure-polish",
+      "4f174d58  Merge branch 'lean/pr-03-datasets-geodatasets' into lean/pr-06-configure-polish"
+    ]
+  }
+]

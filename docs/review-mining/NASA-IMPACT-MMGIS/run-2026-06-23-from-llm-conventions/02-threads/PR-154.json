@@ -1,0 +1,41 @@
+[
+  {
+    "pr": 154,
+    "thread_id": "inline-3431215940",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": ".github/workflows/playwright-tests.yml",
+    "line": 24,
+    "commit": "a540feb8b61a9248e73f045346d7120d57419754",
+    "diff_hunk": "@@ -7,9 +7,43 @@ on:\n     branches: [master, main, development]\n \n jobs:\n+  # Unit tests run once, outside the deployment-mode matrix. They are hermetic\n+  # (Vitest + jsdom, no DB/browser) and already cover BOTH modes within a single\n+  # run by busting the require cache per-test (see tests/unit/deploymentMode.spec.js\n+  # and bakeGuards.spec.js). Matrixing them would just waste CI time.\n+  unit:\n+    timeout-minutes: 10\n+    runs-on: ubuntu-latest\n+    steps:\n+      - name: Checkout code\n+        uses: actions/checkout@v4\n+\n+      - name: Setup Node.js\n+        uses: actions/setup-node@v4\n+        with:\n+          node-version: \"20\"",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/154#discussion_r3431215940",
+    "comments": [
+      {
+        "author": "amarouane-ABDELHAK",
+        "body": "Can we upgrade this version?",
+        "createdAt": "2026-06-17T20:24:34Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  name: Playwright Tests\n     2  \n     3  on:\n     4    push:\n     5      branches: [master, main, development]\n     6    pull_request:\n     7      branches: [master, main, development]\n     8  \n     9  jobs:\n    10    # Unit tests run once, outside the deployment-mode matrix. They are hermetic\n    11    # (Vitest + jsdom, no DB/browser) and already cover BOTH modes within a single\n    12    # run by busting the require cache per-test (see tests/unit/deploymentMode.spec.js\n    13    # and bakeGuards.spec.js). Matrixing them would just waste CI time.\n    14    unit:\n    15      timeout-minutes: 10\n    16      runs-on: ubuntu-latest\n    17      steps:\n    18        - name: Checkout code\n    19          uses: actions/checkout@v4\n    20  \n    21        - name: Setup Node.js\n    22          uses: actions/setup-node@v4\n    23          with:\n    24            node-version: \"20\"\n    25            cache: \"npm\"\n    26  \n    27        - name: Install dependencies\n    28          run: npm ci\n    29  \n    30        - name: Run Unit Tests\n    31          run: npx vitest run\n    32  \n    33    # The e2e / app-boot leg runs once per deployment shape. The mode is resolved\n    34    # once at process start (deploymentMode.js), so each shape needs its own boot —\n    35    # hence the matrix. MMGIS_DEPLOYMENT_MODE is written into .env in the setup\n    36    # step below and read by both the server and the present/absent e2e test.\n    37    test:\n    38      name: e2e (${{ matrix.mode }})\n    39      timeout-minutes: 20\n    40      runs-on: ubuntu-latest\n    41      needs: unit\n    42  \n    43      strategy:\n    44        fail-fast: false\n    45        matrix:\n    46          mode: [full, lean]\n    47  \n    48      services:\n    49        postgres:\n    50          image: postgis/postgis:13-3.1\n    51          env:\n    52            POSTGRES_DB: mmgis_test\n    53            POSTGRES_USER: test_user\n    54            POSTGRES_PASSWORD: test_password\n    55          ports:\n    56            - 5432:5432\n    57          options: >-\n    58            --health-cmd pg_isready\n    59            --health-interval 10s\n    60            --health-timeout 5s\n    61            --health-retries 5\n    62  \n    63      steps:\n    64        - name: Checkout code\n    65          uses: actions/checkout@v4\n    66  \n    67        - name: Setup Node.js\n    68          uses: actions/setup-node@v4\n    69          with:\n    70            node-version: \"20\"\n    71            cache: \"npm\"\n    72  \n    73        - name: Install dependencies\n    74          run: npm ci",
+    "post_comment_delta": "",
+    "renamed_to": null,
+    "delta_truncated": false,
+    "pr_commits_after": []
+  },
+  {
+    "pr": 154,
+    "thread_id": "issue-4743452168",
+    "source": "issue-comment",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/154#issuecomment-4743452168",
+    "comments": [
+      {
+        "author": "CarsonDavis",
+        "body": "Question: what are the ramifications of having the lean tests be the baseline tests and then the full tests import them? will that be cleaner than the current strategy?",
+        "createdAt": "2026-06-18T15:19:31Z"
+      }
+    ],
+    "code_context": "none"
+  }
+]

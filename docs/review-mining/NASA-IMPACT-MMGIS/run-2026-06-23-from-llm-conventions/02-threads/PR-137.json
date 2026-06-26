@@ -1,0 +1,16 @@
+[
+  {
+    "pr": 137,
+    "thread_id": "issue-4681666702",
+    "source": "issue-comment",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/137#issuecomment-4681666702",
+    "comments": [
+      {
+        "author": "CarsonDavis",
+        "body": "Heads-up for review: commit 1b26da41 extends item 2 — the shapefile `.prj` is now computed in the browser in **every** mode, not just static builds. LayersTool and DrawTool call `projStringToWkt` directly; the server's `/api/utils/proj42wkt` Python route loses its last first-party caller (kept in full for API compat, gated in lean by #133 — see the review thread there). This is the series' first deliberate full-mode behavior change, senior-dev approved 2026-06-11; the PR body's item 2 carries the details. Verified: both build personalities compile; `projStringToWkt` (11) and dispatcher parity (3) suites pass.",
+        "createdAt": "2026-06-11T14:31:51Z"
+      }
+    ],
+    "code_context": "none"
+  }
+]

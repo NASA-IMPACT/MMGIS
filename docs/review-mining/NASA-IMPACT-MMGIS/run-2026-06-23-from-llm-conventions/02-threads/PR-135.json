@@ -1,0 +1,36 @@
+[
+  {
+    "pr": 135,
+    "thread_id": "inline-3391729153",
+    "source": "inline",
+    "resolved": true,
+    "outdated": false,
+    "path": "API/websocket.js",
+    "line": 46,
+    "commit": "c141d60c6c1aa93998ad329f6c46aa2399f57415",
+    "diff_hunk": "@@ -28,6 +28,22 @@ const websocket = {\n     const wss = new WebSocket.Server({ noServer: true });\r\n     websocket.wss = wss;\r\n \r\n+    // Heartbeat: proxies and load balancers silently drop idle connections,\r\n+    // so periodically ping every client and terminate the ones that stopped\r\n+    // answering. Browsers answer pings automatically.\r\n+    const pingIntervalMs =\r\n+      parseInt(process.env.WEBSOCKET_PING_INTERVAL_MS, 10) || 30000;\r\n+    const heartbeatInterval = setInterval(() => {\r\n+      wss.clients.forEach((client) => {\r\n+        if (client.isAlive === false) {\r\n+          client.terminate();\r\n+          return;\r\n+        }\r\n+        client.isAlive = false;\r\n+        client.ping();\r\n+      });\r\n+    }, pingIntervalMs);\r\n+\r",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/135#discussion_r3391729153",
+    "comments": [
+      {
+        "author": "slesaad",
+        "body": "why was it not needed before? is this a lean mode concern?",
+        "createdAt": "2026-06-10T21:46:21Z"
+      },
+      {
+        "author": "CarsonDavis",
+        "body": "Not lean-specific — it's a \"running behind a proxy\" concern, and it's in this PR because the hardening batch is the mode-agnostic production-readiness set.\n\nIt wasn't needed before because the gap only shows up when something between the browser and the server reaps idle TCP connections. Local dev and same-host deployments have nothing in the middle, so a quiet WebSocket just stays open. Behind CloudFront → ALB (the lean admin topology), the ALB closes idle connections after ~60s of silence by default — and it does so without a clean close, so neither end notices. The two flows riding this socket (Configure lock warnings, layer-update push to open map clients) would silently stop working a minute after the last message, which is most of the time.\n\nAny full deployment behind nginx/an ALB has the same latent issue today; it just hasn't had a deployment shape in-repo that put a proxy in front. Server-side ping/pong is the `ws` library's documented recommendation for exactly this (browsers auto-answer pings, so no client change). With `WEBSOCKET_PING_INTERVAL_MS` unset it defaults to 30s, and behavior is otherwise unchanged.",
+        "createdAt": "2026-06-11T13:42:35Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  const WebSocket = require(\"isomorphic-ws\");\r\n     2  const logger = require(\"./logger\");\r\n     3  \r\n     4  const websocket = {\r\n     5    wss: null,\r\n     6    init: function (server) {\r\n     7      logger(\"info\", \"Trying to init websocket...\", \"websocket\", null, \"\");\r\n     8  \r\n     9      if (!server === null) {\r\n    10        logger(\r\n    11          \"websocket_error\",\r\n    12          \"server parameter not defined.\",\r\n    13          \"error\",\r\n    14          null,\r\n    15          \"\"\r\n    16        );\r\n    17        return null;\r\n    18      }\r\n    19  \r\n    20      logger(\r\n    21        \"info\",\r\n    22        \"Server is valid so still trying to init websocket...\",\r\n    23        \"websocket\",\r\n    24        null,\r\n    25        \"\"\r\n    26      );\r\n    27  \r\n    28      const wss = new WebSocket.Server({ noServer: true });\r\n    29      websocket.wss = wss;\r\n    30  \r\n    31      // Heartbeat: proxies and load balancers silently drop idle connections,\r\n    32      // so periodically ping every client and terminate the ones that stopped\r\n    33      // answering. Browsers answer pings automatically.\r\n    34      const pingIntervalMs =\r\n    35        parseInt(process.env.WEBSOCKET_PING_INTERVAL_MS, 10) || 30000;\r\n    36      const heartbeatInterval = setInterval(() => {\r\n    37        wss.clients.forEach((client) => {\r\n    38          if (client.isAlive === false) {\r\n    39            client.terminate();\r\n    40            return;\r\n    41          }\r\n    42          client.isAlive = false;\r\n    43          client.ping();\r\n    44        });\r\n    45      }, pingIntervalMs);\r\n    46  \r\n    47      // Broadcast to all clients\r\n    48      wss.broadcast = function broadcast(data, isBinary) {\r\n    49        wss.clients.forEach((client) => {\r\n    50          if (client.readyState === WebSocket.OPEN && data !== undefined) {\r\n    51            client.send(data, { binary: isBinary });\r\n    52          }\r\n    53        });\r\n    54      };\r\n    55  \r\n    56      wss.on(\"connection\", (ws) => {\r\n    57        ws.isAlive = true;\r\n    58        ws.on(\"pong\", () => {\r\n    59          ws.isAlive = true;\r\n    60        });\r\n    61        ws.on(\"message\", (message) => {\r\n    62          wss.broadcast(message);\r\n    63        });\r\n    64      });\r\n    65  \r\n    66      server.on(\"upgrade\", function upgrade(request, socket, head) {\r\n    67        const pathname = request.url;\r\n    68        try {\r\n    69          if (\r\n    70            pathname ===\r\n    71            (process.env.WEBSOCKET_ROOT_PATH || process.env.ROOT_PATH || \"\") + \"/\"\r\n    72          ) {\r\n    73            wss.handleUpgrade(request, socket, head, function done(ws) {\r\n    74              wss.emit(\"connection\", ws, request);\r\n    75            });\r\n    76          } else {\r\n    77            socket.destroy();\r\n    78          }\r\n    79        } catch (err) {\r\n    80          socket.destroy();\r\n    81        }\r\n    82      });\r\n    83  \r\n    84      wss.on(\"close\", () => {\r\n    85        logger(\"info\", \"Websocket disconnected...\", \"websocket\", null, \"\");\r\n    86        clearInterval(heartbeatInterval);\r\n    87        websocket.wss = null;\r\n    88      });\r\n    89    },\r\n    90  };\r\n    91  \r\n    92  module.exports = { websocket };\r",
+    "post_comment_delta": "",
+    "renamed_to": null,
+    "delta_truncated": false,
+    "pr_commits_after": [
+      "495d2ed9  Merge branch 'lean/pr-01-foundation' into lean/pr-12-hardening",
+      "e559e5f2  Merge branch 'lean/pr-01-foundation' into lean/pr-12-hardening",
+      "23ec03b5  Merge remote-tracking branch 'origin/feature/mmgis-deployment-skill' into lean/pr-12-hardening"
+    ]
+  }
+]

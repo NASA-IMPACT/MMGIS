@@ -1,0 +1,43 @@
+[
+  {
+    "pr": 150,
+    "thread_id": "inline-3424243134",
+    "source": "inline",
+    "resolved": false,
+    "outdated": true,
+    "path": "package.json",
+    "line": 52,
+    "commit": "8367ef7876a972b803062f1e7dca7824a9172815",
+    "diff_hunk": "@@ -49,8 +49,9 @@\n     \"start:analyzer\": \"node scripts/server.js --analyze\",\n     \"build\": \"node scripts/build.js\",\n     \"build:themes\": \"bash scripts/build-themes.sh\",\n-    \"test\": \"playwright test\",\n-    \"test:unit\": \"cross-env PLAYWRIGHT_TEST_UNIT_ONLY=true playwright test tests/unit\",\n+    \"test\": \"vitest run\",",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/150#discussion_r3424243134",
+    "comments": [
+      {
+        "author": "CarsonDavis",
+        "body": "are we changing the behavior here? i think we should be running playwright and vitest",
+        "createdAt": "2026-06-16T21:49:45Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     2    \"name\": \"mmgis\",\n     3    \"version\": \"4.2.11-20260611\",\n     4    \"description\": \"A web-based mapping and localization solution for science operation on planetary missions.\",\n     5    \"homepage\": \"build\",\n     6    \"repository\": {\n     7      \"type\": \"git\",\n     8      \"url\": \"git+https://github.com/NASA-AMMOS/MMGIS.git\"\n     9    },\n    10    \"keywords\": [\n    11      \"tile\",\n    12      \"planet\",\n    13      \"earth\",\n    14      \"mars\",\n    15      \"graphics\",\n    16      \"globe\",\n    17      \"orbit\",\n    18      \"dem\",\n    19      \"gdal\",\n    20      \"gdal2tiles\",\n    21      \"3d\",\n    22      \"nasa\",\n    23      \"mosaic\",\n    24      \"gis\",\n    25      \"tools\",\n    26      \"map\",\n    27      \"threejs\",\n    28      \"rendering\",\n    29      \"geometry\",\n    30      \"terrain\",\n    31      \"mmgis\",\n    32      \"esri\",\n    33      \"leaflet\",\n    34      \"openlayers\",\n    35      \"mapbox\",\n    36      \"cesium\"\n    37    ],\n    38    \"scripts\": {\n    39      \"db:start\": \"docker-compose -f docker-compose.db.yml up -d\",\n    40      \"db:stop\": \"docker-compose -f docker-compose.db.yml down\",\n    41      \"db:logs\": \"docker-compose -f docker-compose.db.yml logs -f\",\n    42      \"prestart\": \"docker-compose -f docker-compose.db.yml up -d --wait\",\n    43      \"start\": \"node scripts/init-db.js && node scripts/server.js\",\n    44      \"start:no-docker\": \"node scripts/init-db.js && node scripts/server.js\",\n    45      \"start:prod\": \"node scripts/init-db.js && cross-env NODE_ENV=production node scripts/server.js\",\n    46      \"start:prod-docker\": \"node scripts/init-db.js && cross-env NODE_ENV=production node scripts/server.js\",\n    47      \"start:prod:with_examples\": \"cross-env NODE_ENV=production node scripts/server.js --with_examples\",\n    48      \"start:docs\": \"cd ./docs && bundle exec jekyll serve\",\n    49      \"start:analyzer\": \"node scripts/server.js --analyze\",\n    50      \"build\": \"node scripts/build.js\",\n    51      \"build:themes\": \"bash scripts/build-themes.sh\",\n    52      \"test\": \"vitest run\",\n    53      \"test:unit\": \"vitest run\",\n    54      \"test:unit:watch\": \"vitest\",\n    55      \"test:e2e\": \"playwright test tests/e2e\",\n    56      \"test:headed\": \"playwright test --headed\",\n    57      \"test:debug\": \"playwright test --debug\",\n    58      \"test:ui\": \"playwright test --ui\",\n    59      \"test:report\": \"playwright show-report\",\n    60      \"start:test\": \"cross-env NODE_ENV=test PORT=8888 node scripts/server.js\",\n    61      \"typecheck\": \"tsc --noEmit\"\n    62    },\n    63    \"dependencies\": {\n    64      \"@aws-sdk/client-cloudformation\": \"^3.1065.0\",\n    65      \"@aws-sdk/client-cloudfront\": \"^3.1066.0\",\n    66      \"@aws-sdk/client-ecs\": \"^3.1065.0\",\n    67      \"@aws-sdk/client-s3\": \"^3.1065.0\",\n    68      \"@azure/ai-agents\": \"^1.0.0-beta.1\",\n    69      \"@azure/core-auth\": \"^1.7.2\",\n    70      \"@azure/identity\": \"^4.4.0\",\n    71      \"@babel/runtime\": \"^7.23.1\",\n    72      \"@deck.gl/core\": \"^9.2.10\",\n    73      \"@deck.gl/geo-layers\": \"^9.2.10\",\n    74      \"@deck.gl/layers\": \"^9.2.10\",\n    75      \"@deck.gl/mapbox\": \"^9.2.11\",\n    76      \"@eonasdan/tempus-dominus\": \"^6.2.6\",\n    77      \"@ffmpeg/core\": \"^0.12.6\",\n    78      \"@ffmpeg/ffmpeg\": \"^0.12.10\",\n    79      \"@ffmpeg/util\": \"^0.12.1\",\n    80      \"@fontsource-utils/scss\": \"^0.2.2\",\n    81      \"@fontsource-variable/inter\": \"^5.2.8\",\n    82      \"@fontsource/dm-mono\": \"^5.2.7\",\n    83      \"@mapbox/shp-write\": \"^0.4.3\",\n    84      \"@maphubs/tokml\": \"^0.6.1\",\n    85      \"@popperjs/core\": \"^2.11.6\",\n    86      \"@terraformer/wkt\": \"^2.2.0\",\n    87      \"@trussworks/react-uswds\": \"^11.0.1\",\n    88      \"@turf/turf\": \"^6.5.0\",\n    89      \"@uswds/uswds\": \"^3.13.0\",\n    90      \"bcryptjs\": \"^2.4.3\",\n    91      \"bluebird\": \"^3.7.2\",\n    92      \"busboy\": \"1.6\",\n    93      \"camelcase\": \"^5.3.1\",\n    94      \"cesium\": \"^1.121.0\",\n    95      \"chart.js\": \"^4.4.0\",\n    96      \"chartjs-plugin-zoom\": \"^2.2.0\",\n    97      \"chroma-js\": \"^1.4.1\",\n    98      \"compression\": \"^1.7.4\",\n    99      \"connect-pg-simple\": \"^8.0.0\",\n   100      \"cookie-parser\": \"^1.4.5\",\n   101      \"cors\": \"^2.8.5\",\n   102      \"cross-env\": \"^7.0.2\",",
+    "post_comment_delta": "diff --git a/package.json b/package.json\nindex a33efa2e..89f96140 100644\n--- a/package.json\n+++ b/package.json\n@@ -49,7 +49,7 @@\n     \"start:analyzer\": \"node scripts/server.js --analyze\",\n     \"build\": \"node scripts/build.js\",\n     \"build:themes\": \"bash scripts/build-themes.sh\",\n-    \"test\": \"vitest run\",\n+    \"test\": \"vitest run && playwright test tests/e2e\",\n     \"test:unit\": \"vitest run\",\n     \"test:unit:watch\": \"vitest\",\n     \"test:e2e\": \"playwright test tests/e2e\",",
+    "renamed_to": null,
+    "delta_truncated": false,
+    "pr_commits_after": [
+      "a08b9631  Keep npm test running the full suite (Vitest unit + Playwright e2e)"
+    ]
+  },
+  {
+    "pr": 150,
+    "thread_id": "issue-4723823924",
+    "source": "issue-comment",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/150#issuecomment-4723823924",
+    "comments": [
+      {
+        "author": "github-actions[bot]",
+        "body": "## ✅ Version Already Updated\n\nThis PR includes a manual version update to **`4.2.11-20260611`**\n\nNo automatic version bump needed.",
+        "createdAt": "2026-06-16T21:32:11Z"
+      }
+    ],
+    "code_context": "none"
+  }
+]

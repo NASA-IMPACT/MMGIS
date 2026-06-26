@@ -1,0 +1,153 @@
+[
+  {
+    "pr": 63,
+    "thread_id": "inline-3276860192",
+    "source": "inline",
+    "resolved": true,
+    "outdated": false,
+    "path": "src/essence/Tools/Layers/LayersTool.js",
+    "line": 1,
+    "commit": "1c8f3c13e55af1e8285b76561f298bffc2e0fcb9",
+    "diff_hunk": "",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/63#discussion_r3276860192",
+    "comments": [
+      {
+        "author": "sandesh-sp",
+        "body": "Do we need to update the tool now that we're creating our own?",
+        "createdAt": "2026-05-20T20:09:45Z"
+      },
+      {
+        "author": "slesaad",
+        "body": "its backward compatible change and helps the tool too, so why not",
+        "createdAt": "2026-05-20T20:50:59Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  import $ from 'jquery'\r\n     2  import Sortable from 'sortablejs'\r\n     3  import F_ from '../../Basics/Formulae_/Formulae_'\r\n     4  import L_ from '../../Basics/Layers_/Layers_'\r\n     5  import Map_ from '../../Basics/Map_/Map_'\r\n     6  import ServiceUrls from '../../Basics/ServiceUrls/ServiceUrls'\r\n     7  \r\n     8  import DataShaders from '../../Ancillary/DataShaders'\r\n     9  import LayerInfoModal from './LayerInfoModal/LayerInfoModal'\r\n    10  import Filtering from '../../Basics/Layers_/Filtering/Filtering'\r\n    11  import Help from '../../Ancillary/Help'\r\n    12  import CursorInfo from '../../Ancillary/CursorInfo'\r\n    13  import TimeUI from '../../Basics/TimeControl_/TimeUI'\r\n    14  \r\n    15  import LegendTool from '../Legend/LegendTool.js'\r\n    16  \r\n    17  import tippy from 'tippy.js'\r\n    18  import 'markjs'\r\n    19  import calls from '../../../pre/calls'\r\n    20  import * as tokml from '@maphubs/tokml'\r\n    21  import shpwrite from '@mapbox/shp-write'\r\n    22  \r\n    23  import {\r\n    24      evaluate_cmap,\r\n    25      data as colormapData,\r\n    26  } from '../../../external/js-colormaps/js-colormaps.js'\r\n    27  \r\n    28  import './LayersTool.css'\r\n    29  \r\n    30  const helpKey = 'LayersTool'\r\n    31  \r\n    32  /**\r\n    33   * Check if TiTiler is available for a layer (either locally or via external URL)\r\n    34   * @param {object} layerConfig - The layer configuration object\r\n    35   * @returns {boolean} True if TiTiler is available\r\n    36   */\r\n    37  const hasTiTilerAccess = (layerConfig) => {\r\n    38      return window.mmgisglobal.WITH_TITILER === 'true' || layerConfig?.titilerUrl != null\r\n    39  }\r\n    40  \r\n    41  /**\r\n    42   * Generate the tool markup dynamically based on available layer types\r\n    43   * @returns {string} HTML markup for the LayersTool\r\n    44   */\r\n    45  function generateMarkup() {\r\n    46      const availableTypes = getAvailableLayerTypes()\r\n    47  \r\n    48      // Define all possible filter icons with their properties\r\n    49      const filterIcons = [\r\n    50          {\r\n    51              type: 'vector',\r",
+    "post_comment_delta": "",
+    "renamed_to": null,
+    "delta_truncated": false,
+    "pr_commits_after": [
+      "63c5b516  Pull colormaps into a shared constant"
+    ]
+  },
+  {
+    "pr": 63,
+    "thread_id": "inline-3276860936",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "src/essence/Tools/Identifier/IdentifierTool.js",
+    "line": 1,
+    "commit": "1c8f3c13e55af1e8285b76561f298bffc2e0fcb9",
+    "diff_hunk": "",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/63#discussion_r3276860936",
+    "comments": [
+      {
+        "author": "sandesh-sp",
+        "body": "Do we need to update the tool now that we're creating our own?",
+        "createdAt": "2026-05-20T20:09:53Z"
+      },
+      {
+        "author": "slesaad",
+        "body": "yes, otherwise it'll be in a broken state",
+        "createdAt": "2026-05-21T14:48:22Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  //Finds the tile png under the mouse of all active tile layers\r\n     2  //Draws those tiles their owns canvases and get the appropriate pixel value\r\n     3  import $ from 'jquery'\r\n     4  import { utcFormat } from 'd3-time-format'\r\n     5  import F_ from '../../Basics/Formulae_/Formulae_'\r\n     6  import L_ from '../../Basics/Layers_/Layers_'\r\n     7  import Map_ from '../../Basics/Map_/Map_'\r\n     8  import Globe_ from '../../Basics/Globe_/Globe_'\r\n     9  import CursorInfo from '../../Ancillary/CursorInfo'\r\n    10  import ServiceUrls from '../../Basics/ServiceUrls/ServiceUrls'\r\n    11  import calls from '../../../pre/calls'\r\n    12  \r\n    13  //Add the tool markup if you want to do it this way\r\n    14  var markup = [].join('\\n')\r\n    15  \r\n    16  var IdentifierTool = {\r\n    17      height: -1,\r\n    18      tileImageWidth: null,\r\n    19      activeTiles: null,\r\n    20      currentTiles: null,\r\n    21      pxXYs: null,\r\n    22      activeLayerNames: null,\r\n    23      activeLayerURLs: null,\r\n    24      zoomLevels: null,\r\n    25      images: null,\r\n    26      imageData: null,\r\n    27      MMWebGISInterface: null,\r\n    28      mousemoveTimeout: null,\r\n    29      mousemoveTimeoutMap: null,\r\n    30      targetId: null,\r\n    31      made: false,\r\n    32      justification: 'left',\r\n    33      vars: {},\r\n    34      initialize: function () {\r\n    35          //Get tool variables\r\n    36          this.justification = L_.getToolVars('identifier')['justification']\r\n    37          // Justification is now handled by ToolController_ during initialization\r\n    38      },\r\n    39      make: function (targetId) {\r\n    40          this.targetId = targetId\r\n    41          this.MMWebGISInterface = new interfaceWithMMWebGIS()\r\n    42          this.activeLayerNames = []\r\n    43  \r\n    44          L_.subscribeOnLayerToggle('IdentifierTool', () => {\r\n    45              this.MMWebGISInterface = new interfaceWithMMWebGIS()\r\n    46          })\r\n    47  \r\n    48          this.made = true\r\n    49  \r\n    50          L_.subscribeOnLayerToggle('IdentifierTool', () => {\r\n    51              this.MMWebGISInterface = new interfaceWithMMWebGIS()\r",
+    "post_comment_delta": "",
+    "renamed_to": null,
+    "delta_truncated": false,
+    "pr_commits_after": [
+      "63c5b516  Pull colormaps into a shared constant"
+    ]
+  },
+  {
+    "pr": 63,
+    "thread_id": "inline-3276885325",
+    "source": "inline",
+    "resolved": false,
+    "outdated": true,
+    "path": "configure/src/core/injectables.js",
+    "line": 121,
+    "commit": "1c8f3c13e55af1e8285b76561f298bffc2e0fcb9",
+    "diff_hunk": "@@ -100,31 +88,56 @@ function getColormapNames(injectableName) {\n           ),\n         ];\n       },\n-      (res) => {\n+      () => {\n         console.warn(`Failed to query for ${injectableName}. Using defaults.`);\n-        injectables[injectableName] = Object.keys(colormapData);\n+        // Fallback to common colormap names\n+        injectables[injectableName] = [\n+          \"viridis\", \"viridis_r\",\n+          \"plasma\", \"plasma_r\",\n+          \"inferno\", \"inferno_r\",\n+          \"magma\", \"magma_r\",\n+          \"cividis\", \"cividis_r\",\n+          \"greys\", \"greys_r\",\n+          \"blues\", \"blues_r\",\n+          \"greens\", \"greens_r\",\n+          \"reds\", \"reds_r\",\n+          \"rdbu\", \"rdbu_r\",\n+          \"spectral\", \"spectral_r\",\n+          \"jet\", \"jet_r\",\n+          \"turbo\", \"turbo_r\",\n+          \"hot\", \"hot_r\",\n+          \"cool\", \"cool_r\",\n+          \"gist_heat\", \"gist_heat_r\",\n+          \"gist_earth\", \"gist_earth_r\",\n+          \"terrain\", \"terrain_r\",\n+          \"ocean\", \"ocean_r\",\n+          \"rainbow\", \"rainbow_r\",\n+        ].sort();\n       }\n     );\n   } else {\n-    // Get colormaps from js-colormaps and the inversed colors\n-    const js_colormaps = Object.keys(colormapData).map((color => color.toLowerCase()));\n-    let colormaps = [];\n-    js_colormaps.forEach((color) => {\n-      colormaps.push(color);\n-      // js-colormaps only includes the non reversed names so add the reverse\n-      if (!color.endsWith(\"_r\")) {\n-        colormaps.push(`${color}_r`);\n-      }\n-    });\n-\n-    // Sort\n-    colormaps.sort();\n-\n-    // ... new Set removes duplicates\n+    // Without TiTiler, use a common subset of colormaps\n     injectables[injectableName] = [\n-      ...new Set(\n-        injectablesDefaults[injectableName].concat(colormaps)\n-      ),\n-    ];\n+      \"viridis\", \"viridis_r\",",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/63#discussion_r3276885325",
+    "comments": [
+      {
+        "author": "sandesh-sp",
+        "body": "I think it's better if we have the colormap defined once. Use fallback if the titiler isn't defined or fails to return proper value",
+        "createdAt": "2026-05-20T20:14:01Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "    71  \n    72  function getColormapNames(injectableName) {\n    73    if (window.mmgisglobal.WITH_TITILER === \"true\") {\n    74      calls.api(\n    75        \"titiler_colormapNames\",\n    76        null,\n    77        (res) => {\n    78          // Use all colormaps from TiTiler directly (no filtering)\n    79          let colormaps = res.colorMaps || [];\n    80  \n    81          // Sort alphabetically\n    82          colormaps.sort();\n    83  \n    84          // ... new Set removes duplicates\n    85          injectables[injectableName] = [\n    86            ...new Set(\n    87              injectablesDefaults[injectableName].concat(colormaps)\n    88            ),\n    89          ];\n    90        },\n    91        () => {\n    92          console.warn(`Failed to query for ${injectableName}. Using defaults.`);\n    93          // Fallback to common colormap names\n    94          injectables[injectableName] = [\n    95            \"viridis\", \"viridis_r\",\n    96            \"plasma\", \"plasma_r\",\n    97            \"inferno\", \"inferno_r\",\n    98            \"magma\", \"magma_r\",\n    99            \"cividis\", \"cividis_r\",\n   100            \"greys\", \"greys_r\",\n   101            \"blues\", \"blues_r\",\n   102            \"greens\", \"greens_r\",\n   103            \"reds\", \"reds_r\",\n   104            \"rdbu\", \"rdbu_r\",\n   105            \"spectral\", \"spectral_r\",\n   106            \"jet\", \"jet_r\",\n   107            \"turbo\", \"turbo_r\",\n   108            \"hot\", \"hot_r\",\n   109            \"cool\", \"cool_r\",\n   110            \"gist_heat\", \"gist_heat_r\",\n   111            \"gist_earth\", \"gist_earth_r\",\n   112            \"terrain\", \"terrain_r\",\n   113            \"ocean\", \"ocean_r\",\n   114            \"rainbow\", \"rainbow_r\",\n   115          ].sort();\n   116        }\n   117      );\n   118    } else {\n   119      // Without TiTiler, use a common subset of colormaps\n   120      injectables[injectableName] = [\n   121        \"viridis\", \"viridis_r\",\n   122        \"plasma\", \"plasma_r\",\n   123        \"inferno\", \"inferno_r\",\n   124        \"magma\", \"magma_r\",\n   125        \"cividis\", \"cividis_r\",\n   126        \"greys\", \"greys_r\",\n   127        \"blues\", \"blues_r\",\n   128        \"greens\", \"greens_r\",\n   129        \"reds\", \"reds_r\",\n   130        \"rdbu\", \"rdbu_r\",\n   131        \"spectral\", \"spectral_r\",\n   132        \"jet\", \"jet_r\",\n   133        \"turbo\", \"turbo_r\",\n   134        \"hot\", \"hot_r\",\n   135        \"cool\", \"cool_r\",\n   136        \"gist_heat\", \"gist_heat_r\",\n   137        \"gist_earth\", \"gist_earth_r\",\n   138        \"terrain\", \"terrain_r\",\n   139        \"ocean\", \"ocean_r\",\n   140        \"rainbow\", \"rainbow_r\",\n   141      ].sort();\n   142    }\n   143  }",
+    "post_comment_delta": "diff --git a/configure/src/core/injectables.js b/configure/src/core/injectables.js\nindex 1fa00119..da9b4606 100644\n--- a/configure/src/core/injectables.js\n+++ b/configure/src/core/injectables.js\n@@ -31,6 +31,29 @@ export const inject = (configJson) => {\n   return JSON.parse(injected);\n };\n \n+const COMMON_COLORMAP_NAMES = [\n+  \"viridis\", \"viridis_r\",\n+  \"plasma\", \"plasma_r\",\n+  \"inferno\", \"inferno_r\",\n+  \"magma\", \"magma_r\",\n+  \"cividis\", \"cividis_r\",\n+  \"greys\", \"greys_r\",\n+  \"blues\", \"blues_r\",\n+  \"greens\", \"greens_r\",\n+  \"reds\", \"reds_r\",\n+  \"rdbu\", \"rdbu_r\",\n+  \"spectral\", \"spectral_r\",\n+  \"jet\", \"jet_r\",\n+  \"turbo\", \"turbo_r\",\n+  \"hot\", \"hot_r\",\n+  \"cool\", \"cool_r\",\n+  \"gist_heat\", \"gist_heat_r\",\n+  \"gist_earth\", \"gist_earth_r\",\n+  \"terrain\", \"terrain_r\",\n+  \"ocean\", \"ocean_r\",\n+  \"rainbow\", \"rainbow_r\",\n+].sort();\n+\n function getTileMatrixSets() {\n   const injectableName = \"TILE_MATRIX_SETS\";\n   if (window.mmgisglobal.WITH_TITILER === \"true\") {\n@@ -91,53 +114,11 @@ function getColormapNames(injectableName) {\n       () => {\n         console.warn(`Failed to query for ${injectableName}. Using defaults.`);\n         // Fallback to common colormap names\n-        injectables[injectableName] = [\n-          \"viridis\", \"viridis_r\",\n-          \"plasma\", \"plasma_r\",\n-          \"inferno\", \"inferno_r\",\n-          \"magma\", \"magma_r\",\n-          \"cividis\", \"cividis_r\",\n-          \"greys\", \"greys_r\",\n-          \"blues\", \"blues_r\",\n-          \"greens\", \"greens_r\",\n-          \"reds\", \"reds_r\",\n-          \"rdbu\", \"rdbu_r\",\n-          \"spectral\", \"spectral_r\",\n-          \"jet\", \"jet_r\",\n-          \"turbo\", \"turbo_r\",\n-          \"hot\", \"hot_r\",\n-          \"cool\", \"cool_r\",\n-          \"gist_heat\", \"gist_heat_r\",\n-          \"gist_earth\", \"gist_earth_r\",\n-          \"terrain\", \"terrain_r\",\n-          \"ocean\", \"ocean_r\",\n-          \"rainbow\", \"rainbow_r\",\n-        ].sort();\n+        injectables[injectableName] = COMMON_COLORMAP_NAMES;\n       }\n     );\n   } else {\n     // Without TiTiler, use a common subset of colormaps\n-    injectables[injectableName] = [\n-      \"viridis\", \"viridis_r\",\n-      \"plasma\", \"plasma_r\",\n-      \"inferno\", \"inferno_r\",\n-      \"magma\", \"magma_r\",\n-      \"cividis\", \"cividis_r\",\n-      \"greys\", \"greys_r\",\n-      \"blues\", \"blues_r\",\n-      \"greens\", \"greens_r\",\n-      \"reds\", \"reds_r\",\n-      \"rdbu\", \"rdbu_r\",\n-      \"spectral\", \"spectral_r\",\n-      \"jet\", \"jet_r\",\n-      \"turbo\", \"turbo_r\",\n-      \"hot\", \"hot_r\",\n-      \"cool\", \"cool_r\",\n-      \"gist_heat\", \"gist_heat_r\",\n-      \"gist_earth\", \"gist_earth_r\",\n-      \"terrain\", \"terrain_r\",\n-      \"ocean\", \"ocean_r\",\n-      \"rainbow\", \"rainbow_r\",\n-    ].sort();\n+    injectables[injectableName] = COMMON_COLORMAP_NAMES;\n   }\n }",
+    "renamed_to": null,
+    "delta_truncated": false,
+    "pr_commits_after": [
+      "63c5b516  Pull colormaps into a shared constant"
+    ]
+  },
+  {
+    "pr": 63,
+    "thread_id": "inline-3277038774",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "src/essence/Basics/ServiceUrls/ServiceUrls.js",
+    "line": 177,
+    "commit": "1c8f3c13e55af1e8285b76561f298bffc2e0fcb9",
+    "diff_hunk": "@@ -0,0 +1,247 @@\n+/**\r\n+ * ServiceUrls - Centralized utility for getting service URLs\r\n+ *\r\n+ * Supports both local proxied services and external endpoints.\r\n+ * External URLs can be configured per-layer or globally via mmgisglobal.options.\r\n+ *\r\n+ * Services supported:\r\n+ * - titiler: COG tile serving\r\n+ * - titilerpgstac: STAC mosaic tiles\r\n+ * - stac: STAC FastAPI\r\n+ * - tipg: OGC Features/Tiles API\r\n+ * - veloserver: Wind/velocity data\r\n+ */\r\n+\r\n+/**\r\n+ * Service configuration registry\r\n+ * Maps service names to their config key names and local proxy paths\r\n+ */\r\n+const SERVICE_CONFIG = {\r\n+    titiler: { configKey: 'titilerUrl', localPath: '/titiler' },\r\n+    titilerpgstac: { configKey: 'titilerPgStacUrl', localPath: '/titilerpgstac' },\r\n+    stac: { configKey: 'stacUrl', localPath: '/stac' },\r\n+    tipg: { configKey: 'tipgUrl', localPath: '/tipg' },\r\n+    veloserver: { configKey: 'veloserverUrl', localPath: '/veloserver' },\r\n+}\r\n+\r\n+/**\r\n+ * Get the local proxy base URL for MMGIS\r\n+ * @returns {string} Base URL like \"http://localhost:8888/mmgis\"\r\n+ */\r\n+const getLocalBaseUrl = () => {\r\n+    const pathname = (window.location.pathname || '').replace(/\\/$/, '')\r\n+    return `${window.location.origin}${pathname}`\r\n+}\r\n+\r\n+/**\r\n+ * Factory function to get a service URL\r\n+ * Priority: layerConfig > mmgisglobal.options.services > local proxy\r\n+ *\r\n+ * @param {string} serviceName - Name of the service (titiler, stac, etc.)\r\n+ * @param {object} [layerConfig] - Layer configuration (optional, for per-layer override)\r\n+ * @returns {string} Service base URL\r\n+ */\r\n+const getServiceUrl = (serviceName, layerConfig = null) => {\r\n+    const config = SERVICE_CONFIG[serviceName]\r\n+    if (!config) {\r\n+        console.warn(`ServiceUrls: Unknown service \"${serviceName}\"`)\r\n+        return getLocalBaseUrl()\r\n+    }\r\n+\r\n+    const { configKey, localPath } = config\r\n+\r\n+    // Per-layer override\r\n+    if (layerConfig?.[configKey]) {\r\n+        return layerConfig[configKey].replace(/\\/$/, '')\r\n+    }\r\n+\r\n+    // Global override via mmgisglobal.options.services\r\n+    if (window.mmgisglobal?.options?.services?.[configKey]) {\r\n+        return window.mmgisglobal.options.services[configKey].replace(/\\/$/, '')\r\n+    }\r\n+\r\n+    // Default local proxy\r\n+    return `${getLocalBaseUrl()}${localPath}`\r\n+}\r\n+\r\n+/**\r\n+ * Create a service URL getter for a specific service\r\n+ * @param {string} serviceName - Name of the service\r\n+ * @returns {function} Function that takes optional layerConfig and returns URL\r\n+ */\r\n+const createServiceGetter = (serviceName) => {\r\n+    return (layerConfig = null) => getServiceUrl(serviceName, layerConfig)\r\n+}\r\n+\r\n+// Pre-built getters for each service\r\n+const getTiTilerUrl = createServiceGetter('titiler')\r\n+const getTiTilerPgStacUrl = createServiceGetter('titilerpgstac')\r\n+const getStacUrl = createServiceGetter('stac')\r\n+const getTipgUrl = createServiceGetter('tipg')\r\n+const getVeloserverUrl = createServiceGetter('veloserver')\r\n+\r\n+/**\r\n+ * Build a TiTiler COG tiles URL\r\n+ * @param {string} cogUrl - URL to the COG file\r\n+ * @param {object} [layerConfig] - Layer configuration\r\n+ * @param {object} [options] - Additional options (tileMatrixSet, bands, resampling)\r\n+ * @returns {string} Full TiTiler tiles URL with {z}/{x}/{y} placeholders\r\n+ */\r\n+const buildTiTilerCogTilesUrl = (cogUrl, layerConfig = null, options = {}) => {\r\n+    const baseUrl = getTiTilerUrl(layerConfig)\r\n+    const tileMatrixSet = options.tileMatrixSet || layerConfig?.tileMatrixSet || 'WebMercatorQuad'\r\n+\r\n+    let url = `${baseUrl}/cog/tiles/${tileMatrixSet}/{z}/{x}/{y}.webp?url=${encodeURIComponent(cogUrl)}`\r\n+\r\n+    if (options.bands) {\r\n+        options.bands.forEach(band => {\r\n+            if (band != null) url += `&bidx=${band}`\r\n+        })\r\n+    }\r\n+\r\n+    if (options.resampling) {\r\n+        url += `&resampling=${options.resampling}`\r\n+    }\r\n+\r\n+    return url\r\n+}\r\n+\r\n+/**\r\n+ * Build a TiTiler-pgSTAC collection tiles URL\r\n+ * @param {string} collectionName - STAC collection name\r\n+ * @param {object} [layerConfig] - Layer configuration\r\n+ * @param {object} [options] - Additional options (tileMatrixSet, assets, bands, resampling)\r\n+ * @returns {string} Full TiTiler-pgSTAC tiles URL with {z}/{x}/{y} placeholders\r\n+ */\r\n+const buildStacCollectionTilesUrl = (collectionName, layerConfig = null, options = {}) => {\r\n+    const baseUrl = getTiTilerPgStacUrl(layerConfig)\r\n+    const tileMatrixSet = options.tileMatrixSet || layerConfig?.tileMatrixSet || 'WebMercatorQuad'\r\n+    const assets = options.assets || 'asset'\r\n+\r\n+    let url = `${baseUrl}/collections/${collectionName}/tiles/${tileMatrixSet}/{z}/{x}/{y}?assets=${assets}`\r\n+\r\n+    if (options.bands) {\r\n+        options.bands.forEach(band => {\r\n+            if (band != null) url += `&asset_bidx=${assets}|${band}`\r\n+        })\r\n+    }\r\n+\r\n+    if (options.resampling) {\r\n+        url += `&resampling=${options.resampling}`\r\n+    }\r\n+\r\n+    return url\r\n+}\r\n+\r\n+/**\r\n+ * Build a TiTiler COG point query URL\r\n+ * @param {number} lng - Longitude\r\n+ * @param {number} lat - Latitude\r\n+ * @param {string} cogUrl - URL to the COG file\r\n+ * @param {object} [layerConfig] - Layer configuration\r\n+ * @param {object} [params] - Additional query parameters (datetime, expression, bidx, etc.)\r\n+ *                           Note: expression should be pre-encoded by caller\r\n+ * @returns {string} Full TiTiler point query URL\r\n+ */\r\n+const buildTiTilerPointUrl = (lng, lat, cogUrl, layerConfig = null, params = {}) => {\r\n+    const baseUrl = getTiTilerUrl(layerConfig)\r\n+    let url = `${baseUrl}/cog/point/${lng},${lat}?assets=asset&url=${encodeURIComponent(cogUrl)}`\r\n+\r\n+    Object.entries(params).forEach(([key, value]) => {\r\n+        if (value != null && value !== '') {\r\n+            if (Array.isArray(value)) {\r\n+                value.forEach(v => {\r\n+                    if (v != null) url += `&${key}=${v}`\r\n+                })\r\n+            } else {\r\n+                url += `&${key}=${value}`\r\n+            }\r\n+        }\r\n+    })\r\n+\r\n+    return url\r\n+}\r\n+\r\n+/**\r\n+ * Build a TiTiler-pgSTAC collection point query URL\r\n+ * @param {number} lng - Longitude\r\n+ * @param {number} lat - Latitude\r\n+ * @param {string} collectionName - STAC collection name\r\n+ * @param {object} [layerConfig] - Layer configuration\r\n+ * @param {object} [params] - Additional query parameters (datetime, expression, bidx, items_limit, etc.)\r\n+ *                           Note: expression should be pre-encoded by caller\r\n+ * @returns {string} Full TiTiler-pgSTAC point query URL\r\n+ */\r\n+const buildStacCollectionPointUrl = (lng, lat, collectionName, layerConfig = null, params = {}) => {\r\n+    const baseUrl = getTiTilerPgStacUrl(layerConfig)\r\n+    let url = `${baseUrl}/collections/${collectionName}/point/${lng},${lat}?assets=asset`\r",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/63#discussion_r3277038774",
+    "comments": [
+      {
+        "author": "sandesh-sp",
+        "body": "Just curious about ?assets=asset 🧐",
+        "createdAt": "2026-05-20T20:40:52Z"
+      },
+      {
+        "author": "slesaad",
+        "body": "it's the behavior from original code 😅 ",
+        "createdAt": "2026-05-21T14:52:19Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "   127      }\r\n   128  \r\n   129      if (options.resampling) {\r\n   130          url += `&resampling=${options.resampling}`\r\n   131      }\r\n   132  \r\n   133      return url\r\n   134  }\r\n   135  \r\n   136  /**\r\n   137   * Build a TiTiler COG point query URL\r\n   138   * @param {number} lng - Longitude\r\n   139   * @param {number} lat - Latitude\r\n   140   * @param {string} cogUrl - URL to the COG file\r\n   141   * @param {object} [layerConfig] - Layer configuration\r\n   142   * @param {object} [params] - Additional query parameters (datetime, expression, bidx, etc.)\r\n   143   *                           Note: expression should be pre-encoded by caller\r\n   144   * @returns {string} Full TiTiler point query URL\r\n   145   */\r\n   146  const buildTiTilerPointUrl = (lng, lat, cogUrl, layerConfig = null, params = {}) => {\r\n   147      const baseUrl = getTiTilerUrl(layerConfig)\r\n   148      let url = `${baseUrl}/cog/point/${lng},${lat}?assets=asset&url=${encodeURIComponent(cogUrl)}`\r\n   149  \r\n   150      Object.entries(params).forEach(([key, value]) => {\r\n   151          if (value != null && value !== '') {\r\n   152              if (Array.isArray(value)) {\r\n   153                  value.forEach(v => {\r\n   154                      if (v != null) url += `&${key}=${v}`\r\n   155                  })\r\n   156              } else {\r\n   157                  url += `&${key}=${value}`\r\n   158              }\r\n   159          }\r\n   160      })\r\n   161  \r\n   162      return url\r\n   163  }\r\n   164  \r\n   165  /**\r\n   166   * Build a TiTiler-pgSTAC collection point query URL\r\n   167   * @param {number} lng - Longitude\r\n   168   * @param {number} lat - Latitude\r\n   169   * @param {string} collectionName - STAC collection name\r\n   170   * @param {object} [layerConfig] - Layer configuration\r\n   171   * @param {object} [params] - Additional query parameters (datetime, expression, bidx, items_limit, etc.)\r\n   172   *                           Note: expression should be pre-encoded by caller\r\n   173   * @returns {string} Full TiTiler-pgSTAC point query URL\r\n   174   */\r\n   175  const buildStacCollectionPointUrl = (lng, lat, collectionName, layerConfig = null, params = {}) => {\r\n   176      const baseUrl = getTiTilerPgStacUrl(layerConfig)\r\n   177      let url = `${baseUrl}/collections/${collectionName}/point/${lng},${lat}?assets=asset`\r\n   178  \r\n   179      Object.entries(params).forEach(([key, value]) => {\r\n   180          if (value != null && value !== '') {\r\n   181              if (Array.isArray(value)) {\r\n   182                  value.forEach(v => {\r\n   183                      if (v != null) url += `&${key}=${v}`\r\n   184                  })\r\n   185              } else {\r\n   186                  url += `&${key}=${value}`\r\n   187              }\r\n   188          }\r\n   189      })\r\n   190  \r\n   191      return url\r\n   192  }\r\n   193  \r\n   194  /**\r\n   195   * Build a TiTiler colormap image URL\r\n   196   * @param {string} colormapName - Name of the colormap\r\n   197   * @param {object} [layerConfig] - Layer configuration\r\n   198   * @param {string} [format] - Image format (default: 'png')\r\n   199   * @returns {string|null} Colormap image URL or null if colormapName is not provided\r\n   200   */\r\n   201  const buildColormapImageUrl = (colormapName, layerConfig = null, format = 'png') => {\r\n   202      if (!colormapName) return null\r\n   203      const baseUrl = getTiTilerUrl(layerConfig)\r\n   204      return `${baseUrl}/colorMaps/${colormapName}?format=${format}`\r\n   205  }\r\n   206  \r\n   207  /**\r\n   208   * Build a STAC collection items URL\r\n   209   */\r\n   210  const buildStacItemsUrl = (collectionName, layerConfig = null, params = {}) => {\r\n   211      const baseUrl = getStacUrl(layerConfig)\r\n   212      let url = `${baseUrl}/collections/${collectionName}/items`\r\n   213  \r\n   214      const queryParams = new URLSearchParams()\r\n   215      Object.entries(params).forEach(([key, value]) => {\r\n   216          if (value != null) queryParams.append(key, value)\r\n   217      })\r\n   218  \r\n   219      const queryString = queryParams.toString()\r\n   220      if (queryString) url += `?${queryString}`\r\n   221  \r\n   222      return url\r\n   223  }\r\n   224  \r\n   225  const ServiceUrls = {\r\n   226      // Core\r\n   227      getLocalBaseUrl,\r",
+    "post_comment_delta": "",
+    "renamed_to": null,
+    "delta_truncated": false,
+    "pr_commits_after": [
+      "63c5b516  Pull colormaps into a shared constant"
+    ]
+  },
+  {
+    "pr": 63,
+    "thread_id": "issue-4308339388",
+    "source": "issue-comment",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/63#issuecomment-4308339388",
+    "comments": [
+      {
+        "author": "BhattaraiSijan",
+        "body": "Should we expose the same 'External Service URL' options to other layer types like Vector? \r\n\r\nSince these layers already support STAC and other sources, adding stac-url or tipg-url would allow them to use external sources too. \r\n\r\nDoes the service logic in this PR already support other layer types?",
+        "createdAt": "2026-04-23T21:35:27Z"
+      }
+    ],
+    "code_context": "none"
+  },
+  {
+    "pr": 63,
+    "thread_id": "issue-4502930327",
+    "source": "issue-comment",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/63#issuecomment-4502930327",
+    "comments": [
+      {
+        "author": "slesaad",
+        "body": "@BhattaraiSijan it already supports all services",
+        "createdAt": "2026-05-20T21:50:24Z"
+      }
+    ],
+    "code_context": "none"
+  }
+]

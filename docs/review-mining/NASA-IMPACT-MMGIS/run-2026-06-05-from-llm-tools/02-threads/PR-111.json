@@ -1,0 +1,237 @@
+[
+  {
+    "pr": 111,
+    "thread_id": "inline-3349877074",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "API/Backend/CardPlugin/routes/validate.js",
+    "line": 7,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "@@ -0,0 +1,29 @@\n+// Pure validation helpers for the CardPlugin image upload route.\n+\n+const ALLOWED_MIME_TO_EXT = {\n+    'image/png': 'png',\n+    'image/jpeg': 'jpg',\n+    'image/webp': 'webp',\n+    'image/gif': 'gif',",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3349877074",
+    "comments": [
+      {
+        "author": "CarsonDavis",
+        "body": "is this the entire list that we want to use? why not more file types like tiff?",
+        "createdAt": "2026-06-03T15:39:41Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  // Pure validation helpers for the CardPlugin image upload route.\n     2  \n     3  const ALLOWED_MIME_TO_EXT = {\n     4      'image/png': 'png',\n     5      'image/jpeg': 'jpg',\n     6      'image/webp': 'webp',\n     7      'image/gif': 'gif',\n     8  };\n     9  \n    10  // Map an upload mimetype to a safe file extension, or null if not allowed.\n    11  // SVG is intentionally excluded (stored-XSS vector).\n    12  function extensionForMime(mimeType) {\n    13      if (typeof mimeType !== 'string') return null;\n    14      return ALLOWED_MIME_TO_EXT[mimeType.toLowerCase()] || null;\n    15  }\n    16  \n    17  // Reject anything that could escape the Missions/<mission> directory.\n    18  function isValidMission(mission) {\n    19      if (typeof mission !== 'string') return false;\n    20      if (mission.trim() === '') return false;\n    21      if (mission.includes('..')) return false;\n    22      if (mission.includes('/') || mission.includes('\\\\')) return false;\n    23      // A pure-dot name (e.g. \".\") resolves to a directory segment, so the upload\n    24      // would land in the Missions root instead of a mission folder.\n    25      if (/^\\.+$/.test(mission)) return false;\n    26      return true;\n    27  }\n    28  \n    29  module.exports = { ALLOWED_MIME_TO_EXT, extensionForMime, isValidMission };",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  },
+  {
+    "pr": 111,
+    "thread_id": "inline-3349884416",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "API/Backend/CardPlugin/routes/validate.js",
+    "line": 11,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "@@ -0,0 +1,29 @@\n+// Pure validation helpers for the CardPlugin image upload route.\n+\n+const ALLOWED_MIME_TO_EXT = {\n+    'image/png': 'png',\n+    'image/jpeg': 'jpg',\n+    'image/webp': 'webp',\n+    'image/gif': 'gif',\n+};\n+\n+// Map an upload mimetype to a safe file extension, or null if not allowed.\n+// SVG is intentionally excluded (stored-XSS vector).",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3349884416",
+    "comments": [
+      {
+        "author": "CarsonDavis",
+        "body": "are we actually worried about stored-xss vectors when uploaders are trusted admins?",
+        "createdAt": "2026-06-03T15:40:41Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  // Pure validation helpers for the CardPlugin image upload route.\n     2  \n     3  const ALLOWED_MIME_TO_EXT = {\n     4      'image/png': 'png',\n     5      'image/jpeg': 'jpg',\n     6      'image/webp': 'webp',\n     7      'image/gif': 'gif',\n     8  };\n     9  \n    10  // Map an upload mimetype to a safe file extension, or null if not allowed.\n    11  // SVG is intentionally excluded (stored-XSS vector).\n    12  function extensionForMime(mimeType) {\n    13      if (typeof mimeType !== 'string') return null;\n    14      return ALLOWED_MIME_TO_EXT[mimeType.toLowerCase()] || null;\n    15  }\n    16  \n    17  // Reject anything that could escape the Missions/<mission> directory.\n    18  function isValidMission(mission) {\n    19      if (typeof mission !== 'string') return false;\n    20      if (mission.trim() === '') return false;\n    21      if (mission.includes('..')) return false;\n    22      if (mission.includes('/') || mission.includes('\\\\')) return false;\n    23      // A pure-dot name (e.g. \".\") resolves to a directory segment, so the upload\n    24      // would land in the Missions root instead of a mission folder.\n    25      if (/^\\.+$/.test(mission)) return false;\n    26      return true;\n    27  }\n    28  \n    29  module.exports = { ALLOWED_MIME_TO_EXT, extensionForMime, isValidMission };",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  },
+  {
+    "pr": 111,
+    "thread_id": "inline-3350047613",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "API/Backend/CardPlugin/routes/upload.js",
+    "line": 38,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "@@ -0,0 +1,114 @@\n+const express = require('express');\n+const router = express.Router();\n+const fs = require('fs');\n+const path = require('path');\n+const crypto = require('crypto');\n+const busboy = require('busboy');\n+const logger = require('../../../logger');\n+const { extensionForMime, isValidMission } = require('./validate');\n+\n+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB\n+const MISSIONS_DIR = path.join(__dirname, '../../../../Missions');\n+\n+// POST /api/cardplugin/upload?mission=<name>  (multipart, field name \"image\")\n+router.post('/upload', function (req, res) {\n+    const mission = req.query.mission;\n+    if (!isValidMission(mission)) {\n+        return res\n+            .status(400)\n+            .json({ status: 'failure', message: 'Invalid or missing mission' });\n+    }\n+\n+    // The mission's folder may not exist yet — e.g. missions imported via\n+    // \"Upload Config.JSON\" don't materialize a Missions/<mission>/ directory\n+    // (only the \"add mission\" flow does). The mission name is already validated\n+    // against path traversal and this route is admin-gated, so create the\n+    // uploads path on demand rather than rejecting with \"Mission not found\".\n+    const missionDir = path.join(MISSIONS_DIR, mission);\n+\n+    let bb;\n+    try {\n+        bb = busboy({\n+            headers: req.headers,\n+            limits: { files: 1, fileSize: MAX_FILE_BYTES },\n+        });\n+    } catch (err) {\n+        return res\n+            .status(400)\n+            .json({ status: 'failure', message: 'Invalid upload request' });",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3350047613",
+    "comments": [
+      {
+        "author": "CarsonDavis",
+        "body": "does it make sense, both here and in other error messages, to give such vague error messages in an admin gated endpoint?",
+        "createdAt": "2026-06-03T16:02:12Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  const express = require('express');\n     2  const router = express.Router();\n     3  const fs = require('fs');\n     4  const path = require('path');\n     5  const crypto = require('crypto');\n     6  const busboy = require('busboy');\n     7  const logger = require('../../../logger');\n     8  const { extensionForMime, isValidMission } = require('./validate');\n     9  \n    10  const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB\n    11  const MISSIONS_DIR = path.join(__dirname, '../../../../Missions');\n    12  \n    13  // POST /api/cardplugin/upload?mission=<name>  (multipart, field name \"image\")\n    14  router.post('/upload', function (req, res) {\n    15      const mission = req.query.mission;\n    16      if (!isValidMission(mission)) {\n    17          return res\n    18              .status(400)\n    19              .json({ status: 'failure', message: 'Invalid or missing mission' });\n    20      }\n    21  \n    22      // The mission's folder may not exist yet — e.g. missions imported via\n    23      // \"Upload Config.JSON\" don't materialize a Missions/<mission>/ directory\n    24      // (only the \"add mission\" flow does). The mission name is already validated\n    25      // against path traversal and this route is admin-gated, so create the\n    26      // uploads path on demand rather than rejecting with \"Mission not found\".\n    27      const missionDir = path.join(MISSIONS_DIR, mission);\n    28  \n    29      let bb;\n    30      try {\n    31          bb = busboy({\n    32              headers: req.headers,\n    33              limits: { files: 1, fileSize: MAX_FILE_BYTES },\n    34          });\n    35      } catch (err) {\n    36          return res\n    37              .status(400)\n    38              .json({ status: 'failure', message: 'Invalid upload request' });\n    39      }\n    40  \n    41      let responded = false;\n    42      const fail = (code, message, err) => {\n    43          if (err)\n    44              logger('error', `CardPlugin upload: ${message}`, 'CardPlugin', req, err);\n    45          if (responded) return;\n    46          responded = true;\n    47          res.status(code).json({ status: 'failure', message });\n    48      };\n    49      const succeed = () => {\n    50          if (responded) return;\n    51          responded = true;\n    52          res.status(200).json({ status: 'success', path: savedRelPath });\n    53      };\n    54  \n    55      let fileReceived = false;\n    56      let savedRelPath = null;\n    57      let destPath = null;\n    58  \n    59      bb.on('file', (name, file, info) => {\n    60          fileReceived = true;\n    61          const ext = extensionForMime(info && info.mimeType);\n    62          if (!ext) {\n    63              file.resume(); // drain so the request can finish\n    64              return fail(400, 'Unsupported image type');\n    65          }\n    66  \n    67          const uploadsDir = path.join(missionDir, 'CardPlugin', 'uploads');\n    68          try {\n    69              fs.mkdirSync(uploadsDir, { recursive: true });\n    70          } catch (err) {\n    71              file.resume();\n    72              return fail(500, 'Failed to create uploads directory', err);\n    73          }\n    74  \n    75          const filename = `${crypto.randomUUID()}.${ext}`;\n    76          destPath = path.join(uploadsDir, filename);\n    77          savedRelPath = `CardPlugin/uploads/${filename}`;\n    78  \n    79          const writeStream = fs.createWriteStream(destPath);\n    80          file.pipe(writeStream);\n    81  \n    82          file.on('limit', () => {\n    83              writeStream.destroy();\n    84              fs.unlink(destPath, () => {});\n    85              savedRelPath = null;\n    86              fail(413, 'Image exceeds 5MB limit');\n    87          });\n    88          writeStream.on('error', (err) => {",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  },
+  {
+    "pr": 111,
+    "thread_id": "inline-3350101304",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "API/Backend/CardPlugin/routes/upload.js",
+    "line": 77,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "@@ -0,0 +1,114 @@\n+const express = require('express');\n+const router = express.Router();\n+const fs = require('fs');\n+const path = require('path');\n+const crypto = require('crypto');\n+const busboy = require('busboy');\n+const logger = require('../../../logger');\n+const { extensionForMime, isValidMission } = require('./validate');\n+\n+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB\n+const MISSIONS_DIR = path.join(__dirname, '../../../../Missions');\n+\n+// POST /api/cardplugin/upload?mission=<name>  (multipart, field name \"image\")\n+router.post('/upload', function (req, res) {\n+    const mission = req.query.mission;\n+    if (!isValidMission(mission)) {\n+        return res\n+            .status(400)\n+            .json({ status: 'failure', message: 'Invalid or missing mission' });\n+    }\n+\n+    // The mission's folder may not exist yet — e.g. missions imported via\n+    // \"Upload Config.JSON\" don't materialize a Missions/<mission>/ directory\n+    // (only the \"add mission\" flow does). The mission name is already validated\n+    // against path traversal and this route is admin-gated, so create the\n+    // uploads path on demand rather than rejecting with \"Mission not found\".\n+    const missionDir = path.join(MISSIONS_DIR, mission);\n+\n+    let bb;\n+    try {\n+        bb = busboy({\n+            headers: req.headers,\n+            limits: { files: 1, fileSize: MAX_FILE_BYTES },\n+        });\n+    } catch (err) {\n+        return res\n+            .status(400)\n+            .json({ status: 'failure', message: 'Invalid upload request' });\n+    }\n+\n+    let responded = false;\n+    const fail = (code, message, err) => {\n+        if (err)\n+            logger('error', `CardPlugin upload: ${message}`, 'CardPlugin', req, err);\n+        if (responded) return;\n+        responded = true;\n+        res.status(code).json({ status: 'failure', message });\n+    };\n+    const succeed = () => {\n+        if (responded) return;\n+        responded = true;\n+        res.status(200).json({ status: 'success', path: savedRelPath });\n+    };\n+\n+    let fileReceived = false;\n+    let savedRelPath = null;\n+    let destPath = null;\n+\n+    bb.on('file', (name, file, info) => {\n+        fileReceived = true;\n+        const ext = extensionForMime(info && info.mimeType);\n+        if (!ext) {\n+            file.resume(); // drain so the request can finish\n+            return fail(400, 'Unsupported image type');\n+        }\n+\n+        const uploadsDir = path.join(missionDir, 'CardPlugin', 'uploads');\n+        try {\n+            fs.mkdirSync(uploadsDir, { recursive: true });\n+        } catch (err) {\n+            file.resume();\n+            return fail(500, 'Failed to create uploads directory', err);\n+        }\n+\n+        const filename = `${crypto.randomUUID()}.${ext}`;\n+        destPath = path.join(uploadsDir, filename);\n+        savedRelPath = `CardPlugin/uploads/${filename}`;",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3350101304",
+    "comments": [
+      {
+        "author": "CarsonDavis",
+        "body": "this is a fine way to prevent collisions if the card/file coupling is absolute. but what if we want to browse prior uploads and choose files from them? is that going to be an option down the line?",
+        "createdAt": "2026-06-03T16:09:36Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "    27      const missionDir = path.join(MISSIONS_DIR, mission);\n    28  \n    29      let bb;\n    30      try {\n    31          bb = busboy({\n    32              headers: req.headers,\n    33              limits: { files: 1, fileSize: MAX_FILE_BYTES },\n    34          });\n    35      } catch (err) {\n    36          return res\n    37              .status(400)\n    38              .json({ status: 'failure', message: 'Invalid upload request' });\n    39      }\n    40  \n    41      let responded = false;\n    42      const fail = (code, message, err) => {\n    43          if (err)\n    44              logger('error', `CardPlugin upload: ${message}`, 'CardPlugin', req, err);\n    45          if (responded) return;\n    46          responded = true;\n    47          res.status(code).json({ status: 'failure', message });\n    48      };\n    49      const succeed = () => {\n    50          if (responded) return;\n    51          responded = true;\n    52          res.status(200).json({ status: 'success', path: savedRelPath });\n    53      };\n    54  \n    55      let fileReceived = false;\n    56      let savedRelPath = null;\n    57      let destPath = null;\n    58  \n    59      bb.on('file', (name, file, info) => {\n    60          fileReceived = true;\n    61          const ext = extensionForMime(info && info.mimeType);\n    62          if (!ext) {\n    63              file.resume(); // drain so the request can finish\n    64              return fail(400, 'Unsupported image type');\n    65          }\n    66  \n    67          const uploadsDir = path.join(missionDir, 'CardPlugin', 'uploads');\n    68          try {\n    69              fs.mkdirSync(uploadsDir, { recursive: true });\n    70          } catch (err) {\n    71              file.resume();\n    72              return fail(500, 'Failed to create uploads directory', err);\n    73          }\n    74  \n    75          const filename = `${crypto.randomUUID()}.${ext}`;\n    76          destPath = path.join(uploadsDir, filename);\n    77          savedRelPath = `CardPlugin/uploads/${filename}`;\n    78  \n    79          const writeStream = fs.createWriteStream(destPath);\n    80          file.pipe(writeStream);\n    81  \n    82          file.on('limit', () => {\n    83              writeStream.destroy();\n    84              fs.unlink(destPath, () => {});\n    85              savedRelPath = null;\n    86              fail(413, 'Image exceeds 5MB limit');\n    87          });\n    88          writeStream.on('error', (err) => {\n    89              fs.unlink(destPath, () => {});\n    90              savedRelPath = null;\n    91              fail(500, 'Failed to save image', err);\n    92          });\n    93          // Only report success once the bytes are flushed to disk. Responding on\n    94          // busboy's 'close' would race the write stream — 'close' fires when the\n    95          // file readable has been drained into the write buffer, not when the\n    96          // file is fully written, so the client could get a path to a partial or\n    97          // (on a late write error + unlink) already-deleted file.\n    98          writeStream.on('finish', () => {\n    99              if (savedRelPath) succeed();\n   100          });\n   101      });\n   102  \n   103      bb.on('error', (err) => fail(500, 'Upload failed', err));\n   104  \n   105      bb.on('close', () => {\n   106          // A successful upload responds from the write stream's 'finish'. If no\n   107          // file part ever arrived, nothing else will respond — handle that here.\n   108          if (!fileReceived) fail(400, 'No image provided');\n   109      });\n   110  \n   111      req.pipe(bb);\n   112  });\n   113  \n   114  module.exports = router;",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  },
+  {
+    "pr": 111,
+    "thread_id": "inline-3350433246",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "API/Backend/CardPlugin/setup.js",
+    "line": 9,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "@@ -0,0 +1,24 @@\n+const router = require('./routes/upload');\n+\n+let setup = {\n+    // Once the app initializes\n+    onceInit: (s) => {\n+        // Image upload is a Configure-page (admin) action, so it uses the same\n+        // authorization posture as the /api/configure routes (see\n+        // API/Backend/Config/setup.js): ensureAdmin gates it to admin/lead\n+        // sessions (and passes under AUTH=none), not ensureUser/stopGuests.",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3350433246",
+    "comments": [
+      {
+        "author": "CarsonDavis",
+        "body": "is it true that it passes under AUTH=none? i think none only allows viewing not writes",
+        "createdAt": "2026-06-03T17:02:01Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  const router = require('./routes/upload');\n     2  \n     3  let setup = {\n     4      // Once the app initializes\n     5      onceInit: (s) => {\n     6          // Image upload is a Configure-page (admin) action, so it uses the same\n     7          // authorization posture as the /api/configure routes (see\n     8          // API/Backend/Config/setup.js): ensureAdmin gates it to admin/lead\n     9          // sessions (and passes under AUTH=none), not ensureUser/stopGuests.\n    10          s.app.use(\n    11              s.ROOT_PATH + '/api/cardplugin',\n    12              s.ensureAdmin(),\n    13              s.checkHeadersCodeInjection,\n    14              s.setContentType,\n    15              router\n    16          );\n    17      },\n    18      // Once the server starts\n    19      onceStarted: (s) => {},\n    20      // Once all tables sync\n    21      onceSynced: (s) => {},\n    22  };\n    23  \n    24  module.exports = setup;",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  },
+  {
+    "pr": 111,
+    "thread_id": "inline-3351200565",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "API/Backend/CardPlugin/routes/upload.js",
+    "line": 20,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "@@ -0,0 +1,114 @@\n+const express = require('express');\n+const router = express.Router();\n+const fs = require('fs');\n+const path = require('path');\n+const crypto = require('crypto');\n+const busboy = require('busboy');\n+const logger = require('../../../logger');\n+const { extensionForMime, isValidMission } = require('./validate');\n+\n+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB\n+const MISSIONS_DIR = path.join(__dirname, '../../../../Missions');\n+\n+// POST /api/cardplugin/upload?mission=<name>  (multipart, field name \"image\")\n+router.post('/upload', function (req, res) {\n+    const mission = req.query.mission;\n+    if (!isValidMission(mission)) {\n+        return res\n+            .status(400)\n+            .json({ status: 'failure', message: 'Invalid or missing mission' });\n+    }",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3351200565",
+    "comments": [
+      {
+        "author": "slesaad",
+        "body": "Looks like we're making a specific upload route for a specific plugin (cardplugin). plugins are fundamentally meant to be a plug-and-play components that do not have specific core framework counterparts.\nIf there is already a upload functionality (eg. upload geojson, etc) that's not plugin specific, reuse it. if that is plugin specific, then that's not the correct way to do it - extract it out to the core to be a generic component that any plugin can use.",
+        "createdAt": "2026-06-03T19:11:54Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  const express = require('express');\n     2  const router = express.Router();\n     3  const fs = require('fs');\n     4  const path = require('path');\n     5  const crypto = require('crypto');\n     6  const busboy = require('busboy');\n     7  const logger = require('../../../logger');\n     8  const { extensionForMime, isValidMission } = require('./validate');\n     9  \n    10  const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB\n    11  const MISSIONS_DIR = path.join(__dirname, '../../../../Missions');\n    12  \n    13  // POST /api/cardplugin/upload?mission=<name>  (multipart, field name \"image\")\n    14  router.post('/upload', function (req, res) {\n    15      const mission = req.query.mission;\n    16      if (!isValidMission(mission)) {\n    17          return res\n    18              .status(400)\n    19              .json({ status: 'failure', message: 'Invalid or missing mission' });\n    20      }\n    21  \n    22      // The mission's folder may not exist yet — e.g. missions imported via\n    23      // \"Upload Config.JSON\" don't materialize a Missions/<mission>/ directory\n    24      // (only the \"add mission\" flow does). The mission name is already validated\n    25      // against path traversal and this route is admin-gated, so create the\n    26      // uploads path on demand rather than rejecting with \"Mission not found\".\n    27      const missionDir = path.join(MISSIONS_DIR, mission);\n    28  \n    29      let bb;\n    30      try {\n    31          bb = busboy({\n    32              headers: req.headers,\n    33              limits: { files: 1, fileSize: MAX_FILE_BYTES },\n    34          });\n    35      } catch (err) {\n    36          return res\n    37              .status(400)\n    38              .json({ status: 'failure', message: 'Invalid upload request' });\n    39      }\n    40  \n    41      let responded = false;\n    42      const fail = (code, message, err) => {\n    43          if (err)\n    44              logger('error', `CardPlugin upload: ${message}`, 'CardPlugin', req, err);\n    45          if (responded) return;\n    46          responded = true;\n    47          res.status(code).json({ status: 'failure', message });\n    48      };\n    49      const succeed = () => {\n    50          if (responded) return;\n    51          responded = true;\n    52          res.status(200).json({ status: 'success', path: savedRelPath });\n    53      };\n    54  \n    55      let fileReceived = false;\n    56      let savedRelPath = null;\n    57      let destPath = null;\n    58  \n    59      bb.on('file', (name, file, info) => {\n    60          fileReceived = true;\n    61          const ext = extensionForMime(info && info.mimeType);\n    62          if (!ext) {\n    63              file.resume(); // drain so the request can finish\n    64              return fail(400, 'Unsupported image type');\n    65          }\n    66  \n    67          const uploadsDir = path.join(missionDir, 'CardPlugin', 'uploads');\n    68          try {\n    69              fs.mkdirSync(uploadsDir, { recursive: true });\n    70          } catch (err) {",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  },
+  {
+    "pr": 111,
+    "thread_id": "inline-3351227435",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "src/essence/Tools/Card/adapters/mmgisAPI.ts",
+    "line": 1,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3351227435",
+    "comments": [
+      {
+        "author": "slesaad",
+        "body": "See if this can be extracted out into a shared folder that all the plugins can use",
+        "createdAt": "2026-06-03T19:16:37Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  type EventCleanup = () => void\n     2  \n     3  type MMGISAPI = {\n     4      request: (name: string, params?: unknown) => Promise<unknown>\n     5      on: (event: string, handler: (payload?: unknown) => void) => EventCleanup\n     6      emit: (event: string, payload?: unknown) => void\n     7      provide?: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup\n     8      hasHandler?: (name: string) => boolean\n     9  }\n    10  \n    11  declare global {\n    12      interface Window {\n    13          mmgisAPI?: MMGISAPI\n    14      }\n    15  }\n    16  \n    17  export const mmgisRequest = async <T = unknown>(name: string, params?: unknown): Promise<T | null> => {\n    18      if (window.mmgisAPI?.request) {\n    19          return (await window.mmgisAPI.request(name, params)) as T\n    20      }\n    21      return null\n    22  }\n    23  \n    24  export const mmgisOn = (event: string, handler: (payload?: unknown) => void): EventCleanup => {\n    25      if (!window.mmgisAPI?.on) return () => {}\n    26      return window.mmgisAPI.on(event, handler)\n    27  }\n    28  \n    29  export const mmgisEmit = (event: string, payload?: unknown): void => {\n    30      window.mmgisAPI?.emit?.(event, payload)\n    31  }\n    32  \n    33  export const mmgisProvide = (name: string, handler: (...args: unknown[]) => unknown): EventCleanup => {\n    34      if (!window.mmgisAPI?.provide) return () => {}\n    35      return window.mmgisAPI.provide(name, handler)\n    36  }\n    37  \n    38  export const mmgisHasHandler = (name: string): boolean => {\n    39      return window.mmgisAPI?.hasHandler?.(name) === true\n    40  }",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  },
+  {
+    "pr": 111,
+    "thread_id": "inline-3351232858",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "src/essence/Tools/Card/adapters/useMMGISHandlerReady.ts",
+    "line": 1,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3351232858",
+    "comments": [
+      {
+        "author": "slesaad",
+        "body": "can this one be extracted and shared among plugins too?",
+        "createdAt": "2026-06-03T19:17:30Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  import { useEffect } from 'react'\n     2  import { mmgisHasHandler } from './mmgisAPI'\n     3  \n     4  /**\n     5   * Polls mmgisAPI.hasHandler(name) until it returns true, then invokes onReady once.\n     6   *\n     7   * Use when a mmgisAPI capability is registered asynchronously during MMGIS boot\n     8   * (e.g. Layers_.fina() registers 'layers:getAll' etc. only after the mission's\n     9   * layers are loaded). Without this, components that request a not-yet-registered\n    10   * handler at mount silently get null/empty results.\n    11   *\n    12   * Stops after `timeoutMs` if the handler never appears (with a console warning).\n    13   */\n    14  export const useMMGISHandlerReady = (\n    15      handlerName: string,\n    16      onReady: () => void,\n    17      options: { intervalMs?: number; timeoutMs?: number } = {},\n    18  ): void => {\n    19      const { intervalMs = 200, timeoutMs = 10000 } = options\n    20      useEffect(() => {\n    21          if (mmgisHasHandler(handlerName)) {\n    22              onReady()\n    23              return\n    24          }\n    25          const start = Date.now()\n    26          const id = window.setInterval(() => {\n    27              if (mmgisHasHandler(handlerName)) {\n    28                  window.clearInterval(id)\n    29                  onReady()\n    30              } else if (Date.now() - start > timeoutMs) {\n    31                  window.clearInterval(id)\n    32                  console.warn(\n    33                      `[useMMGISHandlerReady] '${handlerName}' not registered after ${timeoutMs}ms`,\n    34                  )\n    35              }\n    36          }, intervalMs)\n    37          return () => window.clearInterval(id)\n    38      }, [handlerName, onReady, intervalMs, timeoutMs])\n    39  }",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  },
+  {
+    "pr": 111,
+    "thread_id": "inline-3351236096",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "src/essence/Tools/Card/lib/geo/Card/Card.tsx",
+    "line": 1,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3351236096",
+    "comments": [
+      {
+        "author": "slesaad",
+        "body": "card is not a geo (geospatial) component, so it shouldn't be inside \"geo\" folder",
+        "createdAt": "2026-06-03T19:18:03Z"
+      },
+      {
+        "author": "slesaad",
+        "body": "use the same stucture as https://github.com/NASA-IMPACT/tinacms-portal-monorepo/tree/main/packages/blocks/src\n\na \"components\" folder",
+        "createdAt": "2026-06-03T19:20:53Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  import React from 'react'\n     2  import type { CardItem } from '../../types'\n     3  \n     4  export type CardProps = CardItem\n     5  \n     6  export function Card({ imageUrl, title, subtitle, linkUrl }: CardProps) {\n     7      if (!title && !imageUrl) return null\n     8      return (\n     9          <a\n    10              className=\"blocks-card\"\n    11              href={linkUrl || undefined}\n    12              target=\"_blank\"\n    13              rel=\"noopener noreferrer\"\n    14          >\n    15              {imageUrl ? (\n    16                  <img className=\"blocks-card__image\" src={imageUrl} alt={title || ''} />\n    17              ) : (\n    18                  <div className=\"blocks-card__image\" />\n    19              )}\n    20              <div className=\"blocks-card__body\">\n    21                  {title ? <div className=\"blocks-card__title\">{title}</div> : null}\n    22                  {subtitle ? (\n    23                      <div className=\"blocks-card__subtitle\">{subtitle}</div>\n    24                  ) : null}\n    25              </div>\n    26          </a>\n    27      )\n    28  }",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  },
+  {
+    "pr": 111,
+    "thread_id": "inline-3351264122",
+    "source": "inline",
+    "resolved": false,
+    "outdated": false,
+    "path": "src/essence/Tools/Card/lib/styles/components-geo/card-list.scss",
+    "line": 1,
+    "commit": "b379f282de017223382ab9a8eed4cd9cf53b6831",
+    "diff_hunk": "",
+    "url": "https://github.com/NASA-IMPACT/MMGIS/pull/111#discussion_r3351264122",
+    "comments": [
+      {
+        "author": "slesaad",
+        "body": "call the folder \"components\" not \"components-geo\"",
+        "createdAt": "2026-06-03T19:21:49Z"
+      }
+    ],
+    "code_context": "full",
+    "code_window": "     1  .blocks-card-list {\n     2      box-sizing: border-box;\n     3      display: flex;\n     4      flex-direction: column;\n     5      gap: var(--theme-spacing-105, 0.75rem);\n     6      padding: var(--theme-spacing-105, 0.75rem);\n     7      width: 100%;\n     8  }",
+    "post_comment_delta": "",
+    "pr_commits_after": []
+  }
+]
