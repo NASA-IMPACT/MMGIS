@@ -33,7 +33,10 @@ const SIDECAR_FLAGS = [
 ];
 
 if (!enabled("localSidecars")) {
+  // Lead with a newline so appending to a .env that lacks a trailing newline
+  // (`node scripts/mode-env.js >> .env`) can't merge the first flag onto the
+  // file's last line. A blank line in .env is ignored by dotenv.
   process.stdout.write(
-    SIDECAR_FLAGS.map((flag) => `${flag}=false`).join("\n") + "\n"
+    "\n" + SIDECAR_FLAGS.map((flag) => `${flag}=false`).join("\n") + "\n"
   );
 }
