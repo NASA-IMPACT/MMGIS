@@ -100,16 +100,17 @@ jobs:
       - name: Generate mode-derived sidecar env
         run: node scripts/mode-env.js >> .env
 
-      # init-db must succeed under the running mode. In lean this also proves the
-      # spatial-catalog (mmgis-stac) DB is NOT created (it's gated on the
-      # localSidecars capability).
+      # In lean, this step also proves the spatial-catalog (mmgis-stac) DB is
+      # NOT created (it's gated on the localSidecars capability).
       - name: Initialize Database
         run: node scripts/init-db.js
 
-      # Acceptance #4: features gated OFF in lean must still have their DB tables
-      # (model sync runs unconditionally; only route mounts are gated), so a
-      # later mode flip needs no data migration. This step boots the app once
-      # (which runs sequelize.sync()) and then asserts the gated tables exist.
+      # Features gated OFF in lean must still have their DB tables: model
+      # registration + sync run unconditionally, only route mounts are gated
+      # (ADR D2: keep, env-gated — models aren't per-mode-gated). This pins that
+      # invariant so a change that gates model registration, or drops a model,
+      # fails CI. This step boots the app once (which runs sequelize.sync()) and
+      # then asserts the gated tables exist.
       # No continue-on-error: a missing table fails the leg.
       - name: Assert gated tables exist
         run: node tests/ci/assert-gated-tables.js
@@ -123,7 +124,7 @@ jobs:
         run: npx playwright test tests/e2e/smoke.spec.js tests/e2e/eventbus-integration.spec.js --project=chromium
         continue-on-error: true
 
-      # Acceptance #1 + #5: the deployment-mode present/absent check MUST fail
+      # The deployment-mode present/absent check MUST fail
       # CI when a shape breaks. NO continue-on-error here — a mis-gated feature
       # (wrongly on in lean, or wrongly off in full) turns this leg red. This is
       # the step that makes "a breaking change to either shape fails CI" real.

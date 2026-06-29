@@ -1,32 +1,22 @@
 /**
  * assert-gated-tables.js
  *
- * Acceptance #4 of the both-modes CI coverage: features that are gated OFF in a
- * given deployment mode must STILL have their database tables created, so a
- * later mode flip needs no data migration. Model registration + sequelize.sync()
- * run unconditionally on boot — only the route MOUNTS are gated — so the tables
- * should exist regardless of mode.
+ * A feature gated OFF in the current deployment mode still has its DB tables,
+ * because model registration + sequelize.sync() run unconditionally on boot and
+ * only route mounts are gated (ADR D2: keep, env-gated — models aren't
+ * per-mode-gated, so a gated-off feature's tables are created but unused).
  *
- * This script mirrors what scripts/server.js does at boot WITHOUT starting the
- * HTTP server (and therefore without a webpack build): it loads every backend
- * setup module (each of which requires its Sequelize models, registering them on
- * the shared connection), runs sequelize.sync() to create the tables, then
- * asserts the gated-feature tables are present.
+ * This check PINS that invariant: a change that accidentally gates model
+ * registration, or drops a model thinking it's dead in lean, fails CI in the leg
+ * where the feature is gated off. (It is not about enabling a migration-free
+ * mode flip — deployments don't switch modes, and sync() self-heals on boot.)
  *
- * ORDERING: sequelize.sync() creates tables with PostGIS geometry columns (e.g.
- * user_features), so the postgis extension must already exist. The CI workflow
- * runs scripts/init-db.js (which enables postgis) BEFORE this script. Do not run
- * it standalone against a bare database or sync() throws
+ * Boots the backend setups (registering the models), runs sync(), and asserts
+ * the gated-feature tables are present — exits non-zero if any are missing.
+ *
+ * Must run AFTER scripts/init-db.js: sync() creates PostGIS geometry columns, so
+ * the postgis extension has to exist first or it throws
  * `type "geometry" does not exist`.
- *
- * It runs in BOTH legs of the CI matrix. In lean, the gated-OFF features
- * (datasets, geodatasets, draw/user-files, the link shortener) have no mounted
- * routes — this proves their tables exist anyway. In full, the lean-only
- * Deployments feature is the gated-OFF one — its table must exist too. Rather
- * than special-case per mode, we assert the union: every table below must exist
- * in every mode.
- *
- * Exits non-zero (failing the CI leg) if any expected table is missing.
  */
 
 require("dotenv").config({ path: __dirname + "/../../.env" });
