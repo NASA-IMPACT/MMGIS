@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const busboy = require('busboy');
 const logger = require('../../logger');
-const { isLean } = require('../Utils/deploymentMode');
+const { enabled } = require('../Utils/capabilities');
 const {
     extensionForMime,
     isValidMission,
@@ -122,10 +122,10 @@ function createUploadRouter(options = {}) {
 
             const filename = `${crypto.randomUUID()}.${ext}`;
 
-            if (isLean()) {
-                // Lean mode: containers are ephemeral and published dashboards
-                // are static, so persist to the shared admin asset bucket
-                // instead of local disk. Buffer-then-put (the cap is 5 MB) so
+            if (enabled('s3AssetUploads')) {
+                // s3AssetUploads (lean): containers are ephemeral and published
+                // dashboards are static, so persist to the shared admin asset
+                // bucket instead of local disk. Buffer-then-put (the cap is 5 MB) so
                 // an oversize upload — busboy's 'limit' — aborts without ever
                 // starting a PutObject, guaranteeing no partial object.
                 const bucket = process.env.MMGIS_SHARED_ASSET_BUCKET;

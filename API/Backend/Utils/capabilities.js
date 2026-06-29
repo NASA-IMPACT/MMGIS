@@ -54,6 +54,10 @@ const FEATURES = {
   // adjacent-servers spawner, the mmgis-stac database creation, and the
   // derived WITH_* Configure flags. They always move together, so one row.
   localSidecars: ["full"],
+  // Image uploads persist to the shared S3 asset bucket instead of local disk.
+  // Lean containers are ephemeral and published dashboards are static, so disk
+  // isn't durable there; full keeps writing under the on-disk Missions/ tree.
+  s3AssetUploads: ["lean"],
 };
 
 const RULES = Object.fromEntries(

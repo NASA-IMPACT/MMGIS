@@ -24,6 +24,9 @@ const FULL_ONLY = [
     'localSidecars',
 ]
 
+// Capabilities that exist only in lean (publish flow + S3 asset uploads).
+const LEAN_ONLY = ['deployments', 's3AssetUploads']
+
 test.describe('capabilities', () => {
     let savedMode
 
@@ -42,13 +45,15 @@ test.describe('capabilities', () => {
         delete require.cache[require.resolve(MODE_PATH)]
     })
 
-    test('in full mode, full-only capabilities are enabled and deployments is off', () => {
+    test('in full mode, full-only capabilities are enabled and lean-only ones are off', () => {
         process.env.MMGIS_DEPLOYMENT_MODE = 'full'
         const { enabled } = freshRequire()
         for (const cap of FULL_ONLY) {
             expect(enabled(cap), `${cap} should be enabled in full`).toBe(true)
         }
-        expect(enabled('deployments')).toBe(false)
+        for (const cap of LEAN_ONLY) {
+            expect(enabled(cap), `${cap} should be disabled in full`).toBe(false)
+        }
     })
 
     test('defaults (unset env) behave as full', () => {
@@ -58,16 +63,22 @@ test.describe('capabilities', () => {
                 true
             )
         }
-        expect(enabled('deployments')).toBe(false)
+        for (const cap of LEAN_ONLY) {
+            expect(enabled(cap), `${cap} should be disabled by default`).toBe(
+                false
+            )
+        }
     })
 
-    test('in lean mode, full-only capabilities are disabled and deployments is on', () => {
+    test('in lean mode, full-only capabilities are disabled and lean-only ones are on', () => {
         process.env.MMGIS_DEPLOYMENT_MODE = 'lean'
         const { enabled } = freshRequire()
         for (const cap of FULL_ONLY) {
             expect(enabled(cap), `${cap} should be disabled in lean`).toBe(false)
         }
-        expect(enabled('deployments')).toBe(true)
+        for (const cap of LEAN_ONLY) {
+            expect(enabled(cap), `${cap} should be enabled in lean`).toBe(true)
+        }
     })
 
     test('throws on an unknown capability (backend contract: fail at boot)', () => {
