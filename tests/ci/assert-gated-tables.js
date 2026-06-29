@@ -1,10 +1,10 @@
 /**
  * assert-gated-tables.js
  *
- * Guards a both-modes invariant: a feature gated OFF in the current deployment
- * mode must still have its DB tables, so flipping modes later needs no data
- * migration. Model registration + sequelize.sync() run unconditionally on boot
- * (only route mounts are gated), so the tables should exist in either mode.
+ * A feature gated OFF in the current deployment mode must still have its DB
+ * tables, so flipping modes later needs no data migration. Model registration +
+ * sequelize.sync() run unconditionally on boot (only route mounts are gated), so
+ * the tables should exist in either mode.
  *
  * Boots the backend setups (registering the models), runs sync(), and asserts
  * the gated-feature tables are present — exits non-zero if any are missing.
