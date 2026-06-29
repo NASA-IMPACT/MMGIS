@@ -16,11 +16,14 @@ export interface FilterDef {
     type: 'select'
     /** Label for the "no selection / all" option (e.g. "All Sectors"). */
     allLabel?: string
-    // FLAG (revisit): options are statically listed in config.json for now.
-    // Values like Location/Year — and arguably all option lists — should instead
-    // be derived from the data (the distinct `layer.properties[property]` values,
-    // eventually from STAC) so they stay in sync without hand-maintenance.
-    options: FilterOption[]
+    /**
+     * Where options come from when `options` is omitted:
+     *   'data' (default) — distinct `layer.properties[property]` values across layers.
+     *   'time'           — years from the mission's configured time range.
+     * Provide `options` explicitly only to curate labels/order/values.
+     */
+    optionsFrom?: 'data' | 'time'
+    options?: FilterOption[]
 }
 
 /** One step-1 theme: a rail entry + the step-2 filters it reveals. */

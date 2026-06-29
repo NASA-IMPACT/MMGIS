@@ -6,6 +6,7 @@ import { useMMGISEvent } from './adapters/hooks'
 import { mmgisEmit } from '../_shared/adapters/mmgisAPI'
 
 const SELECTED_THEME_EVENT = 'layerFilter:selectedThemeChanged'
+const PANEL_CLOSE_EVENT = 'layerFilter:panelCloseClicked'
 
 export function MMGISThemeRailAdapter() {
     const [themes, setThemes] = useState<ThemeSummary[]>([])
@@ -32,5 +33,15 @@ export function MMGISThemeRailAdapter() {
         mmgisEmit(SELECTED_THEME_EVENT, { themeId: id })
     }, [])
 
-    return <ThemeRail themes={themes} selectedId={selectedId} onSelect={onSelect} />
+    return (
+        <ThemeRail
+            themes={themes}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onTopButtonClick={() => {
+                console.log('[LayerFilterThemes] emit', PANEL_CLOSE_EVENT)
+                mmgisEmit(PANEL_CLOSE_EVENT)
+            }}
+        />
+    )
 }

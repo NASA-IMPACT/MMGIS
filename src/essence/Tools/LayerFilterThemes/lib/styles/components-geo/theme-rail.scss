@@ -37,6 +37,39 @@
     overflow: hidden;
     background: var(--theme-color-primary-dark, #0d313d);
 
+    &__top {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 48px;
+        padding: var(--theme-spacing-105, 12px) var(--theme-spacing-05, 4px);
+        border: none;
+        border-bottom: 1px solid var(--theme-color-primary-darker, #0a252e);
+        background: transparent;
+        color: var(--theme-color-white, #ffffff);
+        cursor: pointer;
+        transition: background 0.12s ease;
+
+        &:hover {
+            background: var(--theme-color-primary-vivid, #00687d);
+        }
+
+        &:focus {
+            outline: none;
+        }
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-secondary, #c91b6e);
+            outline-offset: -2px;
+        }
+    }
+
+    &__top-icon {
+        font-size: 24px;
+        line-height: 1;
+        color: inherit;
+    }
+
     &__item {
         box-sizing: border-box;
         display: flex;

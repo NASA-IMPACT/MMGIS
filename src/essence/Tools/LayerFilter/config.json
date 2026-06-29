@@ -33,13 +33,7 @@
                         "label": "Sector",
                         "property": "sector",
                         "type": "select",
-                        "allLabel": "All Sectors",
-                        "options": [
-                            { "value": "agriculture", "label": "Agriculture" },
-                            { "value": "water", "label": "Water Resources" },
-                            { "value": "energy", "label": "Energy" },
-                            { "value": "public_health", "label": "Public Health" }
-                        ]
+                        "allLabel": "All Sectors"
                     }
                 ]
             },
@@ -55,13 +49,7 @@
                         "label": "Hazard",
                         "property": "hazard",
                         "type": "select",
-                        "allLabel": "All Hazards",
-                        "options": [
-                            { "value": "flood", "label": "Flood" },
-                            { "value": "fire", "label": "Fire" },
-                            { "value": "storm", "label": "Storm" },
-                            { "value": "earthquake", "label": "Earthquake" }
-                        ]
+                        "allLabel": "All Hazards"
                     }
                 ]
             },
@@ -77,25 +65,14 @@
                         "label": "Hazard type",
                         "property": "hazard",
                         "type": "select",
-                        "allLabel": "All Hazards",
-                        "options": [
-                            { "value": "flood", "label": "Flood" },
-                            { "value": "fire", "label": "Fire" },
-                            { "value": "storm", "label": "Storm" }
-                        ]
+                        "allLabel": "All Hazards"
                     },
                     {
                         "id": "location",
                         "label": "Location",
                         "property": "location",
                         "type": "select",
-                        "allLabel": "All Locations",
-                        "options": [
-                            { "value": "north_america", "label": "North America" },
-                            { "value": "south_america", "label": "South America" },
-                            { "value": "europe", "label": "Europe" },
-                            { "value": "asia", "label": "Asia" }
-                        ]
+                        "allLabel": "All Locations"
                     },
                     {
                         "id": "year",
@@ -103,11 +80,7 @@
                         "property": "year",
                         "type": "select",
                         "allLabel": "All Years",
-                        "options": [
-                            { "value": "2025", "label": "2025" },
-                            { "value": "2024", "label": "2024" },
-                            { "value": "2023", "label": "2023" }
-                        ]
+                        "optionsFrom": "time"
                     }
                 ]
             }
