@@ -25,13 +25,13 @@
 const { MODE } = require("./deploymentMode");
 
 // Sugar coercions:
-//  - boolean  -> enabled in every mode (or none)
 //  - string[] -> enabled only in the listed modes
 //  - function -> predicate over { mode }
+// (A bare-boolean rule was supported but never used; drop it until a real
+// always-on/off capability needs it, then re-add it with a test.)
 const coerce = (rule) => {
   if (typeof rule === "function") return rule;
   if (Array.isArray(rule)) return ({ mode }) => rule.includes(mode);
-  if (typeof rule === "boolean") return () => rule;
   throw new Error(`Invalid capability rule: ${JSON.stringify(rule)}`);
 };
 
