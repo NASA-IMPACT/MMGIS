@@ -1,33 +1,24 @@
 import { test, expect, request } from '@playwright/test'
 
 /**
- * Deployment-mode present/absent checks (acceptance #2 of the both-modes CI
- * coverage issue).
+ * Deployment-mode present/absent checks.
  *
- * The same codebase ships in two shapes selected by MMGIS_DEPLOYMENT_MODE:
- *   - full: the complete application as shipped today.
- *   - lean: a gated-down deployment that turns a set of server features OFF.
- *
- * The CI matrix boots the app once per shape and passes the mode in via
- * MMGIS_DEPLOYMENT_MODE; this test reads that and, per feature, asserts the
- * feature is reachable when it belongs to the running mode and gone otherwise.
+ * The CI matrix boots the app once per shape (MMGIS_DEPLOYMENT_MODE=full|lean);
+ * this test reads the mode and, per feature, asserts the feature is reachable
+ * when it belongs to the running mode and gone otherwise.
  *
  * HAND-WRITTEN feature inventory — IMPORTANT: the expected on/off mapping below
- * is written by a person from the deployment ADR feature inventory, NOT read
- * from any capability table or from the gated code. That independence is the
- * whole point: a test that takes its expected answers from the thing it is
- * testing cannot catch a wrong entry. The route PATHS were looked up in the
- * code, but which mode each belongs to is hand-asserted here. Do NOT later
- * rewrite this to read its expectations from a capability table.
+ * is written by a person from the deployment ADR, NOT read from any capability
+ * table or the gated code. That independence is the point: a test that takes its
+ * expected answers from the thing it tests can't catch a wrong entry. Route PATHS
+ * were looked up in the code, but which mode each belongs to is hand-asserted.
+ * Do NOT rewrite this to read its expectations from a capability table.
  *
- * How a route reports present vs. absent (verified against the code):
- *   - A MOUNTED route answers from its own handler. With AUTH=off these handlers
- *     return HTTP 200 with a JSON failure body (auth/guard rejection) or real
- *     data, and the sidecar proxy answers with a proxy/upstream error — in every
- *     case the status is NOT 404.
- *   - An UNMOUNTED route falls through to the app's catch-all
- *     (`app.all('*')` -> res.status(404).render('error')), i.e. a real HTTP 404.
- * So the reliable discriminator is: mounted => status !== 404; absent => 404.
+ * Present vs. absent discriminator (verified against the code): a MOUNTED route
+ * answers from its handler — with AUTH=off that's a 200 guard-failure/data body,
+ * or a proxy/upstream error for sidecars; never 404. An UNMOUNTED route falls
+ * through to the catch-all `app.all('*')` -> 404. So: mounted => status !== 404;
+ * absent => 404.
  */
 
 const MODE = process.env.MMGIS_DEPLOYMENT_MODE || 'full'
