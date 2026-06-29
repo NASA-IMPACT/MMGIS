@@ -1,6 +1,6 @@
 import $ from 'jquery'
 import PanelManager_ from '../PanelManager_/PanelManager_'
-import { mmgisAPI } from '../../mmgisAPI/mmgisAPI'
+import { mmgisAPI, mmgisAPI_ } from '../../mmgisAPI/mmgisAPI'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
@@ -17,6 +17,7 @@ let panels = []
 let layoutStyle = ''
 let toolLoadQueue = []
 let cleanupLayoutListener = null
+let cleanupCoreCommandDispatcher = null
 let _resizeObserver = null
 
 // --- DOM Builder Helpers ---
@@ -140,10 +141,14 @@ const _renderFloatRegions = (floatPanels) => {
             if (dims.maxHeight)     bodyCss['max-height'] = _toCssValue(dims.maxHeight)
             if (Object.keys(bodyCss).length) body.css(bodyCss)
             toolsMetadata.forEach(toolMetadata => {
-                const { toolCard, loadTool } = UserInterfaceModern_.createToolCard(toolMetadata, panel.containerId)
+                const { toolCard, loadTool, targetId } = UserInterfaceModern_.createToolCard(toolMetadata, panel.containerId)
                 toolCard.addClass('active')
                 body.append(toolCard)
-                toolLoadQueue.push(loadTool)
+                if (toolMetadata.startUnloaded) {
+                    toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
+                } else {
+                    toolLoadQueue.push(loadTool)
+                }
             })
 
             panelDiv.append(body)
@@ -228,6 +233,15 @@ const UserInterfaceModern_ = {
 
         this.render()
 
+        // Wire plugin lifecycle API into mmgisAPI so plugins and core can call
+        // showPlugin/hidePlugin/loadPlugin/unloadPlugin without a direct import
+        mmgisAPI_._pluginController = ToolControllerModern_
+        mmgisAPI_._panelManager = PanelManager_
+
+        if (!cleanupCoreCommandDispatcher) {
+            cleanupCoreCommandDispatcher = mmgisAPI_._initCoreCommandDispatcher()
+        }
+
         if (!cleanupLayoutListener) {
             cleanupLayoutListener = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
         }
@@ -251,6 +265,10 @@ const UserInterfaceModern_ = {
     destroy: function () {
         ToolControllerModern_.destroyAllTools()
         toolLoadQueue = [] // Clear any pending loads
+        if (cleanupCoreCommandDispatcher) {
+            cleanupCoreCommandDispatcher()
+            cleanupCoreCommandDispatcher = null
+        }
         if (cleanupLayoutListener) {
             cleanupLayoutListener()
             cleanupLayoutListener = null
@@ -261,6 +279,8 @@ const UserInterfaceModern_ = {
         }
         $('#modern-content').empty()
         panels = []
+        mmgisAPI_._pluginController = null
+        mmgisAPI_._panelManager = null
     },
 
     /**
@@ -287,13 +307,17 @@ const UserInterfaceModern_ = {
             .addClass('ui-tool-card')
             .addClass(layoutClass)
             .addClass(isActive ? 'active' : '')
+            // Apply hidden class at init for tools configured with startHidden:true
+            .addClass(toolMetadata.startHidden ? 'plugin-hidden' : '')
             .attr('data-tool', toolId)
             .attr('id', targetId)
 
-        // Return card and a function to load the tool (called after append)
-        // The load function checks if DOM element still exists before loading
+        // Return card, a function to load the tool (called after append), and targetId
+        // so callers can register deferred tools without re-deriving the container ID.
+        // The load function checks if DOM element still exists before loading.
         return {
             toolCard: toolCard,
+            targetId: targetId,
             loadTool: () => {
 
                 const targetElement = document.getElementById(targetId)
@@ -343,10 +367,14 @@ const UserInterfaceModern_ = {
 
             tabBar.append(tab)
 
-            // Create tab content container and queue tool loading
-            const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId, 'tabbed', isActive)
+            // Create tab content container and queue tool loading (or deferral)
+            const { toolCard, loadTool, targetId } = this.createToolCard(toolMetadata, panel.containerId, 'tabbed', isActive)
             tabContentArea.append(toolCard)
-            toolLoadQueue.push(loadTool)
+            if (toolMetadata.startUnloaded) {
+                toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
+            } else {
+                toolLoadQueue.push(loadTool)
+            }
         })
 
         body.append(tabBar).append(tabContentArea)
@@ -382,10 +410,14 @@ const UserInterfaceModern_ = {
         const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
 
         toolsMetadata.forEach(toolMetadata => {
-            const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId)
+            const { toolCard, loadTool, targetId } = this.createToolCard(toolMetadata, panel.containerId)
             body.append(toolCard)
-            // Queue tool loading for after DOM is fully rendered
-            toolLoadQueue.push(loadTool)
+            // Queue tool loading (or deferred registration) for after DOM is fully rendered
+            if (toolMetadata.startUnloaded) {
+                toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
+            } else {
+                toolLoadQueue.push(loadTool)
+            }
         })
     },
 
