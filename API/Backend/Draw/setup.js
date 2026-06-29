@@ -6,8 +6,10 @@ const ufiles = require("./models/userfiles");
 const file_histories = require("./models/filehistories");
 
 let setup = {
-  // Gated off in lean (route mounts). onceSynced still runs unconditionally at
-  // the seam, so Draw's tables are created in both modes.
+  // Gated off in lean (route mounts only). Draw's models register at
+  // require-time and sync unconditionally, so its tables (user_files /
+  // user_features / file_histories) exist in lean too — unused there, by design
+  // (ADR D2: keep, env-gated).
   capability: "draw",
   //Once the app initializes
   onceInit: (s) => {

@@ -3,8 +3,10 @@ const router = require("./routes/geodatasets");
 const geodatasets = require("./models/geodatasets");
 
 let setup = {
-  // Gated off in lean (route mounts). onceSynced still runs unconditionally at
-  // the seam, so the geodatasets table is created in both modes.
+  // Gated off in lean (route mounts only). The model registers at require-time
+  // and syncs unconditionally, so the geodatasets table exists in lean too —
+  // unused there, by design (ADR D2: keep, env-gated; don't per-mode-gate model
+  // registration).
   capability: "geodatasets",
   //Once the app initializes
   onceInit: (s) => {

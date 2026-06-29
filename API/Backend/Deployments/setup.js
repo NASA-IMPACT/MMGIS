@@ -1,8 +1,8 @@
 // Requiring the model registers it with Sequelize so the global
-// sequelize.sync() on boot creates the `deployments` table in BOTH modes —
-// a later mode flip needs no migration. In full mode the table stays
-// passive: the routes below are never mounted (capability gated off via the
-// seam), so nothing writes to it.
+// sequelize.sync() on boot creates the `deployments` table in both modes.
+// The publish flow is lean-only, so in full the routes below are never mounted
+// (capability gated off via the seam) and the table stays passive. Models
+// aren't per-mode-gated (ADR D2: keep, env-gated); the unused table is harmless.
 require("./models/deployment");
 
 let setup = {
