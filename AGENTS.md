@@ -14,7 +14,7 @@ Local development uses hot-reloading and therefore there is little reason to run
 MMGIS deploys in two shapes selected by `MMGIS_DEPLOYMENT_MODE` (resolved once at startup in `API/Backend/Utils/deploymentMode.js`):
 
 - **`full`** (default) — the complete application as shipped today.
-- **`lean`** — a gated-down deployment: geodata management, the bundled sidecar services/proxy, the on-disk mission filesystem, the link shortener, and server-side raster utilities are turned OFF; the dashboard publish flow (Deployments) is turned ON. Models still sync in both modes, so the gated-off tables exist regardless of mode (no migration needed to flip modes).
+- **`lean`** — a gated-down deployment: geodata management, the bundled sidecar services/proxy, the on-disk mission filesystem, the link shortener, and server-side raster utilities are turned OFF; the dashboard publish flow (Deployments) is turned ON. Models register and sync unconditionally in both modes (only the server routes are gated), so the gated-off tables are created but sit unused in lean rather than being absent.
 
 Contributor rule: **author your change for the full app first, then confirm lean still passes.** CI runs the e2e/boot suite once per mode (`.github/workflows/playwright-tests.yml`), with a present/absent check (`tests/e2e/deployment-mode.spec.js`) whose expected on/off mapping is hand-written from the feature inventory — keep it independent of any capability table.
 

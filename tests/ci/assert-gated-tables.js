@@ -1,10 +1,15 @@
 /**
  * assert-gated-tables.js
  *
- * A feature gated OFF in the current deployment mode must still have its DB
- * tables, so flipping modes later needs no data migration. Model registration +
- * sequelize.sync() run unconditionally on boot (only route mounts are gated), so
- * the tables should exist in either mode.
+ * A feature gated OFF in the current deployment mode still has its DB tables,
+ * because model registration + sequelize.sync() run unconditionally on boot and
+ * only route mounts are gated (ADR D2: keep, env-gated — models aren't
+ * per-mode-gated, so a gated-off feature's tables are created but unused).
+ *
+ * This check PINS that invariant: a change that accidentally gates model
+ * registration, or drops a model thinking it's dead in lean, fails CI in the leg
+ * where the feature is gated off. (It is not about enabling a migration-free
+ * mode flip — deployments don't switch modes, and sync() self-heals on boot.)
  *
  * Boots the backend setups (registering the models), runs sync(), and asserts
  * the gated-feature tables are present — exits non-zero if any are missing.

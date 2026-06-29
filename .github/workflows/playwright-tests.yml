@@ -113,10 +113,12 @@ jobs:
       - name: Initialize Database
         run: node scripts/init-db.js
 
-      # Features gated OFF in lean must still have their DB tables
-      # (model sync runs unconditionally; only route mounts are gated), so a
-      # later mode flip needs no data migration. This step boots the app once
-      # (which runs sequelize.sync()) and then asserts the gated tables exist.
+      # Features gated OFF in lean must still have their DB tables: model
+      # registration + sync run unconditionally, only route mounts are gated
+      # (ADR D2: keep, env-gated — models aren't per-mode-gated). This pins that
+      # invariant so a change that gates model registration, or drops a model,
+      # fails CI. This step boots the app once (which runs sequelize.sync()) and
+      # then asserts the gated tables exist.
       # No continue-on-error: a missing table fails the leg.
       - name: Assert gated tables exist
         run: node tests/ci/assert-gated-tables.js
