@@ -1,0 +1,56 @@
+{
+    "defaultIcon": "share-variant",
+    "description": "A top-right \"Share map\" button that opens a menu to share the current view as a link, PNG, or PDF.",
+    "descriptionFull": {
+        "title": "Adds a \"Share map\" button to the top-right action area. Clicking it opens a compact dropdown menu floating over the map. \"Copy link to view\" copies a complete, self-contained URL (layers, place, zoom, time) to the clipboard. \"Export as PNG\" downloads a snapshot of the current map, and \"Export as PDF\" embeds that same snapshot centered on a portrait page. The PNG and PDF items can each be toggled on or off per-dashboard; the share link is always available.",
+        "example": {
+            "exportPng": true,
+            "exportPdf": true
+        }
+    },
+    "hasVars": true,
+    "name": "ShareExport",
+    "toolbarPriority": 3,
+    "separatedTool": true,
+    "width": 0,
+    "height": 0,
+    "paths": {
+        "ShareExportTool": "essence/Tools/ShareExport/ShareExportTool"
+    },
+    "metadata": {
+        "icon": "share-variant",
+        "separatedTool": true,
+        "requiredOrientation": "vertical",
+        "compatiblePositions": ["left", "right"],
+        "preferredPosition": "right",
+        "modernLayoutSupport": true,
+        "width": 0,
+        "height": 0
+    },
+    "config": {
+        "rows": [
+            {
+                "name": "Export Formats",
+                "description": "Choose which downloads are offered in the share menu. The share link is always available.",
+                "components": [
+                    {
+                        "field": "variables.exportPng",
+                        "name": "Enable PNG Download",
+                        "description": "Offer a PNG snapshot of the current map for download.",
+                        "type": "checkbox",
+                        "width": 6,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.exportPdf",
+                        "name": "Enable PDF Download",
+                        "description": "Offer a PDF (the PNG snapshot centered on a portrait page) for download.",
+                        "type": "checkbox",
+                        "width": 6,
+                        "defaultChecked": true
+                    }
+                ]
+            }
+        ]
+    }
+}

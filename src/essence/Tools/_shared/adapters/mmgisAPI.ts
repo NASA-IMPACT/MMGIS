@@ -6,6 +6,8 @@ type MMGISAPI = {
     emit: (event: string, payload?: unknown) => void
     provide?: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
     hasHandler?: (name: string) => boolean
+    writeCoordinateURL?: () => string
+    getMapScreenshot?: () => Promise<string>
 }
 
 declare global {
@@ -37,4 +39,28 @@ export const mmgisProvide = (name: string, handler: (...args: unknown[]) => unkn
 
 export const mmgisHasHandler = (name: string): boolean => {
     return window.mmgisAPI?.hasHandler?.(name) === true
+}
+
+// writeCoordinateURL / getMapScreenshot are first-class methods on the public
+// mmgisAPI surface (not request/provide handlers), so they're wrapped here as
+// thin pass-throughs. This keeps plugins talking to core only through this
+// shared client rather than reaching into core internals.
+
+/**
+ * Returns the current view as a complete, self-contained share URL (the long
+ * form of "Copy Link"). Synchronous, no backend. Null if core isn't ready.
+ */
+export const mmgisWriteCoordinateURL = (): string | null => {
+    return window.mmgisAPI?.writeCoordinateURL?.() ?? null
+}
+
+/**
+ * Captures the current 2D map as a PNG data URL ('data:image/png;base64,...').
+ * Resolves to null if core isn't ready.
+ */
+export const mmgisGetMapScreenshot = async (): Promise<string | null> => {
+    if (window.mmgisAPI?.getMapScreenshot) {
+        return await window.mmgisAPI.getMapScreenshot()
+    }
+    return null
 }
