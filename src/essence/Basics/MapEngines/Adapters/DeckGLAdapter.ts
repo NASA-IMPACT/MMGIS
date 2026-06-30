@@ -1115,6 +1115,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _initStandaloneMode(): void {
         this._deck = new Deck({
             parent: this._container,
+            // Preserve the drawing buffer so captureScreenshot() can read the
+            // rendered frame (parity with the overlay path in _setupOverlay).
+            glOptions: { preserveDrawingBuffer: true },
             width: '100%',
             height: '100%',
             controller: true,
