@@ -43,8 +43,8 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
     }
 
     if (layerObj.cogTransform === true) {
-        if (layerObj.cogColormap && !params.has('colormap_name'))
-            params.set('colormap_name', layerObj.cogColormap as string)
+        const colormap = (layerObj.currentCogColormap ?? layerObj.cogColormap) as string | undefined
+        if (colormap && !params.has('colormap_name')) params.set('colormap_name', colormap)
 
         const cogMin = layerObj.currentCogMin ?? layerObj.cogMin
         const cogMax = layerObj.currentCogMax ?? layerObj.cogMax

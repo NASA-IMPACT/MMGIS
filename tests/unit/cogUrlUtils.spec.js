@@ -123,6 +123,17 @@ test.describe('cogUrlUtils', () => {
             })
             expect(result).toContain('resampling=bilinear')
         })
+
+        test('prefers currentCogColormap over cogColormap', () => {
+            const url = applyCogFieldsToUrl('https://t/{z}/{x}/{y}.png', {
+                cogTransform: true,
+                cogColormap: 'viridis',
+                currentCogColormap: 'plasma',
+                cogMin: 0,
+                cogMax: 1,
+            })
+            expect(url).toContain('colormap_name=plasma')
+        })
     })
 })
 
