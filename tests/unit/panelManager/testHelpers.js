@@ -1,6 +1,7 @@
 import { PANEL_POSITION, PANEL_STATE, PANEL_LAYOUT_TYPE } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
 import { TOOL_ORIENTATION } from '../../../src/essence/Basics/ToolController_/types/tool.ts'
 import { mmgisAPI } from '../../../src/essence/mmgisAPI/mmgisAPI'
+import { onTestFinished } from 'vitest'
 
 const LAYOUT_CHANGED_EVENT = 'mmgis-panel-layout-changed'
 
@@ -55,6 +56,9 @@ export function mockLayoutChangedEvents() {
     }
 
     mmgisAPI.on(LAYOUT_CHANGED_EVENT, handler)
+    // Auto-unsubscribe when the current test ends, so a forgotten restore()
+    // cannot leak this handler onto the shared singleton bus.
+    onTestFinished(() => mmgisAPI.off(LAYOUT_CHANGED_EVENT, handler))
 
     return {
         events,
