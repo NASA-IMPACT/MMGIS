@@ -17,6 +17,11 @@ import {
 
 import { inject } from "../../../../../core/injectables";
 
+import {
+  getHiddenFieldsForEngine,
+  stripHiddenFields,
+} from "./layerFieldVisibility";
+
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -195,52 +200,6 @@ const LAYER_TYPE_CONFIGS = {
   MVTLayer: vectortileConfig,
 };
 
-/**
- * Config fields to hide per engine and layer type.
- * Structure: ENGINE_HIDDEN_FIELDS[engine][layerType] = Set of field paths.
- * Use "_all" to hide a field for every layer type under that engine.
- *
- * Field paths match the `field` key in the metaconfig JSON files.
- * Add entries here when a field is not meaningful for a given engine/type combo.
- */
-const ENGINE_HIDDEN_FIELDS = {
-  deckgl: {
-    _all: new Set([
-      "variables.markerIcon.shadowUrl",
-      "variables.markerIcon.shadowSize.0",
-      "variables.markerIcon.shadowSize.1",
-      "variables.markerIcon.shadowAnchor.0",
-      "variables.markerIcon.shadowAnchor.1",
-    ]),
-    vector: new Set([
-      "shape",
-      "style.shapeIcon",
-      "style.shapeProp",
-      "style.shapeRotationOffset",
-      "style.animation",
-    ]),
-    GeoJsonLayer: new Set([
-      "shape",
-      "style.shapeIcon",
-      "style.shapeProp",
-      "style.shapeRotationOffset",
-      "style.animation",
-    ]),
-    ScatterplotLayer: new Set([
-      "shape",
-      "style.shapeIcon",
-      "style.shapeProp",
-      "style.shapeRotationOffset",
-      "style.animation",
-    ]),
-    tile: new Set([]),
-    TileLayer: new Set([]),
-    BitmapLayer: new Set([]),
-    Tile3DLayer: new Set([]),
-    PointCloudLayer: new Set([]),
-    MVTLayer: new Set([]),
-  },
-};
 
 const MODAL_NAME = "layer";
 const LayerModal = (props) => {
@@ -267,19 +226,10 @@ const LayerModal = (props) => {
       ...ENGINE_LAYER_SUPPORT[mapEngine],
       ...(ENGINE_STRUCTURAL_LAYER_TYPES[mapEngine] ?? []),
     ];
-    const engineFields = ENGINE_HIDDEN_FIELDS[mapEngine] ?? {};
-    const hiddenFields = new Set([
-      ...(engineFields._all ?? []),
-      ...(engineFields[layer.type] ?? []),
-    ]);
 
     config = JSON.parse(JSON.stringify(config));
     config.tabs.forEach((tab) => {
       tab.rows.forEach((row) => {
-        row.components = row.components.filter(
-          (comp) => !comp.field || !hiddenFields.has(comp.field)
-        );
-
         row.components.forEach((comp) => {
           if (comp.field === "type" && comp.type === "dropdown") {
             const filtered = comp.options.filter((opt) =>
@@ -292,12 +242,11 @@ const LayerModal = (props) => {
           }
         });
       });
-
-      tab.rows = tab.rows.filter((row) => row.components.length > 0);
     });
-
-    config.tabs = config.tabs.filter((tab) => tab.rows.length > 0);
   }
+
+  // Hide engine-specific or deck-only fields for all engines (including leaflet).
+  config = stripHiddenFields(config, getHiddenFieldsForEngine(mapEngine, layer.type));
 
   const handleClose = (skipSetConfiguration) => {
     if (skipSetConfiguration !== true) {
