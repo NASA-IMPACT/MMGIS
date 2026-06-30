@@ -123,6 +123,20 @@ jobs:
       - name: Assert gated tables exist
         run: node tests/ci/assert-gated-tables.js
 
+      # The e2e suite drives the real front-end at `/`, which the server renders
+      # from build/index.pug. Without this build step the route 500s, every test
+      # times out waiting for window.mmgisAPI, and the job is cancelled at the
+      # 20-minute cap. Build must run before the playwright steps start the server.
+      - name: Build frontend
+        # GitHub Actions auto-sets CI=true, which makes react-scripts promote all
+        # build warnings to errors. MMGIS ships several intentional warnings (the
+        # optional dist/ theme assets and the unshipped AOI counties/cities geojson
+        # dirs loaded via require.context). The production Dockerfile builds with CI
+        # unset, so mirror that here — otherwise the build fails on non-fatal warnings.
+        run: npm run build
+        env:
+          CI: false
+
       # Legacy smoke / event-bus e2e tests. These boot the full SPA and have
       # historically been allowed to not block the build (continue-on-error),
       # so a genuinely-flaky legacy assertion doesn't turn the leg red. Kept
