@@ -76,7 +76,11 @@ export function validateModernConfig(config) {
     }
 
     // Validate each panel
+    // Float positions are tracked across BOTH the regular "panels" array and the
+    // "floatingPanels" array so the one-panel-per-float-zone rule can't be bypassed
+    // by splitting panels with the same float position across the two arrays.
     const panelIds = new Set()
+    const floatPositions = new Set()
     panelSettings.panels.forEach((panel, index) => {
         const panelErrors = validatePanelConfig(panel, index, false)
         errors.push(...panelErrors)
@@ -87,6 +91,16 @@ export function validateModernConfig(config) {
             }
             panelIds.add(panel.id)
         }
+
+        // Float positions are honored by the renderer regardless of which array a
+        // panel was declared in (modern.js merges "panels" and "floatingPanels"
+        // before registration), so dedup must consider this array too.
+        if (panel.position && FLOAT_POSITIONS.has(panel.position)) {
+            if (floatPositions.has(panel.position)) {
+                errors.push(`Duplicate floating panel position: "${panel.position}" — each float zone can only have one panel`)
+            }
+            floatPositions.add(panel.position)
+        }
     })
 
     // Validate optional floatingPanels array
@@ -94,7 +108,6 @@ export function validateModernConfig(config) {
         if (!Array.isArray(panelSettings.floatingPanels)) {
             errors.push('panelSettings.floatingPanels must be an array')
         } else {
-            const floatPositions = new Set()
             panelSettings.floatingPanels.forEach((panel, index) => {
                 const panelErrors = validatePanelConfig(panel, index, true)
                 errors.push(...panelErrors)
@@ -162,6 +175,12 @@ function validatePanelConfig(panel, index, isFloat = false) {
         errors.push(`${prefix}: Must be an object`)
         return errors
     }
+
+    // What actually governs float rendering/state-machine behavior at runtime is the
+    // panel's position, not which config array it was declared in (modern.js merges
+    // "panels" and "floatingPanels" before registration). Use this for checks that
+    // must hold regardless of source array.
+    const isFloatPosition = !!(panel.position && FLOAT_POSITIONS.has(panel.position))
 
     // Required fields
     if (!panel.id || typeof panel.id !== 'string') {
@@ -231,6 +250,13 @@ function validatePanelConfig(panel, index, isFloat = false) {
                 if (!VALID_STATES.includes(state)) {
                     errors.push(
                         `${prefix}.stateConstraints: Invalid state "${state}" (must be one of ${VALID_STATES.join(', ')})`
+                    )
+                } else if (isFloatPosition && state !== PANEL_STATE.COLLAPSED && state !== PANEL_STATE.EXPANDED) {
+                    // Float panels only support collapsed/expanded — PanelManager_.setPanelState
+                    // throws for float + iconified/focused transitions, so the validator must
+                    // reject these here rather than let it become a reachable runtime throw.
+                    errors.push(
+                        `${prefix}.stateConstraints: Floating panels only support "collapsed" and "expanded" states (got "${state}")`
                     )
                 }
             })
@@ -324,7 +350,7 @@ function validatePanelConfig(panel, index, isFloat = false) {
             const val = dim[field]
             if (val !== undefined && val !== '' && !isValidCssDimension(val)) {
                 errors.push(
-                    `${prefix}.dimensions: "${field}" must be a number (px) or a CSS string with a unit (px, %, vh, vw, rem, em) — got "${val}"`
+                    `${prefix}.dimensions: "${field}" must be a number (px), unitless "0", or a CSS string with a unit (px, %, vh, vw, svh, dvh, vmin, vmax, ch, rem, em) — got "${val}"`
                 )
             }
         })
@@ -341,7 +367,10 @@ function validatePanelConfig(panel, index, isFloat = false) {
  */
 function isValidCssDimension(v) {
     if (typeof v === 'number') return true
-    if (typeof v === 'string') return /^\d+(\.\d+)?(px|%|vh|vw|svh|dvh|rem|em)$/.test(v)
+    if (typeof v === 'string') {
+        if (v === '0') return true
+        return /^\d+(\.\d+)?(px|%|vh|vw|svh|dvh|vmin|vmax|ch|rem|em)$/.test(v)
+    }
     return false
 }
 
