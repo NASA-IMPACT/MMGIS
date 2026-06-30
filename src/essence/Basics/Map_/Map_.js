@@ -16,7 +16,7 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
-import { applyCogFieldsToUrl } from '../Layers_/cogUrlUtils'
+import { applyCogFieldsToUrl, shouldUseDeckRaster } from '../Layers_/cogUrlUtils'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -34,7 +34,7 @@ import {
     LeafletAdapter,
     DeckGLAdapter,
 } from '../MapEngines/index'
-import { buildDeckLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 
 let L = window.L
 
@@ -1510,6 +1510,9 @@ async function makeTileLayer(layerObj, mapContext = null) {
     const tileElevation = getTileLevelElevation(tileLevel)
     const sourceUrl = tileLevelUrl || layerObj.url
     let layerUrl = L_.getUrl(layerObj.type, sourceUrl, layerObj)
+    // Preserve the raw COG file URL (COG: prefix already stripped by L_.getUrl)
+    // before the switch below overwrites layerUrl with a TiTiler tiles URL.
+    const rawFileUrl = layerUrl
 
     let splitColonType
     const splitColonLayerUrl = sourceUrl.split(':')
@@ -1591,6 +1594,22 @@ async function makeTileLayer(layerObj, mapContext = null) {
     } else tileFormat = layerObj.tileformat
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+        // Client-side COG rendering via ColormappedCOGLayer (bypasses TiTiler).
+        // rawFileUrl is the bare .tif URL (no TiTiler host, no query params),
+        // saved before the switch above converted layerUrl to a TiTiler tiles URL.
+        if (shouldUseDeckRaster(Map_.engine.engineType, splitColonType, layerObj)) {
+            ctx.layerRegistry.layer[layerObj.name] = buildDeckCOGLayer(layerObj.name, {
+                rawCogUrl: rawFileUrl,
+                layerObj,
+                opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                minZoom: parseInt(layerObj.minZoom),
+                maxZoom: parseInt(layerObj.maxZoom),
+            })
+            L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+            allLayersLoaded()
+            return
+        }
+
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
         // would normally add per-tile in getTileUrl.
         if (splitColonType === 'COG' || splitColonType === 'stac-collection' || layerObj.cogTransform === true) {
