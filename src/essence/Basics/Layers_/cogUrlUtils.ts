@@ -58,3 +58,36 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
     const qs = params.toString()
     return qs ? `${path}?${qs}` : path
 }
+
+/**
+ * Returns true when the layer should be treated as a COG layer:
+ * - splitColonType is 'COG' or 'stac-collection', OR
+ * - layerObj.cogTransform === true
+ */
+export function isCogLayer(
+    splitColonType: string | undefined,
+    layerObj: Record<string, unknown>
+): boolean {
+    return (
+        splitColonType === 'COG' ||
+        splitColonType === 'stac-collection' ||
+        layerObj.cogTransform === true
+    )
+}
+
+/**
+ * Returns true when the deck.gl raster path should be used:
+ * engineType must be 'deckgl', the layer must be a COG layer,
+ * and cogRendererMode must be 'deckRaster'.
+ */
+export function shouldUseDeckRaster(
+    engineType: string,
+    splitColonType: string | undefined,
+    layerObj: Record<string, unknown>
+): boolean {
+    return (
+        engineType === 'deckgl' &&
+        isCogLayer(splitColonType, layerObj) &&
+        layerObj.cogRendererMode === 'deckRaster'
+    )
+}

@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test'
 import {
     processExpression,
     applyCogFieldsToUrl,
+    isCogLayer,
+    shouldUseDeckRaster,
 } from '../../src/essence/Basics/Layers_/cogUrlUtils.ts'
 
 test.describe('cogUrlUtils', () => {
@@ -121,5 +123,24 @@ test.describe('cogUrlUtils', () => {
             })
             expect(result).toContain('resampling=bilinear')
         })
+    })
+})
+
+test.describe('shouldUseDeckRaster', () => {
+    test('true only for deckgl + COG + deckRaster mode', () => {
+        const layer = { cogRendererMode: 'deckRaster' }
+        expect(shouldUseDeckRaster('deckgl', 'COG', layer)).toBe(true)
+    })
+    test('false in leaflet even when mode is deckRaster', () => {
+        expect(shouldUseDeckRaster('leaflet', 'COG', { cogRendererMode: 'deckRaster' })).toBe(false)
+    })
+    test('false when mode is titiler or unset', () => {
+        expect(shouldUseDeckRaster('deckgl', 'COG', {})).toBe(false)
+        expect(shouldUseDeckRaster('deckgl', 'COG', { cogRendererMode: 'titiler' })).toBe(false)
+    })
+    test('isCogLayer honors cogTransform and stac-collection', () => {
+        expect(isCogLayer('stac-collection', {})).toBe(true)
+        expect(isCogLayer(undefined, { cogTransform: true })).toBe(true)
+        expect(isCogLayer('url', {})).toBe(false)
     })
 })
