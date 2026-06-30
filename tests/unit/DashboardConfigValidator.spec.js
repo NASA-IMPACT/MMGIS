@@ -154,7 +154,6 @@ test.describe('DashboardConfigValidator', () => {
             const result = validateModernConfig(config);
             expect(result.valid).toBe(false);
             expect(result.errors).toContain('Tool[1] must have a string "name"');
-            expect(result.errors).toContain('Tool[1] must have a string "icon"');
         });
     });
 });

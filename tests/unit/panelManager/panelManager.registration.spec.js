@@ -6,7 +6,7 @@ import { test, expect, vi } from 'vitest'
 vi.mock('../../../src/essence/mmgisAPI/mmgisAPI')
 import { PanelManager } from '../../../src/essence/Basics/PanelManager_/PanelManager_.ts'
 import { PANEL_STATE } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
-import { createMockPanelConfig, mockWindowDispatchEvent, setupWindowEnvironment } from './testHelpers.js'
+import { createMockPanelConfig, mockLayoutChangedEvents, setupWindowEnvironment } from './testHelpers.js'
 
 test.describe('PanelManager - Registration', () => {
     let panelManager
@@ -81,7 +81,7 @@ test.describe('PanelManager - Registration', () => {
         })
 
         test('triggers layout recalculation after registration', () => {
-            const mock = mockWindowDispatchEvent()
+            const mock = mockLayoutChangedEvents()
             const config = createMockPanelConfig()
 
             panelManager.registerPanel(config)
@@ -113,7 +113,7 @@ test.describe('PanelManager - Registration', () => {
             const config = createMockPanelConfig()
             panelManager.registerPanel(config)
 
-            const mock = mockWindowDispatchEvent()
+            const mock = mockLayoutChangedEvents()
 
             panelManager.unregisterPanel('test-panel')
 

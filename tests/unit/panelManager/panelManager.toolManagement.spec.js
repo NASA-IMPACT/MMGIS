@@ -7,7 +7,7 @@ vi.mock('../../../src/essence/mmgisAPI/mmgisAPI')
 import { PanelManager } from '../../../src/essence/Basics/PanelManager_/PanelManager_.ts'
 import { PANEL_STATE } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
 import { TOOL_ORIENTATION } from '../../../src/essence/Basics/ToolController_/types/tool.ts'
-import { createMockPanelConfig, createMockToolMetadata, mockWindowDispatchEvent, setupWindowEnvironment } from './testHelpers.js'
+import { createMockPanelConfig, createMockToolMetadata, mockLayoutChangedEvents, setupWindowEnvironment } from './testHelpers.js'
 
 test.describe('PanelManager - Tool Management', () => {
     let panelManager
@@ -209,7 +209,7 @@ test.describe('PanelManager - Tool Management', () => {
             const toolMetadata = createMockToolMetadata()
             panelManager.addToolToPanel('test-panel', toolMetadata)
 
-            const mock = mockWindowDispatchEvent()
+            const mock = mockLayoutChangedEvents()
 
             panelManager.removeToolFromPanel('test-panel', 'test-tool')
 
