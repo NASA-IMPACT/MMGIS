@@ -543,22 +543,17 @@ var mmgisAPI_ = {
         }
     },
     _initCoreCommandDispatcher: function () {
-        const handler = (payload) => {
-            const { action, ...args } = payload || {}
-            switch (action) {
-                case 'showPlugin':   mmgisAPI_.showPlugin(args.pluginId);   break
-                case 'hidePlugin':   mmgisAPI_.hidePlugin(args.pluginId);   break
-                case 'loadPlugin':   mmgisAPI_.loadPlugin(args.pluginId);   break
-                case 'unloadPlugin': mmgisAPI_.unloadPlugin(args.pluginId); break
-                case 'showPanel':    mmgisAPI_.showPanel(args.panelId);     break
-                case 'hidePanel':    mmgisAPI_.hidePanel(args.panelId);     break
-                case 'togglePanel':  mmgisAPI_.togglePanel(args.panelId);   break
-                default:
-                    console.warn('[mmgisAPI] core:command: unknown action:', action)
-            }
+        const handlers = {
+            'core:showPlugin':   ({ pluginId }) => mmgisAPI_.showPlugin(pluginId),
+            'core:hidePlugin':   ({ pluginId }) => mmgisAPI_.hidePlugin(pluginId),
+            'core:loadPlugin':   ({ pluginId }) => mmgisAPI_.loadPlugin(pluginId),
+            'core:unloadPlugin': ({ pluginId }) => mmgisAPI_.unloadPlugin(pluginId),
+            'core:showPanel':    ({ panelId })  => mmgisAPI_.showPanel(panelId),
+            'core:hidePanel':    ({ panelId })  => mmgisAPI_.hidePanel(panelId),
+            'core:togglePanel':  ({ panelId })  => mmgisAPI_.togglePanel(panelId),
         }
-        events.on('core:command', handler)
-        return () => events.off('core:command', handler)
+        Object.entries(handlers).forEach(([ev, fn]) => events.on(ev, fn))
+        return () => Object.entries(handlers).forEach(([ev, fn]) => events.off(ev, fn))
     },
     toggleLayer: async function (layerName, on) {
         if (layerName in L_.layers.data) {

@@ -94,10 +94,7 @@ export function MMGISTitleAdapter() {
             const parts = link.substring(5).split(':')
             const action = parts[0]
             const target = parts.slice(1).join(':')
-            
-            // Dispatch with the target mapped to both possible expected arguments
-            // so the core dispatcher (mmgisAPI._initCoreCommandDispatcher) can consume what it needs.
-            mmgisEmit('core:command', { action, pluginId: target, panelId: target, targetId: target })
+            mmgisEmit(`core:${action}`, { pluginId: target, panelId: target })
             return
         }
 
