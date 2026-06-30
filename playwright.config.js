@@ -5,8 +5,9 @@ import { defineConfig, devices } from "@playwright/test";
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
-  // Test directory
-  testDir: "./tests",
+  // Test directory — Playwright owns the end-to-end suite only. Unit specs run
+  // under Vitest in a jsdom environment (see vitest.config.ts).
+  testDir: "./tests/e2e",
 
   // Test file patterns
   testMatch: "**/*.spec.{js,ts}",
@@ -60,19 +61,15 @@ export default defineConfig({
     // },
   ],
 
-  // Web server configuration - start MMGIS before E2E tests
-  // Note: Unit tests don't need the server running
-  // Only start server if running E2E tests
-  webServer: process.env.PLAYWRIGHT_TEST_UNIT_ONLY
-    ? undefined
-    : {
-      command: "npm run start:test",
-      url: `${process.env.TEST_BASE_URL || "http://localhost:8888"
-        }/api/utils/healthcheck`,
-      timeout: 120 * 1000,
-      reuseExistingServer: !process.env.CI,
-      stdout: "pipe",
-      stderr: "pipe",
-      ignoreHTTPSErrors: true,
-    },
+  // Web server configuration - start MMGIS before the E2E tests run.
+  webServer: {
+    command: "npm run start:test",
+    url: `${process.env.TEST_BASE_URL || "http://localhost:8888"
+      }/api/utils/healthcheck`,
+    timeout: 120 * 1000,
+    reuseExistingServer: !process.env.CI,
+    stdout: "pipe",
+    stderr: "pipe",
+    ignoreHTTPSErrors: true,
+  },
 });
