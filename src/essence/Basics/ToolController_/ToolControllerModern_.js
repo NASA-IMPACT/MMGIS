@@ -437,6 +437,8 @@ const ToolControllerModern_ = {
     registerDeferred: function (toolMetadata, targetId) {
         if (!toolMetadata || !targetId) return
         deferredTools.set(toolMetadata.id, { toolMetadata, targetId })
+        // Hide the card so an empty container doesn't show background/shadow
+        document.getElementById(targetId)?.classList.add('plugin-hidden')
         logger.debug(`Registered deferred tool "${toolMetadata.id}" in container "${targetId}"`)
     },
 
@@ -529,11 +531,12 @@ const ToolControllerModern_ = {
         // Destroy instance and clean up tracking state
         this.destroyTool(targetId)
 
-        // Clear the container content without removing the element itself
+        // Clear the container content without removing the element itself;
+        // hide it so the empty card doesn't show background/shadow
         const container = document.getElementById(targetId)
         if (container) {
             container.innerHTML = ''
-            container.classList.remove('plugin-hidden')
+            container.classList.add('plugin-hidden')
         }
 
         // Register for future reload
