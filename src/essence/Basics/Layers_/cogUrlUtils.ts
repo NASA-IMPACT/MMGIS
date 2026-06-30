@@ -88,6 +88,7 @@ export function shouldUseDeckRaster(
     return (
         engineType === 'deckgl' &&
         isCogLayer(splitColonType, layerObj) &&
+        splitColonType !== 'stac-collection' &&
         layerObj.cogRendererMode === 'deckRaster'
     )
 }

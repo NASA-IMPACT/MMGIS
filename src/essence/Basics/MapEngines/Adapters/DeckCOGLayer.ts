@@ -150,6 +150,10 @@ export class ColormappedCOGLayer extends COGLayer<any> {
                 (this.context as any).device,
                 lutToImageData(lut)
             )
+            const oldTexture = (this.state as any).colormapTexture
+            if (oldTexture && typeof oldTexture.destroy === 'function') {
+                oldTexture.destroy()
+            }
             this.setState({ colormapTexture: texture })
         }
     }
@@ -223,8 +227,8 @@ export function buildDeckCOGLayer(
         nodata,
         updateTriggers: {
             // Forces _renderTileCallback() to be re-evaluated (tiles re-rendered
-            // without re-fetching) when colormap or rescale range changes.
-            renderTile: [colormapName, rescaleMin, rescaleMax],
+            // without re-fetching) when colormap, rescale range, or nodata changes.
+            renderTile: [colormapName, rescaleMin, rescaleMax, nodata],
         },
     } as any) as unknown as Layer
 }

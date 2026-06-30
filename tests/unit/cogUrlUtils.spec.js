@@ -143,4 +143,7 @@ test.describe('shouldUseDeckRaster', () => {
         expect(isCogLayer(undefined, { cogTransform: true })).toBe(true)
         expect(isCogLayer('url', {})).toBe(false)
     })
+    test('false for stac-collection even with deckRaster mode', () => {
+        expect(shouldUseDeckRaster('deckgl', 'stac-collection', { cogRendererMode: 'deckRaster' })).toBe(false)
+    })
 })
