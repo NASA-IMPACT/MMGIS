@@ -6,7 +6,6 @@ import L_ from '../Layers_/Layers_'
 
 import QueryURL from '../../Ancillary/QueryURL'
 import Modal from '../../Ancillary/Modal'
-import { getMapScreenshot } from './ScreenshotUtils'
 import tippy from 'tippy.js'
 
 import './BottomBar.css'
@@ -68,13 +67,15 @@ let BottomBar = {
                 'opacity': '0.8'
             })
             .on('click', function () {
-                // Screenshot capture (DOM prep, html2canvas, and UI restore)
-                // lives in ScreenshotUtils so it can be reused by the public
-                // mmgisAPI.getMapScreenshot(). Here we just show the loading
-                // spinner, then download the resulting PNG data URL.
+                // Screenshot capture is engine-aware: it flows through
+                // mmgisAPI.getMapScreenshot(), which delegates to the active
+                // map engine (Leaflet html2canvas vs deck.gl GL-canvas
+                // readback). Here we just show the loading spinner, then
+                // download the resulting PNG data URL.
                 $('#topBarScreenshotLoading').css('display', 'block')
 
-                getMapScreenshot()
+                window.mmgisAPI
+                    .getMapScreenshot()
                     .then(async function (dataURL) {
                         const mission = L_.configData?.msv?.mission
                         const time = L_.TimeControl_?.currentTime

@@ -121,10 +121,20 @@ interface BasemapInstance {
     setMaxBounds(bounds: [[number, number], [number, number]] | null): unknown
     /** Register a map event listener. */
     on(type: string, handler: (...args: unknown[]) => void): unknown
+    /** Register a one-shot map event listener that auto-removes after firing once. */
+    once(type: string, handler: (...args: unknown[]) => void): unknown
     /** Remove a previously registered map event listener. */
     off(type: string, handler: (...args: unknown[]) => void): unknown
     /** Recalculate the map size from its container element. */
     resize(): void
+    /** Return the WebGL canvas element the base map renders into. */
+    getCanvas(): HTMLCanvasElement
+    /** Force a synchronous re-render of the map (maplibre-gl). */
+    redraw?(): void
+    /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
+    triggerRepaint?(): void
+    /** Whether the map's style and sources are fully loaded and idle. */
+    loaded?(): boolean
 }
 
 /**
@@ -362,6 +372,72 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     getContainer(): HTMLElement {
         return this._container
+    }
+
+    /**
+     * Capture the current map view as a PNG data URL.
+     *
+     * WebGL clears its drawing buffer after every composite, so a canvas
+     * `toDataURL()` returns blank unless the GL context was created with
+     * `preserveDrawingBuffer: true` (set in {@link _setupOverlay}) AND the read
+     * happens in the same frame as a render. We therefore force a repaint and
+     * read the canvas on the next animation frame.
+     *
+     * - **Overlay mode** (the modern map): the `MapboxOverlay` runs in
+     *   `interleaved: true` mode, so deck.gl draws into the base map's GL
+     *   context — there is a single canvas holding basemap + deck layers.
+     *   We repaint the base map and read `basemap.getCanvas().toDataURL()`.
+     * - **Standalone mode**: deck.gl owns the only canvas; we redraw the
+     *   `Deck` instance and read its canvas.
+     */
+    captureScreenshot(): Promise<string> {
+        return new Promise<string>((resolve, reject) => {
+            try {
+                if (this._isOverlayMode && this._basemap) {
+                    const basemap = this._basemap
+                    // Force a synchronous repaint, then read back in the same
+                    // frame. redraw() (maplibre-gl) paints synchronously;
+                    // triggerRepaint() (both libs) schedules a frame, so we
+                    // fall back to a rAF read for that path.
+                    const read = () => {
+                        const canvas = basemap.getCanvas()
+                        resolve(canvas.toDataURL('image/png'))
+                    }
+                    if (typeof basemap.redraw === 'function') {
+                        basemap.redraw()
+                        read()
+                    } else {
+                        basemap.triggerRepaint?.()
+                        requestAnimationFrame(() => {
+                            try {
+                                read()
+                            } catch (err) {
+                                reject(err as Error)
+                            }
+                        })
+                    }
+                    return
+                }
+
+                const deck = this._deck
+                if (!deck) {
+                    reject(new Error('[DeckGLAdapter] captureScreenshot: no active map to capture'))
+                    return
+                }
+                deck.redraw('screenshot')
+                const canvas = (deck as unknown as { getCanvas?: () => HTMLCanvasElement })
+                    .getCanvas?.()
+                if (!canvas) {
+                    reject(
+                        new Error('[DeckGLAdapter] captureScreenshot: deck canvas unavailable')
+                    )
+                    return
+                }
+                resolve(canvas.toDataURL('image/png'))
+            } catch (err) {
+                reject(err as Error)
+            }
+        })
     }
 
     /**
@@ -1107,6 +1183,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             minZoom: this._minZoom,
             maxZoom: this._maxZoom,
             projection: 'mercator',
+            // Required so the GL canvas can be read back via toDataURL() in
+            // captureScreenshot(). WebGL clears its drawing buffer after each
+            // composite unless this is set, so without it the export is blank.
+            // Must be set at map-creation time — it cannot be toggled later.
+            // Slight perf/memory cost (an extra buffer copy per frame), which
+            // is acceptable for a basemap-backed deck.gl view.
+            preserveDrawingBuffer: true,
         }
 
         if (basemap.provider === 'mapbox' && basemap.accessToken) {

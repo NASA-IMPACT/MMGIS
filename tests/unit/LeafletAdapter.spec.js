@@ -143,6 +143,15 @@ test.describe('LeafletAdapter - Lifecycle', () => {
         expect(adapter.getNativeMap()).toBeNull()
     })
 
+    test('exposes captureScreenshot() as part of the IMapEngine contract', () => {
+        // The engine-aware screenshot path (issue #143) requires every adapter
+        // to implement captureScreenshot(). LeafletAdapter delegates to the
+        // shared html2canvas helper; here we assert the method is present so
+        // mmgisAPI.getMapScreenshot() can call it uniformly.
+        const adapter = new LeafletAdapter()
+        expect(typeof adapter.captureScreenshot).toBe('function')
+    })
+
     test('destroy() is safe to call when map is not initialized', () => {
         setup()
         const adapter = new LeafletAdapter()

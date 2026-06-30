@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test'
 import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
-import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/index.ts'
+// Import MAP_ENGINE from the lightweight types module rather than MapEngines/index.ts.
+// index.ts transitively imports LeafletAdapter -> leaflet, which references a global
+// `window` at module-eval time and fails in this Node test context.
+import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
 
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
     const adapter = new DeckGLAdapter()
@@ -212,6 +215,68 @@ test.describe('DeckGLAdapter', () => {
             adapter.emit('ping')
             adapter.emit('ping')
             expect(count).toBe(1)
+        })
+    })
+
+    test.describe('captureScreenshot', () => {
+        test('overlay mode reads the basemap GL canvas after a redraw', async () => {
+            const adapter = makeAdapter()
+            let redrawn = false
+            const canvas = {
+                toDataURL: (type) => {
+                    expect(type).toBe('image/png')
+                    // Only valid once a render has occurred this frame.
+                    return redrawn
+                        ? 'data:image/png;base64,DECKGL'
+                        : 'data:image/png;base64,BLANK'
+                },
+            }
+            adapter._isOverlayMode = true
+            adapter._basemap = {
+                redraw: () => { redrawn = true },
+                getCanvas: () => canvas,
+            }
+
+            const result = await adapter.captureScreenshot()
+            expect(redrawn).toBe(true)
+            expect(result).toBe('data:image/png;base64,DECKGL')
+        })
+
+        test('overlay mode without redraw() falls back to triggerRepaint + rAF', async () => {
+            global.requestAnimationFrame =
+                global.requestAnimationFrame || ((cb) => setTimeout(() => cb(0), 0))
+            const adapter = makeAdapter()
+            let repainted = false
+            adapter._isOverlayMode = true
+            adapter._basemap = {
+                triggerRepaint: () => { repainted = true },
+                getCanvas: () => ({ toDataURL: () => 'data:image/png;base64,RAF' }),
+            }
+
+            const result = await adapter.captureScreenshot()
+            expect(repainted).toBe(true)
+            expect(result).toBe('data:image/png;base64,RAF')
+        })
+
+        test('standalone mode redraws deck and reads its canvas', async () => {
+            const adapter = makeAdapter()
+            let redrawArg = null
+            adapter._isOverlayMode = false
+            adapter._deck = {
+                redraw: (reason) => { redrawArg = reason },
+                getCanvas: () => ({ toDataURL: () => 'data:image/png;base64,STANDALONE' }),
+            }
+
+            const result = await adapter.captureScreenshot()
+            expect(redrawArg).toBe('screenshot')
+            expect(result).toBe('data:image/png;base64,STANDALONE')
+        })
+
+        test('rejects when there is no active map to capture', async () => {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = false
+            adapter._deck = null
+            await expect(adapter.captureScreenshot()).rejects.toThrow(/no active map/)
         })
     })
 

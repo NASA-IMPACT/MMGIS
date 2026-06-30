@@ -66,6 +66,19 @@ export interface IMapEngine<
     getContainer(): HTMLElement
 
     /**
+     * Capture the current map view as a PNG image.
+     *
+     * Each engine owns the capture strategy for its rendering technology:
+     * - Leaflet rasterizes its DOM/SVG/tile panes with html2canvas.
+     * - deck.gl reads the WebGL canvas directly (the base map's GL context
+     *   when running in interleaved overlay mode), which html2canvas cannot do.
+     *
+     * @returns Resolves to a PNG image as a data URL string
+     *   (e.g. `'data:image/png;base64,...'`).
+     */
+    captureScreenshot(): Promise<string>
+
+    /**
      * Jump to a center and zoom without animation.
      */
     setView(center: LatLngLike, zoom?: number, options?: ViewOptions): void

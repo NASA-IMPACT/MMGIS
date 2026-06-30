@@ -442,6 +442,16 @@ var mmgisAPI_ = {
         return QueryURL.writeCoordinateURL()
     },
     getMapScreenshot: function () {
+        // Screenshot capture is engine-specific: Leaflet rasterizes its DOM
+        // with html2canvas, while the deck.gl/GL map must read its WebGL
+        // canvas directly (html2canvas cannot capture a WebGL canvas). Delegate
+        // to the active IMapEngine adapter, which owns the right strategy.
+        const engine = L_.Map_ && L_.Map_.engine
+        if (engine && typeof engine.captureScreenshot === 'function') {
+            return engine.captureScreenshot()
+        }
+        // Fallback for environments where the engine facade is unavailable
+        // (preserves the legacy Leaflet behaviour).
         return getMapScreenshot()
     },
     onLoadCallback: null,
