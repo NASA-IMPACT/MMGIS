@@ -354,7 +354,13 @@ var QueryURL = {
         }
 
         //panePercents
-        var pP = L_.UserInterface_.getPanelPercents()
+        // getPanelPercents only exists on the classic/mobile UI controllers; the
+        // modern layout has no such method, so fall back to a map-only split.
+        var pP =
+            L_.UserInterface_ &&
+            typeof L_.UserInterface_.getPanelPercents === 'function'
+                ? L_.UserInterface_.getPanelPercents()
+                : { viewer: 0, map: 100, globe: 0 }
         var panePercents = pP.viewer + ',' + pP.map + ',' + pP.globe
         urlAppendage += '&panePercents=' + panePercents
 

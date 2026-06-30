@@ -28,7 +28,7 @@ function getMapScreenshot(deps = {}) {
 
     //We need to manually order leaflet z-indices for this to work
     let zIndices = []
-    jquery('#mapScreen #map .leaflet-tile-pane')
+    jquery('#map .leaflet-tile-pane')
         .children()
         .each(function (i, elm) {
             zIndices.push(jquery(elm).css('z-index'))
@@ -42,7 +42,10 @@ function getMapScreenshot(deps = {}) {
     jquery('#mapToolBar').css('bottom', '0px')
     jquery(`#toggleTimeUI.active`).trigger('click')
 
-    const documentElm = document.getElementById('mapScreen')
+    // The classic UI wraps the map in #mapScreen; the modern layout has no such
+    // wrapper, so fall back to the #map container (present in both layouts).
+    const documentElm =
+        document.getElementById('mapScreen') || document.getElementById('map')
     const capture = html2canvas(documentElm, {
         allowTaint: true,
         useCORS: true,
@@ -95,7 +98,7 @@ function getMapScreenshot(deps = {}) {
     // the call above, before its first internal await, so the capture already
     // holds the hidden-chrome state and restoring the live UI now does not
     // affect it.
-    jquery('#mapScreen #map .leaflet-tile-pane')
+    jquery('#map .leaflet-tile-pane')
         .children()
         .each(function (i, elm) {
             jquery(elm).css('z-index', zIndices[i])
