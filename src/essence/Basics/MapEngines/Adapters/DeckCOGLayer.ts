@@ -158,6 +158,18 @@ export class ColormappedCOGLayer extends COGLayer<any> {
         }
     }
 
+    override finalizeState(context: any): void {
+        const tex = (this.state as any).colormapTexture
+        if (tex && typeof tex.destroy === 'function') {
+            tex.destroy()
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if ((super as any).finalizeState) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ;(super as any).finalizeState(context)
+        }
+    }
+
     // Return type is `any` to avoid TypeScript's return-type assignability
     // check against the parent signature (which uses the full RenderTileResult
     // union from @developmentseed/deck.gl-raster). The actual runtime type
