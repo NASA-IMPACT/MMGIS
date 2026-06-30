@@ -113,7 +113,6 @@ const _renderFloatRegions = (floatPanels) => {
             // One panel card per float zone — all tools stack inside it
             const panelDiv = $('<div class="ui-panel ui-float-panel"></div>')
                 .attr('id', panel.containerId)
-                .attr('data-panel-id', panel.containerId)
                 .attr('data-panel-state', panel.state)
 
             const dims = panel.config.dimensions || {}
@@ -565,12 +564,9 @@ const UserInterfaceModern_ = {
         }
 
         panels.forEach(panel => {
-            const isFloat = FLOAT_POSITIONS.has(panel.config?.position)
+            const isFloatingPanel = FLOAT_POSITIONS.has(panel.config?.position)
 
-            // Float panel tool cards use data-panel-id; edge panels use their containerId directly
-            const $panel = isFloat
-                ? $(`[data-panel-id="${panel.containerId}"]`)
-                : $(document.getElementById(panel.containerId))
+            const $panel = $(document.getElementById(panel.containerId))
             if ($panel.length === 0) return
 
             $panel.attr('data-panel-state', panel.state)
@@ -593,7 +589,12 @@ const UserInterfaceModern_ = {
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
             }
 
-            if (panel.state === 'iconified') {
+            // Float panels are sized via dimensions.defaultWidth/defaultHeight applied
+            // once at render time (see _renderFloatRegions) — the edge-panel
+            // expandedSize/iconifiedSize logic below doesn't apply and would clobber them.
+            if (isFloatingPanel) {
+                // no-op
+            } else if (panel.state === 'iconified') {
                 $panel.css({ width: '', height: '', flex: 'none' })
             } else if (panel.state === 'expanded' || panel.state === 'focused') {
                 let targetSize = panel.currentSize;

@@ -120,7 +120,7 @@ Determines where the panel is located:
 
 **Floating panel rules**:
 - Multiple tools can be assigned to one floating panel — each tool renders as its own card with a gap between cards
-- Multiple floating panels at the same position stack **vertically** in declaration order
+- Only **one** floating panel is allowed per position — the validator rejects configs that assign more than one panel (in `panels` or `floatingPanels`) to the same float position
 - Supported states: `"collapsed"` and `"expanded"` only (`"iconified"` and `"focused"` are not supported)
 - `layoutType` is ignored for floating panels
 - `capabilities.resizable` is not supported for floating panels
@@ -482,7 +482,7 @@ Full mission configuration with four panels:
           "allowedStates": ["collapsed", "expanded"],
           "defaultState": "expanded"
         },
-        "tools": ["Timeline"]
+        "panelTools": ["Timeline"]
       },
       {
         "id": "legend-float-panel",
@@ -493,7 +493,7 @@ Full mission configuration with four panels:
           "allowedStates": ["collapsed", "expanded"],
           "defaultState": "expanded"
         },
-        "tools": ["Legend"]
+        "panelTools": ["Legend"]
       }
     ]
   },
