@@ -1117,7 +1117,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             parent: this._container,
             // Preserve the drawing buffer so captureScreenshot() can read the
             // rendered frame (parity with the overlay path in _setupOverlay).
-            glOptions: { preserveDrawingBuffer: true },
+            // deck.gl v9 defaults this to true, but we set it explicitly via
+            // deviceProps.webgl so the guarantee is not dependent on that
+            // default. (The v8-era `glOptions` prop no longer exists in v9.)
+            deviceProps: { webgl: { preserveDrawingBuffer: true } },
             width: '100%',
             height: '100%',
             controller: true,
