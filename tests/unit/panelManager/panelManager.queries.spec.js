@@ -63,6 +63,20 @@ test.describe('PanelManager - Queries', () => {
             expect(panels[1].id).toBe('panel-3')
             expect(panels[2].id).toBe('panel-1')
         })
+
+        test('sorts float panels (no priority) after prioritized panels instead of producing NaN order', () => {
+            // Float panels legitimately omit priority (see DashboardConfigValidator).
+            // `undefined - number` is NaN, and Array.prototype.sort treats a NaN
+            // comparator result as "leave order unchanged" - this must not happen.
+            const floatConfig = createMockPanelConfig({ id: 'float-panel', priority: undefined })
+            const prioritized = createMockPanelConfig({ id: 'prioritized-panel', priority: 2 })
+
+            panelManager.registerPanel(floatConfig)
+            panelManager.registerPanel(prioritized)
+
+            const panels = panelManager.getPanelsAtPosition(PANEL_POSITION.LEFT)
+            expect(panels.map(p => p.id)).toEqual(['prioritized-panel', 'float-panel'])
+        })
     })
 
     test.describe('getAllPanelsByPriority', () => {
@@ -88,6 +102,21 @@ test.describe('PanelManager - Queries', () => {
             expect(panels[1].id).toBe('right')
             expect(panels[2].id).toBe('bottom')
             expect(panels[3].id).toBe('left')
+        })
+
+        test('sorts float panels (no priority) after prioritized panels', () => {
+            const edge = createMockPanelConfig({ id: 'edge', position: PANEL_POSITION.TOP, priority: 0 })
+            const float = createMockPanelConfig({
+                id: 'float',
+                position: PANEL_POSITION.FLOAT_TOP_LEFT,
+                priority: undefined,
+            })
+
+            panelManager.registerPanel(float)
+            panelManager.registerPanel(edge)
+
+            const panels = panelManager.getAllPanelsByPriority()
+            expect(panels.map(p => p.id)).toEqual(['edge', 'float'])
         })
     })
 
