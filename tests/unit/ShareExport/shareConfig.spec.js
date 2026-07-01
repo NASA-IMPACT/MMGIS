@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import { resolveShareFormats } from '../../../src/essence/Tools/ShareExport/adapters/shareConfig.ts'
 
 // Issue #144 - the share link is always available; PNG and PDF are each
