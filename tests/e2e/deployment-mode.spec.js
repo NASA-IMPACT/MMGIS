@@ -1,39 +1,28 @@
 import { test, expect, request } from '@playwright/test'
 
 /**
- * Deployment-mode present/absent checks.
+ * Deployment-mode present/absent checks. Boots once per mode in CI; per feature,
+ * asserts its route is reachable in the mode it belongs to and gone otherwise.
  *
- * The CI matrix boots the app once per shape (MMGIS_DEPLOYMENT_MODE=full|lean);
- * this test reads the mode and, per feature, asserts the feature is reachable
- * when it belongs to the running mode and gone otherwise.
+ * The on/off mapping below is hand-written from the deployment ADR. Do NOT
+ * rewrite it to read expectations from a capability table — a test that takes its
+ * answers from the code under test can't catch a wrong entry.
  *
- * HAND-WRITTEN feature inventory — IMPORTANT: the expected on/off mapping below
- * is written by a person from the deployment ADR, NOT read from any capability
- * table or the gated code. That independence is the point: a test that takes its
- * expected answers from the thing it tests can't catch a wrong entry. Route PATHS
- * were looked up in the code, but which mode each belongs to is hand-asserted.
- * Do NOT rewrite this to read its expectations from a capability table.
- *
- * Present vs. absent discriminator (verified against the code): a MOUNTED route
- * answers from its handler — with AUTH=off that's a 200 guard-failure/data body,
- * or a proxy/upstream error for sidecars; never 404. An UNMOUNTED route falls
- * through to the catch-all `app.all('*')` -> 404. So: mounted => status !== 404;
- * absent => 404.
+ * Discriminator: a mounted route answers from its handler (never 404); an
+ * unmounted route hits the catch-all `app.all('*')` -> 404.
  */
 
 const MODE = process.env.MMGIS_DEPLOYMENT_MODE || 'full'
 
-// Each feature: where it belongs, and a single HTTP probe that exercises a route
-// the feature owns. `method`/`path` only — no body needed, because we only care
-// whether the route is mounted (any non-404) or absent (404).
+// Each feature: which mode it belongs to, and one HTTP probe against a route it
+// owns. We only care whether that route is mounted (non-404) or absent (404).
 const FEATURES = [
     // --- Full-only: present in full, absent in lean ---
     {
         name: 'geodata management (datasets)',
         mode: 'full',
         method: 'post',
-        // ensureAdmin allow-lists /api/datasets/get, so in full it reaches the
-        // mounted router even without admin auth.
+        // ensureAdmin allow-lists /get, so it reaches the router without auth.
         path: '/api/datasets/get',
     },
     {
@@ -117,27 +106,23 @@ test.describe(`Deployment mode present/absent — MODE=${MODE}`, () => {
     for (const feature of FEATURES) {
         const belongsToRunningMode = feature.mode === MODE
 
-        test(`${feature.name} is ${
-            belongsToRunningMode ? 'present' : 'absent'
-        } in ${MODE}`, async () => {
-            const status = await probe(api, feature)
+        test(`${feature.name} is ${belongsToRunningMode ? 'present' : 'absent'
+            } in ${MODE}`, async () => {
+                const status = await probe(api, feature)
 
-            if (belongsToRunningMode) {
-                // Reachable: the route is mounted, so it must NOT hit the
-                // catch-all 404. (It may legitimately answer 200 with a guard
-                // failure, real data, or a proxy/upstream error status.)
-                expect(
-                    status,
-                    `${feature.name} should be MOUNTED in ${MODE} (got ${status}); a 404 means the route is gone`
-                ).not.toBe(404)
-            } else {
-                // Gone: the route is unmounted and falls through to the
-                // app catch-all, which returns a real 404.
-                expect(
-                    status,
-                    `${feature.name} should be ABSENT in ${MODE} (got ${status}); anything but 404 means the route is still mounted`
-                ).toBe(404)
-            }
-        })
+                if (belongsToRunningMode) {
+                    // Mounted: any status but the catch-all 404.
+                    expect(
+                        status,
+                        `${feature.name} should be MOUNTED in ${MODE} (got ${status}); a 404 means the route is gone`
+                    ).not.toBe(404)
+                } else {
+                    // Absent: falls through to the app catch-all 404.
+                    expect(
+                        status,
+                        `${feature.name} should be ABSENT in ${MODE} (got ${status}); anything but 404 means the route is still mounted`
+                    ).toBe(404)
+                }
+            })
     }
 })
