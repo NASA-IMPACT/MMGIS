@@ -15,6 +15,18 @@
     border-radius: var(--mmgis-radius-md, 6px);
     box-shadow: var(--mmgis-shadow-pop, 0 2px 6px rgba(0, 0, 0, 0.18));
     pointer-events: auto;
+
+    // When mounted inside a panel container (float/edge), fill it and let the
+    // panel own position + size instead of pinning to the viewport top-right.
+    &--embedded {
+        position: relative;
+        inset: auto;
+        width: 100%;
+        max-height: 100%;
+        z-index: auto;
+        border-radius: 0;
+        box-shadow: none;
+    }
 }
 
 .aoi-tool,

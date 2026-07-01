@@ -632,10 +632,15 @@ const AOITool = {
 
 }
 
-function interfaceWithMMGIS(tool) {
+function interfaceWithMMGIS(tool, targetId) {
+    // Mount into the panel container we're given (float or edge panel); fall back
+    // to document.body only when no container exists (legacy/standalone use).
+    const container =
+        (targetId && document.getElementById(targetId)) || document.body
     const root = document.createElement('div')
     root.className = 'aoi-tool-host'
-    document.body.appendChild(root)
+    if (container !== document.body) root.classList.add('aoi-tool-host--embedded')
+    container.appendChild(root)
     tool._root = root
     tool._reactRoot = createRoot(root)
 
