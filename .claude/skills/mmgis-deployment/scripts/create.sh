@@ -82,7 +82,24 @@ else
   (cd "$dir" && npm install --force)
 fi
 
+# --- configure CMS bundle ---
+# configure/build is gitignored and the server never builds it live (unlike the
+# dashboard), so /configure has no app to serve unless we provide one. Copy the
+# prebuilt bundle from the main checkout; it reads its tool list and its API port
+# at runtime, so a single prebuilt copy works for any deployment on any port.
+if [ -d "$dir/configure/build" ]; then
+  mw_info "configure/build present (skipping copy)"
+elif [ -d "$main_dir/configure/build" ]; then
+  cp -R "$main_dir/configure/build" "$dir/configure/build"
+  mw_info "copied configure/build from main checkout"
+else
+  mw_info "warning: no configure/build in main checkout — /configure will not load."
+  mw_info "         build it once:  (cd \"$main_dir/configure\" && npm install && npm run build)"
+fi
+
 echo
 echo "ready: $dir"
-echo "  port $port  ·  db $dbname  ·  dashboard $(mw_dashboard_url "$port") (after start)"
+echo "  port $port  ·  db $dbname"
+echo "  dashboard  $(mw_dashboard_url "$port")  (after start)"
+echo "  configure  $(mw_configure_url "$port")  (after start; log in admin / admin)"
 echo "  start it:  $HERE/start.sh \"$dir\""
