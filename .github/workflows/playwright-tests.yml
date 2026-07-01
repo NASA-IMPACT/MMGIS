@@ -7,9 +7,40 @@ on:
     branches: [master, main, development]
 
 jobs:
+  # Unit tests (Vitest + jsdom, no DB/browser). Run once, outside the matrix:
+  # they already cover both modes in a single run by reloading the mode module
+  # per test. See tests/unit/deploymentMode.spec.js and bakeGuards.spec.js.
+  unit:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Unit Tests
+        run: npx vitest run
+
+  # E2e tests boot the real app. Mode is fixed at process start, so we boot once
+  # per mode via the matrix. MMGIS_DEPLOYMENT_MODE is written into .env below.
   test:
+    name: e2e (${{ matrix.mode }})
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    needs: unit
+
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [full, lean]
 
     services:
       postgres:
@@ -39,12 +70,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Unit tests run under Vitest in a jsdom environment — hermetic, so they
-      # need neither the database nor a browser. Run them before the e2e-only
-      # setup so a DB/browser problem can't mask a unit result.
-      - name: Run Unit Tests
-        run: npx vitest run
-
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
 
@@ -62,32 +87,58 @@ jobs:
           echo "ENABLE_MMGIS_WEBSOCKETS=false" >> .env
           echo "ENABLE_CONFIG_WEBSOCKETS=false" >> .env
           echo "HIDE_CONFIG=true" >> .env
+          echo "MMGIS_DEPLOYMENT_MODE=${{ matrix.mode }}" >> .env
 
+      # Lean deploys no sidecars. sample.env ships them ON; left on, init-db would
+      # try to create the mmgis-stac catalog DB. Turn them off so the lean env
+      # matches a real lean deployment.
+      - name: Disable sidecar services for the lean leg
+        if: matrix.mode == 'lean'
+        run: |
+          echo "WITH_STAC=false" >> .env
+          echo "WITH_TIPG=false" >> .env
+          echo "WITH_TITILER=false" >> .env
+          echo "WITH_TITILER_PGSTAC=false" >> .env
+          echo "WITH_VELOSERVER=false" >> .env
+
+      # In lean, also confirms the mmgis-stac catalog DB is not created (full-only).
       - name: Initialize Database
         run: node scripts/init-db.js
 
-      # The e2e suite drives the real front-end at `/`, which the server renders
-      # from build/index.pug. Without this build step the route 500s, every test
-      # times out waiting for window.mmgisAPI, and the job is cancelled at the
-      # 20-minute cap. Build must run before the tests start the server.
+      # A feature gated OFF in the current mode still keeps its DB tables (both
+      # directions: datasets/geodatasets/draw/shortener off in lean, deployments
+      # off in full). Models always register; only routes are gated (ADR D2).
+      # Fails CI if an expected table is missing.
+      - name: Assert gated tables exist
+        run: node tests/ci/assert-gated-tables.js
+
+      # Must build before the server starts: the e2e tests hit `/`, which 500s
+      # without build/index.pug.
       - name: Build frontend
-        # GitHub Actions auto-sets CI=true, which makes react-scripts promote all
-        # build warnings to errors. MMGIS ships several intentional warnings (the
-        # optional dist/ theme assets and the unshipped AOI counties/cities geojson
-        # dirs loaded via require.context). The production Dockerfile builds with CI
-        # unset, so mirror that here — otherwise the build fails on non-fatal warnings.
+        # CI=false: GitHub sets CI=true, which makes react-scripts fail on MMGIS's
+        # intentional build warnings. The production Dockerfile builds with CI unset.
         run: npm run build
         env:
           CI: false
 
-      - name: Run E2E Tests
-        run: npx playwright test tests/e2e --project=chromium
+      # Legacy smoke / event-bus specs. Gating (no continue-on-error), matching
+      # their pre-matrix behavior on development — a real regression here fails
+      # the leg. They boot the same app per mode, so they also confirm smoke +
+      # event bus pass under lean, not just full.
+      - name: Run legacy E2E Tests
+        run: npx playwright test tests/e2e/smoke.spec.js tests/e2e/eventbus-integration.spec.js --project=chromium
+
+      # Gating check: each feature's route must be mounted (non-404) in its mode
+      # and absent (404) otherwise. Checks mount vs. 404 only, not behavior. No
+      # continue-on-error, so mis-gating fails the leg.
+      - name: Run deployment-mode shape check (gating)
+        run: npx playwright test tests/e2e/deployment-mode.spec.js --project=chromium
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.mode }}
           path: playwright-report/
           retention-days: 30
 
@@ -95,6 +146,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ matrix.mode }}
           path: test-results/
           retention-days: 7
