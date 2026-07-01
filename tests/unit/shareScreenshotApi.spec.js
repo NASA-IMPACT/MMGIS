@@ -2,11 +2,11 @@ import { test, expect } from 'vitest'
 
 import getMapScreenshot, {
     getMapScreenshot as namedGetMapScreenshot,
-} from '../../src/essence/Basics/UserInterface_/ScreenshotUtils.js'
+} from '../../src/essence/Basics/MapEngines/Adapters/LeafletScreenshot.js'
 
 // Issue #143 - expose share-link and map-screenshot as first-class plugin API.
 //
-// ScreenshotUtils.getMapScreenshot() drives the live DOM (jQuery) and rasterizes
+// LeafletScreenshot.getMapScreenshot() drives the live DOM (jQuery) and rasterizes
 // with html2canvas, neither of which exists in this Node test context. The
 // function therefore accepts injectable `jquery`/`html2canvas` deps so the
 // behavior can be exercised against lightweight fakes.
@@ -19,6 +19,9 @@ function makeMockJQuery(getterValue) {
 
     function makeNode(selector) {
         return {
+            // A matched selector reports one element; the code uses .length to
+            // detect whether the time UI was active before the capture.
+            length: 1,
             css(prop, value) {
                 if (value === undefined) return getterValue // getter
                 cssSets.push({ selector, prop, value })
@@ -72,7 +75,7 @@ function setupGlobalDom() {
     }
 }
 
-test.describe('ScreenshotUtils.getMapScreenshot - export surface', () => {
+test.describe('LeafletScreenshot.getMapScreenshot - export surface', () => {
     test('is exported as both a default and named function', () => {
         expect(typeof getMapScreenshot).toBe('function')
         expect(typeof namedGetMapScreenshot).toBe('function')
@@ -80,7 +83,7 @@ test.describe('ScreenshotUtils.getMapScreenshot - export surface', () => {
     })
 })
 
-test.describe('ScreenshotUtils.getMapScreenshot - behavior', () => {
+test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
     test.beforeEach(() => {
         setupGlobalDom()
     })
@@ -143,5 +146,24 @@ test.describe('ScreenshotUtils.getMapScreenshot - behavior', () => {
 
         expect(bottomValues).toEqual(['0px', '5px'])
         expect(bottomValues).not.toContain('savedMapToolBarBottom')
+    })
+
+    test('collapses the time UI for the capture and reopens it afterwards', async () => {
+        // Regression guard: the time UI is toggled off (via the .active
+        // selector) before the shot and must be toggled back on (via the plain
+        // selector, since the click cleared .active) afterwards. Previously the
+        // restore was missing, leaving the time UI collapsed.
+        const jquery = makeMockJQuery('5px')
+        const html2canvas = makeMockHtml2canvas('data:image/png;base64,X')
+
+        await getMapScreenshot({ jquery, html2canvas })
+
+        const timeToggleEvents = jquery._triggered.filter((t) =>
+            t.selector.startsWith('#toggleTimeUI')
+        )
+        expect(timeToggleEvents).toEqual([
+            { selector: '#toggleTimeUI.active', event: 'click' },
+            { selector: '#toggleTimeUI', event: 'click' },
+        ])
     })
 })

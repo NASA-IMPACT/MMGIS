@@ -46,7 +46,7 @@ import {
 } from 'terra-draw'
 import { TerraDrawLeafletAdapter } from 'terra-draw-leaflet-adapter'
 import { extractVerticesFromGeometry } from './DrawingHelpers'
-import { getMapScreenshot } from '../../UserInterface_/ScreenshotUtils'
+import { getMapScreenshot } from './LeafletScreenshot'
 import {
     MapEventHandler,
     MapEventOptions,

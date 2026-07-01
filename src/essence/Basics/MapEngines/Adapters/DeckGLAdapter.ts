@@ -389,6 +389,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      *   We repaint the base map and read `basemap.getCanvas().toDataURL()`.
      * - **Standalone mode**: deck.gl owns the only canvas; we redraw the
      *   `Deck` instance and read its canvas.
+     *
+     * Note: this captures only the GL canvas. Anchored HTML overlays/markers
+     * added via {@link addOverlay} are separate DOM nodes and are not included.
      */
     captureScreenshot(): Promise<string> {
         return new Promise<string>((resolve, reject) => {
