@@ -5,6 +5,7 @@ import QueryURL from '../Ancillary/QueryURL'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import Login from '../Ancillary/Login/Login'
 import LegendTool from '../Tools/Legend/LegendTool.js'
+import { PANEL_STATE } from '../Basics/PanelManager_/types/layout'
 import mitt from 'mitt'
 
 import $ from 'jquery'
@@ -502,7 +503,7 @@ var mmgisAPI_ = {
                 console.warn(`[mmgisAPI] showPanel: panel "${panelId}" not found`)
                 return false
             }
-            if (panel.state !== 'collapsed') return true
+            if (panel.state !== PANEL_STATE.COLLAPSED) return true
             mmgisAPI_._panelManager.togglePanelCollapsed(panelId)
             return true
         } catch (e) {
@@ -521,8 +522,8 @@ var mmgisAPI_ = {
                 console.warn(`[mmgisAPI] hidePanel: panel "${panelId}" not found`)
                 return false
             }
-            if (panel.state === 'collapsed') return true
-            mmgisAPI_._panelManager.setPanelState(panelId, 'collapsed')
+            if (panel.state === PANEL_STATE.COLLAPSED) return true
+            mmgisAPI_._panelManager.setPanelState(panelId, PANEL_STATE.COLLAPSED)
             return true
         } catch (e) {
             console.warn('[mmgisAPI] hidePanel failed:', e)
@@ -873,7 +874,7 @@ var mmgisAPI = {
      * Load a plugin that is currently deferred (startUnloaded at init, or previously unloaded).
      * Calls make() on the existing DOM container. The plugin starts visible.
      * @param {string} pluginId - Tool ID
-     * @returns {Object|null} Tool instance or null on failure
+     * @returns {boolean} True if loaded, false if not found or load failed
      */
     loadPlugin: mmgisAPI_.loadPlugin,
 

@@ -34,6 +34,9 @@ const _createPanelIconTray = (panel) => {
         const iconSpan = $('<span></span>').addClass(iconClass)
         const iconBtn = $('<button></button>')
             .addClass('ui-panel-icon-btn')
+            // Apply hidden class at init for tools configured with startHidden/startUnloaded,
+            // mirrors the 'plugin-hidden' class applied to the content card.
+            .addClass(toolMetadata.startHidden || toolMetadata.startUnloaded ? 'plugin-hidden' : '')
             .attr('title', toolName) // jQuery escapes attribute values
             .attr('data-tool', toolId)
             .append(iconSpan)
@@ -347,10 +350,20 @@ const UserInterfaceModern_ = {
 
         const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
 
+        // Pick the first tool that isn't starting hidden/unloaded to be the
+        // active tab, so we don't land on a tab whose content is invisible.
+        // Falls back to idx 0 if every tool starts hidden/unloaded.
+        const firstVisibleIdx = toolsMetadata.findIndex(t => !t.startHidden && !t.startUnloaded)
+        const activeIdx = firstVisibleIdx === -1 ? 0 : firstVisibleIdx
+
         toolsMetadata.forEach((toolMetadata, idx) => {
             const toolName = toolMetadata.name || toolMetadata.id
             const toolId = toolMetadata.id
-            const isActive = idx === 0
+            const isActive = idx === activeIdx
+            // Mirrors the 'plugin-hidden' class applied to the content card below,
+            // so a tool that starts hidden/unloaded doesn't leave a clickable tab
+            // pointing at invisible content.
+            const startsHidden = !!(toolMetadata.startHidden || toolMetadata.startUnloaded)
 
             // Create tab using safe jQuery methods
             const iconClass = getValidIconClass(toolMetadata.icon, toolId)
@@ -360,6 +373,7 @@ const UserInterfaceModern_ = {
             const tab = $('<div></div>')
                 .addClass('ui-panel-tab')
                 .addClass(isActive ? 'active' : '')
+                .addClass(startsHidden ? 'plugin-hidden' : '')
                 .attr('data-tool', toolId)
                 .append(iconSpan)
                 .append(textSpan)
@@ -448,6 +462,12 @@ const UserInterfaceModern_ = {
      * Renders the layout into the #modern-content element
      */
     render: function () {
+        // Defensive: a re-render destroys the DOM the lifecycle registries point to,
+        // so any already-loaded/deferred tools must be cleared or they'd reference
+        // stale elements (isPluginLoaded would lie, loadTool's "already loaded" guard
+        // would try to destroy a tool whose DOM no longer exists).
+        ToolControllerModern_.destroyAllTools()
+
         const container = $('#modern-content')
         container.empty()
 

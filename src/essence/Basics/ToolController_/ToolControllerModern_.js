@@ -63,6 +63,76 @@ const _findPanel = (metadata, registeredPanels) => {
     return null
 }
 
+/**
+ * Keep a tabbed panel's tab button in sync with its content card's hidden state.
+ * No-op for stacked layouts, which have no .ui-panel-tabs sibling.
+ * If the hidden tab was active, activates the next visible tab (and its content)
+ * so the panel never settles on a clickable tab with nothing behind it, or no
+ * active tab at all.
+ *
+ * @param {Element} panelEl - The tool's ancestor .ui-panel element
+ * @param {string} toolId - Tool ID
+ * @param {boolean} hidden - Whether the tab should be hidden
+ */
+const _syncTabVisibility = (panelEl, toolId, hidden) => {
+    const tabBar = panelEl?.querySelector('.ui-panel-tabs')
+    if (!tabBar) return
+
+    const tabs = Array.from(tabBar.children)
+    const tabEl = tabs.find(t => t.dataset.tool === toolId)
+    if (!tabEl) return
+
+    tabEl.classList.toggle('plugin-hidden', hidden)
+
+    const hasActiveTab = tabs.some(t => !t.classList.contains('plugin-hidden') && t.classList.contains('active'))
+    if (hasActiveTab) return
+
+    // No visible tab is active (either this one just got hidden while active,
+    // or this one was just shown and nothing else is active) — activate the
+    // first visible tab and its matching content.
+    tabs.forEach(t => t.classList.remove('active'))
+    const nextTab = tabs.find(t => !t.classList.contains('plugin-hidden'))
+    if (!nextTab) return
+    nextTab.classList.add('active')
+    const contentArea = panelEl.querySelector('.ui-panel-tab-content-area')
+    if (!contentArea) return
+    Array.from(contentArea.children).forEach(c => {
+        c.classList.toggle('active', c.dataset.tool === nextTab.dataset.tool)
+    })
+}
+
+/**
+ * Keep a panel's iconified-state icon-tray button in sync with its content
+ * card's hidden state, so a hidden/unloaded tool doesn't leave a clickable
+ * icon pointing at nothing while the panel is iconified/focused.
+ *
+ * @param {Element} panelEl - The tool's ancestor .ui-panel element
+ * @param {string} toolId - Tool ID
+ * @param {boolean} hidden - Whether the icon button should be hidden
+ */
+const _syncIconTrayVisibility = (panelEl, toolId, hidden) => {
+    const iconTray = panelEl?.querySelector('.ui-panel-icons')
+    if (!iconTray) return
+    const iconBtn = Array.from(iconTray.children).find(b => b.dataset.tool === toolId)
+    iconBtn?.classList.toggle('plugin-hidden', hidden)
+}
+
+/**
+ * Keep a tool's auxiliary visibility indicators (tabbed-panel tab button,
+ * iconified-panel icon-tray button) in sync with its content card's hidden state.
+ *
+ * @param {string} targetId - DOM element ID of the tool's content container
+ * @param {string} toolId - Tool ID
+ * @param {boolean} hidden - Whether the tool's indicators should be hidden
+ */
+const _syncVisibilityIndicators = (targetId, toolId, hidden) => {
+    const targetEl = document.getElementById(targetId)
+    const panelEl = targetEl?.closest('.ui-panel')
+    if (!panelEl) return
+    _syncTabVisibility(panelEl, toolId, hidden)
+    _syncIconTrayVisibility(panelEl, toolId, hidden)
+}
+
 const ToolControllerModern_ = {
 
     /**
@@ -439,6 +509,7 @@ const ToolControllerModern_ = {
         deferredTools.set(toolMetadata.id, { toolMetadata, targetId })
         // Hide the card so an empty container doesn't show background/shadow
         document.getElementById(targetId)?.classList.add('plugin-hidden')
+        _syncVisibilityIndicators(targetId, toolMetadata.id, true)
         logger.debug(`Registered deferred tool "${toolMetadata.id}" in container "${targetId}"`)
     },
 
@@ -457,6 +528,7 @@ const ToolControllerModern_ = {
         }
         document.getElementById(targetId)?.classList.remove('plugin-hidden')
         hiddenTools.delete(pluginId)
+        _syncVisibilityIndicators(targetId, pluginId, false)
         logger.debug(`Showed plugin "${pluginId}"`)
         return true
     },
@@ -476,6 +548,7 @@ const ToolControllerModern_ = {
         }
         document.getElementById(targetId)?.classList.add('plugin-hidden')
         hiddenTools.add(pluginId)
+        _syncVisibilityIndicators(targetId, pluginId, true)
         logger.debug(`Hid plugin "${pluginId}"`)
         return true
     },
@@ -485,17 +558,17 @@ const ToolControllerModern_ = {
      * Calls make() on the existing DOM container. The plugin starts visible after load.
      *
      * @param {string} pluginId - Tool ID
-     * @returns {Object|null} Tool instance or null if not found / load failed
+     * @returns {boolean} True if loaded (or already loaded), false if not found / load failed
      */
     loadPlugin: function (pluginId) {
         if (toolIdToTargetId.has(pluginId)) {
             logger.warn(`loadPlugin: "${pluginId}" is already loaded`)
-            return loadedTools.get(toolIdToTargetId.get(pluginId))?.toolInstance || null
+            return true
         }
         const deferred = deferredTools.get(pluginId)
         if (!deferred) {
             logger.warn(`loadPlugin: "${pluginId}" not found in deferred registry`)
-            return null
+            return false
         }
         const instance = this.loadTool(deferred.toolMetadata, deferred.targetId)
         if (instance) {
@@ -503,9 +576,10 @@ const ToolControllerModern_ = {
             // Fresh load always starts visible — remove any leftover hidden class
             document.getElementById(deferred.targetId)?.classList.remove('plugin-hidden')
             hiddenTools.delete(pluginId)
+            _syncVisibilityIndicators(deferred.targetId, pluginId, false)
             logger.debug(`Loaded deferred plugin "${pluginId}"`)
         }
-        return instance
+        return !!instance
     },
 
     /**
@@ -538,6 +612,7 @@ const ToolControllerModern_ = {
             container.innerHTML = ''
             container.classList.add('plugin-hidden')
         }
+        _syncVisibilityIndicators(targetId, pluginId, true)
 
         // Register for future reload
         deferredTools.set(pluginId, { toolMetadata: savedMetadata, targetId })
@@ -556,7 +631,10 @@ const ToolControllerModern_ = {
     },
 
     /**
-     * Check if a plugin is currently hidden (loaded but not visible)
+     * Check if a plugin is currently hidden via hidePlugin/startHidden (loaded but not visible).
+     * Returns false for a plugin that was never loaded or is currently unloaded/deferred
+     * (startUnloaded, or unloadPlugin) — those are also visually hidden but are reported
+     * via isPluginLoaded()===false instead. Check both to fully reason about visibility.
      *
      * @param {string} pluginId - Tool ID
      * @returns {boolean}
