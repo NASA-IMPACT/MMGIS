@@ -108,8 +108,7 @@ const AOITool = {
     height: 0,
     width: 0,
     made: false,
-    MMGISInterface: null,
-    _root: null,
+    targetId: null,
     _reactRoot: null,
     _state: initialState(),
     _cleanups: [],
@@ -119,7 +118,13 @@ const AOITool = {
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
     make(targetId) {
-        this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
+        this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
+        const container = document.getElementById(this.targetId)
+        if (!container) {
+            console.error(`AOITool: container ${this.targetId} not found`)
+            return
+        }
+        this._reactRoot = createRoot(container)
 
         this._api =
             (typeof window !== 'undefined' && window.mmgisAPI?.forPlugin?.(PLUGIN_ID)) ||
@@ -207,12 +212,7 @@ const AOITool = {
             this._reactRoot.unmount()
             this._reactRoot = null
         }
-        this._root = null
-
-        if (this.MMGISInterface) {
-            this.MMGISInterface.separateFromMMGIS()
-            this.MMGISInterface = null
-        }
+        this.targetId = null
 
         this._state = initialState()
         this._api = null
@@ -630,20 +630,6 @@ const AOITool = {
         this._clearSelection()
     },
 
-}
-
-function interfaceWithMMGIS(tool) {
-    const root = document.createElement('div')
-    root.className = 'aoi-tool-host'
-    document.body.appendChild(root)
-    tool._root = root
-    tool._reactRoot = createRoot(root)
-
-    this.separateFromMMGIS = function () {
-        if (tool._root && tool._root.parentNode) {
-            tool._root.parentNode.removeChild(tool._root)
-        }
-    }
 }
 
 export default AOITool
