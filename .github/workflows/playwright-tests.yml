@@ -121,11 +121,12 @@ jobs:
         env:
           CI: false
 
-      # Legacy smoke / event-bus tests, kept non-gating (continue-on-error) so a
-      # flaky old assertion doesn't redden the job. Real gate is the step below.
-      - name: Run legacy E2E Tests (non-gating)
+      # Legacy smoke / event-bus specs. Gating (no continue-on-error), matching
+      # their pre-matrix behavior on development — a real regression here fails
+      # the leg. They boot the same app per mode, so they also confirm smoke +
+      # event bus pass under lean, not just full.
+      - name: Run legacy E2E Tests
         run: npx playwright test tests/e2e/smoke.spec.js tests/e2e/eventbus-integration.spec.js --project=chromium
-        continue-on-error: true
 
       # Gating check: each feature's route must be mounted (non-404) in its mode
       # and absent (404) otherwise. Checks mount vs. 404 only, not behavior. No
