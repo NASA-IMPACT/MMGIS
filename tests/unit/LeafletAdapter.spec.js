@@ -1,6 +1,14 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, vi } from 'vitest'
 import LeafletAdapter from '../../src/essence/Basics/MapEngines/Adapters/LeafletAdapter.ts'
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
+import { getMapScreenshot as mockedLeafletCapture } from '../../src/essence/Basics/MapEngines/Adapters/LeafletScreenshot.js'
+
+// Mock the Leaflet screenshot strategy so we can assert LeafletAdapter delegates
+// to it (issue #143) without driving the real html2canvas/DOM path.
+vi.mock('../../src/essence/Basics/MapEngines/Adapters/LeafletScreenshot.js', () => {
+    const fn = vi.fn(() => Promise.resolve('data:image/png;base64,LEAFLET'))
+    return { getMapScreenshot: fn, default: fn }
+})
 
 
 /**
@@ -143,13 +151,19 @@ test.describe('LeafletAdapter - Lifecycle', () => {
         expect(adapter.getNativeMap()).toBeNull()
     })
 
-    test('exposes captureScreenshot() as part of the IMapEngine contract', () => {
+    test('captureScreenshot() delegates to the Leaflet screenshot strategy', async () => {
         // The engine-aware screenshot path (issue #143) requires every adapter
         // to implement captureScreenshot(). LeafletAdapter delegates to the
-        // shared html2canvas helper; here we assert the method is present so
-        // mmgisAPI.getMapScreenshot() can call it uniformly.
+        // Leaflet screenshot helper; assert it actually calls it and returns the
+        // helper's promise (not just that the method exists).
         const adapter = new LeafletAdapter()
         expect(typeof adapter.captureScreenshot).toBe('function')
+
+        mockedLeafletCapture.mockClear()
+        const result = await adapter.captureScreenshot()
+
+        expect(mockedLeafletCapture).toHaveBeenCalledTimes(1)
+        expect(result).toBe('data:image/png;base64,LEAFLET')
     })
 
     test('destroy() is safe to call when map is not initialized', () => {

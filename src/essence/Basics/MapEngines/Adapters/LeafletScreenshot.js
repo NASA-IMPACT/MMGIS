@@ -2,17 +2,18 @@ import $ from 'jquery'
 import HTML2Canvas from 'html2canvas'
 
 /**
- * Captures a PNG screenshot of the current 2D map (#mapScreen).
+ * The Leaflet map engine's screenshot strategy: captures a PNG of the current
+ * 2D Leaflet map. Invoked via `LeafletAdapter.captureScreenshot()`, which is
+ * what `mmgisAPI.getMapScreenshot()` delegates to when Leaflet is the active
+ * engine. (The deck.gl engine reads its WebGL canvas instead — see
+ * `DeckGLAdapter.captureScreenshot()`.)
  *
- * Temporarily hides UI chrome (zoom controls, compass, scale factor) and
- * normalizes the Leaflet pane z-indices so html2canvas rasterizes the layers
- * in the correct order, then restores that UI afterwards. The `onclone`
- * callback performs non-obvious SVG re-parenting and tile-pane z-index fixups
- * that the cloned document needs in order to render identically to the live
- * map; it must not be altered.
- *
- * This is the reusable core behind both the BottomBar camera button and the
- * public `mmgisAPI.getMapScreenshot()` method.
+ * Temporarily hides UI chrome (zoom controls, compass, scale factor, time UI)
+ * and normalizes the Leaflet pane z-indices so html2canvas rasterizes the
+ * layers in the correct order, then restores that chrome afterwards. The
+ * `onclone` callback performs non-obvious SVG re-parenting and tile-pane
+ * z-index fixups that the cloned document needs in order to render identically
+ * to the live map; it must not be altered.
  *
  * @param {object} [deps] - Injectable dependencies (intended for testing). In
  *   production these default to the imported jQuery and html2canvas.
@@ -40,7 +41,11 @@ function getMapScreenshot(deps = {}) {
     jquery('#scaleBar').css('margin-top', '0px')
     const savedMapToolBarBottom = jquery('#mapToolBar').css('bottom') || '0px'
     jquery('#mapToolBar').css('bottom', '0px')
-    jquery(`#toggleTimeUI.active`).trigger('click')
+    // Collapse the time UI so it stays out of the capture; remember whether it
+    // was open so we can restore it afterwards (the click removes the .active
+    // class, so the restore re-triggers the plain #toggleTimeUI selector).
+    const timeUIWasActive = jquery('#toggleTimeUI.active').length > 0
+    if (timeUIWasActive) jquery('#toggleTimeUI.active').trigger('click')
 
     // The classic UI wraps the map in #mapScreen; the modern layout has no such
     // wrapper, so fall back to the #map container (present in both layouts).
@@ -108,6 +113,7 @@ function getMapScreenshot(deps = {}) {
     jquery('.leaflet-control-zoom').css('display', 'block')
     jquery('#scaleBar').css('margin-top', '5px')
     jquery('#mapToolBar').css('bottom', savedMapToolBarBottom)
+    if (timeUIWasActive) jquery('#toggleTimeUI').trigger('click')
 
     return capture
 }

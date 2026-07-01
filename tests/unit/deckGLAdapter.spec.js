@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
 // Import MAP_ENGINE from the lightweight types module rather than MapEngines/index.ts.
 // index.ts transitively imports LeafletAdapter -> leaflet, which references a global

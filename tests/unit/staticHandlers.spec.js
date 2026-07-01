@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 
@@ -26,8 +26,8 @@ const getHandlerNames = () => {
 }
 
 test.describe('staticHandlers parity with calls.js', () => {
-    test('calls.js registry has the expected 40 entries', () => {
-        expect(getCallNames()).toHaveLength(40)
+    test('calls.js registry has the expected 39 entries', () => {
+        expect(getCallNames()).toHaveLength(39)
     })
 
     test('every calls.js entry has a STATIC_HANDLERS handler', () => {

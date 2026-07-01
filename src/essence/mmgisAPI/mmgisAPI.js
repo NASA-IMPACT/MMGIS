@@ -5,7 +5,6 @@ import QueryURL from '../Ancillary/QueryURL'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import Login from '../Ancillary/Login/Login'
 import LegendTool from '../Tools/Legend/LegendTool.js'
-import { getMapScreenshot } from '../Basics/UserInterface_/ScreenshotUtils'
 import mitt from 'mitt'
 
 import $ from 'jquery'
@@ -443,16 +442,18 @@ var mmgisAPI_ = {
     },
     getMapScreenshot: function () {
         // Screenshot capture is engine-specific: Leaflet rasterizes its DOM
-        // with html2canvas, while the deck.gl/GL map must read its WebGL
-        // canvas directly (html2canvas cannot capture a WebGL canvas). Delegate
-        // to the active IMapEngine adapter, which owns the right strategy.
+        // with html2canvas, while the deck.gl/GL map reads its WebGL canvas
+        // directly (html2canvas cannot capture a WebGL canvas). Delegate to the
+        // active IMapEngine adapter, which owns the right strategy. Map_ assigns
+        // its engine synchronously at init, so a missing engine means no map is
+        // loaded yet — reject rather than reach into a specific engine's DOM.
         const engine = L_.Map_ && L_.Map_.engine
         if (engine && typeof engine.captureScreenshot === 'function') {
             return engine.captureScreenshot()
         }
-        // Fallback for environments where the engine facade is unavailable
-        // (preserves the legacy Leaflet behaviour).
-        return getMapScreenshot()
+        return Promise.reject(
+            new Error('getMapScreenshot: no active map engine to capture')
+        )
     },
     onLoadCallback: null,
     onLoaded: function (onLoadCallback) {
@@ -737,10 +738,13 @@ var mmgisAPI = {
      */
     writeCoordinateURL: mmgisAPI_.writeCoordinateURL,
 
-    /** getMapScreenshot - captures a PNG screenshot of the current 2D map.
-     * Hides UI chrome (zoom controls, compass, scale factor) during capture and
-     * restores it afterwards. The capture is rasterized with html2canvas, so this
-     * is asynchronous and requires no backend call.
+    /** getMapScreenshot - captures a PNG screenshot of the current map view.
+     * Delegates to the active map engine, so the capture strategy is
+     * engine-specific: the Leaflet engine rasterizes its DOM (hiding UI chrome
+     * for the shot), while the deck.gl/GL engine reads its WebGL canvas. Note
+     * that the deck.gl capture is limited to the GL canvas and does not include
+     * HTML overlays/markers layered on top. Asynchronous; requires no backend
+     * call. Rejects if no map engine is active.
      * @returns {Promise<string>} - resolves to a PNG image as a data URL string (e.g. 'data:image/png;base64,...'). The data URL form can be used to trigger a download or to embed the image (e.g. into a PDF).
      */
     getMapScreenshot: mmgisAPI_.getMapScreenshot,

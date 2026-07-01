@@ -1,4 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, vi } from 'vitest'
+
+// PanelManager_ imports mmgisAPI, which transitively pulls in the entire Map_
+// rendering stack. These specs only exercise panel logic, so mock it out (the
+// adjacent __mocks__ stub) to keep the import graph light.
+vi.mock('../../../src/essence/mmgisAPI/mmgisAPI')
 import { PanelManager } from '../../../src/essence/Basics/PanelManager_/PanelManager_.ts'
 import { PANEL_POSITION } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
 import { TOOL_ORIENTATION } from '../../../src/essence/Basics/ToolController_/types/tool.ts'
