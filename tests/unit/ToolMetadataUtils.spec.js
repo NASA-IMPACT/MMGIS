@@ -2,7 +2,7 @@
  * Tests for Tool Metadata Validation and Sanitization Utilities
  */
 
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import {
     sanitizeValue,
     sanitizeNumber,

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import { formatValue, formatRange, formatPercent, interpolateValue } from '../../../src/essence/Tools/LayerManager/lib/utils/formatters.ts'
 
 test.describe('formatters', () => {

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 
 // Tests for the per-dashboard CloudFormation template renderer
 // (scripts/lib/cfn-template.js) used by the lean publish flow.
