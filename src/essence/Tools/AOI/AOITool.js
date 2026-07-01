@@ -345,8 +345,7 @@ const AOITool = {
     },
 
     _onClose() {
-        const btn = document.getElementById('toolButtonAOI')
-        if (btn) btn.click()
+        window.mmgisAPI?.emit('core:unloadPlugin', { pluginId: 'AOITool' })
     },
 
     // ── Search mode ────────────────────────────────────────────────────────────
