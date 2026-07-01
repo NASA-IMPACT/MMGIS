@@ -22,6 +22,7 @@ import {
     FitBoundsOptions,
     MapInitOptions,
     ProjectionOptions,
+    BasemapOptions,
 } from '../types/view'
 import {
     LayerOptions,
@@ -100,6 +101,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Stored initialization options
      */
     private _initOptions: MapInitOptions | null = null
+
+    private _basemapLayer: any = null
+    private _basemapAccessToken: string | undefined
 
     /**
      * Wrapped map listeners installed by onFeatureClick / onFeatureHover.
@@ -189,6 +193,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         const attributionControl = this._container.querySelector('.leaflet-control-attribution')
         if (attributionControl) {
             attributionControl.remove()
+        }
+
+        if (options.basemap && options.basemap.provider && options.basemap.provider !== 'none') {
+            this._initBasemapTileLayer(options.basemap)
         }
     }
 
@@ -283,6 +291,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     destroy(): void {
         if (!this._map) return
 
+        this._removeBasemapLayer()
+
         this._eventHandlers.forEach((handler, eventName) => {
             this._map.off(eventName, handler)
         })
@@ -322,6 +332,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      */
     getNativeMap(): any {
         return this._map
+    }
+
+    getBasemap(): any {
+        return this._basemapLayer
     }
 
     /**
@@ -1252,6 +1266,82 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             }
         }
         return null
+    }
+
+    // ========================================
+    // BASEMAP TILE LAYER METHODS
+    // ========================================
+
+    private _initBasemapTileLayer(basemap: BasemapOptions): void {
+        this._basemapAccessToken = basemap.accessToken
+        const spec = this._resolveBasemapTileSpec(basemap)
+        this._basemapLayer = L.tileLayer(spec.url, spec.options)
+        this._basemapLayer.addTo(this._map)
+        this._basemapLayer.bringToBack()
+
+        const specMinZoom = (spec.options as { minZoom?: number }).minZoom
+        if (typeof specMinZoom === 'number' && specMinZoom > this._map.getMinZoom()) {
+            this._map.setMinZoom(specMinZoom)
+        }
+    }
+
+    setBasemapStyle(styleUrl: string): void {
+        if (!this._map) return
+        const spec = this._resolveBasemapTileSpec({
+            provider: this._inferProvider(styleUrl),
+            style: styleUrl,
+            accessToken: this._basemapAccessToken,
+        })
+        this._removeBasemapLayer()
+        this._basemapLayer = L.tileLayer(spec.url, spec.options)
+        this._basemapLayer.addTo(this._map)
+        this._basemapLayer.bringToBack()
+    }
+
+    private _removeBasemapLayer(): void {
+        if (this._basemapLayer && this._map) {
+            this._map.removeLayer(this._basemapLayer)
+        }
+        this._basemapLayer = null
+    }
+
+    private _resolveBasemapTileSpec(basemap: BasemapOptions): {
+        url: string
+        options: Record<string, unknown>
+    } {
+        const style = basemap.style || ''
+
+        const mapboxMatch = style.match(/^mapbox:\/\/styles\/([^/]+)\/(.+)$/)
+        if (mapboxMatch) {
+            const [, user, styleId] = mapboxMatch
+            const token = basemap.accessToken || this._basemapAccessToken || ''
+            return {
+                url: `https://api.mapbox.com/styles/v1/${user}/${styleId}/tiles/{z}/{x}/{y}?access_token=${token}`,
+                options: {
+                    tileSize: 512,
+                    zoomOffset: -1,
+                    minZoom: 1,
+                    attribution: '© Mapbox © OpenStreetMap',
+                },
+            }
+        }
+
+        if (style.includes('{z}') && style.includes('{x}') && style.includes('{y}')) {
+            return { url: style, options: {} }
+        }
+
+        return {
+            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+            options: {
+                subdomains: 'abc',
+                attribution: '© OpenStreetMap contributors',
+            },
+        }
+    }
+
+    private _inferProvider(styleUrl: string): BasemapOptions['provider'] {
+        if (styleUrl.startsWith('mapbox://')) return 'mapbox'
+        return 'maplibre'
     }
 }
 
