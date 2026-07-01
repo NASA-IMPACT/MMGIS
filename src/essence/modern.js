@@ -262,9 +262,14 @@ class ModernInterface {
      */
     _registerPanels() {
         const panelsConfig = this.configData?.panelSettings?.panels || []
+        const floatingPanelsConfig = (this.configData?.panelSettings?.floatingPanels || []).map(p => ({
+            layoutType: 'stacked',
+            ...p,
+        }))
+        const allPanels = [...panelsConfig, ...floatingPanelsConfig]
 
         const failedPanels = []
-        panelsConfig.forEach(panelConfig => {
+        allPanels.forEach(panelConfig => {
             try {
                 // Register with the global PanelManager
                 PanelManager_.registerPanel(panelConfig)
