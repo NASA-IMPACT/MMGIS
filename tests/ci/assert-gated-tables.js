@@ -1,22 +1,16 @@
 /**
  * assert-gated-tables.js
  *
- * A feature gated OFF in the current deployment mode still has its DB tables,
- * because model registration + sequelize.sync() run unconditionally on boot and
- * only route mounts are gated (ADR D2: keep, env-gated — models aren't
- * per-mode-gated, so a gated-off feature's tables are created but unused).
+ * A feature gated OFF in the current mode still keeps its DB tables: models
+ * register and sync() runs unconditionally on boot, only route mounts are gated
+ * (ADR D2). This pins that — dropping a model, or gating its registration, fails
+ * CI in the leg where the feature is off.
  *
- * This check PINS that invariant: a change that accidentally gates model
- * registration, or drops a model thinking it's dead in lean, fails CI in the leg
- * where the feature is gated off. (It is not about enabling a migration-free
- * mode flip — deployments don't switch modes, and sync() self-heals on boot.)
- *
- * Boots the backend setups (registering the models), runs sync(), and asserts
- * the gated-feature tables are present — exits non-zero if any are missing.
+ * Boots the backend setups (registering models), runs sync(), and exits non-zero
+ * if any gated-feature table is missing.
  *
  * Must run AFTER scripts/init-db.js: sync() creates PostGIS geometry columns, so
- * the postgis extension has to exist first or it throws
- * `type "geometry" does not exist`.
+ * the postgis extension must exist first.
  */
 
 require("dotenv").config({ path: __dirname + "/../../.env" });
@@ -25,10 +19,8 @@ const { MODE } = require("../../API/Backend/Utils/deploymentMode");
 const setups = require("../../API/setups");
 const { sequelize } = require("../../API/connection");
 
-// Hand-written from the deployment feature inventory: the tables behind the
-// features that are gated OFF in one mode or the other. They must exist in BOTH
-// modes. The shortener model is `url_shortener`; Sequelize pluralizes it to
-// `url_shorteners` by default, so accept either spelling.
+// Hand-written: tables behind features gated off in one mode or the other; they
+// must exist in BOTH. Accept either spelling where Sequelize may pluralize.
 const REQUIRED_TABLE_GROUPS = [
     ["datasets"], // geodata management (datasets)
     ["geodatasets"], // geodata management (geodatasets)
@@ -40,8 +32,7 @@ const REQUIRED_TABLE_GROUPS = [
 
 async function main() {
     await new Promise((resolve) => {
-        // Loading the backend setups requires each feature's setup.js, which in
-        // turn requires its models — registering them on the shared sequelize.
+        // Loading the setups requires each feature's models, registering them.
         setups.getBackendSetups(() => resolve());
     });
 
