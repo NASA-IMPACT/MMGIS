@@ -163,11 +163,8 @@ export class ColormappedCOGLayer extends COGLayer<any> {
         if (tex && typeof tex.destroy === 'function') {
             tex.destroy()
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if ((super as any).finalizeState) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ;(super as any).finalizeState(context)
-        }
+        // deck.gl's Layer base class always defines finalizeState.
+        super.finalizeState(context)
     }
 
     // Return type is `any` to avoid TypeScript's return-type assignability
