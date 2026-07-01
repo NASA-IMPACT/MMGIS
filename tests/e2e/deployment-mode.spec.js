@@ -9,10 +9,8 @@ import { test, expect, request } from '@playwright/test'
  *
  * HAND-WRITTEN feature inventory — IMPORTANT: the expected on/off mapping below
  * is written by a person from the deployment ADR, NOT read from any capability
- * table or the gated code. That independence is the point: a test that takes its
- * expected answers from the thing it tests can't catch a wrong entry. Route PATHS
- * were looked up in the code, but which mode each belongs to is hand-asserted.
- * Do NOT rewrite this to read its expectations from a capability table.
+ * table or the gated code. Do NOT rewrite this to read its expectations from a
+ * capability table.
  *
  * Present vs. absent discriminator (verified against the code): a MOUNTED route
  * answers from its handler — with AUTH=off that's a 200 guard-failure/data body,
@@ -116,27 +114,26 @@ test.describe(`Deployment mode present/absent — MODE=${MODE}`, () => {
     for (const feature of FEATURES) {
         const belongsToRunningMode = feature.mode === MODE
 
-        test(`${feature.name} is ${
-            belongsToRunningMode ? 'present' : 'absent'
-        } in ${MODE}`, async () => {
-            const status = await probe(api, feature)
+        test(`${feature.name} is ${belongsToRunningMode ? 'present' : 'absent'
+            } in ${MODE}`, async () => {
+                const status = await probe(api, feature)
 
-            if (belongsToRunningMode) {
-                // Reachable: the route is mounted, so it must NOT hit the
-                // catch-all 404. (It may legitimately answer 200 with a guard
-                // failure, real data, or a proxy/upstream error status.)
-                expect(
-                    status,
-                    `${feature.name} should be MOUNTED in ${MODE} (got ${status}); a 404 means the route is gone`
-                ).not.toBe(404)
-            } else {
-                // Gone: the route is unmounted and falls through to the
-                // app catch-all, which returns a real 404.
-                expect(
-                    status,
-                    `${feature.name} should be ABSENT in ${MODE} (got ${status}); anything but 404 means the route is still mounted`
-                ).toBe(404)
-            }
-        })
+                if (belongsToRunningMode) {
+                    // Reachable: the route is mounted, so it must NOT hit the
+                    // catch-all 404. (It may legitimately answer 200 with a guard
+                    // failure, real data, or a proxy/upstream error status.)
+                    expect(
+                        status,
+                        `${feature.name} should be MOUNTED in ${MODE} (got ${status}); a 404 means the route is gone`
+                    ).not.toBe(404)
+                } else {
+                    // Gone: the route is unmounted and falls through to the
+                    // app catch-all, which returns a real 404.
+                    expect(
+                        status,
+                        `${feature.name} should be ABSENT in ${MODE} (got ${status}); anything but 404 means the route is still mounted`
+                    ).toBe(404)
+                }
+            })
     }
 })
