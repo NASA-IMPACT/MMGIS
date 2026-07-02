@@ -1803,21 +1803,10 @@ var Formulae_ = {
         downloadAnchorNode.click()
         downloadAnchorNode.remove()
     },
-    // Downloads a data-URL image (e.g. canvas.toDataURL output) as a file.
-    // Decodes to a Blob and downloads via an object URL: large/hi-DPI captures
-    // inflate ~33% as base64 and data-URL anchor downloads are capped/unreliable
-    // across browsers (Chromium caps them around 2MB). fetch(dataUrl) is avoided
-    // deliberately — the shipped CSP's connect-src does not allow the data:
-    // scheme, so fetch-based conversion fails on stock deployments.
-    downloadDataUrl(dataUrl, filename) {
-        const [header, base64] = dataUrl.split(',')
-        const mimeMatch = header.match(/data:([^;,]+)/)
-        const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream'
-        const binary = atob(base64)
-        const bytes = new Uint8Array(binary.length)
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-        this.downloadBlob(new Blob([bytes], { type: mime }), filename)
-    },
+    // Downloads a Blob as a file via a transient object URL. Preferred over
+    // data-URL anchor downloads (capped/unreliable for large payloads across
+    // browsers) and over fetch(dataUrl) conversion (the shipped CSP's
+    // connect-src does not allow the data: scheme).
     downloadBlob(blob, filename) {
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')

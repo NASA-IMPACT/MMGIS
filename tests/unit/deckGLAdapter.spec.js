@@ -283,9 +283,12 @@ test.describe('DeckGLAdapter', () => {
             try {
                 const adapter = makeAdapter()
                 let repainted = false
+                let armedHandler = null
+                const removed = []
                 adapter._isOverlayMode = true
                 adapter._basemap = {
-                    once: () => {},
+                    once: (type, handler) => { armedHandler = handler },
+                    off: (type, handler) => { removed.push({ type, handler }) },
                     triggerRepaint: () => { repainted = true },
                     getCanvas: () => ({
                         width: 256,
@@ -299,6 +302,11 @@ test.describe('DeckGLAdapter', () => {
                 vi.advanceTimersByTime(3000)
                 await assertion
                 expect(repainted).toBe(true)
+                // The timeout must unhook the pending render listener, or a
+                // timed-out capture leaves it armed to fire on a later render.
+                expect(removed).toEqual([
+                    { type: 'render', handler: armedHandler },
+                ])
             } finally {
                 vi.useRealTimers()
             }
