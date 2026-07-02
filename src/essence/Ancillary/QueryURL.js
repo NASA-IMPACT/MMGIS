@@ -4,6 +4,7 @@ import F_ from '../Basics/Formulae_/Formulae_'
 import L_ from '../Basics/Layers_/Layers_'
 import T_ from '../Basics/ToolController_/ToolController_'
 import calls from '../../pre/calls'
+import { isStaticBuild } from '../../pre/capabilities'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import TimeUI from '../Basics/TimeControl_/TimeUI'
 
@@ -430,6 +431,33 @@ var QueryURL = {
         var url = encodeURI(urlAppendage)
 
         return window.location.href.split('?')[0] + url
+    },
+    getShareURL: function (callback) {
+        var fullUrl = this.writeCoordinateURL()
+
+        if (isStaticBuild()) {
+            if (typeof callback === 'function') callback(fullUrl)
+            return
+        }
+
+        var baseUrl = window.location.href.split('?')[0]
+        var urlAppendage = fullUrl.startsWith(baseUrl)
+            ? fullUrl.substring(baseUrl.length)
+            : fullUrl.substring(fullUrl.indexOf('?'))
+
+        calls.api(
+            'shortener_shorten',
+            {
+                url: urlAppendage,
+            },
+            function (s) {
+                var shortUrl = baseUrl + '?s=' + s.body.url
+                if (typeof callback === 'function') callback(shortUrl)
+            },
+            function () {
+                if (typeof callback === 'function') callback(fullUrl)
+            }
+        )
     },
     writeSearchURL: function (searchStrs, searchFile) {
         return //!!!!!!!!!!!!!!!!

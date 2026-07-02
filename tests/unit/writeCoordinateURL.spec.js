@@ -5,10 +5,20 @@ import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 // viewers, so stub the aggregator to keep the QueryURL import chain parseable in
 // the jsdom test env.
 vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
+vi.mock('../../src/pre/calls', () => ({
+    default: {
+        api: vi.fn(),
+    },
+}))
+vi.mock('../../src/pre/capabilities', () => ({
+    isStaticBuild: vi.fn(() => false),
+}))
 
 import QueryURL from '../../src/essence/Ancillary/QueryURL'
 import L_ from '../../src/essence/Basics/Layers_/Layers_'
 import T_ from '../../src/essence/Basics/ToolController_/ToolController_'
+import calls from '../../src/pre/calls'
+import { isStaticBuild } from '../../src/pre/capabilities'
 
 // Issue #143 - writeCoordinateURL() is the canonical share-link method: it must
 // return the full view URL synchronously (a string, no backend call), and it
@@ -35,6 +45,9 @@ let saved
 let savedGetToolsUrl
 
 beforeEach(() => {
+    vi.mocked(calls.api).mockReset()
+    vi.mocked(isStaticBuild).mockReturnValue(false)
+
     saved = {}
     for (const key of TOUCHED) saved[key] = L_[key]
     savedGetToolsUrl = T_.getToolsUrl
@@ -86,5 +99,57 @@ test.describe('QueryURL.writeCoordinateURL (issue #143)', () => {
             url = QueryURL.writeCoordinateURL()
         }).not.toThrow()
         expect(url).toContain('panePercents=0,100,0')
+    })
+})
+
+test.describe('QueryURL.getShareURL (issue #143)', () => {
+    test('returns the long URL without shortening in static builds', () => {
+        vi.mocked(isStaticBuild).mockReturnValue(true)
+        L_.UserInterface_ = {}
+
+        const callback = vi.fn()
+
+        QueryURL.getShareURL(callback)
+
+        expect(calls.api).not.toHaveBeenCalled()
+        expect(callback).toHaveBeenCalledWith(
+            expect.stringContaining('mission=TestMission')
+        )
+        expect(callback.mock.calls[0][0]).toContain('panePercents=0,100,0')
+    })
+
+    test('returns a short URL when the full-mode shortener succeeds', () => {
+        L_.UserInterface_ = {}
+        vi.mocked(calls.api).mockImplementation((call, data, success) => {
+            success({ body: { url: 'abc12' } })
+        })
+        const callback = vi.fn()
+
+        QueryURL.getShareURL(callback)
+
+        expect(calls.api).toHaveBeenCalledWith(
+            'shortener_shorten',
+            { url: expect.stringContaining('?mission=TestMission') },
+            expect.any(Function),
+            expect.any(Function)
+        )
+        expect(callback).toHaveBeenCalledWith(
+            'http://localhost:3000/?s=abc12'
+        )
+    })
+
+    test('falls back to the long URL when shortening fails', () => {
+        L_.UserInterface_ = {}
+        vi.mocked(calls.api).mockImplementation((call, data, success, error) => {
+            error()
+        })
+        const callback = vi.fn()
+
+        QueryURL.getShareURL(callback)
+
+        expect(callback).toHaveBeenCalledWith(
+            expect.stringContaining('mission=TestMission')
+        )
+        expect(callback.mock.calls[0][0]).not.toContain('?s=')
     })
 })

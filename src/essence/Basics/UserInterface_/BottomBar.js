@@ -31,18 +31,20 @@ let BottomBar = {
             })
             .on('click', function () {
                 const linkButton = $(this)
-                L_.url = QueryURL.writeCoordinateURL()
-                window.history.replaceState('', '', L_.url)
-                F_.copyToClipboard(L_.url)
+                QueryURL.getShareURL(function (url) {
+                    L_.url = url
+                    window.history.replaceState('', '', L_.url)
+                    F_.copyToClipboard(L_.url)
 
-                linkButton.removeClass('mdi-open-in-new')
-                linkButton.addClass('mdi-check-bold')
-                linkButton.css('color', 'var(--color-green)')
-                setTimeout(() => {
-                    linkButton.removeClass('mdi-check-bold')
-                    linkButton.css('color', '')
-                    linkButton.addClass('mdi-open-in-new')
-                }, 3000)
+                    linkButton.removeClass('mdi-open-in-new')
+                    linkButton.addClass('mdi-check-bold')
+                    linkButton.css('color', 'var(--color-green)')
+                    setTimeout(() => {
+                        linkButton.removeClass('mdi-check-bold')
+                        linkButton.css('color', '')
+                        linkButton.addClass('mdi-open-in-new')
+                    }, 3000)
+                })
             })
         bottomBar.append(topBarLink)
 
