@@ -1,5 +1,4 @@
 import type { ShareActionKind, ShareFormatFlags } from './types'
-import { getEnabledShareActions } from './getEnabledShareActions'
 
 /** A renderable share-menu item: its kind, the label/icon shown, the handler
  *  it fires, whether a separator precedes it, and whether it respects `busy`. */
@@ -35,17 +34,20 @@ const ICONS: Record<ShareActionKind, string> = {
 }
 
 /**
- * Single source of truth for the dropdown's rows: maps the enabled actions
- * (from getEnabledShareActions) to renderable items, each wired to the matching
- * handler. The first export item carries a separator so the link is visually
- * divided from the downloads. Pure and DOM-free so the gating + handler wiring
- * can be asserted without a render.
+ * Single source of truth for the dropdown's rows: decides which actions are
+ * enabled (the link is always present; PNG/PDF only when their toggle is on)
+ * and maps them to renderable items, each wired to the matching handler. The
+ * first export item carries a separator so the link is visually divided from
+ * the downloads. Pure and DOM-free so the gating + handler wiring can be
+ * asserted without a render.
  */
 export function getShareMenuItems(
     formats: ShareFormatFlags,
     handlers: ShareMenuHandlers,
 ): ShareMenuItem[] {
-    const actions = getEnabledShareActions(formats)
+    const actions: ShareActionKind[] = ['link']
+    if (formats.png) actions.push('png')
+    if (formats.pdf) actions.push('pdf')
     const handlerFor: Record<ShareActionKind, (() => void) | undefined> = {
         link: handlers.onCopyLink,
         png: handlers.onDownloadPng,

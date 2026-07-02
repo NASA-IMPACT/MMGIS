@@ -77,6 +77,12 @@ export async function writeTextToClipboard(
     textarea.style.top = '-9999px'
     textarea.style.left = '-9999px'
     textarea.setAttribute('readonly', '')
+    // The select() below destroys whatever text the user had selected on the
+    // page, so save the selection and restore it afterwards (mirrors core's
+    // F_.copyToClipboard, which plugins can't import).
+    const selection = doc.getSelection?.()
+    const savedRange =
+        selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
     doc.body.appendChild(textarea)
     try {
         textarea.select()
@@ -84,6 +90,10 @@ export async function writeTextToClipboard(
         if (!ok) throw new Error('Clipboard copy command was rejected')
     } finally {
         doc.body.removeChild(textarea)
+        if (selection && savedRange) {
+            selection.removeAllRanges()
+            selection.addRange(savedRange)
+        }
     }
 }
 

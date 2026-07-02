@@ -2,7 +2,6 @@
 export { ShareMenu, type ShareMenuProps } from './components/ShareMenu/ShareMenu'
 
 // Pure helpers / domain types
-export { getEnabledShareActions } from './getEnabledShareActions'
 export {
     getShareMenuItems,
     type ShareMenuItem,
