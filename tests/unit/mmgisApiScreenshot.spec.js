@@ -48,4 +48,20 @@ test.describe('mmgisAPI.getMapScreenshot delegation (issue #143)', () => {
             /no active map engine/
         )
     })
+
+    // The engine does synchronous DOM work before its promise exists (e.g.
+    // Leaflet's chrome hiding); a sync throw must surface as a rejection, not
+    // an exception escaping the promise-returning API.
+    test('converts a synchronous engine throw into a rejection', async () => {
+        L_.Map_ = {
+            engine: {
+                captureScreenshot: () => {
+                    throw new Error('boom before promise')
+                },
+            },
+        }
+        await expect(mmgisAPI.getMapScreenshot()).rejects.toThrow(
+            /boom before promise/
+        )
+    })
 })

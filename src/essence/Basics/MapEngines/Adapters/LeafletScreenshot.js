@@ -47,73 +47,95 @@ function getMapScreenshot(deps = {}) {
     const timeUIWasActive = jquery('#toggleTimeUI.active').length > 0
     if (timeUIWasActive) jquery('#toggleTimeUI.active').trigger('click')
 
+    // Restore the UI chrome hidden above. Split out so the error path below
+    // can restore too — without it, a synchronous throw between the hide and
+    // the capture would leave controls hidden and the time UI collapsed.
+    const restoreChrome = function () {
+        jquery('#map .leaflet-tile-pane')
+            .children()
+            .each(function (i, elm) {
+                jquery(elm).css('z-index', zIndices[i])
+            })
+        jquery('.leaflet-control-scalefactor').css('display', 'flex')
+        jquery('#mmgis-map-compass').css('display', 'block')
+        jquery('.leaflet-control-zoom').css('display', 'block')
+        jquery('#scaleBar').css('margin-top', '5px')
+        jquery('#mapToolBar').css('bottom', savedMapToolBarBottom)
+        if (timeUIWasActive) jquery('#toggleTimeUI').trigger('click')
+    }
+
     // The classic UI wraps the map in #mapScreen; the modern layout has no such
     // wrapper, so fall back to the #map container (present in both layouts).
     const documentElm =
         document.getElementById('mapScreen') || document.getElementById('map')
-    const capture = html2canvas(documentElm, {
-        allowTaint: true,
-        useCORS: true,
-        logging: false,
-        scrollX: -window.scrollX,
-        scrollY: -window.scrollY,
-        windowWidth: documentElm.offsetWidth,
-        windowHeight: documentElm.offsetHeight,
-        onclone: function (e) {
-            // Fix svg layer shift
-            const originalSVG = document.body.querySelectorAll(
-                'svg.leaflet-zoom-animated'
-            )
-            const copySVG = e.body.querySelectorAll(
-                'svg.leaflet-zoom-animated'
-            )
-            copySVG.forEach((copyEle, i) => {
-                const attribute = originalSVG
-                    .item(i)
-                    .getAttribute('style')
-                const parentElement = copyEle.parentElement
-                parentElement.removeChild(copyEle)
-                const temp = document.createElement('div')
-                temp.appendChild(copyEle)
-                parentElement.appendChild(temp)
-                temp.setAttribute('style', attribute)
-                copyEle.removeAttribute('style')
-            })
+    if (!documentElm) {
+        restoreChrome()
+        return Promise.reject(
+            new Error('getMapScreenshot: no #mapScreen/#map container to capture')
+        )
+    }
 
-            // Fix tile layer z-indices
-            const originalZ = document.body.querySelectorAll(
-                '.leaflet-tile-pane > div.leaflet-layer'
-            )
-            const copyZ = e.body.querySelectorAll(
-                '.leaflet-tile-pane > div.leaflet-layer'
-            )
-            copyZ.forEach((copyEle, i) => {
-                const attribute = originalZ
-                    .item(i)
-                    .getAttribute('style')
-                copyEle.setAttribute('style', attribute)
-            })
-        },
-    }).then(function (canvas) {
-        return canvas.toDataURL('image/png')
-    })
+    let capture
+    try {
+        capture = html2canvas(documentElm, {
+            allowTaint: true,
+            useCORS: true,
+            logging: false,
+            scrollX: -window.scrollX,
+            scrollY: -window.scrollY,
+            windowWidth: documentElm.offsetWidth,
+            windowHeight: documentElm.offsetHeight,
+            onclone: function (e) {
+                // Fix svg layer shift
+                const originalSVG = document.body.querySelectorAll(
+                    'svg.leaflet-zoom-animated'
+                )
+                const copySVG = e.body.querySelectorAll(
+                    'svg.leaflet-zoom-animated'
+                )
+                copySVG.forEach((copyEle, i) => {
+                    const attribute = originalSVG
+                        .item(i)
+                        .getAttribute('style')
+                    const parentElement = copyEle.parentElement
+                    parentElement.removeChild(copyEle)
+                    const temp = document.createElement('div')
+                    temp.appendChild(copyEle)
+                    parentElement.appendChild(temp)
+                    temp.setAttribute('style', attribute)
+                    copyEle.removeAttribute('style')
+                })
+
+                // Fix tile layer z-indices
+                const originalZ = document.body.querySelectorAll(
+                    '.leaflet-tile-pane > div.leaflet-layer'
+                )
+                const copyZ = e.body.querySelectorAll(
+                    '.leaflet-tile-pane > div.leaflet-layer'
+                )
+                copyZ.forEach((copyEle, i) => {
+                    const attribute = originalZ
+                        .item(i)
+                        .getAttribute('style')
+                    copyEle.setAttribute('style', attribute)
+                })
+            },
+        }).then(function (canvas) {
+            return canvas.toDataURL('image/png')
+        })
+    } catch (err) {
+        restoreChrome()
+        throw err
+    }
 
     // Restore the UI chrome we hid for the capture. This runs immediately
-    // (not in .then) because html2canvas clones the DOM synchronously within
-    // the call above, before its first internal await, so the capture already
-    // holds the hidden-chrome state and restoring the live UI now does not
-    // affect it.
-    jquery('#map .leaflet-tile-pane')
-        .children()
-        .each(function (i, elm) {
-            jquery(elm).css('z-index', zIndices[i])
-        })
-    jquery('.leaflet-control-scalefactor').css('display', 'flex')
-    jquery('#mmgis-map-compass').css('display', 'block')
-    jquery('.leaflet-control-zoom').css('display', 'block')
-    jquery('#scaleBar').css('margin-top', '5px')
-    jquery('#mapToolBar').css('bottom', savedMapToolBarBottom)
-    if (timeUIWasActive) jquery('#toggleTimeUI').trigger('click')
+    // (not in .then) so the live UI isn't visibly degraded for the duration of
+    // the capture; html2canvas's initial DOM clone happens synchronously within
+    // the call above. (Caveat: html2canvas's `onclone` fires later and copies
+    // some styles from the live document, so restored values can leak into the
+    // clone's tile z-indices — a pre-existing quirk inherited from the old
+    // BottomBar implementation.)
+    restoreChrome()
 
     return capture
 }
