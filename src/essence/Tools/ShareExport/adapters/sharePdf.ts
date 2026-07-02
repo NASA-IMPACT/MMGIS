@@ -1,13 +1,7 @@
-// jspdf is loaded via dynamic import() inside defaultFactory (never imported at
-// module top): webpack code-splits the dynamic import into its own async chunk,
-// keeping the heavy jspdf module out of the main bundle and off the critical
-// path — it is only fetched the first time a PDF export runs. It also avoids
-// evaluating jspdf (which touches browser-only globals like atob/btoa) in Node
-// test/SSR contexts.
-
-// PDF generation is owned entirely by this plugin (core has no PDF dependency).
-// The screenshot PNG is embedded centered on a portrait page, scaled to fit
-// within margins while preserving its natural aspect ratio.
+// jspdf is loaded via dynamic import() inside defaultFactory so webpack
+// code-splits it out of the main bundle (fetched on first PDF export) and it
+// never evaluates in Node test/SSR contexts. PDF generation is owned entirely
+// by this plugin — core has no PDF dependency.
 
 export type Placement = {
     x: number

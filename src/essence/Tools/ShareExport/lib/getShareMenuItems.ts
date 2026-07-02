@@ -34,12 +34,9 @@ const ICONS: Record<ShareActionKind, string> = {
 }
 
 /**
- * Single source of truth for the dropdown's rows: decides which actions are
- * enabled (the link is always present; PNG/PDF only when their toggle is on)
- * and maps them to renderable items, each wired to the matching handler. The
- * first export item carries a separator so the link is visually divided from
- * the downloads. Pure and DOM-free so the gating + handler wiring can be
- * asserted without a render.
+ * Single source of truth for the dropdown's rows: the link is always present,
+ * PNG/PDF only when their toggle is on; the first export row carries a
+ * separator. Pure and DOM-free so gating + wiring are testable without a render.
  */
 export function getShareMenuItems(
     formats: ShareFormatFlags,

@@ -26,17 +26,12 @@ const MENU_GAP_PX = 4
 type MenuPosition = { top: number; right: number }
 
 /**
- * Presentational share control: a compact "Share map" trigger button that opens
- * a small dropdown menu (copy link / export PNG / export PDF). Pure and
- * framework-agnostic — all behaviour comes in via props. The rows it renders
- * come from getShareMenuItems, so the config toggles directly gate the menu.
- *
- * The trigger renders in place (positioned by the host layout, e.g. a floating
- * panel card); the transient dropdown is portaled to document.body so an
- * overflow-clipping ancestor (like the float zone's panel card) can't cut it
- * off. The portal is position:fixed, anchored under the trigger's bottom-right
- * corner via getBoundingClientRect, measured when the menu opens. Scroll and
- * resize invalidate that measurement, so both simply close the menu.
+ * Presentational share control: a "Share map" trigger that opens a dropdown
+ * (copy link / export PNG / export PDF). Pure — all behaviour comes in via
+ * props. The trigger renders in place (positioned by the host layout); the
+ * transient dropdown is portaled to document.body so an overflow-clipping
+ * ancestor (like a float panel card) can't cut it off, anchored under the
+ * trigger's bottom-right corner at open time.
  */
 export function ShareMenu({
     formats,
@@ -80,8 +75,7 @@ export function ShareMenu({
         setOpen(true)
     }, [open, close])
 
-    // Close on outside-click and Escape while the menu is open. The dropdown
-    // lives in a portal, so "outside" must check containment against both the
+    // Close on outside-click and Escape. "Outside" must check both the
     // in-place root (trigger) and the portaled menu element.
     useEffect(() => {
         if (!open) return
@@ -102,12 +96,9 @@ export function ShareMenu({
         }
     }, [open, close])
 
-    // The portal's fixed position was measured when the menu opened, so ANY
-    // movement of the trigger desyncs it — scroll and resize, but also layout
-    // shifts that fire no event (e.g. a sibling tool in the same float card
-    // re-rendering taller). While the menu is open, watch the trigger's rect
-    // each animation frame and close on drift. The menu is transient, so the
-    // one getBoundingClientRect per frame is negligible.
+    // The anchor was measured at open time, so ANY trigger movement desyncs
+    // the portal — including layout shifts that fire no event. Watch the
+    // trigger's rect each frame while open and close on drift.
     useEffect(() => {
         if (!open) return
         const anchor = triggerRef.current?.getBoundingClientRect()

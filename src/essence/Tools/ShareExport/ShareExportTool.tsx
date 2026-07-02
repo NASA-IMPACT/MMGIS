@@ -2,13 +2,10 @@ import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MMGISShareExportAdapter } from './MMGISShareExportAdapter'
 
-// ShareExport renders a self-contained "Share map" trigger button that opens a
-// small dropdown menu. Placement is layout-owned: the modern layout assigns the
-// tool to a panel (e.g. a `float-top-right` floating panel declared in the
-// mission's panelSettings) and calls make(targetId); we mount the React root
-// into that assigned container, exactly like CardTool. Only the transient
-// dropdown menu escapes the panel card (portaled to document.body by
-// <ShareMenu>) so the float zone's overflow clipping can't cut it off.
+// ShareExport's "Share map" control. Placement is layout-owned: the layout
+// assigns the tool a panel (e.g. a `float-top-right` floating panel) and calls
+// make(targetId); the React root mounts into that container. Only the
+// transient dropdown escapes the panel card (portaled by <ShareMenu>).
 
 const HOST_ID = 'shareExport-tool-host'
 
@@ -35,8 +32,7 @@ const ShareExportTool = {
             return
         }
 
-        // Guard against a double-make: fully tear down the previous mount
-        // (unmount the React root, then drop its host element).
+        // Double-make guard: fully tear down the previous mount.
         if (_root) {
             _root.unmount()
             _root = null

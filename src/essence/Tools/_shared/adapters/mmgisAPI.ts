@@ -57,23 +57,15 @@ export const mmgisHasHandler = (name: string): boolean => {
     return window.mmgisAPI?.hasHandler?.(name) === true
 }
 
-// writeCoordinateURL / getMapScreenshot are first-class methods on the public
-// mmgisAPI surface (not request/provide handlers), so they're wrapped here as
-// thin pass-throughs. This keeps plugins talking to core only through this
-// shared client rather than reaching into core internals.
+// Thin pass-throughs for first-class mmgisAPI methods, so plugins reach core
+// only through this shared client. Each returns null if core isn't ready.
 
-/**
- * Returns the current view as a complete, self-contained share URL (the long
- * form of "Copy Link"). Synchronous, no backend. Null if core isn't ready.
- */
+/** The current view as a complete, self-contained share URL. Synchronous. */
 export const mmgisWriteCoordinateURL = (): string | null => {
     return window.mmgisAPI?.writeCoordinateURL?.() ?? null
 }
 
-/**
- * Captures the current map as a PNG Blob plus image metadata.
- * Resolves to null if core isn't ready.
- */
+/** The current map as a PNG Blob plus image metadata. */
 export const mmgisGetMapScreenshot = async (): Promise<MapScreenshotResult | null> => {
     if (window.mmgisAPI?.getMapScreenshot) {
         return await window.mmgisAPI.getMapScreenshot()
@@ -81,11 +73,7 @@ export const mmgisGetMapScreenshot = async (): Promise<MapScreenshotResult | nul
     return null
 }
 
-/**
- * Returns metadata about the current view (mission name, time, center, zoom)
- * for provenance-rich export filenames. Null if core isn't ready; individual
- * fields are null until the mission has loaded far enough to answer them.
- */
+/** View metadata (mission, time, center, zoom); fields null until loaded. */
 export const mmgisGetViewState = (): ViewState | null => {
     return window.mmgisAPI?.getViewState?.() ?? null
 }

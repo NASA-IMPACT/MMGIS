@@ -1,12 +1,7 @@
 // Small DOM helpers for triggering browser downloads and converting image
-// blobs. Kept dependency-injectable (document / URL / FileReader) so
-// shareActions stays unit-testable.
+// blobs. Dependency-injectable (document / URL / FileReader) for tests.
 
-/**
- * How long the object URL stays alive after the download is triggered. The
- * revoke must be deferred: browsers resolve the URL asynchronously after the
- * click, so revoking immediately can abort the download.
- */
+// Deferred revoke: an immediate revoke after click() can abort the download.
 const REVOKE_DELAY_MS = 10000
 
 export type DownloadEnv = {
@@ -29,11 +24,7 @@ export type BlobReaderLike = {
 
 export type BlobReaderCtor = new () => BlobReaderLike
 
-/**
- * Triggers a browser download of a Blob by clicking a transient object URL.
- * The revoke is delayed because browsers resolve the object URL asynchronously
- * after the click, and revoking immediately can abort the download.
- */
+/** Triggers a browser download of a Blob by clicking a transient object URL. */
 export function downloadBlob(
     blob: Blob,
     filename: string,

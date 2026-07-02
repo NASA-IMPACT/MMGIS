@@ -8,19 +8,15 @@ import {
 import { buildSharePdf, type JsPdfLike } from './sharePdf'
 import { blobToDataUrl, downloadBlob } from './download'
 
-// Orchestrates the three export actions. Each function talks to core only
-// through the shared mmgisAPI client (writeCoordinateURL / getMapScreenshot /
-// getViewState) and packages the result. Dependencies are injectable so the
-// wiring is unit-testable without a live map or DOM.
+// Orchestrates the three export actions, reaching core only through the
+// shared mmgisAPI client. Dependencies are injectable for tests.
 
 export const PNG_FILENAME = 'mmgis-map.png'
 export const PDF_FILENAME = 'mmgis-map.pdf'
 
 /**
- * Builds a provenance-rich export filename matching the core screenshot
- * button's convention: mmgis-<mission>_<time>_<lat>_<lng>.<ext>. Fields the
- * view can't answer yet are omitted; with no view state at all this degrades
- * to the generic mmgis-map.<ext>.
+ * Export filename per the core convention: mmgis-<mission>_<time>_<lat>_<lng>
+ * .<ext>; unavailable fields are omitted, degrading to mmgis-map.<ext>.
  */
 export function buildExportFilename(
     extension: string,
@@ -39,21 +35,16 @@ export function buildExportFilename(
     return `mmgis-${parts.join('_')}.${extension}`
 }
 
-// navigator / document are injectable so the dual clipboard paths can be
-// exercised in tests (Node's global navigator is read-only and can't be
-// monkeypatched).
+// Injectable because Node's global navigator is read-only in tests.
 export type ClipboardEnv = {
     nav?: { clipboard?: { writeText?: (text: string) => Promise<void> } }
     doc?: Document
 }
 
 /**
- * Writes text to the clipboard, preferring the async Clipboard API and falling
- * back to a hidden-textarea + execCommand('copy') when it is unavailable.
- *
- * navigator.clipboard is undefined on insecure origins (e.g. HTTP served by IP,
- * not localhost), so the modern path silently doesn't exist there. Failures in
- * either path surface as a thrown error so the caller can react.
+ * Writes text to the clipboard via the async Clipboard API, falling back to a
+ * hidden textarea + execCommand('copy') on insecure origins where
+ * navigator.clipboard doesn't exist. Failures throw.
  */
 export async function writeTextToClipboard(
     text: string,
@@ -77,9 +68,7 @@ export async function writeTextToClipboard(
     textarea.style.top = '-9999px'
     textarea.style.left = '-9999px'
     textarea.setAttribute('readonly', '')
-    // The select() below destroys whatever text the user had selected on the
-    // page, so save the selection and restore it afterwards (mirrors core's
-    // F_.copyToClipboard, which plugins can't import).
+    // select() destroys the user's page selection; save and restore it.
     const selection = doc.getSelection?.()
     const savedRange =
         selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null

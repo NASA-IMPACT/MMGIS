@@ -1,10 +1,8 @@
 import React from 'react'
 
 /**
- * Inline Lucide icons (lucide.dev, ISC license) used by the share menu,
- * matching the reference prototype's glyphs exactly: `link-2` for the copy
- * link row, `file-image` for PNG, `download` for PDF. Inlined as SVGs so the
- * portable lib carries no icon-font or icon-library dependency.
+ * Inline Lucide icons (lucide.dev, ISC license) matching the reference
+ * prototype's share menu; inlined so the lib carries no icon dependency.
  */
 
 type IconProps = { className?: string }
