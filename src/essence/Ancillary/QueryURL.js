@@ -51,7 +51,10 @@ var QueryURL = {
             L_.FUTURES.mapView = [
                 parseFloat(urlMapLat),
                 parseFloat(urlMapLon),
-                urlMapZoom !== false ? parseInt(urlMapZoom) : null,
+                // parseFloat, not parseInt: the modern map zooms fractionally and
+                // truncation visibly changes the restored view (classic Leaflet
+                // zooms are integers either way).
+                urlMapZoom !== false ? parseFloat(urlMapZoom) : null,
             ]
         }
 
