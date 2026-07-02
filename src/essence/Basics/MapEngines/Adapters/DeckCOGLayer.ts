@@ -19,7 +19,7 @@
  */
 
 import type { Layer, UpdateParameters } from '@deck.gl/core'
-import { COGLayer } from '@developmentseed/deck.gl-geotiff'
+import { COGLayer, addAlphaChannel } from '@developmentseed/deck.gl-geotiff'
 // `moduleResolution: "node"` in tsconfig.json does not read package exports
 // maps, so tsc cannot resolve the `./gpu-modules` subpath export.  The import
 // below works correctly at runtime (Node.js, Playwright, Webpack all honour
@@ -107,57 +107,78 @@ function lutToImageData(lut: Uint8ClampedArray): ImageData {
     return new ImageData(lut, 256, 1)
 }
 
+type TileData = {
+    texture: any
+    /** 'single' → float value in color.r (colormap path); 'rgb' → RGBA displayed directly. */
+    mode: 'single' | 'rgb'
+    width: number
+    height: number
+    byteLength: number
+} | null
+
 /**
- * Custom tile loader for single-band COGs. Uploads the band as a single-channel
- * `r32float` GPU texture so the RAW pixel value lands in `color.r` for the
- * downstream LinearRescale + Colormap modules.
+ * Custom tile loader for COGs. Two paths, chosen by band count:
  *
- * This deliberately replaces `@developmentseed/deck.gl-geotiff`'s default
- * `inferRenderPipeline`, whose auto-inference currently only supports unsigned
- * integer COGs (it throws `non-unsigned integers not yet supported` for float,
- * SampleFormat 3 — the common case for scientific single-band rasters). By
- * supplying our own `getTileData` + `renderTile`, `COGLayer._parseGeoTIFF`
- * skips that inference entirely.
+ *  - **Single-band** (the primary case): upload the band as a single-channel
+ *    `r32float` texture so the RAW value lands in `color.r` for the downstream
+ *    FilterNaN + LinearRescale + Colormap modules. Nearest sampling (float
+ *    linear filtering is not guaranteed in WebGL2).
+ *  - **Multi-band uint (RGB/RGBA)**: upload as `rgba8unorm` and display the
+ *    colour directly via CreateTexture (no colormap/rescale). This is the
+ *    multi-band case #158 defers — supported here as a passthrough so true-colour
+ *    COGs (e.g. Sentinel-2 TCI) render client-side. Assumes 8-bit samples.
  *
- * Values of any numeric type are converted to Float32 and uploaded as
- * `r32float`, so a single rescale (in raw data units) is correct for float and
- * integer COGs alike. Sampled with nearest filtering (float-linear filtering is
- * not guaranteed in WebGL2).
+ * Supplying this `getTileData` (+ a `renderTile`) makes `COGLayer._parseGeoTIFF`
+ * skip its default `inferRenderPipeline`, whose auto-inference throws for float
+ * COGs (`non-unsigned integers not yet supported`, SampleFormat 3).
  *
  * @param image   A `GeoTIFF` (full-res) or `Overview`, selected per-zoom by
- *                COGLayer's `_getTileDataCallback` wrapper.
+ *                COGLayer's `_getTileDataCallback` wrapper — this is what makes
+ *                higher zooms load finer overviews.
  * @param options `{ device, x, y, signal, pool }` supplied by the wrapper.
  */
 async function cogGetTileData(
     image: any,
     options: { device: any; x: number; y: number; signal?: AbortSignal; pool?: any }
-): Promise<{ texture: any; width: number; height: number; byteLength: number } | null> {
+): Promise<TileData> {
     const { device, x, y, signal, pool } = options
-    const tile = await image.fetchTile(x, y, { boundless: false, pool, signal })
-    const array = tile?.array
+    let array = (await image.fetchTile(x, y, { boundless: false, pool, signal }))?.array
     if (!array) return null
     const width = array.width
     const height = array.height
-    // Single-band: prefer flat `data`; fall back to first band for band-separate.
-    let src = array.data
-    if (array.layout === 'band-separate' && array.bands && array.bands.length) {
-        src = array.bands[0]
+    const samples =
+        (array.bands && array.bands.length) ||
+        Math.max(1, Math.round(array.data.length / (width * height)))
+
+    if (samples === 1) {
+        const src =
+            array.layout === 'band-separate' && array.bands && array.bands.length
+                ? array.bands[0]
+                : array.data
+        const f32 = src instanceof Float32Array ? src : Float32Array.from(src)
+        const texture = device.createTexture({
+            data: f32,
+            format: 'r32float',
+            width,
+            height,
+            mipmaps: false,
+            sampler: { minFilter: 'nearest', magFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' },
+        })
+        return { texture, mode: 'single', width, height, byteLength: f32.byteLength }
     }
-    const f32 = src instanceof Float32Array ? src : Float32Array.from(src)
+
+    // Multi-band: WebGL2 has no RGB-only format, so pad RGB → RGBA.
+    if (samples === 3) array = addAlphaChannel(array)
+    const u8 = array.data instanceof Uint8Array ? array.data : Uint8Array.from(array.data)
     const texture = device.createTexture({
-        data: f32,
-        format: 'r32float',
+        data: u8,
+        format: 'rgba8unorm',
         width,
         height,
         mipmaps: false,
-        sampler: {
-            minFilter: 'nearest',
-            magFilter: 'nearest',
-            addressModeU: 'clamp-to-edge',
-            addressModeV: 'clamp-to-edge',
-        },
+        sampler: { minFilter: 'linear', magFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' },
     })
-    return { texture, width, height, byteLength: f32.byteLength }
+    return { texture, mode: 'rgb', width, height, byteLength: u8.byteLength }
 }
 
 /** Truthy placeholder so COGLayer._parseGeoTIFF skips the (float-unsupported)
@@ -178,6 +199,22 @@ const FilterNaN = {
     inject: {
         'fs:DECKGL_FILTER_COLOR': `
       if (color.r != color.r) { discard; }
+    `,
+    },
+}
+
+/**
+ * GPU module for the multi-band RGB path: discards fully-black pixels. Satellite
+ * true-colour COGs (e.g. Sentinel-2 TCI) encode nodata as exact black (0,0,0) —
+ * most visibly the rotated UTM tile edges — so this leaves them transparent
+ * rather than painting black over the basemap. Heuristic: also discards any
+ * legitimately pure-black pixel (rare in true-colour imagery).
+ */
+const FilterBlack = {
+    name: 'filter-black',
+    inject: {
+        'fs:DECKGL_FILTER_COLOR': `
+      if (color.r == 0.0 && color.g == 0.0 && color.b == 0.0) { discard; }
     `,
     },
 }
@@ -264,11 +301,21 @@ export class ColormappedCOGLayer extends COGLayer<any> {
 
         return (data: any) => {
             if (!data || !data.texture) return null
+            // Multi-band RGB: display the colour directly (no colormap/rescale);
+            // discard black nodata edges → transparent.
+            if (data.mode === 'rgb') {
+                return {
+                    renderPipeline: [
+                        { module: CreateTexture, props: { textureName: data.texture } },
+                        { module: FilterBlack },
+                    ],
+                }
+            }
+            // Single-band: raw value in color.r → discard NaN → rescale → colormap.
             return composeColormapPipeline(
                 {
                     renderPipeline: [
                         { module: CreateTexture, props: { textureName: data.texture } },
-                        // Discard NaN nodata (oceans/fill) → transparent.
                         { module: FilterNaN },
                     ],
                 },
