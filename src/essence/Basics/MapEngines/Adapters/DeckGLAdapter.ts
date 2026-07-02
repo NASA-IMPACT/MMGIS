@@ -400,7 +400,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Capture the current map view as a PNG data URL.
+     * Capture the current map view as a PNG Blob screenshot result.
      *
      * WebGL clears its drawing buffer once the browser presents a frame, so
      * `canvas.toDataURL()` only returns pixels if the read happens before
