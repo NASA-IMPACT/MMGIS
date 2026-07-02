@@ -475,7 +475,7 @@ var mmgisAPI_ = {
     loadPlugin: function (pluginId) {
         if (!mmgisAPI_._pluginController) {
             console.warn('[mmgisAPI] loadPlugin: modern layout not active')
-            return null
+            return false
         }
         return mmgisAPI_._pluginController.loadPlugin(pluginId)
     },
@@ -894,7 +894,9 @@ var mmgisAPI = {
     isPluginLoaded: mmgisAPI_.isPluginLoaded,
 
     /**
-     * Check whether a plugin is currently hidden (loaded but not visible).
+     * Check whether a plugin is not currently visible — either explicitly hidden
+     * via hidePlugin/startHidden while loaded, or deferred/unloaded (startUnloaded,
+     * or unloadPlugin). Use isPluginLoaded alongside this to tell the two apart.
      * @param {string} pluginId - Tool ID
      * @returns {boolean}
      */

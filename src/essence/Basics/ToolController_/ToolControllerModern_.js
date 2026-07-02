@@ -631,16 +631,15 @@ const ToolControllerModern_ = {
     },
 
     /**
-     * Check if a plugin is currently hidden via hidePlugin/startHidden (loaded but not visible).
-     * Returns false for a plugin that was never loaded or is currently unloaded/deferred
-     * (startUnloaded, or unloadPlugin) — those are also visually hidden but are reported
-     * via isPluginLoaded()===false instead. Check both to fully reason about visibility.
+     * Check if a plugin is currently hidden from view — via hidePlugin/startHidden
+     * (loaded but not visible), or because it's deferred/unloaded (startUnloaded,
+     * or unloadPlugin)
      *
      * @param {string} pluginId - Tool ID
      * @returns {boolean}
      */
     isPluginHidden: function (pluginId) {
-        return hiddenTools.has(pluginId)
+        return hiddenTools.has(pluginId) || deferredTools.has(pluginId)
     }
 }
 
