@@ -107,20 +107,29 @@ test.describe('writeTextToClipboard', () => {
 })
 
 test.describe('downloadSharePng', () => {
-    test('fetches the screenshot and downloads it as a PNG', async () => {
+    test('fetches the screenshot Blob and downloads it as a PNG', async () => {
         const downloads = []
         const screenshotCalls = []
-        const dataUrl = await downloadSharePng({
+        const blob = new Blob(['PNGDATA'], { type: 'image/png' })
+        const screenshot = {
+            blob,
+            mimeType: 'image/png',
+            extension: 'png',
+            width: 1024,
+            height: 768,
+        }
+        const result = await downloadSharePng({
             getScreenshot: async () => {
                 screenshotCalls.push(true)
-                return 'data:image/png;base64,PNGDATA'
+                return screenshot
             },
-            download: (data, filename) => downloads.push({ data, filename }),
+            download: (downloadedBlob, filename) =>
+                downloads.push({ blob: downloadedBlob, filename }),
         })
         expect(screenshotCalls.length).toBe(1)
-        expect(dataUrl).toBe('data:image/png;base64,PNGDATA')
+        expect(result).toBe(screenshot)
         expect(downloads).toEqual([
-            { data: 'data:image/png;base64,PNGDATA', filename: PNG_FILENAME },
+            { blob, filename: PNG_FILENAME },
         ])
     })
 
@@ -135,15 +144,26 @@ test.describe('downloadSharePng', () => {
 })
 
 test.describe('downloadSharePdf', () => {
-    test('builds a PDF from the screenshot and saves it', async () => {
+    test('converts the screenshot Blob only for jsPDF and saves it', async () => {
         const saved = []
         const buildArgs = []
+        const blob = new Blob(['PNGDATA'], { type: 'image/png' })
+        const screenshot = {
+            blob,
+            mimeType: 'image/png',
+            extension: 'png',
+            width: 1024,
+            height: 768,
+        }
         const fakeDoc = {
             save: (filename) => saved.push(filename),
         }
         const doc = await downloadSharePdf({
-            getScreenshot: async () => 'data:image/png;base64,PNGDATA',
-            getImageSize: async () => ({ width: 1024, height: 768 }),
+            getScreenshot: async () => screenshot,
+            blobToDataUrl: async (input) => {
+                expect(input).toBe(blob)
+                return 'data:image/png;base64,PNGDATA'
+            },
             buildPdf: (data, w, h) => {
                 buildArgs.push({ data, w, h })
                 return fakeDoc
@@ -160,7 +180,7 @@ test.describe('downloadSharePdf', () => {
         await expect(
             downloadSharePdf({
                 getScreenshot: async () => null,
-                getImageSize: async () => ({ width: 1, height: 1 }),
+                blobToDataUrl: async () => 'data:image/png;base64,PNGDATA',
                 buildPdf: () => ({ save: () => {} }),
             }),
         ).rejects.toThrow('No screenshot available')

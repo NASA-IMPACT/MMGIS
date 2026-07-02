@@ -1,9 +1,10 @@
 import {
     mmgisWriteCoordinateURL,
     mmgisGetMapScreenshot,
+    type MapScreenshotResult,
 } from '../../_shared/adapters/mmgisAPI'
 import { buildSharePdf, type JsPdfLike } from './sharePdf'
-import { downloadDataUrl, loadImageSize, type ImageSize } from './download'
+import { blobToDataUrl, downloadBlob } from './download'
 
 // Orchestrates the three export actions. Each function talks to core only
 // through the shared mmgisAPI client (writeCoordinateURL / getMapScreenshot)
@@ -84,31 +85,31 @@ export async function copyShareLink(
 }
 
 export type DownloadSharePngDeps = {
-    getScreenshot?: () => Promise<string | null>
-    download?: (dataUrl: string, filename: string) => void
+    getScreenshot?: () => Promise<MapScreenshotResult | null>
+    download?: (blob: Blob, filename: string) => void
     filename?: string
 }
 
 /**
- * Downloads the current map as a PNG. Returns the PNG data URL.
+ * Downloads the current map as a PNG. Returns the screenshot result.
  */
 export async function downloadSharePng(
     deps: DownloadSharePngDeps = {},
-): Promise<string> {
+): Promise<MapScreenshotResult> {
     const {
         getScreenshot = mmgisGetMapScreenshot,
-        download = downloadDataUrl,
+        download = downloadBlob,
         filename = PNG_FILENAME,
     } = deps
-    const dataUrl = await getScreenshot()
-    if (!dataUrl) throw new Error('No screenshot available')
-    download(dataUrl, filename)
-    return dataUrl
+    const screenshot = await getScreenshot()
+    if (!screenshot) throw new Error('No screenshot available')
+    download(screenshot.blob, filename)
+    return screenshot
 }
 
 export type DownloadSharePdfDeps = {
-    getScreenshot?: () => Promise<string | null>
-    getImageSize?: (dataUrl: string) => Promise<ImageSize>
+    getScreenshot?: () => Promise<MapScreenshotResult | null>
+    blobToDataUrl?: (blob: Blob) => Promise<string>
     buildPdf?: (
         dataUrl: string,
         naturalWidth: number,
@@ -126,14 +127,14 @@ export async function downloadSharePdf(
 ): Promise<JsPdfLike> {
     const {
         getScreenshot = mmgisGetMapScreenshot,
-        getImageSize = loadImageSize,
+        blobToDataUrl: convertBlobToDataUrl = blobToDataUrl,
         buildPdf = buildSharePdf,
         filename = PDF_FILENAME,
     } = deps
-    const dataUrl = await getScreenshot()
-    if (!dataUrl) throw new Error('No screenshot available')
-    const { width, height } = await getImageSize(dataUrl)
-    const doc = buildPdf(dataUrl, width, height)
+    const screenshot = await getScreenshot()
+    if (!screenshot) throw new Error('No screenshot available')
+    const dataUrl = await convertBlobToDataUrl(screenshot.blob)
+    const doc = buildPdf(dataUrl, screenshot.width, screenshot.height)
     doc.save(filename)
     return doc
 }

@@ -7,7 +7,15 @@ type MMGISAPI = {
     provide?: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
     hasHandler?: (name: string) => boolean
     writeCoordinateURL?: () => string
-    getMapScreenshot?: () => Promise<string>
+    getMapScreenshot?: () => Promise<MapScreenshotResult>
+}
+
+export type MapScreenshotResult = {
+    blob: Blob
+    mimeType: 'image/png'
+    extension: 'png'
+    width: number
+    height: number
 }
 
 declare global {
@@ -55,10 +63,10 @@ export const mmgisWriteCoordinateURL = (): string | null => {
 }
 
 /**
- * Captures the current 2D map as a PNG data URL ('data:image/png;base64,...').
+ * Captures the current map as a PNG Blob plus image metadata.
  * Resolves to null if core isn't ready.
  */
-export const mmgisGetMapScreenshot = async (): Promise<string | null> => {
+export const mmgisGetMapScreenshot = async (): Promise<MapScreenshotResult | null> => {
     if (window.mmgisAPI?.getMapScreenshot) {
         return await window.mmgisAPI.getMapScreenshot()
     }
