@@ -26,7 +26,7 @@ import { COGLayer } from '@developmentseed/deck.gl-geotiff'
 // the exports map).  See deviation note in the file header.
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
-import { Colormap, LinearRescale, FilterNoDataVal, createColormapTexture } from '@developmentseed/deck.gl-raster/gpu-modules'
+import { Colormap, LinearRescale, FilterNoDataVal, CreateTexture, createColormapTexture } from '@developmentseed/deck.gl-raster/gpu-modules'
 import type { Texture } from '@luma.gl/core'
 import { buildColormapLUT } from './colormapLUT'
 
@@ -107,6 +107,64 @@ function lutToImageData(lut: Uint8ClampedArray): ImageData {
     return new ImageData(lut, 256, 1)
 }
 
+/**
+ * Custom tile loader for single-band COGs. Uploads the band as a single-channel
+ * `r32float` GPU texture so the RAW pixel value lands in `color.r` for the
+ * downstream LinearRescale + Colormap modules.
+ *
+ * This deliberately replaces `@developmentseed/deck.gl-geotiff`'s default
+ * `inferRenderPipeline`, whose auto-inference currently only supports unsigned
+ * integer COGs (it throws `non-unsigned integers not yet supported` for float,
+ * SampleFormat 3 — the common case for scientific single-band rasters). By
+ * supplying our own `getTileData` + `renderTile`, `COGLayer._parseGeoTIFF`
+ * skips that inference entirely.
+ *
+ * Values of any numeric type are converted to Float32 and uploaded as
+ * `r32float`, so a single rescale (in raw data units) is correct for float and
+ * integer COGs alike. Sampled with nearest filtering (float-linear filtering is
+ * not guaranteed in WebGL2).
+ *
+ * @param image   A `GeoTIFF` (full-res) or `Overview`, selected per-zoom by
+ *                COGLayer's `_getTileDataCallback` wrapper.
+ * @param options `{ device, x, y, signal, pool }` supplied by the wrapper.
+ */
+async function cogGetTileData(
+    image: any,
+    options: { device: any; x: number; y: number; signal?: AbortSignal; pool?: any }
+): Promise<{ texture: any; width: number; height: number; byteLength: number } | null> {
+    const { device, x, y, signal, pool } = options
+    const tile = await image.fetchTile(x, y, { boundless: false, pool, signal })
+    const array = tile?.array
+    if (!array) return null
+    const width = array.width
+    const height = array.height
+    // Single-band: prefer flat `data`; fall back to first band for band-separate.
+    let src = array.data
+    if (array.layout === 'band-separate' && array.bands && array.bands.length) {
+        src = array.bands[0]
+    }
+    const f32 = src instanceof Float32Array ? src : Float32Array.from(src)
+    const texture = device.createTexture({
+        data: f32,
+        format: 'r32float',
+        width,
+        height,
+        mipmaps: false,
+        sampler: {
+            minFilter: 'nearest',
+            magFilter: 'nearest',
+            addressModeU: 'clamp-to-edge',
+            addressModeV: 'clamp-to-edge',
+        },
+    })
+    return { texture, width, height, byteLength: f32.byteLength }
+}
+
+/** Truthy placeholder so COGLayer._parseGeoTIFF skips the (float-unsupported)
+ *  default `inferRenderPipeline`. The real render pipeline is produced by the
+ *  overridden `_renderTileCallback()` below, so this is never invoked. */
+const RENDER_TILE_PLACEHOLDER = (): null => null
+
 // ---------------------------------------------------------------------------
 // ColormappedCOGLayer
 // ---------------------------------------------------------------------------
@@ -170,12 +228,15 @@ export class ColormappedCOGLayer extends COGLayer<any> {
     // Return type is `any` to avoid TypeScript's return-type assignability
     // check against the parent signature (which uses the full RenderTileResult
     // union from @developmentseed/deck.gl-raster). The actual runtime type
-    // satisfies the union contract; this is validated by Task 8's render test.
+    // satisfies the union contract.
+    //
+    // The pipeline is built from scratch — CreateTexture samples our r32float
+    // tile texture into `color` (raw value in color.r), then composeColormapPipeline
+    // appends [FilterNoDataVal?, LinearRescale, Colormap]. We do NOT call
+    // super._renderTileCallback() because COGLayer's default renderTile pairs
+    // with its default getTileData (inferRenderPipeline), which throws for float.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     protected override _renderTileCallback(): any {
-        const base = super._renderTileCallback()
-        if (!base) return undefined
-
         const p = this.props as any
         const { rescaleMin, rescaleMax, nodata } = p
         // Capture colormapTexture at callback-construction time; the updateTriggers
@@ -185,10 +246,9 @@ export class ColormappedCOGLayer extends COGLayer<any> {
         const colormapTexture = (this.state as any).colormapTexture as Texture | null
 
         return (data: any) => {
-            const result = base(data)
-            if (!result) return null
+            if (!data || !data.texture) return null
             return composeColormapPipeline(
-                result as { image?: unknown; renderPipeline?: PipelineEntry[] },
+                { renderPipeline: [{ module: CreateTexture, props: { textureName: data.texture } }] },
                 { rescaleMin, rescaleMax, colormapTexture, nodata }
             )
         }
@@ -229,6 +289,12 @@ export function buildDeckCOGLayer(
         opacity: options.opacity ?? 1,
         minZoom: options.minZoom,
         maxZoom: options.maxZoom,
+        // Supplying getTileData + renderTile makes COGLayer._parseGeoTIFF skip
+        // its default inferRenderPipeline (which throws for float COGs).
+        // getTileData uploads the band as r32float; renderTile is overridden by
+        // the subclass (this placeholder only satisfies the parse-time guard).
+        getTileData: cogGetTileData,
+        renderTile: RENDER_TILE_PLACEHOLDER,
         // Custom props consumed in updateState and _renderTileCallback:
         colormapName,
         rescaleMin,
