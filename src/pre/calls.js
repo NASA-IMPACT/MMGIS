@@ -117,6 +117,10 @@ const c = {
         type: 'POST',
         url: 'api/files/gethistory',
     },
+    shortener_shorten: {
+        type: 'POST',
+        url: 'api/shortener/shorten',
+    },
     shortener_expand: {
         type: 'POST',
         url: 'api/shortener/expand',

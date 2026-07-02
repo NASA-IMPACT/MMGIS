@@ -97,6 +97,7 @@ const STATIC_HANDLERS = {
     files_publish: drop(),
     files_gethistory: drop(),
     // Drop — modules not deployed alongside dashboards
+    shortener_shorten: drop(),
     shortener_expand: drop(),
     clear_test: drop(),
     tactical_targets: drop(),
