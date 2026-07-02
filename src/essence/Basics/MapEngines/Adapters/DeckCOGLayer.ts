@@ -165,6 +165,23 @@ async function cogGetTileData(
  *  overridden `_renderTileCallback()` below, so this is never invoked. */
 const RENDER_TILE_PLACEHOLDER = (): null => null
 
+/**
+ * GPU module that discards NaN pixels. Float COGs almost always encode nodata
+ * as NaN (GDAL_NODATA="nan"), and the library's FilterNoDataVal uses `==`
+ * equality — which never matches NaN. `color.r != color.r` is the portable
+ * self-inequality NaN test (NaN is the only value not equal to itself), so this
+ * discards ocean/fill pixels and leaves them transparent. Harmless for integer
+ * data (no pixel is NaN). Runs right after CreateTexture, before rescale.
+ */
+const FilterNaN = {
+    name: 'filter-nan',
+    inject: {
+        'fs:DECKGL_FILTER_COLOR': `
+      if (color.r != color.r) { discard; }
+    `,
+    },
+}
+
 // ---------------------------------------------------------------------------
 // ColormappedCOGLayer
 // ---------------------------------------------------------------------------
@@ -248,7 +265,13 @@ export class ColormappedCOGLayer extends COGLayer<any> {
         return (data: any) => {
             if (!data || !data.texture) return null
             return composeColormapPipeline(
-                { renderPipeline: [{ module: CreateTexture, props: { textureName: data.texture } }] },
+                {
+                    renderPipeline: [
+                        { module: CreateTexture, props: { textureName: data.texture } },
+                        // Discard NaN nodata (oceans/fill) → transparent.
+                        { module: FilterNaN },
+                    ],
+                },
                 { rescaleMin, rescaleMax, colormapTexture, nodata }
             )
         }
