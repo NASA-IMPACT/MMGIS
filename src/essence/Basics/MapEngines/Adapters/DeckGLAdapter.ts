@@ -129,13 +129,16 @@ interface BasemapInstance {
     resize(): void
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
-    /** Force a synchronous re-render of the map (maplibre-gl). */
-    redraw?(): void
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
-    triggerRepaint?(): void
-    /** Whether the map's style and sources are fully loaded and idle. */
-    loaded?(): boolean
+    triggerRepaint(): void
 }
+
+/**
+ * How long {@link DeckGLAdapter.captureScreenshot} waits for the basemap's
+ * `render` event before rejecting. Generous enough for a slow first frame,
+ * short enough that a dead map fails fast.
+ */
+const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
 
 /**
  * DeckGL map engine adapter.
@@ -377,18 +380,25 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /**
      * Capture the current map view as a PNG data URL.
      *
-     * WebGL clears its drawing buffer after every composite, so a canvas
-     * `toDataURL()` returns blank unless the GL context was created with
-     * `preserveDrawingBuffer: true` (set in {@link _setupOverlay}) AND the read
-     * happens in the same frame as a render. We therefore force a repaint and
-     * read the canvas on the next animation frame.
+     * WebGL clears its drawing buffer once the browser presents a frame, so
+     * `canvas.toDataURL()` only returns pixels if the read happens before
+     * that clear. Rather than paying the per-frame cost of creating the GL
+     * context with `preserveDrawingBuffer: true`, we capture on demand:
      *
      * - **Overlay mode** (the modern map): the `MapboxOverlay` runs in
      *   `interleaved: true` mode, so deck.gl draws into the base map's GL
      *   context — there is a single canvas holding basemap + deck layers.
-     *   We repaint the base map and read `basemap.getCanvas().toDataURL()`.
-     * - **Standalone mode**: deck.gl owns the only canvas; we redraw the
-     *   `Deck` instance and read its canvas.
+     *   We subscribe `once('render')` and call `triggerRepaint()`: the
+     *   `render` event fires after the frame's draw but before the browser
+     *   presents (and clears) the buffer — the documented maplibre/mapbox
+     *   pattern for readback without `preserveDrawingBuffer`. A timeout
+     *   rejects if the render event never fires (e.g. destroyed map).
+     * - **Standalone mode**: deck.gl owns the only canvas. In deck.gl v9,
+     *   `deck.redraw(reason)` draws synchronously (`redraw` -> `_drawLayers`
+     *   -> `DeckRenderer.renderLayers` all in the same call stack), so
+     *   reading the canvas immediately afterwards in the same task is safe:
+     *   the drawing buffer is only cleared when the browser presents, after
+     *   the current task completes.
      *
      * Note: this captures only the GL canvas. Anchored HTML overlays/markers
      * added via {@link addOverlay} are separate DOM nodes and are not included.
@@ -398,27 +408,22 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try {
                 if (this._isOverlayMode && this._basemap) {
                     const basemap = this._basemap
-                    // Force a synchronous repaint, then read back in the same
-                    // frame. redraw() (maplibre-gl) paints synchronously;
-                    // triggerRepaint() (both libs) schedules a frame, so we
-                    // fall back to a rAF read for that path.
-                    const read = () => {
-                        const canvas = basemap.getCanvas()
-                        resolve(canvas.toDataURL('image/png'))
-                    }
-                    if (typeof basemap.redraw === 'function') {
-                        basemap.redraw()
-                        read()
-                    } else {
-                        basemap.triggerRepaint?.()
-                        requestAnimationFrame(() => {
-                            try {
-                                read()
-                            } catch (err) {
-                                reject(err as Error)
-                            }
-                        })
-                    }
+                    const timeout = setTimeout(() => {
+                        reject(
+                            new Error(
+                                '[DeckGLAdapter] captureScreenshot: timed out waiting for the basemap render event'
+                            )
+                        )
+                    }, SCREENSHOT_RENDER_TIMEOUT_MS)
+                    basemap.once('render', () => {
+                        clearTimeout(timeout)
+                        try {
+                            resolve(basemap.getCanvas().toDataURL('image/png'))
+                        } catch (err) {
+                            reject(err as Error)
+                        }
+                    })
+                    basemap.triggerRepaint()
                     return
                 }
 
@@ -427,6 +432,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     reject(new Error('[DeckGLAdapter] captureScreenshot: no active map to capture'))
                     return
                 }
+                // Synchronous in deck.gl v9 — pixels are guaranteed present
+                // for the toDataURL() read below (same task, pre-present).
                 deck.redraw('screenshot')
                 const canvas = (deck as unknown as { getCanvas?: () => HTMLCanvasElement })
                     .getCanvas?.()
@@ -1118,12 +1125,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _initStandaloneMode(): void {
         this._deck = new Deck({
             parent: this._container,
-            // Preserve the drawing buffer so captureScreenshot() can read the
-            // rendered frame (parity with the overlay path in _setupOverlay).
-            // deck.gl v9 defaults this to true, but we set it explicitly via
-            // deviceProps.webgl so the guarantee is not dependent on that
-            // default. (The v8-era `glOptions` prop no longer exists in v9.)
-            deviceProps: { webgl: { preserveDrawingBuffer: true } },
+            // No preserveDrawingBuffer needed: captureScreenshot() reads the
+            // canvas synchronously after deck.redraw(), before the browser
+            // presents (and clears) the drawing buffer.
             width: '100%',
             height: '100%',
             controller: true,
@@ -1192,13 +1196,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             minZoom: this._minZoom,
             maxZoom: this._maxZoom,
             projection: 'mercator',
-            // Required so the GL canvas can be read back via toDataURL() in
-            // captureScreenshot(). WebGL clears its drawing buffer after each
-            // composite unless this is set, so without it the export is blank.
-            // Must be set at map-creation time — it cannot be toggled later.
-            // Slight perf/memory cost (an extra buffer copy per frame), which
-            // is acceptable for a basemap-backed deck.gl view.
-            preserveDrawingBuffer: true,
+            // No preserveDrawingBuffer needed: captureScreenshot() reads the
+            // canvas inside a once('render') handler, in the same frame the
+            // map draws — before the drawing buffer is presented and cleared.
         }
 
         if (basemap.provider === 'mapbox' && basemap.accessToken) {

@@ -1,4 +1,4 @@
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
 // Import MAP_ENGINE from the lightweight types module rather than MapEngines/index.ts.
 // index.ts transitively imports LeafletAdapter -> leaflet, which references a global
@@ -219,43 +219,76 @@ test.describe('DeckGLAdapter', () => {
     })
 
     test.describe('captureScreenshot', () => {
-        test('overlay mode reads the basemap GL canvas after a redraw', async () => {
+        test('overlay mode reads the canvas inside the render event after triggerRepaint', async () => {
             const adapter = makeAdapter()
-            let redrawn = false
+            let inRenderFrame = false
+            let renderHandler = null
             const canvas = {
                 toDataURL: (type) => {
                     expect(type).toBe('image/png')
-                    // Only valid once a render has occurred this frame.
-                    return redrawn
+                    // Only valid during the render event, before the browser
+                    // presents (and clears) the drawing buffer.
+                    return inRenderFrame
                         ? 'data:image/png;base64,DECKGL'
                         : 'data:image/png;base64,BLANK'
                 },
             }
             adapter._isOverlayMode = true
             adapter._basemap = {
-                redraw: () => { redrawn = true },
+                once: (type, handler) => {
+                    expect(type).toBe('render')
+                    renderHandler = handler
+                },
+                triggerRepaint: () => {
+                    // Simulate the frame the repaint schedules: the map draws,
+                    // fires 'render' while the buffer still holds pixels, then
+                    // the buffer is cleared on present.
+                    inRenderFrame = true
+                    renderHandler()
+                    inRenderFrame = false
+                },
                 getCanvas: () => canvas,
             }
 
             const result = await adapter.captureScreenshot()
-            expect(redrawn).toBe(true)
             expect(result).toBe('data:image/png;base64,DECKGL')
         })
 
-        test('overlay mode without redraw() falls back to triggerRepaint + rAF', async () => {
-            global.requestAnimationFrame =
-                global.requestAnimationFrame || ((cb) => setTimeout(() => cb(0), 0))
+        test('overlay mode rejects when toDataURL throws during the render event', async () => {
             const adapter = makeAdapter()
-            let repainted = false
+            let renderHandler = null
             adapter._isOverlayMode = true
             adapter._basemap = {
-                triggerRepaint: () => { repainted = true },
-                getCanvas: () => ({ toDataURL: () => 'data:image/png;base64,RAF' }),
+                once: (_type, handler) => { renderHandler = handler },
+                triggerRepaint: () => renderHandler(),
+                getCanvas: () => ({
+                    toDataURL: () => { throw new Error('tainted canvas') },
+                }),
             }
 
-            const result = await adapter.captureScreenshot()
-            expect(repainted).toBe(true)
-            expect(result).toBe('data:image/png;base64,RAF')
+            await expect(adapter.captureScreenshot()).rejects.toThrow(/tainted canvas/)
+        })
+
+        test('overlay mode rejects after the timeout if the render event never fires', async () => {
+            vi.useFakeTimers()
+            try {
+                const adapter = makeAdapter()
+                let repainted = false
+                adapter._isOverlayMode = true
+                adapter._basemap = {
+                    once: () => {},
+                    triggerRepaint: () => { repainted = true },
+                    getCanvas: () => ({ toDataURL: () => 'data:image/png;base64,NEVER' }),
+                }
+
+                const capture = adapter.captureScreenshot()
+                const assertion = expect(capture).rejects.toThrow(/timed out/)
+                vi.advanceTimersByTime(3000)
+                await assertion
+                expect(repainted).toBe(true)
+            } finally {
+                vi.useRealTimers()
+            }
         })
 
         test('standalone mode redraws deck and reads its canvas', async () => {

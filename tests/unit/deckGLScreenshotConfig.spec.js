@@ -1,17 +1,16 @@
 import { test, expect, vi, beforeEach } from 'vitest'
 
-// Issue #143 - the deck.gl screenshot path depends on the GL context being
-// created with `preserveDrawingBuffer: true`; without it, canvas.toDataURL()
-// returns a blank image. The captureScreenshot() tests inject fake
-// _basemap/_deck and never call init(), so nothing guards that init() actually
-// requests that setting. These tests drive the real init() path with the GL
-// constructors mocked, and assert the setting is passed through on both the
-// standalone (Deck) and overlay (maplibre Map) paths.
-//
-// Regression guard specifically for the deck.gl v9 shape: the setting lives at
-// deviceProps.webgl.preserveDrawingBuffer on Deck (the v8 `glOptions` prop no
-// longer exists in v9), and preserveDrawingBuffer at the top level of the
-// maplibre/mapbox Map constructor options.
+// Issue #143 - the deck.gl screenshot path captures on demand instead of
+// paying the per-frame cost of `preserveDrawingBuffer: true`:
+// - overlay mode reads the canvas inside a once('render') handler after
+//   triggerRepaint(), in the same frame the map draws (before the browser
+//   presents and clears the buffer);
+// - standalone mode reads immediately after deck.redraw('screenshot'), which
+//   draws synchronously in deck.gl v9.
+// Nothing should request preserveDrawingBuffer at init time any more. These
+// tests drive the real init() path with the GL constructors mocked and assert
+// the flag is absent on both the standalone (Deck) and overlay (maplibre Map)
+// paths — a regression guard against reintroducing the always-on buffer copy.
 
 const deckCtorArgs = []
 const maplibreCtorArgs = []
@@ -67,22 +66,22 @@ function makeContainer(id = 'map') {
     return el
 }
 
-test.describe('DeckGLAdapter init sets preserveDrawingBuffer (issue #143)', () => {
+test.describe('DeckGLAdapter init does not set preserveDrawingBuffer (issue #143)', () => {
     beforeEach(() => {
         deckCtorArgs.length = 0
         maplibreCtorArgs.length = 0
         makeContainer('map')
     })
 
-    test('standalone mode creates the Deck with deviceProps.webgl.preserveDrawingBuffer', () => {
+    test('standalone mode creates the Deck without preserveDrawingBuffer deviceProps', () => {
         const adapter = new DeckGLAdapter()
         adapter.init({ containerId: 'map', zoom: 4, center: { lat: 0, lng: 0 } })
 
         expect(deckCtorArgs).toHaveLength(1)
-        expect(deckCtorArgs[0].deviceProps.webgl.preserveDrawingBuffer).toBe(true)
+        expect(deckCtorArgs[0].deviceProps?.webgl?.preserveDrawingBuffer).toBeUndefined()
     })
 
-    test('maplibre overlay mode creates the Map with preserveDrawingBuffer', () => {
+    test('maplibre overlay mode creates the Map without preserveDrawingBuffer', () => {
         const adapter = new DeckGLAdapter()
         adapter.init({
             containerId: 'map',
@@ -92,6 +91,6 @@ test.describe('DeckGLAdapter init sets preserveDrawingBuffer (issue #143)', () =
         })
 
         expect(maplibreCtorArgs).toHaveLength(1)
-        expect(maplibreCtorArgs[0].preserveDrawingBuffer).toBe(true)
+        expect(maplibreCtorArgs[0].preserveDrawingBuffer).toBeUndefined()
     })
 })
