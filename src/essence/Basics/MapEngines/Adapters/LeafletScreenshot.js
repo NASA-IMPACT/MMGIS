@@ -46,10 +46,9 @@ function getMapScreenshot(deps = {}) {
     const timeUIWasActive = jquery('#toggleTimeUI.active').length > 0
     if (timeUIWasActive) jquery('#toggleTimeUI.active').trigger('click')
 
-    // The classic UI wraps the map in #mapScreen; the modern layout has no such
-    // wrapper, so fall back to the #map container (present in both layouts).
-    const documentElm =
-        document.getElementById('mapScreen') || document.getElementById('map')
+    // Restore the UI chrome hidden above. Split out so the error path below
+    // can restore too — without it, a synchronous throw between the hide and
+    // the capture would leave controls hidden and the time UI collapsed.
     const restoreChrome = function () {
         jquery('#map .leaflet-tile-pane')
             .children()
@@ -63,6 +62,11 @@ function getMapScreenshot(deps = {}) {
         jquery('#mapToolBar').css('bottom', savedMapToolBarBottom)
         if (timeUIWasActive) jquery('#toggleTimeUI').trigger('click')
     }
+
+    // The classic UI wraps the map in #mapScreen; the modern layout has no such
+    // wrapper, so fall back to the #map container (present in both layouts).
+    const documentElm =
+        document.getElementById('mapScreen') || document.getElementById('map')
     if (!documentElm) {
         restoreChrome()
         return Promise.reject(
@@ -122,10 +126,12 @@ function getMapScreenshot(deps = {}) {
     }
 
     // Restore the UI chrome we hid for the capture. This runs immediately
-    // (not in .then) because html2canvas clones the DOM synchronously within
-    // the call above, before its first internal await, so the capture already
-    // holds the hidden-chrome state and restoring the live UI now does not
-    // affect it.
+    // (not in .then) so the live UI isn't visibly degraded for the duration of
+    // the capture; html2canvas's initial DOM clone happens synchronously within
+    // the call above. (Caveat: html2canvas's `onclone` fires later and copies
+    // some styles from the live document, so restored values can leak into the
+    // clone's tile z-indices — a pre-existing quirk inherited from the old
+    // BottomBar implementation.)
     restoreChrome()
 
     return capture

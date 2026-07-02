@@ -438,7 +438,30 @@ var mmgisAPI_ = {
         return validEvents.includes(eventName)
     },
     writeCoordinateURL: function () {
+        // The URL builder dereferences L_.Viewer_ / L_.Map_.map / TimeControl,
+        // which only exist after mission finalization (fina). Until then return
+        // null — the documented "no link available yet" signal — so an early
+        // caller (e.g. a plugin's always-visible Copy Link button clicked while
+        // layers are still loading) doesn't hit a TypeError.
+        if (mmgisAPI_.map == null) return null
         return QueryURL.writeCoordinateURL()
+    },
+    getViewState: function () {
+        // View metadata for plugins (e.g. provenance-rich export filenames)
+        // without reaching into core internals. Fields are null until the
+        // mission has loaded far enough to answer them.
+        const map = L_.Map_ && L_.Map_.map
+        const center =
+            map && typeof map.getCenter === 'function' ? map.getCenter() : null
+        return {
+            missionName: L_.configData?.msv?.mission ?? null,
+            time: L_.TimeControl_?.currentTime ?? null,
+            center: center ? { lat: center.lat, lng: center.lng } : null,
+            zoom:
+                map && typeof map.getZoom === 'function'
+                    ? map.getZoom()
+                    : null,
+        }
     },
     getMapScreenshot: function () {
         // Screenshot capture is engine-specific: Leaflet rasterizes its DOM
@@ -449,7 +472,14 @@ var mmgisAPI_ = {
         // loaded yet — reject rather than reach into a specific engine's DOM.
         const engine = L_.Map_ && L_.Map_.engine
         if (engine && typeof engine.captureScreenshot === 'function') {
-            return engine.captureScreenshot()
+            // The engine does synchronous DOM work before its promise exists;
+            // catch a sync throw so callers always get a rejection, never an
+            // exception escaping what is documented as a promise-returning API.
+            try {
+                return Promise.resolve(engine.captureScreenshot())
+            } catch (err) {
+                return Promise.reject(err)
+            }
         }
         return Promise.reject(
             new Error('getMapScreenshot: no active map engine to capture')
@@ -734,7 +764,7 @@ var mmgisAPI = {
 
     /** writeCoordinateURL - writes out the current view as a url. This returns the long form of
      * the 'Copy Link' feature and does not save a short url to the database.
-     * @returns {string} - a string containing the current view as a url
+     * @returns {string|null} - a string containing the current view as a url, or null if the mission has not finished loading yet
      */
     writeCoordinateURL: mmgisAPI_.writeCoordinateURL,
 
