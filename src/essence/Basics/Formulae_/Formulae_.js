@@ -1803,18 +1803,30 @@ var Formulae_ = {
         downloadAnchorNode.click()
         downloadAnchorNode.remove()
     },
-    downloadCanvas(canvasId, name, callback) {
-        var link = document.createElement('a')
-        name = name ? name + '.png' : 'mmgis.png'
-        link.setAttribute('download', name)
-        document.getElementById(canvasId).toBlob(function (blob) {
-            var objUrl = URL.createObjectURL(blob)
-            link.setAttribute('href', objUrl)
-            document.body.appendChild(link)
-            link.click()
-            link.remove()
-            if (typeof callback === 'function') callback()
-        })
+    // Downloads a data-URL image (e.g. canvas.toDataURL output) as a file.
+    // Decodes to a Blob and downloads via an object URL: large/hi-DPI captures
+    // inflate ~33% as base64 and data-URL anchor downloads are capped/unreliable
+    // across browsers (Chromium caps them around 2MB). fetch(dataUrl) is avoided
+    // deliberately — the shipped CSP's connect-src does not allow the data:
+    // scheme, so fetch-based conversion fails on stock deployments.
+    downloadDataUrl(dataUrl, filename) {
+        const [header, base64] = dataUrl.split(',')
+        const mimeMatch = header.match(/data:([^;,]+)/)
+        const mime = mimeMatch ? mimeMatch[1] : 'application/octet-stream'
+        const binary = atob(base64)
+        const bytes = new Uint8Array(binary.length)
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+        const url = URL.createObjectURL(new Blob([bytes], { type: mime }))
+        const link = document.createElement('a')
+        link.setAttribute('download', filename)
+        link.setAttribute('href', url)
+        document.body.appendChild(link) // required for firefox
+        link.click()
+        link.remove()
+        // Revoke on a delay: browsers may dereference the blob URL
+        // asynchronously after the click, and an immediate revoke can abort
+        // the download.
+        setTimeout(() => URL.revokeObjectURL(url), 10000)
     },
     getMinMaxOfArray(arrayOfNumbers) {
         return {

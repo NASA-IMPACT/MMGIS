@@ -76,7 +76,7 @@ let BottomBar = {
 
                 window.mmgisAPI
                     .getMapScreenshot()
-                    .then(async function (dataURL) {
+                    .then(function (dataURL) {
                         const mission = L_.configData?.msv?.mission
                         const time = L_.TimeControl_?.currentTime
                         const mapCenter = L_.Map_.map.getCenter()
@@ -86,19 +86,7 @@ let BottomBar = {
                             time ? `${time.replaceAll(':', '-')}_` : ''
                         }${lat}_${lng}.png`
 
-                        // Download via a blob URL rather than the base64 data
-                        // URL directly: large/hi-DPI captures inflate ~33% as
-                        // base64 and large data-URL anchor downloads are less
-                        // reliable across browsers.
-                        const blob = await (await fetch(dataURL)).blob()
-                        const url = URL.createObjectURL(blob)
-                        const link = document.createElement('a')
-                        link.setAttribute('download', name)
-                        link.setAttribute('href', url)
-                        document.body.appendChild(link)
-                        link.click()
-                        link.remove()
-                        URL.revokeObjectURL(url)
+                        F_.downloadDataUrl(dataURL, name)
 
                         setTimeout(function () {
                             $('#topBarScreenshotLoading').css('display', 'none')
