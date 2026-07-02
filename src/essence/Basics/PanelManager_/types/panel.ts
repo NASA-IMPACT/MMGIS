@@ -62,6 +62,20 @@ export interface PanelDimensions {
      * - For left/right: this is the width
      */
     expandedSize?: PanelSize;
+
+    /**
+     * CSS sizing for floating panels — applied directly as CSS properties on the panel element.
+     * Numbers are treated as px; strings are passed through as-is (e.g. "50%", "40vh", "300px").
+     *
+     * Distinct from PanelCapabilities.minSize/maxSize, which constrain drag-resize handles
+     * (single-axis, pixels only). These apply to both axes and support all CSS units.
+     */
+    defaultWidth?: number | string;
+    defaultHeight?: number | string;
+    minWidth?: number | string;
+    maxWidth?: number | string;
+    minHeight?: number | string;
+    maxHeight?: number | string;
 }
 
 /**
