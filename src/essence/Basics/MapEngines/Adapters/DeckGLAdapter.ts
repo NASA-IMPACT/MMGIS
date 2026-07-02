@@ -430,20 +430,26 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try {
                 if (this._isOverlayMode && this._basemap) {
                     const basemap = this._basemap
+                    const onRender = () => {
+                        clearTimeout(timeout)
+                        canvasToPngScreenshot(basemap.getCanvas()).then(
+                            resolve,
+                            reject
+                        )
+                    }
                     const timeout = setTimeout(() => {
+                        // Unhook the pending listener, otherwise a timed-out
+                        // capture (e.g. a backgrounded tab whose repaint frame
+                        // never ran) leaves it armed to fire — and do a wasted
+                        // capture — on some later render.
+                        basemap.off('render', onRender)
                         reject(
                             new Error(
                                 '[DeckGLAdapter] captureScreenshot: timed out waiting for the basemap render event'
                             )
                         )
                     }, SCREENSHOT_RENDER_TIMEOUT_MS)
-                    basemap.once('render', () => {
-                        clearTimeout(timeout)
-                        canvasToPngScreenshot(basemap.getCanvas()).then(
-                            resolve,
-                            reject
-                        )
-                    })
+                    basemap.once('render', onRender)
                     basemap.triggerRepaint()
                     return
                 }
