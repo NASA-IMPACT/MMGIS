@@ -310,17 +310,20 @@ var InfoTool = {
             const feature = L_.convertGeoJSONLngLatsToPrimaryCoordinates(
                 InfoTool.info[InfoTool.activeFeatureI]
             )
-            F_.copyToClipboard(JSON.stringify(feature, null, 2))
-
             const icon = $(this).find('i')
-            icon.removeClass('mdi-clipboard-outline')
-            icon.addClass('mdi-check-bold')
-            icon.css('color', 'var(--color-green)')
-            setTimeout(() => {
-                icon.removeClass('mdi-check-bold')
-                icon.css('color', 'inherit')
-                icon.addClass('mdi-clipboard-outline')
-            }, 3000)
+            F_.copyToClipboard(JSON.stringify(feature, null, 2)).then(
+                (copied) => {
+                    if (!copied) return
+                    icon.removeClass('mdi-clipboard-outline')
+                    icon.addClass('mdi-check-bold')
+                    icon.css('color', 'var(--color-green)')
+                    setTimeout(() => {
+                        icon.removeClass('mdi-check-bold')
+                        icon.css('color', 'inherit')
+                        icon.addClass('mdi-clipboard-outline')
+                    }, 3000)
+                }
+            )
         })
 
         // Locate

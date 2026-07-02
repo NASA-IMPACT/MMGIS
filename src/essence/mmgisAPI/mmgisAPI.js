@@ -443,6 +443,9 @@ var mmgisAPI_ = {
         if (mmgisAPI_.map == null) return null
         return QueryURL.writeCoordinateURL()
     },
+    copyText: function (text) {
+        return F_.copyToClipboard(text)
+    },
     getViewState: function () {
         // View metadata for plugins; fields are null until loaded.
         const map = L_.Map_ && L_.Map_.map
@@ -764,6 +767,15 @@ var mmgisAPI = {
      * @returns {object} {missionName: string|null, time: string|null, center: {lat, lng}|null, zoom: number|null}
      */
     getViewState: mmgisAPI_.getViewState,
+
+    /** copyText - copies text to the user's clipboard. Uses the async
+     * Clipboard API with a legacy fallback for insecure origins. Note: pages
+     * embedding MMGIS in an iframe (FRAME_ANCESTORS) must set
+     * allow="clipboard-write" for the modern path.
+     * @param {string} text - text to copy
+     * @returns {Promise<boolean>} true on success, false on failure — never rejects
+     */
+    copyText: mmgisAPI_.copyText,
 
     /** getMapScreenshot - captures a PNG screenshot of the current map view.
      * Delegates to the active map engine, so the capture strategy is
