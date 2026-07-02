@@ -2,6 +2,7 @@ import React from 'react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { ShareFormatFlags } from '../../types'
 import { getShareMenuItems } from '../../getShareMenuItems'
+import { SHARE_MENU_ICONS } from './icons'
 
 export type ShareMenuProps = {
     /** Which downloadable formats are enabled. The link is always shown. */
@@ -81,36 +82,37 @@ export function ShareMenu({
                 aria-controls={open ? menuId : undefined}
                 onClick={() => setOpen((v) => !v)}
             >
-                <i className="mdi mdi-share-variant mdi-18px" />
                 <span>Share map</span>
-                <i className="mdi mdi-chevron-down share-menu__caret" />
             </button>
 
             {open && (
                 <div className="share-menu__dropdown" id={menuId} role="menu">
-                    {items.map((item) => (
-                        <React.Fragment key={item.kind}>
-                            {item.separatorBefore && (
-                                <div className="share-menu__separator" />
-                            )}
-                            <button
-                                type="button"
-                                role="menuitem"
-                                className="share-menu__item"
-                                onClick={() => run(item.onClick)}
-                                disabled={item.gatedByBusy && busy}
-                            >
-                                <i
-                                    className={`mdi ${item.icon} share-menu__item-icon`}
-                                />
-                                <span>
-                                    {item.kind === 'link' && copied
-                                        ? 'Link copied'
-                                        : item.label}
-                                </span>
-                            </button>
-                        </React.Fragment>
-                    ))}
+                    {items.map((item) => {
+                        const Icon = SHARE_MENU_ICONS[item.icon]
+                        return (
+                            <React.Fragment key={item.kind}>
+                                {item.separatorBefore && (
+                                    <div className="share-menu__separator" />
+                                )}
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="share-menu__item"
+                                    onClick={() => run(item.onClick)}
+                                    disabled={item.gatedByBusy && busy}
+                                >
+                                    {Icon && (
+                                        <Icon className="share-menu__item-icon" />
+                                    )}
+                                    <span>
+                                        {item.kind === 'link' && copied
+                                            ? 'Link copied'
+                                            : item.label}
+                                    </span>
+                                </button>
+                            </React.Fragment>
+                        )
+                    })}
                 </div>
             )}
         </div>

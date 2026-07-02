@@ -26,10 +26,12 @@ const LABELS: Record<ShareActionKind, string> = {
     pdf: 'Export as PDF',
 }
 
+// Lucide icon names (rendered by the ShareMenu's inline SVGs), matching the
+// reference prototype's share menu.
 const ICONS: Record<ShareActionKind, string> = {
-    link: 'mdi-link-variant',
-    png: 'mdi-image-outline',
-    pdf: 'mdi-file-pdf-box',
+    link: 'link-2',
+    png: 'file-image',
+    pdf: 'download',
 }
 
 /**
