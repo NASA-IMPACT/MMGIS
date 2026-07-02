@@ -1,18 +1,43 @@
 import {
     mmgisWriteCoordinateURL,
     mmgisGetMapScreenshot,
+    mmgisGetViewState,
     type MapScreenshotResult,
+    type ViewState,
 } from '../../_shared/adapters/mmgisAPI'
 import { buildSharePdf, type JsPdfLike } from './sharePdf'
 import { blobToDataUrl, downloadBlob } from './download'
 
 // Orchestrates the three export actions. Each function talks to core only
-// through the shared mmgisAPI client (writeCoordinateURL / getMapScreenshot)
-// and packages the result. Dependencies are injectable so the wiring is
-// unit-testable without a live map or DOM.
+// through the shared mmgisAPI client (writeCoordinateURL / getMapScreenshot /
+// getViewState) and packages the result. Dependencies are injectable so the
+// wiring is unit-testable without a live map or DOM.
 
 export const PNG_FILENAME = 'mmgis-map.png'
 export const PDF_FILENAME = 'mmgis-map.pdf'
+
+/**
+ * Builds a provenance-rich export filename matching the core screenshot
+ * button's convention: mmgis-<mission>_<time>_<lat>_<lng>.<ext>. Fields the
+ * view can't answer yet are omitted; with no view state at all this degrades
+ * to the generic mmgis-map.<ext>.
+ */
+export function buildExportFilename(
+    extension: string,
+    viewState: ViewState | null,
+): string {
+    const parts: string[] = []
+    if (viewState?.missionName) parts.push(viewState.missionName)
+    if (viewState?.time) parts.push(viewState.time.replaceAll(':', '-'))
+    if (viewState?.center)
+        parts.push(
+            `${viewState.center.lat.toFixed(4)}_${viewState.center.lng.toFixed(
+                4,
+            )}`,
+        )
+    if (parts.length === 0) return `mmgis-map.${extension}`
+    return `mmgis-${parts.join('_')}.${extension}`
+}
 
 // navigator / document are injectable so the dual clipboard paths can be
 // exercised in tests (Node's global navigator is read-only and can't be
@@ -87,6 +112,7 @@ export async function copyShareLink(
 export type DownloadSharePngDeps = {
     getScreenshot?: () => Promise<MapScreenshotResult | null>
     download?: (blob: Blob, filename: string) => void
+    getViewState?: () => ViewState | null
     filename?: string
 }
 
@@ -99,10 +125,13 @@ export async function downloadSharePng(
     const {
         getScreenshot = mmgisGetMapScreenshot,
         download = downloadBlob,
-        filename = PNG_FILENAME,
+        getViewState = mmgisGetViewState,
     } = deps
     const screenshot = await getScreenshot()
     if (!screenshot) throw new Error('No screenshot available')
+    const filename =
+        deps.filename ??
+        buildExportFilename(screenshot.extension, getViewState())
     download(screenshot.blob, filename)
     return screenshot
 }
@@ -114,13 +143,15 @@ export type DownloadSharePdfDeps = {
         dataUrl: string,
         naturalWidth: number,
         naturalHeight: number,
-    ) => JsPdfLike
+    ) => JsPdfLike | Promise<JsPdfLike>
+    getViewState?: () => ViewState | null
     filename?: string
 }
 
 /**
  * Downloads the current map as a PDF: the PNG snapshot centered on a portrait
- * page. Returns the generated jsPDF document.
+ * page. Returns the generated jsPDF document. buildPdf is awaited because the
+ * default lazy-loads jspdf via a code-split dynamic import.
  */
 export async function downloadSharePdf(
     deps: DownloadSharePdfDeps = {},
@@ -129,12 +160,14 @@ export async function downloadSharePdf(
         getScreenshot = mmgisGetMapScreenshot,
         blobToDataUrl: convertBlobToDataUrl = blobToDataUrl,
         buildPdf = buildSharePdf,
-        filename = PDF_FILENAME,
+        getViewState = mmgisGetViewState,
     } = deps
     const screenshot = await getScreenshot()
     if (!screenshot) throw new Error('No screenshot available')
     const dataUrl = await convertBlobToDataUrl(screenshot.blob)
-    const doc = buildPdf(dataUrl, screenshot.width, screenshot.height)
+    const doc = await buildPdf(dataUrl, screenshot.width, screenshot.height)
+    const filename =
+        deps.filename ?? buildExportFilename('pdf', getViewState())
     doc.save(filename)
     return doc
 }

@@ -8,6 +8,7 @@ type MMGISAPI = {
     hasHandler?: (name: string) => boolean
     writeCoordinateURL?: () => string
     getMapScreenshot?: () => Promise<MapScreenshotResult>
+    getViewState?: () => ViewState
 }
 
 export type MapScreenshotResult = {
@@ -16,6 +17,13 @@ export type MapScreenshotResult = {
     extension: 'png'
     width: number
     height: number
+}
+
+export type ViewState = {
+    missionName: string | null
+    time: string | null
+    center: { lat: number; lng: number } | null
+    zoom: number | null
 }
 
 declare global {
@@ -71,4 +79,13 @@ export const mmgisGetMapScreenshot = async (): Promise<MapScreenshotResult | nul
         return await window.mmgisAPI.getMapScreenshot()
     }
     return null
+}
+
+/**
+ * Returns metadata about the current view (mission name, time, center, zoom)
+ * for provenance-rich export filenames. Null if core isn't ready; individual
+ * fields are null until the mission has loaded far enough to answer them.
+ */
+export const mmgisGetViewState = (): ViewState | null => {
+    return window.mmgisAPI?.getViewState?.() ?? null
 }

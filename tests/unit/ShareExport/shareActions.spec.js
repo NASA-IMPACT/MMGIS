@@ -6,6 +6,7 @@ import {
     writeTextToClipboard,
     PNG_FILENAME,
     PDF_FILENAME,
+    buildExportFilename,
 } from '../../../src/essence/Tools/ShareExport/adapters/shareActions.ts'
 
 // Issue #144 - the adapter must call the right plugin-API methods and package
@@ -184,5 +185,55 @@ test.describe('downloadSharePdf', () => {
                 buildPdf: () => ({ save: () => {} }),
             }),
         ).rejects.toThrow('No screenshot available')
+    })
+})
+
+test.describe('buildExportFilename', () => {
+    test('builds the core convention from a full view state', () => {
+        const name = buildExportFilename('png', {
+            missionName: 'MSL',
+            time: '2026-07-01T12:00:00Z',
+            center: { lat: 4.58921, lng: 137.44162 },
+            zoom: 7,
+        })
+        expect(name).toBe('mmgis-MSL_2026-07-01T12-00-00Z_4.5892_137.4416.png')
+    })
+
+    test('omits fields the view cannot answer yet', () => {
+        const name = buildExportFilename('pdf', {
+            missionName: 'MSL',
+            time: null,
+            center: null,
+            zoom: null,
+        })
+        expect(name).toBe('mmgis-MSL.pdf')
+    })
+
+    test('degrades to the generic name with no view state', () => {
+        expect(buildExportFilename('png', null)).toBe('mmgis-map.png')
+    })
+})
+
+test.describe('provenance filenames in downloads', () => {
+    test('PNG download names the file from the injected view state', async () => {
+        const blob = new Blob(['png'], { type: 'image/png' })
+        const downloads = []
+        await downloadSharePng({
+            getScreenshot: async () => ({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: 640,
+                height: 480,
+            }),
+            download: (b, filename) => downloads.push(filename),
+            getViewState: () => ({
+                missionName: 'Earth',
+                time: null,
+                center: { lat: 33.1, lng: -84.2 },
+                zoom: 5,
+            }),
+        })
+        expect(downloads).toEqual(['mmgis-Earth_33.1000_-84.2000.png'])
     })
 })
