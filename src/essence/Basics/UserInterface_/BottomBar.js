@@ -73,12 +73,12 @@ let BottomBar = {
                 // mmgisAPI.getMapScreenshot(), which delegates to the active
                 // map engine (Leaflet html2canvas vs deck.gl GL-canvas
                 // readback). Here we just show the loading spinner, then
-                // download the resulting PNG data URL.
+                // download the resulting PNG Blob.
                 $('#topBarScreenshotLoading').css('display', 'block')
 
                 window.mmgisAPI
                     .getMapScreenshot()
-                    .then(function (dataURL) {
+                    .then(function (screenshot) {
                         const mission = L_.configData?.msv?.mission
                         const time = L_.TimeControl_?.currentTime
                         const mapCenter = L_.Map_.map.getCenter()
@@ -88,7 +88,7 @@ let BottomBar = {
                             time ? `${time.replaceAll(':', '-')}_` : ''
                         }${lat}_${lng}.png`
 
-                        F_.downloadDataUrl(dataURL, name)
+                        F_.downloadBlob(screenshot.blob, name)
 
                         setTimeout(function () {
                             $('#topBarScreenshotLoading').css('display', 'none')

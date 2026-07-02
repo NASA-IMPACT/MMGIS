@@ -18,6 +18,14 @@ import {
 } from './types/events'
 import { MapEngineType } from './types/engine'
 
+export interface MapScreenshotResult {
+    blob: Blob
+    mimeType: 'image/png'
+    extension: 'png'
+    width: number
+    height: number
+}
+
 /**
  * Core map engine contract.
  *
@@ -73,10 +81,9 @@ export interface IMapEngine<
      * - deck.gl reads the WebGL canvas directly (the base map's GL context
      *   when running in interleaved overlay mode), which html2canvas cannot do.
      *
-     * @returns Resolves to a PNG image as a data URL string
-     *   (e.g. `'data:image/png;base64,...'`).
+     * @returns Resolves to a PNG image Blob plus metadata.
      */
-    captureScreenshot(): Promise<string>
+    captureScreenshot(): Promise<MapScreenshotResult>
 
     /**
      * Jump to a center and zoom without animation.

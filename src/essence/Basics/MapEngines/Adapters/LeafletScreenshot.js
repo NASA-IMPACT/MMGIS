@@ -19,9 +19,8 @@ import HTML2Canvas from 'html2canvas'
  *   production these default to the imported jQuery and html2canvas.
  * @param {function} [deps.html2canvas] - html2canvas implementation.
  * @param {function} [deps.jquery] - jQuery implementation.
- * @returns {Promise<string>} Resolves to a PNG image as a data URL string
- *   (e.g. 'data:image/png;base64,...'). The data URL form is convenient for
- *   both triggering a download and embedding the image (e.g. into a PDF).
+ * @returns {Promise<object>} Resolves to a PNG Blob plus metadata:
+ *   `{ blob, mimeType, extension, width, height }`.
  */
 function getMapScreenshot(deps = {}) {
     const html2canvas = deps.html2canvas || HTML2Canvas
@@ -120,9 +119,7 @@ function getMapScreenshot(deps = {}) {
                     copyEle.setAttribute('style', attribute)
                 })
             },
-        }).then(function (canvas) {
-            return canvas.toDataURL('image/png')
-        })
+        }).then(canvasToPngScreenshot)
     } catch (err) {
         restoreChrome()
         throw err
@@ -138,6 +135,28 @@ function getMapScreenshot(deps = {}) {
     restoreChrome()
 
     return capture
+}
+
+function canvasToPngScreenshot(canvas) {
+    return new Promise(function (resolve, reject) {
+        if (typeof canvas.toBlob !== 'function') {
+            reject(new Error('getMapScreenshot: canvas.toBlob is unavailable'))
+            return
+        }
+        canvas.toBlob(function (blob) {
+            if (!blob) {
+                reject(new Error('getMapScreenshot: canvas.toBlob returned null'))
+                return
+            }
+            resolve({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: canvas.width,
+                height: canvas.height,
+            })
+        }, 'image/png')
+    })
 }
 
 export { getMapScreenshot }

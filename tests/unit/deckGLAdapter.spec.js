@@ -223,14 +223,15 @@ test.describe('DeckGLAdapter', () => {
             const adapter = makeAdapter()
             let inRenderFrame = false
             let renderHandler = null
+            const blob = new Blob(['deckgl'], { type: 'image/png' })
             const canvas = {
-                toDataURL: (type) => {
+                width: 256,
+                height: 128,
+                toBlob: (callback, type) => {
                     expect(type).toBe('image/png')
                     // Only valid during the render event, before the browser
                     // presents (and clears) the drawing buffer.
-                    return inRenderFrame
-                        ? 'data:image/png;base64,DECKGL'
-                        : 'data:image/png;base64,BLANK'
+                    callback(inRenderFrame ? blob : null)
                 },
             }
             adapter._isOverlayMode = true
@@ -251,10 +252,16 @@ test.describe('DeckGLAdapter', () => {
             }
 
             const result = await adapter.captureScreenshot()
-            expect(result).toBe('data:image/png;base64,DECKGL')
+            expect(result).toEqual({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: 256,
+                height: 128,
+            })
         })
 
-        test('overlay mode rejects when toDataURL throws during the render event', async () => {
+        test('overlay mode rejects when toBlob returns null during the render event', async () => {
             const adapter = makeAdapter()
             let renderHandler = null
             adapter._isOverlayMode = true
@@ -262,11 +269,13 @@ test.describe('DeckGLAdapter', () => {
                 once: (_type, handler) => { renderHandler = handler },
                 triggerRepaint: () => renderHandler(),
                 getCanvas: () => ({
-                    toDataURL: () => { throw new Error('tainted canvas') },
+                    width: 256,
+                    height: 128,
+                    toBlob: (callback) => callback(null),
                 }),
             }
 
-            await expect(adapter.captureScreenshot()).rejects.toThrow(/tainted canvas/)
+            await expect(adapter.captureScreenshot()).rejects.toThrow(/toBlob returned null/)
         })
 
         test('overlay mode rejects after the timeout if the render event never fires', async () => {
@@ -278,7 +287,11 @@ test.describe('DeckGLAdapter', () => {
                 adapter._basemap = {
                     once: () => {},
                     triggerRepaint: () => { repainted = true },
-                    getCanvas: () => ({ toDataURL: () => 'data:image/png;base64,NEVER' }),
+                    getCanvas: () => ({
+                        width: 256,
+                        height: 128,
+                        toBlob: () => {},
+                    }),
                 }
 
                 const capture = adapter.captureScreenshot()
@@ -294,15 +307,29 @@ test.describe('DeckGLAdapter', () => {
         test('standalone mode redraws deck and reads its canvas', async () => {
             const adapter = makeAdapter()
             let redrawArg = null
+            const blob = new Blob(['standalone'], { type: 'image/png' })
             adapter._isOverlayMode = false
             adapter._deck = {
                 redraw: (reason) => { redrawArg = reason },
-                getCanvas: () => ({ toDataURL: () => 'data:image/png;base64,STANDALONE' }),
+                getCanvas: () => ({
+                    width: 300,
+                    height: 200,
+                    toBlob: (callback, type) => {
+                        expect(type).toBe('image/png')
+                        callback(blob)
+                    },
+                }),
             }
 
             const result = await adapter.captureScreenshot()
             expect(redrawArg).toBe('screenshot')
-            expect(result).toBe('data:image/png;base64,STANDALONE')
+            expect(result).toEqual({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: 300,
+                height: 200,
+            })
         })
 
         test('rejects when there is no active map to capture', async () => {

@@ -24,15 +24,22 @@ test.describe('mmgisAPI.getMapScreenshot delegation (issue #143)', () => {
     })
 
     test('delegates to the active engine and returns its result', async () => {
+        const screenshot = {
+            blob: new Blob(['engine'], { type: 'image/png' }),
+            mimeType: 'image/png',
+            extension: 'png',
+            width: 640,
+            height: 480,
+        }
         const capture = vi.fn(() =>
-            Promise.resolve('data:image/png;base64,ENGINE')
+            Promise.resolve(screenshot)
         )
         L_.Map_ = { engine: { captureScreenshot: capture } }
 
         const result = await mmgisAPI.getMapScreenshot()
 
         expect(capture).toHaveBeenCalledTimes(1)
-        expect(result).toBe('data:image/png;base64,ENGINE')
+        expect(result).toBe(screenshot)
     })
 
     test('rejects when no engine is active', async () => {

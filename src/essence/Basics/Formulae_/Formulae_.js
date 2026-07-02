@@ -1816,7 +1816,10 @@ var Formulae_ = {
         const binary = atob(base64)
         const bytes = new Uint8Array(binary.length)
         for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-        const url = URL.createObjectURL(new Blob([bytes], { type: mime }))
+        this.downloadBlob(new Blob([bytes], { type: mime }), filename)
+    },
+    downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
         link.setAttribute('download', filename)
         link.setAttribute('href', url)

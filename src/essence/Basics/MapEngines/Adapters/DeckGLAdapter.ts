@@ -29,7 +29,7 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { Map as MaplibreGLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import type { IMapEngine } from '../IMapEngine'
+import type { IMapEngine, MapScreenshotResult } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
 import type { MapEngineType } from '../types/engine'
 import type { LatLng, LatLngLike, BoundsLike, PointLike } from '../types/geometry'
@@ -139,6 +139,28 @@ interface BasemapInstance {
  * short enough that a dead map fails fast.
  */
 const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
+
+function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
+    return new Promise((resolve, reject) => {
+        if (typeof canvas.toBlob !== 'function') {
+            reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob is unavailable'))
+            return
+        }
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob returned null'))
+                return
+            }
+            resolve({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: canvas.width,
+                height: canvas.height,
+            })
+        }, 'image/png')
+    })
+}
 
 /**
  * DeckGL map engine adapter.
@@ -403,8 +425,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Note: this captures only the GL canvas. Anchored HTML overlays/markers
      * added via {@link addOverlay} are separate DOM nodes and are not included.
      */
-    captureScreenshot(): Promise<string> {
-        return new Promise<string>((resolve, reject) => {
+    captureScreenshot(): Promise<MapScreenshotResult> {
+        return new Promise<MapScreenshotResult>((resolve, reject) => {
             try {
                 if (this._isOverlayMode && this._basemap) {
                     const basemap = this._basemap
@@ -417,11 +439,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     }, SCREENSHOT_RENDER_TIMEOUT_MS)
                     basemap.once('render', () => {
                         clearTimeout(timeout)
-                        try {
-                            resolve(basemap.getCanvas().toDataURL('image/png'))
-                        } catch (err) {
-                            reject(err as Error)
-                        }
+                        canvasToPngScreenshot(basemap.getCanvas()).then(
+                            resolve,
+                            reject
+                        )
                     })
                     basemap.triggerRepaint()
                     return
@@ -443,7 +464,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     )
                     return
                 }
-                resolve(canvas.toDataURL('image/png'))
+                canvasToPngScreenshot(canvas).then(resolve, reject)
             } catch (err) {
                 reject(err as Error)
             }

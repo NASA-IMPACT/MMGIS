@@ -782,7 +782,7 @@ var mmgisAPI = {
      * that the deck.gl capture is limited to the GL canvas and does not include
      * HTML overlays/markers layered on top. Asynchronous; requires no backend
      * call. Rejects if no map engine is active.
-     * @returns {Promise<string>} - resolves to a PNG image as a data URL string (e.g. 'data:image/png;base64,...'). The data URL form can be used to trigger a download or to embed the image (e.g. into a PDF).
+     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number}>} - resolves to a PNG Blob plus image metadata.
      */
     getMapScreenshot: mmgisAPI_.getMapScreenshot,
 

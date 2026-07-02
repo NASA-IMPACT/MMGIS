@@ -6,7 +6,14 @@ import { getMapScreenshot as mockedLeafletCapture } from '../../src/essence/Basi
 // Mock the Leaflet screenshot strategy so we can assert LeafletAdapter delegates
 // to it (issue #143) without driving the real html2canvas/DOM path.
 vi.mock('../../src/essence/Basics/MapEngines/Adapters/LeafletScreenshot.js', () => {
-    const fn = vi.fn(() => Promise.resolve('data:image/png;base64,LEAFLET'))
+    const result = {
+        blob: new Blob(['leaflet'], { type: 'image/png' }),
+        mimeType: 'image/png',
+        extension: 'png',
+        width: 640,
+        height: 480,
+    }
+    const fn = vi.fn(() => Promise.resolve(result))
     return { getMapScreenshot: fn, default: fn }
 })
 
@@ -163,7 +170,11 @@ test.describe('LeafletAdapter - Lifecycle', () => {
         const result = await adapter.captureScreenshot()
 
         expect(mockedLeafletCapture).toHaveBeenCalledTimes(1)
-        expect(result).toBe('data:image/png;base64,LEAFLET')
+        expect(result.mimeType).toBe('image/png')
+        expect(result.extension).toBe('png')
+        expect(result.width).toBe(640)
+        expect(result.height).toBe(480)
+        expect(result.blob).toBeInstanceOf(Blob)
     })
 
     test('destroy() is safe to call when map is not initialized', () => {

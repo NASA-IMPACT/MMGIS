@@ -46,12 +46,21 @@ function makeMockJQuery(getterValue) {
     return jquery
 }
 
-function makeMockHtml2canvas(dataURL) {
+function makePngBlob(content = 'png') {
+    return new Blob([content], { type: 'image/png' })
+}
+
+function makeMockHtml2canvas(blob = makePngBlob()) {
     const calls = [] // { element, options }
     function html2canvas(element, options) {
         calls.push({ element, options })
         return Promise.resolve({
-            toDataURL: () => dataURL,
+            width: element.offsetWidth,
+            height: element.offsetHeight,
+            toBlob: (callback, type) => {
+                expect(type).toBe('image/png')
+                callback(blob)
+            },
         })
     }
     html2canvas._calls = calls
@@ -88,18 +97,43 @@ test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
         setupGlobalDom()
     })
 
-    test('resolves to the PNG data URL produced by html2canvas', async () => {
+    test('resolves to a PNG Blob screenshot result produced by html2canvas', async () => {
         const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas('data:image/png;base64,FAKEPNG')
+        const blob = makePngBlob('leaflet')
+        const html2canvas = makeMockHtml2canvas(blob)
 
         const result = await getMapScreenshot({ jquery, html2canvas })
 
-        expect(result).toBe('data:image/png;base64,FAKEPNG')
+        expect(result).toEqual({
+            blob,
+            mimeType: 'image/png',
+            extension: 'png',
+            width: 1024,
+            height: 768,
+        })
+    })
+
+    test('rejects when canvas.toBlob returns null', async () => {
+        const jquery = makeMockJQuery('5px')
+        const html2canvas = makeMockHtml2canvas()
+        html2canvas._calls = []
+        const nullBlobHtml2canvas = (element, options) => {
+            html2canvas._calls.push({ element, options })
+            return Promise.resolve({
+                width: element.offsetWidth,
+                height: element.offsetHeight,
+                toBlob: (callback) => callback(null),
+            })
+        }
+
+        await expect(
+            getMapScreenshot({ jquery, html2canvas: nullBlobHtml2canvas })
+        ).rejects.toThrow(/toBlob returned null/)
     })
 
     test('invokes html2canvas once on #mapScreen with an onclone option', async () => {
         const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas('data:image/png;base64,X')
+        const html2canvas = makeMockHtml2canvas()
 
         await getMapScreenshot({ jquery, html2canvas })
 
@@ -114,7 +148,7 @@ test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
 
     test('hides UI chrome for the capture and restores it afterwards', async () => {
         const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas('data:image/png;base64,X')
+        const html2canvas = makeMockHtml2canvas()
 
         await getMapScreenshot({ jquery, html2canvas })
 
@@ -136,7 +170,7 @@ test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
         // Regression guard: the restore must pass the captured variable, not the
         // literal 'savedMapToolBarBottom'. Saved value here is '5px'.
         const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas('data:image/png;base64,X')
+        const html2canvas = makeMockHtml2canvas()
 
         await getMapScreenshot({ jquery, html2canvas })
 
@@ -154,7 +188,7 @@ test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
         // selector, since the click cleared .active) afterwards. Previously the
         // restore was missing, leaving the time UI collapsed.
         const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas('data:image/png;base64,X')
+        const html2canvas = makeMockHtml2canvas()
 
         await getMapScreenshot({ jquery, html2canvas })
 
