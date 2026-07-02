@@ -7,7 +7,7 @@
  * 
  */
 
-import { IMapEngine } from '../IMapEngine'
+import { IMapEngine, MapScreenshotResult } from '../IMapEngine'
 import {
     LatLng,
     LatLngLike,
@@ -333,7 +333,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     }
 
     /**
-     * Capture the current Leaflet view as a PNG data URL.
+     * Capture the current Leaflet view as a PNG Blob result.
      *
      * Delegates to the shared {@link getMapScreenshot} helper, which performs
      * the html2canvas rasterization plus the Leaflet-specific DOM prep
@@ -341,7 +341,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * That logic is correct for Leaflet's DOM/SVG/tile rendering and is left
      * unchanged here.
      */
-    captureScreenshot(): Promise<string> {
+    captureScreenshot(): Promise<MapScreenshotResult> {
         return getMapScreenshot()
     }
 
@@ -1268,4 +1268,3 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return null
     }
 }
-

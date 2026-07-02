@@ -29,7 +29,7 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { Map as MaplibreGLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import type { IMapEngine } from '../IMapEngine'
+import type { IMapEngine, MapScreenshotResult } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
 import type { MapEngineType } from '../types/engine'
 import type { LatLng, LatLngLike, BoundsLike, PointLike } from '../types/geometry'
@@ -135,6 +135,35 @@ interface BasemapInstance {
     triggerRepaint?(): void
     /** Whether the map's style and sources are fully loaded and idle. */
     loaded?(): boolean
+}
+
+/**
+ * How long {@link DeckGLAdapter.captureScreenshot} waits for the basemap's
+ * `render` event before rejecting. Generous enough for a slow first frame,
+ * short enough that a dead map fails fast.
+ */
+const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
+
+function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
+    return new Promise((resolve, reject) => {
+        if (typeof canvas.toBlob !== 'function') {
+            reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob is unavailable'))
+            return
+        }
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob returned null'))
+                return
+            }
+            resolve({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: canvas.width,
+                height: canvas.height,
+            })
+        }, 'image/png')
+    })
 }
 
 /**
@@ -375,50 +404,44 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Capture the current map view as a PNG data URL.
+     * Capture the current map view as a PNG Blob plus image metadata.
      *
      * WebGL clears its drawing buffer after every composite, so a canvas
-     * `toDataURL()` returns blank unless the GL context was created with
+     * canvas readback returns blank unless the GL context was created with
      * `preserveDrawingBuffer: true` (set in {@link _setupOverlay}) AND the read
      * happens in the same frame as a render. We therefore force a repaint and
-     * read the canvas on the next animation frame.
+     * read the canvas inside the render event.
      *
      * - **Overlay mode** (the modern map): the `MapboxOverlay` runs in
      *   `interleaved: true` mode, so deck.gl draws into the base map's GL
      *   context — there is a single canvas holding basemap + deck layers.
-     *   We repaint the base map and read `basemap.getCanvas().toDataURL()`.
+     *   We repaint the base map and convert `basemap.getCanvas()` to a Blob.
      * - **Standalone mode**: deck.gl owns the only canvas; we redraw the
      *   `Deck` instance and read its canvas.
      *
      * Note: this captures only the GL canvas. Anchored HTML overlays/markers
      * added via {@link addOverlay} are separate DOM nodes and are not included.
      */
-    captureScreenshot(): Promise<string> {
-        return new Promise<string>((resolve, reject) => {
+    captureScreenshot(): Promise<MapScreenshotResult> {
+        return new Promise<MapScreenshotResult>((resolve, reject) => {
             try {
                 if (this._isOverlayMode && this._basemap) {
                     const basemap = this._basemap
-                    // Force a synchronous repaint, then read back in the same
-                    // frame. redraw() (maplibre-gl) paints synchronously;
-                    // triggerRepaint() (both libs) schedules a frame, so we
-                    // fall back to a rAF read for that path.
-                    const read = () => {
-                        const canvas = basemap.getCanvas()
-                        resolve(canvas.toDataURL('image/png'))
-                    }
-                    if (typeof basemap.redraw === 'function') {
-                        basemap.redraw()
-                        read()
-                    } else {
-                        basemap.triggerRepaint?.()
-                        requestAnimationFrame(() => {
-                            try {
-                                read()
-                            } catch (err) {
-                                reject(err as Error)
-                            }
-                        })
-                    }
+                    const timeout = setTimeout(() => {
+                        reject(
+                            new Error(
+                                '[DeckGLAdapter] captureScreenshot: timed out waiting for the basemap render event'
+                            )
+                        )
+                    }, SCREENSHOT_RENDER_TIMEOUT_MS)
+                    basemap.once('render', () => {
+                        clearTimeout(timeout)
+                        canvasToPngScreenshot(basemap.getCanvas()).then(
+                            resolve,
+                            reject
+                        )
+                    })
+                    basemap.triggerRepaint()
                     return
                 }
 
@@ -436,7 +459,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     )
                     return
                 }
-                resolve(canvas.toDataURL('image/png'))
+                canvasToPngScreenshot(canvas).then(resolve, reject)
             } catch (err) {
                 reject(err as Error)
             }

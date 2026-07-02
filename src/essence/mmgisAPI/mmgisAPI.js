@@ -738,6 +738,13 @@ var mmgisAPI = {
      */
     writeCoordinateURL: mmgisAPI_.writeCoordinateURL,
 
+    /** getViewState - returns metadata about the current view (for example to
+     * build provenance-rich export filenames). Fields are null until the
+     * mission has loaded far enough to answer them.
+     * @returns {object} {missionName: string|null, time: string|null, center: {lat, lng}|null, zoom: number|null}
+     */
+    getViewState: mmgisAPI_.getViewState,
+
     /** getMapScreenshot - captures a PNG screenshot of the current map view.
      * Delegates to the active map engine, so the capture strategy is
      * engine-specific: the Leaflet engine rasterizes its DOM (hiding UI chrome
@@ -745,7 +752,7 @@ var mmgisAPI = {
      * that the deck.gl capture is limited to the GL canvas and does not include
      * HTML overlays/markers layered on top. Asynchronous; requires no backend
      * call. Rejects if no map engine is active.
-     * @returns {Promise<string>} - resolves to a PNG image as a data URL string (e.g. 'data:image/png;base64,...'). The data URL form can be used to trigger a download or to embed the image (e.g. into a PDF).
+     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number}>} - resolves to a PNG Blob plus image metadata.
      */
     getMapScreenshot: mmgisAPI_.getMapScreenshot,
 

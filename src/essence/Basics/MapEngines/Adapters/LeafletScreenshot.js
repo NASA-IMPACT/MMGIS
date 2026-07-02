@@ -19,9 +19,8 @@ import HTML2Canvas from 'html2canvas'
  *   production these default to the imported jQuery and html2canvas.
  * @param {function} [deps.html2canvas] - html2canvas implementation.
  * @param {function} [deps.jquery] - jQuery implementation.
- * @returns {Promise<string>} Resolves to a PNG image as a data URL string
- *   (e.g. 'data:image/png;base64,...'). The data URL form is convenient for
- *   both triggering a download and embedding the image (e.g. into a PDF).
+ * @returns {Promise<object>} Resolves to a PNG Blob plus metadata:
+ *   `{ blob, mimeType, extension, width, height }`.
  */
 function getMapScreenshot(deps = {}) {
     const html2canvas = deps.html2canvas || HTML2Canvas
@@ -51,71 +50,107 @@ function getMapScreenshot(deps = {}) {
     // wrapper, so fall back to the #map container (present in both layouts).
     const documentElm =
         document.getElementById('mapScreen') || document.getElementById('map')
-    const capture = html2canvas(documentElm, {
-        allowTaint: true,
-        useCORS: true,
-        logging: false,
-        scrollX: -window.scrollX,
-        scrollY: -window.scrollY,
-        windowWidth: documentElm.offsetWidth,
-        windowHeight: documentElm.offsetHeight,
-        onclone: function (e) {
-            // Fix svg layer shift
-            const originalSVG = document.body.querySelectorAll(
-                'svg.leaflet-zoom-animated'
-            )
-            const copySVG = e.body.querySelectorAll(
-                'svg.leaflet-zoom-animated'
-            )
-            copySVG.forEach((copyEle, i) => {
-                const attribute = originalSVG
-                    .item(i)
-                    .getAttribute('style')
-                const parentElement = copyEle.parentElement
-                parentElement.removeChild(copyEle)
-                const temp = document.createElement('div')
-                temp.appendChild(copyEle)
-                parentElement.appendChild(temp)
-                temp.setAttribute('style', attribute)
-                copyEle.removeAttribute('style')
+    const restoreChrome = function () {
+        jquery('#map .leaflet-tile-pane')
+            .children()
+            .each(function (i, elm) {
+                jquery(elm).css('z-index', zIndices[i])
             })
+        jquery('.leaflet-control-scalefactor').css('display', 'flex')
+        jquery('#mmgis-map-compass').css('display', 'block')
+        jquery('.leaflet-control-zoom').css('display', 'block')
+        jquery('#scaleBar').css('margin-top', '5px')
+        jquery('#mapToolBar').css('bottom', savedMapToolBarBottom)
+        if (timeUIWasActive) jquery('#toggleTimeUI').trigger('click')
+    }
+    if (!documentElm) {
+        restoreChrome()
+        return Promise.reject(
+            new Error('getMapScreenshot: no #mapScreen/#map container to capture')
+        )
+    }
 
-            // Fix tile layer z-indices
-            const originalZ = document.body.querySelectorAll(
-                '.leaflet-tile-pane > div.leaflet-layer'
-            )
-            const copyZ = e.body.querySelectorAll(
-                '.leaflet-tile-pane > div.leaflet-layer'
-            )
-            copyZ.forEach((copyEle, i) => {
-                const attribute = originalZ
-                    .item(i)
-                    .getAttribute('style')
-                copyEle.setAttribute('style', attribute)
-            })
-        },
-    }).then(function (canvas) {
-        return canvas.toDataURL('image/png')
-    })
+    let capture
+    try {
+        capture = html2canvas(documentElm, {
+            allowTaint: true,
+            useCORS: true,
+            logging: false,
+            scrollX: -window.scrollX,
+            scrollY: -window.scrollY,
+            windowWidth: documentElm.offsetWidth,
+            windowHeight: documentElm.offsetHeight,
+            onclone: function (e) {
+                // Fix svg layer shift
+                const originalSVG = document.body.querySelectorAll(
+                    'svg.leaflet-zoom-animated'
+                )
+                const copySVG = e.body.querySelectorAll(
+                    'svg.leaflet-zoom-animated'
+                )
+                copySVG.forEach((copyEle, i) => {
+                    const attribute = originalSVG
+                        .item(i)
+                        .getAttribute('style')
+                    const parentElement = copyEle.parentElement
+                    parentElement.removeChild(copyEle)
+                    const temp = document.createElement('div')
+                    temp.appendChild(copyEle)
+                    parentElement.appendChild(temp)
+                    temp.setAttribute('style', attribute)
+                    copyEle.removeAttribute('style')
+                })
+
+                // Fix tile layer z-indices
+                const originalZ = document.body.querySelectorAll(
+                    '.leaflet-tile-pane > div.leaflet-layer'
+                )
+                const copyZ = e.body.querySelectorAll(
+                    '.leaflet-tile-pane > div.leaflet-layer'
+                )
+                copyZ.forEach((copyEle, i) => {
+                    const attribute = originalZ
+                        .item(i)
+                        .getAttribute('style')
+                    copyEle.setAttribute('style', attribute)
+                })
+            },
+        }).then(canvasToPngScreenshot)
+    } catch (err) {
+        restoreChrome()
+        throw err
+    }
 
     // Restore the UI chrome we hid for the capture. This runs immediately
     // (not in .then) because html2canvas clones the DOM synchronously within
     // the call above, before its first internal await, so the capture already
     // holds the hidden-chrome state and restoring the live UI now does not
     // affect it.
-    jquery('#map .leaflet-tile-pane')
-        .children()
-        .each(function (i, elm) {
-            jquery(elm).css('z-index', zIndices[i])
-        })
-    jquery('.leaflet-control-scalefactor').css('display', 'flex')
-    jquery('#mmgis-map-compass').css('display', 'block')
-    jquery('.leaflet-control-zoom').css('display', 'block')
-    jquery('#scaleBar').css('margin-top', '5px')
-    jquery('#mapToolBar').css('bottom', savedMapToolBarBottom)
-    if (timeUIWasActive) jquery('#toggleTimeUI').trigger('click')
+    restoreChrome()
 
     return capture
+}
+
+function canvasToPngScreenshot(canvas) {
+    return new Promise(function (resolve, reject) {
+        if (typeof canvas.toBlob !== 'function') {
+            reject(new Error('getMapScreenshot: canvas.toBlob is unavailable'))
+            return
+        }
+        canvas.toBlob(function (blob) {
+            if (!blob) {
+                reject(new Error('getMapScreenshot: canvas.toBlob returned null'))
+                return
+            }
+            resolve({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: canvas.width,
+                height: canvas.height,
+            })
+        }, 'image/png')
+    })
 }
 
 export { getMapScreenshot }
