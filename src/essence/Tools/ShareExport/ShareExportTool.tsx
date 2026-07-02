@@ -2,13 +2,13 @@ import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MMGISShareExportAdapter } from './MMGISShareExportAdapter'
 
-// ShareExport renders a self-contained "Share map" control floating in the
-// top-right action area (alongside the AOI "Analyze areas" cluster), NOT in the
-// left layers panel. The modern/default layout assigns the tool to a panel and
-// calls make(targetId), but — exactly like the AOI plugin — we ignore that
-// docked target and mount our own position:fixed host on document.body so the
-// trigger + dropdown float over the map. width:0/height:0 in config.json keeps
-// the assigned panel slot collapsed.
+// ShareExport renders a self-contained "Share map" trigger button that opens a
+// small dropdown menu. Placement is layout-owned: the modern layout assigns the
+// tool to a panel (e.g. a `float-top-right` floating panel declared in the
+// mission's panelSettings) and calls make(targetId); we mount the React root
+// into that assigned container, exactly like CardTool. Only the transient
+// dropdown menu escapes the panel card (portaled to document.body by
+// <ShareMenu>) so the float zone's overflow clipping can't cut it off.
 
 const HOST_ID = 'shareExport-tool-host'
 
@@ -26,16 +26,31 @@ const ShareExportTool = {
     },
 
     make: function (targetId?: string) {
-        this.targetId = typeof targetId === 'string' ? targetId : null
+        this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
+        const container = document.getElementById(this.targetId)
+        if (!container) {
+            console.error(
+                `ShareExportTool: container ${this.targetId} not found`,
+            )
+            return
+        }
 
-        // Reuse a single floating host; guard against a double-make.
+        // Guard against a double-make: fully tear down the previous mount
+        // (unmount the React root, then drop its host element).
+        if (_root) {
+            _root.unmount()
+            _root = null
+        }
         if (_host && _host.parentNode) {
             _host.parentNode.removeChild(_host)
         }
+
+        // A dedicated host element scopes the plugin's styles/tokens
+        // (.shareExport-tool-host) without leaking into the panel.
         _host = document.createElement('div')
         _host.id = HOST_ID
         _host.className = 'shareExport-tool-host'
-        document.body.appendChild(_host)
+        container.appendChild(_host)
 
         _root = createRoot(_host)
         _root.render(<MMGISShareExportAdapter />)

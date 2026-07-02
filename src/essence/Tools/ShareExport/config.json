@@ -1,8 +1,8 @@
 {
     "defaultIcon": "share-variant",
-    "description": "A top-right \"Share map\" button that opens a menu to share the current view as a link, PNG, or PDF.",
+    "description": "A \"Share map\" button that opens a menu to share the current view as a link, PNG, or PDF.",
     "descriptionFull": {
-        "title": "Adds a \"Share map\" button to the top-right action area. Clicking it opens a compact dropdown menu floating over the map. \"Copy link to view\" copies a complete, self-contained URL (layers, place, zoom, time) to the clipboard. \"Export as PNG\" downloads a snapshot of the current map, and \"Export as PDF\" embeds that same snapshot centered on a portrait page. The PNG and PDF items can each be toggled on or off per-dashboard; the share link is always available.",
+        "title": "Adds a \"Share map\" button, typically placed in a floating panel over the map (e.g. float-top-right). Clicking it opens a compact dropdown menu. \"Copy link to view\" copies a complete, self-contained URL (layers, place, zoom, time) to the clipboard. \"Export as PNG\" downloads a snapshot of the current map, and \"Export as PDF\" embeds that same snapshot centered on a portrait page. The PNG and PDF items can each be toggled on or off per-dashboard; the share link is always available.",
         "example": {
             "exportPng": true,
             "exportPdf": true
@@ -11,21 +11,24 @@
     "hasVars": true,
     "name": "ShareExport",
     "toolbarPriority": 3,
-    "separatedTool": true,
-    "width": 0,
-    "height": 0,
     "paths": {
         "ShareExportTool": "essence/Tools/ShareExport/ShareExportTool"
     },
     "metadata": {
         "icon": "share-variant",
-        "separatedTool": true,
         "requiredOrientation": "vertical",
-        "compatiblePositions": ["left", "right"],
-        "preferredPosition": "right",
-        "modernLayoutSupport": true,
-        "width": 0,
-        "height": 0
+        "compatiblePositions": [
+            "left",
+            "right",
+            "float-top-left",
+            "float-top-center",
+            "float-top-right",
+            "float-bottom-left",
+            "float-bottom-center",
+            "float-bottom-right"
+        ],
+        "preferredPosition": "float-top-right",
+        "modernLayoutSupport": true
     },
     "config": {
         "rows": [

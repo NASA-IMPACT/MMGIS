@@ -1,8 +1,13 @@
-// ShareExport "Share map" control — a compact top-right trigger button that
-// opens a small dropdown menu floating over the map. Mirrors the AOI plugin's
-// token convention: every literal carries an `--mmgis-*` fallback so a host
-// theme can override it at :root without touching this file. Scoped entirely
-// under the .shareExport-tool-host root so it never leaks into core styles.
+// ShareExport "Share map" control — a compact trigger button that opens a
+// small dropdown menu. The trigger is placed by the layout (e.g. a
+// float-top-right floating panel); this file only styles the control, it never
+// positions it. Mirrors the AOI plugin's token convention: every literal
+// carries an `--mmgis-*` fallback so a host theme can override it at :root
+// without touching this file. Scoped entirely under the .shareExport-tool-host
+// root so it never leaks into core styles. The dropdown menu is portaled to
+// document.body (so the float zone's overflow clipping can't cut it off), so
+// the portal element carries the .shareExport-tool-host class too to keep the
+// token scope.
 
 .shareExport-tool-host {
     // Tokens (host theme overrides --mmgis-* on :root).
@@ -26,18 +31,7 @@
     --se-space-1: var(--mmgis-space-1, 4px);
     --se-space-2: var(--mmgis-space-2, 8px);
     --se-space-3: var(--mmgis-space-3, 12px);
-    // Right offset of the top-right action area. The default clears the AOI
-    // cluster (.aoi-tool-host: right 16px + width 372px ≈ 404px) so the two
-    // don't overlap. This is the one inter-plugin layout assumption here; a
-    // host can override --mmgis-action-area-right once the framework exposes a
-    // real top-bar slot API (the proper fix), making this token unnecessary.
-    --se-action-offset-right: var(--mmgis-action-area-right, 404px);
 
-    // Float in the top-right action area, to the left of the AOI cluster.
-    position: fixed;
-    top: 70px;
-    right: var(--se-action-offset-right);
-    z-index: 1003;
     color: var(--se-fg);
     font-family: var(--se-font-body);
     font-size: var(--se-font-size-md);
@@ -83,10 +77,12 @@
     }
 }
 
+// Portaled to document.body and anchored to the trigger with an inline
+// top/right computed from the trigger's bounding rect (see <ShareMenu>), so
+// the float zone's overflow clipping can't cut the menu off.
 .share-menu__dropdown {
-    position: absolute;
-    top: calc(100% + var(--se-space-1));
-    right: 0;
+    position: fixed;
+    z-index: var(--mmgis-popup-z, 1200);
     min-width: 200px;
     padding: var(--se-space-1);
     background: var(--se-bg);
