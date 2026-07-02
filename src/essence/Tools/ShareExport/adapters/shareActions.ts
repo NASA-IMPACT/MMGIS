@@ -2,6 +2,7 @@ import {
     mmgisWriteCoordinateURL,
     mmgisGetMapScreenshot,
     mmgisGetViewState,
+    mmgisCopyText,
     type MapScreenshotResult,
     type ViewState,
 } from '../../_shared/adapters/mmgisAPI'
@@ -35,76 +36,26 @@ export function buildExportFilename(
     return `mmgis-${parts.join('_')}.${extension}`
 }
 
-// Injectable because Node's global navigator is read-only in tests.
-export type ClipboardEnv = {
-    nav?: { clipboard?: { writeText?: (text: string) => Promise<void> } }
-    doc?: Document
-}
-
-/**
- * Writes text to the clipboard via the async Clipboard API, falling back to a
- * hidden textarea + execCommand('copy') on insecure origins where
- * navigator.clipboard doesn't exist. Failures throw.
- */
-export async function writeTextToClipboard(
-    text: string,
-    env: ClipboardEnv = {},
-): Promise<void> {
-    const nav =
-        env.nav ?? (typeof navigator !== 'undefined' ? navigator : undefined)
-    const doc =
-        env.doc ?? (typeof document !== 'undefined' ? document : undefined)
-
-    if (nav?.clipboard?.writeText) {
-        await nav.clipboard.writeText(text)
-        return
-    }
-    // Legacy fallback for insecure origins / older browsers.
-    if (!doc) throw new Error('Clipboard is unavailable')
-    const textarea = doc.createElement('textarea')
-    textarea.value = text
-    // Keep it off-screen and non-disruptive while still selectable.
-    textarea.style.position = 'fixed'
-    textarea.style.top = '-9999px'
-    textarea.style.left = '-9999px'
-    textarea.setAttribute('readonly', '')
-    // select() destroys the user's page selection; save and restore it.
-    const selection = doc.getSelection?.()
-    const savedRange =
-        selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
-    doc.body.appendChild(textarea)
-    try {
-        textarea.select()
-        const ok = doc.execCommand('copy')
-        if (!ok) throw new Error('Clipboard copy command was rejected')
-    } finally {
-        doc.body.removeChild(textarea)
-        if (selection && savedRange) {
-            selection.removeAllRanges()
-            selection.addRange(savedRange)
-        }
-    }
-}
-
 export type CopyShareLinkDeps = {
     writeCoordinateURL?: () => string | null
-    writeClipboard?: (text: string) => Promise<void>
+    copyText?: (text: string) => Promise<boolean>
 }
 
 /**
- * Copies the current view's self-contained share URL to the clipboard.
- * Returns the copied URL. Throws if no link is available or the copy fails.
+ * Copies the current view's self-contained share URL to the clipboard via
+ * core's mmgisAPI.copyText. Returns the copied URL. Throws if no link is
+ * available or the copy fails.
  */
 export async function copyShareLink(
     deps: CopyShareLinkDeps = {},
 ): Promise<string> {
     const {
         writeCoordinateURL = mmgisWriteCoordinateURL,
-        writeClipboard = writeTextToClipboard,
+        copyText = mmgisCopyText,
     } = deps
     const url = writeCoordinateURL()
     if (!url) throw new Error('No share link available')
-    await writeClipboard(url)
+    if (!(await copyText(url))) throw new Error('Clipboard copy failed')
     return url
 }
 

@@ -3,107 +3,74 @@ import {
     copyShareLink,
     downloadSharePng,
     downloadSharePdf,
-    writeTextToClipboard,
     PNG_FILENAME,
     PDF_FILENAME,
     buildExportFilename,
 } from '../../../src/essence/Tools/ShareExport/adapters/shareActions.ts'
+import { mmgisCopyText } from '../../../src/essence/Tools/_shared/adapters/mmgisAPI.ts'
 
 // Issue #144 - the adapter must call the right plugin-API methods and package
 // the results. All core access is injected here so the wiring is exercised
 // without a live map or DOM.
 
 test.describe('copyShareLink', () => {
-    test('writes the share URL to the clipboard and returns it', async () => {
-        const clipboardWrites = []
+    test('copies the share URL via copyText and returns it', async () => {
+        const copied = []
         const url = await copyShareLink({
             writeCoordinateURL: () => 'https://mmgis/?v=1',
-            writeClipboard: async (text) => {
-                clipboardWrites.push(text)
+            copyText: async (text) => {
+                copied.push(text)
+                return true
             },
         })
         expect(url).toBe('https://mmgis/?v=1')
-        expect(clipboardWrites).toEqual(['https://mmgis/?v=1'])
+        expect(copied).toEqual(['https://mmgis/?v=1'])
     })
 
     test('throws when no link is available', async () => {
         await expect(
             copyShareLink({
                 writeCoordinateURL: () => null,
-                writeClipboard: async () => {},
+                copyText: async () => true,
             }),
         ).rejects.toThrow('No share link available')
     })
+
+    test('throws when the clipboard write fails (copyText false)', async () => {
+        // copyText never rejects; failure surfaces as false, which the action
+        // converts to a throw so the adapter's existing catch handles it.
+        await expect(
+            copyShareLink({
+                writeCoordinateURL: () => 'https://mmgis/?v=1',
+                copyText: async () => false,
+            }),
+        ).rejects.toThrow('Clipboard copy failed')
+    })
 })
 
-test.describe('writeTextToClipboard', () => {
-    function makeMockDocument(execResult = true) {
-        const appended = []
-        const removed = []
-        const node = {
-            value: '',
-            style: {},
-            selected: false,
-            attrs: {},
-            setAttribute(k, v) {
-                this.attrs[k] = v
-            },
-            select() {
-                this.selected = true
+test.describe('mmgisCopyText wrapper', () => {
+    test('delegates to core copyText when present', async () => {
+        const calls = []
+        window.mmgisAPI = {
+            copyText: async (t) => {
+                calls.push(t)
+                return true
             },
         }
-        return {
-            _node: node,
-            _appended: appended,
-            _removed: removed,
-            _execCalls: [],
-            createElement: () => node,
-            execCommand(cmd) {
-                this._execCalls.push(cmd)
-                return execResult
-            },
-            body: {
-                appendChild: (n) => appended.push(n),
-                removeChild: (n) => removed.push(n),
-            },
+        try {
+            await expect(mmgisCopyText('hello')).resolves.toBe(true)
+            expect(calls).toEqual(['hello'])
+        } finally {
+            delete window.mmgisAPI
         }
-    }
-
-    test('uses the async Clipboard API when available', async () => {
-        const writes = []
-        const nav = { clipboard: { writeText: async (t) => writes.push(t) } }
-        const doc = makeMockDocument()
-
-        await writeTextToClipboard('hello', { nav, doc })
-
-        expect(writes).toEqual(['hello'])
-        // The legacy fallback must not run when the modern API exists.
-        expect(doc._execCalls).toEqual([])
     })
 
-    test('falls back to a hidden textarea + execCommand on insecure origins', async () => {
-        // navigator.clipboard is undefined on insecure origins (HTTP by IP).
-        const nav = {}
-        const doc = makeMockDocument(true)
-
-        await writeTextToClipboard('share-url', { nav, doc })
-
-        expect(doc._node.value).toBe('share-url')
-        expect(doc._execCalls).toEqual(['copy'])
-        // The transient textarea is appended and then cleaned up.
-        expect(doc._appended).toEqual([doc._node])
-        expect(doc._removed).toEqual([doc._node])
-    })
-
-    test('surfaces a failure when the fallback copy command is rejected', async () => {
-        const nav = {}
-        const doc = makeMockDocument(false)
-
-        await expect(
-            writeTextToClipboard('x', { nav, doc }),
-        ).rejects.toThrow('Clipboard copy command was rejected')
-        // Even on failure, the textarea must be removed (finally cleanup).
-        expect(doc._removed).toEqual([doc._node])
+    test('returns false on old cores without a modern clipboard', async () => {
+        // No mmgisAPI.copyText and no navigator.clipboard (insecure origin):
+        // the wrapper deliberately degrades to false rather than vendoring the
+        // legacy execCommand path per plugin.
+        delete window.mmgisAPI
+        await expect(mmgisCopyText('hello')).resolves.toBe(false)
     })
 })
 

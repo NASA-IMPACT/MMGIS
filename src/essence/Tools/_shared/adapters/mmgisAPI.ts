@@ -9,6 +9,7 @@ type MMGISAPI = {
     writeCoordinateURL?: () => string
     getMapScreenshot?: () => Promise<MapScreenshotResult>
     getViewState?: () => ViewState
+    copyText?: (text: string) => Promise<boolean>
 }
 
 export type MapScreenshotResult = {
@@ -76,4 +77,20 @@ export const mmgisGetMapScreenshot = async (): Promise<MapScreenshotResult | nul
 /** View metadata (mission, time, center, zoom); fields null until loaded. */
 export const mmgisGetViewState = (): ViewState | null => {
     return window.mmgisAPI?.getViewState?.() ?? null
+}
+
+/**
+ * Copies text to the clipboard via core's single implementation; true on
+ * success. For cores that predate copyText, falls back to the modern browser
+ * API only (no legacy path — silently degraded on old-core insecure origins).
+ */
+export const mmgisCopyText = async (text: string): Promise<boolean> => {
+    if (window.mmgisAPI?.copyText) return window.mmgisAPI.copyText(text)
+    if (!navigator.clipboard?.writeText) return false
+    try {
+        await navigator.clipboard.writeText(text)
+        return true
+    } catch {
+        return false
+    }
 }
