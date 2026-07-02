@@ -410,15 +410,20 @@ const ToolControllerModern_ = {
             return false
         }
 
-        try {
-            const { toolInstance, toolName, toolId } = loadedTools.get(targetId)
+        const { toolInstance, toolName, toolId } = loadedTools.get(targetId)
+        let destroyed = true
 
+        try {
             // Call destroy() if available
             if (typeof toolInstance.destroy === 'function') {
                 toolInstance.destroy()
             }
-
-            // Remove from tracking
+        } catch (error) {
+            logger.error(`Error destroying tool in container "${targetId}":`, error)
+            destroyed = false
+        } finally {
+            // Always remove from tracking, even if destroy() threw, so a
+            // misbehaving plugin can't leave stale/zombie lifecycle state
             loadedTools.delete(targetId)
 
             // Clean up reverse lookup and hidden state
@@ -426,14 +431,13 @@ const ToolControllerModern_ = {
                 toolIdToTargetId.delete(toolId)
                 hiddenTools.delete(toolId)
             }
-
-            logger.debug(`Destroyed tool "${toolName}" from container "${targetId}"`)
-
-            return true
-        } catch (error) {
-            logger.error(`Error destroying tool in container "${targetId}":`, error)
-            return false
         }
+
+        if (destroyed) {
+            logger.debug(`Destroyed tool "${toolName}" from container "${targetId}"`)
+        }
+
+        return destroyed
     },
 
     /**
