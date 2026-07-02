@@ -7,17 +7,9 @@ import {
 } from './LeafletCloneFixups'
 
 /**
- * The Leaflet map engine's screenshot strategy: captures a PNG of the current
- * 2D Leaflet map. Invoked via `LeafletAdapter.captureScreenshot()`, which is
- * what `mmgisAPI.getMapScreenshot()` delegates to when Leaflet is the active
- * engine. (The deck.gl engine reads its WebGL canvas instead — see
- * `DeckGLAdapter.captureScreenshot()`.)
- *
- * Temporarily hides UI chrome (zoom controls, compass, scale factor, time UI)
- * and normalizes the Leaflet pane z-indices so html2canvas rasterizes the
- * layers in the correct order, then restores that chrome afterwards. The
- * clone fixups the capture needs (SVG re-parenting, tile z-index copy) live in
- * the shared LeafletCloneFixups module.
+ * The Leaflet map engine's screenshot strategy: rasterizes the map container
+ * with html2canvas, temporarily hiding some UI (zoom controls, compass, scale
+ * factor, time UI) and normalizing the Leaflet pane z-indices for the shot.
  *
  * @returns {Promise<object>} Resolves to a PNG Blob plus metadata:
  *   `{ blob, mimeType, extension, width, height }`.
@@ -43,18 +35,14 @@ function getMapScreenshot() {
     const timeUIWasActive = jquery('#toggleTimeUI.active').length > 0
     if (timeUIWasActive) jquery('#toggleTimeUI.active').trigger('click')
 
-    // Snapshot the pane styles NOW — after the z-index normalization above,
-    // before the restore below. The onclone fixups apply these saved values
-    // instead of re-reading the live DOM, which will already be restored by
-    // the time html2canvas fires onclone.
+    // Snapshot now — after the z-index normalization, before the restore —
+    // because onclone fires after the restore has already run.
     const paneStyles = snapshotLeafletPaneStyles({
         svgSelector: 'svg.leaflet-zoom-animated',
         tileSelector: '.leaflet-tile-pane > div.leaflet-layer',
     })
 
-    // Restore the UI chrome hidden above. Split out so the error path below
-    // can restore too — without it, a synchronous throw between the hide and
-    // the capture would leave controls hidden and the time UI collapsed.
+    // Split out so the error paths below can restore the hidden UI too.
     const restoreChrome = function () {
         jquery('#map .leaflet-tile-pane')
             .children()
@@ -99,11 +87,9 @@ function getMapScreenshot() {
         throw err
     }
 
-    // Restore the UI chrome we hid for the capture. This runs immediately
-    // (not in .then) so the live UI isn't visibly degraded for the duration of
-    // the capture: html2canvas's initial DOM clone happens synchronously within
-    // the call above, and the later-firing onclone fixups apply the snapshot
-    // taken before this restore, so restored values can't leak into the clone.
+    // Restore immediately (not in .then) so the UI isn't visibly degraded
+    // during the capture: html2canvas clones the DOM synchronously above, and
+    // the onclone fixups use the pre-restore snapshot.
     restoreChrome()
 
     return capture

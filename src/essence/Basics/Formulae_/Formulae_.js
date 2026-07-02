@@ -1803,10 +1803,8 @@ var Formulae_ = {
         downloadAnchorNode.click()
         downloadAnchorNode.remove()
     },
-    // Downloads a Blob as a file via a transient object URL. Preferred over
-    // data-URL anchor downloads (capped/unreliable for large payloads across
-    // browsers) and over fetch(dataUrl) conversion (the shipped CSP's
-    // connect-src does not allow the data: scheme).
+    // Downloads a Blob as a file via a transient object URL. Don't convert
+    // via fetch(dataUrl): the shipped CSP's connect-src blocks the data: scheme.
     downloadBlob(blob, filename) {
         const url = URL.createObjectURL(blob)
         const link = document.createElement('a')
@@ -1815,9 +1813,7 @@ var Formulae_ = {
         document.body.appendChild(link) // required for firefox
         link.click()
         link.remove()
-        // Revoke on a delay: browsers may dereference the blob URL
-        // asynchronously after the click, and an immediate revoke can abort
-        // the download.
+        // Deferred: an immediate revoke can abort the download.
         setTimeout(() => URL.revokeObjectURL(url), 10000)
     },
     getMinMaxOfArray(arrayOfNumbers) {

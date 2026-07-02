@@ -438,18 +438,13 @@ var mmgisAPI_ = {
         return validEvents.includes(eventName)
     },
     writeCoordinateURL: function () {
-        // The URL builder dereferences L_.Viewer_ / L_.Map_.map / TimeControl,
-        // which only exist after mission finalization (fina). Until then return
-        // null — the documented "no link available yet" signal — so an early
-        // caller (e.g. a plugin's always-visible Copy Link button clicked while
-        // layers are still loading) doesn't hit a TypeError.
+        // The URL builder dereferences objects that only exist after mission
+        // finalization; return null (the "no link yet" signal) until then.
         if (mmgisAPI_.map == null) return null
         return QueryURL.writeCoordinateURL()
     },
     getViewState: function () {
-        // View metadata for plugins (e.g. provenance-rich export filenames)
-        // without reaching into core internals. Fields are null until the
-        // mission has loaded far enough to answer them.
+        // View metadata for plugins; fields are null until loaded.
         const map = L_.Map_ && L_.Map_.map
         const center =
             map && typeof map.getCenter === 'function' ? map.getCenter() : null
@@ -464,17 +459,12 @@ var mmgisAPI_ = {
         }
     },
     getMapScreenshot: function () {
-        // Screenshot capture is engine-specific: Leaflet rasterizes its DOM
-        // with html2canvas, while the deck.gl/GL map reads its WebGL canvas
-        // directly (html2canvas cannot capture a WebGL canvas). Delegate to the
-        // active IMapEngine adapter, which owns the right strategy. Map_ assigns
-        // its engine synchronously at init, so a missing engine means no map is
-        // loaded yet — reject rather than reach into a specific engine's DOM.
+        // Capture is engine-specific (Leaflet DOM rasterization vs deck.gl
+        // canvas readback); delegate to the active IMapEngine adapter. A
+        // missing engine means no map is loaded yet.
         const engine = L_.Map_ && L_.Map_.engine
         if (engine && typeof engine.captureScreenshot === 'function') {
-            // The engine does synchronous DOM work before its promise exists;
-            // catch a sync throw so callers always get a rejection, never an
-            // exception escaping what is documented as a promise-returning API.
+            // Convert a sync engine throw into a rejection.
             try {
                 return Promise.resolve(engine.captureScreenshot())
             } catch (err) {
