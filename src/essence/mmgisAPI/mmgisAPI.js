@@ -452,7 +452,9 @@ var mmgisAPI_ = {
         const center =
             map && typeof map.getCenter === 'function' ? map.getCenter() : null
         return {
-            missionName: L_.configData?.msv?.mission ?? null,
+            // L_.mission is the canonical identity (the ?mission= URL value);
+            // msv.mission is a display field that can be stale.
+            missionName: L_.mission || L_.configData?.msv?.mission || null,
             time: L_.TimeControl_?.currentTime ?? null,
             center: center ? { lat: center.lat, lng: center.lng } : null,
             zoom:

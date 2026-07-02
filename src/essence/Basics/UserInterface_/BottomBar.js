@@ -80,7 +80,9 @@ let BottomBar = {
                 window.mmgisAPI
                     .getMapScreenshot()
                     .then(function (screenshot) {
-                        const mission = L_.configData?.msv?.mission
+                        // L_.mission is the mission's canonical identity (the ?mission= value);
+                        // configData.msv.mission is a display field that can be stale.
+                        const mission = L_.mission || L_.configData?.msv?.mission
                         const time = L_.TimeControl_?.currentTime
                         const mapCenter = L_.Map_.map.getCenter()
                         const lng = mapCenter.lng.toFixed(4)
