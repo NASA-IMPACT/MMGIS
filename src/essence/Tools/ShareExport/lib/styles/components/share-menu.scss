@@ -49,23 +49,25 @@
     display: inline-block;
 }
 
+// The hosting tool card provides the chrome (white background, rounded
+// corners), so the trigger itself is chromeless — a bordered/shadowed button
+// inside the card reads as a double border.
 .share-menu__trigger {
     display: inline-flex;
     align-items: center;
     gap: var(--se-space-2);
     height: 36px;
     padding: 0 var(--se-space-3);
-    background: var(--se-bg);
+    background: transparent;
     color: var(--se-fg);
-    border: 1px solid var(--se-border);
+    border: 0;
     border-radius: var(--se-radius-md);
-    box-shadow: var(--se-shadow-pop);
     cursor: pointer;
     font: inherit;
     font-weight: 600;
     line-height: 1;
     white-space: nowrap;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition: background 0.15s ease;
 
     &:hover {
         background: var(--se-bg-hover);
@@ -73,7 +75,7 @@
 
     &:focus-visible {
         outline: 2px solid var(--se-accent);
-        outline-offset: 2px;
+        outline-offset: -2px;
     }
 }
 
