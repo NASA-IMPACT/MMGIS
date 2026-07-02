@@ -59,12 +59,19 @@ function makeMockDoc(pageWidth, pageHeight) {
 }
 
 test.describe('buildSharePdf', () => {
-    test('places the PNG centered on the page via addImage', () => {
+    test('places the PNG centered on the page via addImage', async () => {
         const doc = makeMockDoc(600, 800)
-        const out = buildSharePdf('data:image/png;base64,FAKE', 1000, 500, {
-            margin: 50,
-            factory: () => doc,
-        })
+        // buildSharePdf is async: the default factory lazy-loads jspdf via a
+        // code-split dynamic import, so the doc arrives through a promise.
+        const out = await buildSharePdf(
+            'data:image/png;base64,FAKE',
+            1000,
+            500,
+            {
+                margin: 50,
+                factory: () => doc,
+            },
+        )
 
         expect(out).toBe(doc)
         expect(doc._calls.addImage.length).toBe(1)

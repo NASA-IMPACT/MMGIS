@@ -1,7 +1,9 @@
-// jspdf is lazy-required inside defaultFactory (never imported at module top):
-// jspdf touches browser-only globals (atob/btoa) at evaluation time, so a static
-// import would break Node test/SSR contexts and eagerly load a heavy module.
-declare const require: (id: string) => unknown
+// jspdf is loaded via dynamic import() inside defaultFactory (never imported at
+// module top): webpack code-splits the dynamic import into its own async chunk,
+// keeping the heavy jspdf module out of the main bundle and off the critical
+// path — it is only fetched the first time a PDF export runs. It also avoids
+// evaluating jspdf (which touches browser-only globals like atob/btoa) in Node
+// test/SSR contexts.
 
 // PDF generation is owned entirely by this plugin (core has no PDF dependency).
 // The screenshot PNG is embedded centered on a portrait page, scaled to fit
@@ -63,10 +65,10 @@ export type JsPdfLike = {
     save: (filename: string) => unknown
 }
 
-export type JsPdfFactory = () => JsPdfLike
+export type JsPdfFactory = () => JsPdfLike | Promise<JsPdfLike>
 
-const defaultFactory: JsPdfFactory = () => {
-    const { jsPDF } = require('jspdf') as {
+const defaultFactory: JsPdfFactory = async () => {
+    const { jsPDF } = (await import('jspdf')) as unknown as {
         jsPDF: new (opts: unknown) => JsPdfLike
     }
     return new jsPDF({
@@ -87,16 +89,17 @@ export type BuildSharePdfOptions = {
  * Builds a portrait PDF with the given PNG data URL placed centered on the page
  * (aspect preserved, fit within margins). Returns the jsPDF document so the
  * caller decides when to save/download it. Natural image dimensions must be
- * supplied by the caller (e.g. read from an Image element).
+ * supplied by the caller (e.g. read from an Image element). Async because the
+ * default factory lazy-loads jspdf via a code-split dynamic import.
  */
-export function buildSharePdf(
+export async function buildSharePdf(
     dataUrl: string,
     naturalWidth: number,
     naturalHeight: number,
     options: BuildSharePdfOptions = {},
-): JsPdfLike {
+): Promise<JsPdfLike> {
     const { margin = 36, factory = defaultFactory } = options
-    const doc = factory()
+    const doc = await factory()
     const pageWidth = doc.internal.pageSize.getWidth()
     const pageHeight = doc.internal.pageSize.getHeight()
     const { x, y, width, height } = computeCenteredPlacement(

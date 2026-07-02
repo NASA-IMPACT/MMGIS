@@ -1,16 +1,25 @@
-// Small DOM helpers for triggering browser downloads and converting image
-// blobs. Kept dependency-injectable so the orchestration in shareActions stays
-// unit-testable.
+// Small DOM helpers for triggering browser downloads, converting image blobs,
+// and reading image dimensions. Kept dependency-injectable (document / URL /
+// atob / FileReader / Image constructor) so shareActions stays unit-testable.
 
+/**
+ * How long the object URL stays alive after the download is triggered. The
+ * revoke must be deferred: browsers resolve the URL asynchronously after the
+ * click, so revoking immediately can abort the download.
+ */
 const REVOKE_DELAY_MS = 10000
 
-export type DownloadBlobEnv = {
+export type DownloadEnv = {
     doc?: Document
+    /** URL.createObjectURL / URL.revokeObjectURL (jsdom lacks these). */
     urlApi?: {
         createObjectURL: (blob: Blob) => string
         revokeObjectURL: (url: string) => void
     }
+    /** Deferred-callback scheduler (defaults to setTimeout). */
     schedule?: (fn: () => void, ms: number) => void
+    /** Base64 decoder (defaults to the global atob). */
+    atobFn?: (base64: string) => string
 }
 
 export type BlobReaderLike = {
@@ -23,19 +32,53 @@ export type BlobReaderLike = {
 export type BlobReaderCtor = new () => BlobReaderLike
 
 /**
+ * Decodes a base64 data URL into a Blob of its declared MIME type.
+ */
+export function dataUrlToBlob(
+    dataUrl: string,
+    atobFn: (base64: string) => string = atob,
+): Blob {
+    const match = /^data:([^;,]+);base64,(.*)$/.exec(dataUrl)
+    if (!match) throw new Error('Expected a base64 data URL')
+    const [, mime, base64] = match
+    const binary = atobFn(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i)
+    }
+    return new Blob([bytes], { type: mime })
+}
+
+/**
  * Triggers a browser download of a data URL by clicking a transient anchor.
+ *
+ * The data URL is converted to a Blob + object URL first: multi-megabyte
+ * data:-scheme hrefs are unreliable as anchor downloads (browsers cap URL
+ * length), while object URLs download dependably regardless of size. The
+ * object URL is revoked on a delay so the browser has time to start the
+ * download before the resource disappears.
  */
 export function downloadDataUrl(
     dataUrl: string,
     filename: string,
-    doc: Document = document,
+    env: DownloadEnv = {},
 ): void {
+    const doc = env.doc ?? document
+    const urlApi = env.urlApi ?? URL
+    const schedule =
+        env.schedule ?? ((fn: () => void, ms: number) => setTimeout(fn, ms))
+
+    const blob = dataUrlToBlob(dataUrl, env.atobFn)
+    const objectUrl = urlApi.createObjectURL(blob)
+
     const a = doc.createElement('a')
-    a.href = dataUrl
+    a.href = objectUrl
     a.download = filename
     doc.body.appendChild(a)
     a.click()
     doc.body.removeChild(a)
+
+    schedule(() => urlApi.revokeObjectURL(objectUrl), REVOKE_DELAY_MS)
 }
 
 /**
@@ -46,7 +89,7 @@ export function downloadDataUrl(
 export function downloadBlob(
     blob: Blob,
     filename: string,
-    env: DownloadBlobEnv = {},
+    env: DownloadEnv = {},
 ): void {
     const doc = env.doc ?? document
     const urlApi = env.urlApi ?? URL
