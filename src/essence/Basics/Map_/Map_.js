@@ -431,7 +431,9 @@ let Map_ = {
         if (isNaN(lat)) lat = 0
         var lon = parseFloat(latlonzoom[1])
         if (isNaN(lon)) lon = 0
-        var zoom = parseInt(latlonzoom[2])
+        // parseFloat: the modern map zooms fractionally; truncating here
+        // visibly changes restored views (Leaflet snaps integers itself).
+        var zoom = parseFloat(latlonzoom[2])
         if (zoom == null || isNaN(zoom))
             zoom =
                 this.engine.getZoom() ||
