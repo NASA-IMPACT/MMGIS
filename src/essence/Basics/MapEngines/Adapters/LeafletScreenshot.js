@@ -1,5 +1,10 @@
-import $ from 'jquery'
-import HTML2Canvas from 'html2canvas'
+import jquery from 'jquery'
+import html2canvas from 'html2canvas'
+
+import {
+    snapshotLeafletPaneStyles,
+    applyLeafletCloneFixups,
+} from './LeafletCloneFixups'
 
 /**
  * The Leaflet map engine's screenshot strategy: captures a PNG of the current
@@ -11,21 +16,13 @@ import HTML2Canvas from 'html2canvas'
  * Temporarily hides UI chrome (zoom controls, compass, scale factor, time UI)
  * and normalizes the Leaflet pane z-indices so html2canvas rasterizes the
  * layers in the correct order, then restores that chrome afterwards. The
- * `onclone` callback performs non-obvious SVG re-parenting and tile-pane
- * z-index fixups that the cloned document needs in order to render identically
- * to the live map; it must not be altered.
+ * clone fixups the capture needs (SVG re-parenting, tile z-index copy) live in
+ * the shared LeafletCloneFixups module.
  *
- * @param {object} [deps] - Injectable dependencies (intended for testing). In
- *   production these default to the imported jQuery and html2canvas.
- * @param {function} [deps.html2canvas] - html2canvas implementation.
- * @param {function} [deps.jquery] - jQuery implementation.
  * @returns {Promise<object>} Resolves to a PNG Blob plus metadata:
  *   `{ blob, mimeType, extension, width, height }`.
  */
-function getMapScreenshot(deps = {}) {
-    const html2canvas = deps.html2canvas || HTML2Canvas
-    const jquery = deps.jquery || $
-
+function getMapScreenshot() {
     //We need to manually order leaflet z-indices for this to work
     let zIndices = []
     jquery('#map .leaflet-tile-pane')
@@ -45,6 +42,15 @@ function getMapScreenshot(deps = {}) {
     // class, so the restore re-triggers the plain #toggleTimeUI selector).
     const timeUIWasActive = jquery('#toggleTimeUI.active').length > 0
     if (timeUIWasActive) jquery('#toggleTimeUI.active').trigger('click')
+
+    // Snapshot the pane styles NOW — after the z-index normalization above,
+    // before the restore below. The onclone fixups apply these saved values
+    // instead of re-reading the live DOM, which will already be restored by
+    // the time html2canvas fires onclone.
+    const paneStyles = snapshotLeafletPaneStyles({
+        svgSelector: 'svg.leaflet-zoom-animated',
+        tileSelector: '.leaflet-tile-pane > div.leaflet-layer',
+    })
 
     // Restore the UI chrome hidden above. Split out so the error path below
     // can restore too — without it, a synchronous throw between the hide and
@@ -85,39 +91,7 @@ function getMapScreenshot(deps = {}) {
             windowWidth: documentElm.offsetWidth,
             windowHeight: documentElm.offsetHeight,
             onclone: function (e) {
-                // Fix svg layer shift
-                const originalSVG = document.body.querySelectorAll(
-                    'svg.leaflet-zoom-animated'
-                )
-                const copySVG = e.body.querySelectorAll(
-                    'svg.leaflet-zoom-animated'
-                )
-                copySVG.forEach((copyEle, i) => {
-                    const attribute = originalSVG
-                        .item(i)
-                        .getAttribute('style')
-                    const parentElement = copyEle.parentElement
-                    parentElement.removeChild(copyEle)
-                    const temp = document.createElement('div')
-                    temp.appendChild(copyEle)
-                    parentElement.appendChild(temp)
-                    temp.setAttribute('style', attribute)
-                    copyEle.removeAttribute('style')
-                })
-
-                // Fix tile layer z-indices
-                const originalZ = document.body.querySelectorAll(
-                    '.leaflet-tile-pane > div.leaflet-layer'
-                )
-                const copyZ = e.body.querySelectorAll(
-                    '.leaflet-tile-pane > div.leaflet-layer'
-                )
-                copyZ.forEach((copyEle, i) => {
-                    const attribute = originalZ
-                        .item(i)
-                        .getAttribute('style')
-                    copyEle.setAttribute('style', attribute)
-                })
+                applyLeafletCloneFixups(e.body, paneStyles)
             },
         }).then(canvasToPngScreenshot)
     } catch (err) {
@@ -127,11 +101,9 @@ function getMapScreenshot(deps = {}) {
 
     // Restore the UI chrome we hid for the capture. This runs immediately
     // (not in .then) so the live UI isn't visibly degraded for the duration of
-    // the capture; html2canvas's initial DOM clone happens synchronously within
-    // the call above. (Caveat: html2canvas's `onclone` fires later and copies
-    // some styles from the live document, so restored values can leak into the
-    // clone's tile z-indices — a pre-existing quirk inherited from the old
-    // BottomBar implementation.)
+    // the capture: html2canvas's initial DOM clone happens synchronously within
+    // the call above, and the later-firing onclone fixups apply the snapshot
+    // taken before this restore, so restored values can't leak into the clone.
     restoreChrome()
 
     return capture
@@ -160,4 +132,3 @@ function canvasToPngScreenshot(canvas) {
 }
 
 export { getMapScreenshot }
-export default getMapScreenshot

@@ -1,15 +1,20 @@
-import { test, expect } from 'vitest'
-
-import getMapScreenshot, {
-    getMapScreenshot as namedGetMapScreenshot,
-} from '../../src/essence/Basics/MapEngines/Adapters/LeafletScreenshot.js'
+import { test, expect, vi } from 'vitest'
 
 // Issue #143 - expose share-link and map-screenshot as first-class plugin API.
 //
-// LeafletScreenshot.getMapScreenshot() drives the live DOM (jQuery) and rasterizes
-// with html2canvas, neither of which exists in this Node test context. The
-// function therefore accepts injectable `jquery`/`html2canvas` deps so the
-// behavior can be exercised against lightweight fakes.
+// LeafletScreenshot.getMapScreenshot() drives the live DOM (jQuery) and
+// rasterizes with html2canvas, neither of which exists in this Node test
+// context — so both module imports are replaced with configurable fakes via
+// vi.mock (no production injection seam needed). Each test assigns the fake
+// implementations through the hoisted `mocks` holder before calling.
+
+const mocks = vi.hoisted(() => ({ jquery: null, html2canvas: null }))
+vi.mock('jquery', () => ({ default: (...args) => mocks.jquery(...args) }))
+vi.mock('html2canvas', () => ({
+    default: (...args) => mocks.html2canvas(...args),
+}))
+
+import { getMapScreenshot } from '../../src/essence/Basics/MapEngines/Adapters/LeafletScreenshot.js'
 
 // A fake jQuery that records every .css(prop, value) setter call (keyed by the
 // selector it was invoked on) and answers .css(prop) getters with a known value.
@@ -84,25 +89,18 @@ function setupGlobalDom() {
     }
 }
 
-test.describe('LeafletScreenshot.getMapScreenshot - export surface', () => {
-    test('is exported as both a default and named function', () => {
-        expect(typeof getMapScreenshot).toBe('function')
-        expect(typeof namedGetMapScreenshot).toBe('function')
-        expect(getMapScreenshot).toBe(namedGetMapScreenshot)
-    })
-})
-
 test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
     test.beforeEach(() => {
         setupGlobalDom()
+        mocks.jquery = makeMockJQuery('5px')
+        mocks.html2canvas = makeMockHtml2canvas()
     })
 
     test('resolves to a PNG Blob screenshot result produced by html2canvas', async () => {
-        const jquery = makeMockJQuery('5px')
         const blob = makePngBlob('leaflet')
-        const html2canvas = makeMockHtml2canvas(blob)
+        mocks.html2canvas = makeMockHtml2canvas(blob)
 
-        const result = await getMapScreenshot({ jquery, html2canvas })
+        const result = await getMapScreenshot()
 
         expect(result).toEqual({
             blob,
@@ -114,28 +112,20 @@ test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
     })
 
     test('rejects when canvas.toBlob returns null', async () => {
-        const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas()
-        html2canvas._calls = []
-        const nullBlobHtml2canvas = (element, options) => {
-            html2canvas._calls.push({ element, options })
-            return Promise.resolve({
+        mocks.html2canvas = (element, options) =>
+            Promise.resolve({
                 width: element.offsetWidth,
                 height: element.offsetHeight,
                 toBlob: (callback) => callback(null),
             })
-        }
 
-        await expect(
-            getMapScreenshot({ jquery, html2canvas: nullBlobHtml2canvas })
-        ).rejects.toThrow(/toBlob returned null/)
+        await expect(getMapScreenshot()).rejects.toThrow(/toBlob returned null/)
     })
 
     test('invokes html2canvas once on #mapScreen with an onclone option', async () => {
-        const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas()
+        const html2canvas = mocks.html2canvas
 
-        await getMapScreenshot({ jquery, html2canvas })
+        await getMapScreenshot()
 
         expect(html2canvas._calls.length).toBe(1)
         const { element, options } = html2canvas._calls[0]
@@ -147,10 +137,9 @@ test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
     })
 
     test('hides UI chrome for the capture and restores it afterwards', async () => {
-        const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas()
+        const jquery = mocks.jquery
 
-        await getMapScreenshot({ jquery, html2canvas })
+        await getMapScreenshot()
 
         const displayFor = (selector) =>
             jquery._cssSets
@@ -169,10 +158,9 @@ test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
     test('restores #mapToolBar bottom to its saved value, not a string literal', async () => {
         // Regression guard: the restore must pass the captured variable, not the
         // literal 'savedMapToolBarBottom'. Saved value here is '5px'.
-        const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas()
+        const jquery = mocks.jquery
 
-        await getMapScreenshot({ jquery, html2canvas })
+        await getMapScreenshot()
 
         const bottomValues = jquery._cssSets
             .filter((c) => c.selector === '#mapToolBar' && c.prop === 'bottom')
@@ -187,10 +175,9 @@ test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
         // selector) before the shot and must be toggled back on (via the plain
         // selector, since the click cleared .active) afterwards. Previously the
         // restore was missing, leaving the time UI collapsed.
-        const jquery = makeMockJQuery('5px')
-        const html2canvas = makeMockHtml2canvas()
+        const jquery = mocks.jquery
 
-        await getMapScreenshot({ jquery, html2canvas })
+        await getMapScreenshot()
 
         const timeToggleEvents = jquery._triggered.filter((t) =>
             t.selector.startsWith('#toggleTimeUI')
@@ -199,5 +186,44 @@ test.describe('LeafletScreenshot.getMapScreenshot - behavior', () => {
             { selector: '#toggleTimeUI.active', event: 'click' },
             { selector: '#toggleTimeUI', event: 'click' },
         ])
+    })
+
+    test('onclone applies the styles snapshotted before the UI restore', async () => {
+        // Regression guard for the restore/onclone race: the clone fixups must
+        // use the tile styles captured at kickoff (post-normalization), not
+        // re-read the live DOM (already restored when onclone fires). We
+        // simulate: live tiles report style A at kickoff, then mutate to style
+        // B before onclone runs — the clone must receive A.
+        const liveTile = {
+            getAttribute: () => 'z-index: 1',
+            setAttribute() {},
+        }
+        global.document.body.querySelectorAll = (sel) =>
+            sel.includes('tile') ? [liveTile] : []
+
+        let cloneApplied = []
+        const cloneTile = {
+            setAttribute: (name, value) => cloneApplied.push(value),
+            getAttribute: () => null,
+        }
+        mocks.html2canvas = (element, options) => {
+            // Live DOM "restores" (mutates) before onclone fires.
+            liveTile.getAttribute = () => 'z-index: 999'
+            options.onclone({
+                body: {
+                    querySelectorAll: (sel) =>
+                        sel.includes('tile') ? [cloneTile] : [],
+                },
+            })
+            return Promise.resolve({
+                width: element.offsetWidth,
+                height: element.offsetHeight,
+                toBlob: (callback) => callback(makePngBlob()),
+            })
+        }
+
+        await getMapScreenshot()
+
+        expect(cloneApplied).toEqual(['z-index: 1'])
     })
 })
