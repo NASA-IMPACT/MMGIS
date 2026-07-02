@@ -1,5 +1,5 @@
 import { ToolOrientation, ToolMetadata } from '../ToolController_/types/tool';
-import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE } from './types/layout';
+import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE, FLOAT_POSITIONS } from './types/layout';
 import { PanelConfig, PanelStateObject, PanelManager as PanelManagerInterface } from './types/panel';
 import { mmgisAPI } from '../../mmgisAPI/mmgisAPI';
 
@@ -155,6 +155,14 @@ class PanelManager implements PanelManagerInterface {
         const panel = this.panels.get(panelId);
         if (!panel) {
             throw new Error(`Panel with ID ${panelId} not found`);
+        }
+
+        if ((FLOAT_POSITIONS as Set<string>).has(panel.config.position) &&
+            (newState === PANEL_STATE.ICONIFIED || newState === PANEL_STATE.FOCUSED)) {
+            throw new Error(
+                `Float panels do not support '${newState}' state. ` +
+                `Only 'collapsed' and 'expanded' are allowed for float panel ${panelId}.`
+            );
         }
 
         if (!panel.config.stateConstraints.allowedStates.includes(newState)) {

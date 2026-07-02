@@ -1,3 +1,8 @@
+// Load .env so the test process sees the same vars as the server — notably
+// MMGIS_DEPLOYMENT_MODE, which deployment-mode.spec.js reads from process.env.
+// Without this the spec defaults to 'full' and the lean CI leg tests the wrong
+// mode. Mirrors scripts/server.js, which also loads .env via dotenv.
+import "dotenv/config";
 import { defineConfig, devices } from "@playwright/test";
 
 /**

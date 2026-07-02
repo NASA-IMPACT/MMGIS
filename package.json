@@ -1,6 +1,6 @@
 {
   "name": "mmgis",
-  "version": "4.2.12-20260630",
+  "version": "4.2.13-20260701",
   "description": "A web-based mapping and localization solution for science operation on planetary missions.",
   "homepage": "build",
   "repository": {
@@ -36,10 +36,10 @@
     "cesium"
   ],
   "scripts": {
-    "db:start": "docker-compose -f docker-compose.db.yml up -d",
-    "db:stop": "docker-compose -f docker-compose.db.yml down",
-    "db:logs": "docker-compose -f docker-compose.db.yml logs -f",
-    "prestart": "docker-compose -f docker-compose.db.yml up -d --wait",
+    "db:start": "docker compose -f docker-compose.db.yml up -d",
+    "db:stop": "docker compose -f docker-compose.db.yml down",
+    "db:logs": "docker compose -f docker-compose.db.yml logs -f",
+    "prestart": "docker compose -f docker-compose.db.yml up -d --wait",
     "start": "node scripts/init-db.js && node scripts/server.js",
     "start:no-docker": "node scripts/init-db.js && node scripts/server.js",
     "start:prod": "node scripts/init-db.js && cross-env NODE_ENV=production node scripts/server.js",

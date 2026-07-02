@@ -62,6 +62,9 @@ export interface PanelSettings {
     /** Array of panel configurations */
     panels: PanelConfig[];
 
+    /** Floating panels rendered inside the center map area */
+    floatingPanels?: PanelConfig[];
+
     /** Layout style ('overlay' | 'compact') */
     layoutStyle?: LayoutStyle;
 }
