@@ -82,8 +82,7 @@ export function ShareMenu({
 
     // Close on outside-click and Escape while the menu is open. The dropdown
     // lives in a portal, so "outside" must check containment against both the
-    // in-place root (trigger) and the portaled menu element. Scroll/resize
-    // would desync the measured anchor, so they close the menu too.
+    // in-place root (trigger) and the portaled menu element.
     useEffect(() => {
         if (!open) return
         const onPointerDown = (e: PointerEvent) => {
@@ -95,17 +94,41 @@ export function ShareMenu({
         const onKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape') close()
         }
-        const onReposition = () => close()
         document.addEventListener('pointerdown', onPointerDown, true)
         document.addEventListener('keydown', onKeyDown, true)
-        window.addEventListener('scroll', onReposition, true)
-        window.addEventListener('resize', onReposition)
         return () => {
             document.removeEventListener('pointerdown', onPointerDown, true)
             document.removeEventListener('keydown', onKeyDown, true)
-            window.removeEventListener('scroll', onReposition, true)
-            window.removeEventListener('resize', onReposition)
         }
+    }, [open, close])
+
+    // The portal's fixed position was measured when the menu opened, so ANY
+    // movement of the trigger desyncs it — scroll and resize, but also layout
+    // shifts that fire no event (e.g. a sibling tool in the same float card
+    // re-rendering taller). While the menu is open, watch the trigger's rect
+    // each animation frame and close on drift. The menu is transient, so the
+    // one getBoundingClientRect per frame is negligible.
+    useEffect(() => {
+        if (!open) return
+        const anchor = triggerRef.current?.getBoundingClientRect()
+        let raf = 0
+        const tick = () => {
+            const rect = triggerRef.current?.getBoundingClientRect()
+            if (
+                !rect ||
+                !anchor ||
+                rect.top !== anchor.top ||
+                rect.left !== anchor.left ||
+                rect.width !== anchor.width ||
+                rect.height !== anchor.height
+            ) {
+                close()
+                return
+            }
+            raf = requestAnimationFrame(tick)
+        }
+        raf = requestAnimationFrame(tick)
+        return () => cancelAnimationFrame(raf)
     }, [open, close])
 
     // Run an action then collapse the menu.
