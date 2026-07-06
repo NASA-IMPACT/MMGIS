@@ -21,7 +21,10 @@ mkdir -p "$dir/.mmgis"
 
 echo "starting server (port $port) — waiting for healthcheck..."
 if mw_wait_healthy "$port" 120; then
-  echo "up: dashboard $(mw_dashboard_url "$port")  ·  api http://localhost:$port"
+  echo "up:"
+  echo "  dashboard  $(mw_dashboard_url "$port")"
+  echo "  configure  $(mw_configure_url "$port")  (log in admin / admin)"
+  echo "  api        http://localhost:$port"
 else
   echo "healthcheck did not pass within timeout. Last log lines:" >&2
   tail -n 30 "$dir/.mmgis/server.log" >&2 || true

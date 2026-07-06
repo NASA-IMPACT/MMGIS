@@ -3,6 +3,7 @@ import { useSelector, useDispatch } from "react-redux";
 
 import { setModal } from "../../../../core/ConfigureStore";
 import { publicUrlMainSite } from "../../../../core/constants";
+import { getMainSiteBase } from "../../../../core/urls";
 
 import Dialog from "@mui/material/Dialog";
 import DialogContent from "@mui/material/DialogContent";
@@ -82,11 +83,7 @@ function MMGIS(props) {
         );
       });
     });
-    MMGISIframe.src = `${
-      window.mmgisglobal.NODE_ENV === "development"
-        ? "http://localhost:8889"
-        : publicUrlMainSite
-    }/?_preview=true`;
+    MMGISIframe.src = `${getMainSiteBase(publicUrlMainSite)}/?_preview=true`;
   }, [configuration]);
 
   return (

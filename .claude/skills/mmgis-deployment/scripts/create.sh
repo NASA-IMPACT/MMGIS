@@ -82,7 +82,25 @@ else
   (cd "$dir" && npm install --force)
 fi
 
+# --- configure CMS bundle ---
+# configure/build is gitignored and the server never builds it live (unlike the
+# dashboard), so /configure has no app to serve unless we build one. Always
+# build from this worktree's own sources: a bundle copied from another checkout
+# goes silently stale whenever either side's configure/src changes. The build
+# itself is ~20s; configure/ has its own package.json, so first provision also
+# pays an npm install here.
+if [ -d "$dir/configure/node_modules" ]; then
+  mw_info "configure/node_modules present (skipping npm install)"
+else
+  mw_info "running npm install in configure/ (takes a few minutes)..."
+  (cd "$dir/configure" && npm install)
+fi
+mw_info "building configure (~20s)..."
+(cd "$dir/configure" && npm run build)
+
 echo
 echo "ready: $dir"
-echo "  port $port  ·  db $dbname  ·  dashboard $(mw_dashboard_url "$port") (after start)"
+echo "  port $port  ·  db $dbname"
+echo "  dashboard  $(mw_dashboard_url "$port")  (after start)"
+echo "  configure  $(mw_configure_url "$port")  (after start; log in admin / admin)"
 echo "  start it:  $HERE/start.sh \"$dir\""
