@@ -236,6 +236,126 @@
       ]
     },
     {
+      "name": "Floating Panels (Center Area)",
+      "components": [
+        {
+          "field": "panelSettings.floatingPanels",
+          "name": "Floating Panels",
+          "description": "Panels that float over the center map area. Each floating panel is anchored to one of six positions. At most one panel per position is allowed.",
+          "type": "objectarray",
+          "width": 24,
+          "object": [
+            {
+              "field": "id",
+              "name": "ID",
+              "description": "Unique identifier for this floating panel (e.g., 'timeline-panel', 'legend-float').",
+              "type": "text",
+              "width": 6
+            },
+            {
+              "field": "position",
+              "name": "Position",
+              "description": "Where the panel floats within the map area.",
+              "type": "dropdown",
+              "options": [
+                "float-top-left",
+                "float-top-center",
+                "float-top-right",
+                "float-bottom-left",
+                "float-bottom-center",
+                "float-bottom-right"
+              ],
+              "default": "float-bottom-center",
+              "width": 6
+            },
+            {
+              "field": "hasHeader",
+              "name": "Has Header",
+              "description": "Whether the panel shows a title bar with control buttons.",
+              "type": "checkbox",
+              "width": 4,
+              "defaultChecked": false
+            },
+            {
+              "field": "title",
+              "name": "Title",
+              "description": "Display title shown in the header (only relevant when Has Header is enabled).",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "stateConstraints.allowedStates",
+              "name": "Allowed States",
+              "description": "Permitted states for this panel. Floating panels support collapsed (hidden) and expanded (visible) only.",
+              "type": "multiselect",
+              "options": ["collapsed", "expanded"],
+              "default": ["collapsed", "expanded"],
+              "width": 12
+            },
+            {
+              "field": "stateConstraints.defaultState",
+              "name": "Default State",
+              "description": "Initial visibility state when the panel is created.",
+              "type": "dropdown",
+              "options": ["collapsed", "expanded"],
+              "default": "expanded",
+              "width": 12
+            },
+            {
+              "field": "dimensions.defaultWidth",
+              "name": "Default Width",
+              "description": "Initial width of each tool card. Accepts any CSS unit (e.g. '300px', '40%', '20vw'). Leave empty to size to content.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "dimensions.defaultHeight",
+              "name": "Default Height",
+              "description": "Initial height of each tool card. Accepts any CSS unit (e.g. '200px', '30%', '25vh'). Leave empty to size to content.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "dimensions.minWidth",
+              "name": "Min Width",
+              "description": "Minimum width of each tool card. Accepts any CSS unit (e.g. '100px', '10%').",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "dimensions.maxWidth",
+              "name": "Max Width",
+              "description": "Maximum width of each tool card. Accepts any CSS unit (e.g. '600px', '50%').",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "dimensions.minHeight",
+              "name": "Min Height",
+              "description": "Minimum height of each tool card. Accepts any CSS unit (e.g. '100px', '10vh').",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "dimensions.maxHeight",
+              "name": "Max Height",
+              "description": "Maximum height of each tool card. Accepts any CSS unit (e.g. '400px', '40%', '50vh'). Useful for preventing top/bottom float zones from overlapping.",
+              "type": "text",
+              "width": 4
+            },
+            {
+              "field": "panelTools",
+              "name": "Tools",
+              "description": "Tool names to display in this floating panel. Each tool renders as its own card with a gap between cards. Must match tool names in the mission's tools array (e.g., 'Timeline', 'Legend').",
+              "type": "textarray",
+              "default": [],
+              "width": 24
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Map Panel",
       "components": [
         {
