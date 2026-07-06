@@ -7,9 +7,26 @@ const logger = createLogger('ToolControllerModern')
 
 // --- Module-Level State ---
 /**
- * Map of loaded tool instances: targetId -> { toolInstance, toolName, toolId }
+ * Map of loaded tool instances: targetId -> { toolInstance, toolName, toolId, toolMetadata }
  */
 const loadedTools = new Map()
+
+/**
+ * Reverse lookup: toolId -> targetId (populated only for currently-loaded tools)
+ */
+const toolIdToTargetId = new Map()
+
+/**
+ * Set of toolIds that are currently hidden via show/hide API or startHidden config
+ */
+const hiddenTools = new Set()
+
+/**
+ * Deferred tools: toolId -> { toolMetadata, targetId }
+ * Tracks tools whose DOM container exists but whose make() has not been called
+ * (either startUnloaded at init, or unloaded via unloadPlugin API)
+ */
+const deferredTools = new Map()
 
 // --- Internal Helper Functions ---
 
@@ -44,6 +61,76 @@ const _findPanel = (metadata, registeredPanels) => {
     }
 
     return null
+}
+
+/**
+ * Keep a tabbed panel's tab button in sync with its content card's hidden state.
+ * No-op for stacked layouts, which have no .ui-panel-tabs sibling.
+ * If the hidden tab was active, activates the next visible tab (and its content)
+ * so the panel never settles on a clickable tab with nothing behind it, or no
+ * active tab at all.
+ *
+ * @param {Element} panelEl - The tool's ancestor .ui-panel element
+ * @param {string} toolId - Tool ID
+ * @param {boolean} hidden - Whether the tab should be hidden
+ */
+const _syncTabVisibility = (panelEl, toolId, hidden) => {
+    const tabBar = panelEl?.querySelector('.ui-panel-tabs')
+    if (!tabBar) return
+
+    const tabs = Array.from(tabBar.children)
+    const tabEl = tabs.find(t => t.dataset.tool === toolId)
+    if (!tabEl) return
+
+    tabEl.classList.toggle('plugin-hidden', hidden)
+
+    const hasActiveTab = tabs.some(t => !t.classList.contains('plugin-hidden') && t.classList.contains('active'))
+    if (hasActiveTab) return
+
+    // No visible tab is active (either this one just got hidden while active,
+    // or this one was just shown and nothing else is active) — activate the
+    // first visible tab and its matching content.
+    tabs.forEach(t => t.classList.remove('active'))
+    const nextTab = tabs.find(t => !t.classList.contains('plugin-hidden'))
+    if (!nextTab) return
+    nextTab.classList.add('active')
+    const contentArea = panelEl.querySelector('.ui-panel-tab-content-area')
+    if (!contentArea) return
+    Array.from(contentArea.children).forEach(c => {
+        c.classList.toggle('active', c.dataset.tool === nextTab.dataset.tool)
+    })
+}
+
+/**
+ * Keep a panel's iconified-state icon-tray button in sync with its content
+ * card's hidden state, so a hidden/unloaded tool doesn't leave a clickable
+ * icon pointing at nothing while the panel is iconified/focused.
+ *
+ * @param {Element} panelEl - The tool's ancestor .ui-panel element
+ * @param {string} toolId - Tool ID
+ * @param {boolean} hidden - Whether the icon button should be hidden
+ */
+const _syncIconTrayVisibility = (panelEl, toolId, hidden) => {
+    const iconTray = panelEl?.querySelector('.ui-panel-icons')
+    if (!iconTray) return
+    const iconBtn = Array.from(iconTray.children).find(b => b.dataset.tool === toolId)
+    iconBtn?.classList.toggle('plugin-hidden', hidden)
+}
+
+/**
+ * Keep a tool's auxiliary visibility indicators (tabbed-panel tab button,
+ * iconified-panel icon-tray button) in sync with its content card's hidden state.
+ *
+ * @param {string} targetId - DOM element ID of the tool's content container
+ * @param {string} toolId - Tool ID
+ * @param {boolean} hidden - Whether the tool's indicators should be hidden
+ */
+const _syncVisibilityIndicators = (targetId, toolId, hidden) => {
+    const targetEl = document.getElementById(targetId)
+    const panelEl = targetEl?.closest('.ui-panel')
+    if (!panelEl) return
+    _syncTabVisibility(panelEl, toolId, hidden)
+    _syncIconTrayVisibility(panelEl, toolId, hidden)
 }
 
 const ToolControllerModern_ = {
@@ -286,8 +373,22 @@ const ToolControllerModern_ = {
                 toolInstance: ToolClass,
                 toolName: toolMetadata.name,
                 toolId: toolMetadata.id,
+                toolMetadata: toolMetadata,
                 targetId: targetId
             })
+
+            // Register reverse lookup (toolId -> targetId) for show/hide/unload by toolId
+            toolIdToTargetId.set(toolMetadata.id, targetId)
+
+            // Remove from deferred registry if it was queued there
+            deferredTools.delete(toolMetadata.id)
+
+            // Sync hidden state: if the container already has plugin-hidden class
+            // (set by createToolCard when startHidden is true), track it
+            const el = document.getElementById(targetId)
+            if (el && el.classList.contains('plugin-hidden')) {
+                hiddenTools.add(toolMetadata.id)
+            }
 
             logger.debug(`Loaded tool "${toolMetadata.name}" in container "${targetId}"`)
 
@@ -310,7 +411,7 @@ const ToolControllerModern_ = {
         }
 
         try {
-            const { toolInstance, toolName } = loadedTools.get(targetId)
+            const { toolInstance, toolName, toolId } = loadedTools.get(targetId)
 
             // Call destroy() if available
             if (typeof toolInstance.destroy === 'function') {
@@ -319,6 +420,12 @@ const ToolControllerModern_ = {
 
             // Remove from tracking
             loadedTools.delete(targetId)
+
+            // Clean up reverse lookup and hidden state
+            if (toolId) {
+                toolIdToTargetId.delete(toolId)
+                hiddenTools.delete(toolId)
+            }
 
             logger.debug(`Destroyed tool "${toolName}" from container "${targetId}"`)
 
@@ -330,7 +437,7 @@ const ToolControllerModern_ = {
     },
 
     /**
-     * Destroy all loaded tools
+     * Destroy all loaded tools and clear all plugin lifecycle state
      */
     destroyAllTools: function () {
         const targetIds = Array.from(loadedTools.keys())
@@ -340,6 +447,9 @@ const ToolControllerModern_ = {
         targetIds.forEach(targetId => {
             this.destroyTool(targetId)
         })
+
+        // Clear deferred registry (destroyTool already clears toolIdToTargetId and hiddenTools)
+        deferredTools.clear()
     },
 
     /**
@@ -381,6 +491,156 @@ const ToolControllerModern_ = {
     reloadTool: function (toolMetadata, targetId) {
         this.destroyTool(targetId)
         return this.loadTool(toolMetadata, targetId)
+    },
+
+    // ========================================================================
+    // Plugin Visibility & Lifecycle API (show/hide/load/unload by plugin ID)
+    // ========================================================================
+
+    /**
+     * Register a tool as deferred — its DOM container exists but make() has not been called.
+     * Called at init time for tools with startUnloaded:true, and internally by unloadPlugin.
+     *
+     * @param {Object} toolMetadata - Tool metadata object
+     * @param {string} targetId - DOM element ID of the tool's container
+     */
+    registerDeferred: function (toolMetadata, targetId) {
+        if (!toolMetadata || !targetId) return
+        deferredTools.set(toolMetadata.id, { toolMetadata, targetId })
+        // Hide the card so an empty container doesn't show background/shadow
+        document.getElementById(targetId)?.classList.add('plugin-hidden')
+        _syncVisibilityIndicators(targetId, toolMetadata.id, true)
+        logger.debug(`Registered deferred tool "${toolMetadata.id}" in container "${targetId}"`)
+    },
+
+    /**
+     * Show a plugin that was hidden via hidePlugin or startHidden config.
+     * The plugin must already be loaded — its instance and state are preserved.
+     *
+     * @param {string} pluginId - Tool ID (e.g., 'TitleTool')
+     * @returns {boolean} True if shown successfully, false if not found
+     */
+    showPlugin: function (pluginId) {
+        const targetId = toolIdToTargetId.get(pluginId)
+        if (!targetId) {
+            logger.warn(`showPlugin: "${pluginId}" is not a loaded plugin`)
+            return false
+        }
+        document.getElementById(targetId)?.classList.remove('plugin-hidden')
+        hiddenTools.delete(pluginId)
+        _syncVisibilityIndicators(targetId, pluginId, false)
+        logger.debug(`Showed plugin "${pluginId}"`)
+        return true
+    },
+
+    /**
+     * Hide a plugin without destroying it. Its instance and internal state are preserved;
+     * calling showPlugin later restores it exactly as left.
+     *
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean} True if hidden successfully, false if not found
+     */
+    hidePlugin: function (pluginId) {
+        const targetId = toolIdToTargetId.get(pluginId)
+        if (!targetId) {
+            logger.warn(`hidePlugin: "${pluginId}" is not a loaded plugin`)
+            return false
+        }
+        document.getElementById(targetId)?.classList.add('plugin-hidden')
+        hiddenTools.add(pluginId)
+        _syncVisibilityIndicators(targetId, pluginId, true)
+        logger.debug(`Hid plugin "${pluginId}"`)
+        return true
+    },
+
+    /**
+     * Load a plugin that is currently deferred (startUnloaded at init, or previously unloaded).
+     * Calls make() on the existing DOM container. The plugin starts visible after load.
+     *
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean} True if loaded (or already loaded), false if not found / load failed
+     */
+    loadPlugin: function (pluginId) {
+        if (toolIdToTargetId.has(pluginId)) {
+            logger.warn(`loadPlugin: "${pluginId}" is already loaded`)
+            return true
+        }
+        const deferred = deferredTools.get(pluginId)
+        if (!deferred) {
+            logger.warn(`loadPlugin: "${pluginId}" not found in deferred registry`)
+            return false
+        }
+        const instance = this.loadTool(deferred.toolMetadata, deferred.targetId)
+        if (instance) {
+            deferredTools.delete(pluginId)
+            // Fresh load always starts visible — remove any leftover hidden class
+            document.getElementById(deferred.targetId)?.classList.remove('plugin-hidden')
+            hiddenTools.delete(pluginId)
+            _syncVisibilityIndicators(deferred.targetId, pluginId, false)
+            logger.debug(`Loaded deferred plugin "${pluginId}"`)
+        }
+        return !!instance
+    },
+
+    /**
+     * Fully unload a plugin, releasing its instance and resources.
+     * The DOM container is emptied but kept in place so loadPlugin can recreate it later.
+     *
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean} True if unloaded successfully, false if not found or already unloaded
+     */
+    unloadPlugin: function (pluginId) {
+        const targetId = toolIdToTargetId.get(pluginId)
+        if (!targetId) {
+            logger.warn(`unloadPlugin: "${pluginId}" is not loaded`)
+            return false
+        }
+        const toolData = loadedTools.get(targetId)
+        if (!toolData) {
+            logger.warn(`unloadPlugin: "${pluginId}" data not found`)
+            return false
+        }
+        const savedMetadata = toolData.toolMetadata
+
+        // Destroy instance and clean up tracking state
+        this.destroyTool(targetId)
+
+        // Clear the container content without removing the element itself;
+        // hide it so the empty card doesn't show background/shadow
+        const container = document.getElementById(targetId)
+        if (container) {
+            container.innerHTML = ''
+            container.classList.add('plugin-hidden')
+        }
+        _syncVisibilityIndicators(targetId, pluginId, true)
+
+        // Register for future reload
+        deferredTools.set(pluginId, { toolMetadata: savedMetadata, targetId })
+        logger.debug(`Unloaded plugin "${pluginId}", registered as deferred`)
+        return true
+    },
+
+    /**
+     * Check if a plugin is currently loaded (make() has been called and not yet destroyed)
+     *
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean}
+     */
+    isPluginLoaded: function (pluginId) {
+        return toolIdToTargetId.has(pluginId)
+    },
+
+    /**
+     * Check if a plugin is currently hidden via hidePlugin/startHidden (loaded but not visible).
+     * Returns false for a plugin that was never loaded or is currently unloaded/deferred
+     * (startUnloaded, or unloadPlugin) — those are also visually hidden but are reported
+     * via isPluginLoaded()===false instead. Check both to fully reason about visibility.
+     *
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean}
+     */
+    isPluginHidden: function (pluginId) {
+        return hiddenTools.has(pluginId)
     }
 }
 

@@ -5,6 +5,7 @@ import QueryURL from '../Ancillary/QueryURL'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import Login from '../Ancillary/Login/Login'
 import LegendTool from '../Tools/Legend/LegendTool.js'
+import { PANEL_STATE } from '../Basics/PanelManager_/types/layout'
 import mitt from 'mitt'
 
 import $ from 'jquery'
@@ -22,6 +23,11 @@ var mmgisAPI_ = {
     // Internal event bus access for core modules
     _events: events,
     _handlers: handlers,
+
+    // Set by UserInterfaceModern_ on init; null when modern layout is not active
+    _pluginController: null,
+    // Set by UserInterfaceModern_ on init; null when modern layout is not active
+    _panelManager: null,
 
     // Exposes Leaflet map object
     map: null,
@@ -452,6 +458,104 @@ var mmgisAPI_ = {
     unproject: function (xy) {
         return window.mmgisglobal.customCRS.unproject(xy)
     },
+    showPlugin: function (pluginId) {
+        if (!mmgisAPI_._pluginController) {
+            console.warn('[mmgisAPI] showPlugin: modern layout not active')
+            return false
+        }
+        return mmgisAPI_._pluginController.showPlugin(pluginId)
+    },
+    hidePlugin: function (pluginId) {
+        if (!mmgisAPI_._pluginController) {
+            console.warn('[mmgisAPI] hidePlugin: modern layout not active')
+            return false
+        }
+        return mmgisAPI_._pluginController.hidePlugin(pluginId)
+    },
+    loadPlugin: function (pluginId) {
+        if (!mmgisAPI_._pluginController) {
+            console.warn('[mmgisAPI] loadPlugin: modern layout not active')
+            return null
+        }
+        return mmgisAPI_._pluginController.loadPlugin(pluginId)
+    },
+    unloadPlugin: function (pluginId) {
+        if (!mmgisAPI_._pluginController) {
+            console.warn('[mmgisAPI] unloadPlugin: modern layout not active')
+            return false
+        }
+        return mmgisAPI_._pluginController.unloadPlugin(pluginId)
+    },
+    isPluginLoaded: function (pluginId) {
+        return mmgisAPI_._pluginController?.isPluginLoaded(pluginId) ?? false
+    },
+    isPluginHidden: function (pluginId) {
+        return mmgisAPI_._pluginController?.isPluginHidden(pluginId) ?? false
+    },
+    showPanel: function (panelId) {
+        if (!mmgisAPI_._panelManager) {
+            console.warn('[mmgisAPI] showPanel: modern layout not active')
+            return false
+        }
+        try {
+            const panel = mmgisAPI_._panelManager.getPanelState(panelId)
+            if (!panel) {
+                console.warn(`[mmgisAPI] showPanel: panel "${panelId}" not found`)
+                return false
+            }
+            if (panel.state !== PANEL_STATE.COLLAPSED) return true
+            mmgisAPI_._panelManager.togglePanelCollapsed(panelId)
+            return true
+        } catch (e) {
+            console.warn('[mmgisAPI] showPanel failed:', e)
+            return false
+        }
+    },
+    hidePanel: function (panelId) {
+        if (!mmgisAPI_._panelManager) {
+            console.warn('[mmgisAPI] hidePanel: modern layout not active')
+            return false
+        }
+        try {
+            const panel = mmgisAPI_._panelManager.getPanelState(panelId)
+            if (!panel) {
+                console.warn(`[mmgisAPI] hidePanel: panel "${panelId}" not found`)
+                return false
+            }
+            if (panel.state === PANEL_STATE.COLLAPSED) return true
+            mmgisAPI_._panelManager.setPanelState(panelId, PANEL_STATE.COLLAPSED)
+            return true
+        } catch (e) {
+            console.warn('[mmgisAPI] hidePanel failed:', e)
+            return false
+        }
+    },
+    togglePanel: function (panelId) {
+        if (!mmgisAPI_._panelManager) {
+            console.warn('[mmgisAPI] togglePanel: modern layout not active')
+            return false
+        }
+        try {
+            mmgisAPI_._panelManager.togglePanelCollapsed(panelId)
+            return true
+        } catch (e) {
+            console.warn('[mmgisAPI] togglePanel failed:', e)
+            return false
+        }
+    },
+    _initCoreCommandDispatcher: function () {
+        const handlers = {
+            'core:showPlugin':   ({ pluginId }) => mmgisAPI_.showPlugin(pluginId),
+            'core:hidePlugin':   ({ pluginId }) => mmgisAPI_.hidePlugin(pluginId),
+            'core:loadPlugin':   ({ pluginId }) => mmgisAPI_.loadPlugin(pluginId),
+            'core:unloadPlugin': ({ pluginId }) => mmgisAPI_.unloadPlugin(pluginId),
+            'core:showPanel':    ({ panelId })  => mmgisAPI_.showPanel(panelId),
+            'core:hidePanel':    ({ panelId })  => mmgisAPI_.hidePanel(panelId),
+            'core:togglePanel':  ({ panelId })  => mmgisAPI_.togglePanel(panelId),
+        }
+        Object.entries(handlers).forEach(([ev, fn]) => events.on(ev, fn))
+        return () => Object.entries(handlers).forEach(([ev, fn]) => events.off(ev, fn))
+    },
     toggleLayer: async function (layerName, on) {
         if (layerName in L_.layers.data) {
             if (on === undefined || on === null) {
@@ -784,6 +888,73 @@ var mmgisAPI = {
      * @returns {Promise<{x: number, y: number} | null>}
      */
     latLngToContainerPoint: (latlng) => mmgisAPI.request('map:latLngToContainerPoint', latlng),
+
+    // ============ PLUGIN LIFECYCLE API (modern layout only) ============
+
+    /**
+     * Show a hidden plugin. The plugin must be loaded; its internal state is preserved.
+     * @param {string} pluginId - Tool ID (e.g., 'TitleTool')
+     * @returns {boolean} True if shown, false if plugin not found or layout not active
+     */
+    showPlugin: mmgisAPI_.showPlugin,
+
+    /**
+     * Hide a plugin without destroying it. State is preserved; showPlugin restores it.
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean} True if hidden, false if plugin not found or layout not active
+     */
+    hidePlugin: mmgisAPI_.hidePlugin,
+
+    /**
+     * Load a plugin that is currently deferred (startUnloaded at init, or previously unloaded).
+     * Calls make() on the existing DOM container. The plugin starts visible.
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean} True if loaded, false if not found or load failed
+     */
+    loadPlugin: mmgisAPI_.loadPlugin,
+
+    /**
+     * Fully unload a plugin, calling destroy() and releasing all resources.
+     * The DOM container remains so loadPlugin can recreate it later.
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean} True if unloaded, false if not found or layout not active
+     */
+    unloadPlugin: mmgisAPI_.unloadPlugin,
+
+    /**
+     * Check whether a plugin is currently loaded (make() has been called and not destroyed).
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean}
+     */
+    isPluginLoaded: mmgisAPI_.isPluginLoaded,
+
+    /**
+     * Check whether a plugin is currently hidden (loaded but not visible).
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean}
+     */
+    isPluginHidden: mmgisAPI_.isPluginHidden,
+
+    /**
+     * Show a collapsed panel, restoring its last visible state.
+     * @param {string} panelId - Panel ID
+     * @returns {boolean} True if shown, false if not found or layout not active
+     */
+    showPanel: mmgisAPI_.showPanel,
+
+    /**
+     * Collapse a panel without destroying its contents.
+     * @param {string} panelId - Panel ID
+     * @returns {boolean} True if hidden, false if not found or layout not active
+     */
+    hidePanel: mmgisAPI_.hidePanel,
+
+    /**
+     * Toggle a panel between collapsed and its last visible state.
+     * @param {string} panelId - Panel ID
+     * @returns {boolean} True if toggled, false if not found or layout not active
+     */
+    togglePanel: mmgisAPI_.togglePanel,
 
     /** overwriteLegends - overwrite the contents displayed in the LegendTool; useful when used with `toggleSeparatedTool` event listener in mmgisAPI
      * @param {array} - legends - an array of objects, where each object must contain the following keys: legend, layerUUID, display_name, opacity. The value for the legend key should be in the same format as what is stored in the layers data under the `_legend` key (i.e. `L_.layers.data[layerName]._legend`). layerUUID and display_name should be strings and opacity should be a number between 0 and 1.
