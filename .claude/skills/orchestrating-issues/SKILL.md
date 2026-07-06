@@ -31,7 +31,7 @@ Everything between gates runs autonomously.
 | 4. Implement | Dispatch one sub-agent per worktree, scoped to that directory, to do the work — committing and pushing as it goes. Tell it the issue's collapsed plan is a stale sketch to re-investigate, but to heed any marked gotcha. Run independent issues in parallel; sequence dependent ones (downstream branches off the upstream branch, not bare `development`). | **superpowers-extended-cc:dispatching-parallel-agents** |
 | 5. Review | After each implementation, have a **fresh agent that didn't write the code** review it; the implementer addresses findings, then the reviewer re-checks the changed lines. | **superpowers-extended-cc:requesting-code-review** (or the `code-reviewer` agent) |
 | 6. Verify | Run that branch's tests **and check the issue's acceptance criteria** (coverage is partial — acceptance is the real bar). Never report "tested" without seeing the output. | **mmgis-deployment** (`test.sh`), **superpowers-extended-cc:verification-before-completion** |
-| 7. Smoke handoff | Boot each deployment, capture the dashboard URL/port, and report (see contract below). Make sure the branch is pushed first. **Gate: iterate with the user until it works live.** | **mmgis-deployment** (`start.sh`) |
+| 7. Smoke handoff | Boot each local deployment, capture the dashboard URL/port, and report (see contract below). Make sure the branch is pushed first. **Gate: iterate with the user until it works live.** | **mmgis-deployment** (`start.sh`) |
 | 8. Draft PR | Open a **draft** PR per issue; body must close the issue (`Closes #N`). | **superpowers-extended-cc:finishing-a-development-branch** |
 | 9. Address feedback | Read the user's PR comments from GitHub and resolve them. Each substantive change loops back through **Verify (6) and Smoke (7)** before it counts as resolved. Repeat until the user is satisfied. | **superpowers-extended-cc:receiving-code-review** |
 
@@ -73,7 +73,7 @@ Isolation holds regardless of ordering: the orchestrator (you) owns the deployme
 
 You run autonomously between gates, but stop and surface these rather than pushing through:
 
-- **An issue is bigger than one PR.** Even right-sized issues sometimes sprawl once you're in the code. Propose a split (per the issue right-sizing convention) instead of ballooning the PR.
+- **An issue is too big.** If it becomes obvious that an task is going to produce a massive PR, or one that conflates easily separable tasks, consider telling the user and thinking about splitting it.
 - **Tests can't pass locally** (flaky, infra, environment). Don't claim a green you didn't get — document why and get the user's call.
 - **Merge conflicts you can't cleanly resolve** — surface them, especially across stacked issues.
 
