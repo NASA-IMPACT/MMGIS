@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 
 // Tests for teardownDeployment in
 // API/Backend/Deployments/routes/deployments.js using injected mock AWS

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 
 // Tests for the MMGIS_DEPLOYMENT_MODE backend helper.
 // The module resolves the mode once at load, so each test clears the
