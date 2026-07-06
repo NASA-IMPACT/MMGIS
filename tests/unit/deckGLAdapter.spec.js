@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/index.ts'
 

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 
 // Tests for scripts/lib/aws-provision.js using injected mock clients —
 // no test here (or anywhere) ever calls real AWS.

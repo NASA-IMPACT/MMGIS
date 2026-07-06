@@ -87,10 +87,25 @@ export function MMGISTitleAdapter() {
         if (!link) return
         if (link.startsWith('http://') || link.startsWith('https://')) {
             window.open(link, '_blank', 'noopener,noreferrer')
-        } else {
-            // Emit under this plugin's namespace: 'plugin:title:<link>'.
-            mmgisEmit(`plugin:${PLUGIN_ID}:${link}`)
+            return
         }
+        // Core commands using the "core:action:target" syntax (e.g. "core:showPlugin:LayersTool")
+        if (link.startsWith('core:')) {
+            const parts = link.substring(5).split(':')
+            const action = parts[0]
+            const target = parts.slice(1).join(':')
+            mmgisEmit(`core:${action}`, { pluginId: target, panelId: target })
+            return
+        }
+
+        // Custom namespaced events (e.g. "LayerManager:someEvent")
+        if (link.indexOf(':') !== -1) {
+            mmgisEmit(link)
+            return
+        }
+
+        // Fallback: simple event under this plugin's namespace (no colons)
+        mmgisEmit(`plugin:${PLUGIN_ID}:${link}`)
     }, [state.actionButtonLink])
 
     return (

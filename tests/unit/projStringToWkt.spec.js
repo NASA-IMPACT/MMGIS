@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import proj4 from 'proj4'
 import projStringToWkt from '../../src/pre/projStringToWkt.js'
 
