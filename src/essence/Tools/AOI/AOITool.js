@@ -108,8 +108,7 @@ const AOITool = {
     height: 0,
     width: 0,
     made: false,
-    MMGISInterface: null,
-    _root: null,
+    targetId: null,
     _reactRoot: null,
     _state: initialState(),
     _cleanups: [],
@@ -119,7 +118,13 @@ const AOITool = {
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
     make(targetId) {
-        this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
+        this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
+        const container = document.getElementById(this.targetId)
+        if (!container) {
+            console.error(`AOITool: container ${this.targetId} not found`)
+            return
+        }
+        this._reactRoot = createRoot(container)
 
         this._api =
             (typeof window !== 'undefined' && window.mmgisAPI?.forPlugin?.(PLUGIN_ID)) ||
@@ -151,12 +156,12 @@ const AOITool = {
                 const off = api.on(event, handler)
                 this._cleanups.push(typeof off === 'function' ? off : () => { })
             }
-            subscribe('tool:change',       () => this._clearSelection())
-            subscribe('map:drawstart',     (e) => this._onDrawStart(e))
-            subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
-            subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
-            subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
-            subscribe('map:featureClick',  (info) => this._onMapFeatureClick(info))
+            subscribe('tool:change', () => this._clearSelection())
+            subscribe('map:drawstart', (e) => this._onDrawStart(e))
+            subscribe('map:drawvertex', (e) => this._onDrawVertex(e))
+            subscribe('map:drawcomplete', (e) => this._onDrawComplete(e))
+            subscribe('map:drawcancel', () => this._onDrawCancelEvent())
+            subscribe('map:featureClick', (info) => this._onMapFeatureClick(info))
             subscribe('plugin:fetch-stats:analysisProgress', ({ done, total }) => {
                 if (done === 0) {
                     this._setState({
@@ -207,12 +212,7 @@ const AOITool = {
             this._reactRoot.unmount()
             this._reactRoot = null
         }
-        this._root = null
-
-        if (this.MMGISInterface) {
-            this.MMGISInterface.separateFromMMGIS()
-            this.MMGISInterface = null
-        }
+        this.targetId = null
 
         this._state = initialState()
         this._api = null
@@ -345,8 +345,7 @@ const AOITool = {
     },
 
     _onClose() {
-        const btn = document.getElementById('toolButtonAOI')
-        if (btn) btn.click()
+        window.mmgisAPI?.emit('core:unloadPlugin', { pluginId: 'AOITool' })
     },
 
     // ── Search mode ────────────────────────────────────────────────────────────
@@ -630,25 +629,6 @@ const AOITool = {
         this._clearSelection()
     },
 
-}
-
-function interfaceWithMMGIS(tool, targetId) {
-    // Mount into the panel container we're given (float or edge panel); fall back
-    // to document.body only when no container exists (legacy/standalone use).
-    const container =
-        (targetId && document.getElementById(targetId)) || document.body
-    const root = document.createElement('div')
-    root.className = 'aoi-tool-host'
-    if (container !== document.body) root.classList.add('aoi-tool-host--embedded')
-    container.appendChild(root)
-    tool._root = root
-    tool._reactRoot = createRoot(root)
-
-    this.separateFromMMGIS = function () {
-        if (tool._root && tool._root.parentNode) {
-            tool._root.parentNode.removeChild(tool._root)
-        }
-    }
 }
 
 export default AOITool
