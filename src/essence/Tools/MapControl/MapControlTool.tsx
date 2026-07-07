@@ -1,11 +1,11 @@
 /**
- * MapControlTool — MMGIS tool wrapper for the MapControl floating overlay.
+ * MapControlTool — MMGIS tool wrapper for the MapControl bar.
  *
- * Unlike a docked panel tool, MapControl is a floating overlay: it self-mounts
- * into a viewport-fixed, click-through layer on document.body. src/pre/tools.js
- * eagerly imports every tool at app start, so the module-level auto-mount polls
- * until the map is alive, then mounts. The _root guard prevents double-mounting
- * if the panel system also calls make().
+ * MapControl is a floating-panel tool: the modern layout's panel system creates
+ * a container and calls make(targetId); we mount our React tree into it, exactly
+ * like the AOI and Chart plugins. Placement (e.g. the top-right float zone) is
+ * owned by the panel the tool is assigned to in the layout — the tool no longer
+ * self-attaches a viewport overlay to document.body.
  *
  * All MMGIS coupling lives in MMGISMapControlAdapter + adapters/. The lib/ tree
  * is portable.
@@ -14,61 +14,37 @@ import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MMGISMapControlAdapter } from './MMGISMapControlAdapter'
 
-const ROOT_ID = 'mmgis-map-control-root'
-const ROOT_STYLE = 'position:fixed;inset:0;pointer-events:none;z-index:1002;'
-const APP_READY_IDS = ['mapScreen', 'modern-content', 'map']
-
-function isAppReady(): boolean {
-    return APP_READY_IDS.some((id) => document.getElementById(id) !== null)
-}
-
-let _root: Root | null = null
-
 const MapControlTool = {
     height: 0,
     width: 0,
     made: false,
+    targetId: null as string | null,
+    _reactRoot: null as Root | null,
 
-    make() {
-        if (_root) return
-        document.getElementById(ROOT_ID)?.remove()
-        const container = document.createElement('div')
-        container.id = ROOT_ID
-        container.style.cssText = ROOT_STYLE
-        document.body.appendChild(container)
-        _root = createRoot(container)
-        _root.render(<MMGISMapControlAdapter />)
+    make(targetId?: string) {
+        this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
+        const container = document.getElementById(this.targetId)
+        if (!container) {
+            console.error(`MapControlTool: container ${this.targetId} not found`)
+            return
+        }
+        this._reactRoot = createRoot(container)
+        this._reactRoot.render(<MMGISMapControlAdapter />)
         this.made = true
     },
 
     destroy() {
-        if (_root) {
-            _root.unmount()
-            _root = null
+        if (this._reactRoot) {
+            this._reactRoot.unmount()
+            this._reactRoot = null
         }
-        document.getElementById(ROOT_ID)?.remove()
+        this.targetId = null
         this.made = false
     },
 
     getUrlString() {
         return ''
     },
-}
-
-function tryAutoMount(): boolean {
-    if (_root) return true
-    if (!isAppReady()) return false
-    MapControlTool.make()
-    return true
-}
-
-if (typeof window !== 'undefined') {
-    if (!tryAutoMount()) {
-        const id = setInterval(() => {
-            if (tryAutoMount()) clearInterval(id)
-        }, 100)
-        setTimeout(() => clearInterval(id), 15000)
-    }
 }
 
 export default MapControlTool
