@@ -9,8 +9,8 @@ import {
 } from 'react'
 import { GradientGraphic } from '../GradientGraphic/GradientGraphic'
 import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
-import { useClickOutside } from '../../hooks/useClickOutside'
 import type { Layer } from '../../types'
+import { FloatingPopover } from '../../../../../Ancillary/FloatingPopover'
 
 export type LayerLegendProps = {
     layer: Layer
@@ -49,7 +49,6 @@ export function LayerLegend({
     const [isOpacityExpanded, setIsOpacityExpanded] = useState(false)
     const [localOpacity, setLocalOpacity] = useState(opacity ?? 1)
     const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
-    const opacityPopoverRef = useRef<HTMLDivElement | null>(null)
 
     useEffect(() => {
         setIsVisible(visible)
@@ -58,12 +57,6 @@ export function LayerLegend({
     useEffect(() => {
         setLocalOpacity(opacity ?? 1)
     }, [opacity])
-
-    useClickOutside(
-        [opacityPopoverRef, opacityBtnRef],
-        useCallback(() => setIsOpacityExpanded(false), []),
-        isOpacityExpanded,
-    )
 
     const handleVisibilityToggle = () => {
         const newState = !isVisible
@@ -146,11 +139,14 @@ export function LayerLegend({
                         >
                             <i className="mdi mdi-circle-half-full mdi-18px" />
                         </button>
-                        {isOpacityExpanded && (
-                            <div
-                                ref={opacityPopoverRef}
-                                className="blocks-layer-legend__opacity-popover"
-                            >
+                        <FloatingPopover
+                            anchorRef={opacityBtnRef}
+                            isOpen={isOpacityExpanded}
+                            onClose={() => setIsOpacityExpanded(false)}
+                            placement="bottom"
+                            offset={8}
+                        >
+                            <div className="blocks-layer-legend__opacity-popover" style={{ position: 'relative', top: 0, right: 0 }}>
                                 <input
                                     type="range"
                                     className="blocks-layer-legend__opacity-slider"
@@ -164,7 +160,7 @@ export function LayerLegend({
                                     {Math.round(localOpacity * 100)}%
                                 </span>
                             </div>
-                        )}
+                        </FloatingPopover>
                     </div>
                     <button
                         className={`blocks-layer-legend__action-btn ${isInfoExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}

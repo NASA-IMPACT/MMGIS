@@ -12,3 +12,13 @@
 // 4. Export theme tokens as CSS custom properties
 @use "../theme-export";
 @include theme-export.export-theme-tokens();
+
+// 5. Override USWDS blue focus outline
+input:not([disabled]):focus,
+select:not([disabled]):focus,
+textarea:not([disabled]):focus,
+button:not([disabled]):focus,
+[tabindex]:focus,
+[contentEditable=true]:focus {
+    outline: none !important;
+}
