@@ -13,6 +13,7 @@ import L_ from '../Layers_/Layers_'
 import calls from '../../../pre/calls'
 import tippy from 'tippy.js'
 import Dropy from '../../../external/Dropy/dropy'
+import { parseTimeWithOffset } from './timeUtils'
 
 import { TempusDominus, Namespace } from '@eonasdan/tempus-dominus'
 import '@eonasdan/tempus-dominus/dist/css/tempus-dominus.css'
@@ -47,6 +48,12 @@ const TimeUI = {
         this.MMWebGISInterface = new interfaceWithMMWebGIS()
     },
     destroy: function () {
+        // Clean up event subscriptions
+        if (TimeUI._cleanups) {
+            TimeUI._cleanups.forEach((cleanup) => cleanup())
+            TimeUI._cleanups = []
+        }
+
         this.MMWebGISInterface.separateFromMMWebGIS()
     },
     startTempus: null,
@@ -89,7 +96,41 @@ const TimeUI = {
     init: function (timeChange, enabled) {
         TimeUI.timeChange = timeChange
         TimeUI.enabled = enabled
+        TimeUI._cleanups = [] // Track cleanup functions for event listeners
 
+        // Subscribe to TimeControl events via Event Bus
+        if (window.mmgisAPI) {
+            TimeUI._cleanups.push(
+                // Listen for TimeControl ready event (new event-based initialization)
+                window.mmgisAPI.on('time:controlReady', (data) => {
+                    // Use callback from event if provided (new pattern)
+                    if (data.timeInputChangeCallback) {
+                        TimeUI.timeChange = data.timeInputChangeCallback
+                    }
+                    // Update enabled state from TimeControl
+                    if (data.enabled != null) {
+                        TimeUI.enabled = data.enabled
+                    }
+                }),
+                window.mmgisAPI.on('time:setRequested', (data) => {
+                    TimeUI.updateTimes(data.startTime, data.endTime, data.currentTime)
+                }),
+                // Listen for time layer reloads to handle follow feature
+                window.mmgisAPI.on('time:layersReloaded', (data) => {
+                    TimeUI._handleFollowAfterReload(data.reloadedLayers)
+                })
+            )
+        }
+
+        // Check if we're in modern mode - skip UI initialization if so
+        const isModernMode = $('#modern-content').length > 0
+        if (isModernMode) {
+            // In modern mode, TimeUI doesn't render - modern timeline tool handles it
+            // But event listeners are still active for the API
+            return TimeUI
+        }
+
+        // Legacy mode: Initialize TimeUI as normal
         // prettier-ignore
         let markup = [
             `<div id="mmgisTimeUI">`,
@@ -332,28 +373,6 @@ const TimeUI = {
         return TimeUI
     },
     getElement: function () {},
-    getDateAdditionalSeconds: function (d) {
-        let dateString = d
-        let opMult = 1
-        let additionalSeconds = 0
-        if (typeof dateString === 'string') {
-            const indexPlus = dateString.indexOf(' + ')
-            const indexMinus = dateString.indexOf(' - ')
-            if (indexPlus > -1 || indexMinus > -1) {
-                if (indexMinus > indexPlus) opMult = -1
-                const initialendSplit = dateString.split(
-                    ` ${opMult === 1 ? '+' : '-'} `
-                )
-                dateString = initialendSplit[0]
-                additionalSeconds = parseInt(initialendSplit[1]) || 0
-                additionalSeconds = isNaN(additionalSeconds)
-                    ? 0
-                    : additionalSeconds
-            }
-            additionalSeconds *= opMult
-        }
-        return { dateString, additionalSeconds }
-    },
     alignPopovers(e) {
         if (L_.UserInterface_?.isMobile === true) {
             return
@@ -754,7 +773,7 @@ const TimeUI = {
             promptTimeOnDateChangeTransitionDelay: 200,
         }
 
-        const startElm = document.getElementById('mmgisTimeUIStart')
+        // startElm is already defined at the top
         TimeUI.startTempus = new TempusDominus(startElm, options)
         TimeUI.startTempus.dates.formatInput = function (date) {
             return moment(date).format(FORMAT)
@@ -1017,7 +1036,7 @@ const TimeUI = {
         }
 
         // parse formats like "2024-03-04T14:05:00Z + 10000000" for relative times
-        dateAddSec = TimeUI.getDateAdditionalSeconds(
+        dateAddSec = parseTimeWithOffset(
             L_.configData.time.initialend
         )
         if (
@@ -1041,7 +1060,7 @@ const TimeUI = {
             L_.configData.time.initialwindowend != 'now'
         ) {
             // parse formats like "2024-03-04T14:05:00Z + 10000000" for relative times
-            dateAddSec = TimeUI.getDateAdditionalSeconds(
+            dateAddSec = parseTimeWithOffset(
                 L_.configData.time.initialwindowend
             )
             const dateStaged = new Date(dateAddSec.dateString)
@@ -1071,7 +1090,7 @@ const TimeUI = {
             )
         else {
             // parse formats like "2024-03-04T14:05:00Z + 10000000" for relative times
-            dateAddSec = TimeUI.getDateAdditionalSeconds(
+            dateAddSec = parseTimeWithOffset(
                 L_.configData.time.initialstart
             )
 
@@ -1101,7 +1120,7 @@ const TimeUI = {
         // Initial Timeline window start
         if (L_.configData.time.initialwindowstart != null) {
             // parse formats like "2024-03-04T14:05:00Z + 10000000" for relative times
-            dateAddSec = TimeUI.getDateAdditionalSeconds(
+            dateAddSec = parseTimeWithOffset(
                 L_.configData.time.initialwindowstart
             )
 
@@ -1154,11 +1173,13 @@ const TimeUI = {
         date = new Date(TimeUI._initialEnd)
         const savedEndDate = new Date(date)
 
-        const offsetEndDate = TimeUI.addOffset(date.getTime())
-        const parsedEnd = TimeUI.endTempus.dates.parseInput(
-            new Date(offsetEndDate)
-        )
-        TimeUI.endTempus.dates.setValue(parsedEnd)
+        if (TimeUI.endTempus) {
+            const offsetEndDate = TimeUI.addOffset(date.getTime())
+            const parsedEnd = TimeUI.endTempus.dates.parseInput(
+                new Date(offsetEndDate)
+            )
+            TimeUI.endTempus.dates.setValue(parsedEnd)
+        }
 
         // Initial start
         // Start 1 month ago
@@ -1181,10 +1202,12 @@ const TimeUI = {
         date = new Date(TimeUI._initialStart)
 
         const offsetStartDate = TimeUI.addOffset(date.getTime())
-        const parsedStart = TimeUI.startTempus.dates.parseInput(
-            new Date(offsetStartDate)
-        )
-        TimeUI.startTempus.dates.setValue(parsedStart)
+        if (TimeUI.startTempus) {
+            const parsedStart = TimeUI.startTempus.dates.parseInput(
+                new Date(offsetStartDate)
+            )
+            TimeUI.startTempus.dates.setValue(parsedStart)
+        }
 
         $('#mmgisTimeUIPlay').on('click', TimeUI.togglePlay)
         $('#mmgisTimeUIBottomPrevious').on('click', TimeUI.stepPrevious)
@@ -2628,6 +2651,15 @@ const TimeUI = {
             // Feature not found - it may have gone out of time range
         }
     },
+    _handleFollowAfterReload: function (reloadedLayers) {
+        // Handle follow feature after time-enabled layers reload
+        if (TimeUI.followEnabled && TimeUI.followedFeature) {
+            // Add a small delay to ensure layers have finished loading
+            setTimeout(() => {
+                TimeUI.panToFollowedFeature()
+            }, 500)
+        }
+    },
     _restoreFollowFromDeeplink: function () {
         // Check if we have an active point from the deeplink
         if (!L_.FUTURES.activePoint) {
@@ -3202,25 +3234,35 @@ const TimeUI = {
     },
     change() {
         if (
-            typeof TimeUI.timeChange === 'function' &&
             TimeUI._startTimestamp != null &&
             TimeUI._endTimestamp != null
         ) {
             const mode = TimeUI.modes[TimeUI.modeIndex]
-            TimeUI.timeChange(
-                new Date(
-                    mode === 'Range'
-                        ? TimeUI.removeOffset(TimeUI._startTimestamp)
-                        : 0
-                ).toISOString(),
-                // use currentTime as endTime if in playmode
-                TimeUI.play === true
-                    ? new Date(TimeUI.getCurrentTimestamp(true)).toISOString()
-                    : new Date(
-                          TimeUI.removeOffset(TimeUI._endTimestamp)
-                      ).toISOString(),
-                new Date(TimeUI.getCurrentTimestamp(true)).toISOString()
-            )
+            const startTime = new Date(
+                mode === 'Range'
+                    ? TimeUI.removeOffset(TimeUI._startTimestamp)
+                    : 0
+            ).toISOString()
+            const endTime = TimeUI.play === true
+                ? new Date(TimeUI.getCurrentTimestamp(true)).toISOString()
+                : new Date(
+                      TimeUI.removeOffset(TimeUI._endTimestamp)
+                  ).toISOString()
+            const currentTime = new Date(TimeUI.getCurrentTimestamp(true)).toISOString()
+
+            // Emit event via Event Bus for TimeControl to respond
+            if (window.mmgisAPI) {
+                window.mmgisAPI.emit('time:userChanged', {
+                    startTime,
+                    endTime,
+                    currentTime,
+                })
+            }
+
+            // Keep callback for backward compatibility
+            if (typeof TimeUI.timeChange === 'function') {
+                TimeUI.timeChange(startTime, endTime, currentTime)
+            }
         }
         // Update expanded rows if expanded
         if (TimeUI.expanded) {

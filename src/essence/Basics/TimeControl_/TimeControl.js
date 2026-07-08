@@ -5,9 +5,9 @@ import $ from 'jquery'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
-import TimeUI from './TimeUI'
-
-import './TimeControl.css'
+import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
+import { compileTileUrl } from '../Layers_/tileUrlUtils'
+import ServiceUrls from '../ServiceUrls/ServiceUrls'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
@@ -28,7 +28,6 @@ var TimeControl = {
     relativeEndTime: '00:00:00',
     globalTimeFormat: null,
     _updateLockedForAcceptingInput: false,
-    timeUI: null,
     customTimes: {
         times: [],
     },
@@ -39,27 +38,83 @@ var TimeControl = {
                 L_.configData.time.format
             )
         } else {
-            $('#toggleTimeUI').css({ display: 'none' })
-            $('#CoordinatesDiv').css({ marginRight: '0px' })
             return
         }
 
-        TimeControl.timeUI = TimeUI.init(timeInputChange, TimeControl.enabled)
+        let dateAddSec = null
+        let initialEnd = new Date()
+        if (L_.FUTURES.endTime != null) {
+            initialEnd = new Date(L_.FUTURES.endTime)
+        } else if (L_.configData.time.initialend != null && L_.configData.time.initialend !== 'now') {
+            dateAddSec = parseTimeWithOffset(L_.configData.time.initialend)
+            const dateStaged = new Date(dateAddSec.dateString)
+            if (dateStaged != 'Invalid Date') {
+                dateStaged.setSeconds(dateStaged.getSeconds() + dateAddSec.additionalSeconds)
+                initialEnd = dateStaged
+            }
+        }
+        
+        let initialStart = new Date(initialEnd)
+        initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
+        
+        if (L_.FUTURES.startTime != null) {
+            initialStart = new Date(L_.FUTURES.startTime)
+        } else if (L_.configData.time.initialstart != null) {
+            dateAddSec = parseTimeWithOffset(L_.configData.time.initialstart)
+            const dateStaged = new Date(dateAddSec.dateString)
+            if (dateStaged != 'Invalid Date') {
+                dateStaged.setSeconds(dateStaged.getSeconds() + dateAddSec.additionalSeconds)
+                if (dateStaged.getTime() <= initialEnd.getTime()) {
+                    initialStart = dateStaged
+                }
+            }
+        }
+
+        TimeControl.startTime = initialStart.toISOString()
+        TimeControl.endTime = initialEnd.toISOString()
+        TimeControl.currentTime = initialEnd.toISOString()
+
+        // Subscribe to user-initiated time changes from UI elements via Event Bus
+        // and emit controlReady event for UI elements to initialize
+        if (window.mmgisAPI) {
+            const cleanup = window.mmgisAPI.on('time:userChanged', ({ startTime, endTime, currentTime }) => {
+                timeInputChange(startTime, endTime, currentTime)
+            })
+            _providerCleanups.push(cleanup)
+
+            // Notify that TimeControl is ready for UI elements to initialize
+            window.mmgisAPI.emit('time:controlReady', {
+                enabled: TimeControl.enabled,
+                startTime: TimeControl.startTime,
+                endTime: TimeControl.endTime,
+                currentTime: TimeControl.currentTime,
+                timeInputChangeCallback: timeInputChange,
+            })
+        }
 
         //updateTime()
 
         initLayerTimes()
         initLayerDataTimes()
+
+        // Ensure layers are updated and reloaded with initial time parameters,
+        // particularly when TimeUI is missing or skipped.
+        timeInputChange(
+            TimeControl.startTime,
+            TimeControl.endTime,
+            TimeControl.currentTime
+        )
     },
     fina: function () {
-        if ((TimeControl.enabled = true && TimeControl.timeUI != null))
-            TimeControl.timeUI.fina()
-
         // Register time providers for mmgisAPI Event Bus
         if (window.mmgisAPI) {
             // Clean up previous providers if re-initializing
             _providerCleanups.forEach((cleanup) => cleanup())
             _providerCleanups = [
+                // Re-register the time:userChanged listener that was registered in init()
+                window.mmgisAPI.on('time:userChanged', ({ startTime, endTime, currentTime }) => {
+                    timeInputChange(startTime, endTime, currentTime)
+                }),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
@@ -111,7 +166,7 @@ var TimeControl = {
         const now = new Date()
         let offset = 0
         if (relativeTimeFormat.test(timeOffset)) {
-            offset = parseTime(timeOffset)
+            offset = parseTimeToSeconds(timeOffset)
         } else {
             // assume seconds otherwise
             offset = parseInt(timeOffset)
@@ -128,8 +183,8 @@ var TimeControl = {
         }
 
         if (isRelative == true) {
-            const start = parseTime(startTime)
-            const end = parseTime(endTime)
+            const start = parseTimeToSeconds(startTime)
+            const end = parseTimeToSeconds(endTime)
             const startTimeM = new moment(currentTime).subtract(
                 start,
                 'seconds'
@@ -154,11 +209,16 @@ var TimeControl = {
                     .split('.')[0] + 'Z'
         }
 
-        return TimeControl.timeUI.updateTimes(
-            TimeControl.startTime,
-            TimeControl.endTime,
-            TimeControl.currentTime
-        )
+        // Emit event for UI elements to respond, instead of calling it directly
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('time:setRequested', {
+                startTime: TimeControl.startTime,
+                endTime: TimeControl.endTime,
+                currentTime: TimeControl.currentTime,
+            })
+        }
+
+        return true
     },
     setLayerTime: function (layer, startTime, endTime) {
         if (typeof layer == 'string') {
@@ -176,7 +236,8 @@ var TimeControl = {
                 layer.time.end
             )
 
-            if (layer.type == 'tile') {
+            const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+            if (isTileLayer) {
                 TimeControl.setLayerWmsParams(layer)
             }
         }
@@ -238,13 +299,65 @@ var TimeControl = {
         let changedUrl = null
         if (layer.url !== originalUrl) changedUrl = layer.url
 
-        if (layer.type === 'tile') {
+        // Check for both 'tile' and 'TileLayer' (case-insensitive comparison)
+        const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+
+        if (isTileLayer) {
             if (layer.time && layer.time.enabled === true) {
                 TimeControl.setLayerWmsParams(layer)
             }
             if (evenIfControlled === true || layer.controlled !== true) {
-                if (L_.layers.on[layer.name] || evenIfOff) {
-                    L_.layers.layer[layer.name].refresh(changedUrl)
+                const tileLayer = L_.layers.layer[layer.name]
+                // Check if layer is "on" in tracking OR if layer object exists (which means it's actually on the map)
+                const isLayerVisible = L_.layers.on[layer.name] || evenIfOff || (tileLayer && tileLayer !== false && tileLayer !== null)
+                if (isLayerVisible) {
+                    const timeConfig = layer.time || {};
+                    const deckOptions = {
+                        ...layer,
+                        timeEnabled: timeConfig.enabled === true,
+                        time: timeConfig.end ?? '',
+                        compositeTile: timeConfig.compositeTile ?? false,
+                        starttime: timeConfig.start ?? '',
+                        endtime: timeConfig.end ?? '',
+                        customTimes: timeConfig.customTimes ?? '',
+                        tileFormat: layer.tileformat || 'tms',
+                        timeFormat: timeConfig.format,
+                    }
+
+                    // Build the new resolved URL (e.g. for COG or STAC)
+                    let resolvedUrl = changedUrl != null && L_.getUrl ? L_.getUrl(layer.type, changedUrl, layer) : (changedUrl || layer.url)
+                    const splitColonLayerUrl = (changedUrl || layer.url || '').split(':')
+                    let splitColonType = undefined
+                    if (splitColonLayerUrl[1] != null && ['stac-collection', 'COG', 'titiler-url'].includes(splitColonLayerUrl[0])) {
+                        splitColonType = splitColonLayerUrl[0]
+                        deckOptions.splitColonType = splitColonType
+                        if (splitColonType === 'stac-collection') {
+                            resolvedUrl = L_.transformStacUrl(resolvedUrl, layer, 'tile')
+                        } else if (splitColonType === 'COG') {
+                            resolvedUrl = ServiceUrls.buildTiTilerCogTilesUrl(resolvedUrl, layer, {
+                                tileMatrixSet: layer.tileMatrixSet,
+                                bands: (!layer.cogExpression || layer.cogExpression.trim() === '') ? layer.cogBands : null,
+                                resampling: layer.cogResampling
+                            })
+                        } else if (splitColonType === 'titiler-url') {
+                            resolvedUrl = splitColonLayerUrl.slice(1).join(':')
+                            if (!F_.isUrlAbsolute(resolvedUrl)) {
+                                resolvedUrl = L_.missionPath + resolvedUrl
+                            }
+                        }
+                    }
+
+                    // TODO: Refactor this to push URL compilation and refreshing into the map engine adapters
+                    // so that TimeControl.js doesn't need to check Map_.engine.engineType === 'deckgl'
+                    // or rely on tileLayer.refresh().
+                    if (tileLayer && typeof tileLayer.refresh === 'function') {
+                        // Pass deckOptions to refresh so it updates this.options with new COG fields
+                        tileLayer.refresh(resolvedUrl, true, deckOptions)
+                    } else if (Map_.engine?.engineType === 'deckgl') {
+                        const newUrl = compileTileUrl(resolvedUrl, deckOptions)
+                        Map_.engine.updateLayer(layer.name, { url: newUrl })
+                        return true
+                    }
                 }
             }
         } else if (layer.type == 'velocity') {
@@ -458,7 +571,7 @@ var TimeControl = {
             if (
                 layer.time &&
                 layer.time.enabled === true &&
-                layer.variables?.dynamicExtent != true
+                layer.variables?.dynamicExtent !== true
             ) {
                 TimeControl.reloadLayer(layer)
                 reloadedLayers.push(layer.name)
@@ -515,12 +628,11 @@ var TimeControl = {
             }, 500)
         }
 
-        // Pan to followed feature after layers reload
-        if (TimeUI.followEnabled && TimeUI.followedFeature) {
-            // Add a small delay to ensure layers have finished loading
-            setTimeout(() => {
-                TimeUI.panToFollowedFeature()
-            }, 500)
+        // Emit event for TimeUI to handle follow feature
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('time:layersReloaded', {
+                reloadedLayers: reloadedLayers,
+            })
         }
 
         return reloadedLayers
@@ -540,7 +652,8 @@ var TimeControl = {
                     layer.time.end
                 )
                 updatedLayers.push(layer.name)
-                if (layer.type === 'tile') {
+                const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+                if (isTileLayer) {
                     TimeControl.setLayerWmsParams(layer)
                 }
             }
@@ -582,11 +695,20 @@ var TimeControl = {
                 ? utcFormat('%Y-%m-%dT%H:%M:%SZ')
                 : utcFormat(layer.time.format)
         const l = L_.layers.layer[layer.name]
+        const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
 
-        if (l != null && layer.type === 'tile') {
-            l.options.time = layerTimeFormat(Date.parse(layer.time.end))
-            l.options.starttime = layerTimeFormat(Date.parse(layer.time.start))
-            l.options.endtime = layerTimeFormat(Date.parse(layer.time.end))
+        if (l != null && isTileLayer) {
+            const formattedTime = layerTimeFormat(Date.parse(layer.time.end))
+            const formattedStart = layerTimeFormat(Date.parse(layer.time.start))
+
+            // Ensure options object exists (needed for middleware-based layers)
+            if (!l.options) {
+                l.options = {}
+            }
+
+            l.options.time = formattedTime
+            l.options.starttime = formattedStart
+            l.options.endtime = formattedTime
         }
     },
 }
@@ -636,6 +758,16 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
     TimeControl.currentTime = currentTime == null ? endTime : currentTime
     TimeControl.endTime = endTime
 
+    // Emit event for external listeners via Event Bus
+    if (window.mmgisAPI) {
+        window.mmgisAPI.emit('time:change', {
+            startTime: TimeControl.startTime,
+            endTime: TimeControl.endTime,
+            currentTime: TimeControl.currentTime,
+        })
+    }
+
+    // Keep existing subscriptions for backward compatibility
     if (L_?._timeChangeSubscriptions)
         Object.keys(L_._timeChangeSubscriptions).forEach((k) => {
             L_._timeChangeSubscriptions[k]({ startTime, currentTime, endTime })
@@ -654,18 +786,6 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
         TimeControl.updateLayersTime()
         TimeControl.reloadTimeLayers()
     }
-}
-
-function parseTime(t) {
-    if (t.toString().indexOf(':') == -1) {
-        return parseInt(t)
-    }
-    var s = t.split(':')
-    var seconds = +s[0].replace('-', '') * 60 * 60 + +s[1] * 60 + +s[2]
-    if (t.charAt(0) === '-') {
-        seconds = seconds * -1
-    }
-    return seconds
 }
 
 export default TimeControl

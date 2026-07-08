@@ -42,6 +42,7 @@ import Attributions from './Ancillary/Attributions'
 //import Swap from './Ancillary/Swap'
 import QueryURL from './Ancillary/QueryURL'
 import TimeControl from './Basics/TimeControl_/TimeControl'
+import TimeUI from './Basics/TimeControl_/TimeUI'
 import calls from '../pre/calls'
 import { mmgisAPI_, mmgisAPI } from './mmgisAPI/mmgisAPI'
 import { makeErrorScreen } from './LandingPage/LandingPage'
@@ -387,6 +388,13 @@ var essence = {
         //Make the time control
         TimeControl.init()
 
+        // Initialize TimeUI for desktop/legacy mode (not mobile, not modern mode)
+        const isModernMode = $('#modern-content').length > 0
+        if (!UserInterface_.isMobile && !isModernMode && L_.configData.time?.enabled === true) {
+            TimeUI.initialize()
+            TimeUI.make()
+        }
+
         Map_.init(essence.fina)
 
         //Now that the map is made
@@ -532,6 +540,11 @@ var essence = {
             Viewer_.fina(Map_)
             //Finalize the TimeControl
             TimeControl.fina()
+            //Finalize the TimeUI (if in legacy mode)
+            const isModernMode = $('#modern-content').length > 0
+            if (!UserInterface_.isMobile && !isModernMode && L_.configData.time?.enabled === true) {
+                TimeUI.fina()
+            }
             // Finalize the mmgisAPI
             mmgisAPI_.fina(Map_)
 
