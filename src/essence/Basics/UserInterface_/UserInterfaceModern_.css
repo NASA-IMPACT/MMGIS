@@ -72,6 +72,17 @@
     transition: width 0.3s cubic-bezier(0.2, 0, 0, 1), height 0.3s cubic-bezier(0.2, 0, 0, 1), flex 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
 
+/* Full-bleed left region: panels abut with no floating gap or rounded corners,
+   matching the portal design (rail flush to the screen edge and to the panel
+   beside it). The default floating margin/radius is kept for other regions. */
+.ui-region-left {
+    gap: 0;
+}
+.ui-region-left .ui-panel {
+    margin: 0;
+    border-radius: 0;
+}
+
 .ui-panel-header {
     background-color: var(--theme-color-primary, #005ea2);
     color: var(--theme-color-white, #ffffff);
