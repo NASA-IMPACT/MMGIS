@@ -19,6 +19,7 @@
 
 import {
     Deck,
+    MapView,
     FlyToInterpolator,
     LinearInterpolator,
     type PickingInfo,
@@ -93,6 +94,10 @@ interface BasemapInstance {
     getCenter(): { lat: number; lng: number }
     /** Return the current zoom level. */
     getZoom(): number
+    /** Return the current bearing (rotation) in degrees. */
+    getBearing(): number
+    /** Return the current pitch (tilt) in degrees. */
+    getPitch(): number
     /** Return the current visible bounds. */
     getBounds(): {
         getSouthWest(): { lat: number; lng: number }
@@ -248,6 +253,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             longitude: center.lng,
             latitude: center.lat,
             zoom: this._basemap!.getZoom(),
+            bearing: this._basemap!.getBearing(),
+            pitch: this._basemap!.getPitch(),
         }
         if (this._comparisonEnabled) this._syncComparisonCamera()
         this._emitEvent('moveend', this._viewState)
@@ -266,6 +273,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             longitude: center.lng,
             latitude: center.lat,
             zoom: this._basemap!.getZoom(),
+            bearing: this._basemap!.getBearing(),
+            pitch: this._basemap!.getPitch(),
         }
         if (this._comparisonEnabled) this._syncComparisonCamera()
     }
@@ -1141,6 +1150,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 width: '100%',
                 height: '100%',
                 controller: false,
+                // Match the wrapping basemap: render every world copy so the
+                // side layers fill the viewport when zoomed out past one world.
+                views: new MapView({ repeat: true }),
                 viewState: this._viewState,
                 layers: [],
             } as any)
