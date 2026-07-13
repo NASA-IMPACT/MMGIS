@@ -156,6 +156,7 @@ const NewMissionModal = (props) => {
 
     const config = {
       msv: {
+        view: [39, -98, 4],
         radius: {
           major: planetRadius.major,
           minor: planetRadius.minor,
@@ -165,7 +166,7 @@ const NewMissionModal = (props) => {
       },
     };
 
-    if (selectedEngine === "deckgl" && basemapProvider !== "none" && basemapStyle) {
+    if (basemapProvider !== "none" && basemapStyle) {
       config.msv.basemap = {
         provider: basemapProvider,
         style: basemapStyle,
@@ -341,13 +342,13 @@ const NewMissionModal = (props) => {
                 onChange={(e) => setBasemapProvider(e.target.value)}
                 label="Basemap"
               >
-                <MenuItem value="none">None (transparent background)</MenuItem>
+                <MenuItem value="none">None (no basemap)</MenuItem>
                 <MenuItem value="maplibre">MapLibre GL (open-source)</MenuItem>
                 <MenuItem value="mapbox">Mapbox GL (requires access token)</MenuItem>
               </Select>
             </FormControl>
             <Typography className={c.subtitle2}>
-              {`Optional vector-tile basemap rendered beneath deck.gl layers. Can be changed later.`}
+              {`Optional vector-tile basemap rendered beneath map layers. Can be changed later.`}
             </Typography>
             {basemapProvider !== "none" && (
               <>

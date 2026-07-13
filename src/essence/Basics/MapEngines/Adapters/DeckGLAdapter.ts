@@ -130,6 +130,8 @@ interface BasemapInstance {
     off(type: string, handler: (...args: unknown[]) => void): unknown
     /** Recalculate the map size from its container element. */
     resize(): void
+    /** Switch the map to a different style URL at runtime. */
+    setStyle(styleUrl: string): unknown
 }
 
 /**
@@ -411,6 +413,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     getBasemap(): BasemapInstance | null {
         return this._basemap
+    }
+
+    setBasemapStyle(styleUrl: string): void {
+        if (this._basemap) {
+            this._basemap.setStyle(styleUrl)
+        }
     }
 
     getContainer(): HTMLElement {
@@ -1262,10 +1270,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             onClick: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureClickHandler?.(pickInfoToResult(info))
+                this._emitClick(info)
             },
             onHover: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureHoverHandler?.(pickInfoToResult(info))
+                this._emitMouseMove(info)
             },
         } as any)
     }
@@ -1331,10 +1341,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             onClick: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureClickHandler?.(pickInfoToResult(info))
+                this._emitClick(info)
             },
             onHover: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureHoverHandler?.(pickInfoToResult(info))
+                this._emitMouseMove(info)
             },
         })
 
@@ -1432,6 +1444,34 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _emitEvent(name: string, data?: unknown): void {
         this._eventListeners.get(name)?.forEach((h) => h(data as PickingInfo))
+    }
+
+    private _emitClick(info: PickingInfo): void {
+        if (!info?.coordinate) return
+        this._eventListeners.get('click')?.forEach(
+            (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
+        )
+    }
+
+    private _emitMouseMove(info: PickingInfo): void {
+        if (!info?.coordinate) return
+        this._eventListeners.get('mousemove')?.forEach(
+            (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
+        )
+    }
+
+    private _buildNormalizedPointerEvent(info: PickingInfo): Record<string, unknown> {
+        const lat = info.coordinate![1]
+        const lng = info.coordinate![0]
+        return {
+            lat,
+            lng,
+            latlng: { lat, lng },
+            containerPoint:
+                info.x != null && info.y != null
+                    ? { x: info.x, y: info.y }
+                    : undefined,
+        }
     }
 }
 

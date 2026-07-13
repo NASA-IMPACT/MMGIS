@@ -1,0 +1,58 @@
+{
+    "defaultIcon": "layers",
+    "description": "Floating map control bar: basemap switcher, search, measure, zoom.",
+    "descriptionFull": {
+        "title": "A floating horizontal toolbar rendered over the map. Each of the four features can be enabled or disabled independently."
+    },
+    "hasVars": true,
+    "name": "MapControl",
+    "toolbarPriority": 5,
+    "separatedTool": true,
+    "paths": {
+        "MapControlTool": "essence/Tools/MapControl/MapControlTool"
+    },
+    "metadata": {
+        "icon": "layers",
+        "modernLayoutSupport": true
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.showBasemapSwitcher",
+                        "name": "Basemap switcher",
+                        "description": "Show the basemap style selector button.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showSearch",
+                        "name": "Search",
+                        "description": "Show the geocode search button.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showMeasure",
+                        "name": "Measure",
+                        "description": "Show the distance measure button.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showZoom",
+                        "name": "Zoom",
+                        "description": "Show the zoom in / zoom out buttons.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
+                    }
+                ]
+            }
+        ]
+    }
+}

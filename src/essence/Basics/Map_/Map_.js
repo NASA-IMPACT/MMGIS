@@ -53,6 +53,47 @@ const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
 
+let _basemapStyles = []
+let _basemapActiveIndex = 0
+
+let _mapClickHandler = null
+let _mapMouseMoveHandler = null
+
+function _resolveBasemapStyles(basemapConfig, engineType) {
+    const isLeaflet = engineType === MAP_ENGINE.LEAFLET
+
+    const MAPBOX_DEFAULTS = [
+        { name: 'Streets', style: 'mapbox://styles/mapbox/streets-v12' },
+        { name: 'Satellite', style: 'mapbox://styles/mapbox/satellite-streets-v12' },
+        { name: 'Outdoors', style: 'mapbox://styles/mapbox/outdoors-v12' },
+        { name: 'Light', style: 'mapbox://styles/mapbox/light-v11' },
+        { name: 'Dark', style: 'mapbox://styles/mapbox/dark-v11' },
+    ]
+
+    const MAPLIBRE_DEFAULTS_DECKGL = [
+        { name: 'Streets', style: 'https://tiles.openfreemap.org/styles/liberty' },
+        { name: 'Light', style: 'https://tiles.openfreemap.org/styles/positron' },
+        { name: 'Dark', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' },
+    ]
+    const MAPLIBRE_DEFAULTS_LEAFLET = [
+        { name: 'Streets', style: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' },
+        { name: 'Light', style: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png' },
+        { name: 'Dark', style: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png' },
+        { name: 'Terrain', style: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png' },
+    ]
+
+    const maplibreDefaults = isLeaflet ? MAPLIBRE_DEFAULTS_LEAFLET : MAPLIBRE_DEFAULTS_DECKGL
+
+    const styles =
+        basemapConfig.styles && basemapConfig.styles.length > 0
+            ? [...basemapConfig.styles]
+            : basemapConfig.provider === 'mapbox'
+                ? [...MAPBOX_DEFAULTS]
+                : [...maplibreDefaults]
+
+    return styles
+}
+
 let Map_ = {
     /** The native map object (L.Map for Leaflet, Deck for deck.gl). Kept for backward compatibility with existing callers. */
     map: null,
@@ -279,6 +320,56 @@ let Map_ = {
                     engine.removeOverlay(id)
                     return true
                 }),
+                window.mmgisAPI.provide('map:setBasemap', (styleName) => {
+                    const index = _basemapStyles.findIndex((s) => s.name === styleName)
+                    if (index === -1) {
+                        console.warn(`[map:setBasemap] No basemap style found with name: "${styleName}"`)
+                        return false
+                    }
+                    const selectedStyle = _basemapStyles[index]
+                    if (Map_.engine && typeof Map_.engine.setBasemapStyle === 'function') {
+                        Map_.engine.setBasemapStyle(selectedStyle.style)
+                    }
+                    _basemapActiveIndex = index
+                    return true
+                }),
+                window.mmgisAPI.provide('map:getBasemap', () => {
+                    if (_basemapStyles.length === 0) return null
+                    return { ..._basemapStyles[_basemapActiveIndex] }
+                }),
+                window.mmgisAPI.provide('map:getBasemapStyles', () => {
+                    return [..._basemapStyles]
+                }),
+                window.mmgisAPI.provide('map:zoomIn', () => {
+                    if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
+                    const current = Map_.engine.getZoom()
+                    const max = typeof Map_.engine.getMaxZoom === 'function'
+                        ? Map_.engine.getMaxZoom()
+                        : Infinity
+                    const next = Math.min(current + 1, max)
+                    if (next === current) return false
+                    Map_.engine.setZoom(next)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:zoomOut', () => {
+                    if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
+                    const current = Map_.engine.getZoom()
+                    const min = typeof Map_.engine.getMinZoom === 'function'
+                        ? Map_.engine.getMinZoom()
+                        : -Infinity
+                    const next = Math.max(current - 1, min)
+                    if (next === current) return false
+                    Map_.engine.setZoom(next)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:latLngToContainerPoint', (latlng) => {
+                    if (!Map_.engine || typeof Map_.engine.latLngToContainerPoint !== 'function') {
+                        return null
+                    }
+                    if (!latlng || latlng.lat == null || latlng.lng == null) return null
+                    const p = Map_.engine.latLngToContainerPoint(latlng)
+                    return p ? { x: p.x, y: p.y } : null
+                }),
             ]
 
             // Engine event re-emits — translate adapter events onto the bus
@@ -321,6 +412,25 @@ let Map_ = {
                 window.mmgisAPI.provide('map:comparison:getState',
                     () => MapComparison.getState()),
             )
+            if (Map_.engine && typeof Map_.engine.on === 'function') {
+                if (_mapClickHandler && typeof Map_.engine.off === 'function') {
+                    Map_.engine.off('click', _mapClickHandler)
+                }
+                _mapClickHandler = (e) => {
+                    if (!e || e.lat == null || e.lng == null) return
+                    window.mmgisAPI.emit('map:click', { lat: e.lat, lng: e.lng })
+                }
+                Map_.engine.on('click', _mapClickHandler)
+
+                if (_mapMouseMoveHandler && typeof Map_.engine.off === 'function') {
+                    Map_.engine.off('mousemove', _mapMouseMoveHandler)
+                }
+                _mapMouseMoveHandler = (e) => {
+                    if (!e || e.lat == null || e.lng == null) return
+                    window.mmgisAPI.emit('map:mousemove', { lat: e.lat, lng: e.lng })
+                }
+                Map_.engine.on('mousemove', _mapMouseMoveHandler)
+            }
         }
 
         // Initialise comparison controller with the active engine so it can
@@ -386,6 +496,15 @@ let Map_ = {
         }
 
         buildToolBar()
+
+        const basemapConfig = L_.configData?.msv?.basemap
+        if (basemapConfig && basemapConfig.provider && basemapConfig.provider !== 'none') {
+            _basemapStyles = _resolveBasemapStyles(basemapConfig, engineType)
+            _basemapActiveIndex = 0
+            _basemapStyles.forEach(function (s, i) {
+                if (s.style === basemapConfig.style) _basemapActiveIndex = i
+            })
+        }
 
         TimeControl.updateLayersTime()
     },

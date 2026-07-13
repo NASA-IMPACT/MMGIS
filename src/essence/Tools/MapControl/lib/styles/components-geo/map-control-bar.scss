@@ -1,0 +1,74 @@
+.blocks-map-control {
+    position: absolute;
+    top: 18px;
+    // right is set via inline style — dynamic offset from the top-bar chrome.
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    pointer-events: auto;
+    font-family: var(--theme-font-ui);
+    z-index: 1002;
+
+    &__bar {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        gap: var(--theme-spacing-1, 0.5rem);
+        white-space: nowrap;
+    }
+
+    &__group {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        height: 36px;
+        overflow: hidden;
+        background: var(--theme-color-white, #ffffff);
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-md, 0.25rem);
+        box-shadow: 0 1px 3px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    }
+
+    &__btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 100%;
+        padding: 0;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        background: transparent;
+        color: var(--theme-color-ink, #1b1b1b);
+        transition: background 0.12s ease, color 0.12s ease;
+
+        &:hover {
+            background: var(--theme-color-base-lightest, #f1f3f6);
+        }
+
+        &--active {
+            color: var(--theme-color-primary, #0e7482);
+            background: var(--theme-color-base-lighter, #dfe1e2);
+        }
+    }
+
+    &__divider {
+        width: 1px;
+        height: 24px;
+        flex-shrink: 0;
+        background: var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    &__hint {
+        margin-top: var(--theme-spacing-05, 0.25rem);
+        align-self: flex-end;
+        padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
+        background: var(--theme-color-white, #ffffff);
+        border-radius: var(--theme-radius-md, 0.25rem);
+        box-shadow: 0 2px 8px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        color: var(--theme-color-base-dark, #565c65);
+    }
+}
