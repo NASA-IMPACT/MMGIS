@@ -3,6 +3,7 @@ const path = require("path");
 
 const logger = require("./logger");
 const { isLean } = require("./Backend/Utils/deploymentMode");
+const { injectMetadata } = require("../scripts/lib/tool-metadata-seed");
 
 function updateTools() {
   let tools = {};
@@ -147,11 +148,25 @@ function updateTools() {
       return obj;
     }, {});
 
-  // Build dynamic toolConfigs.json file for configure page
+  // Build dynamic toolConfigs.json file for configure page.
+  // The Configure Tools page reads this to render each tool's editor. We inject
+  // the standard modern-layout "metadata" block + editor section here (into a
+  // deep copy) rather than duplicating it across every tool's source
+  // config.json — so the section stays DRY and updates in one place. The
+  // runtime bundle (src/pre/tools.js, generated below) keeps the un-injected
+  // tools so it stays lean; the modern layout reads metadata from the mission
+  // config, not from this template. "Kinds" is a pseudo-tool the Tools page
+  // skips, so it is copied through without injection.
+  const toolsForConfigure = {};
+  for (const t in tools) {
+    const clone = JSON.parse(JSON.stringify(tools[t]));
+    toolsForConfigure[t] = t === "Kinds" ? clone : injectMetadata(clone, t);
+  }
+
   try {
     fs.writeFileSync(
       "./configure/public/toolConfigs.json",
-      JSON.stringify(tools)
+      JSON.stringify(toolsForConfigure)
     );
     logger(
       "success",

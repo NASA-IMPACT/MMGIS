@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 
 import {
@@ -6,6 +6,7 @@ import {
   updateToolInConfiguration,
   getIn,
   setIn,
+  seedToolMetadata,
 } from "../../../../../core/utils";
 
 import { setModal, setConfiguration } from "../../../../../core/ConfigureStore";
@@ -180,6 +181,29 @@ const ToolModal = (props) => {
 
   const dispatch = useDispatch();
 
+  // When opening for an already-active tool that predates metadata support,
+  // backfill its metadata from the tool's declared defaults so the editor
+  // shows real values and they persist to the mission config.
+  useEffect(() => {
+    if (!open) return;
+    const activeTool = getToolFromConfiguration(toolName, configuration);
+    if (
+      activeTool &&
+      activeTool.name != null &&
+      activeTool.metadata == null &&
+      toolConfig?.metadata
+    ) {
+      const nextConfiguration = JSON.parse(JSON.stringify(configuration));
+      updateToolInConfiguration(
+        toolName,
+        nextConfiguration,
+        ["metadata"],
+        seedToolMetadata(null, toolConfig)
+      );
+      dispatch(setConfiguration(nextConfiguration));
+    }
+  }, [open, toolName]);
+
   const handleClose = () => {
     const nextConfiguration = JSON.parse(JSON.stringify(configuration));
     nextConfiguration.tools.forEach((currentTool, idx) => {
@@ -306,6 +330,7 @@ const ToolModal = (props) => {
                           name: toolName,
                           icon: toolConfig.defaultIcon,
                           js: Object.keys(toolConfig.paths)[0],
+                          metadata: seedToolMetadata(null, toolConfig),
                         });
                       }
                       dispatch(setConfiguration(nextConfiguration));
@@ -339,6 +364,7 @@ const ToolModal = (props) => {
                     name: toolName,
                     icon: e.target.value,
                     js: Object.keys(toolConfig.paths)[0],
+                    metadata: seedToolMetadata(null, toolConfig),
                   });
                 }
                 dispatch(setConfiguration(nextConfiguration));
