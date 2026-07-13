@@ -5,6 +5,25 @@
 
 /* Modern UI uses theme tokens directly - no local overrides needed */
 
+/* Plugin-level visibility control (show/hide API and startHidden config).
+ * Applied to individual .ui-tool-card elements, not the panel itself,
+ * so other tools sharing the same panel are not affected. */
+.ui-tool-card.plugin-hidden {
+    display: none !important;
+}
+
+/* Same visibility control applied to a tabbed panel's tab button, so a
+ * hidden/unloaded tool's tab isn't left clickable with nothing behind it. */
+.ui-panel-tab.plugin-hidden {
+    display: none !important;
+}
+
+/* Same visibility control applied to an iconified-panel's icon-tray button,
+ * so a hidden/unloaded tool's icon isn't left clickable with nothing behind it. */
+.ui-panel-icon-btn.plugin-hidden {
+    display: none !important;
+}
+
 /* Full screen grid layout */
 .ui-modern-grid {
     display: grid;
