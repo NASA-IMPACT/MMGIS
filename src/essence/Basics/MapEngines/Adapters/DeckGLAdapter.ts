@@ -19,6 +19,7 @@
 
 import {
     Deck,
+    MapView,
     FlyToInterpolator,
     LinearInterpolator,
     type PickingInfo,
@@ -29,7 +30,7 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { Map as MaplibreGLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import type { IMapEngine } from '../IMapEngine'
+import type { IMapEngine, ComparisonConfig } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
 import type { MapEngineType } from '../types/engine'
 import type { LatLng, LatLngLike, BoundsLike, PointLike } from '../types/geometry'
@@ -93,6 +94,10 @@ interface BasemapInstance {
     getCenter(): { lat: number; lng: number }
     /** Return the current zoom level. */
     getZoom(): number
+    /** Return the current bearing (rotation) in degrees. */
+    getBearing(): number
+    /** Return the current pitch (tilt) in degrees. */
+    getPitch(): number
     /** Return the current visible bounds. */
     getBounds(): {
         getSouthWest(): { lat: number; lng: number }
@@ -213,6 +218,30 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /** Registry of anchored HTML overlays (id -> teardown function). */
     private _overlays = new Map<string, () => void>()
 
+    // ── Comparison / swipe state ──────────────────────────────────────────────
+    // Comparison renders each side into its own dedicated `Deck` canvas stacked
+    // over the primary map. The primary keeps its basemap but hides its data
+    // layers (see `_syncLayers`); each side canvas renders only its assigned
+    // layers and is revealed by a CSS clip driven by the divider position. Both
+    // side canvases follow the primary camera (controller-less, view-only) so the
+    // basemap + data stay aligned while the user pans/zooms the primary map.
+    private _comparisonEnabled = false
+    private _comparisonDividerPos = 0.5
+    private _comparisonLeftIds: string[] = []
+    private _comparisonRightIds: string[] = []
+    private _comparisonLeftDeck: Deck | null = null
+    private _comparisonRightDeck: Deck | null = null
+    private _comparisonLeftDiv: HTMLElement | null = null
+    private _comparisonRightDiv: HTMLElement | null = null
+    /**
+     * Watches the container for size changes while comparison is active so the
+     * side canvases redraw and the clip stays aligned. `invalidateSize()` isn't
+     * reliably called on every layout change (e.g. the modern UI's docked-panel
+     * resizes only dispatch a synthetic `window` resize event), so this observes
+     * the container directly instead of depending on that call chain.
+     */
+    private _comparisonResizeObserver: ResizeObserver | null = null
+
     /**
      * Bound handler kept as a class field so it can be removed cleanly in {@link destroy}.
      * Syncs `_viewState` from the basemap and emits the engine-level `'moveend'` event.
@@ -224,7 +253,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             longitude: center.lng,
             latitude: center.lat,
             zoom: this._basemap!.getZoom(),
+            bearing: this._basemap!.getBearing(),
+            pitch: this._basemap!.getPitch(),
         }
+        if (this._comparisonEnabled) this._syncComparisonCamera()
         this._emitEvent('moveend', this._viewState)
     }
 
@@ -241,7 +273,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             longitude: center.lng,
             latitude: center.lat,
             zoom: this._basemap!.getZoom(),
+            bearing: this._basemap!.getBearing(),
+            pitch: this._basemap!.getPitch(),
         }
+        if (this._comparisonEnabled) this._syncComparisonCamera()
     }
 
     /**
@@ -315,6 +350,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             this._terraDraw = null
         }
         this._drawingShape = null
+
+        this._comparisonEnabled = false
+        this._destroyComparisonCanvases()
 
         if (this._isOverlayMode) {
             if (this._basemap) {
@@ -708,6 +746,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             return
         }
         this._deck?.redraw('invalidateSize')
+        if (this._comparisonEnabled) {
+            this._applyComparisonClip()
+            this._syncComparisonCamera()
+        }
     }
 
     getSize(): PointLike {
@@ -1048,6 +1090,156 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return this.projectCoordinates(latLng)
     }
 
+    // ── Comparison / swipe ────────────────────────────────────────────────────
+
+    /**
+     * Enable (or reconfigure) side-by-side swipe comparison mode.
+     *
+     * Each side renders into its own dedicated `Deck` canvas stacked over the
+     * primary map; the primary keeps its basemap but hides its data layers. A
+     * CSS clip driven by the divider reveals the left canvas on the left of the
+     * divider and the right canvas on the right. Both side canvases are camera
+     * followers (no controller) locked to the primary map's view, so the shared
+     * basemap and each side's layers stay aligned while panning/zooming.
+     *
+     * Works in both standalone and overlay (basemap) modes. Calling again while
+     * already enabled just re-renders the layer sets (used for live side swaps).
+     */
+    enableComparison(config: ComparisonConfig): void {
+        this._comparisonLeftIds = [...config.leftLayerIds]
+        this._comparisonRightIds = [...config.rightLayerIds]
+
+        if (!this._comparisonEnabled) {
+            this._comparisonEnabled = true
+            this._createComparisonCanvases()
+            // Hide the primary map's data layers — comparison layers now render
+            // in the side canvases and everything else is hidden by request.
+            this._syncLayers()
+        }
+
+        this._renderComparisonLayers()
+        this._applyComparisonClip()
+        this._syncComparisonCamera()
+    }
+
+    /** Disable comparison mode and restore the normal single view. */
+    disableComparison(): void {
+        if (!this._comparisonEnabled) return
+        this._comparisonEnabled = false
+        this._comparisonLeftIds = []
+        this._comparisonRightIds = []
+        this._destroyComparisonCanvases()
+        // Restore the primary map's data layers.
+        this._syncLayers()
+    }
+
+    /**
+     * Move the comparison divider to `pos` (0–1 fraction of container width).
+     * Only re-applies the CSS clip — no deck re-render needed.
+     */
+    setComparisonDivider(pos: number): void {
+        this._comparisonDividerPos = Math.max(0, Math.min(1, pos))
+        if (this._comparisonEnabled) this._applyComparisonClip()
+    }
+
+    /** Returns true when comparison mode is currently active. */
+    isComparisonEnabled(): boolean {
+        return this._comparisonEnabled
+    }
+
+    /**
+     * Create the two side canvases (each a controller-less `Deck` in an absolutely
+     * positioned, pointer-events-transparent div) and start observing the
+     * container for resizes so the canvases redraw and the clip stays aligned.
+     */
+    private _createComparisonCanvases(): void {
+        const makeCanvas = (): { div: HTMLElement; deck: Deck } => {
+            const div = document.createElement('div')
+            // Full-size overlay; pointer-events:none so pan/zoom passes through to
+            // the primary map underneath. z-index sits above the primary canvas
+            // but below the MapComparison divider (z-index 1000).
+            div.style.cssText =
+                'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;'
+            this._container.appendChild(div)
+            const deck = new Deck({
+                parent: div,
+                width: '100%',
+                height: '100%',
+                controller: false,
+                // Match the wrapping basemap: render every world copy so the
+                // side layers fill the viewport when zoomed out past one world.
+                views: new MapView({ repeat: true }),
+                viewState: this._viewState,
+                layers: [],
+            } as any)
+            return { div, deck }
+        }
+
+        const left = makeCanvas()
+        this._comparisonLeftDiv = left.div
+        this._comparisonLeftDeck = left.deck
+
+        const right = makeCanvas()
+        this._comparisonRightDiv = right.div
+        this._comparisonRightDeck = right.deck
+
+        this._comparisonResizeObserver = new ResizeObserver(() => {
+            if (!this._comparisonEnabled) return
+            this._applyComparisonClip()
+            this._syncComparisonCamera()
+        })
+        this._comparisonResizeObserver.observe(this._container)
+    }
+
+    /** Finalize both side canvases and remove their DOM nodes. */
+    private _destroyComparisonCanvases(): void {
+        this._comparisonResizeObserver?.disconnect()
+        this._comparisonResizeObserver = null
+        this._comparisonLeftDeck?.finalize()
+        this._comparisonLeftDeck = null
+        this._comparisonRightDeck?.finalize()
+        this._comparisonRightDeck = null
+        this._comparisonLeftDiv?.remove()
+        this._comparisonLeftDiv = null
+        this._comparisonRightDiv?.remove()
+        this._comparisonRightDiv = null
+    }
+
+    /**
+     * Render each side's layer set into its canvas. Looks up the live deck layer
+     * for each requested id in `_layers` and clones it so the side canvas owns an
+     * independent instance (the originals stay untouched for restore on disable).
+     * Unknown ids (e.g. a layer that isn't currently on) are skipped.
+     */
+    private _renderComparisonLayers(): void {
+        const clonesFor = (ids: string[]): Layer[] =>
+            ids
+                .map((id) => this._layers.get(id))
+                .filter((l): l is Layer => l != null)
+                .map((l) => l.clone({}) as Layer)
+
+        this._comparisonLeftDeck?.setProps({ layers: clonesFor(this._comparisonLeftIds) } as any)
+        this._comparisonRightDeck?.setProps({ layers: clonesFor(this._comparisonRightIds) } as any)
+    }
+
+    /**
+     * Reveal the left canvas over `[0, pos]` and the right canvas over `[pos, 1]`
+     * via CSS clip. Percentages keep the split proportional across resizes.
+     */
+    private _applyComparisonClip(): void {
+        const pct = this._comparisonDividerPos * 100
+        if (this._comparisonLeftDiv)
+            this._comparisonLeftDiv.style.clipPath = `inset(0 ${100 - pct}% 0 0)`
+        if (this._comparisonRightDiv)
+            this._comparisonRightDiv.style.clipPath = `inset(0 0 0 ${pct}%)`
+    }
+
+    /** Push the primary camera's current view state to both side canvases. */
+    private _syncComparisonCamera(): void {
+        this._comparisonLeftDeck?.setProps({ viewState: this._viewState } as any)
+        this._comparisonRightDeck?.setProps({ viewState: this._viewState } as any)
+    }
+
     /**
      * Initialise a standalone `Deck` instance (no basemap).
      * Called by {@link init} when `options.basemap` is absent.
@@ -1064,6 +1256,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 const clamped = this._clampToMaxBounds(viewState)
                 this._viewState = clamped
                 this._deckSetProps({ viewState: clamped })
+                if (this._comparisonEnabled) this._syncComparisonCamera()
                 this._emitEvent('moveend', clamped)
             },
             onClick: (info: PickingInfo) => {
@@ -1197,10 +1390,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * - Standalone mode: `_deck.setProps({ layers })` — direct deck.gl update.
      */
     private _syncLayers(): void {
-        // DeckGL expects new layer instances to trigger a proper re-render and re-order.
-        // Since we manage layers imperatively, we clone them here to ensure DeckGL
-        // correctly detects changes in the layers array and their drawing order.
-        const layers = [...this._layers.values()].map(layer => layer.clone({}))
+        // While comparison is active the primary map shows basemap only — its
+        // data layers are hidden and rendered in the side canvases instead.
+        const layers = this._comparisonEnabled ? [] : [...this._layers.values()]
         if (this._isOverlayMode) {
             this._overlay?.setProps({ layers })
         } else {
