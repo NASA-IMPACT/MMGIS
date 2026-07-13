@@ -1,0 +1,26 @@
+{
+    "defaultIcon": "compare-horizontal",
+    "description": "Swipe-compare two layers with a draggable divider.",
+    "descriptionFull": {
+        "title": "A comparison tool that reveals one layer against another behind a draggable divider on the map. Entered contextually from a layer's three-dots (kebab) menu via 'Compare layer', then pick a second layer to compare. Completely independent: it drives the core swipe capability and reads layers purely through the mmgisAPI event bus.",
+        "example": {}
+    },
+    "hasVars": false,
+    "name": "Comparison",
+    "toolbarPriority": 7,
+    "width": 350,
+    "height": 0,
+    "paths": {
+        "ComparisonTool": "essence/Tools/Comparison/ComparisonTool"
+    },
+    "metadata": {
+        "icon": "compare-horizontal",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": ["left", "right"],
+        "preferredPosition": "right",
+        "modernLayoutSupport": true,
+        "startUnloaded": true,
+        "width": 350,
+        "height": 0
+    }
+}

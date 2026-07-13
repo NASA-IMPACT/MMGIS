@@ -1,0 +1,242 @@
+// Comparison plugin — panel (Disasters Portal design, Figma 7318-21979).
+//
+// Fills whatever container the modern layout mounts it into; the layout owns
+// the panel's outer position and size. Colors, spacing, and type come from the
+// disasters theme's exported CSS custom properties (dist/disasters.css →
+// var(--theme-*)), with the Figma pixel values as fallbacks so it renders
+// correctly before the theme bundle loads. No Sass theme coupling.
+
+.blocks-comparison {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+
+    background: var(--theme-color-white, #ffffff);
+    color: var(--theme-color-primary-dark, #0d313d);
+    font-family: var(--theme-font-body, 'Public Sans', system-ui, sans-serif);
+
+    * {
+        box-sizing: border-box;
+    }
+
+    // ── Header ──────────────────────────────────────────────────────────────
+    &__header {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 40px;
+        padding: 10px 10px;
+        border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    &__brand {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 8px);
+        min-width: 0;
+    }
+
+    &__brand-icon {
+        flex: 0 0 auto;
+        display: block;
+        width: 24px;
+        height: 24px;
+        color: var(--theme-color-primary-dark, #0d313d);
+    }
+
+    &__brand-title {
+        font-size: 16px;
+        font-weight: var(--theme-font-weight-semibold, 600);
+        color: var(--theme-color-primary-dark, #0d313d);
+    }
+
+    &__header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    &__exit {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px var(--theme-spacing-105, 12px);
+        background: var(--theme-color-primary, #0e7482);
+        border: 0;
+        color: var(--theme-color-white, #ffffff);
+        font-family: inherit;
+        font-size: 10px;
+        font-weight: var(--theme-font-weight-semibold, 600);
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        cursor: pointer;
+
+        &:hover {
+            background: var(--theme-color-primary-dark, #0d313d);
+        }
+    }
+
+    &__collapse {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        background: none;
+        border: 0;
+        cursor: pointer;
+        color: var(--theme-color-base-dark, #565c65);
+        line-height: 1;
+
+        &:hover {
+            color: var(--theme-color-primary-dark, #0d313d);
+        }
+    }
+
+    // ── Body ────────────────────────────────────────────────────────────────
+    &__body {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        padding: 10px 10px;
+    }
+
+    // ── Tab toggle ──────────────────────────────────────────────────────────
+    &__tabs {
+        display: flex;
+        width: 100%;
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: 2px;
+        overflow: hidden;
+    }
+
+    &__tab {
+        flex: 1 1 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 10px var(--theme-spacing-105, 12px);
+        min-height: 65px;
+        background: var(--theme-color-white, #ffffff);
+        border: 0;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: var(--theme-font-weight-semibold, 600);
+        color: var(--theme-color-primary-dark, #0d313d);
+
+        & + & {
+            border-left: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        }
+
+        &--active {
+            background: var(--theme-color-base-lightest, #f1f3f6);
+        }
+
+        &--disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+    }
+
+    // ── Side fields ─────────────────────────────────────────────────────────
+    &__field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-1, 8px);
+        width: 100%;
+    }
+
+    &__field-label {
+        font-size: 12px;
+        font-weight: var(--theme-font-weight-semibold, 600);
+        color: var(--theme-color-base-dark, #565c65);
+    }
+
+    &__select-wrapper {
+        position: relative;
+        width: 100%;
+    }
+
+    &__select {
+        width: 100%;
+        height: 36px;
+        padding: 8px 32px 8px var(--theme-spacing-105, 12px);
+        appearance: none;
+        -webkit-appearance: none;
+        background: var(--theme-color-base-lightest, #f1f3f6);
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: 2px;
+        font-family: inherit;
+        font-size: 16px;
+        font-weight: var(--theme-font-weight-semibold, 600);
+        color: var(--theme-color-primary-dark, #0d313d);
+        cursor: pointer;
+
+        &:has(option[value='']:checked) {
+            color: var(--theme-color-base, #71767a);
+        }
+    }
+
+    &__select-caret {
+        position: absolute;
+        top: 50%;
+        right: 8px;
+        transform: translateY(-50%);
+        pointer-events: none;
+        color: var(--theme-color-base-dark, #565c65);
+    }
+
+    // ── Action row ──────────────────────────────────────────────────────────
+    &__actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+    }
+
+    &__actions-group {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 8px);
+    }
+
+    &__action-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 4px var(--theme-spacing-105, 12px);
+        border-radius: 2px;
+        cursor: pointer;
+        font-family: inherit;
+        background: var(--theme-color-white, #ffffff);
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        color: var(--theme-color-primary-dark, #0d313d);
+
+        &--swap {
+            color: var(--theme-color-primary-dark, #0d313d);
+
+            &:hover:not(:disabled) {
+                background: var(--theme-color-base-lightest, #f1f3f6);
+            }
+        }
+
+        &--mode.blocks-comparison__action-btn--active {
+            background: var(--theme-color-primary-dark, #0d313d);
+            border-color: var(--theme-color-primary-dark, #0d313d);
+            color: var(--theme-color-white, #ffffff);
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+    }
+}
