@@ -9,7 +9,7 @@
  */
 
 import type { Feature, FeatureCollection } from 'geojson'
-import { slug } from './aoiHelpers'
+import { slug } from './adapters/slug'
 
 declare const require: {
     context: (
