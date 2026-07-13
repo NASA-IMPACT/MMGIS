@@ -1754,6 +1754,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'tile',
             url: layerUrl,
+            tileformat: tileFormat,
             opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),

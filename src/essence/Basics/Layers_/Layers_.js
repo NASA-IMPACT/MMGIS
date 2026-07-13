@@ -217,6 +217,14 @@ const L_ = {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true
                 }),
+                // In-memory layer add/remove (not persisted; lost on reload).
+                // layerObj requires { name, type, ... }. See mmgisAPI.addLayer.
+                window.mmgisAPI.provide('layers:addLayer', (layerObj) =>
+                    window.mmgisAPI.addLayer(layerObj)
+                ),
+                window.mmgisAPI.provide('layers:removeLayer', (layerUUID) =>
+                    window.mmgisAPI.removeLayer(layerUUID)
+                ),
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
@@ -424,7 +432,11 @@ const L_ = {
                 nextUrl = `/${nextUrl}`
             }
         }
-        if (process.env.NODE_ENV === 'development' && F_.isUrlAbsolute(nextUrl)) {
+        if (
+            process.env.NODE_ENV === 'development' &&
+            process.env.ENABLE_CORS_PROXY === 'true' &&
+            F_.isUrlAbsolute(nextUrl)
+        ) {
             try {
                 if (new URL(nextUrl).origin !== window.location.origin) {
                     const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
@@ -3359,12 +3371,10 @@ const L_ = {
             await L_.removeLayerFromLayersData(layerName)
         }
 
-        if (ToolController_.activeToolName === 'LayersTool') {
-            const layersTool = ToolController_.getTool('LayersTool')
-            if (layersTool.destroy && layersTool.make) {
-                layersTool.destroy()
-                layersTool.make()
-            }
+        // Notify subscribers (e.g. the Layers panel) that the layer list
+        // changed, so they rebuild. Works in classic and modern layouts.
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('layers:listChanged')
         }
     },
     addLayerToLayersData: async function (layerName) {
