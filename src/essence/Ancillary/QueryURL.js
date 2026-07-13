@@ -4,6 +4,7 @@ import F_ from '../Basics/Formulae_/Formulae_'
 import L_ from '../Basics/Layers_/Layers_'
 import T_ from '../Basics/ToolController_/ToolController_'
 import calls from '../../pre/calls'
+import { isStaticBuild } from '../../pre/capabilities'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import TimeUI from '../Basics/TimeControl_/TimeUI'
 
@@ -50,7 +51,10 @@ var QueryURL = {
             L_.FUTURES.mapView = [
                 parseFloat(urlMapLat),
                 parseFloat(urlMapLon),
-                urlMapZoom !== false ? parseInt(urlMapZoom) : null,
+                // parseFloat, not parseInt: the modern map zooms fractionally and
+                // truncation visibly changes the restored view (classic Leaflet
+                // zooms are integers either way).
+                urlMapZoom !== false ? parseFloat(urlMapZoom) : null,
             ]
         }
 
@@ -277,8 +281,10 @@ var QueryURL = {
     tools
       "tools=camp$1.3.4,"
     */
+    // Builds and returns the full, self-contained view URL synchronously. This
+    // is the canonical share-link method (exposed publicly via
+    // mmgisAPI.writeCoordinateURL). It makes no backend call.
     writeCoordinateURL: function (
-        shortenURL = true,
         mapLon,
         mapLat,
         mapZoom,
@@ -287,12 +293,6 @@ var QueryURL = {
         globeZoom
     ) {
         L_.Viewer_.getLocation()
-
-        var callback
-        if (typeof mapLon === 'function') {
-            callback = mapLon
-            mapLon = undefined
-        }
 
         //Defaults
         if (mapLon == undefined) mapLon = L_.Map_.map.getCenter().lng
@@ -358,7 +358,13 @@ var QueryURL = {
         }
 
         //panePercents
-        var pP = L_.UserInterface_.getPanelPercents()
+        // getPanelPercents only exists on the classic/mobile UI controllers; the
+        // modern layout has no such method, so fall back to a map-only split.
+        var pP =
+            L_.UserInterface_ &&
+            typeof L_.UserInterface_.getPanelPercents === 'function'
+                ? L_.UserInterface_.getPanelPercents()
+                : { viewer: 0, map: 100, globe: 0 }
         var panePercents = pP.viewer + ',' + pP.map + ',' + pP.globe
         urlAppendage += '&panePercents=' + panePercents
 
@@ -427,29 +433,34 @@ var QueryURL = {
 
         var url = encodeURI(urlAppendage)
 
-        if (shortenURL) {
-            calls.api(
-                'shortener_shorten',
-                {
-                    url: url,
-                },
-                function (s) {
-                    //Set and update the short url
-                    L_.url =
-                        window.location.href.split('?')[0] + '?s=' + s.body.url
-                    window.history.replaceState('', '', L_.url)
-                    if (typeof callback === 'function') callback()
-                },
-                function (e) {
-                    //Set and update the full url
-                    L_.url = window.location.href.split('?')[0] + url
-                    window.history.replaceState('', '', L_.url)
-                    if (typeof callback === 'function') callback()
-                }
-            )
+        return window.location.href.split('?')[0] + url
+    },
+    getShareURL: function (callback) {
+        var fullUrl = this.writeCoordinateURL()
+
+        if (isStaticBuild()) {
+            if (typeof callback === 'function') callback(fullUrl)
+            return
         }
 
-        return window.location.href.split('?')[0] + url
+        var baseUrl = window.location.href.split('?')[0]
+        var urlAppendage = fullUrl.startsWith(baseUrl)
+            ? fullUrl.substring(baseUrl.length)
+            : fullUrl.substring(fullUrl.indexOf('?'))
+
+        calls.api(
+            'shortener_shorten',
+            {
+                url: urlAppendage,
+            },
+            function (s) {
+                var shortUrl = baseUrl + '?s=' + s.body.url
+                if (typeof callback === 'function') callback(shortUrl)
+            },
+            function () {
+                if (typeof callback === 'function') callback(fullUrl)
+            }
+        )
     },
     writeSearchURL: function (searchStrs, searchFile) {
         return //!!!!!!!!!!!!!!!!

@@ -451,7 +451,47 @@ var mmgisAPI_ = {
         return validEvents.includes(eventName)
     },
     writeCoordinateURL: function () {
-        return QueryURL.writeCoordinateURL(false)
+        // The URL builder dereferences objects that only exist after mission
+        // finalization; return null (the "no link yet" signal) until then.
+        if (mmgisAPI_.map == null) return null
+        return QueryURL.writeCoordinateURL()
+    },
+    copyText: function (text) {
+        return F_.copyToClipboard(text)
+    },
+    getViewState: function () {
+        // View metadata for plugins; fields are null until loaded.
+        const map = L_.Map_ && L_.Map_.map
+        const center =
+            map && typeof map.getCenter === 'function' ? map.getCenter() : null
+        return {
+            // L_.mission is the canonical identity (the ?mission= URL value);
+            // msv.mission is a display field that can be stale.
+            missionName: L_.mission || L_.configData?.msv?.mission || null,
+            time: L_.TimeControl_?.currentTime ?? null,
+            center: center ? { lat: center.lat, lng: center.lng } : null,
+            zoom:
+                map && typeof map.getZoom === 'function'
+                    ? map.getZoom()
+                    : null,
+        }
+    },
+    getMapScreenshot: function () {
+        // Capture is engine-specific (Leaflet DOM rasterization vs deck.gl
+        // canvas readback); delegate to the active IMapEngine adapter. A
+        // missing engine means no map is loaded yet.
+        const engine = L_.Map_ && L_.Map_.engine
+        if (engine && typeof engine.captureScreenshot === 'function') {
+            // Convert a sync engine throw into a rejection.
+            try {
+                return Promise.resolve(engine.captureScreenshot())
+            } catch (err) {
+                return Promise.reject(err)
+            }
+        }
+        return Promise.reject(
+            new Error('getMapScreenshot: no active map engine to capture')
+        )
     },
     onLoadCallback: null,
     onLoaded: function (onLoadCallback) {
@@ -834,9 +874,36 @@ var mmgisAPI = {
 
     /** writeCoordinateURL - writes out the current view as a url. This returns the long form of
      * the 'Copy Link' feature and does not save a short url to the database.
-     * @returns {string} - a string containing the current view as a url
+     * @returns {string|null} - a string containing the current view as a url, or null if the mission has not finished loading yet
      */
     writeCoordinateURL: mmgisAPI_.writeCoordinateURL,
+
+    /** getViewState - returns metadata about the current view (for example to
+     * build provenance-rich export filenames). Fields are null until the
+     * mission has loaded far enough to answer them.
+     * @returns {object} {missionName: string|null, time: string|null, center: {lat, lng}|null, zoom: number|null}
+     */
+    getViewState: mmgisAPI_.getViewState,
+
+    /** copyText - copies text to the user's clipboard. Uses the async
+     * Clipboard API with a legacy fallback for insecure origins. Note: pages
+     * embedding MMGIS in an iframe (FRAME_ANCESTORS) must set
+     * allow="clipboard-write" for the modern path.
+     * @param {string} text - text to copy
+     * @returns {Promise<boolean>} true on success, false on failure — never rejects
+     */
+    copyText: mmgisAPI_.copyText,
+
+    /** getMapScreenshot - captures a PNG screenshot of the current map view.
+     * Delegates to the active map engine, so the capture strategy is
+     * engine-specific: the Leaflet engine rasterizes its DOM (hiding UI chrome
+     * for the shot), while the deck.gl/GL engine reads its WebGL canvas. Note
+     * that the deck.gl capture is limited to the GL canvas and does not include
+     * HTML overlays/markers layered on top. Asynchronous; requires no backend
+     * call. Rejects if no map engine is active.
+     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number}>} - resolves to a PNG Blob plus image metadata.
+     */
+    getMapScreenshot: mmgisAPI_.getMapScreenshot,
 
     /** onLoaded - calls onLoadCallback as a function once MMGIS has finished loading.
      * @param {function} - onLoadCallback - function reference to function that is called when MMGIS is finished loading

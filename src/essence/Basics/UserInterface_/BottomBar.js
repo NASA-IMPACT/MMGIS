@@ -6,7 +6,6 @@ import L_ from '../Layers_/Layers_'
 
 import QueryURL from '../../Ancillary/QueryURL'
 import Modal from '../../Ancillary/Modal'
-import HTML2Canvas from 'html2canvas'
 import tippy from 'tippy.js'
 
 import './BottomBar.css'
@@ -32,17 +31,20 @@ let BottomBar = {
             })
             .on('click', function () {
                 const linkButton = $(this)
-                QueryURL.writeCoordinateURL(true, function () {
-                    F_.copyToClipboard(L_.url)
-
-                    linkButton.removeClass('mdi-open-in-new')
-                    linkButton.addClass('mdi-check-bold')
-                    linkButton.css('color', 'var(--color-green)')
-                    setTimeout(() => {
-                        linkButton.removeClass('mdi-check-bold')
-                        linkButton.css('color', '')
-                        linkButton.addClass('mdi-open-in-new')
-                    }, 3000)
+                QueryURL.getShareURL(function (url) {
+                    L_.url = url
+                    window.history.replaceState('', '', L_.url)
+                    F_.copyToClipboard(L_.url).then((copied) => {
+                        if (!copied) return
+                        linkButton.removeClass('mdi-open-in-new')
+                        linkButton.addClass('mdi-check-bold')
+                        linkButton.css('color', 'var(--color-green)')
+                        setTimeout(() => {
+                            linkButton.removeClass('mdi-check-bold')
+                            linkButton.css('color', '')
+                            linkButton.addClass('mdi-open-in-new')
+                        }, 3000)
+                    })
                 })
             })
         bottomBar.append(topBarLink)
@@ -68,104 +70,37 @@ let BottomBar = {
                 'opacity': '0.8'
             })
             .on('click', function () {
-                //We need to manually order leaflet z-indices for this to work
-                let zIndices = []
-                $('#mapScreen #map .leaflet-tile-pane')
-                    .children()
-                    .each(function (i, elm) {
-                        zIndices.push($(elm).css('z-index'))
-                        $(elm).css('z-index', i + 1)
-                    })
-                $('.leaflet-control-scalefactor').css('display', 'none')
-                $('#mmgis-map-compass').css('display', 'none')
-                $('.leaflet-control-zoom').css('display', 'none')
+                // Screenshot capture is engine-aware: it flows through
+                // mmgisAPI.getMapScreenshot(), which delegates to the active
+                // map engine (Leaflet html2canvas vs deck.gl GL-canvas
+                // readback). Here we just show the loading spinner, then
+                // download the resulting PNG Blob.
                 $('#topBarScreenshotLoading').css('display', 'block')
-                $('#scaleBar').css('margin-top', '0px')
-                const savedMapToolBarBottom =
-                    $('#mapToolBar').css('bottom') || '0px'
-                $('#mapToolBar').css('bottom', '0px')
-                $(`#toggleTimeUI.active`).trigger('click')
 
-                const documentElm = document.getElementById('mapScreen')
-                HTML2Canvas(documentElm, {
-                    allowTaint: true,
-                    useCORS: true,
-                    logging: false,
-                    scrollX: -window.scrollX,
-                    scrollY: -window.scrollY,
-                    windowWidth: documentElm.offsetWidth,
-                    windowHeight: documentElm.offsetHeight,
-                    onclone: function (e) {
-                        // Fix svg layer shift
-                        const originalSVG = document.body.querySelectorAll(
-                            'svg.leaflet-zoom-animated'
-                        )
-                        const copySVG = e.body.querySelectorAll(
-                            'svg.leaflet-zoom-animated'
-                        )
-                        copySVG.forEach((copyEle, i) => {
-                            const attribute = originalSVG
-                                .item(i)
-                                .getAttribute('style')
-                            const parentElement = copyEle.parentElement
-                            parentElement.removeChild(copyEle)
-                            const temp = document.createElement('div')
-                            temp.appendChild(copyEle)
-                            parentElement.appendChild(temp)
-                            temp.setAttribute('style', attribute)
-                            copyEle.removeAttribute('style')
-                        })
-
-                        // Fix tile layer z-indices
-                        const originalZ = document.body.querySelectorAll(
-                            '.leaflet-tile-pane > div.leaflet-layer'
-                        )
-                        const copyZ = e.body.querySelectorAll(
-                            '.leaflet-tile-pane > div.leaflet-layer'
-                        )
-                        copyZ.forEach((copyEle, i) => {
-                            const attribute = originalZ
-                                .item(i)
-                                .getAttribute('style')
-                            copyEle.setAttribute('style', attribute)
-                        })
-                    },
-                }).then(function (canvas) {
-                    canvas.id = 'mmgisScreenshot'
-                    document.body.appendChild(canvas)
-
-                    const mission = L_.configData?.msv?.mission
-                    const time = L_.TimeControl_?.currentTime
-                    const mapCenter = L_.Map_.map.getCenter()
-                    const lng = mapCenter.lng.toFixed(4)
-                    const lat = mapCenter.lat.toFixed(4)
-
-                    F_.downloadCanvas(
-                        canvas.id,
-                        `mmgis-${mission}_${
+                window.mmgisAPI
+                    .getMapScreenshot()
+                    .then(function (screenshot) {
+                        // L_.mission is the mission's canonical identity (the ?mission= value);
+                        // configData.msv.mission is a display field that can be stale.
+                        const mission = L_.mission || L_.configData?.msv?.mission
+                        const time = L_.TimeControl_?.currentTime
+                        const mapCenter = L_.Map_.map.getCenter()
+                        const lng = mapCenter.lng.toFixed(4)
+                        const lat = mapCenter.lat.toFixed(4)
+                        const name = `mmgis-${mission}_${
                             time ? `${time.replaceAll(':', '-')}_` : ''
-                        }${lat}_${lng}`,
-                        function () {
-                            canvas.remove()
-                            setTimeout(function () {
-                                $('#topBarScreenshotLoading').css(
-                                    'display',
-                                    'none'
-                                )
-                            }, 2000)
-                        }
-                    )
-                })
-                $('#mapScreen #map .leaflet-tile-pane')
-                    .children()
-                    .each(function (i, elm) {
-                        $(elm).css('z-index', zIndices[i])
+                        }${lat}_${lng}.png`
+
+                        F_.downloadBlob(screenshot.blob, name)
+
+                        setTimeout(function () {
+                            $('#topBarScreenshotLoading').css('display', 'none')
+                        }, 2000)
                     })
-                $('.leaflet-control-scalefactor').css('display', 'flex')
-                $('#mmgis-map-compass').css('display', 'block')
-                $('.leaflet-control-zoom').css('display', 'block')
-                $('#scaleBar').css('margin-top', '5px')
-                $('#mapToolBar').css('bottom', 'savedMapToolBarBottom')
+                    .catch(function (err) {
+                        console.error('Screenshot failed:', err)
+                        $('#topBarScreenshotLoading').css('display', 'none')
+                    })
             })
         bottomBar.append(topBarScreenshot)
 

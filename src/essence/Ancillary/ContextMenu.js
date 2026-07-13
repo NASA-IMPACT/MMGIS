@@ -97,22 +97,28 @@ function showContextMenuMap(e) {
     $('#contextMenuMapCopyCoords').on('click', function () {
         F_.copyToClipboard(
             JSON.stringify(Coordinates.getAllCoordinates(), null, 2)
-        )
-        $('#contextMenuMapCopyCoords').text('Copied!')
-        setTimeout(function () {
-            $('#contextMenuMapCopyCoords').text('Copy Coordinates')
-        }, 2000)
+        ).then((copied) => {
+            if (!copied) return
+            $('#contextMenuMapCopyCoords').text('Copied!')
+            setTimeout(function () {
+                $('#contextMenuMapCopyCoords').text('Copy Coordinates')
+            }, 2000)
+        })
     })
 
     $('#contextMenuCopyable').on('click', function () {
         const that = this
         const key = $(that).attr('key')
         const copyable = L_._toolCopyables[key]
-        F_.copyToClipboard(JSON.stringify(copyable.copyable, null, 2))
-        $(that).text('Copied!')
-        setTimeout(function () {
-            $(that).text(copyable.title)
-        }, 2000)
+        F_.copyToClipboard(JSON.stringify(copyable.copyable, null, 2)).then(
+            (copied) => {
+                if (!copied) return
+                $(that).text('Copied!')
+                setTimeout(function () {
+                    $(that).text(copyable.title)
+                }, 2000)
+            }
+        )
     })
 
     contextMenuActionsFull.forEach((c) => {
