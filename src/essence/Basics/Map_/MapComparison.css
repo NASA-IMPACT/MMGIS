@@ -1,0 +1,31 @@
+.mmgis-comparison-divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: .2rem;
+    background: var(--theme-color-white, #fff);
+    cursor: ew-resize;
+    z-index: 1000;
+    transform: translateX(-50%);
+    pointer-events: all;
+}
+
+.mmgis-comparison-divider::after {
+    content: '\2039\2009\203A'; /* ‹ › with a thin space between */
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: var(--theme-color-primary, #005ea2);
+    border-radius: 50%;
+    color: var(--theme-color-white, #fff);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    user-select: none;
+}

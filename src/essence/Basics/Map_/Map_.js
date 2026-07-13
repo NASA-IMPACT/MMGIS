@@ -35,6 +35,7 @@ import {
     DeckGLAdapter,
 } from '../MapEngines/index'
 import { buildDeckLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import MapComparison from './MapComparison'
 
 let L = window.L
 
@@ -303,7 +304,28 @@ let Map_ = {
                 )
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
+
+            // Comparison / swipe providers — delegates to MapComparison which
+            // owns divider DOM and time-subscription lifecycle.
+            _providerCleanups.push(
+                window.mmgisAPI.provide('map:comparison:enable',
+                    (p) => MapComparison.enable(p)),
+                window.mmgisAPI.provide('map:comparison:disable',
+                    () => MapComparison.disable()),
+                window.mmgisAPI.provide('map:comparison:setLeftSide',
+                    (p) => MapComparison.setLeftSide(p)),
+                window.mmgisAPI.provide('map:comparison:setRightSide',
+                    (p) => MapComparison.setRightSide(p)),
+                window.mmgisAPI.provide('map:comparison:setDividerPosition',
+                    (p) => MapComparison.setDividerPosition(p)),
+                window.mmgisAPI.provide('map:comparison:getState',
+                    () => MapComparison.getState()),
+            )
         }
+
+        // Initialise comparison controller with the active engine so it can
+        // inject the divider DOM and delegate rendering calls.
+        MapComparison.init(engine)
 
         //Make our layers
         makeLayers(L_.layers.dataFlat)

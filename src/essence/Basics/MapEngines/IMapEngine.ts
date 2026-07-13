@@ -337,4 +337,36 @@ export interface IMapEngine<
      * removes the DOM node from the container. No-op if the id is unknown.
      */
     removeOverlay(id: string): void
+
+    // ── Comparison / swipe ────────────────────────────────────────────────────
+
+    /**
+     * Enable (or reconfigure) side-by-side swipe comparison mode.
+     * Renders each side's layer set into its own canvas stacked over the map and
+     * reveals them on either side of a draggable divider; the underlying basemap
+     * stays shared and all other data layers are hidden. Calling again while
+     * already enabled re-applies the (possibly changed) layer sets.
+     * Optional per-side date overrides for time-enabled layers are a follow-up.
+     */
+    enableComparison?(config: ComparisonConfig): void
+
+    /** Disable comparison mode and restore the normal single-viewport view. */
+    disableComparison?(): void
+
+    /**
+     * Move the comparison divider to `pos` (0–1 fraction of container width).
+     * No-op if comparison mode is off.
+     */
+    setComparisonDivider?(pos: number): void
+
+    /** Returns true when comparison mode is currently active. */
+    isComparisonEnabled?(): boolean
+}
+
+/** Configuration for {@link IMapEngine.enableComparison}. */
+export interface ComparisonConfig {
+    /** deck.gl layer IDs (= MMGIS layer names) to render on the left side. */
+    leftLayerIds: string[]
+    /** deck.gl layer IDs (= MMGIS layer names) to render on the right side. */
+    rightLayerIds: string[]
 }
