@@ -120,6 +120,21 @@ export const updateToolInConfiguration = (
   }
 };
 
+/**
+ * Merge a tool's declared metadata defaults with any already-saved metadata.
+ * The tool's config.json metadata block is the base; existing (mission-config)
+ * values win. Returns a deep clone so callers can safely mutate the result.
+ *
+ * @param {Object|null} existingMetadata - metadata already on the tool entry
+ * @param {Object} toolConfig - the tool's entry from toolConfigs.json
+ * @returns {Object} seeded metadata object
+ */
+export const seedToolMetadata = (existingMetadata, toolConfig) => {
+  const base = toolConfig && toolConfig.metadata ? toolConfig.metadata : {};
+  const merged = { ...base, ...(existingMetadata || {}) };
+  return JSON.parse(JSON.stringify(merged));
+};
+
 export const getComponentFromConfiguration = (componentName, configuration) => {
   if (!configuration.components) return null;
   for (let i = 0; i < configuration.components.length; i++) {
