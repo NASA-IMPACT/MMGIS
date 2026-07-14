@@ -11,6 +11,7 @@ import { GradientGraphic } from '../GradientGraphic/GradientGraphic'
 import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import type { Layer } from '../../types'
 import { FloatingPopover } from '../../../../../Ancillary/FloatingPopover'
+import { useClickOutside } from '../../hooks/useClickOutside'
 
 export type LayerLegendProps = {
     layer: Layer
@@ -19,6 +20,8 @@ export type LayerLegendProps = {
     onOpacityChange?: (layerId: string, opacity: number) => void
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
+    /** Start a comparison with this layer as one side (kebab menu action). */
+    onCompareLayer?: (layerId: string) => void
 }
 
 export function LayerLegend({
@@ -28,6 +31,7 @@ export function LayerLegend({
     onOpacityChange,
     onColormapChange,
     onRescaleChange,
+    onCompareLayer,
 }: LayerLegendProps) {
     const {
         id,
@@ -47,8 +51,11 @@ export function LayerLegend({
     const [isVisible, setIsVisible] = useState(visible)
     const [isInfoExpanded, setIsInfoExpanded] = useState(defaultInfoExpanded)
     const [isOpacityExpanded, setIsOpacityExpanded] = useState(false)
+    const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [localOpacity, setLocalOpacity] = useState(opacity ?? 1)
     const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
+    const menuBtnRef = useRef<HTMLButtonElement | null>(null)
+    const menuRef = useRef<HTMLDivElement | null>(null)
 
     useEffect(() => {
         setIsVisible(visible)
@@ -57,6 +64,12 @@ export function LayerLegend({
     useEffect(() => {
         setLocalOpacity(opacity ?? 1)
     }, [opacity])
+
+    useClickOutside(
+        [menuRef, menuBtnRef],
+        useCallback(() => setIsMenuOpen(false), []),
+        isMenuOpen,
+    )
 
     const handleVisibilityToggle = () => {
         const newState = !isVisible
@@ -169,12 +182,38 @@ export function LayerLegend({
                     >
                         <i className="mdi mdi-information-outline mdi-18px" />
                     </button>
-                    <button
-                        className="blocks-layer-legend__action-btn"
-                        title="More options"
-                    >
-                        <i className="mdi mdi-dots-vertical mdi-18px" />
-                    </button>
+                    <div className="blocks-layer-legend__menu-wrapper">
+                        <button
+                            ref={menuBtnRef}
+                            className={`blocks-layer-legend__action-btn ${isMenuOpen ? 'blocks-layer-legend__action-btn--active' : ''}`}
+                            onClick={() => setIsMenuOpen((open) => !open)}
+                            title="More options"
+                            aria-haspopup="menu"
+                            aria-expanded={isMenuOpen}
+                        >
+                            <i className="mdi mdi-dots-vertical mdi-18px" />
+                        </button>
+                        {isMenuOpen && (
+                            <div
+                                ref={menuRef}
+                                className="blocks-layer-legend__menu"
+                                role="menu"
+                            >
+                                <button
+                                    type="button"
+                                    role="menuitem"
+                                    className="blocks-layer-legend__menu-item"
+                                    onClick={() => {
+                                        setIsMenuOpen(false)
+                                        onCompareLayer?.(id)
+                                    }}
+                                >
+                                    <i className="mdi mdi-compare-horizontal mdi-18px" />
+                                    <span>Compare layer</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
             {isInfoExpanded && description && (

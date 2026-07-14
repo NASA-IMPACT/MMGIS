@@ -10,6 +10,7 @@ export type LayerManagerPanelProps = {
     onOpacityChange?: (layerId: string, opacity: number) => void
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
+    onCompareLayer?: (layerId: string) => void
 }
 
 export function LayerManagerPanel({
@@ -20,6 +21,7 @@ export function LayerManagerPanel({
     onOpacityChange,
     onColormapChange,
     onRescaleChange,
+    onCompareLayer,
 }: LayerManagerPanelProps) {
     return (
         <div className="blocks-layer-manager">
@@ -36,6 +38,7 @@ export function LayerManagerPanel({
                         onOpacityChange={onOpacityChange}
                         onColormapChange={onColormapChange}
                         onRescaleChange={onRescaleChange}
+                        onCompareLayer={onCompareLayer}
                     />
                 )}
             </div>

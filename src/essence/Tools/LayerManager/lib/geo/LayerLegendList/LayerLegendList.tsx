@@ -9,6 +9,7 @@ export type LayerLegendListProps = {
     onOpacityChange?: LayerLegendProps['onOpacityChange']
     onColormapChange?: LayerLegendProps['onColormapChange']
     onRescaleChange?: LayerLegendProps['onRescaleChange']
+    onCompareLayer?: LayerLegendProps['onCompareLayer']
 }
 
 export function LayerLegendList({
@@ -18,6 +19,7 @@ export function LayerLegendList({
     onOpacityChange,
     onColormapChange,
     onRescaleChange,
+    onCompareLayer,
 }: LayerLegendListProps) {
     if (!layers || layers.length === 0) {
         return (
@@ -36,6 +38,7 @@ export function LayerLegendList({
                     onOpacityChange={onOpacityChange}
                     onColormapChange={onColormapChange}
                     onRescaleChange={onRescaleChange}
+                    onCompareLayer={onCompareLayer}
                 />
             ))}
         </div>

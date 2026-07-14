@@ -5,6 +5,7 @@ import type { Layer } from './lib/types'
 import { useMMGISEvent } from './adapters/useMMGISEvent'
 import { useMMGISToolVars } from './adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
+import { mmgisEmit } from '../_shared/adapters/mmgisAPI'
 import { getVisibleLayersWithLegends } from './adapters/getVisibleLayersWithLegends'
 import {
     toggleVisibility,
@@ -53,6 +54,11 @@ export function MMGISLayerManagerAdapter() {
             onOpacityChange={(id, op) => { void setOpacity(id, op) }}
             onColormapChange={(id, cm) => { void setColormap(id, cm, refresh) }}
             onRescaleChange={(id, mn, mx) => { void setRescale(id, mn, mx, refresh) }}
+            onCompareLayer={(id) => {
+                // Hand off to the independent Comparison plugin via the event
+                // bus — LayerManager never imports it directly.
+                mmgisEmit('plugin:comparison:startWithLayer', { layerId: id })
+            }}
         />
     )
 }
