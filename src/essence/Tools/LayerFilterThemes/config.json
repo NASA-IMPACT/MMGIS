@@ -4,8 +4,24 @@
     "description": "Theme rail (step 1) for the LayerFilter plugin. Renders the high-level themes and emits the selected theme on the event bus. Pulls its theme list from the LayerFilter tool.",
     "width": 66,
     "height": 0,
+    "hasVars": true,
     "paths": {
         "LayerFilterThemesTool": "essence/Tools/LayerFilterThemes/LayerFilterThemesTool"
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.togglePanelId",
+                        "name": "Toggle Panel ID",
+                        "description": "The id of the panel that the rail's top chevron button shows/hides via core's 'core:togglePanel' command (e.g. 'left-panel'). Defaults to 'left-panel'.",
+                        "type": "text",
+                        "width": 6
+                    }
+                ]
+            }
+        ]
     },
     "metadata": {
         "icon": "view-dashboard-outline",

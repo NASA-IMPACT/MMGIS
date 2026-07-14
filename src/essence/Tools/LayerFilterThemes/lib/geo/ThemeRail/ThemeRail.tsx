@@ -5,16 +5,23 @@ export interface ThemeRailProps {
     themes: ThemeSummary[]
     selectedId: string
     onSelect: (id: string) => void
-    /** The chevron button at the top of the rail. */
+    /** The chevron toggle button at the top of the rail. */
     onTopButtonClick?: () => void
+    /**
+     * Whether the adjacent panel is currently collapsed. Controls the chevron
+     * direction: points left while the panel is visible, rotates to point right
+     * once collapsed.
+     */
+    collapsed?: boolean
 }
 
-/** Presentational green rail: a top chevron button + one entry per theme. */
+/** Presentational green rail: a top chevron toggle button + one entry per theme. */
 export function ThemeRail({
     themes,
     selectedId,
     onSelect,
     onTopButtonClick,
+    collapsed = false,
 }: ThemeRailProps) {
     return (
         <div
@@ -26,11 +33,14 @@ export function ThemeRail({
             <button
                 type="button"
                 className="blocks-theme-rail__top"
-                aria-label="Collapse panel"
+                aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
+                aria-expanded={!collapsed}
                 onClick={() => onTopButtonClick?.()}
             >
                 <i
-                    className="mdi mdi-chevron-right blocks-theme-rail__top-icon"
+                    className={`mdi mdi-chevron-left blocks-theme-rail__top-icon${
+                        collapsed ? ' blocks-theme-rail__top-icon--collapsed' : ''
+                    }`}
                     aria-hidden="true"
                 />
             </button>
