@@ -59,6 +59,11 @@ export function MMGISLayerManagerAdapter() {
                 // bus — LayerManager never imports it directly.
                 mmgisEmit('plugin:comparison:startWithLayer', { layerId: id })
             }}
+            onAddLayer={() => {
+                // Reveal the AddTempLayer plugin (its overlay is the tool).
+                // LayerManager never imports it directly.
+                mmgisEmit('core:showPlugin', { pluginId: 'AddTempLayerTool' })
+            }}
         />
     )
 }

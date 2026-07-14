@@ -2,7 +2,7 @@
     "defaultIcon": "add",
     "description": "Add an external layer (WMS/WMTS/XYZ/GeoJSON) to the map for the current session.",
     "descriptionFull": {
-        "title": "Opens a modal to add a temporary external layer from a URL. The layer is session-only and is lost on reload."
+        "title": "An add-layer overlay for adding a temporary external layer from a URL. Revealed via the Layer Manager's 'Add layer from URL' button; the layer is session-only and is lost on reload."
     },
     "hasVars": false,
     "name": "AddTempLayer",
@@ -17,6 +17,7 @@
         "compatiblePositions": ["left", "right"],
         "preferredPosition": "left",
         "modernLayoutSupport": true,
+        "startHidden": true,
         "width": 300,
         "height": 0
     }

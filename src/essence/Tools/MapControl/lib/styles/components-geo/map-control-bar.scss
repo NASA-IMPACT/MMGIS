@@ -1,7 +1,7 @@
 .blocks-map-control {
     position: absolute;
     top: 18px;
-    // right is set via inline style — dynamic offset from the top-bar chrome.
+    // `right` is set via inline style — inset from the positioned parent container.
     display: flex;
     flex-direction: column;
     align-items: flex-end;

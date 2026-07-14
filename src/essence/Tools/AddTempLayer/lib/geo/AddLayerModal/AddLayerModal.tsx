@@ -15,6 +15,8 @@ export type AddLayerModalProps = {
     onDisplayNameChange: (next: string) => void
     onSubmit: () => void
     onClose: () => void
+    /** Element to portal into; positions the modal within it. Defaults to document.body. */
+    container?: HTMLElement | null
 }
 
 export function AddLayerModal({
@@ -26,6 +28,7 @@ export function AddLayerModal({
     onDisplayNameChange,
     onSubmit,
     onClose,
+    container,
 }: AddLayerModalProps) {
     return createPortal(
         <div className="blocks-add-layer-modal__overlay">
@@ -106,6 +109,6 @@ export function AddLayerModal({
                 </div>
             </div>
         </div>,
-        document.body,
+        container ?? document.body,
     )
 }

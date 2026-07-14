@@ -23,8 +23,11 @@ const AddTempLayerTool = {
             console.error(`AddTempLayerTool: container ${this.targetId} not found`)
             return
         }
+        // The overlay is viewport-fixed, but we portal it into this container
+        // (not document.body) so its DOM stays inside the tool card — that's
+        // what lets showPlugin/hidePlugin toggle it via the card's display.
         _root = createRoot(container)
-        _root.render(<MMGISAddTempLayerAdapter />)
+        _root.render(<MMGISAddTempLayerAdapter portalContainer={container} />)
         this.made = true
     },
 

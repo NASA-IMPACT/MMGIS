@@ -1,4 +1,8 @@
-// "Add layer from URL" modal — portaled to document.body, anchored top-right.
+// "Add layer from URL" overlay — the tool itself. Fixed to the viewport (the
+// tool's card container collapses to 0h since the overlay is its only content),
+// anchored top-right. The DOM stays inside the tool card, so hidePlugin's
+// display:none still controls it. The overlay layer is click-through; only the
+// dialog captures pointer events, so the map behind stays usable.
 
 .blocks-add-layer-modal {
     &__overlay {
@@ -6,12 +10,13 @@
         inset: 0;
         z-index: 2000;
         display: flex;
-        // Anchor top-right, just below the top map toolbar (search / zoom / share).
+        // Anchor top-right of the viewport.
         align-items: flex-start;
         justify-content: flex-end;
         box-sizing: border-box;
-        padding-top: var(--theme-spacing-8, 64px);
+        padding-top: var(--theme-spacing-2, 16px);
         padding-right: var(--theme-spacing-2, 16px);
+        pointer-events: none;
     }
 
     &__dialog {
@@ -24,6 +29,7 @@
         border-radius: var(--theme-radius-lg, 6px);
         box-shadow: 0 8px 32px var(--theme-color-shadow, rgba(0, 0, 0, 0.18));
         font-family: var(--theme-font-ui);
+        pointer-events: auto;
     }
 
     &__header {

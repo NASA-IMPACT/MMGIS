@@ -16,7 +16,7 @@ import { MeasureLabel } from '../MeasureLabel/MeasureLabel'
 import { BasemapIcon, MinusIcon, PlusIcon, RulerIcon, SearchIcon } from '../icons'
 
 export type MapControlBarProps = {
-    /** Distance from the right edge of the viewport (px) — dynamic, from the wrapper. */
+    /** Inset (px) from the top-right of the positioned parent container. */
     rightOffset?: number
 
     // Basemap
