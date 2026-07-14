@@ -1,4 +1,0 @@
-// Theming (USWDS framework + theme tokens + :root --theme-* custom properties)
-// is provided by MMGIS's per-theme bundles at dist/<theme>.css, loaded at
-// runtime. Component partials reference --theme-* directly (Path A).
-@forward 'components-geo';

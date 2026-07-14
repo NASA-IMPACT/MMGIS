@@ -1,4 +1,5 @@
 import React from 'react'
+import './AOIComponent/AOIComponent.scss'
 
 export interface AOITooltipProps {
     label: string
@@ -11,16 +12,16 @@ export interface AOITooltipProps {
 export function AOITooltip(props: AOITooltipProps) {
     return (
         <div
-            className="blocks-aoi-tooltip"
+            className="aoi-tooltip"
             style={{ left: props.position.x, top: props.position.y }}
             role="dialog"
             aria-label="Confirm analysis area"
         >
-            <p className="blocks-aoi-tooltip__label">{props.label}</p>
-            <div className="blocks-aoi-tooltip__actions">
+            <p className="aoi-tooltip__label">{props.label}</p>
+            <div className="aoi-tooltip__actions">
                 <button
                     type="button"
-                    className="blocks-aoi-tooltip__primary"
+                    className="aoi-tooltip__primary"
                     onClick={props.onAnalyze}
                     disabled={!props.analyzeEnabled}
                 >
@@ -28,7 +29,7 @@ export function AOITooltip(props: AOITooltipProps) {
                 </button>
                 <button
                     type="button"
-                    className="blocks-aoi-tooltip__secondary"
+                    className="aoi-tooltip__secondary"
                     onClick={props.onCancel}
                 >
                     Cancel
@@ -37,3 +38,5 @@ export function AOITooltip(props: AOITooltipProps) {
         </div>
     )
 }
+
+export default AOITooltip
