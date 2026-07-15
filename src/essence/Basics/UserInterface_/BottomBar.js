@@ -31,7 +31,7 @@ let BottomBar = {
             })
             .on('click', function () {
                 const linkButton = $(this)
-                QueryURL.getShareURL(function (url) {
+                QueryURL.getShareURL().then(function (url) {
                     L_.url = url
                     window.history.replaceState('', '', L_.url)
                     F_.copyToClipboard(L_.url).then((copied) => {

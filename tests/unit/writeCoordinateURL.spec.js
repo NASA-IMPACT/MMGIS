@@ -103,29 +103,24 @@ test.describe('QueryURL.writeCoordinateURL (issue #143)', () => {
 })
 
 test.describe('QueryURL.getShareURL (issue #143)', () => {
-    test('returns the long URL without shortening in static builds', () => {
+    test('resolves with the long URL without shortening in static builds', async () => {
         vi.mocked(isStaticBuild).mockReturnValue(true)
         L_.UserInterface_ = {}
 
-        const callback = vi.fn()
-
-        QueryURL.getShareURL(callback)
+        const url = await QueryURL.getShareURL()
 
         expect(calls.api).not.toHaveBeenCalled()
-        expect(callback).toHaveBeenCalledWith(
-            expect.stringContaining('mission=TestMission')
-        )
-        expect(callback.mock.calls[0][0]).toContain('panePercents=0,100,0')
+        expect(url).toContain('mission=TestMission')
+        expect(url).toContain('panePercents=0,100,0')
     })
 
-    test('returns a short URL when the full-mode shortener succeeds', () => {
+    test('resolves with a short URL when the full-mode shortener succeeds', async () => {
         L_.UserInterface_ = {}
         vi.mocked(calls.api).mockImplementation((call, data, success) => {
             success({ body: { url: 'abc12' } })
         })
-        const callback = vi.fn()
 
-        QueryURL.getShareURL(callback)
+        const url = await QueryURL.getShareURL()
 
         expect(calls.api).toHaveBeenCalledWith(
             'shortener_shorten',
@@ -133,23 +128,18 @@ test.describe('QueryURL.getShareURL (issue #143)', () => {
             expect.any(Function),
             expect.any(Function)
         )
-        expect(callback).toHaveBeenCalledWith(
-            'http://localhost:3000/?s=abc12'
-        )
+        expect(url).toBe('http://localhost:3000/?s=abc12')
     })
 
-    test('falls back to the long URL when shortening fails', () => {
+    test('resolves with the long URL when shortening fails', async () => {
         L_.UserInterface_ = {}
         vi.mocked(calls.api).mockImplementation((call, data, success, error) => {
             error()
         })
-        const callback = vi.fn()
 
-        QueryURL.getShareURL(callback)
+        const url = await QueryURL.getShareURL()
 
-        expect(callback).toHaveBeenCalledWith(
-            expect.stringContaining('mission=TestMission')
-        )
-        expect(callback.mock.calls[0][0]).not.toContain('?s=')
+        expect(url).toContain('mission=TestMission')
+        expect(url).not.toContain('?s=')
     })
 })

@@ -294,6 +294,8 @@ function validatePanelConfig(panel, index, isFloat = false) {
 
         if (cap.resizable !== undefined && typeof cap.resizable !== 'boolean') {
             errors.push(`${prefix}.capabilities: "resizable" must be a boolean`)
+        } else if (isFloatPosition && cap.resizable === true) {
+            errors.push(`${prefix}.capabilities: "resizable" is not supported on floating panels`)
         }
 
         let minSize, maxSize

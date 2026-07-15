@@ -435,12 +435,13 @@ var QueryURL = {
 
         return window.location.href.split('?')[0] + url
     },
-    getShareURL: function (callback) {
+    // Resolves with the short URL, or with the full URL when shortening is
+    // unavailable (static builds) or fails — it never rejects.
+    getShareURL: function () {
         var fullUrl = this.writeCoordinateURL()
 
         if (isStaticBuild()) {
-            if (typeof callback === 'function') callback(fullUrl)
-            return
+            return Promise.resolve(fullUrl)
         }
 
         var baseUrl = window.location.href.split('?')[0]
@@ -448,19 +449,20 @@ var QueryURL = {
             ? fullUrl.substring(baseUrl.length)
             : fullUrl.substring(fullUrl.indexOf('?'))
 
-        calls.api(
-            'shortener_shorten',
-            {
-                url: urlAppendage,
-            },
-            function (s) {
-                var shortUrl = baseUrl + '?s=' + s.body.url
-                if (typeof callback === 'function') callback(shortUrl)
-            },
-            function () {
-                if (typeof callback === 'function') callback(fullUrl)
-            }
-        )
+        return new Promise(function (resolve) {
+            calls.api(
+                'shortener_shorten',
+                {
+                    url: urlAppendage,
+                },
+                function (s) {
+                    resolve(baseUrl + '?s=' + s.body.url)
+                },
+                function () {
+                    resolve(fullUrl)
+                }
+            )
+        })
     },
     writeSearchURL: function (searchStrs, searchFile) {
         return //!!!!!!!!!!!!!!!!

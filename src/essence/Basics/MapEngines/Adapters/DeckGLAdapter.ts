@@ -119,7 +119,7 @@ interface BasemapInstance {
     ): unknown
     /** Restrict panning to the given bounding box. Pass `null` to remove the constraint. */
     setMaxBounds(bounds: [[number, number], [number, number]] | null): unknown
-    /** Register a map event listener. */
+    /** Register a map event listener (e.g. `'load'`, `'move'`, `'moveend'`). */
     on(type: string, handler: (...args: unknown[]) => void): unknown
     /** Register a one-shot map event listener that auto-removes after firing once. */
     once(type: string, handler: (...args: unknown[]) => void): unknown
@@ -280,6 +280,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
+     * Re-push layers once the basemap style has loaded.
+     *
+     * deck.gl's interleaved `resolveLayers()` silently drops any layers set via
+     * `setProps` before `map.style._loaded` is true. Layers added during MMGIS
+     * startup (which runs synchronously right after `init`, while the style is
+     * still fetching) are therefore never inserted — the map shows only the
+     * basemap until some later `setProps` runs post-load. This flush is that
+     * post-load `setProps`, re-inserting everything buffered in `_layers`.
+     */
+    private _onBasemapLoad = (): void => {
+        this._syncLayers()
+    }
+
+    /**
      * Create and mount the map inside the element identified by `options.containerId`.
      *
      * Returns `void` (synchronous) for standalone mode and MapLibre overlay mode.
@@ -341,6 +355,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             if (this._basemap) {
                 this._basemap.off('move', this._onBasemapMove)
                 this._basemap.off('moveend', this._onBasemapMoveEnd)
+                this._basemap.off('load', this._onBasemapLoad)
                 if (this._overlay) {
                     this._overlay.finalize()
                     this._basemap.removeControl(this._overlay as unknown as object)
@@ -1242,6 +1257,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         this._basemap.on('move', this._onBasemapMove)
         this._basemap.on('moveend', this._onBasemapMoveEnd)
+        this._basemap.on('load', this._onBasemapLoad)
     }
 
     /**
