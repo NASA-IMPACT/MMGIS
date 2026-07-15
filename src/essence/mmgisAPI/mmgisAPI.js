@@ -864,6 +864,7 @@ var mmgisAPI = {
     /** writeCoordinateURL - writes out the current view as a url. This returns the long form of
      * the 'Copy Link' feature and does not save a short url to the database.
      * @returns {string|null} - a string containing the current view as a url, or null if the mission has not finished loading yet
+     * Plugins should prefer `mmgisAPI.request('map:writeCoordinateURL')`.
      */
     writeCoordinateURL: mmgisAPI_.writeCoordinateURL,
 
@@ -871,6 +872,7 @@ var mmgisAPI = {
      * build provenance-rich export filenames). Fields are null until the
      * mission has loaded far enough to answer them.
      * @returns {object} {missionName: string|null, time: string|null, center: {lat, lng}|null, zoom: number|null}
+     * Plugins should prefer `mmgisAPI.request('map:getViewState')`.
      */
     getViewState: mmgisAPI_.getViewState,
 
@@ -880,6 +882,7 @@ var mmgisAPI = {
      * allow="clipboard-write" for the modern path.
      * @param {string} text - text to copy
      * @returns {Promise<boolean>} true on success, false on failure — never rejects
+     * Plugins should prefer `mmgisAPI.request('app:copyText', text)`.
      */
     copyText: mmgisAPI_.copyText,
 
@@ -891,6 +894,7 @@ var mmgisAPI = {
      * HTML overlays/markers layered on top. Asynchronous; requires no backend
      * call. Rejects if no map engine is active.
      * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number}>} - resolves to a PNG Blob plus image metadata.
+     * Plugins should prefer `mmgisAPI.request('map:getScreenshot')`.
      */
     getMapScreenshot: mmgisAPI_.getMapScreenshot,
 
@@ -1126,5 +1130,18 @@ var mmgisAPI = {
 }
 
 window.mmgisAPI = mmgisAPI
+
+// The share capabilities are also registered on the request/provide bus —
+// the channel plugins are expected to use (string-named requests survive a
+// postMessage sandbox boundary; direct method calls don't). The direct
+// methods above remain for pages embedding MMGIS. Registered at module
+// scope so hasHandler() is true from page load; each implementation guards
+// its own readiness (null / rejection until the mission and engine exist).
+mmgisAPI.provide('map:writeCoordinateURL', () =>
+    mmgisAPI_.writeCoordinateURL()
+)
+mmgisAPI.provide('map:getViewState', () => mmgisAPI_.getViewState())
+mmgisAPI.provide('map:getScreenshot', () => mmgisAPI_.getMapScreenshot())
+mmgisAPI.provide('app:copyText', (text) => mmgisAPI_.copyText(text))
 
 export { mmgisAPI_, mmgisAPI }
