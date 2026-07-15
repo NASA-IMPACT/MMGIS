@@ -53,25 +53,28 @@ test.describe('copyShareLink', () => {
     })
 })
 
+// A fake core bus: hasHandler answers from the given responses map, and
+// request() records every call, throwing on unregistered names exactly like
+// the real bus does.
+function makeBusApi(responses) {
+    const requests = []
+    return {
+        api: {
+            hasHandler: (name) => name in responses,
+            request: async (name, params) => {
+                requests.push({ name, params })
+                if (!(name in responses))
+                    throw new Error(`[mmgisAPI] No handler for: "${name}"`)
+                return responses[name]
+            },
+        },
+        requests,
+    }
+}
+
 test.describe('bus wiring of the shared-client wrappers', () => {
     // The wrappers are the plugin's only strings-on-the-bus site; pin each
     // one to its registered core name so a rename can't silently no-op.
-    function makeBusApi(responses) {
-        const requests = []
-        return {
-            api: {
-                hasHandler: (name) => name in responses,
-                request: async (name, params) => {
-                    requests.push({ name, params })
-                    if (!(name in responses))
-                        throw new Error(`[mmgisAPI] No handler for: "${name}"`)
-                    return responses[name]
-                },
-            },
-            requests,
-        }
-    }
-
     test('each wrapper requests its registered bus name', async () => {
         const screenshot = { blob: new Blob(['p']), extension: 'png' }
         const viewState = { missionName: 'M', time: null, center: null, zoom: 2 }
@@ -107,22 +110,42 @@ test.describe('bus wiring of the shared-client wrappers', () => {
         await expect(mmgisGetMapScreenshot()).resolves.toBe(null)
         await expect(mmgisGetViewState()).resolves.toBe(null)
     })
-})
 
-test.describe('mmgisCopyText wrapper', () => {
-    test('delegates to the app:copyText handler when registered', async () => {
-        const { api, requests } = makeCopyApi(true)
+    test('wrappers resolve null (not reject) on a bus-era core that predates the share handlers', async () => {
+        // Version skew: the core has request/provide but none of the four
+        // share registrations. Every wrapper must degrade to null so the
+        // actions surface their designed errors ('No share link available')
+        // instead of a raw '[mmgisAPI] No handler for' rejection.
+        const { api, requests } = makeBusApi({})
         window.mmgisAPI = api
         try {
-            await expect(mmgisCopyText('hello')).resolves.toBe(true)
-            expect(requests).toEqual([
-                { name: 'app:copyText', params: 'hello' },
-            ])
+            await expect(mmgisWriteCoordinateURL()).resolves.toBe(null)
+            await expect(mmgisGetMapScreenshot()).resolves.toBe(null)
+            await expect(mmgisGetViewState()).resolves.toBe(null)
+            // hasHandler said no, so request() must never have been risked.
+            expect(requests).toEqual([])
         } finally {
             delete window.mmgisAPI
         }
     })
 
+    test('handler errors still propagate (they are real failures, not skew)', async () => {
+        const { api } = makeBusApi({ 'map:getScreenshot': null })
+        api.request = async () => {
+            throw new Error('getMapScreenshot: no active map engine')
+        }
+        window.mmgisAPI = api
+        try {
+            await expect(mmgisGetMapScreenshot()).rejects.toThrow(
+                /no active map engine/,
+            )
+        } finally {
+            delete window.mmgisAPI
+        }
+    })
+})
+
+test.describe('mmgisCopyText wrapper', () => {
     test('returns false on old cores without a modern clipboard', async () => {
         // No app:copyText handler and no navigator.clipboard (insecure
         // origin): the wrapper deliberately degrades to false rather than
@@ -134,32 +157,15 @@ test.describe('mmgisCopyText wrapper', () => {
     test('falls back past a core that lacks the handler', async () => {
         // hasHandler false → the wrapper must not call request() (which
         // would throw), and with no clipboard available resolves false.
-        window.mmgisAPI = {
-            hasHandler: () => false,
-            request: async () => {
-                throw new Error('should not be called')
-            },
-        }
+        const { api, requests } = makeBusApi({})
+        window.mmgisAPI = api
         try {
             await expect(mmgisCopyText('hello')).resolves.toBe(false)
+            expect(requests).toEqual([])
         } finally {
             delete window.mmgisAPI
         }
     })
-
-    function makeCopyApi(result) {
-        const requests = []
-        return {
-            api: {
-                hasHandler: (name) => name === 'app:copyText',
-                request: async (name, params) => {
-                    requests.push({ name, params })
-                    return result
-                },
-            },
-            requests,
-        }
-    }
 })
 
 test.describe('downloadSharePng', () => {

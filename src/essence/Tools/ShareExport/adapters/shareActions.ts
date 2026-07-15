@@ -43,8 +43,9 @@ export type CopyShareLinkDeps = {
 
 /**
  * Copies the current view's self-contained share URL to the clipboard via
- * core's mmgisAPI.copyText. Returns the copied URL. Throws if no link is
- * available or the copy fails.
+ * the shared client (core's app:copyText handler, with a browser-clipboard
+ * fallback). Returns the copied URL. Throws if no link is available or the
+ * copy fails.
  */
 export async function copyShareLink(
     deps: CopyShareLinkDeps = {},

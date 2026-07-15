@@ -57,36 +57,46 @@ export const mmgisHasHandler = (name: string): boolean => {
 // Typed wrappers for the core capabilities this plugin consumes, so plugins
 // reach core only through this shared client — and only via the
 // request/provide bus (string-named messages survive a sandbox boundary;
-// direct method calls don't). Each returns null if core isn't ready. The
-// bus name strings live here and nowhere else.
+// direct method calls don't). The bus name strings live here and nowhere
+// else. Each wrapper resolves null when core is absent or too old to
+// register the handler; errors thrown by a registered handler still
+// propagate (they are real failures, not version skew).
+
+const mmgisRequestIfProvided = async <T = unknown>(
+    name: string,
+    params?: unknown,
+): Promise<T | null> => {
+    if (!mmgisHasHandler(name)) return null
+    return mmgisRequest<T>(name, params)
+}
 
 /** The current view as a complete, self-contained share URL. */
 export const mmgisWriteCoordinateURL = (): Promise<string | null> => {
-    return mmgisRequest<string | null>('map:writeCoordinateURL')
+    return mmgisRequestIfProvided<string>('map:writeCoordinateURL')
 }
 
 /** The current map as a PNG Blob plus image metadata. */
-export const mmgisGetMapScreenshot = (): Promise<MapScreenshotResult | null> => {
-    return mmgisRequest<MapScreenshotResult>('map:getScreenshot')
+export const mmgisGetMapScreenshot = (): Promise<
+    MapScreenshotResult | null
+> => {
+    return mmgisRequestIfProvided<MapScreenshotResult>('map:getScreenshot')
 }
 
 /** View metadata (mission, time, center, zoom); fields null until loaded. */
 export const mmgisGetViewState = (): Promise<ViewState | null> => {
-    return mmgisRequest<ViewState>('map:getViewState')
+    return mmgisRequestIfProvided<ViewState>('map:getViewState')
 }
 
 /**
- * Copies text to the clipboard via core's single implementation; true on
- * success. For cores that predate the app:copyText handler, falls back to
- * the modern browser API only (no legacy path — silently degraded on
- * old-core insecure origins). The hasHandler guard matters: request()
- * throws on an unregistered name, unlike the optional chaining it replaced.
+ * Copies text to the clipboard via core's app:copyText handler; true on
+ * success. Against cores that predate the handler — including ones whose
+ * direct copyText method carried a legacy execCommand path this plugin no
+ * longer calls — falls back to the modern browser API only, so copy
+ * silently degrades to false on old-core insecure origins.
  */
 export const mmgisCopyText = async (text: string): Promise<boolean> => {
-    if (mmgisHasHandler('app:copyText')) {
-        const copied = await mmgisRequest<boolean>('app:copyText', text)
-        return copied === true
-    }
+    const copied = await mmgisRequestIfProvided<boolean>('app:copyText', text)
+    if (copied !== null) return copied === true
     if (!navigator.clipboard?.writeText) return false
     try {
         await navigator.clipboard.writeText(text)
