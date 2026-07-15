@@ -1142,6 +1142,10 @@ mmgisAPI.provide('map:writeCoordinateURL', () =>
 )
 mmgisAPI.provide('map:getViewState', () => mmgisAPI_.getViewState())
 mmgisAPI.provide('map:getScreenshot', () => mmgisAPI_.getMapScreenshot())
-mmgisAPI.provide('app:copyText', (text) => mmgisAPI_.copyText(text))
+mmgisAPI.provide('app:copyText', (text) =>
+    // Bus payloads arrive from arbitrary plugins; refuse non-strings rather
+    // than clobber the user's clipboard with a coerced 'undefined'.
+    typeof text === 'string' ? mmgisAPI_.copyText(text) : Promise.resolve(false)
+)
 
 export { mmgisAPI_, mmgisAPI }
