@@ -6,10 +6,6 @@ type MMGISAPI = {
     emit: (event: string, payload?: unknown) => void
     provide?: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
     hasHandler?: (name: string) => boolean
-    writeCoordinateURL?: () => string
-    getMapScreenshot?: () => Promise<MapScreenshotResult>
-    getViewState?: () => ViewState
-    copyText?: (text: string) => Promise<boolean>
 }
 
 export type MapScreenshotResult = {
@@ -58,34 +54,39 @@ export const mmgisHasHandler = (name: string): boolean => {
     return window.mmgisAPI?.hasHandler?.(name) === true
 }
 
-// Thin pass-throughs for first-class mmgisAPI methods, so plugins reach core
-// only through this shared client. Each returns null if core isn't ready.
+// Typed wrappers for the core capabilities this plugin consumes, so plugins
+// reach core only through this shared client — and only via the
+// request/provide bus (string-named messages survive a sandbox boundary;
+// direct method calls don't). Each returns null if core isn't ready. The
+// bus name strings live here and nowhere else.
 
-/** The current view as a complete, self-contained share URL. Synchronous. */
-export const mmgisWriteCoordinateURL = (): string | null => {
-    return window.mmgisAPI?.writeCoordinateURL?.() ?? null
+/** The current view as a complete, self-contained share URL. */
+export const mmgisWriteCoordinateURL = (): Promise<string | null> => {
+    return mmgisRequest<string | null>('map:writeCoordinateURL')
 }
 
 /** The current map as a PNG Blob plus image metadata. */
-export const mmgisGetMapScreenshot = async (): Promise<MapScreenshotResult | null> => {
-    if (window.mmgisAPI?.getMapScreenshot) {
-        return await window.mmgisAPI.getMapScreenshot()
-    }
-    return null
+export const mmgisGetMapScreenshot = (): Promise<MapScreenshotResult | null> => {
+    return mmgisRequest<MapScreenshotResult>('map:getScreenshot')
 }
 
 /** View metadata (mission, time, center, zoom); fields null until loaded. */
-export const mmgisGetViewState = (): ViewState | null => {
-    return window.mmgisAPI?.getViewState?.() ?? null
+export const mmgisGetViewState = (): Promise<ViewState | null> => {
+    return mmgisRequest<ViewState>('map:getViewState')
 }
 
 /**
  * Copies text to the clipboard via core's single implementation; true on
- * success. For cores that predate copyText, falls back to the modern browser
- * API only (no legacy path — silently degraded on old-core insecure origins).
+ * success. For cores that predate the app:copyText handler, falls back to
+ * the modern browser API only (no legacy path — silently degraded on
+ * old-core insecure origins). The hasHandler guard matters: request()
+ * throws on an unregistered name, unlike the optional chaining it replaced.
  */
 export const mmgisCopyText = async (text: string): Promise<boolean> => {
-    if (window.mmgisAPI?.copyText) return window.mmgisAPI.copyText(text)
+    if (mmgisHasHandler('app:copyText')) {
+        const copied = await mmgisRequest<boolean>('app:copyText', text)
+        return copied === true
+    }
     if (!navigator.clipboard?.writeText) return false
     try {
         await navigator.clipboard.writeText(text)

@@ -7,7 +7,12 @@ import {
     PDF_FILENAME,
     buildExportFilename,
 } from '../../../src/essence/Tools/ShareExport/adapters/shareActions.ts'
-import { mmgisCopyText } from '../../../src/essence/Tools/_shared/adapters/mmgisAPI.ts'
+import {
+    mmgisCopyText,
+    mmgisWriteCoordinateURL,
+    mmgisGetMapScreenshot,
+    mmgisGetViewState,
+} from '../../../src/essence/Tools/_shared/adapters/mmgisAPI.ts'
 
 // Issue #144 - the adapter must call the right plugin-API methods and package
 // the results. All core access is injected here so the wiring is exercised
@@ -17,7 +22,7 @@ test.describe('copyShareLink', () => {
     test('copies the share URL via copyText and returns it', async () => {
         const copied = []
         const url = await copyShareLink({
-            writeCoordinateURL: () => 'https://mmgis/?v=1',
+            writeCoordinateURL: async () => 'https://mmgis/?v=1',
             copyText: async (text) => {
                 copied.push(text)
                 return true
@@ -30,7 +35,7 @@ test.describe('copyShareLink', () => {
     test('throws when no link is available', async () => {
         await expect(
             copyShareLink({
-                writeCoordinateURL: () => null,
+                writeCoordinateURL: async () => null,
                 copyText: async () => true,
             }),
         ).rejects.toThrow('No share link available')
@@ -41,37 +46,120 @@ test.describe('copyShareLink', () => {
         // converts to a throw so the adapter's existing catch handles it.
         await expect(
             copyShareLink({
-                writeCoordinateURL: () => 'https://mmgis/?v=1',
+                writeCoordinateURL: async () => 'https://mmgis/?v=1',
                 copyText: async () => false,
             }),
         ).rejects.toThrow('Clipboard copy failed')
     })
 })
 
-test.describe('mmgisCopyText wrapper', () => {
-    test('delegates to core copyText when present', async () => {
-        const calls = []
-        window.mmgisAPI = {
-            copyText: async (t) => {
-                calls.push(t)
-                return true
+test.describe('bus wiring of the shared-client wrappers', () => {
+    // The wrappers are the plugin's only strings-on-the-bus site; pin each
+    // one to its registered core name so a rename can't silently no-op.
+    function makeBusApi(responses) {
+        const requests = []
+        return {
+            api: {
+                hasHandler: (name) => name in responses,
+                request: async (name, params) => {
+                    requests.push({ name, params })
+                    if (!(name in responses))
+                        throw new Error(`[mmgisAPI] No handler for: "${name}"`)
+                    return responses[name]
+                },
             },
+            requests,
         }
+    }
+
+    test('each wrapper requests its registered bus name', async () => {
+        const screenshot = { blob: new Blob(['p']), extension: 'png' }
+        const viewState = { missionName: 'M', time: null, center: null, zoom: 2 }
+        const { api, requests } = makeBusApi({
+            'map:writeCoordinateURL': 'https://mmgis/?v=1',
+            'map:getScreenshot': screenshot,
+            'map:getViewState': viewState,
+            'app:copyText': true,
+        })
+        window.mmgisAPI = api
+        try {
+            await expect(mmgisWriteCoordinateURL()).resolves.toBe(
+                'https://mmgis/?v=1',
+            )
+            await expect(mmgisGetMapScreenshot()).resolves.toBe(screenshot)
+            await expect(mmgisGetViewState()).resolves.toBe(viewState)
+            await expect(mmgisCopyText('hello')).resolves.toBe(true)
+            expect(requests.map((r) => r.name)).toEqual([
+                'map:writeCoordinateURL',
+                'map:getScreenshot',
+                'map:getViewState',
+                'app:copyText',
+            ])
+            expect(requests[3].params).toBe('hello')
+        } finally {
+            delete window.mmgisAPI
+        }
+    })
+
+    test('wrappers resolve null when core is absent', async () => {
+        delete window.mmgisAPI
+        await expect(mmgisWriteCoordinateURL()).resolves.toBe(null)
+        await expect(mmgisGetMapScreenshot()).resolves.toBe(null)
+        await expect(mmgisGetViewState()).resolves.toBe(null)
+    })
+})
+
+test.describe('mmgisCopyText wrapper', () => {
+    test('delegates to the app:copyText handler when registered', async () => {
+        const { api, requests } = makeCopyApi(true)
+        window.mmgisAPI = api
         try {
             await expect(mmgisCopyText('hello')).resolves.toBe(true)
-            expect(calls).toEqual(['hello'])
+            expect(requests).toEqual([
+                { name: 'app:copyText', params: 'hello' },
+            ])
         } finally {
             delete window.mmgisAPI
         }
     })
 
     test('returns false on old cores without a modern clipboard', async () => {
-        // No mmgisAPI.copyText and no navigator.clipboard (insecure origin):
-        // the wrapper deliberately degrades to false rather than vendoring the
-        // legacy execCommand path per plugin.
+        // No app:copyText handler and no navigator.clipboard (insecure
+        // origin): the wrapper deliberately degrades to false rather than
+        // vendoring the legacy execCommand path per plugin.
         delete window.mmgisAPI
         await expect(mmgisCopyText('hello')).resolves.toBe(false)
     })
+
+    test('falls back past a core that lacks the handler', async () => {
+        // hasHandler false → the wrapper must not call request() (which
+        // would throw), and with no clipboard available resolves false.
+        window.mmgisAPI = {
+            hasHandler: () => false,
+            request: async () => {
+                throw new Error('should not be called')
+            },
+        }
+        try {
+            await expect(mmgisCopyText('hello')).resolves.toBe(false)
+        } finally {
+            delete window.mmgisAPI
+        }
+    })
+
+    function makeCopyApi(result) {
+        const requests = []
+        return {
+            api: {
+                hasHandler: (name) => name === 'app:copyText',
+                request: async (name, params) => {
+                    requests.push({ name, params })
+                    return result
+                },
+            },
+            requests,
+        }
+    }
 })
 
 test.describe('downloadSharePng', () => {
@@ -194,7 +282,7 @@ test.describe('provenance filenames in downloads', () => {
                 height: 480,
             }),
             download: (b, filename) => downloads.push(filename),
-            getViewState: () => ({
+            getViewState: async () => ({
                 missionName: 'Earth',
                 time: null,
                 center: { lat: 33.1, lng: -84.2 },

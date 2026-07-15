@@ -37,7 +37,7 @@ export function buildExportFilename(
 }
 
 export type CopyShareLinkDeps = {
-    writeCoordinateURL?: () => string | null
+    writeCoordinateURL?: () => Promise<string | null>
     copyText?: (text: string) => Promise<boolean>
 }
 
@@ -53,7 +53,7 @@ export async function copyShareLink(
         writeCoordinateURL = mmgisWriteCoordinateURL,
         copyText = mmgisCopyText,
     } = deps
-    const url = writeCoordinateURL()
+    const url = await writeCoordinateURL()
     if (!url) throw new Error('No share link available')
     if (!(await copyText(url))) throw new Error('Clipboard copy failed')
     return url
@@ -62,7 +62,7 @@ export async function copyShareLink(
 export type DownloadSharePngDeps = {
     getScreenshot?: () => Promise<MapScreenshotResult | null>
     download?: (blob: Blob, filename: string) => void
-    getViewState?: () => ViewState | null
+    getViewState?: () => Promise<ViewState | null>
     filename?: string
 }
 
@@ -81,7 +81,7 @@ export async function downloadSharePng(
     if (!screenshot) throw new Error('No screenshot available')
     const filename =
         deps.filename ??
-        buildExportFilename(screenshot.extension, getViewState())
+        buildExportFilename(screenshot.extension, await getViewState())
     download(screenshot.blob, filename)
     return screenshot
 }
@@ -94,7 +94,7 @@ export type DownloadSharePdfDeps = {
         naturalWidth: number,
         naturalHeight: number,
     ) => JsPdfLike | Promise<JsPdfLike>
-    getViewState?: () => ViewState | null
+    getViewState?: () => Promise<ViewState | null>
     filename?: string
 }
 
@@ -117,7 +117,7 @@ export async function downloadSharePdf(
     const dataUrl = await convertBlobToDataUrl(screenshot.blob)
     const doc = await buildPdf(dataUrl, screenshot.width, screenshot.height)
     const filename =
-        deps.filename ?? buildExportFilename('pdf', getViewState())
+        deps.filename ?? buildExportFilename('pdf', await getViewState())
     doc.save(filename)
     return doc
 }
