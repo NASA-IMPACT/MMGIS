@@ -83,6 +83,17 @@ test.describe('share capabilities on the request/provide bus', () => {
         expect(mmgisAPI_.copyText).toHaveBeenCalledWith('hello')
     })
 
+    test('app:copyText refuses non-string payloads without touching the clipboard', async () => {
+        // Bus payloads arrive from arbitrary plugins; a missing or object
+        // payload must resolve false, not copy a coerced 'undefined'.
+        mmgisAPI_.copyText = vi.fn(() => Promise.resolve(true))
+        await expect(mmgisAPI.request('app:copyText')).resolves.toBe(false)
+        await expect(mmgisAPI.request('app:copyText', { a: 1 })).resolves.toBe(
+            false
+        )
+        expect(mmgisAPI_.copyText).not.toHaveBeenCalled()
+    })
+
     test('pre-load behavior matches the direct method (null link)', async () => {
         // Before the mission finalizes, writeCoordinateURL returns null on
         // both channels — the bus must not mask or change that signal.
