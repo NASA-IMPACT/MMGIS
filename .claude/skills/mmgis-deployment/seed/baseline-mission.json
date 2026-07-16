@@ -84,6 +84,22 @@
         "panelTools": [],
         "id": "left"
       }
+    ],
+    "floatingPanels": [
+      {
+        "id": "share-export-float",
+        "position": "float-top-right",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "panelTools": [
+          "ShareExport"
+        ]
+      }
     ]
   },
   "panels": {
@@ -95,6 +111,16 @@
     "enabled": false
   },
   "tools": [
+    {
+      "name": "ShareExport",
+      "icon": "share-variant",
+      "js": "ShareExportTool",
+      "on": true,
+      "variables": {
+        "exportPng": true,
+        "exportPdf": true
+      }
+    },
     {
       "name": "Layers",
       "icon": "layers",
