@@ -1,6 +1,21 @@
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import LeafletAdapter from '../../src/essence/Basics/MapEngines/Adapters/LeafletAdapter.ts'
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
+import { getMapScreenshot as mockedLeafletCapture } from '../../src/essence/Basics/MapEngines/Adapters/LeafletScreenshot.js'
+
+// Mock the Leaflet screenshot strategy so we can assert LeafletAdapter delegates
+// to it (issue #143) without driving the real html2canvas/DOM path.
+vi.mock('../../src/essence/Basics/MapEngines/Adapters/LeafletScreenshot.js', () => {
+    const result = {
+        blob: new Blob(['leaflet'], { type: 'image/png' }),
+        mimeType: 'image/png',
+        extension: 'png',
+        width: 640,
+        height: 480,
+    }
+    const fn = vi.fn(() => Promise.resolve(result))
+    return { getMapScreenshot: fn, default: fn }
+})
 
 
 /**
@@ -141,6 +156,25 @@ test.describe('LeafletAdapter - Lifecycle', () => {
         adapter.destroy()
 
         expect(adapter.getNativeMap()).toBeNull()
+    })
+
+    test('captureScreenshot() delegates to the Leaflet screenshot strategy', async () => {
+        // The engine-aware screenshot path (issue #143) requires every adapter
+        // to implement captureScreenshot(). LeafletAdapter delegates to the
+        // Leaflet screenshot helper; assert it actually calls it and returns the
+        // helper's promise (not just that the method exists).
+        const adapter = new LeafletAdapter()
+        expect(typeof adapter.captureScreenshot).toBe('function')
+
+        mockedLeafletCapture.mockClear()
+        const result = await adapter.captureScreenshot()
+
+        expect(mockedLeafletCapture).toHaveBeenCalledTimes(1)
+        expect(result.mimeType).toBe('image/png')
+        expect(result.extension).toBe('png')
+        expect(result.width).toBe(640)
+        expect(result.height).toBe(480)
+        expect(result.blob).toBeInstanceOf(Blob)
     })
 
     test('destroy() is safe to call when map is not initialized', () => {

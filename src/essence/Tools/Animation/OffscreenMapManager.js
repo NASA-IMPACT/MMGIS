@@ -20,6 +20,10 @@ import L_ from '../../Basics/Layers_/Layers_'
 import Map_ from '../../Basics/Map_/Map_'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import HTML2Canvas from 'html2canvas'
+import {
+    snapshotLeafletPaneStyles,
+    applyLeafletCloneFixups,
+} from '../../Basics/MapEngines/Adapters/LeafletCloneFixups'
 
 // Access Leaflet from global window object
 const L = window.L
@@ -620,6 +624,16 @@ class OffscreenMapManager {
             // Wait a bit for Leaflet to render (asynchronous rendering)
             await new Promise((resolve) => setTimeout(resolve, 100))
 
+            // Snapshot the pane styles for the shared Leaflet/html2canvas
+            // clone fixups (SVG re-parenting, tile z-index copy); the
+            // selectors scope them to the offscreen map only.
+            const paneStyles = snapshotLeafletPaneStyles({
+                svgSelector:
+                    '#offscreen-map-container .leaflet-overlay-pane > svg',
+                tileSelector:
+                    '#offscreen-map-container .leaflet-tile-pane > div.leaflet-layer',
+            })
+
             // Capture using HTML2Canvas
             const canvas = await HTML2Canvas(this.container, {
                 allowTaint: true,
@@ -635,41 +649,7 @@ class OffscreenMapManager {
                 windowWidth: this.container.offsetWidth,
                 windowHeight: this.container.offsetHeight,
 
-                onclone: function (e) {
-                    // Fix svg layer shift
-                    const originalSVG = document.body.querySelectorAll(
-                        '#offscreen-map-container .leaflet-overlay-pane > svg'
-                    )
-                    const copySVG = e.body.querySelectorAll(
-                        '#offscreen-map-container .leaflet-overlay-pane > svg'
-                    )
-                    copySVG.forEach((copyEle, i) => {
-                        const attribute = originalSVG
-                            .item(i)
-                            .getAttribute('style')
-                        const parentElement = copyEle.parentElement
-                        parentElement.removeChild(copyEle)
-                        const temp = document.createElement('div')
-                        temp.appendChild(copyEle)
-                        parentElement.appendChild(temp)
-                        temp.setAttribute('style', attribute)
-                        copyEle.removeAttribute('style')
-                    })
-
-                    // Fix tile layer z-indices
-                    const originalZ = document.body.querySelectorAll(
-                        '#offscreen-map-container .leaflet-tile-pane > div.leaflet-layer'
-                    )
-                    const copyZ = e.body.querySelectorAll(
-                        '#offscreen-map-container .leaflet-tile-pane > div.leaflet-layer'
-                    )
-                    copyZ.forEach((copyEle, i) => {
-                        const attribute = originalZ
-                            .item(i)
-                            .getAttribute('style')
-                        copyEle.setAttribute('style', attribute)
-                    })
-                },
+                onclone: (e) => applyLeafletCloneFixups(e.body, paneStyles),
             })
 
             // Since the offscreen container was sized to match the drawn bbox dimensions
