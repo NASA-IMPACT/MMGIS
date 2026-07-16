@@ -6,6 +6,8 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
 import TimeUI from './TimeUI'
+import { compileTileUrl } from '../Layers_/tileUrlUtils'
+import ServiceUrls from '../ServiceUrls/ServiceUrls'
 
 import './TimeControl.css'
 
@@ -176,7 +178,8 @@ var TimeControl = {
                 layer.time.end
             )
 
-            if (layer.type == 'tile') {
+            const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+            if (isTileLayer) {
                 TimeControl.setLayerWmsParams(layer)
             }
         }
@@ -238,13 +241,65 @@ var TimeControl = {
         let changedUrl = null
         if (layer.url !== originalUrl) changedUrl = layer.url
 
-        if (layer.type === 'tile') {
+        // Check for both 'tile' and 'TileLayer' (case-insensitive comparison)
+        const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+
+        if (isTileLayer) {
             if (layer.time && layer.time.enabled === true) {
                 TimeControl.setLayerWmsParams(layer)
             }
             if (evenIfControlled === true || layer.controlled !== true) {
-                if (L_.layers.on[layer.name] || evenIfOff) {
-                    L_.layers.layer[layer.name].refresh(changedUrl)
+                const tileLayer = L_.layers.layer[layer.name]
+                // Check if layer is "on" in tracking OR if layer object exists (which means it's actually on the map)
+                const isLayerVisible = L_.layers.on[layer.name] || evenIfOff || (tileLayer && tileLayer !== false && tileLayer !== null)
+                if (isLayerVisible) {
+                    const timeConfig = layer.time || {};
+                    const deckOptions = {
+                        ...layer,
+                        timeEnabled: timeConfig.enabled === true,
+                        time: timeConfig.end ?? '',
+                        compositeTile: timeConfig.compositeTile ?? false,
+                        starttime: timeConfig.start ?? '',
+                        endtime: timeConfig.end ?? '',
+                        customTimes: timeConfig.customTimes ?? '',
+                        tileFormat: layer.tileformat || 'tms',
+                        timeFormat: timeConfig.format,
+                    }
+
+                    // Build the new resolved URL (e.g. for COG or STAC)
+                    let resolvedUrl = changedUrl != null && L_.getUrl ? L_.getUrl(layer.type, changedUrl, layer) : (changedUrl || layer.url)
+                    const splitColonLayerUrl = (changedUrl || layer.url || '').split(':')
+                    let splitColonType = undefined
+                    if (splitColonLayerUrl[1] != null && ['stac-collection', 'COG', 'titiler-url'].includes(splitColonLayerUrl[0])) {
+                        splitColonType = splitColonLayerUrl[0]
+                        deckOptions.splitColonType = splitColonType
+                        if (splitColonType === 'stac-collection') {
+                            resolvedUrl = L_.transformStacUrl(resolvedUrl, layer, 'tile')
+                        } else if (splitColonType === 'COG') {
+                            resolvedUrl = ServiceUrls.buildTiTilerCogTilesUrl(resolvedUrl, layer, {
+                                tileMatrixSet: layer.tileMatrixSet,
+                                bands: (!layer.cogExpression || layer.cogExpression.trim() === '') ? layer.cogBands : null,
+                                resampling: layer.cogResampling
+                            })
+                        } else if (splitColonType === 'titiler-url') {
+                            resolvedUrl = splitColonLayerUrl.slice(1).join(':')
+                            if (!F_.isUrlAbsolute(resolvedUrl)) {
+                                resolvedUrl = L_.missionPath + resolvedUrl
+                            }
+                        }
+                    }
+
+                    // TODO: Refactor this to push URL compilation and refreshing into the map engine adapters
+                    // so that TimeControl.js doesn't need to check Map_.engine.engineType === 'deckgl'
+                    // or rely on tileLayer.refresh().
+                    if (tileLayer && typeof tileLayer.refresh === 'function') {
+                        // Pass deckOptions to refresh so it updates this.options with new COG fields
+                        tileLayer.refresh(resolvedUrl, true, deckOptions)
+                    } else if (Map_.engine?.engineType === 'deckgl') {
+                        const newUrl = compileTileUrl(resolvedUrl, deckOptions)
+                        Map_.engine.updateLayer(layer.name, { url: newUrl })
+                        return true
+                    }
                 }
             }
         } else if (layer.type == 'velocity') {
@@ -540,7 +595,8 @@ var TimeControl = {
                     layer.time.end
                 )
                 updatedLayers.push(layer.name)
-                if (layer.type === 'tile') {
+                const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+                if (isTileLayer) {
                     TimeControl.setLayerWmsParams(layer)
                 }
             }
@@ -582,11 +638,20 @@ var TimeControl = {
                 ? utcFormat('%Y-%m-%dT%H:%M:%SZ')
                 : utcFormat(layer.time.format)
         const l = L_.layers.layer[layer.name]
+        const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
 
-        if (l != null && layer.type === 'tile') {
-            l.options.time = layerTimeFormat(Date.parse(layer.time.end))
-            l.options.starttime = layerTimeFormat(Date.parse(layer.time.start))
-            l.options.endtime = layerTimeFormat(Date.parse(layer.time.end))
+        if (l != null && isTileLayer) {
+            const formattedTime = layerTimeFormat(Date.parse(layer.time.end))
+            const formattedStart = layerTimeFormat(Date.parse(layer.time.start))
+
+            // Ensure options object exists (needed for middleware-based layers)
+            if (!l.options) {
+                l.options = {}
+            }
+
+            l.options.time = formattedTime
+            l.options.starttime = formattedStart
+            l.options.endtime = formattedTime
         }
     },
 }

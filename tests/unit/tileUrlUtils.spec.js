@@ -2,9 +2,9 @@ import { test, expect } from 'vitest'
 import {
     processExpression,
     applyCogFieldsToUrl,
-} from '../../src/essence/Basics/Layers_/cogUrlUtils.ts'
+} from '../../src/essence/Basics/Layers_/tileUrlUtils.ts'
 
-test.describe('cogUrlUtils', () => {
+test.describe('tileUrlUtils', () => {
     test.describe('processExpression', () => {
         test('returns empty string unchanged', () => {
             expect(processExpression('')).toBe('')
