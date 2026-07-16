@@ -5,9 +5,7 @@ import $ from 'jquery'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
-import TimeUI from './TimeUI'
-
-import './TimeControl.css'
+import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
@@ -28,7 +26,6 @@ var TimeControl = {
     relativeEndTime: '00:00:00',
     globalTimeFormat: null,
     _updateLockedForAcceptingInput: false,
-    timeUI: null,
     customTimes: {
         times: [],
     },
@@ -39,27 +36,83 @@ var TimeControl = {
                 L_.configData.time.format
             )
         } else {
-            $('#toggleTimeUI').css({ display: 'none' })
-            $('#CoordinatesDiv').css({ marginRight: '0px' })
             return
         }
 
-        TimeControl.timeUI = TimeUI.init(timeInputChange, TimeControl.enabled)
+        let dateAddSec = null
+        let initialEnd = new Date()
+        if (L_.FUTURES.endTime != null) {
+            initialEnd = new Date(L_.FUTURES.endTime)
+        } else if (L_.configData.time.initialend != null && L_.configData.time.initialend !== 'now') {
+            dateAddSec = parseTimeWithOffset(L_.configData.time.initialend)
+            const dateStaged = new Date(dateAddSec.dateString)
+            if (dateStaged != 'Invalid Date') {
+                dateStaged.setSeconds(dateStaged.getSeconds() + dateAddSec.additionalSeconds)
+                initialEnd = dateStaged
+            }
+        }
+        
+        let initialStart = new Date(initialEnd)
+        initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
+        
+        if (L_.FUTURES.startTime != null) {
+            initialStart = new Date(L_.FUTURES.startTime)
+        } else if (L_.configData.time.initialstart != null) {
+            dateAddSec = parseTimeWithOffset(L_.configData.time.initialstart)
+            const dateStaged = new Date(dateAddSec.dateString)
+            if (dateStaged != 'Invalid Date') {
+                dateStaged.setSeconds(dateStaged.getSeconds() + dateAddSec.additionalSeconds)
+                if (dateStaged.getTime() <= initialEnd.getTime()) {
+                    initialStart = dateStaged
+                }
+            }
+        }
+
+        TimeControl.startTime = initialStart.toISOString()
+        TimeControl.endTime = initialEnd.toISOString()
+        TimeControl.currentTime = initialEnd.toISOString()
+
+        // Subscribe to user-initiated time changes from UI elements via Event Bus
+        // and emit controlReady event for UI elements to initialize
+        if (window.mmgisAPI) {
+            const cleanup = window.mmgisAPI.on('time:userChanged', ({ startTime, endTime, currentTime }) => {
+                timeInputChange(startTime, endTime, currentTime)
+            })
+            _providerCleanups.push(cleanup)
+
+            // Notify that TimeControl is ready for UI elements to initialize
+            window.mmgisAPI.emit('time:controlReady', {
+                enabled: TimeControl.enabled,
+                startTime: TimeControl.startTime,
+                endTime: TimeControl.endTime,
+                currentTime: TimeControl.currentTime,
+                timeInputChangeCallback: timeInputChange,
+            })
+        }
 
         //updateTime()
 
         initLayerTimes()
         initLayerDataTimes()
+
+        // Ensure layers are updated and reloaded with initial time parameters,
+        // particularly when TimeUI is missing or skipped.
+        timeInputChange(
+            TimeControl.startTime,
+            TimeControl.endTime,
+            TimeControl.currentTime
+        )
     },
     fina: function () {
-        if ((TimeControl.enabled = true && TimeControl.timeUI != null))
-            TimeControl.timeUI.fina()
-
         // Register time providers for mmgisAPI Event Bus
         if (window.mmgisAPI) {
             // Clean up previous providers if re-initializing
             _providerCleanups.forEach((cleanup) => cleanup())
             _providerCleanups = [
+                // Re-register the time:userChanged listener that was registered in init()
+                window.mmgisAPI.on('time:userChanged', ({ startTime, endTime, currentTime }) => {
+                    timeInputChange(startTime, endTime, currentTime)
+                }),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
@@ -111,7 +164,7 @@ var TimeControl = {
         const now = new Date()
         let offset = 0
         if (relativeTimeFormat.test(timeOffset)) {
-            offset = parseTime(timeOffset)
+            offset = parseTimeToSeconds(timeOffset)
         } else {
             // assume seconds otherwise
             offset = parseInt(timeOffset)
@@ -128,8 +181,8 @@ var TimeControl = {
         }
 
         if (isRelative == true) {
-            const start = parseTime(startTime)
-            const end = parseTime(endTime)
+            const start = parseTimeToSeconds(startTime)
+            const end = parseTimeToSeconds(endTime)
             const startTimeM = new moment(currentTime).subtract(
                 start,
                 'seconds'
@@ -154,11 +207,16 @@ var TimeControl = {
                     .split('.')[0] + 'Z'
         }
 
-        return TimeControl.timeUI.updateTimes(
-            TimeControl.startTime,
-            TimeControl.endTime,
-            TimeControl.currentTime
-        )
+        // Emit event for UI elements to respond, instead of calling it directly
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('time:setRequested', {
+                startTime: TimeControl.startTime,
+                endTime: TimeControl.endTime,
+                currentTime: TimeControl.currentTime,
+            })
+        }
+
+        return true
     },
     setLayerTime: function (layer, startTime, endTime) {
         if (typeof layer == 'string') {
@@ -458,7 +516,7 @@ var TimeControl = {
             if (
                 layer.time &&
                 layer.time.enabled === true &&
-                layer.variables?.dynamicExtent != true
+                layer.variables?.dynamicExtent !== true
             ) {
                 TimeControl.reloadLayer(layer)
                 reloadedLayers.push(layer.name)
@@ -515,12 +573,11 @@ var TimeControl = {
             }, 500)
         }
 
-        // Pan to followed feature after layers reload
-        if (TimeUI.followEnabled && TimeUI.followedFeature) {
-            // Add a small delay to ensure layers have finished loading
-            setTimeout(() => {
-                TimeUI.panToFollowedFeature()
-            }, 500)
+        // Emit event for TimeUI to handle follow feature
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('time:layersReloaded', {
+                reloadedLayers: reloadedLayers,
+            })
         }
 
         return reloadedLayers
@@ -636,6 +693,16 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
     TimeControl.currentTime = currentTime == null ? endTime : currentTime
     TimeControl.endTime = endTime
 
+    // Emit event for external listeners via Event Bus
+    if (window.mmgisAPI) {
+        window.mmgisAPI.emit('time:change', {
+            startTime: TimeControl.startTime,
+            endTime: TimeControl.endTime,
+            currentTime: TimeControl.currentTime,
+        })
+    }
+
+    // Keep existing subscriptions for backward compatibility
     if (L_?._timeChangeSubscriptions)
         Object.keys(L_._timeChangeSubscriptions).forEach((k) => {
             L_._timeChangeSubscriptions[k]({ startTime, currentTime, endTime })
@@ -654,18 +721,6 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
         TimeControl.updateLayersTime()
         TimeControl.reloadTimeLayers()
     }
-}
-
-function parseTime(t) {
-    if (t.toString().indexOf(':') == -1) {
-        return parseInt(t)
-    }
-    var s = t.split(':')
-    var seconds = +s[0].replace('-', '') * 60 * 60 + +s[1] * 60 + +s[2]
-    if (t.charAt(0) === '-') {
-        seconds = seconds * -1
-    }
-    return seconds
 }
 
 export default TimeControl

@@ -363,6 +363,9 @@ var mmgisAPI_ = {
             return matchedLayers
         } else return L_.layers.data
     },
+    getRawConfigData: function () {
+        return L_.configData
+    },
     getLayers: function () {
         return L_.layers.layer
     },
@@ -797,6 +800,10 @@ var mmgisAPI = {
      * @returns {object} - an object containing the visibility state of each layer
      */
     getLayerConfigs: mmgisAPI_.getLayerConfigs,
+    /** getRawConfigData - returns the original unmutated configuration data 
+     * @returns {object} - the original configData object
+     */
+    getRawConfigData: mmgisAPI_.getRawConfigData,
     /** getLayers - returns an object with the visibility state of all layers
      * @returns {object} - an object containing the visibility state of each layer
      */
