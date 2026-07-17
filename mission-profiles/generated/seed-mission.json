@@ -101,6 +101,21 @@
     ],
     "floatingPanels": [
       {
+        "position": "float-top-left",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "collapsed",
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "panelTools": [
+          "ShareExport"
+        ],
+        "id": "float-top-left"
+      },
+      {
         "position": "float-top-right",
         "hasHeader": false,
         "stateConstraints": {
@@ -111,7 +126,6 @@
           "defaultState": "expanded"
         },
         "panelTools": [
-          "ShareExport",
           "AOI",
           "Chart"
         ],
