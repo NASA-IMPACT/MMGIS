@@ -133,7 +133,7 @@
       ],
       "floatingPanels": [
         {
-          "position": "float-top-left",
+          "position": "float-top-right",
           "hasHeader": false,
           "stateConstraints": {
             "allowedStates": [
@@ -145,10 +145,10 @@
           "panelTools": [
             "ShareExport"
           ],
-          "id": "float-top-left"
+          "id": "float-share"
         },
         {
-          "position": "float-top-right",
+          "position": "float-bottom-right",
           "hasHeader": false,
           "stateConstraints": {
             "allowedStates": [
@@ -161,7 +161,7 @@
             "AOI",
             "Chart"
           ],
-          "id": "float-top-right",
+          "id": "float-analysis",
           "dimensions": {
             "maxWidth": "",
             "defaultWidth": "20vw",
