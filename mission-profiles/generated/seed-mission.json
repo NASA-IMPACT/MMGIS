@@ -1,7 +1,7 @@
 {
   "msv": {
-    "mission": "Disasters Demo",
-    "missionFolderName": "",
+    "mission": "Demo Dashboard",
+    "missionFolderName": "Demo Dashboard",
     "site": "",
     "masterdb": false,
     "view": [
