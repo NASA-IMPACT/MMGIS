@@ -182,17 +182,24 @@ jobs:
           echo "Rollout did not reach a steady state within 20 minutes." >&2
           exit 1
 
-      # Surface where this deploy landed in the run summary. ADMIN_URL is a
-      # repo variable; if it is unset, note that rather than print a blank.
+      # Surface where this deploy landed in the run summary. Runs even when
+      # the rollout step fails or times out — the image is already in ECR by
+      # then, and recording its URI aids debugging — but only once an image
+      # was actually pushed. The rollout line reports the job status so a
+      # failed rollout is not mistaken for a completed deploy. ADMIN_URL is
+      # a repo variable; if it is unset, note that rather than print a blank.
       - name: Write deployment summary
+        if: ${{ !cancelled() && steps.build-image.outputs.IMAGE_URI != '' }}
         env:
           IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
           ADMIN_URL: ${{ vars.ADMIN_URL }}
+          JOB_STATUS: ${{ job.status }}
         run: |
           {
             echo "## Lean deployment"
             echo ""
-            echo "- **Image:** \`$IMAGE_URI\`"
+            echo "- **Image pushed:** \`$IMAGE_URI\`"
+            echo "- **Rollout:** $JOB_STATUS"
             if [ -n "$ADMIN_URL" ]; then
               echo "- **Admin URL:** $ADMIN_URL"
             else
