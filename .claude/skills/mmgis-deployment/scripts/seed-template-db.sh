@@ -92,7 +92,11 @@ case "$out" in *'"status":"success"'*) : ;; *) mw_die "login failed: $out" ;; es
 # into MMGIS's mission template and sets msv.mission/missionFolderName itself.
 # (Mapbox pk. tokens are [A-Za-z0-9._-], so plain sed substitution is safe.)
 payload="$(mktemp)"
-{ printf '{"mission":"arst","config":'; sed "s|{{MAPBOX_TOKEN}}|${token}|" "$seed_json"; printf '}'; } >"$payload"
+# The mission name comes from the seed itself (msv.mission in the generated config),
+# so the profile is the single source of truth for what the seeded mission is called.
+mission_name="$(node -pe 'require(process.argv[1]).msv.mission' "$seed_json")"
+[ -n "$mission_name" ] && [ "$mission_name" != "undefined" ] || mw_die "seed file has no msv.mission"
+{ printf '{"mission":"%s","config":' "$mission_name"; sed "s|{{MAPBOX_TOKEN}}|${token}|" "$seed_json"; printf '}'; } >"$payload"
 out="$(curl -fsS -X POST -H 'Content-Type: application/json' -b "$jar" -d @"$payload" "$base/api/configure/add")"
 rm -f "$payload" "$jar"
 case "$out" in *'"status":"success"'*) : ;; *) mw_die "mission add failed: $out" ;; esac
@@ -107,4 +111,4 @@ done
 if mw_db_exists "$target"; then mw_psql postgres "DROP DATABASE \"$target\" WITH (FORCE)"; fi
 mw_psql postgres "ALTER DATABASE \"$scratch\" RENAME TO \"$target\""
 
-echo "$target ready (admin: $admin_user/$admin_pass · mission: arst)."
+echo "$target ready (admin: $admin_user/$admin_pass · mission: $mission_name)."

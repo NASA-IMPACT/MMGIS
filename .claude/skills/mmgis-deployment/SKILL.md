@@ -16,7 +16,7 @@ To understand the internals (the single-instance deploy and the multi-instance p
 ## Prerequisites
 
 - The shared DB container must be running. From the main checkout: `npm run db:start`.
-- `mmgis_template_db` must exist. On a fresh machine run `scripts/seed-template-db.sh` once — it builds the baseline (admin/admin + the `arst` mission) from the committed seed via a temporary server; no existing database needed. Set `MAPBOX_TOKEN` (env or main `.env`) first if you want basemaps to render — tokens are never committed to git. `scripts/refresh-template-db.sh` instead re-snapshots the baseline from a live database you already have.
+- `mmgis_template_db` must exist. On a fresh machine run `scripts/seed-template-db.sh` once — it builds the baseline (admin/admin + the seed mission, named by the seed's `msv.mission`) from the committed seed via a temporary server; no existing database needed. Set `MAPBOX_TOKEN` (env or main `.env`) first if you want basemaps to render — tokens are never committed to git. `scripts/refresh-template-db.sh` instead re-snapshots the baseline from a live database you already have.
 
 ## Routing — which script for which intent
 
