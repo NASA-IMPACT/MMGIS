@@ -15,7 +15,8 @@ name: Deploy lean (AWS ECS Express Mode)
 # below still matter (see that step's comment).
 #
 # Repository configuration:
-#   vars:    AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE
+#   vars:    AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE,
+#            ADMIN_URL (optional; shown in the run summary)
 #   secrets: AWS_DEPLOY_ROLE_ARN (OIDC-assumable deploy role; no
 #            long-lived keys)
 #
@@ -26,9 +27,9 @@ name: Deploy lean (AWS ECS Express Mode)
 concurrency: deploy_lean_mmgis
 
 on:
-  # Deploy on final releases (same release convention as docker-build.yml)
-  release:
-    types: [published]
+  # Deploy on every push to development
+  push:
+    branches: [development]
 
   # Plus manual rollouts
   workflow_dispatch:
@@ -78,9 +79,8 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
         run: |
-          # Tag with the release tag (or the short SHA for manual runs)
-          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
-          [ "${{ github.event_name }}" == "workflow_dispatch" ] && VERSION=$(git rev-parse --short HEAD)
+          # Every trigger tags the image with the commit short SHA.
+          VERSION=$(git rev-parse --short HEAD)
           IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
 
           docker build \
@@ -181,3 +181,21 @@ jobs:
           done
           echo "Rollout did not reach a steady state within 20 minutes." >&2
           exit 1
+
+      # Surface where this deploy landed in the run summary. ADMIN_URL is a
+      # repo variable; if it is unset, note that rather than print a blank.
+      - name: Write deployment summary
+        env:
+          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+          ADMIN_URL: ${{ vars.ADMIN_URL }}
+        run: |
+          {
+            echo "## Lean deployment"
+            echo ""
+            echo "- **Image:** \`$IMAGE_URI\`"
+            if [ -n "$ADMIN_URL" ]; then
+              echo "- **Admin URL:** $ADMIN_URL"
+            else
+              echo "- **Admin URL:** _not set (repo variable \`ADMIN_URL\` is empty)_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
