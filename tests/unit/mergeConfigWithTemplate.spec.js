@@ -15,9 +15,11 @@ import configTemplate from '../../API/templates/config_template.js'
 const freshTemplate = () => JSON.parse(JSON.stringify(configTemplate))
 
 test.describe('mergeConfigWithTemplate', () => {
-    test('template ships the three default tools (fixture sanity)', () => {
+    test('template ships the minimal default tools (fixture sanity)', () => {
+        // #109 swapped config_template.js to the generated minimal template:
+        // Title + LayerManager (both on), no layers, modern mode.
         const tools = configTemplate.tools.map((t) => t.name)
-        expect(tools).toEqual(['Layers', 'Legend', 'Info'])
+        expect(tools).toEqual(['LayerManager', 'Title'])
     })
 
     test('partial post with no arrays: template tools survive, scalars win', () => {
@@ -33,9 +35,8 @@ test.describe('mergeConfigWithTemplate', () => {
 
         // Gap-fill unchanged: the template's default tools are still present.
         expect(merged.tools.map((t) => t.name)).toEqual([
-            'Layers',
-            'Legend',
-            'Info',
+            'LayerManager',
+            'Title',
         ])
         // Posted scalars win.
         expect(merged.msv.mapEngine).toBe('cesium')
@@ -55,8 +56,9 @@ test.describe('mergeConfigWithTemplate', () => {
         const merged = mergeConfigWithTemplate(freshTemplate(), posted)
 
         expect(merged.tools.map((t) => t.name)).toEqual(['Draw', 'Measure'])
-        // None of the template's defaults leaked in.
-        expect(merged.tools.map((t) => t.name)).not.toContain('Layers')
+        // None of the template's defaults (Title / LayerManager) leaked in.
+        expect(merged.tools.map((t) => t.name)).not.toContain('LayerManager')
+        expect(merged.tools.map((t) => t.name)).not.toContain('Title')
         expect(merged.tools).toHaveLength(2)
     })
 
