@@ -9,6 +9,7 @@
     "AOI",
     "Card",
     "Chart",
+    "FetchStats",
     "ShareExport"
   ],
   "overrides": {

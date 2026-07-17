@@ -348,7 +348,7 @@
     {
       "name": "FetchStats",
       "js": "FetchStatsTool",
-      "on": false,
+      "on": true,
       "variables": {}
     },
     {
