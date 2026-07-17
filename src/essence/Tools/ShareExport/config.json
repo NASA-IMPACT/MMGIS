@@ -1,4 +1,10 @@
 {
+    "defaults": {
+        "variables": {
+            "exportPng": true,
+            "exportPdf": true
+        }
+    },
     "defaultIcon": "share-variant",
     "description": "A \"Share map\" button that opens a menu to share the current view as a link, PNG, or PDF.",
     "descriptionFull": {

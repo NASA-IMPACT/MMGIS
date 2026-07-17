@@ -1,4 +1,9 @@
 {
+    "defaults": {
+        "variables": {
+            "withCredentials": false
+        }
+    },
     "defaultIcon": "waves",
     "description": "Curtain views of Ground Penetrating Radar data.",
     "descriptionFull": {

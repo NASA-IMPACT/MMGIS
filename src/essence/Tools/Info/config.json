@@ -1,4 +1,9 @@
 {
+    "defaults": {
+        "variables": {
+            "sortAlphabetically": false
+        }
+    },
     "defaultIcon": "information-variant",
     "description": "Display the geojson properties field of a clicked feature.",
     "descriptionFull": {

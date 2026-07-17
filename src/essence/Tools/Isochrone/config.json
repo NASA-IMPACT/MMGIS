@@ -1,4 +1,9 @@
 {
+    "defaults": {
+        "variables": {
+            "interpolateSeams": false
+        }
+    },
     "defaultIcon": "circle-double",
     "description": "Find the range of locations accessible to an explorer within a given time.",
     "descriptionFull": {

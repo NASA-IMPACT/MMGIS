@@ -1,4 +1,20 @@
 {
+    "seedExclude": true,
+    "defaults": {
+        "variables": {
+            "defaultDrawClipping": "over",
+            "leadsCanEditFileInfo": false,
+            "hoverLengthOnLines": false,
+            "defaultPublicFilter": false,
+            "defaultYoursOnlyFilter": true,
+            "defaultOnFilter": false,
+            "dynamicExtent": {
+                "enabled": true,
+                "moveThreshold": "1000/z",
+                "timeProp": "time"
+            }
+        }
+    },
     "defaultIcon": "pencil",
     "description": "Advanced and collaborative map drawing.",
     "descriptionFull": {

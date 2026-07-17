@@ -1,4 +1,7 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "defaultIcon": "sun-angle-outline",
     "description": "Realtime user generated sun and orbiter masks.",
     "descriptionFull": {

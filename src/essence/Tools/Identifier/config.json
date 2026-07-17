@@ -1,4 +1,9 @@
 {
+    "defaults": {
+        "variables": {
+            "justification": "left"
+        }
+    },
     "defaultIcon": "map-marker",
     "description": "Mouse over the map for a by-pixel legend of a raster.",
     "descriptionFull": {

@@ -1,4 +1,7 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "defaultIcon": "flask",
     "description": "Display chemistry percentages via graphs of a clicked point.",
     "descriptionFull": {},
