@@ -1,0 +1,917 @@
+{
+  "msv": {
+    "mission": "Disasters Demo",
+    "missionFolderName": "",
+    "site": "",
+    "masterdb": false,
+    "view": [
+      "0",
+      "0",
+      "0"
+    ],
+    "radius": {
+      "major": 6371008,
+      "minor": 6371008
+    },
+    "mapscale": "",
+    "mapEngine": "deckgl",
+    "mode": "modern",
+    "basemap": {
+      "provider": "mapbox",
+      "style": "mapbox://styles/mapbox/streets-v12",
+      "accessToken": "{{MAPBOX_TOKEN}}"
+    },
+    "theme": "disasters"
+  },
+  "projection": {
+    "custom": false,
+    "epsg": "",
+    "proj": "",
+    "globeproj": "webmercator",
+    "xmlpath": "",
+    "bounds": [
+      "",
+      "",
+      "",
+      ""
+    ],
+    "origin": [
+      "",
+      ""
+    ],
+    "reszoomlevel": "",
+    "resunitsperpixel": ""
+  },
+  "look": {
+    "pagename": "Disasters Program",
+    "minimalist": false,
+    "topbar": true,
+    "toolbar": true,
+    "scalebar": true,
+    "coordinates": true,
+    "zoomcontrol": false,
+    "graticule": false,
+    "miscellaneous": true,
+    "bodycolor": "",
+    "topbarcolor": "",
+    "toolbarcolor": "",
+    "mapcolor": "",
+    "swap": true,
+    "copylink": true,
+    "screenshot": true,
+    "fullscreen": true,
+    "help": true,
+    "logourl": "https://visualization-tool-prototype.netlify.app/nasa-disasters-logo.svg",
+    "helpurl": "",
+    "mapLogoUrl": "",
+    "mapLogoLink": ""
+  },
+  "panelSettings": {
+    "panels": [
+      {
+        "position": "left",
+        "priority": 1,
+        "layoutType": "stacked",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "expanded",
+            "collapsed"
+          ],
+          "defaultState": "expanded"
+        },
+        "capabilities": {
+          "resizable": false
+        },
+        "panelTools": [
+          "Title",
+          "Card",
+          "LayerManager"
+        ],
+        "id": "left-tools-panel",
+        "dimensions": {
+          "iconifiedSize": 40,
+          "expandedSize": 368
+        },
+        "pinnedTools": [
+          "Title",
+          "Card"
+        ]
+      }
+    ],
+    "floatingPanels": [
+      {
+        "position": "float-top-right",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "collapsed",
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "panelTools": [
+          "ShareExport",
+          "AOI",
+          "Chart"
+        ],
+        "id": "float-top-right",
+        "dimensions": {
+          "maxWidth": "",
+          "defaultWidth": "20vw",
+          "minWidth": "350px"
+        }
+      }
+    ],
+    "layoutStyle": "compact"
+  },
+  "panels": {
+    "viewer": true,
+    "map": true,
+    "globe": true
+  },
+  "time": {
+    "enabled": true,
+    "visible": true,
+    "format": "YYYY-MM-DDTHH:mm:ss[Z]",
+    "initiallyOpen": false,
+    "liveByDefault": false,
+    "initialstart": "2015-03-13T00:00:00Z",
+    "initialend": "now",
+    "initialwindowstart": null,
+    "initialwindowend": null
+  },
+  "tools": [
+    {
+      "name": "Identifier",
+      "icon": "map-marker",
+      "js": "IdentifierTool",
+      "on": false,
+      "variables": {
+        "justification": "left"
+      }
+    },
+    {
+      "name": "Layers",
+      "icon": "layers",
+      "js": "LayersTool",
+      "on": false,
+      "variables": {
+        "expanded": false
+      }
+    },
+    {
+      "name": "LayerManager",
+      "icon": "layers-triple-outline",
+      "js": "LayerManagerTool",
+      "on": true,
+      "variables": {
+        "displayOnStart": false,
+        "showOnlyVisible": false
+      },
+      "metadata": {
+        "icon": "layers-triple-outline",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+          "left",
+          "right"
+        ],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 320,
+        "height": 0
+      }
+    },
+    {
+      "name": "Legend",
+      "icon": "map-legend",
+      "js": "LegendTool",
+      "on": false,
+      "variables": {
+        "displayOnStart": false,
+        "justification": "left",
+        "showHeadersInLegend": false
+      }
+    },
+    {
+      "name": "Card",
+      "icon": "card-text-outline",
+      "js": "CardTool",
+      "on": true,
+      "variables": {
+        "cards": [
+          {
+            "title": "Hurricane Helene: Mapping the Flood Footprint",
+            "subtitle": "Story of Impact",
+            "linkUrl": "https://www.earthdata.nasa.gov/topics/disasters"
+          },
+          {
+            "title": "Wildfire Burn Severity from Sentinel-2 dNBR",
+            "subtitle": "How to Read This Map",
+            "linkUrl": "https://www.earthdata.nasa.gov/topics/disasters/wildfires"
+          }
+        ]
+      },
+      "metadata": {
+        "icon": "card-text-outline",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+          "left",
+          "right"
+        ],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 368,
+        "height": 0
+      }
+    },
+    {
+      "name": "Info",
+      "icon": "information-variant",
+      "js": "InfoTool",
+      "on": false,
+      "variables": {
+        "sortAlphabetically": false
+      }
+    },
+    {
+      "name": "ShareExport",
+      "icon": "share-variant",
+      "js": "ShareExportTool",
+      "on": true,
+      "variables": {
+        "exportPng": true,
+        "exportPdf": true
+      },
+      "metadata": {
+        "icon": "share-variant",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+          "left",
+          "right",
+          "float-top-left",
+          "float-top-center",
+          "float-top-right",
+          "float-bottom-left",
+          "float-bottom-center",
+          "float-bottom-right"
+        ],
+        "preferredPosition": "float-top-right",
+        "modernLayoutSupport": true
+      }
+    },
+    {
+      "name": "Title",
+      "icon": "information-variant",
+      "js": "TitleTool",
+      "on": true,
+      "variables": {
+        "showLogo": true,
+        "showTitleText": true
+      },
+      "metadata": {
+        "icon": "information-variant",
+        "requiredOrientation": "horizontal",
+        "compatiblePositions": [
+          "top"
+        ],
+        "preferredPosition": "top",
+        "modernLayoutSupport": true,
+        "width": 300,
+        "height": 0
+      }
+    },
+    {
+      "name": "Sites",
+      "icon": "pin",
+      "js": "SitesTool",
+      "on": false,
+      "variables": {}
+    },
+    {
+      "name": "AOI",
+      "icon": "selection-drag",
+      "js": "AOITool",
+      "on": true,
+      "variables": {
+        "justification": "left"
+      }
+    },
+    {
+      "name": "Chart",
+      "icon": "chart-bar",
+      "js": "ChartTool",
+      "on": true,
+      "variables": {}
+    },
+    {
+      "name": "Isochrone",
+      "icon": "circle-double",
+      "js": "IsochroneTool",
+      "on": false,
+      "variables": {
+        "interpolateSeams": false
+      }
+    },
+    {
+      "name": "Viewshed",
+      "icon": "wifi-strength-2",
+      "js": "ViewshedTool",
+      "on": false,
+      "variables": {
+        "curvature": false
+      }
+    },
+    {
+      "name": "Shade",
+      "icon": "sun-angle-outline",
+      "js": "ShadeTool",
+      "on": false,
+      "variables": {}
+    },
+    {
+      "name": "Chemistry",
+      "icon": "flask",
+      "js": "ChemistryTool",
+      "on": false,
+      "variables": {}
+    },
+    {
+      "name": "Curtain",
+      "icon": "waves",
+      "js": "CurtainTool",
+      "on": false,
+      "variables": {
+        "withCredentials": false
+      }
+    },
+    {
+      "name": "FetchStats",
+      "js": "FetchStatsTool",
+      "on": false,
+      "variables": {}
+    },
+    {
+      "name": "Measure",
+      "icon": "tape-measure",
+      "js": "MeasureTool",
+      "on": false,
+      "variables": {
+        "onlyShowDemIfLayerOn": false,
+        "defaultMode": "segment"
+      }
+    },
+    {
+      "name": "Animation",
+      "icon": "video",
+      "js": "AnimationTool",
+      "on": false,
+      "variables": {
+        "animationGIF": true,
+        "animationMP4": true,
+        "animationPNG": false
+      }
+    }
+  ],
+  "layers": [
+    {
+      "name": "Sentinel-2 True Color",
+      "uuid": "4a794cab-c789-4d26-af27-33536fb35984",
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-truecolor-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=truecolor&bidx=1&bidx=2&bidx=3&resampling=nearest&datetime={starttime}/{endtime}",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "boundingBox": [
+        -88.13232421875,
+        36.04909895906563,
+        -86.8798828125,
+        37.0551771066608
+      ],
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "start": "2015-03-13T00:00:00Z",
+        "end": "2026-01-29T00:00:00Z"
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-truecolor-daily/items/sentinel2-truecolor-daily-S2B_MSIL2A_trueColor_164439_T16SDF_2026-01-29_day",
+          "assets": [
+            "truecolor"
+          ],
+          "bidx": [
+            1,
+            2,
+            3
+          ]
+        }
+      },
+      "properties": {
+        "theme": [
+          "need",
+          "hazard",
+          "event"
+        ],
+        "hazard": "storm",
+        "sector": "agriculture",
+        "location": "north_america",
+        "year": "2026"
+      }
+    },
+    {
+      "name": "Sentinel-2 Color Infrared",
+      "uuid": "5578bdf9-55b9-4e1c-915c-0abf70bc9d63",
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-colorir-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=colorir&bidx=1&bidx=2&bidx=3&resampling=nearest&datetime={starttime}/{endtime}",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "boundingBox": [
+        -102.19482421875,
+        30.60009387355006,
+        -98.876953125,
+        32.54681317351514
+      ],
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "start": "2023-10-18T00:00:00Z",
+        "end": "2025-07-10T00:00:00Z"
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-colorir-daily/items/sentinel2-colorir-daily-NW_CentralTX_S2C_colorInfrared_merged_2025-07-10_day",
+          "assets": [
+            "colorir"
+          ],
+          "bidx": [
+            1,
+            2,
+            3
+          ]
+        }
+      },
+      "properties": {
+        "theme": [
+          "need",
+          "hazard",
+          "event"
+        ],
+        "hazard": "storm",
+        "sector": "agriculture",
+        "location": "north_america",
+        "year": "2025"
+      }
+    },
+    {
+      "name": "Sentinel-2 dNBR",
+      "uuid": "204bcec1-539e-4028-a8cb-54436a2adadf",
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-dnbr-daily/items/sentinel2-dnbr-daily-s2_dnbr_dNBR_2025-01-12_day/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=dnbr&bidx=1&rescale=-1,1&colormap_name=gray&resampling=nearest&nodata=-9999",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "boundingBox": [
+        -119.17968749999999,
+        33.32134852669881,
+        -117.94921874999999,
+        34.34343606848294
+      ],
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "time": {
+        "enabled": false
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-dnbr-daily/items/sentinel2-dnbr-daily-s2_dnbr_dNBR_2025-01-12_day",
+          "assets": [
+            "dnbr"
+          ],
+          "bidx": [
+            1
+          ],
+          "nodata": -9999
+        },
+        "legend": [
+          {
+            "shape": "continuous",
+            "color": "#000000",
+            "value": -1
+          },
+          {
+            "shape": "continuous",
+            "color": "#1a1a1a",
+            "value": -0.8
+          },
+          {
+            "shape": "continuous",
+            "color": "#333333",
+            "value": -0.6
+          },
+          {
+            "shape": "continuous",
+            "color": "#4c4c4c",
+            "value": -0.4
+          },
+          {
+            "shape": "continuous",
+            "color": "#666666",
+            "value": -0.2
+          },
+          {
+            "shape": "continuous",
+            "color": "#808080",
+            "value": 0
+          },
+          {
+            "shape": "continuous",
+            "color": "#999999",
+            "value": 0.2
+          },
+          {
+            "shape": "continuous",
+            "color": "#b2b2b2",
+            "value": 0.4
+          },
+          {
+            "shape": "continuous",
+            "color": "#cccccc",
+            "value": 0.6
+          },
+          {
+            "shape": "continuous",
+            "color": "#e6e6e6",
+            "value": 0.8
+          },
+          {
+            "shape": "continuous",
+            "color": "#ffffff",
+            "value": 1
+          }
+        ]
+      },
+      "properties": {
+        "theme": [
+          "need",
+          "hazard",
+          "event"
+        ],
+        "hazard": "fire",
+        "sector": "public_health",
+        "location": "north_america",
+        "year": "2025"
+      }
+    },
+    {
+      "name": "Landsat True Color",
+      "uuid": "260afe79-4f16-4f01-ba9e-97f0804deca3",
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/landsat-truecolor-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=truecolor&bidx=1&bidx=2&bidx=3&resampling=nearest&datetime={starttime}/{endtime}",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "boundingBox": [
+        -90.35156250000001,
+        33.504759069226075,
+        -87.62695312500001,
+        35.74651225991851
+      ],
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "start": "2023-01-15T00:00:00Z",
+        "end": "2026-01-28T00:00:00Z"
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/landsat-truecolor-daily/items/landsat-truecolor-daily-LC09_trueColor_16319_022036_2026-01-28_day",
+          "assets": [
+            "truecolor"
+          ],
+          "bidx": [
+            1,
+            2,
+            3
+          ]
+        }
+      },
+      "properties": {
+        "theme": [
+          "need",
+          "hazard",
+          "event"
+        ],
+        "hazard": "storm",
+        "sector": "agriculture",
+        "location": "north_america",
+        "year": "2026"
+      }
+    },
+    {
+      "name": "UAVSAR Surface Displacement",
+      "uuid": "03121064-16c2-474d-a8cc-73a11ea9e1b4",
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/uavsar-displacement-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=displacement&bidx=1&rescale=-0.1,0.2&colormap_name=rdbu_r&resampling=nearest&datetime={starttime}/{endtime}",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "demparser": "rgba",
+      "boundingBox": [
+        -118.39965820312499,
+        33.7243396617476,
+        -118.3447265625,
+        33.77001515278013
+      ],
+      "throughTileServer": false,
+      "cogResampling": "nearest",
+      "cogExpressionEditable": false,
+      "cogTransform": false,
+      "cogColormap": "blues",
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "compositeTile": false,
+        "refreshIntervalEnabled": false
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "legend": [
+          {
+            "shape": "continuous",
+            "color": "#053061",
+            "value": -0.1
+          },
+          {
+            "shape": "continuous",
+            "color": "#2166ac",
+            "value": -0.07
+          },
+          {
+            "shape": "continuous",
+            "color": "#4393c3",
+            "value": -0.04
+          },
+          {
+            "shape": "continuous",
+            "color": "#90c4dd",
+            "value": -0.01
+          },
+          {
+            "shape": "continuous",
+            "color": "#d1e5f0",
+            "value": 0.02
+          },
+          {
+            "shape": "continuous",
+            "color": "#f7f6f6",
+            "value": 0.05
+          },
+          {
+            "shape": "continuous",
+            "color": "#fddbc7",
+            "value": 0.08
+          },
+          {
+            "shape": "continuous",
+            "color": "#f4a683",
+            "value": 0.11
+          },
+          {
+            "shape": "continuous",
+            "color": "#d6604d",
+            "value": 0.14
+          },
+          {
+            "shape": "continuous",
+            "color": "#b0172a",
+            "value": 0.17
+          },
+          {
+            "shape": "continuous",
+            "color": "#67001f",
+            "value": 0.2
+          }
+        ]
+      },
+      "properties": {
+        "theme": [
+          "need",
+          "hazard",
+          "event"
+        ],
+        "hazard": "flood",
+        "sector": "water",
+        "location": "north_america",
+        "year": "2024"
+      }
+    },
+    {
+      "name": "Black Marble HD",
+      "uuid": "79a4662e-b480-41d7-bd99-7b82380e0dbd",
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/blackmarble-hd-daily-june2026/items/blackmarble-hd-daily-june2026-202409_Hurricane_Helene_finalBMHD_VNP46A2_BRDFCorrected_Augusta_2024-09-28_day/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=blackmarble_hd&bidx=1&bidx=2&bidx=3&resampling=nearest",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "boundingBox": [
+        -82.409052,
+        33.16695,
+        -81.548639,
+        33.784658
+      ],
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "time": {
+        "enabled": false
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/blackmarble-hd-daily-june2026/items/blackmarble-hd-daily-june2026-202409_Hurricane_Helene_finalBMHD_VNP46A2_BRDFCorrected_Augusta_2024-09-28_day",
+          "assets": [
+            "blackmarble_hd"
+          ],
+          "bidx": [
+            1,
+            2,
+            3
+          ]
+        }
+      },
+      "properties": {
+        "theme": [
+          "need",
+          "hazard",
+          "event"
+        ],
+        "hazard": "storm",
+        "sector": "energy",
+        "location": "north_america",
+        "year": "2026"
+      }
+    },
+    {
+      "name": "Sentinel-1 HydroSAR Water",
+      "uuid": "a7a18d4b-e070-4825-9ea0-52e7b5cb9a60",
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-hydrosar-wm-iw-dvr-subdaily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=dvr&bidx=1&colormap=%7B%221%22%3A%5B1%2C92%2C230%2C255%5D%2C%222%22%3A%5B255%2C0%2C0%2C255%5D%2C%223%22%3A%5B56%2C168%2C1%2C255%5D%2C%224%22%3A%5B230%2C151%2C2%2C255%5D%7D&nodata=0&resampling=nearest&datetime={starttime}/{endtime}",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "boundingBox": [
+        -85.3857421875,
+        10.185187409269048,
+        -82.6611328125,
+        12.382928338487396
+      ],
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "start": "2023-01-01T01:59:15Z",
+        "end": "2024-11-23T23:49:03Z"
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-hydrosar-wm-iw-dvr-subdaily/items/sentinel1-hydrosar-wm-iw-dvr-subdaily-S1A_IW_DVR_RTC20_G_gpufed_0C2F_WM_2024-11-23T23:49:03Z",
+          "assets": [
+            "dvr"
+          ],
+          "bidx": [
+            1
+          ]
+        },
+        "legend": [
+          {
+            "shape": "rect",
+            "color": "#015ce6",
+            "value": "Open Water"
+          },
+          {
+            "shape": "rect",
+            "color": "#ff0000",
+            "value": "Flooded Developed"
+          },
+          {
+            "shape": "rect",
+            "color": "#38a801",
+            "value": "Flooded Vegetation"
+          },
+          {
+            "shape": "rect",
+            "color": "#e69702",
+            "value": "Flooded Crop"
+          }
+        ]
+      },
+      "properties": {
+        "theme": [
+          "need",
+          "hazard",
+          "event"
+        ],
+        "hazard": "flood",
+        "sector": "water",
+        "location": "south_america",
+        "year": "2024"
+      }
+    }
+  ]
+}
