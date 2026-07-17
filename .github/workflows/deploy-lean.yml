@@ -155,8 +155,10 @@ jobs:
             --output text)
           echo "Resolved $ECS_SERVICE -> $SERVICE_ARN"
 
+          # No --cluster here: current CLIs removed it from
+          # update-express-gateway-service (the service ARN fully
+          # qualifies the target).
           aws ecs update-express-gateway-service \
-            --cluster "$ECS_CLUSTER" \
             --service-arn "$SERVICE_ARN" \
             --primary-container "{\"image\": \"$IMAGE_URI\"}"
 
