@@ -135,8 +135,14 @@ jobs:
       # We poll `describe-express-gateway-service` rather than use
       # `monitor-express-gateway-service`: monitor is an interactive,
       # open-ended streamer meant for a human terminal, while describe
-      # returns a discrete deployment status we can bound with a timeout
-      # and a clean exit code in CI.
+      # returns discrete state we can bound with a timeout and a clean
+      # exit code in CI. The response exposes no per-deployment
+      # rolloutState; convergence is when service.status.statusCode is
+      # ACTIVE and every entry in service.activeConfigurations[] runs the
+      # target image (during a rollout the old and new revisions are both
+      # listed until the old one drains). statusCode has no failure value
+      # (only ACTIVE | DRAINING | INACTIVE), so a rollout that cannot
+      # converge is caught by the timeout, not a status check.
       - name: Roll the Express Mode gateway service
         env:
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
@@ -162,22 +168,22 @@ jobs:
             --service-arn "$SERVICE_ARN" \
             --primary-container "{\"image\": \"$IMAGE_URI\"}"
 
-          # Bounded poll (up to 20 minutes) until the managed deployment is
-          # steady. A deployment that is still converging reports an
-          # in-progress status; anything FAILED fails the job immediately.
+          # Bounded poll (up to 20 minutes) until the rollout converges:
+          # the service is ACTIVE and the target image is the only one
+          # across the active configurations.
           for attempt in $(seq 1 80); do
-            STATUS=$(aws ecs describe-express-gateway-service \
+            RESPONSE=$(aws ecs describe-express-gateway-service \
               --service-arn "$SERVICE_ARN" \
-              --query 'service.deployments[0].rolloutState' \
-              --output text)
-            echo "[$attempt/80] deployment status: $STATUS"
-            if [ "$STATUS" = "COMPLETED" ]; then
-              echo "Rollout steady."
+              --output json)
+            STATUS=$(echo "$RESPONSE" \
+              | jq -r '.service.status.statusCode')
+            IMAGES=$(echo "$RESPONSE" \
+              | jq -r '[.service.activeConfigurations[]?.primaryContainer.image]
+                       | unique | join(", ")')
+            echo "[$attempt/80] status: $STATUS; active images: $IMAGES"
+            if [ "$STATUS" = "ACTIVE" ] && [ "$IMAGES" = "$IMAGE_URI" ]; then
+              echo "Rollout converged on $IMAGE_URI."
               exit 0
-            fi
-            if [ "$STATUS" = "FAILED" ]; then
-              echo "Rollout FAILED — see the ECS console / service events." >&2
-              exit 1
             fi
             sleep 15
           done
