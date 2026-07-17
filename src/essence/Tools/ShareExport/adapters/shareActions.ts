@@ -25,7 +25,7 @@ export function buildExportFilename(
 ): string {
     const parts: string[] = []
     if (viewState?.missionName) parts.push(viewState.missionName)
-    if (viewState?.time) parts.push(viewState.time.replaceAll(':', '-'))
+    if (viewState?.time) parts.push(viewState.time.split(':').join('-'))
     if (viewState?.center)
         parts.push(
             `${viewState.center.lat.toFixed(4)}_${viewState.center.lng.toFixed(
