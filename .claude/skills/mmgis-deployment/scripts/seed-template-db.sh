@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # seed-template-db.sh — build mmgis_template_db from the committed seed (no existing database needed).
 #   seed-template-db.sh [--force]
-# For fresh machines: boots a temporary server from the main checkout against a scratch
-# database, seeds an admin user + the baseline mission through MMGIS's own APIs
+# Boots a temporary server FROM THIS SKILL'S OWN CHECKOUT against a scratch database,
+# seeds an admin user + the baseline mission through MMGIS's own APIs
 # (first_signup → login → configure/add), then freezes the result as mmgis_template_db.
+# The server must run this checkout's code — the seed relies on this branch's merge
+# semantics in /api/configure/add; a server from another checkout (e.g. the main one on
+# an older branch) can corrupt the seeded mission (duplicated template tools).
+# On a fresh machine the skill lives in the main checkout, so nothing changes there.
 # To re-baseline from your live mmgis database instead, use refresh-template-db.sh.
 #
 # Env:
 #   MAPBOX_TOKEN        basemap token injected into the seed config (never committed to git;
-#                       falls back to MAPBOX_TOKEN in the main checkout's .env, else empty)
+#                       falls back to MAPBOX_TOKEN in this checkout's .env, then the main
+#                       checkout's .env, else empty)
 #   MW_SEED_ADMIN_USER  seeded admin username (default: admin)
 #   MW_SEED_ADMIN_PASS  seeded admin password (default: admin)
 #   MW_TEMPLATE_DB      target database name (default: mmgis_template_db)
@@ -27,9 +32,13 @@ target="${MW_TEMPLATE_DB:-mmgis_template_db}"
 seed_json="$HERE/../../../../mission-profiles/generated/seed-mission.json"
 [ -f "$seed_json" ] || mw_die "seed file missing: $seed_json (run: node scripts/generate-mission-config.js seed)"
 
+# The checkout this skill (and the committed seed) belong to — the temp server runs from
+# here so the seeding API has the same branch's code as the seed it receives.
+repo_root="$(cd "$HERE/../../../.." && pwd)"
 main_dir="$(mw_main_dir)"
-[ -d "$main_dir/node_modules" ] || mw_die "main checkout has no node_modules — run npm install --force in $main_dir first"
-mw_db_env "$main_dir/.env"
+[ -d "$repo_root/node_modules" ] || mw_die "$repo_root has no node_modules — run npm install --force there first"
+env_file="$repo_root/.env"; [ -f "$env_file" ] || env_file="$main_dir/.env"
+mw_db_env "$env_file"
 
 if mw_db_exists "$target" && [ "$force" -ne 1 ]; then
   mw_die "$target already exists — use refresh-template-db.sh to re-baseline from a live DB, or --force to overwrite with the committed seed"
@@ -37,13 +46,14 @@ fi
 
 admin_user="${MW_SEED_ADMIN_USER:-admin}"
 admin_pass="${MW_SEED_ADMIN_PASS:-admin}"
-token="${MAPBOX_TOKEN:-$(mw_env_get "$main_dir/.env" MAPBOX_TOKEN)}"
-[ -n "$token" ] || echo "warning: MAPBOX_TOKEN not set (env or main .env) — basemaps won't render until a token is added in Configure" >&2
+token="${MAPBOX_TOKEN:-$(mw_env_get "$env_file" MAPBOX_TOKEN)}"
+[ -n "$token" ] || token="$(mw_env_get "$main_dir/.env" MAPBOX_TOKEN)"
+[ -n "$token" ] || echo "warning: MAPBOX_TOKEN not set (env or .env) — basemaps won't render until a token is added in Configure" >&2
 
 scratch="${target}_seed"
 port="$(mw_next_port)"
-log="$main_dir/.mmgis/seed-server.log"
-mkdir -p "$main_dir/.mmgis"
+log="$repo_root/.mmgis/seed-server.log"
+mkdir -p "$repo_root/.mmgis"
 
 cleanup() { mw_kill_ports "$port" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -54,10 +64,11 @@ echo "seeding $target via a temporary server (port $port, scratch db $scratch)..
 
 # init-db creates the scratch DB + extensions; the server's Sequelize sync creates the
 # tables on boot. Real env vars beat .env values (dotenv never overrides existing env),
-# so the main checkout can be reused safely. AUTH=none matches deployment behavior;
-# NODE_ENV=test serves the API without webpack.
-( cd "$main_dir" && DB_NAME="$scratch" PORT="$port" NODE_ENV=test AUTH=none node scripts/init-db.js >>"$log" 2>&1 )
-( cd "$main_dir" && DB_NAME="$scratch" PORT="$port" NODE_ENV=test AUTH=none nohup node scripts/server.js >>"$log" 2>&1 & )
+# so the checkout can be reused safely. AUTH=none matches deployment behavior;
+# NODE_ENV=test serves the API without webpack. Must run from $repo_root (this branch's
+# code) — see the header note on merge semantics.
+( cd "$repo_root" && DB_NAME="$scratch" PORT="$port" NODE_ENV=test AUTH=none node scripts/init-db.js >>"$log" 2>&1 )
+( cd "$repo_root" && DB_NAME="$scratch" PORT="$port" NODE_ENV=test AUTH=none nohup node scripts/server.js >>"$log" 2>&1 & )
 
 mw_wait_healthy "$port" 60 || { tail -n 20 "$log" >&2; mw_die "temporary seed server never became healthy — see $log"; }
 
