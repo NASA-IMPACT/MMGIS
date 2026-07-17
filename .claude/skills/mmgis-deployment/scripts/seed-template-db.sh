@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# seed-golden.sh — build mmgis_golden from the committed seed (no existing database needed).
-#   seed-golden.sh [--force]
+# seed-template-db.sh — build mmgis_template_db from the committed seed (no existing database needed).
+#   seed-template-db.sh [--force]
 # For fresh machines: boots a temporary server from the main checkout against a scratch
 # database, seeds an admin user + the baseline mission through MMGIS's own APIs
-# (first_signup → login → configure/add), then freezes the result as mmgis_golden.
-# To re-baseline from your live mmgis database instead, use refresh-golden.sh.
+# (first_signup → login → configure/add), then freezes the result as mmgis_template_db.
+# To re-baseline from your live mmgis database instead, use refresh-template-db.sh.
 #
 # Env:
 #   MAPBOX_TOKEN        basemap token injected into the seed config (never committed to git;
 #                       falls back to MAPBOX_TOKEN in the main checkout's .env, else empty)
 #   MW_SEED_ADMIN_USER  seeded admin username (default: admin)
 #   MW_SEED_ADMIN_PASS  seeded admin password (default: admin)
-#   MW_GOLDEN_DB        target database name (default: mmgis_golden)
+#   MW_TEMPLATE_DB        target database name (default: mmgis_template_db)
 # NOTE: the agent must confirm with the user before running with --force (overwrites the baseline).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -20,16 +20,19 @@ source "$HERE/_lib.sh"
 force=0
 [ "${1:-}" = "--force" ] && force=1
 
-target="${MW_GOLDEN_DB:-mmgis_golden}"
-seed_json="$HERE/../seed/baseline-mission.json"
-[ -f "$seed_json" ] || mw_die "seed file missing: $seed_json"
+target="${MW_TEMPLATE_DB:-mmgis_template_db}"
+# The seed mission is generated from mission-profiles/seed.json; regenerate with
+# `node scripts/generate-mission-config.js seed`. Path is repo-root-relative from
+# this skill's location (.claude/skills/mmgis-deployment/scripts -> repo root).
+seed_json="$HERE/../../../../mission-profiles/generated/seed-mission.json"
+[ -f "$seed_json" ] || mw_die "seed file missing: $seed_json (run: node scripts/generate-mission-config.js seed)"
 
 main_dir="$(mw_main_dir)"
 [ -d "$main_dir/node_modules" ] || mw_die "main checkout has no node_modules — run npm install --force in $main_dir first"
 mw_db_env "$main_dir/.env"
 
 if mw_db_exists "$target" && [ "$force" -ne 1 ]; then
-  mw_die "$target already exists — use refresh-golden.sh to re-baseline from a live DB, or --force to overwrite with the committed seed"
+  mw_die "$target already exists — use refresh-template-db.sh to re-baseline from a live DB, or --force to overwrite with the committed seed"
 fi
 
 admin_user="${MW_SEED_ADMIN_USER:-admin}"
