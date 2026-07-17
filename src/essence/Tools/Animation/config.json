@@ -1,11 +1,4 @@
 {
-    "defaults": {
-        "variables": {
-            "animationGIF": true,
-            "animationMP4": true,
-            "animationPNG": false
-        }
-    },
     "defaultIcon": "video",
     "description": "Create animated sequences of map data with custom time ranges and export options.",
     "descriptionFull": {

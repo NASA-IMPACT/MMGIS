@@ -157,24 +157,6 @@
   },
   "tools": [
     {
-      "name": "Identifier",
-      "icon": "map-marker",
-      "js": "IdentifierTool",
-      "on": false,
-      "variables": {
-        "justification": "left"
-      }
-    },
-    {
-      "name": "Layers",
-      "icon": "layers",
-      "js": "LayersTool",
-      "on": false,
-      "variables": {
-        "expanded": false
-      }
-    },
-    {
       "name": "LayerManager",
       "icon": "layers-triple-outline",
       "js": "LayerManagerTool",
@@ -194,17 +176,6 @@
         "modernLayoutSupport": true,
         "width": 320,
         "height": 0
-      }
-    },
-    {
-      "name": "Legend",
-      "icon": "map-legend",
-      "js": "LegendTool",
-      "on": false,
-      "variables": {
-        "displayOnStart": false,
-        "justification": "left",
-        "showHeadersInLegend": false
       }
     },
     {
@@ -237,15 +208,6 @@
         "modernLayoutSupport": true,
         "width": 368,
         "height": 0
-      }
-    },
-    {
-      "name": "Info",
-      "icon": "information-variant",
-      "js": "InfoTool",
-      "on": false,
-      "variables": {
-        "sortAlphabetically": false
       }
     },
     {
@@ -296,13 +258,6 @@
       }
     },
     {
-      "name": "Sites",
-      "icon": "pin",
-      "js": "SitesTool",
-      "on": false,
-      "variables": {}
-    },
-    {
       "name": "AOI",
       "icon": "selection-drag",
       "js": "AOITool",
@@ -319,72 +274,10 @@
       "variables": {}
     },
     {
-      "name": "Isochrone",
-      "icon": "circle-double",
-      "js": "IsochroneTool",
-      "on": false,
-      "variables": {
-        "interpolateSeams": false
-      }
-    },
-    {
-      "name": "Viewshed",
-      "icon": "wifi-strength-2",
-      "js": "ViewshedTool",
-      "on": false,
-      "variables": {
-        "curvature": false
-      }
-    },
-    {
-      "name": "Shade",
-      "icon": "sun-angle-outline",
-      "js": "ShadeTool",
-      "on": false,
-      "variables": {}
-    },
-    {
-      "name": "Chemistry",
-      "icon": "flask",
-      "js": "ChemistryTool",
-      "on": false,
-      "variables": {}
-    },
-    {
-      "name": "Curtain",
-      "icon": "waves",
-      "js": "CurtainTool",
-      "on": false,
-      "variables": {
-        "withCredentials": false
-      }
-    },
-    {
       "name": "FetchStats",
       "js": "FetchStatsTool",
       "on": true,
       "variables": {}
-    },
-    {
-      "name": "Measure",
-      "icon": "tape-measure",
-      "js": "MeasureTool",
-      "on": false,
-      "variables": {
-        "onlyShowDemIfLayerOn": false,
-        "defaultMode": "segment"
-      }
-    },
-    {
-      "name": "Animation",
-      "icon": "video",
-      "js": "AnimationTool",
-      "on": false,
-      "variables": {
-        "animationGIF": true,
-        "animationMP4": true,
-        "animationPNG": false
-      }
     }
   ],
   "layers": [

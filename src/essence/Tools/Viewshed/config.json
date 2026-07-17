@@ -1,9 +1,4 @@
 {
-    "defaults": {
-        "variables": {
-            "curvature": false
-        }
-    },
     "defaultIcon": "wifi-strength-2",
     "description": "Realtime user generated viewsheds.",
     "descriptionFull": {

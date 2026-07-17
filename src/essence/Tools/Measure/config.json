@@ -1,10 +1,4 @@
 {
-    "defaults": {
-        "variables": {
-            "onlyShowDemIfLayerOn": false,
-            "defaultMode": "segment"
-        }
-    },
     "defaultIcon": "tape-measure",
     "description": "Measure distances and generates elevation profiles.",
     "descriptionFull": {

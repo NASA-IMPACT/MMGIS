@@ -1,11 +1,4 @@
 {
-    "defaults": {
-        "variables": {
-            "displayOnStart": false,
-            "justification": "left",
-            "showHeadersInLegend": false
-        }
-    },
     "defaultIcon": "map-legend",
     "description": "Show a chart legend that maps colors and symbols to meaning.",
     "descriptionFull": {

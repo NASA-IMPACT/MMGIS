@@ -1,7 +1,4 @@
 {
-    "defaults": {
-        "variables": {}
-    },
     "defaultIcon": "pin",
     "description": "A button bar to navigate between various map locations.",
     "descriptionFull": {
