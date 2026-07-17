@@ -1,13 +1,14 @@
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 import mergeConfigWithTemplate from '../../API/Backend/Config/mergeConfigWithTemplate.js'
 import configTemplate from '../../API/templates/config_template.js'
 
-// Issue #109: config_template.js is now a one-line re-export of the generated
-// config_template.json (produced from mission-profiles/minimal.json by #157's
-// generator). These tests pin the WIRING: the module export IS the generated
-// JSON, and the create-path merge over it yields the minimal, modern starter
+// Issue #109: config_template.js re-exports the generated config_template.json
+// (produced from mission-profiles/minimal.json by #157's generator), resolving
+// {{MAPBOX_TOKEN}} from the environment at require time. These tests pin the
+// WIRING: the module export IS the generated JSON (placeholders resolved), and
+// the create-path merge over it yields the minimal, modern starter
 // (Title + LayerManager) while letting the NewMissionModal's posted picks win.
 
 // cwd is the repo root under vitest (mirrors generateMissionConfig.spec.js).
@@ -19,8 +20,10 @@ const generatedJson = JSON.parse(
 const freshTemplate = () => JSON.parse(JSON.stringify(configTemplate))
 
 test.describe('config_template.js wiring (#109)', () => {
-    test('requiring config_template.js yields the generated JSON object', () => {
-        expect(configTemplate).toEqual(generatedJson)
+    test('requiring config_template.js yields the generated JSON, placeholders resolved', () => {
+        const expected = JSON.parse(JSON.stringify(generatedJson))
+        expected.msv.basemap.accessToken = process.env.MAPBOX_TOKEN || ''
+        expect(configTemplate).toEqual(expected)
     })
 
     test('the wired template is the minimal, modern starter', () => {
@@ -91,5 +94,48 @@ test.describe('config_template.js wiring (#109)', () => {
         expect(merged.tools.map((t) => t.name)).not.toContain('LayerManager')
         expect(merged.tools.map((t) => t.name)).not.toContain('Title')
         expect(merged.tools).toHaveLength(2)
+    })
+})
+
+test.describe('placeholder resolution at require time (#109)', () => {
+    // Fresh require of the template with the module cache cleared, so the
+    // load-time env read happens under this test's stubbed environment.
+    async function freshRequire() {
+        vi.resetModules()
+        const mod = await import('../../API/templates/config_template.js')
+        return mod.default
+    }
+
+    test('the committed JSON keeps the placeholder — no baked token', () => {
+        // The artifact must never carry a real token; resolution happens only
+        // at require time. (Guards against "fixing" a blank basemap by
+        // committing a token into the generated JSON.)
+        expect(generatedJson.msv.basemap.accessToken).toBe('{{MAPBOX_TOKEN}}')
+    })
+
+    test('MAPBOX_TOKEN set: a fresh require substitutes the token', async () => {
+        vi.stubEnv('MAPBOX_TOKEN', 'pk.test-token-109')
+        try {
+            const template = await freshRequire()
+            expect(template.msv.basemap.accessToken).toBe('pk.test-token-109')
+        } finally {
+            vi.unstubAllEnvs()
+            vi.resetModules()
+        }
+    })
+
+    test('MAPBOX_TOKEN unset: empty string, and no literal {{ survives anywhere', async () => {
+        vi.stubEnv('MAPBOX_TOKEN', undefined) // delete for this test
+        try {
+            const template = await freshRequire()
+            // Empty string is falsy: DeckGLAdapter skips it, exactly as if the
+            // user had left the token field blank. The literal "{{MAPBOX_TOKEN}}"
+            // is truthy and would reach mapbox-gl -> 401/blank basemap.
+            expect(template.msv.basemap.accessToken).toBe('')
+            expect(JSON.stringify(template)).not.toContain('{{')
+        } finally {
+            vi.unstubAllEnvs()
+            vi.resetModules()
+        }
     })
 })
