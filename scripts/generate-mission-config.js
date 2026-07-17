@@ -192,17 +192,35 @@ function generate(profile) {
   return config;
 }
 
-// Assert the generated config is a key-superset of the mission template, so the
-// create path's gap-fill (add()) has nothing to add (committed file == seeded DB).
+// Recursively collect template keys absent from the config. Mirrors the
+// mergeConfigWithTemplate (deepmerge) semantics: object keys gap-fill
+// recursively, so recurse where BOTH sides are plain objects; posted arrays
+// replace wholesale and posted scalars win, so for anything non-object the
+// key's presence alone means the template contributes nothing.
+function collectMissingTemplateKeys(template, config, prefix, missing) {
+  for (const key of Object.keys(template)) {
+    if (!Object.prototype.hasOwnProperty.call(config, key)) {
+      missing.push(prefix + key);
+      continue;
+    }
+    if (isPlainObject(template[key]) && isPlainObject(config[key])) {
+      collectMissingTemplateKeys(template[key], config[key], `${prefix}${key}.`, missing);
+    }
+  }
+}
+
+// Assert the generated config is a recursive key-superset of the mission
+// template, so the create path's gap-fill (add()'s deep merge) has nothing to
+// add (committed file == seeded DB).
 function assertTemplateSuperset(config) {
   const template = require(path.join(REPO_ROOT, 'API', 'templates', 'config_template.js'));
-  const missing = Object.keys(template).filter(
-    (key) => !Object.prototype.hasOwnProperty.call(config, key)
-  );
+  const missing = [];
+  collectMissingTemplateKeys(template, config, '', missing);
   if (missing.length) {
     throw new Error(
-      `generated config is missing top-level template keys: ${missing.join(', ')}. ` +
-        `The profile's scaffold must supply every key config_template.js declares.`
+      `generated config is missing template keys: ${missing.join(', ')}. ` +
+        `The profile's scaffold must supply every key config_template.js declares ` +
+        `(nested object keys included), or add()'s gap-fill would inject them into the seeded DB.`
     );
   }
 }

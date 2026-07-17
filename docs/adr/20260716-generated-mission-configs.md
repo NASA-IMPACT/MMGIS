@@ -126,11 +126,14 @@ composition is what gets written.
 
 ### Template-superset assertion
 
-The generator asserts the output is a **key-superset** of `API/templates/config_template.js`'s
-top-level keys. This matters because the mission create path (`add()`) gap-fills a posted config
-against the template but — per the template-merge fix (#194) — posted arrays now **replace**
-template arrays instead of concatenating. Ensuring the generated config already carries every
-template key means the gap-fill adds nothing, so the committed artifact equals the seeded
+The generator asserts the output is a **recursive key-superset** of
+`API/templates/config_template.js`: every template key must be present, recursing wherever both
+sides are plain objects (arrays replace wholesale and posted scalars win under the merge, so for
+non-objects the key's presence suffices). This matters because the mission create path (`add()`)
+deep-merges a posted config over the template as fallback — per the template-merge fix (#194),
+posted arrays **replace** template arrays instead of concatenating, but object keys still
+gap-fill recursively. Ensuring the generated config already carries every template key, nested
+ones included, means the gap-fill adds nothing, so the committed artifact equals the seeded
 mission exactly. (`add()` never runs `populateUUIDs`/`validate` — those are upsert-only — which
 is also why layer UUIDs must be authored constants in the profile, never minted at generation
 time; otherwise the CI diff would flap.)

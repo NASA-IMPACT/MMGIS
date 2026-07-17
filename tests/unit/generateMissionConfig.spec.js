@@ -1,4 +1,5 @@
 import { test, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
 import gen from '../../scripts/generate-mission-config.js'
 
 const {
@@ -11,9 +12,9 @@ const {
     serialize,
 } = gen
 
-// A tiny profile that supplies every top-level template key, so the superset
-// assertion is satisfied and generate() can run end to end against the real
-// on-disk tool manifests.
+// A tiny profile that supplies every top-level template key (though not the
+// nested ones — the recursive superset tests rely on that), so generate() can
+// run end to end against the real on-disk tool manifests.
 function baseProfile(overrides = {}) {
     return {
         tools: ['Title', 'LayerManager'],
@@ -193,14 +194,43 @@ test.describe('generate-mission-config', () => {
         })
     })
 
-    test.describe('assertTemplateSuperset', () => {
-        test('passes for a generated config that supplies every template key', () => {
-            expect(() => assertTemplateSuperset(generate(baseProfile()))).not.toThrow()
+    test.describe('assertTemplateSuperset (recursive)', () => {
+        test('passes for both committed profiles', () => {
+            const seed = JSON.parse(
+                readFileSync('mission-profiles/seed.json', 'utf8')
+            )
+            const minimal = JSON.parse(
+                readFileSync('mission-profiles/minimal.json', 'utf8')
+            )
+            expect(() => assertTemplateSuperset(generate(seed))).not.toThrow()
+            expect(() => assertTemplateSuperset(generate(minimal))).not.toThrow()
         })
 
         test('throws when a top-level template key is missing', () => {
             const partial = { msv: {}, tools: [], layers: [] } // missing projection/look/etc.
-            expect(() => assertTemplateSuperset(partial)).toThrow(/missing top-level template keys/)
+            expect(() => assertTemplateSuperset(partial)).toThrow(/missing template keys/)
+        })
+
+        test('throws when a NESTED template key is missing (deep merge would gap-fill it)', () => {
+            const config = generate(JSON.parse(
+                readFileSync('mission-profiles/minimal.json', 'utf8')
+            ))
+            delete config.msv.radius.major // nested inside msv.radius
+            expect(() => assertTemplateSuperset(config)).toThrow(/msv\.radius\.major/)
+        })
+
+        test('skeletal nested objects fail: presence of msv alone is not enough', () => {
+            const config = generate(baseProfile()) // baseProfile msv carries only basemap
+            expect(() => assertTemplateSuperset(config)).toThrow(/msv\.mission/)
+        })
+
+        test('array keys need presence only, never their template contents', () => {
+            const config = generate(JSON.parse(
+                readFileSync('mission-profiles/minimal.json', 'utf8')
+            ))
+            config.layers = [] // template's layers is [] too; empty array must pass
+            config.tools = [{ different: 'shape' }] // replaces wholesale under the merge
+            expect(() => assertTemplateSuperset(config)).not.toThrow()
         })
     })
 })

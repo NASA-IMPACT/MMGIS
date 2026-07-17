@@ -11,7 +11,7 @@
 #                       falls back to MAPBOX_TOKEN in the main checkout's .env, else empty)
 #   MW_SEED_ADMIN_USER  seeded admin username (default: admin)
 #   MW_SEED_ADMIN_PASS  seeded admin password (default: admin)
-#   MW_TEMPLATE_DB        target database name (default: mmgis_template_db)
+#   MW_TEMPLATE_DB      target database name (default: mmgis_template_db)
 # NOTE: the agent must confirm with the user before running with --force (overwrites the baseline).
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
