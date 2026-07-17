@@ -58,8 +58,9 @@ out; a mission supplies those through a profile override when it needs them.
 **Declaring `defaults` is how a tool opts into generation.** A manifest with no `defaults`
 block never appears in a generated config. Two additional flags:
 
-- `seedExclude: true` opts a tool out of the implicit everything-on (`"all"`) seed even though
-  it declares defaults. Only `Draw` carries it (lean deployments drop the Draw backend; static
+- A profile's `exclude` list opts tools out of its implicit everything-on (`"all"`) set even
+  though they declare defaults. Exclusion is profile policy, never manifest knowledge. Only
+  `Draw` is excluded (lean deployments drop the Draw backend; static
   previews serve it read-only).
 
 ### Layer 2 — profiles (curated policy files)
@@ -68,8 +69,9 @@ A profile (`mission-profiles/<name>.json`) owns everything the tool manifests ca
 
 | Field | Meaning |
 |-------|---------|
-| `tools` | `"all"` (every manifest with `defaults`, minus `seedExclude`) or an explicit array of tool names. |
+| `tools` | `"all"` (every manifest with `defaults`, minus the profile's `exclude` list) or an explicit array of tool names. |
 | `on` | Array of tool names that start toggled on. |
+| `exclude` | (with `"all"`) tool names to omit despite their `defaults` block. |
 | `overrides` | `{ <ToolName>: { variables: {...} } }` — per-tool variable overrides, deep-merged onto the manifest defaults (objects merge; arrays and scalars replace). |
 | `scaffold` | The non-tool config: `msv`, `projection`, `look`, `panelSettings`, `panels`, `time`, `layers`. |
 | `output` | Repo-root-relative path of the generated artifact. |
@@ -144,7 +146,7 @@ time; otherwise the CI diff would flap.)
 
 | Artifact | Generated from | Consumed by |
 |----------|----------------|-------------|
-| `mission-profiles/generated/seed-mission.json` | `mission-profiles/seed.json` | The local deployment tooling (`.claude/skills/mmgis-deployment`) seeds the template database from it; PR previews (#156) will publish it. |
+| `mission-profiles/generated/full-demo-mission.json` | `mission-profiles/full-demo.json` | The local deployment tooling (`.claude/skills/mmgis-deployment`) seeds the template database from it; PR previews (#156) will publish it. |
 | `API/templates/config_template.json` | `mission-profiles/minimal.json` | The new-mission template (#109 wires it into `config_template.js`). |
 
 Both artifacts are committed. Both are regenerated and diff-checked in CI.
@@ -170,10 +172,10 @@ block if it needs specific placement), then regenerate:
 seed with no seed edits. Commit the manifest change and the regenerated artifact.
 
 **Change the seed** (which tools are on, layout, layers, demo cards, time). Edit
-`mission-profiles/seed.json`, regenerate, commit. Never hand-edit
-`mission-profiles/generated/seed-mission.json`.
+`mission-profiles/full-demo.json`, regenerate, commit. Never hand-edit
+`mission-profiles/generated/full-demo-mission.json`.
 
-**Keep a tool out of the everything-on seed.** Add `seedExclude: true` to its manifest.
+**Keep a tool out of the everything-on config.** Add its name to the full-demo profile's `exclude` list.
 
 **Start a brand-new profile.** Copy an existing profile, set `tools`, `on`, `overrides`,
 `scaffold`, and `output`, then `node scripts/generate-mission-config.js <name> --out <path>`.
@@ -184,8 +186,8 @@ seed with no seed edits. Commit the manifest change and the regenerated artifact
 
 - **Kinds** is a core module, not a mission tool. It is hard-skipped by the generator and gets
   no `defaults` block.
-- **Draw** declares `defaults` but carries `seedExclude: true`. It is the only lean-excluded
-  tool, so no separate lean seed variant is needed — `seedExclude` keeps it out entirely.
+- **Draw** declares `defaults` but is on the full-demo profile's `exclude` list. It is the
+  only lean-excluded tool, so no separate lean variant is needed — the exclusion keeps it out entirely.
 - **`add()` / `config_template` divergence from upstream is accepted.** The template-merge
   fallback-only semantics (#194) and the generated minimal template (#109) intentionally differ
   from upstream MMGIS behavior; that divergence is a deliberate part of this project's direction.

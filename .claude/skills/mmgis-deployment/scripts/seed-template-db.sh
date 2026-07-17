@@ -26,10 +26,10 @@ force=0
 [ "${1:-}" = "--force" ] && force=1
 
 target="${MW_TEMPLATE_DB:-mmgis_template_db}"
-# The seed mission is generated from mission-profiles/seed.json; regenerate with
-# `node scripts/generate-mission-config.js seed`. Path is repo-root-relative from
+# The seed mission is generated from mission-profiles/full-demo.json; regenerate with
+# `node scripts/generate-mission-config.js full-demo`. Path is repo-root-relative from
 # this skill's location (.claude/skills/mmgis-deployment/scripts -> repo root).
-seed_json="$HERE/../../../../mission-profiles/generated/seed-mission.json"
+seed_json="$HERE/../../../../mission-profiles/generated/full-demo-mission.json"
 [ -f "$seed_json" ] || mw_die "seed file missing: $seed_json (run: node scripts/generate-mission-config.js seed)"
 
 # The checkout this skill (and the committed seed) belong to — the temp server runs from

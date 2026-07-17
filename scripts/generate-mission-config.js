@@ -8,7 +8,7 @@
  * Usage:
  *   node scripts/generate-mission-config.js <profile> [--out <path>] [--stdout] [--check]
  *
- *   <profile>   a profile name ("seed", "minimal") resolved under mission-profiles/,
+ *   <profile>   a profile name ("full-demo", "minimal") resolved under mission-profiles/,
  *               or a path to a profile .json.
  *   --out       output path (repo-root-relative or absolute). Defaults to the
  *               profile's own "output" field.
@@ -21,8 +21,9 @@
  *     (not src/pre/tools.js, not any *Plugin-Tools* / *Private-Tools* dirs that
  *     API/updateTools.js also globs — untracked local tools must never influence
  *     committed output). `Kinds` is a core module, never a mission tool: hard-skipped.
- *   - A manifest opts into generation by declaring a `defaults` block. `seedExclude:
- *     true` opts it out of the implicit everything-on ("all") seed.
+ *   - A manifest opts into generation by declaring a `defaults` block. A profile's
+ *     `exclude` list opts tools out of its implicit everything-on ("all") set —
+ *     exclusion is profile policy, never manifest knowledge.
  *   - Output is deterministic: tools sorted by (toolbarPriority || 1000) then name,
  *     fixed key order, LF line endings, placeholders ({{MAPBOX_TOKEN}}) left verbatim.
  *   - The raw composition is what we write. We validate a DEEP CLONE with the
@@ -95,15 +96,18 @@ function loadManifests() {
 }
 
 // Decide which tools a profile includes.
-//   tools: "all"  -> every manifest with defaults, minus seedExclude:true
+//   tools: "all"  -> every manifest with defaults, minus the profile's exclude list
 //   tools: [names] -> exactly those names (must have defaults)
+// Exclusion is profile policy, not manifest knowledge: a plugin declares what it
+// looks like when included; the profile decides whether it's included.
 function selectToolNames(profile, manifests) {
   const withDefaults = Object.keys(manifests).filter(
     (name) => manifests[name].defaults != null
   );
 
   if (profile.tools === 'all' || profile.tools == null) {
-    return withDefaults.filter((name) => manifests[name].seedExclude !== true);
+    const excluded = new Set(profile.exclude || []);
+    return withDefaults.filter((name) => !excluded.has(name));
   }
 
   if (!Array.isArray(profile.tools)) {

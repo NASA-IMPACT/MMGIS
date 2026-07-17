@@ -51,18 +51,18 @@ jobs:
 
       - name: Regenerate mission configs
         run: |
-          node scripts/generate-mission-config.js seed
+          node scripts/generate-mission-config.js full-demo
           node scripts/generate-mission-config.js minimal
 
       - name: Fail if committed configs are stale
         run: |
           if ! git diff --exit-code -- \
-            mission-profiles/generated/seed-mission.json \
+            mission-profiles/generated/full-demo-mission.json \
             API/templates/config_template.json; then
             echo "::error::Committed mission configs are out of date. Regenerate with:"
-            echo "::error::  node scripts/generate-mission-config.js seed"
+            echo "::error::  node scripts/generate-mission-config.js full-demo"
             echo "::error::  node scripts/generate-mission-config.js minimal"
-            echo "::error::then commit mission-profiles/generated/seed-mission.json and API/templates/config_template.json"
+            echo "::error::then commit mission-profiles/generated/full-demo-mission.json and API/templates/config_template.json"
             exit 1
           fi
 

@@ -37,16 +37,16 @@ test.describe('generate-mission-config', () => {
     test.describe('selectToolNames (implicit-all vs explicit list)', () => {
         const manifests = {
             Alpha: { name: 'Alpha', defaults: { variables: {} } },
-            Bravo: { name: 'Bravo', defaults: { variables: {} }, seedExclude: true },
+            Bravo: { name: 'Bravo', defaults: { variables: {} } },
             Charlie: { name: 'Charlie' }, // no defaults block
         }
 
-        test('tools:"all" includes defaults-declaring tools, minus seedExclude', () => {
-            expect(selectToolNames({ tools: 'all' }, manifests)).toEqual(['Alpha'])
+        test('tools:"all" includes defaults-declaring tools, minus the profile exclude list', () => {
+            expect(selectToolNames({ tools: 'all', exclude: ['Bravo'] }, manifests)).toEqual(['Alpha'])
         })
 
-        test('missing tools defaults to "all"', () => {
-            expect(selectToolNames({}, manifests)).toEqual(['Alpha'])
+        test('missing tools defaults to "all" (no exclude list = everything with defaults)', () => {
+            expect(selectToolNames({}, manifests)).toEqual(['Alpha', 'Bravo'])
         })
 
         test('a tool without a defaults block is excluded from "all"', () => {
@@ -57,8 +57,8 @@ test.describe('generate-mission-config', () => {
             expect(selectToolNames({ tools: ['Alpha'] }, manifests)).toEqual(['Alpha'])
         })
 
-        test('explicit list may include a seedExclude tool (opt-out is only for "all")', () => {
-            expect(selectToolNames({ tools: ['Bravo'] }, manifests)).toEqual(['Bravo'])
+        test('explicit list ignores the exclude list (exclusion only applies to "all")', () => {
+            expect(selectToolNames({ tools: ['Bravo'], exclude: ['Bravo'] }, manifests)).toEqual(['Bravo'])
         })
 
         test('explicit list throws on an unknown tool', () => {
@@ -69,10 +69,10 @@ test.describe('generate-mission-config', () => {
             expect(() => selectToolNames({ tools: ['Charlie'] }, manifests)).toThrow(/no "defaults"/)
         })
 
-        test('real manifests under "all" exclude Draw (seedExclude) and Kinds (hard-skip)', () => {
+        test('real manifests under "all" with the full-demo exclude list drop Draw; Kinds is hard-skipped', () => {
             const manifests = loadManifests()
             expect(manifests.Kinds).toBeUndefined()
-            const names = selectToolNames({ tools: 'all' }, manifests)
+            const names = selectToolNames({ tools: 'all', exclude: ['Draw'] }, manifests)
             expect(names).not.toContain('Draw')
             expect(names).not.toContain('Kinds')
             // every selected tool declares defaults
@@ -196,13 +196,13 @@ test.describe('generate-mission-config', () => {
 
     test.describe('assertTemplateSuperset (recursive)', () => {
         test('passes for both committed profiles', () => {
-            const seed = JSON.parse(
-                readFileSync('mission-profiles/seed.json', 'utf8')
+            const fullDemo = JSON.parse(
+                readFileSync('mission-profiles/full-demo.json', 'utf8')
             )
             const minimal = JSON.parse(
                 readFileSync('mission-profiles/minimal.json', 'utf8')
             )
-            expect(() => assertTemplateSuperset(generate(seed))).not.toThrow()
+            expect(() => assertTemplateSuperset(generate(fullDemo))).not.toThrow()
             expect(() => assertTemplateSuperset(generate(minimal))).not.toThrow()
         })
 

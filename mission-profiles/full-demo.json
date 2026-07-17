@@ -1,8 +1,11 @@
 {
-  "name": "seed",
-  "description": "Showcase seed mission: every tool that declares defaults, on the disasters demo scaffold. Generated -> mission-profiles/generated/seed-mission.json.",
-  "output": "mission-profiles/generated/seed-mission.json",
+  "name": "full-demo",
+  "description": "Full demo mission: every tool that declares defaults (minus the exclude list), on the disasters demo scaffold. Generates the committed full-demo config that dev deployments and PR previews boot.",
+  "output": "mission-profiles/generated/full-demo-mission.json",
   "tools": "all",
+  "exclude": [
+    "Draw"
+  ],
   "on": [
     "Title",
     "LayerManager",
