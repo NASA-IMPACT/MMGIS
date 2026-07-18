@@ -1,4 +1,9 @@
 {
+    "defaults": {
+        "variables": {
+            "justification": "left"
+        }
+    },
     "defaultIcon": "selection-drag",
     "description": "Select an Area of Interest by search, click, drawing, or upload.",
     "descriptionFull": {
