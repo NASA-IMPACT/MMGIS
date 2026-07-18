@@ -16,6 +16,8 @@ name: Deploy lean (AWS ECS Express Mode)
 #
 # Repository configuration:
 #   vars:    AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE,
+#            ADMIN_TASK_FAMILY, PUBLISH_TASK_FAMILY (per-environment
+#            task-def families; default to mmgis-admin / mmgis-publish),
 #            ADMIN_URL (optional; shown in the run summary)
 #   secrets: AWS_DEPLOY_ROLE_ARN (OIDC-assumable deploy role; no
 #            long-lived keys)
@@ -40,8 +42,13 @@ permissions:
   contents: read
 
 env:
-  ADMIN_TASK_FAMILY: mmgis-admin
-  PUBLISH_TASK_FAMILY: mmgis-publish
+  # Task-definition family names are region-global, so each environment uses
+  # its own (mmgis-<env>-admin / -publish) to keep a production deploy from
+  # registering a revision development's publish-by-family flow would pick up.
+  # These come from Actions variables; the legacy hard-coded names remain as
+  # documented fallbacks so an unconfigured repo still behaves as before.
+  ADMIN_TASK_FAMILY: ${{ vars.ADMIN_TASK_FAMILY || 'mmgis-admin' }}
+  PUBLISH_TASK_FAMILY: ${{ vars.PUBLISH_TASK_FAMILY || 'mmgis-publish' }}
 
 jobs:
   deploy:
