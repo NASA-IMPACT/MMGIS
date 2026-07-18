@@ -1,0 +1,12 @@
+# Local Terraform state, plugins, and crash logs
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Uncommitted, account-specific inputs (only the *.example files are committed)
+terraform.tfvars
+*.auto.tfvars
+backend.hcl

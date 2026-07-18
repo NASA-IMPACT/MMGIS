@@ -1,0 +1,35 @@
+# Only values that must NOT be committed are variables. See development for the
+# same pattern. Production is instantiated by #195.
+
+variable "region" {
+  description = "AWS region."
+  type        = string
+  default     = "us-west-2"
+}
+
+variable "vpc_id" {
+  description = "Existing VPC id for the production environment."
+  type        = string
+}
+
+variable "private_subnet_ids" {
+  description = "Private subnet ids (>= 2, different AZs)."
+  type        = list(string)
+}
+
+variable "rds_ca_bundle_base64" {
+  description = "base64 of the region's RDS CA bundle (public, region-specific)."
+  type        = string
+}
+
+variable "express_internal_alb_arn" {
+  description = "Phase 2 only. Internal ALB ARN from `aws ecs describe-express-gateway-service`."
+  type        = string
+  default     = ""
+}
+
+variable "express_onaws_endpoint" {
+  description = "Phase 2 only. The on.aws endpoint host from the Express service."
+  type        = string
+  default     = ""
+}

@@ -1,0 +1,4 @@
+# Copy to backend.hcl and fill in, then: terraform init -backend-config=backend.hcl
+# Production's state bucket is bootstrapped in #195.
+bucket = "mmgis-production-tfstate-<ACCOUNT_ID>"
+region = "us-west-2"
