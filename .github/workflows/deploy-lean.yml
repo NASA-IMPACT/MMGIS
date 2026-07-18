@@ -171,10 +171,17 @@ jobs:
           # Bounded poll (up to 20 minutes) until the rollout converges:
           # the service is ACTIVE and the target image is the only one
           # across the active configurations.
+          IMAGES="(unknown)"
           for attempt in $(seq 1 80); do
-            RESPONSE=$(aws ecs describe-express-gateway-service \
+            # A transient describe failure should cost one attempt, not
+            # the whole rollout step.
+            if ! RESPONSE=$(aws ecs describe-express-gateway-service \
               --service-arn "$SERVICE_ARN" \
-              --output json)
+              --output json); then
+              echo "[$attempt/80] describe failed; retrying" >&2
+              sleep 15
+              continue
+            fi
             STATUS=$(echo "$RESPONSE" \
               | jq -r '.service.status.statusCode')
             IMAGES=$(echo "$RESPONSE" \
@@ -187,7 +194,7 @@ jobs:
             fi
             sleep 15
           done
-          echo "Rollout did not reach a steady state within 20 minutes." >&2
+          echo "Rollout did not converge within 20 minutes; still serving: $IMAGES" >&2
           exit 1
 
       # Surface where this deploy landed in the run summary. Runs even when
