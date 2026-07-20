@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { MapControlBar } from './lib'
 import type { BasemapStyle } from './lib'
-import { useMMGISToolVars } from './adapters/useMMGISToolVars'
+import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { getBasemaps } from './adapters/getBasemaps'
 import {
     selectBasemap,
