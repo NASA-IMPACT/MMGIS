@@ -1,13 +1,12 @@
 .blocks-map-control {
-    position: absolute;
-    top: 18px;
-    // right is set via inline style — dynamic offset from the top-bar chrome.
+    // Placement is owned by the host container (e.g. a floating panel zone);
+    // the bar only anchors its own dropdowns.
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
     pointer-events: auto;
     font-family: var(--theme-font-ui);
-    z-index: 1002;
 
     &__bar {
         display: flex;

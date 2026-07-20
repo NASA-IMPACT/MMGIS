@@ -25,30 +25,21 @@ type ToolVars = {
 const isFalsy = (v: unknown) =>
     v === false || v === 'false' || v === 0 || v === '0'
 
-// Measures #topBarRight so the bar tucks beside the existing top-right chrome.
-function useTopBarOffset(): number {
-    const [offset, setOffset] = useState(12)
-    useEffect(() => {
-        const measure = () => {
-            const el = document.getElementById('topBarRight')
-            const w = el ? el.getBoundingClientRect().width : 0
-            setOffset(w > 0 ? Math.ceil(w) + 16 : 12)
-        }
-        measure()
-        const t = setTimeout(measure, 300)
-        window.addEventListener('resize', measure)
-        return () => {
-            clearTimeout(t)
-            window.removeEventListener('resize', measure)
-        }
-    }, [])
-    return offset
+// The measure label anchors to map-container-relative pixel coords, so it
+// must portal onto the live map element rather than render inside the panel.
+const MAP_CONTAINER_IDS = ['mapScreen', 'map']
+
+const getMapContainer = (): HTMLElement | null => {
+    for (const id of MAP_CONTAINER_IDS) {
+        const el = document.getElementById(id)
+        if (el) return el
+    }
+    return null
 }
 
 export function MMGISMapControlAdapter() {
     const [basemapStyles, setBasemapStyles] = useState<BasemapStyle[]>([])
     const [activeBasemap, setActiveBasemap] = useState<BasemapStyle | null>(null)
-    const rightOffset = useTopBarOffset()
     const vars = useMMGISToolVars<ToolVars>('mapcontrol')
 
     // Default ON; a saved false/0 disables the feature.
@@ -92,7 +83,7 @@ export function MMGISMapControlAdapter() {
 
     return (
         <MapControlBar
-            rightOffset={rightOffset}
+            getOverlayContainer={getMapContainer}
             basemapStyles={showBasemapSwitcher ? basemapStyles : []}
             activeBasemap={showBasemapSwitcher ? activeBasemap : null}
             onSelectBasemap={showBasemapSwitcher ? onSelectBasemap : undefined}

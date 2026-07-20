@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type {
     BasemapStyle,
     ContainerPoint,
@@ -16,8 +17,13 @@ import { MeasureLabel } from '../MeasureLabel/MeasureLabel'
 import { BasemapIcon, MinusIcon, PlusIcon, RulerIcon, SearchIcon } from '../icons'
 
 export type MapControlBarProps = {
-    /** Distance from the right edge of the viewport (px) — dynamic, from the wrapper. */
-    rightOffset?: number
+    /**
+     * Returns the map container element. The measure label anchors to
+     * map-container-relative pixel coords, so when this is provided the label
+     * portals into that element instead of rendering next to the bar.
+     * Resolved lazily so the map may mount after the bar does.
+     */
+    getOverlayContainer?: () => HTMLElement | null
 
     // Basemap
     basemapStyles?: BasemapStyle[]
@@ -40,7 +46,7 @@ export type MapControlBarProps = {
 }
 
 export function MapControlBar({
-    rightOffset = 12,
+    getOverlayContainer,
     basemapStyles = [],
     activeBasemap = null,
     onSelectBasemap,
@@ -93,6 +99,14 @@ export function MapControlBar({
     const hasStyles = basemapStyles.length > 0
     const hasZoom = Boolean(onZoomIn && onZoomOut)
 
+    const measureLabel =
+        measure.measuring && measure.segment && measure.labelPixel ? (
+            <MeasureLabel segment={measure.segment} pixel={measure.labelPixel} />
+        ) : null
+    // The label's pixel coords are map-container-relative, so anchor it there
+    // when the host app can hand us that element; otherwise render in place.
+    const overlayEl = measureLabel ? getOverlayContainer?.() ?? null : null
+
     function toggleBasemap() {
         setBasemapOpen((v) => !v)
         setSearchOpen(false)
@@ -113,7 +127,7 @@ export function MapControlBar({
 
     return (
         <>
-            <div ref={rootRef} className="blocks-map-control" style={{ right: rightOffset }}>
+            <div ref={rootRef} className="blocks-map-control">
                 <div className="blocks-map-control__bar">
                     {onSearchSelect && (
                         <div className="blocks-map-control__group">
@@ -192,9 +206,7 @@ export function MapControlBar({
                 )}
             </div>
 
-            {measure.measuring && measure.segment && measure.labelPixel && (
-                <MeasureLabel segment={measure.segment} pixel={measure.labelPixel} />
-            )}
+            {overlayEl ? createPortal(measureLabel, overlayEl) : measureLabel}
         </>
     )
 }
