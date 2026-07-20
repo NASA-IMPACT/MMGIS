@@ -4,36 +4,39 @@ const routerDraw = require("./routes/draw").router;
 const routerAggregations = require("./routes/aggregations");
 const ufiles = require("./models/userfiles");
 const file_histories = require("./models/filehistories");
+const { isFull } = require("../Utils/deploymentMode");
 
 let setup = {
   //Once the app initializes
   onceInit: (s) => {
-    s.app.use(
-      s.ROOT_PATH + "/api/files",
-      s.ensureUser(),
-      s.checkHeadersCodeInjection,
-      s.setContentType,
-      s.stopGuests,
-      routerFiles
-    );
+    if (isFull()) {
+      s.app.use(
+        s.ROOT_PATH + "/api/files",
+        s.ensureUser(),
+        s.checkHeadersCodeInjection,
+        s.setContentType,
+        s.stopGuests,
+        routerFiles
+      );
 
-    s.app.use(
-      s.ROOT_PATH + "/api/draw",
-      s.ensureUser(),
-      s.checkHeadersCodeInjection,
-      s.setContentType,
-      s.stopGuests,
-      routerDraw
-    );
+      s.app.use(
+        s.ROOT_PATH + "/api/draw",
+        s.ensureUser(),
+        s.checkHeadersCodeInjection,
+        s.setContentType,
+        s.stopGuests,
+        routerDraw
+      );
 
-    s.app.use(
-      s.ROOT_PATH + "/api/draw",
-      s.ensureUser(),
-      s.checkHeadersCodeInjection,
-      s.setContentType,
-      s.stopGuests,
-      routerAggregations
-    );
+      s.app.use(
+        s.ROOT_PATH + "/api/draw",
+        s.ensureUser(),
+        s.checkHeadersCodeInjection,
+        s.setContentType,
+        s.stopGuests,
+        routerAggregations
+      );
+    }
   },
   //Once the server starts
   onceStarted: (s) => {},

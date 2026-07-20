@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { mmgisOn } from './mmgisAPI'
+import { mmgisOn } from '../../_shared/adapters/mmgisAPI'
 
 export const useMMGISEvent = (
     eventName: string,

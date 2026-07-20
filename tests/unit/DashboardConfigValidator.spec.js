@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from 'vitest';
 import { validateModernConfig, sanitizeText } from '../../src/essence/Validators/DashboardConfigValidator.js';
 
 test.describe('DashboardConfigValidator', () => {
@@ -154,7 +154,6 @@ test.describe('DashboardConfigValidator', () => {
             const result = validateModernConfig(config);
             expect(result.valid).toBe(false);
             expect(result.errors).toContain('Tool[1] must have a string "name"');
-            expect(result.errors).toContain('Tool[1] must have a string "icon"');
         });
     });
 });

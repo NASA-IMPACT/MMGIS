@@ -1,0 +1,45 @@
+// Pure validation helpers for image upload routes (see ./uploadRouter.js).
+
+const IMAGE_MIME_TO_EXT = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    // SVG is allowed: uploaders are trusted admins, and uploaded images are
+    // rendered via <img src>, which does not execute scripts embedded in an SVG.
+    // (Residual risk is limited to someone opening the raw asset URL directly.)
+    'image/svg+xml': 'svg',
+};
+
+// Map an upload mimetype to a safe file extension using the given allow-list,
+// or null if the type is not allowed.
+function extensionForMime(mimeType, allowedMimeToExt = IMAGE_MIME_TO_EXT) {
+    if (typeof mimeType !== 'string') return null;
+    return allowedMimeToExt[mimeType.toLowerCase()] || null;
+}
+
+// A single safe path segment: rejects anything that could escape its parent
+// directory (no traversal, no separators, no pure-dot name like "." or "..").
+function isSafePathSegment(value) {
+    if (typeof value !== 'string') return false;
+    if (value.trim() === '') return false;
+    if (value.includes('..')) return false;
+    if (value.includes('/') || value.includes('\\')) return false;
+    // A pure-dot name (e.g. ".") resolves to a directory segment, so the upload
+    // would land in the parent instead of the intended folder.
+    if (/^\.+$/.test(value)) return false;
+    return true;
+}
+
+// Mission name and upload subdir share the same constraint: one safe segment
+// under Missions/. Named separately so callers read clearly at the call site.
+const isValidMission = isSafePathSegment;
+const isValidSubdir = isSafePathSegment;
+
+module.exports = {
+    IMAGE_MIME_TO_EXT,
+    extensionForMime,
+    isSafePathSegment,
+    isValidMission,
+    isValidSubdir,
+};

@@ -1,4 +1,5 @@
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import { curveLinearClosed } from 'd3-shape'
 import F_ from '../../Basics/Formulae_/Formulae_'
 import L_ from '../../Basics/Layers_/Layers_'
@@ -281,6 +282,12 @@ const Measure = () => {
             </div>
             <div
                 id='measureGraph'
+                style={
+                    // No elevation profile without a getprofile backend
+                    isStaticBuild()
+                        ? { display: 'none' }
+                        : null
+                }
                 onMouseLeave={() => {
                     MeasureTool.clearFocusPoint()
 
@@ -1451,6 +1458,10 @@ function makeMeasureToolLayer() {
     makeGlobePolyline(polylinePoints)
 }
 function makeProfile() {
+    // Static builds have no getprofile backend; the elevation profile is
+    // disabled and Measure stays distance-only
+    if (isStaticBuild()) return
+
     var numOfPts = clickedLatLngs.length
     const path = MeasureTool.dems[MeasureTool.activeDemIdx].path
     if (numOfPts > 1 && path && path != 'none' && path != 'undefined') {
@@ -1594,6 +1605,9 @@ function makeProfile() {
     }
 }
 function makeBandProfile(xy) {
+    // Static builds have no getbands backend
+    if (isStaticBuild()) return
+
     $.ajax({
         type: calls.getbands.type,
         url: calls.getbands.url,

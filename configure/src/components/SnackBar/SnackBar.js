@@ -7,6 +7,7 @@ import { makeStyles } from "@mui/styles";
 
 import Snackbar from "@mui/material/Snackbar";
 import MuiAlert from "@mui/material/Alert";
+import Link from "@mui/material/Link";
 
 const useStyles = makeStyles((theme) => ({
   main: { top: "74px !important" },
@@ -43,7 +44,9 @@ const SnackBar = (props) => {
         horizontal: "right",
       }}
       open={openSnackbar}
-      autoHideDuration={5000}
+      // A toast carrying a link (e.g. a freshly published dashboard URL)
+      // stays until dismissed; plain toasts auto-hide.
+      autoHideDuration={snackBarText.link ? null : 5000}
       onClose={handleCloseSnackbar}
     >
       <MuiAlert
@@ -54,6 +57,17 @@ const SnackBar = (props) => {
         severity={snackBarText.severity || "success"}
       >
         {snackBarText.text || afterImage}
+        {snackBarText.link ? (
+          <Link
+            href={snackBarText.link}
+            target="_blank"
+            rel="noopener"
+            color="inherit"
+            style={{ marginLeft: "6px" }}
+          >
+            {snackBarText.link}
+          </Link>
+        ) : null}
       </MuiAlert>
     </Snackbar>
   );

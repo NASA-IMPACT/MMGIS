@@ -2,7 +2,7 @@ import React from 'react'
 import $ from 'jquery'
 import { createRoot, type Root } from 'react-dom/client'
 import { MMGISLayerManagerAdapter } from './MMGISLayerManagerAdapter'
-import { mmgisRequest, mmgisProvide, mmgisEmit } from './adapters/mmgisAPI'
+import { mmgisRequest, mmgisProvide, mmgisEmit } from '../_shared/adapters/mmgisAPI'
 
 type ToolVars = { width?: number }
 
@@ -58,7 +58,6 @@ const LayerManagerTool = {
             )
             return
         }
-        $(container).css('background', 'var(--color-k)')
         _root = createRoot(container)
         _root.render(<MMGISLayerManagerAdapter />)
         this.made = true

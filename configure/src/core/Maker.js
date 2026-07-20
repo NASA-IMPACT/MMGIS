@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { getApiBase } from "./urls";
 import { useSelector, useDispatch } from "react-redux";
 import { makeStyles } from "@mui/styles";
 
@@ -31,6 +32,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import PrecisionManufacturingIcon from "@mui/icons-material/PrecisionManufacturing";
 
 import { setConfiguration, setSnackBarText } from "./ConfigureStore";
+import UploadField from "./components/UploadField";
 import {
   getIn,
   setIn,
@@ -43,6 +45,7 @@ import {
   isUrlAbsolute,
 } from "./utils";
 import { isFieldRequired } from "./validators";
+import { isCapabilityEnabled } from "./capabilities";
 
 import Map from "../components/Map/Map";
 import VideoPreview from "../components/VideoPreview/VideoPreview";
@@ -384,6 +387,10 @@ const getComponent = (
   dispatch,
   fieldDefaults
 ) => {
+  // Metaconfigs may declare a capability the deployment must support
+  if (com.requiresCapability && !isCapabilityEnabled(com.requiresCapability))
+    return null;
+
   const directConf =
     layer == null ? (tool == null ? (component == null ? configuration : component) : tool) : layer;
   
@@ -425,6 +432,29 @@ const getComponent = (
           </Typography>
         </div>
       );
+    case "upload": {
+      const uploadDomain = getApiBase();
+      return (
+        <UploadField
+          label={com.name}
+          description={com.description}
+          value={fieldValue}
+          mission={
+            configuration?.msv?.missionFolderName ||
+            configuration?.msv?.mission
+          }
+          subdir={com.subdir}
+          domain={uploadDomain}
+          disabled={disabled || isDisabled}
+          onChange={(p) =>
+            updateConfiguration(forceField || com.field, p, layer)
+          }
+          onError={(msg) =>
+            dispatch(setSnackBarText({ text: msg, severity: "error" }))
+          }
+        />
+      );
+    }
     case "text":
       inner = (
         <TextField
@@ -1309,11 +1339,7 @@ const getComponent = (
         </FormControl>
       );
 
-      let domain =
-        window.mmgisglobal.NODE_ENV === "development"
-          ? "http://localhost:8888/"
-          : window.mmgisglobal.ROOT_PATH || "";
-      if (domain.length > 0 && !domain.endsWith("/")) domain += "/";
+      const domain = getApiBase();
 
       let source = "";
       if (window.mmgisglobal.WITH_TITILER === "true") {

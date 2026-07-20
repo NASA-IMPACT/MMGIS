@@ -1,0 +1,193 @@
+/* Chart plugin — scoped under .chart-tool-host / .chart-tool.
+ * Every literal lives in theme.css; this file references var(--chart-*) only.
+ */
+
+.chart-tool-host {
+    position: fixed;
+    top: 70px;
+    right: 16px;
+    width: 372px;
+    max-height: calc(100vh - 90px);
+    overflow: hidden;
+    z-index: 1003;
+    border-radius: var(--chart-radius-md);
+    box-shadow: var(--chart-shadow-pop);
+    pointer-events: auto;
+}
+
+.chart-tool {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    width: 100%;
+    background: var(--chart-bg);
+    color: var(--chart-fg);
+    font-family: var(--chart-font-body);
+    font-size: var(--chart-font-size-md);
+}
+
+.chart-tool * {
+    box-sizing: border-box;
+}
+
+.chart-tool__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--chart-space-3) var(--chart-space-4);
+    border-bottom: 1px solid var(--chart-border);
+}
+
+.chart-tool__title {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--chart-space-2);
+    font-size: var(--chart-font-size-lg);
+    font-weight: 600;
+}
+
+.chart-tool__title-icon {
+    color: var(--chart-accent);
+    font-size: 16px;
+    line-height: 1;
+}
+
+.chart-tool__close {
+    background: none;
+    border: 0;
+    color: var(--chart-fg-muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: var(--chart-space-1);
+}
+
+.chart-tool__close:hover {
+    color: var(--chart-fg);
+}
+
+.chart-tool__body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: var(--chart-space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--chart-space-3);
+}
+
+.chart-tool__placeholder {
+    margin: 0;
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
+    text-align: center;
+    padding: var(--chart-space-5) var(--chart-space-3);
+}
+
+.chart-tool__exit {
+    width: 100%;
+    padding: var(--chart-space-2) var(--chart-space-3);
+    border: 1px solid var(--chart-border);
+    border-radius: var(--chart-radius-sm);
+    background: var(--chart-bg);
+    color: var(--chart-fg);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+}
+
+.chart-tool__exit:hover {
+    background: var(--chart-bg-muted);
+}
+
+.chart-tool__card {
+    border: 1px solid var(--chart-border);
+    border-radius: var(--chart-radius-md);
+    padding: var(--chart-space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--chart-space-3);
+}
+
+.chart-tool__card--empty {
+    background: var(--chart-bg-muted);
+}
+
+.chart-tool__card-header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.chart-tool__card-title {
+    margin: 0;
+    font-size: var(--chart-font-size-md);
+    font-weight: 600;
+}
+
+.chart-tool__card-subtitle {
+    color: var(--chart-fg-muted);
+    font-family: var(--chart-font-mono);
+    font-size: var(--chart-font-size-sm);
+}
+
+.chart-tool__card-empty {
+    margin: 0;
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
+    font-style: italic;
+}
+
+.chart-tool__headline {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.chart-tool__headline-label {
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
+}
+
+.chart-tool__headline-value {
+    font-size: var(--chart-font-size-xl);
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.chart-tool__headline-meta {
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
+}
+
+.chart-tool__histogram {
+    height: 120px;
+    width: 100%;
+}
+
+.chart-tool__stats {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: var(--chart-space-2);
+}
+
+.chart-tool__stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.chart-tool__stat-label {
+    margin: 0;
+    color: var(--chart-fg-muted);
+    font-size: var(--chart-font-size-sm);
+}
+
+.chart-tool__stat-value {
+    margin: 0;
+    font-family: var(--chart-font-mono);
+    font-size: var(--chart-font-size-sm);
+    font-weight: 600;
+}

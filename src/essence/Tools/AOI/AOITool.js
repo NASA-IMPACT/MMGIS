@@ -33,7 +33,7 @@
  */
 
 import React from 'react'
-import { render, unmountComponentAtNode } from 'react-dom'
+import { createRoot } from 'react-dom/client'
 
 import AOIComponent from './AOIComponent'
 import AOITooltip from './AOITooltip'
@@ -108,8 +108,8 @@ const AOITool = {
     height: 0,
     width: 0,
     made: false,
-    MMGISInterface: null,
-    _root: null,
+    targetId: null,
+    _reactRoot: null,
     _state: initialState(),
     _cleanups: [],
     _api: null,
@@ -118,7 +118,13 @@ const AOITool = {
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
     make(targetId) {
-        this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
+        this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
+        const container = document.getElementById(this.targetId)
+        if (!container) {
+            console.error(`AOITool: container ${this.targetId} not found`)
+            return
+        }
+        this._reactRoot = createRoot(container)
 
         this._api =
             (typeof window !== 'undefined' && window.mmgisAPI?.forPlugin?.(PLUGIN_ID)) ||
@@ -202,15 +208,11 @@ const AOITool = {
         this._hideInspectBoundaries()
         this._hideTooltip()
 
-        if (this._root) {
-            unmountComponentAtNode(this._root)
-            this._root = null
+        if (this._reactRoot) {
+            this._reactRoot.unmount()
+            this._reactRoot = null
         }
-
-        if (this.MMGISInterface) {
-            this.MMGISInterface.separateFromMMGIS()
-            this.MMGISInterface = null
-        }
+        this.targetId = null
 
         this._state = initialState()
         this._api = null
@@ -286,8 +288,8 @@ const AOITool = {
     },
 
     _render() {
-        if (!this._root) return
-        render(
+        if (!this._reactRoot) return
+        this._reactRoot.render(
             React.createElement(AOIComponent, {
                 mode: this._state.mode,
                 onModeChange: (mode) => this._onModeChange(mode),
@@ -320,8 +322,7 @@ const AOITool = {
                 onDismissAnalysisError: () => this._dismissAnalysisError(),
 
                 onClose: () => this._onClose(),
-            }),
-            this._root
+            })
         )
     },
 
@@ -344,8 +345,7 @@ const AOITool = {
     },
 
     _onClose() {
-        const btn = document.getElementById('toolButtonAOI')
-        if (btn) btn.click()
+        window.mmgisAPI?.emit('core:unloadPlugin', { pluginId: 'AOITool' })
     },
 
     // ── Search mode ────────────────────────────────────────────────────────────
@@ -595,17 +595,17 @@ const AOITool = {
             id: TOOLTIP_OVERLAY_ID,
             latlng,
             mount: (node) => {
-                render(
+                const tooltipRoot = createRoot(node)
+                tooltipRoot.render(
                     React.createElement(AOITooltip, {
                         label,
                         position: { x: 0, y: 0 },
                         analyzeEnabled,
                         onAnalyze: () => this._onAnalyze(),
                         onCancel: () => this._onCancel(),
-                    }),
-                    node
+                    })
                 )
-                return () => unmountComponentAtNode(node)
+                return () => tooltipRoot.unmount()
             },
         }).catch((err) => console.warn('[AOI] addOverlay failed', err))
     },
@@ -629,19 +629,6 @@ const AOITool = {
         this._clearSelection()
     },
 
-}
-
-function interfaceWithMMGIS(tool) {
-    const root = document.createElement('div')
-    root.className = 'aoi-tool-host'
-    document.body.appendChild(root)
-    tool._root = root
-
-    this.separateFromMMGIS = function () {
-        if (tool._root && tool._root.parentNode) {
-            tool._root.parentNode.removeChild(tool._root)
-        }
-    }
 }
 
 export default AOITool

@@ -5,6 +5,7 @@
   Modal.remove() programmatically removes it.
 */
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import * as moment from 'moment'
 import F_ from '../Formulae_/Formulae_'
 import Map_ from '../Map_/Map_'
@@ -305,7 +306,15 @@ const TimeUI = {
             const timeUIDiv = $('<div>')
                 .attr('id', 'timeUI')
                 .html(markup)
-            $('#splitscreens').append(timeUIDiv)
+            // #splitscreens only exists in the classic layout. In the modern
+            // layout fall back to its main content container so the markup
+            // still mounts and attachEvents() can find the time inputs.
+            const desktopContainer = document.getElementById('splitscreens')
+                ? $('#splitscreens')
+                : document.getElementById('modern-content')
+                ? $('#modern-content')
+                : $('body')
+            desktopContainer.append(timeUIDiv)
 
             const playPopover = $('<div>')
                 .attr('id', 'timeUIPlayPopover_global')
@@ -382,6 +391,15 @@ const TimeUI = {
         }
     },
     attachEvents: function (timeChange) {
+        // Defensive: if the markup never mounted (e.g. no compatible container
+        // in the active layout), skip rather than constructing TempusDominus
+        // against a null element, which throws and aborts app initialization.
+        if (!document.getElementById('mmgisTimeUIStart')) {
+            console.warn(
+                '[TimeUI] time markup not present in DOM; skipping attachEvents'
+            )
+            return
+        }
         TimeUI._startingModeIndex = TimeUI.modeIndex
         // Set modeIndex to 1/Point if a deeplink had an endtime but no starttime
         if (L_.FUTURES.startTime == null && L_.FUTURES.endTime != null)
@@ -2833,6 +2851,13 @@ const TimeUI = {
         }
     },
     _makeHistogram() {
+        // Static builds drop the histogram (no backend to count tile times);
+        // the slider itself still scrubs and animates without it
+        if (isStaticBuild()) {
+            $('#mmgisTimeUITimelineHisto').hide()
+            return
+        }
+
         const startTimestamp = TimeUI.removeOffset(
             TimeUI._timelineStartTimestamp
         )

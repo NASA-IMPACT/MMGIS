@@ -1,7 +1,18 @@
 import { ToolOrientation, ToolMetadata } from '../ToolController_/types/tool';
-import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE } from './types/layout';
+import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE, FLOAT_POSITIONS } from './types/layout';
 import { PanelConfig, PanelStateObject, PanelManager as PanelManagerInterface } from './types/panel';
 import { mmgisAPI } from '../../mmgisAPI/mmgisAPI';
+
+/**
+ * Float panels don't require a priority (they don't compete for edge viewport
+ * space), so `config.priority` may be undefined. Treat missing priority as
+ * lowest priority (sorts last) instead of letting `undefined - undefined`
+ * produce NaN, which Array.prototype.sort treats as "leave order unchanged"
+ * and yields insertion-order-dependent, effectively unsorted results.
+ */
+function normalizePriority(priority: number | undefined): number {
+    return priority === undefined ? Infinity : priority;
+}
 
 class PanelManager implements PanelManagerInterface {
     private panels: Map<string, PanelStateObject> = new Map();
@@ -157,6 +168,14 @@ class PanelManager implements PanelManagerInterface {
             throw new Error(`Panel with ID ${panelId} not found`);
         }
 
+        if ((FLOAT_POSITIONS as Set<string>).has(panel.config.position) &&
+            (newState === PANEL_STATE.ICONIFIED || newState === PANEL_STATE.FOCUSED)) {
+            throw new Error(
+                `Float panels do not support '${newState}' state. ` +
+                `Only 'collapsed' and 'expanded' are allowed for float panel ${panelId}.`
+            );
+        }
+
         if (!panel.config.stateConstraints.allowedStates.includes(newState)) {
             throw new Error(`State transition to ${newState} is not allowed for panel ${panelId}`);
         }
@@ -263,7 +282,7 @@ class PanelManager implements PanelManagerInterface {
     getPanelsAtPosition(position: PanelPosition): PanelStateObject[] {
         return Array.from(this.panels.values())
             .filter(p => p.config.position === position)
-            .sort((a, b) => a.config.priority - b.config.priority);
+            .sort((a, b) => normalizePriority(a.config.priority) - normalizePriority(b.config.priority));
     }
 
     /**
@@ -274,7 +293,7 @@ class PanelManager implements PanelManagerInterface {
      */
     getAllPanelsByPriority(): PanelStateObject[] {
         return Array.from(this.panels.values())
-            .sort((a, b) => a.config.priority - b.config.priority);
+            .sort((a, b) => normalizePriority(a.config.priority) - normalizePriority(b.config.priority));
     }
 
     /**
