@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import MapEngineRegistry from '../../src/essence/Basics/MapEngines/MapEngineRegistry.ts'
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/index.ts'
 

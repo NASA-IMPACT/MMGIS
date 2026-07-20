@@ -1,4 +1,5 @@
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 
@@ -205,7 +206,8 @@ var Viewer_ = {
             navigatorWidth: '128px',
             minZoomLevel: 0.5,
             maxZoomLevel: 12,
-            ajaxWithCredentials: true,
+            // Static builds read public files anonymously
+            ajaxWithCredentials: !isStaticBuild(),
             //zoomPerClick: 1, //disables click to zoom for tools...
             imageSmoothingEnabled: false,
         })

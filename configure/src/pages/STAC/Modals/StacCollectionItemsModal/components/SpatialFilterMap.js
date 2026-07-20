@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { getApiBase } from "../../../../../core/urls";
 import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import { makeStyles, useTheme } from "@mui/styles";
@@ -320,8 +321,7 @@ export default function SpatialFilterMap({
     }
     const enabled = window?.mmgisglobal?.WITH_TITILER_PGSTAC === "true";
     if (!enabled) return;
-    let domain = window.mmgisglobal.NODE_ENV === "development" ? "http://localhost:8888/" : window.mmgisglobal.ROOT_PATH || "";
-    if (domain.length > 0 && !domain.endsWith("/")) domain += "/";
+    const domain = getApiBase();
     const zxy = "WebMercatorQuad/{z}/{x}/{y}";
     const urlParams = new URLSearchParams();
     urlParams.set("assets", "asset");

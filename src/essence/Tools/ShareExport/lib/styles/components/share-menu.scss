@@ -1,0 +1,143 @@
+// ShareExport "Share map" control — a compact trigger button that opens a
+// small dropdown menu. The trigger is placed by the layout (e.g. a
+// float-top-right floating panel); this file only styles the control, it never
+// positions it. Mirrors the AOI plugin's token convention: every literal
+// carries an `--mmgis-*` fallback so a host theme can override it at :root
+// without touching this file. Scoped entirely under the .shareExport-tool-host
+// root so it never leaks into core styles. The dropdown menu is portaled to
+// document.body (so the float zone's overflow clipping can't cut it off), so
+// the portal element carries the .shareExport-tool-host class too to keep the
+// token scope.
+
+.shareExport-tool-host {
+    // Tokens (host theme overrides --mmgis-* on :root).
+    --se-bg: var(--mmgis-surface, #ffffff);
+    --se-bg-hover: var(--mmgis-surface-muted, #f6f7f8);
+    --se-fg: var(--mmgis-text, #1b1b1b);
+    --se-fg-muted: var(--mmgis-text-muted, #565c65);
+    --se-accent: var(--mmgis-accent, #137480);
+    --se-border: var(--mmgis-border, #dfe1e2);
+    --se-radius-sm: var(--mmgis-radius-sm, 4px);
+    --se-radius-md: var(--mmgis-radius-md, 6px);
+    --se-shadow-pop: var(--mmgis-shadow-pop, 0 2px 6px rgba(0, 0, 0, 0.18));
+    --se-font-body: var(
+        --mmgis-font-body,
+        'Source Sans Pro',
+        system-ui,
+        sans-serif
+    );
+    --se-font-size-sm: var(--mmgis-font-size-sm, 13px);
+    --se-font-size-md: var(--mmgis-font-size-md, 14px);
+    --se-space-1: var(--mmgis-space-1, 4px);
+    --se-space-2: var(--mmgis-space-2, 8px);
+    --se-space-3: var(--mmgis-space-3, 12px);
+
+    color: var(--se-fg);
+    font-family: var(--se-font-body);
+    font-size: var(--se-font-size-md);
+    pointer-events: auto;
+}
+
+.shareExport-tool-host *,
+.shareExport-tool-host *::before,
+.shareExport-tool-host *::after {
+    box-sizing: border-box;
+}
+
+.share-menu {
+    position: relative;
+    display: inline-block;
+}
+
+// The hosting tool card provides the chrome (white background, rounded
+// corners), so the trigger itself is chromeless — a bordered/shadowed button
+// inside the card reads as a double border.
+.share-menu__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--se-space-2);
+    height: 36px;
+    padding: 0 var(--se-space-3);
+    background: transparent;
+    color: var(--se-fg);
+    border: 0;
+    border-radius: var(--se-radius-md);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    transition: background 0.15s ease;
+
+    &:hover {
+        background: var(--se-bg-hover);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--se-accent);
+        outline-offset: -2px;
+    }
+}
+
+// Portaled to document.body and anchored to the trigger with an inline
+// top/right computed from the trigger's bounding rect (see <ShareMenu>), so
+// the float zone's overflow clipping can't cut the menu off.
+.share-menu__dropdown {
+    position: fixed;
+    z-index: var(--mmgis-popup-z, 1200);
+    min-width: 200px;
+    padding: var(--se-space-1);
+    background: var(--se-bg);
+    border: 1px solid var(--se-border);
+    border-radius: var(--se-radius-md);
+    box-shadow: var(--se-shadow-pop);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.share-menu__item {
+    display: flex;
+    align-items: center;
+    gap: var(--se-space-2);
+    width: 100%;
+    padding: 6px var(--se-space-2); // ~px-2 py-1.5
+    background: none;
+    border: 0;
+    border-radius: var(--se-radius-sm);
+    color: var(--se-fg);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--se-font-size-sm);
+    line-height: 1.2;
+    text-align: left;
+    white-space: nowrap;
+    transition: background 0.12s ease;
+
+    &:hover {
+        background: var(--se-bg-hover);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--se-accent);
+        outline-offset: -2px;
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: default;
+    }
+}
+
+.share-menu__item-icon {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    color: var(--se-fg-muted);
+}
+
+.share-menu__separator {
+    height: 1px;
+    margin: var(--se-space-1) 0;
+    background: var(--se-border);
+}

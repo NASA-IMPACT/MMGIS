@@ -1,0 +1,115 @@
+import { test, expect } from 'vitest'
+
+// Tests for the per-dashboard CloudFormation template renderer
+// (scripts/lib/cfn-template.js) used by the lean publish flow.
+
+const {
+    STACK_NAME_PREFIX,
+    BASIC_AUTH_USER,
+    stackNameForDeployment,
+    renderAuthFunctionCode,
+    renderCfnTemplate,
+} = require('../../scripts/lib/cfn-template')
+
+const PASSWORD = 'a-Distinctive-Passw0rd!'
+
+test.describe('stackNameForDeployment', () => {
+    test('encodes the deployment id with the mmgis-dashboard- prefix', () => {
+        expect(stackNameForDeployment(12)).toBe('mmgis-dashboard-12')
+        expect(stackNameForDeployment('40')).toBe('mmgis-dashboard-40')
+        expect(STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
+    })
+
+    test('throws without an id', () => {
+        expect(() => stackNameForDeployment(null)).toThrow()
+        expect(() => stackNameForDeployment('')).toThrow()
+    })
+})
+
+test.describe('renderCfnTemplate', () => {
+    test('throws without a password', () => {
+        expect(() => renderCfnTemplate({})).toThrow(/password/)
+        expect(() => renderCfnTemplate({ password: '' })).toThrow(/password/)
+    })
+
+    test('renders valid JSON with the expected resources', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        const resources = template.Resources
+        expect(resources.DashboardBucket.Type).toBe('AWS::S3::Bucket')
+        expect(resources.DashboardBucketPolicy.Type).toBe(
+            'AWS::S3::BucketPolicy'
+        )
+        expect(resources.DashboardOriginAccessControl.Type).toBe(
+            'AWS::CloudFront::OriginAccessControl'
+        )
+        expect(resources.DashboardAuthFunction.Type).toBe(
+            'AWS::CloudFront::Function'
+        )
+        expect(resources.DashboardDistribution.Type).toBe(
+            'AWS::CloudFront::Distribution'
+        )
+    })
+
+    test('has no Parameters block — the password is never a CFN parameter', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        expect(template.Parameters).toBeUndefined()
+    })
+
+    test('bakes the password into the Function code as a base64 constant', () => {
+        const body = renderCfnTemplate({ password: PASSWORD })
+        const template = JSON.parse(body)
+        const code =
+            template.Resources.DashboardAuthFunction.Properties.FunctionCode
+        const expected = Buffer.from(
+            `${BASIC_AUTH_USER}:${PASSWORD}`
+        ).toString('base64')
+        expect(code).toContain(`Basic ${expected}`)
+        // The plaintext password never appears anywhere in the template
+        expect(body).not.toContain(PASSWORD)
+    })
+
+    test('auth function returns 401 with a www-authenticate challenge', () => {
+        const code = renderAuthFunctionCode(PASSWORD)
+        expect(code).toContain('statusCode: 401')
+        expect(code).toContain('www-authenticate')
+        expect(code).toContain('return request')
+    })
+
+    test('distribution is gated by the viewer-request function and serves index.html', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        const dist =
+            template.Resources.DashboardDistribution.Properties
+                .DistributionConfig
+        expect(dist.DefaultRootObject).toBe('index.html')
+        const associations = dist.DefaultCacheBehavior.FunctionAssociations
+        expect(associations).toHaveLength(1)
+        expect(associations[0].EventType).toBe('viewer-request')
+        expect(associations[0].FunctionARN['Fn::GetAtt']).toEqual([
+            'DashboardAuthFunction',
+            'FunctionARN',
+        ])
+    })
+
+    test('bucket blocks all public access; CloudFront reads via OAC', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        const block =
+            template.Resources.DashboardBucket.Properties
+                .PublicAccessBlockConfiguration
+        expect(block.BlockPublicAcls).toBe(true)
+        expect(block.RestrictPublicBuckets).toBe(true)
+        const statement =
+            template.Resources.DashboardBucketPolicy.Properties.PolicyDocument
+                .Statement[0]
+        expect(statement.Principal.Service).toBe('cloudfront.amazonaws.com')
+        expect(statement.Action).toBe('s3:GetObject')
+    })
+
+    test('declares the outputs the publish task and routes consume', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        expect(Object.keys(template.Outputs).sort()).toEqual([
+            'BucketName',
+            'DistributionDomainName',
+            'DistributionId',
+        ])
+    })
+})

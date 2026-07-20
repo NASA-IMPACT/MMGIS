@@ -1,4 +1,10 @@
 {
+    "defaults": {
+        "variables": {
+            "showLogo": true,
+            "showTitleText": true
+        }
+    },
     "name": "Title",
     "description": "Display mission icon and title from the mission config file.",
     "descriptionFull": {
@@ -28,6 +34,47 @@
         "height": 0
     },
     "config": {
-        "rows": []
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.showLogo",
+                        "name": "Show Logo",
+                        "description": "Dictates whether or not the logo/icon is visible in the rendered tool.",
+                        "type": "checkbox",
+                        "width": 6,
+                        "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showTitleText",
+                        "name": "Show Title Text",
+                        "description": "Dictates whether or not the title text is visible in the rendered tool.",
+                        "type": "checkbox",
+                        "width": 6,
+                        "defaultChecked": true
+                    }
+                ]
+            },
+            {
+                "name": "Action Button",
+                "description": "Configure an optional action button displayed on the side of the title.",
+                "components": [
+                    {
+                        "field": "variables.actionButtonText",
+                        "name": "Button Text",
+                        "description": "Text to display on the action button. If empty, the button shows a default arrow icon. The button is shown whenever Button Link is set.",
+                        "type": "text",
+                        "width": 6
+                    },
+                    {
+                        "field": "variables.actionButtonLink",
+                        "name": "Button Link",
+                        "description": "An external http(s) URL (opened in a new tab); a core command using 'core:action:target' (e.g. 'core:showPlugin:LayersTool', 'core:togglePanel:left-panel'); or a custom event name like 'LayerManager:someEvent'. Simple strings without colons are emitted as 'plugin:title:<value>'. Leave empty to hide the button.",
+                        "type": "text",
+                        "width": 6
+                    }
+                ]
+            }
+        ]
     }
 }

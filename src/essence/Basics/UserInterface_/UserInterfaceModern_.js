@@ -1,9 +1,10 @@
 import $ from 'jquery'
 import PanelManager_ from '../PanelManager_/PanelManager_'
-import { mmgisAPI } from '../../mmgisAPI/mmgisAPI'
+import { mmgisAPI, mmgisAPI_ } from '../../mmgisAPI/mmgisAPI'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
+import { FLOAT_POSITIONS } from '../PanelManager_/types/layout'
 import './UserInterfaceModern_.css'
 
 const logger = createLogger('UserInterfaceModern')
@@ -16,6 +17,7 @@ let panels = []
 let layoutStyle = ''
 let toolLoadQueue = []
 let cleanupLayoutListener = null
+let cleanupCoreCommandDispatcher = null
 let _resizeObserver = null
 
 // --- DOM Builder Helpers ---
@@ -32,6 +34,9 @@ const _createPanelIconTray = (panel) => {
         const iconSpan = $('<span></span>').addClass(iconClass)
         const iconBtn = $('<button></button>')
             .addClass('ui-panel-icon-btn')
+            // Apply hidden class at init for tools configured with startHidden/startUnloaded,
+            // mirrors the 'plugin-hidden' class applied to the content card.
+            .addClass(toolMetadata.startHidden || toolMetadata.startUnloaded ? 'plugin-hidden' : '')
             .attr('title', toolName) // jQuery escapes attribute values
             .attr('data-tool', toolId)
             .append(iconSpan)
@@ -81,6 +86,81 @@ const _createPanelHeader = (panel) => {
 
     header.append(title).append(headerButtons)
     return header
+}
+
+// Converts a dimension value to a CSS string.
+// Numbers are treated as px; strings are passed through as-is (e.g. "40%", "50vh").
+const _toCssValue = (v) => (typeof v === 'number' ? v + 'px' : v)
+
+const _renderFloatRegions = (floatPanels) => {
+    if (!floatPanels || floatPanels.length === 0) return null
+
+    const fragment = $('<div class="ui-float-regions"></div>')
+
+    // Group panels by their float position (validator enforces at most one per position)
+    const byPosition = {}
+    floatPanels.forEach(panel => {
+        const pos = panel.config.position
+        if (!byPosition[pos]) byPosition[pos] = []
+        byPosition[pos].push(panel)
+    })
+
+    Object.entries(byPosition).forEach(([position, positionPanels]) => {
+        const suffix = position.replace('float-', '')
+        const zone = $(`<div class="ui-float-zone ui-float-zone-${suffix}"></div>`)
+
+        positionPanels.forEach(panel => {
+            const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+            if (toolsMetadata.length === 0) return
+
+            // One panel card per float zone — all tools stack inside it
+            const panelDiv = $('<div class="ui-panel ui-float-panel"></div>')
+                .attr('id', panel.containerId)
+                .attr('data-panel-state', panel.state)
+
+            const dims = panel.config.dimensions || {}
+
+            // Width constraints go on the panel container
+            const panelCss = {}
+            if (dims.defaultWidth)  panelCss['width']     = _toCssValue(dims.defaultWidth)
+            if (dims.minWidth)      panelCss['min-width'] = _toCssValue(dims.minWidth)
+            if (dims.maxWidth)      panelCss['max-width'] = _toCssValue(dims.maxWidth)
+            if (Object.keys(panelCss).length) panelDiv.css(panelCss)
+
+            if (panel.config.hasHeader) {
+                panelDiv.append(_createPanelHeader(panel))
+            }
+
+            // Body holds all tool cards stacked vertically with gaps
+            const body = $('<div class="ui-float-panel-body"></div>')
+
+            // Height constraints go on the body so overflow-y: auto can trigger correctly.
+            // Applying max-height only to the panel won't constrain the flex body's actual height,
+            // so the body scroll never fires; setting it on the body directly fixes this.
+            const bodyCss = {}
+            if (dims.defaultHeight) bodyCss['height']     = _toCssValue(dims.defaultHeight)
+            if (dims.minHeight)     bodyCss['min-height'] = _toCssValue(dims.minHeight)
+            if (dims.maxHeight)     bodyCss['max-height'] = _toCssValue(dims.maxHeight)
+            if (Object.keys(bodyCss).length) body.css(bodyCss)
+            toolsMetadata.forEach(toolMetadata => {
+                const { toolCard, loadTool, targetId } = UserInterfaceModern_.createToolCard(toolMetadata, panel.containerId)
+                toolCard.addClass('active')
+                body.append(toolCard)
+                if (toolMetadata.startUnloaded) {
+                    toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
+                } else {
+                    toolLoadQueue.push(loadTool)
+                }
+            })
+
+            panelDiv.append(body)
+            zone.append(panelDiv)
+        })
+
+        fragment.append(zone)
+    })
+
+    return fragment
 }
 
 const _renderRegion = (regionName, regionPanels) => {
@@ -155,6 +235,15 @@ const UserInterfaceModern_ = {
 
         this.render()
 
+        // Wire plugin lifecycle API into mmgisAPI so plugins and core can call
+        // showPlugin/hidePlugin/loadPlugin/unloadPlugin without a direct import
+        mmgisAPI_._pluginController = ToolControllerModern_
+        mmgisAPI_._panelManager = PanelManager_
+
+        if (!cleanupCoreCommandDispatcher) {
+            cleanupCoreCommandDispatcher = mmgisAPI_._initCoreCommandDispatcher()
+        }
+
         if (!cleanupLayoutListener) {
             cleanupLayoutListener = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
         }
@@ -178,6 +267,10 @@ const UserInterfaceModern_ = {
     destroy: function () {
         ToolControllerModern_.destroyAllTools()
         toolLoadQueue = [] // Clear any pending loads
+        if (cleanupCoreCommandDispatcher) {
+            cleanupCoreCommandDispatcher()
+            cleanupCoreCommandDispatcher = null
+        }
         if (cleanupLayoutListener) {
             cleanupLayoutListener()
             cleanupLayoutListener = null
@@ -188,6 +281,8 @@ const UserInterfaceModern_ = {
         }
         $('#modern-content').empty()
         panels = []
+        mmgisAPI_._pluginController = null
+        mmgisAPI_._panelManager = null
     },
 
     /**
@@ -214,13 +309,17 @@ const UserInterfaceModern_ = {
             .addClass('ui-tool-card')
             .addClass(layoutClass)
             .addClass(isActive ? 'active' : '')
+            // Apply hidden class at init for tools configured with startHidden:true
+            .addClass(toolMetadata.startHidden ? 'plugin-hidden' : '')
             .attr('data-tool', toolId)
             .attr('id', targetId)
 
-        // Return card and a function to load the tool (called after append)
-        // The load function checks if DOM element still exists before loading
+        // Return card, a function to load the tool (called after append), and targetId
+        // so callers can register deferred tools without re-deriving the container ID.
+        // The load function checks if DOM element still exists before loading.
         return {
             toolCard: toolCard,
+            targetId: targetId,
             loadTool: () => {
 
                 const targetElement = document.getElementById(targetId)
@@ -251,10 +350,20 @@ const UserInterfaceModern_ = {
 
         const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
 
+        // Pick the first tool that isn't starting hidden/unloaded to be the
+        // active tab, so we don't land on a tab whose content is invisible.
+        // Falls back to idx 0 if every tool starts hidden/unloaded.
+        const firstVisibleIdx = toolsMetadata.findIndex(t => !t.startHidden && !t.startUnloaded)
+        const activeIdx = firstVisibleIdx === -1 ? 0 : firstVisibleIdx
+
         toolsMetadata.forEach((toolMetadata, idx) => {
             const toolName = toolMetadata.name || toolMetadata.id
             const toolId = toolMetadata.id
-            const isActive = idx === 0
+            const isActive = idx === activeIdx
+            // Mirrors the 'plugin-hidden' class applied to the content card below,
+            // so a tool that starts hidden/unloaded doesn't leave a clickable tab
+            // pointing at invisible content.
+            const startsHidden = !!(toolMetadata.startHidden || toolMetadata.startUnloaded)
 
             // Create tab using safe jQuery methods
             const iconClass = getValidIconClass(toolMetadata.icon, toolId)
@@ -264,16 +373,21 @@ const UserInterfaceModern_ = {
             const tab = $('<div></div>')
                 .addClass('ui-panel-tab')
                 .addClass(isActive ? 'active' : '')
+                .addClass(startsHidden ? 'plugin-hidden' : '')
                 .attr('data-tool', toolId)
                 .append(iconSpan)
                 .append(textSpan)
 
             tabBar.append(tab)
 
-            // Create tab content container and queue tool loading
-            const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId, 'tabbed', isActive)
+            // Create tab content container and queue tool loading (or deferral)
+            const { toolCard, loadTool, targetId } = this.createToolCard(toolMetadata, panel.containerId, 'tabbed', isActive)
             tabContentArea.append(toolCard)
-            toolLoadQueue.push(loadTool)
+            if (toolMetadata.startUnloaded) {
+                toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
+            } else {
+                toolLoadQueue.push(loadTool)
+            }
         })
 
         body.append(tabBar).append(tabContentArea)
@@ -309,10 +423,14 @@ const UserInterfaceModern_ = {
         const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
 
         toolsMetadata.forEach(toolMetadata => {
-            const { toolCard, loadTool } = this.createToolCard(toolMetadata, panel.containerId)
+            const { toolCard, loadTool, targetId } = this.createToolCard(toolMetadata, panel.containerId)
             body.append(toolCard)
-            // Queue tool loading for after DOM is fully rendered
-            toolLoadQueue.push(loadTool)
+            // Queue tool loading (or deferred registration) for after DOM is fully rendered
+            if (toolMetadata.startUnloaded) {
+                toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
+            } else {
+                toolLoadQueue.push(loadTool)
+            }
         })
     },
 
@@ -344,6 +462,12 @@ const UserInterfaceModern_ = {
      * Renders the layout into the #modern-content element
      */
     render: function () {
+        // Defensive: a re-render destroys the DOM the lifecycle registries point to,
+        // so any already-loaded/deferred tools must be cleared or they'd reference
+        // stale elements (isPluginLoaded would lie, loadTool's "already loaded" guard
+        // would try to destroy a tool whose DOM no longer exists).
+        ToolControllerModern_.destroyAllTools()
+
         const container = $('#modern-content')
         container.empty()
 
@@ -356,17 +480,20 @@ const UserInterfaceModern_ = {
             gridWrapper.addClass('ui-layout-compact')
         }
 
-        // Group panels by position
+        // Group panels by position — float positions go into a separate bucket
         const layoutRegions = {
             top: [],
             left: [],
             right: [],
             bottom: []
         }
+        const floatPanels = []
 
         panels.forEach(p => {
             const pos = p.config?.position
-            if (layoutRegions[pos]) {
+            if (FLOAT_POSITIONS.has(pos)) {
+                floatPanels.push(p)
+            } else if (layoutRegions[pos]) {
                 layoutRegions[pos].push(p)
             }
         })
@@ -413,6 +540,11 @@ const UserInterfaceModern_ = {
             }
         }
 
+        const floatRegions = _renderFloatRegions(floatPanels)
+        if (floatRegions) {
+            centralArea.append(floatRegions)
+        }
+
         gridWrapper.append(_renderRegion('left', layoutRegions.left))
         gridWrapper.append(_renderRegion('right', layoutRegions.right))
         gridWrapper.append(_renderRegion('bottom', layoutRegions.bottom))
@@ -452,6 +584,8 @@ const UserInterfaceModern_ = {
         }
 
         panels.forEach(panel => {
+            const isFloatingPanel = FLOAT_POSITIONS.has(panel.config?.position)
+
             const $panel = $(document.getElementById(panel.containerId))
             if ($panel.length === 0) return
 
@@ -475,7 +609,12 @@ const UserInterfaceModern_ = {
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
             }
 
-            if (panel.state === 'iconified') {
+            // Float panels are sized via dimensions.defaultWidth/defaultHeight applied
+            // once at render time (see _renderFloatRegions) — the edge-panel
+            // expandedSize/iconifiedSize logic below doesn't apply and would clobber them.
+            if (isFloatingPanel) {
+                // no-op
+            } else if (panel.state === 'iconified') {
                 $panel.css({ width: '', height: '', flex: 'none' })
             } else if (panel.state === 'expanded' || panel.state === 'focused') {
                 let targetSize = panel.currentSize;

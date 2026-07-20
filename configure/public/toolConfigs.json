@@ -293,8 +293,9 @@
                                 {
                                     "field": "image",
                                     "name": "Image",
-                                    "description": "Upload an image (png/jpg/webp/gif, &le;5MB). It is cropped to a square in the card.",
+                                    "description": "Upload an image (png/jpg/webp/gif/svg, &le;5MB). It is cropped to a square in the card.",
                                     "type": "upload",
+                                    "subdir": "CardPlugin",
                                     "width": 12
                                 },
                                 {
@@ -314,7 +315,7 @@
                                 {
                                     "field": "linkUrl",
                                     "name": "Link URL",
-                                    "description": "URL opened when the card is clicked.",
+                                    "description": "Link opened when the card is clicked. Use a full https:// URL for external sites, or start with / for a page in this site.",
                                     "type": "text",
                                     "width": 12
                                 }

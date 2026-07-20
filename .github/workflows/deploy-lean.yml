@@ -1,0 +1,183 @@
+name: Deploy lean (AWS ECS Express Mode)
+
+# Lean-deployment pipeline (see infrastructure/README.md):
+#   build theme assets -> build image -> push to ECR -> register new
+#   mmgis-admin + mmgis-publish task-definition revisions -> point the
+#   ECS Express Mode gateway service's primary container at the new
+#   image and let the managed rollout run.
+#
+# Per the D1 decision, ECS Express Mode owns the ALB, target groups,
+# rollout strategy, and scaling — this workflow deliberately defines and
+# touches none of them. Express Mode services are NOT task-definition
+# driven: the admin rollout goes through
+# `aws ecs update-express-gateway-service --primary-container`, not
+# `update-service --task-definition`. The task-definition registrations
+# below still matter (see that step's comment).
+#
+# Repository configuration:
+#   vars:    AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE
+#   secrets: AWS_DEPLOY_ROLE_ARN (OIDC-assumable deploy role; no
+#            long-lived keys)
+#
+# The full/upstream deployment does not use this workflow
+# (docker-build.yml continues to publish the GHCR image).
+
+# limit concurrency
+concurrency: deploy_lean_mmgis
+
+on:
+  # Deploy on final releases (same release convention as docker-build.yml)
+  release:
+    types: [published]
+
+  # Plus manual rollouts
+  workflow_dispatch:
+
+permissions:
+  # OIDC token for aws-actions/configure-aws-credentials
+  id-token: write
+  contents: read
+
+env:
+  ADMIN_TASK_FAMILY: mmgis-admin
+  PUBLISH_TASK_FAMILY: mmgis-publish
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The Dockerfile's `npm run build` does NOT run build:themes; the
+      # generated public/ CSS + fonts must exist in the build context
+      # (COPY . .) or themed missions/dashboards render unstyled.
+      - name: Build theme assets
+        run: |
+          npm install --force
+          npm run build:themes
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker build and push
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          # Tag with the release tag (or the short SHA for manual runs)
+          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
+          [ "${{ github.event_name }}" == "workflow_dispatch" ] && VERSION=$(git rev-parse --short HEAD)
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
+
+          docker build \
+            --tag $IMAGE_URI \
+            --no-cache \
+            .
+          docker push $IMAGE_URI
+
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      # Register new revisions of both families pointing at the new image.
+      # mmgis-publish genuinely needs its revision: the Deployments backend
+      # starts publish jobs with RunTask on the bare family name, which
+      # resolves to the latest revision. mmgis-admin is NOT what the Express
+      # Mode service deploys from (the service carries its own
+      # primary-container definition), but we keep registering it as the
+      # human-auditable source-of-truth the service's primary container —
+      # environment, secrets, logging — is derived from.
+      - name: Register new task-definition revisions
+        id: register
+        env:
+          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+        run: |
+          set -o pipefail
+          register_revision() {
+            local family=$1
+            aws ecs describe-task-definition \
+              --task-definition "$family" \
+              --query taskDefinition \
+              --output json \
+            | jq --arg IMAGE "$IMAGE_URI" '
+                .containerDefinitions[0].image = $IMAGE
+                | del(.taskDefinitionArn, .revision, .status,
+                      .requiresAttributes, .compatibilities,
+                      .registeredAt, .registeredBy, .deregisteredAt)
+              ' > /tmp/$family.json
+            aws ecs register-task-definition \
+              --cli-input-json file:///tmp/$family.json \
+              --query taskDefinition.taskDefinitionArn \
+              --output text
+          }
+
+          ADMIN_TASK_DEF_ARN=$(register_revision "$ADMIN_TASK_FAMILY")
+          PUBLISH_TASK_DEF_ARN=$(register_revision "$PUBLISH_TASK_FAMILY")
+          echo "Registered $ADMIN_TASK_DEF_ARN"
+          echo "Registered $PUBLISH_TASK_DEF_ARN"
+
+      # Express gateway services are updated through their own API: point
+      # the primary container at the new image and Express Mode rolls it.
+      # `update-service --task-definition` does not apply here.
+      #
+      # We poll `describe-express-gateway-service` rather than use
+      # `monitor-express-gateway-service`: monitor is an interactive,
+      # open-ended streamer meant for a human terminal, while describe
+      # returns a discrete deployment status we can bound with a timeout
+      # and a clean exit code in CI.
+      - name: Roll the Express Mode gateway service
+        env:
+          ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+          ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+        run: |
+          set -o pipefail
+
+          # ECS_SERVICE is the service NAME; the express-gateway-service
+          # API addresses services by ARN, so resolve it first (an Express
+          # Mode service is still an ECS service in its cluster).
+          SERVICE_ARN=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].serviceArn' \
+            --output text)
+          echo "Resolved $ECS_SERVICE -> $SERVICE_ARN"
+
+          aws ecs update-express-gateway-service \
+            --cluster "$ECS_CLUSTER" \
+            --service-arn "$SERVICE_ARN" \
+            --primary-container "{\"image\": \"$IMAGE_URI\"}"
+
+          # Bounded poll (up to 20 minutes) until the managed deployment is
+          # steady. A deployment that is still converging reports an
+          # in-progress status; anything FAILED fails the job immediately.
+          for attempt in $(seq 1 80); do
+            STATUS=$(aws ecs describe-express-gateway-service \
+              --service-arn "$SERVICE_ARN" \
+              --query 'service.deployments[0].rolloutState' \
+              --output text)
+            echo "[$attempt/80] deployment status: $STATUS"
+            if [ "$STATUS" = "COMPLETED" ]; then
+              echo "Rollout steady."
+              exit 0
+            fi
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "Rollout FAILED — see the ECS console / service events." >&2
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "Rollout did not reach a steady state within 20 minutes." >&2
+          exit 1

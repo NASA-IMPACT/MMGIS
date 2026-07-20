@@ -1,4 +1,5 @@
 import $ from 'jquery'
+import { isStaticBuild } from '../../../pre/capabilities'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
@@ -430,7 +431,9 @@ let Map_ = {
         if (isNaN(lat)) lat = 0
         var lon = parseFloat(latlonzoom[1])
         if (isNaN(lon)) lon = 0
-        var zoom = parseInt(latlonzoom[2])
+        // parseFloat: the modern map zooms fractionally; truncating here
+        // visibly changes restored views (Leaflet snaps integers itself).
+        var zoom = parseFloat(latlonzoom[2])
         if (zoom == null || isNaN(zoom))
             zoom =
                 this.engine.getZoom() ||
@@ -2034,7 +2037,7 @@ function makeImageLayer(layerObj, mapContext = null) {
     const cogColormap = F_.getIn(L_.layers.data[layerObj.name], 'cogColormap')
 
     parseGeoraster(layerUrl)
-        .then((georaster) => {
+        .then(async (georaster) => {
             let pixelValuesToColorFn = null
             if (
                 F_.getIn(
@@ -2070,42 +2073,95 @@ function makeImageLayer(layerObj, mapContext = null) {
                     isNaN(parseFloat(layerObj.cogMin)) ||
                     isNaN(parseFloat(layerObj.cogMax))
                 ) {
-                    // Try to get the min and max values using gdal if the user did not input min/max in the layer config
-                    $.ajax({
-                        type: calls.getminmax.type,
-                        url: calls.getminmax.url,
-                        data: {
-                            type: 'minmax',
-                            path: calls.getprofile.pathprefix + layerUrl,
-                            bands: '[1]', // Assume the geotiff images only have a single band
-                        },
-                        async: false,
-                        success: function (data) {
-                            if (
-                                data &&
-                                data[0] &&
-                                data[0].band &&
-                                data[0].band === 1
-                            ) {
-                                if (isNaN(parseFloat(layerObj.cogMin))) {
-                                    min = data[0].min
-                                    layerObj.cogMin = min
-                                }
-                                if (isNaN(parseFloat(layerObj.cogMax))) {
-                                    max = data[0].max
-                                    layerObj.cogMax = max
-                                }
-                            }
-                        },
-                        error: function (request, status, error) {
-                            console.warn(
-                                `Failed to get gdal minmax info for ${layerObj.name}`,
-                                request,
-                                status,
-                                error
+                    if (isStaticBuild()) {
+                        // Static builds have no gdal backend; ask the layer's
+                        // external TiTiler for the band's statistics instead
+                        const titilerBase = ServiceUrls.getTiTilerUrl(layerObj)
+                        if (titilerBase != null) {
+                            await fetch(
+                                `${titilerBase}/cog/statistics?url=${encodeURIComponent(
+                                    layerUrl
+                                )}&bidx=1`
                             )
-                        },
-                    })
+                                .then((response) => {
+                                    if (!response.ok)
+                                        throw new Error(
+                                            `TiTiler statistics returned ${response.status}`
+                                        )
+                                    return response.json()
+                                })
+                                .then((stats) => {
+                                    // TiTiler keys statistics by band ('b1');
+                                    // fall back to the first band returned
+                                    const band =
+                                        stats == null
+                                            ? null
+                                            : stats.b1 ||
+                                              stats[Object.keys(stats)[0]]
+                                    if (band != null) {
+                                        if (
+                                            isNaN(parseFloat(layerObj.cogMin))
+                                        ) {
+                                            min = band.min
+                                            layerObj.cogMin = min
+                                        }
+                                        if (
+                                            isNaN(parseFloat(layerObj.cogMax))
+                                        ) {
+                                            max = band.max
+                                            layerObj.cogMax = max
+                                        }
+                                    }
+                                })
+                                .catch((err) => {
+                                    console.warn(
+                                        `Failed to get TiTiler minmax statistics for ${layerObj.name}`,
+                                        err
+                                    )
+                                })
+                        } else {
+                            console.warn(
+                                `Failed to get minmax statistics for ${layerObj.name}: no TiTiler URL configured`
+                            )
+                        }
+                    } else {
+                        // Try to get the min and max values using gdal if the user did not input min/max in the layer config
+                        $.ajax({
+                            type: calls.getminmax.type,
+                            url: calls.getminmax.url,
+                            data: {
+                                type: 'minmax',
+                                path: calls.getprofile.pathprefix + layerUrl,
+                                bands: '[1]', // Assume the geotiff images only have a single band
+                            },
+                            async: false,
+                            success: function (data) {
+                                if (
+                                    data &&
+                                    data[0] &&
+                                    data[0].band &&
+                                    data[0].band === 1
+                                ) {
+                                    if (isNaN(parseFloat(layerObj.cogMin))) {
+                                        min = data[0].min
+                                        layerObj.cogMin = min
+                                    }
+                                    if (isNaN(parseFloat(layerObj.cogMax))) {
+                                        max = data[0].max
+                                        layerObj.cogMax = max
+                                    }
+                                }
+                            },
+                            error: function (request, status, error) {
+                                console.warn(
+                                    `Failed to get gdal minmax info for ${layerObj.name}`,
+                                    request,
+                                    status,
+                                    error
+                                )
+                            },
+                        })
+                    }
                 }
 
                 // FIXME A lot of this code is duplicated in LayersTool so find some way to consolidate them as functions

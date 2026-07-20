@@ -58,6 +58,8 @@ const createDevServerConfig = require("../configuration/webpackDevServer.config"
 
 const middleware = require("./middleware").middleware;
 
+const { isFull } = require("../API/Backend/Utils/deploymentMode");
+
 const isDevEnv = process.env.NODE_ENV === "development";
 
 //Username to use when not logged in
@@ -347,6 +349,7 @@ function ensureAdmin(
       res.render("adminlogin", {
         user: req.user,
         VERSION: configurePackageJson.version,
+        DISABLE_FIRST_SIGNUP: process.env.DISABLE_FIRST_SIGNUP === "true",
       });
       return;
     }
@@ -506,8 +509,8 @@ let s = {
   ROOT_PATH,
 };
 
-// Trust first proxy
-app.set("trust proxy", 1);
+// Trust two proxy hops (lean deployment topology: CloudFront -> ALB -> ECS)
+app.set("trust proxy", 2);
 
 app.use("/api/", apilimiter);
 
@@ -640,12 +643,14 @@ setups.getBackendSetups(function (setups) {
       express.static(path.join(rootDir, "/examples"))
     );
   app.use(`${ROOT_PATH}/public`, express.static(path.join(rootDir, "/public")));
-  app.use(
-    `${ROOT_PATH}/Missions`,
-    ensureUser(),
-    middleware.missions(ROOT_PATH),
-    express.static(path.join(rootDir, "/Missions"))
-  );
+  if (isFull()) {
+    app.use(
+      `${ROOT_PATH}/Missions`,
+      ensureUser(),
+      middleware.missions(ROOT_PATH),
+      express.static(path.join(rootDir, "/Missions"))
+    );
+  }
   app.get(s.ROOT_PATH + "/resetPassword", (req, res) => {
     const user = process.env.AUTH === "csso" ? req.user : req.user || "";
     res.render("../views/resetpassword.pug", {

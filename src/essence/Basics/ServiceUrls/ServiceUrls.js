@@ -34,18 +34,28 @@ const getLocalBaseUrl = () => {
 }
 
 /**
+ * Whether this bundle was built without a backend (mmgisglobal.SERVER !== 'node').
+ * Static builds have no same-origin service proxies to fall back to.
+ * @returns {boolean}
+ */
+import { isStaticBuild } from '../../../pre/capabilities'
+
+/**
  * Factory function to get a service URL
  * Priority: layerConfig > mmgisglobal.options.services > local proxy
+ * Static builds have no local proxy; an explicitly configured URL is required
+ * and missing config returns null (with a warning) rather than a same-origin
+ * path that would silently 404.
  *
  * @param {string} serviceName - Name of the service (titiler, stac, etc.)
  * @param {object} [layerConfig] - Layer configuration (optional, for per-layer override)
- * @returns {string} Service base URL
+ * @returns {string|null} Service base URL (null if unresolvable in a static build)
  */
 const getServiceUrl = (serviceName, layerConfig = null) => {
     const config = SERVICE_CONFIG[serviceName]
     if (!config) {
         console.warn(`ServiceUrls: Unknown service "${serviceName}"`)
-        return getLocalBaseUrl()
+        return isStaticBuild() ? null : getLocalBaseUrl()
     }
 
     const { configKey, localPath } = config
@@ -58,6 +68,13 @@ const getServiceUrl = (serviceName, layerConfig = null) => {
     // Global override via mmgisglobal.options.services
     if (window.mmgisglobal?.options?.services?.[configKey]) {
         return window.mmgisglobal.options.services[configKey].replace(/\/$/, '')
+    }
+
+    if (isStaticBuild()) {
+        console.warn(
+            `ServiceUrls: No "${configKey}" configured for service "${serviceName}". Static builds require an external service URL (per-layer or via options.services).`
+        )
+        return null
     }
 
     // Default local proxy
@@ -89,6 +106,7 @@ const getVeloserverUrl = createServiceGetter('veloserver')
  */
 const buildTiTilerCogTilesUrl = (cogUrl, layerConfig = null, options = {}) => {
     const baseUrl = getTiTilerUrl(layerConfig)
+    if (baseUrl == null) return null
     const tileMatrixSet = options.tileMatrixSet || layerConfig?.tileMatrixSet || 'WebMercatorQuad'
 
     let url = `${baseUrl}/cog/tiles/${tileMatrixSet}/{z}/{x}/{y}.webp?url=${encodeURIComponent(cogUrl)}`
@@ -115,6 +133,7 @@ const buildTiTilerCogTilesUrl = (cogUrl, layerConfig = null, options = {}) => {
  */
 const buildStacCollectionTilesUrl = (collectionName, layerConfig = null, options = {}) => {
     const baseUrl = getTiTilerPgStacUrl(layerConfig)
+    if (baseUrl == null) return null
     const tileMatrixSet = options.tileMatrixSet || layerConfig?.tileMatrixSet || 'WebMercatorQuad'
     const assets = options.assets || 'asset'
 
@@ -145,6 +164,7 @@ const buildStacCollectionTilesUrl = (collectionName, layerConfig = null, options
  */
 const buildTiTilerPointUrl = (lng, lat, cogUrl, layerConfig = null, params = {}) => {
     const baseUrl = getTiTilerUrl(layerConfig)
+    if (baseUrl == null) return null
     let url = `${baseUrl}/cog/point/${lng},${lat}?assets=asset&url=${encodeURIComponent(cogUrl)}`
 
     Object.entries(params).forEach(([key, value]) => {
@@ -174,6 +194,7 @@ const buildTiTilerPointUrl = (lng, lat, cogUrl, layerConfig = null, params = {})
  */
 const buildStacCollectionPointUrl = (lng, lat, collectionName, layerConfig = null, params = {}) => {
     const baseUrl = getTiTilerPgStacUrl(layerConfig)
+    if (baseUrl == null) return null
     let url = `${baseUrl}/collections/${collectionName}/point/${lng},${lat}?assets=asset`
 
     Object.entries(params).forEach(([key, value]) => {
@@ -201,7 +222,34 @@ const buildStacCollectionPointUrl = (lng, lat, collectionName, layerConfig = nul
 const buildColormapImageUrl = (colormapName, layerConfig = null, format = 'png') => {
     if (!colormapName) return null
     const baseUrl = getTiTilerUrl(layerConfig)
+    if (baseUrl == null) return null
     return `${baseUrl}/colorMaps/${colormapName}?format=${format}`
+}
+
+/**
+ * Build a tipg (OGC Features/Tiles) URL
+ * @param {string} [endpoint] - Endpoint path appended to the tipg base URL
+ * @param {object} [layerConfig] - Layer configuration
+ * @returns {string|null} Full tipg URL (null if unresolvable in a static build)
+ */
+const buildTipgUrl = (endpoint = '', layerConfig = null) => {
+    const baseUrl = getTipgUrl(layerConfig)
+    if (baseUrl == null) return null
+    if (!endpoint) return baseUrl
+    return `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`
+}
+
+/**
+ * Build a veloserver (wind/velocity data) URL
+ * @param {string} [endpoint] - Endpoint path appended to the veloserver base URL
+ * @param {object} [layerConfig] - Layer configuration
+ * @returns {string|null} Full veloserver URL (null if unresolvable in a static build)
+ */
+const buildVeloserverUrl = (endpoint = '', layerConfig = null) => {
+    const baseUrl = getVeloserverUrl(layerConfig)
+    if (baseUrl == null) return null
+    if (!endpoint) return baseUrl
+    return `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`
 }
 
 /**
@@ -209,6 +257,7 @@ const buildColormapImageUrl = (colormapName, layerConfig = null, format = 'png')
  */
 const buildStacItemsUrl = (collectionName, layerConfig = null, params = {}) => {
     const baseUrl = getStacUrl(layerConfig)
+    if (baseUrl == null) return null
     let url = `${baseUrl}/collections/${collectionName}/items`
 
     const queryParams = new URLSearchParams()
@@ -241,6 +290,8 @@ const ServiceUrls = {
     buildTiTilerPointUrl,
     buildStacCollectionPointUrl,
     buildColormapImageUrl,
+    buildTipgUrl,
+    buildVeloserverUrl,
     buildStacItemsUrl,
 }
 

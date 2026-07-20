@@ -18,6 +18,7 @@
 */
 
 import $ from 'jquery'
+import { isStaticBuild } from '../pre/capabilities'
 import WebSocket from 'isomorphic-ws'
 import M from 'materialize-css'
 import F_ from './Basics/Formulae_/Formulae_'
@@ -412,6 +413,7 @@ var essence = {
 
         // Enable MMGIS backend websockets
         if (
+            !isStaticBuild() &&
             window.mmgisglobal.PORT &&
             window.mmgisglobal.ENABLE_MMGIS_WEBSOCKETS === 'true'
         ) {
@@ -445,7 +447,7 @@ var essence = {
         //Close all tools since they only update when reopened
         ToolController_.closeActiveTool()
 
-        if (window.mmgisglobal.SERVER == 'node') {
+        if (!isStaticBuild()) {
             calls.api(
                 'get',
                 {
