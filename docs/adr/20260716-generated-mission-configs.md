@@ -12,12 +12,14 @@
 Mission configs that ship with the repo are **generated, never hand-edited**. A single
 generator composes two hand-maintained inputs — per-tool `defaults` blocks and a curated
 profile — into a complete mission config. CI regenerates every profile on each PR and fails
-if a committed artifact is stale, so the seed can no longer silently drift when a tool changes.
+if a committed artifact is stale, so the shipped configs can no longer silently drift when a
+tool changes.
 
 Two profiles ship today:
 
-- **seed** — the everything-on showcase mission (dev deployments boot from it; PR previews
-  will publish it — #156).
+- **full-demo** — the everything-on showcase mission (local dev deployments boot from it via
+  the deployment tooling's template database; PR previews will publish it — #156. The deployed
+  dev environment keeps its own persistent database and does not reseed from it).
 - **minimal** — a two-tool starting point for brand-new missions (wired into the new-mission
   template by #109).
 
@@ -160,18 +162,20 @@ profiles and runs `git diff --exit-code` on the two committed artifacts. A stale
 the PR with the exact regeneration commands. The regenerated diff **is** the review artifact.
 
 In-flight tool branches (e.g. Timeline, LayerFilter/Themes, Comparison, AddTempLayer) each join
-the seed at merge only once they ship a `defaults` block — a checklist line for those PRs.
+the full-demo config at merge only once they ship a `defaults` block — a checklist line for
+those PRs.
 
 ---
 
 ## How-tos
 
-**Add a tool to the seed.** Declare a `defaults` block in the tool's manifest (and a `metadata`
-block if it needs specific placement), then regenerate:
-`node scripts/generate-mission-config.js seed`. With `tools: "all"`, the tool appears in the
-seed with no seed edits. Commit the manifest change and the regenerated artifact.
+**Add a tool to the full-demo.** Declare a `defaults` block in the tool's manifest (and a
+`metadata` block if it needs specific placement), then regenerate:
+`node scripts/generate-mission-config.js full-demo`. With `tools: "all"`, the tool appears in
+the generated config with no profile edits. Commit the manifest change and the regenerated
+artifact.
 
-**Change the seed** (which tools are on, layout, layers, demo cards, time). Edit
+**Change the full-demo** (which tools are on, layout, layers, demo cards, time). Edit
 `mission-profiles/full-demo.json`, regenerate, commit. Never hand-edit
 `mission-profiles/generated/full-demo-mission.json`.
 
@@ -198,7 +202,7 @@ seed with no seed edits. Commit the manifest change and the regenerated artifact
 
 **Positive**
 
-- The seed can no longer silently drift; a new tool with defaults shows up automatically.
+- The shipped configs can no longer silently drift; a new tool with defaults shows up automatically.
 - CI enforces committed == regenerated, making stale configs a hard failure, not a latent bug.
 - Profiles cleanly separate curated policy (layout, layers, on-state) from mechanical tool
   defaults, and the profile mechanism already supports future preset profiles (predefined
@@ -208,4 +212,4 @@ seed with no seed edits. Commit the manifest change and the regenerated artifact
 
 - Tool authors must remember to declare `defaults` (enforced socially + by the CI checklist for
   in-flight branches, not by a build failure — a tool with no defaults is simply absent).
-- The generated artifacts are committed, so every seed/tool change carries a regenerated diff.
+- The generated artifacts are committed, so every profile/tool change carries a regenerated diff.
