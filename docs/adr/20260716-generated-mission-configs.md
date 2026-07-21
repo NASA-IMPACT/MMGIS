@@ -60,10 +60,12 @@ out; a mission supplies those through a profile override when it needs them.
 **Declaring `defaults` is how a tool opts into generation.** A manifest with no `defaults`
 block never appears in a generated config. Two additional flags:
 
-- A profile's `exclude` list opts tools out of its implicit everything-on (`"all"`) set even
-  though they declare defaults. Exclusion is profile policy, never manifest knowledge. Only
-  `Draw` is excluded (lean deployments drop the Draw backend; static
-  previews serve it read-only).
+- A profile's `exclude` list opts tools out of its implicit everything-on (`"all"`) set.
+  Exclusion is profile policy, never manifest knowledge. The full-demo profile excludes the
+  13 classic-era tools (Animation, Chemistry, Curtain, Draw, Identifier, Info, Isochrone,
+  Layers, Legend, Measure, Shade, Sites, Viewshed), keeping the showcase to the modern plugin
+  set. Those tools also declare no `defaults` block — absence keeps them out mechanically;
+  the exclude list documents the intent explicitly.
 
 ### Layer 2 — profiles (curated policy files)
 
@@ -190,8 +192,10 @@ artifact.
 
 - **Kinds** is a core module, not a mission tool. It is hard-skipped by the generator and gets
   no `defaults` block.
-- **Draw** declares `defaults` but is on the full-demo profile's `exclude` list. It is the
-  only lean-excluded tool, so no separate lean variant is needed — the exclusion keeps it out entirely.
+- **The 13 classic-era tools** carry no `defaults` block and are additionally named on the
+  full-demo `exclude` list (see Layer 1). **Draw**, among them, is the only tool the backend
+  drops in lean deployments, so no separate lean profile variant is needed — the exclusion
+  keeps it out of the generated config entirely.
 - **`add()` / `config_template` divergence from upstream is accepted.** The template-merge
   fallback-only semantics (#194) and the generated minimal template (#109) intentionally differ
   from upstream MMGIS behavior; that divergence is a deliberate part of this project's direction.
