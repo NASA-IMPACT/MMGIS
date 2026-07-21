@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { MapControlBar } from './lib'
 import type { BasemapStyle } from './lib'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
+import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import { getBasemaps } from './adapters/getBasemaps'
 import {
     selectBasemap,
@@ -10,7 +11,8 @@ import {
     subscribeToMap,
     drawOverlay,
     removeOverlay,
-    projectLatLng,
+    showMeasureLabel,
+    removeMeasureLabel,
     setCursor,
     flyToResult,
 } from './adapters/handlers'
@@ -25,18 +27,6 @@ type ToolVars = {
 const isFalsy = (v: unknown) =>
     v === false || v === 'false' || v === 0 || v === '0'
 
-// The measure label anchors to map-container-relative pixel coords, so it
-// must portal onto the live map element rather than render inside the panel.
-const MAP_CONTAINER_IDS = ['mapScreen', 'map']
-
-const getMapContainer = (): HTMLElement | null => {
-    for (const id of MAP_CONTAINER_IDS) {
-        const el = document.getElementById(id)
-        if (el) return el
-    }
-    return null
-}
-
 export function MMGISMapControlAdapter() {
     const [basemapStyles, setBasemapStyles] = useState<BasemapStyle[]>([])
     const [activeBasemap, setActiveBasemap] = useState<BasemapStyle | null>(null)
@@ -48,33 +38,15 @@ export function MMGISMapControlAdapter() {
     const showMeasure = !isFalsy(vars.showMeasure)
     const showZoom = !isFalsy(vars.showZoom)
 
-    // Retry until the map registers its basemap handlers (fixes the
-    // "switcher appears only sometimes" race).
-    useEffect(() => {
-        let cancelled = false
-        let attempts = 0
-        const tick = () => {
-            if (cancelled || attempts >= 20) return
-            attempts++
-            getBasemaps()
-                .then(({ styles, active }) => {
-                    if (cancelled) return
-                    if (styles.length === 0) {
-                        setTimeout(tick, 300)
-                        return
-                    }
-                    setBasemapStyles(styles)
-                    setActiveBasemap(active)
-                })
-                .catch(() => {
-                    if (!cancelled) setTimeout(tick, 300)
-                })
-        }
-        tick()
-        return () => {
-            cancelled = true
-        }
+    // Fetch once the map registers its basemap handlers. An empty style list
+    // then means the mission genuinely has no basemap — not "not ready yet".
+    const fetchBasemaps = useCallback(() => {
+        getBasemaps().then(({ styles, active }) => {
+            setBasemapStyles(styles)
+            setActiveBasemap(active)
+        })
     }, [])
+    useMMGISHandlerReady('map:getBasemapStyles', fetchBasemaps)
 
     const onSelectBasemap = useCallback((style: BasemapStyle) => {
         setActiveBasemap(style)
@@ -83,7 +55,6 @@ export function MMGISMapControlAdapter() {
 
     return (
         <MapControlBar
-            getOverlayContainer={getMapContainer}
             basemapStyles={showBasemapSwitcher ? basemapStyles : []}
             activeBasemap={showBasemapSwitcher ? activeBasemap : null}
             onSelectBasemap={showBasemapSwitcher ? onSelectBasemap : undefined}
@@ -92,7 +63,8 @@ export function MMGISMapControlAdapter() {
             subscribeToMap={showMeasure ? subscribeToMap : undefined}
             onDrawOverlay={showMeasure ? drawOverlay : undefined}
             onRemoveOverlay={showMeasure ? removeOverlay : undefined}
-            onProjectLatLng={showMeasure ? projectLatLng : undefined}
+            onShowMeasureLabel={showMeasure ? showMeasureLabel : undefined}
+            onRemoveMeasureLabel={showMeasure ? removeMeasureLabel : undefined}
             onSetCursor={showMeasure ? setCursor : undefined}
             onSearchSelect={showSearch ? flyToResult : undefined}
         />

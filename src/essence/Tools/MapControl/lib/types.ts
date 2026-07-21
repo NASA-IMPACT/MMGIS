@@ -25,4 +25,3 @@ export type MapSubscribeHandlers = {
 }
 
 /** Pixel point relative to the map container. */
-export type ContainerPoint = { x: number; y: number }

@@ -412,10 +412,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return this._basemap
     }
 
-    setBasemapStyle(styleUrl: string): void {
-        if (this._basemap) {
-            this._basemap.setStyle(styleUrl)
-        }
+    setBasemapStyle(styleUrl: string): boolean {
+        if (!this._basemap) return false
+        this._basemap.setStyle(styleUrl)
+        return true
     }
 
     getContainer(): HTMLElement {

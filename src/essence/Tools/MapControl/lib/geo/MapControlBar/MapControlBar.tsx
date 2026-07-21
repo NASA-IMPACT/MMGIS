@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
 import type {
     BasemapStyle,
-    ContainerPoint,
     GeocodeResult,
     LatLng,
     MapOverlayOpts,
@@ -13,18 +11,9 @@ import { useDebouncedSearch } from '../../hooks/useDebouncedSearch'
 import { useMeasure } from '../../hooks/useMeasure'
 import { BasemapPanel } from '../BasemapPanel/BasemapPanel'
 import { SearchPanel } from '../SearchPanel/SearchPanel'
-import { MeasureLabel } from '../MeasureLabel/MeasureLabel'
 import { BasemapIcon, MinusIcon, PlusIcon, RulerIcon, SearchIcon } from '../icons'
 
 export type MapControlBarProps = {
-    /**
-     * Returns the map container element. The measure label anchors to
-     * map-container-relative pixel coords, so when this is provided the label
-     * portals into that element instead of rendering next to the bar.
-     * Resolved lazily so the map may mount after the bar does.
-     */
-    getOverlayContainer?: () => HTMLElement | null
-
     // Basemap
     basemapStyles?: BasemapStyle[]
     activeBasemap?: BasemapStyle | null
@@ -38,7 +27,9 @@ export type MapControlBarProps = {
     subscribeToMap?: (handlers: MapSubscribeHandlers) => () => void
     onDrawOverlay?: (opts: MapOverlayOpts) => void
     onRemoveOverlay?: (id: string) => void
-    onProjectLatLng?: (latlng: LatLng) => Promise<ContainerPoint | null>
+    /** Show (or move) the distance label anchored at a map point. */
+    onShowMeasureLabel?: (latlng: LatLng, text: string) => void
+    onRemoveMeasureLabel?: () => void
     onSetCursor?: (cursor: string) => void
 
     // Geocode search
@@ -46,7 +37,6 @@ export type MapControlBarProps = {
 }
 
 export function MapControlBar({
-    getOverlayContainer,
     basemapStyles = [],
     activeBasemap = null,
     onSelectBasemap,
@@ -55,7 +45,8 @@ export function MapControlBar({
     subscribeToMap,
     onDrawOverlay,
     onRemoveOverlay,
-    onProjectLatLng,
+    onShowMeasureLabel,
+    onRemoveMeasureLabel,
     onSetCursor,
     onSearchSelect,
 }: MapControlBarProps) {
@@ -68,7 +59,8 @@ export function MapControlBar({
         subscribeToMap,
         onDrawOverlay,
         onRemoveOverlay,
-        onProjectLatLng,
+        onShowMeasureLabel,
+        onRemoveMeasureLabel,
         onSetCursor,
     })
     const { results, loading } = useDebouncedSearch(searchOpen ? searchQuery : '')
@@ -98,14 +90,6 @@ export function MapControlBar({
     const current = activeBasemap ?? (basemapStyles[0] ?? null)
     const hasStyles = basemapStyles.length > 0
     const hasZoom = Boolean(onZoomIn && onZoomOut)
-
-    const measureLabel =
-        measure.measuring && measure.segment && measure.labelPixel ? (
-            <MeasureLabel segment={measure.segment} pixel={measure.labelPixel} />
-        ) : null
-    // The label's pixel coords are map-container-relative, so anchor it there
-    // when the host app can hand us that element; otherwise render in place.
-    const overlayEl = measureLabel ? getOverlayContainer?.() ?? null : null
 
     function toggleBasemap() {
         setBasemapOpen((v) => !v)
@@ -206,7 +190,6 @@ export function MapControlBar({
                 )}
             </div>
 
-            {overlayEl ? createPortal(measureLabel, overlayEl) : measureLabel}
         </>
     )
 }

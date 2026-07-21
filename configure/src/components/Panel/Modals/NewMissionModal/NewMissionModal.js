@@ -156,7 +156,9 @@ const NewMissionModal = (props) => {
 
     const config = {
       msv: {
-        view: [39, -98, 4],
+        // Continental-US default only makes sense for Earth; other bodies
+        // fall back to the template's neutral view.
+        ...(selectedPlanet === "Earth" ? { view: [39, -98, 4] } : {}),
         radius: {
           major: planetRadius.major,
           minor: planetRadius.minor,
@@ -305,7 +307,14 @@ const NewMissionModal = (props) => {
           <InputLabel>Map Engine</InputLabel>
           <Select
             value={selectedEngine}
-            onChange={(e) => setSelectedEngine(e.target.value)}
+            onChange={(e) => {
+              setSelectedEngine(e.target.value);
+              // The basemap fields only render for deck.gl — clear them so
+              // values entered there don't silently ship with another engine.
+              setBasemapProvider("none");
+              setBasemapStyle("");
+              setBasemapToken("");
+            }}
             label="Map Engine"
           >
             {MAP_ENGINES.map((eng) => (

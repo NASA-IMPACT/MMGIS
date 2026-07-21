@@ -659,6 +659,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             throw new Error('createLayer: options.id is required')
         }
 
+        // Re-creating an id replaces the prior layer; without this the old
+        // layer stays on the map with no registry entry left to remove it by.
+        if (this._layers.has(options.id)) {
+            this.removeLayer(options.id)
+        }
+
         const leafletLayer = buildLeafletLayer(options.id, options)
 
         this._layers.set(options.id, leafletLayer)
@@ -1289,6 +1295,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _initBasemapTileLayer(basemap: BasemapOptions): void {
         this._basemapAccessToken = basemap.accessToken
         const spec = this._resolveBasemapTileSpec(basemap)
+        if (!spec) return
         this._basemapLayer = L.tileLayer(spec.url, spec.options)
         this._basemapLayer.addTo(this._map)
         this._basemapLayer.bringToBack()
@@ -1299,17 +1306,19 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
     }
 
-    setBasemapStyle(styleUrl: string): void {
-        if (!this._map) return
+    setBasemapStyle(styleUrl: string): boolean {
+        if (!this._map) return false
         const spec = this._resolveBasemapTileSpec({
             provider: this._inferProvider(styleUrl),
             style: styleUrl,
             accessToken: this._basemapAccessToken,
         })
+        if (!spec) return false
         this._removeBasemapLayer()
         this._basemapLayer = L.tileLayer(spec.url, spec.options)
         this._basemapLayer.addTo(this._map)
         this._basemapLayer.bringToBack()
+        return true
     }
 
     private _removeBasemapLayer(): void {
@@ -1319,16 +1328,29 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._basemapLayer = null
     }
 
+    /**
+     * Resolve a basemap config into a Leaflet tile-layer spec, or null when
+     * the style cannot be rendered by this engine: a mapbox:// style with no
+     * access token (every tile would 401), or a GL style.json URL (Leaflet
+     * consumes raster XYZ templates only). Returning null skips the basemap
+     * rather than silently rendering the wrong one.
+     */
     private _resolveBasemapTileSpec(basemap: BasemapOptions): {
         url: string
         options: Record<string, unknown>
-    } {
+    } | null {
         const style = basemap.style || ''
 
         const mapboxMatch = style.match(/^mapbox:\/\/styles\/([^/]+)\/(.+)$/)
         if (mapboxMatch) {
             const [, user, styleId] = mapboxMatch
             const token = basemap.accessToken || this._basemapAccessToken || ''
+            if (!token) {
+                console.warn(
+                    `[LeafletAdapter] Skipping basemap "${style}": mapbox styles require an accessToken`
+                )
+                return null
+            }
             return {
                 url: `https://api.mapbox.com/styles/v1/${user}/${styleId}/tiles/{z}/{x}/{y}?access_token=${token}`,
                 options: {
@@ -1344,13 +1366,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             return { url: style, options: {} }
         }
 
-        return {
-            url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            options: {
-                subdomains: 'abc',
-                attribution: '© OpenStreetMap contributors',
-            },
-        }
+        console.warn(
+            `[LeafletAdapter] Skipping basemap "${style}": the Leaflet engine renders raster {z}/{x}/{y} templates or mapbox:// styles, not GL style URLs`
+        )
+        return null
     }
 
     private _inferProvider(styleUrl: string): BasemapOptions['provider'] {

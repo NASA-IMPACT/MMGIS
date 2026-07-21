@@ -3,7 +3,6 @@
 import { mmgisOn, mmgisRequest } from './mmgisAPI'
 import type {
     BasemapStyle,
-    ContainerPoint,
     GeocodeResult,
     LatLng,
     MapOverlayOpts,
@@ -11,6 +10,7 @@ import type {
 } from '../lib'
 
 const SEARCH_OVERLAY_ID = 'plugin:mapcontrol:search'
+const MEASURE_LABEL_ID = 'plugin:mapcontrol:measure-label'
 const MAP_CURSOR_IDS = ['mapScreen', 'map']
 
 export const selectBasemap = (style: BasemapStyle): void => {
@@ -50,8 +50,24 @@ export const removeOverlay = (id: string): void => {
     void mmgisRequest('map:removeLayer', { id })
 }
 
-export const projectLatLng = async (latlng: LatLng): Promise<ContainerPoint | null> => {
-    return (await mmgisRequest<ContainerPoint>('map:latLngToContainerPoint', latlng)) ?? null
+/**
+ * Show (or move) the measure distance label as an engine-anchored HTML
+ * overlay. map:addOverlay replaces an existing id, and the engine keeps the
+ * node positioned across pan/zoom.
+ */
+export const showMeasureLabel = (latlng: LatLng, text: string): void => {
+    void mmgisRequest('map:addOverlay', {
+        id: MEASURE_LABEL_ID,
+        latlng,
+        mount: (node: HTMLElement) => {
+            node.className = 'blocks-measure-label'
+            node.textContent = text
+        },
+    })
+}
+
+export const removeMeasureLabel = (): void => {
+    void mmgisRequest('map:removeOverlay', { id: MEASURE_LABEL_ID })
 }
 
 /** Set the cursor on the live map canvas (DOM, not bus). */

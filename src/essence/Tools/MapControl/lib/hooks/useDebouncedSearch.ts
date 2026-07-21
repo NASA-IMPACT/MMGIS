@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { GeocodeResult } from '../types'
 import { geocodeSearch } from '../utils/geocode'
 
@@ -11,23 +11,26 @@ export function useDebouncedSearch(query: string): {
 } {
     const [results, setResults] = useState<GeocodeResult[]>([])
     const [loading, setLoading] = useState(false)
-    const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     useEffect(() => {
-        if (timer.current) clearTimeout(timer.current)
         if (query.length < 2) {
             setResults([])
             setLoading(false)
             return
         }
         setLoading(true)
-        timer.current = setTimeout(async () => {
-            const r = await geocodeSearch(query)
+        // Abort superseded requests so a slow older response can't clobber
+        // newer results after the user keeps typing.
+        const controller = new AbortController()
+        const timer = setTimeout(async () => {
+            const r = await geocodeSearch(query, controller.signal)
+            if (controller.signal.aborted) return
             setResults(r)
             setLoading(false)
         }, DEBOUNCE_MS)
         return () => {
-            if (timer.current) clearTimeout(timer.current)
+            clearTimeout(timer)
+            controller.abort()
         }
     }, [query])
 

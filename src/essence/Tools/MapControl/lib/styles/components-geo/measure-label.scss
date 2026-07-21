@@ -1,6 +1,6 @@
 .blocks-measure-label {
-    position: absolute;
-    transform: translate(-50%, -50%);
+    // Applied to the engine-anchored overlay node, which the engine
+    // positions (and centers) itself — no positioning here.
     padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-1, 0.5rem);
     background: var(--theme-color-white, #ffffff);
     border-radius: var(--theme-radius-lg, 0.5rem);

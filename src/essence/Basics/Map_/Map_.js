@@ -323,8 +323,13 @@ let Map_ = {
                         return false
                     }
                     const selectedStyle = _basemapStyles[index]
-                    if (Map_.engine && typeof Map_.engine.setBasemapStyle === 'function') {
-                        Map_.engine.setBasemapStyle(selectedStyle.style)
+                    if (!Map_.engine || typeof Map_.engine.setBasemapStyle !== 'function') {
+                        console.warn('[map:setBasemap] The active engine does not support basemap switching')
+                        return false
+                    }
+                    if (Map_.engine.setBasemapStyle(selectedStyle.style) === false) {
+                        console.warn(`[map:setBasemap] Engine could not apply style: "${styleName}"`)
+                        return false
                     }
                     _basemapActiveIndex = index
                     return true
@@ -459,10 +464,19 @@ let Map_ = {
         const basemapConfig = L_.configData?.msv?.basemap
         if (basemapConfig && basemapConfig.provider && basemapConfig.provider !== 'none') {
             _basemapStyles = _resolveBasemapStyles(basemapConfig, engineType)
-            _basemapActiveIndex = 0
-            _basemapStyles.forEach(function (s, i) {
-                if (s.style === basemapConfig.style) _basemapActiveIndex = i
-            })
+            let activeIndex = _basemapStyles.findIndex(
+                (s) => s.style === basemapConfig.style
+            )
+            // A configured style outside the resolved list must still be
+            // reported (and switchable) as the active basemap.
+            if (activeIndex === -1 && basemapConfig.style) {
+                _basemapStyles.unshift({
+                    name: 'Default',
+                    style: basemapConfig.style,
+                })
+                activeIndex = 0
+            }
+            _basemapActiveIndex = Math.max(activeIndex, 0)
         }
 
         TimeControl.updateLayersTime()
