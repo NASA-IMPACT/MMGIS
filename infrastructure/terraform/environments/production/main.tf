@@ -22,6 +22,7 @@ module "mmgis" {
   deploy_role_branch = "production"
 
   # CloudFront two-phase inputs (empty on the first apply).
-  express_internal_alb_arn = var.express_internal_alb_arn
-  express_onaws_endpoint   = var.express_onaws_endpoint
+  express_internal_alb_arn      = var.express_internal_alb_arn
+  express_onaws_endpoint        = var.express_onaws_endpoint
+  express_alb_security_group_id = var.express_alb_security_group_id
 }

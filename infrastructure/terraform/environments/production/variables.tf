@@ -33,3 +33,9 @@ variable "express_onaws_endpoint" {
   type        = string
   default     = ""
 }
+
+variable "express_alb_security_group_id" {
+  description = "Phase 2. SG id of the ECS-managed ALB (same describe call as the ALB ARN). Empty in phase 1."
+  type        = string
+  default     = ""
+}

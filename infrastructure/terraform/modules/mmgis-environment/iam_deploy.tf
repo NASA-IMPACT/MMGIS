@@ -66,13 +66,15 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = local.service_arn
       },
       {
-        # The three ExpressGatewayService actions. The API authorizes
-        # Update/Describe against the SERVICE ARN (learned empirically), NOT
-        # the express-gateway-service/* shape, so the Resource lists BOTH.
+        # Update + Describe only — CI rolls the EXISTING service; creating a
+        # service is Terraform's job under operator credentials, and a
+        # compromised branch token must not be able to stand up new services.
+        # The API authorizes Update/Describe against the SERVICE ARN (learned
+        # empirically), NOT the express-gateway-service/* shape, so the
+        # Resource lists BOTH.
         Sid    = "ExpressGatewayServiceDeploy"
         Effect = "Allow"
         Action = [
-          "ecs:CreateExpressGatewayService",
           "ecs:UpdateExpressGatewayService",
           "ecs:DescribeExpressGatewayService",
         ]
@@ -83,7 +85,8 @@ resource "aws_iam_role_policy" "deploy" {
       },
       {
         # Pinned PassRole: registering task-def revisions passes the task/exec
-        # roles; an Express service create/update passes the infra role too.
+        # roles; an Express service update passes the infra role too. The
+        # PassedToService condition mirrors iam.tf's pattern.
         Sid    = "PassEnvTaskRoles"
         Effect = "Allow"
         Action = ["iam:PassRole"]
@@ -94,6 +97,11 @@ resource "aws_iam_role_policy" "deploy" {
           aws_iam_role.publish_task.arn,
           aws_iam_role.express_infra.arn,
         ]
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "ecs.amazonaws.com"]
+          }
+        }
       },
     ]
   })

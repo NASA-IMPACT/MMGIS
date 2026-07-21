@@ -149,3 +149,15 @@ variable "express_onaws_endpoint" {
   type        = string
   default     = ""
 }
+
+variable "express_alb_security_group_id" {
+  description = "Phase 2. Security-group id of the ECS-managed ALB fronting the admin service (from the same describe-express-gateway-service call as the ALB ARN). Drives the :443-from-VPC-CIDR ingress rule. Empty in phase 1."
+  type        = string
+  default     = ""
+}
+
+variable "secret_recovery_window_days" {
+  description = "Secrets Manager recovery window on delete. Default 30 (production-safe). Development sets 0 so a destroy/re-apply cycle doesn't collide with names held in the recovery window."
+  type        = number
+  default     = 30
+}

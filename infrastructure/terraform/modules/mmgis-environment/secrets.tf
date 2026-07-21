@@ -11,28 +11,33 @@
 # secrets exist on purpose. The value here is populated out-of-band, copying
 # DB_PASS from the RDS-managed secret and DB_HOST from the RDS endpoint.
 resource "aws_secretsmanager_secret" "db" {
-  name        = local.secret_db_name
-  description = "MMGIS ${var.environment} app DB credentials (JSON: DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASS). Value set out-of-band."
+  name                    = local.secret_db_name
+  description             = "MMGIS ${var.environment} app DB credentials (JSON: DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASS). Value set out-of-band."
+  recovery_window_in_days = var.secret_recovery_window_days
 }
 
 # express-session secret; injected as env SECRET (the name scripts/server.js reads).
 resource "aws_secretsmanager_secret" "session" {
-  name        = local.secret_session_name
-  description = "MMGIS ${var.environment} express-session secret (injected as env SECRET). Value set out-of-band."
+  name                    = local.secret_session_name
+  description             = "MMGIS ${var.environment} express-session secret (injected as env SECRET). Value set out-of-band."
+  recovery_window_in_days = var.secret_recovery_window_days
 }
 
 resource "aws_secretsmanager_secret" "seed_username" {
-  name        = local.secret_seed_user_name
-  description = "MMGIS ${var.environment} superadmin seed username (SEED_SUPERADMIN_USERNAME). Value set out-of-band."
+  name                    = local.secret_seed_user_name
+  description             = "MMGIS ${var.environment} superadmin seed username (SEED_SUPERADMIN_USERNAME). Value set out-of-band."
+  recovery_window_in_days = var.secret_recovery_window_days
 }
 
 resource "aws_secretsmanager_secret" "seed_password" {
-  name        = local.secret_seed_pass_name
-  description = "MMGIS ${var.environment} superadmin seed password (SEED_SUPERADMIN_PASSWORD). Value set out-of-band."
+  name                    = local.secret_seed_pass_name
+  description             = "MMGIS ${var.environment} superadmin seed password (SEED_SUPERADMIN_PASSWORD). Value set out-of-band."
+  recovery_window_in_days = var.secret_recovery_window_days
 }
 
 # Shared dashboards password; injected only on the publish task (MMGIS_DASHBOARDS_PASSWORD).
 resource "aws_secretsmanager_secret" "dashboards_password" {
-  name        = local.secret_dash_pass_name
-  description = "MMGIS ${var.environment} shared dashboards password (MMGIS_DASHBOARDS_PASSWORD). Value set out-of-band."
+  name                    = local.secret_dash_pass_name
+  description             = "MMGIS ${var.environment} shared dashboards password (MMGIS_DASHBOARDS_PASSWORD). Value set out-of-band."
+  recovery_window_in_days = var.secret_recovery_window_days
 }

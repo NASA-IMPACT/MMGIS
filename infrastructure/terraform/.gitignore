@@ -1,6 +1,5 @@
 # Local Terraform state, plugins, and crash logs
 .terraform/
-.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 crash.log

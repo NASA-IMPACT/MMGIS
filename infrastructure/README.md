@@ -64,6 +64,10 @@ publish generator (`scripts/lib/cfn-template.js`) is kept in sync with (see
   make the admin reachable only through CloudFront.
 - **A per-environment Terraform state bucket**, bootstrapped once (below).
   Development's is created here; production's is created by #195.
+- **The account's GitHub OIDC identity provider**
+  (`token.actions.githubusercontent.com`) must already exist — the module
+  references it by data source and never creates it. The very first `plan`
+  fails without it.
 - **Secret values**, set out-of-band (below). Terraform defines the secrets'
   existence and names only.
 - **The RDS regional CA bundle**, supplied as `rds_ca_bundle_base64` (below).
@@ -147,34 +151,49 @@ The DB master **username must be `postgres`** (`scripts/init-db.js`'s bootstrap
 connection defaults the maintenance DB name to the username, and a fresh RDS
 instance only has the `postgres` database). That is enforced in the module.
 
-### Open the ALB to CloudFront's VPC-origin ENIs
+Secrets Manager keeps **deleted secret names for 30 days** by default, so a
+destroy/re-apply cycle collides on all five names. The development root sets
+`secret_recovery_window_days = 0` (immediate deletion) for exactly this
+reason; production keeps the 30-day window on purpose.
 
-The Express service's ALB security group is created and **owned by ECS Express
-Mode** (not a Terraform resource). Once the service is up, add a `:443` ingress
-rule **from the VPC CIDR** to that ALB SG so the VPC origin's ENIs can reach it:
+### First image deploy — before CloudFront
 
-```sh
-aws ecs describe-express-gateway-service --service-arn "$(terraform output -raw express_service_arn)"
-# find the managed ALB's security group, then:
-aws ec2 authorize-security-group-ingress --group-id <ALB_SG> \
-  --protocol tcp --port 443 --cidr <VPC_CIDR>
-```
+A from-scratch phase 1 leaves the service pointing at a **placeholder image
+that does not exist in ECR** (CI pushes commit-SHA tags only), so the tasks
+crash-loop until a real image arrives. Push one through the pipeline now:
 
-### Phase 2 — CloudFront
+1. Set the repository's GitHub Actions variables from
+   `terraform output workflow_variables` (region, ECR repo, cluster, service,
+   both task families) and the `AWS_DEPLOY_ROLE_ARN` secret from
+   `terraform output deploy_role_arn`.
+2. Run `deploy-lean.yml` (manual dispatch) and wait for the rollout to
+   converge — the run summary shows the deployed image.
 
-Read the internal ALB ARN and the on.aws endpoint from the running service
-(`aws ecs describe-express-gateway-service`, or `terraform output
-express_ingress_paths` for the endpoint), set them in `terraform.tfvars`, and
-re-apply:
+Only then move on: phase 2's inputs are read from the now-healthy service, and
+Publish depends on the task families pointing at a real image.
+
+### Phase 2 — CloudFront front door
+
+Read **three values** from the running service with one call —
+`aws ecs describe-express-gateway-service --service-arn "$(terraform output -raw express_service_arn)"`:
+the internal ALB ARN, the on.aws endpoint host (also visible via
+`terraform output express_ingress_paths`), and the ECS-managed ALB's
+**security-group id**. Set them in `terraform.tfvars` and re-apply:
 
 ```hcl
-express_internal_alb_arn = "arn:aws:elasticloadbalancing:<REGION>:<ACCOUNT>:loadbalancer/app/ecs-express-gateway-alb-xxxx/xxxx"
-express_onaws_endpoint   = "mm-xxxx.ecs.<REGION>.on.aws"
+express_internal_alb_arn      = "arn:aws:elasticloadbalancing:<REGION>:<ACCOUNT>:loadbalancer/app/ecs-express-gateway-alb-xxxx/xxxx"
+express_onaws_endpoint        = "mm-xxxx.ecs.<REGION>.on.aws"
+express_alb_security_group_id = "sg-xxxxxxxxxxxxxxxxx"
 ```
 
 ```sh
-terraform apply   # creates the VPC origin, distribution, and asset-bucket policy
+terraform apply   # VPC origin, distribution, asset-bucket policy, and the
+                  # :443-from-VPC-CIDR ingress rule on the ECS-managed ALB SG
 ```
+
+The ALB security group itself is created and owned by ECS Express Mode — the
+module only adds the one ingress rule to it, so no hand-executed mutation
+remains anywhere in the flow.
 
 VPC origins **cannot be updated while status=Deploying** and deploy cycles run
 ~6–10 minutes — be patient between changes.
@@ -206,6 +225,12 @@ into the job.
 
 ## Operational notes (still true, now in the Terraform world)
 
+- **After ANY Terraform change that touches a task definition, run
+  `deploy-lean.yml`.** Terraform's task defs point at a placeholder `:latest`
+  tag that never exists in ECR; a re-registered revision therefore points at a
+  nonexistent image, and Publish (`RunTask` on the family's latest revision)
+  silently breaks until the deploy workflow re-registers both families with a
+  real commit-SHA image.
 - **Express Mode is not task-definition driven.** The service runs from its own
   inline `primary_container`; the deploy workflow rolls it with
   `aws ecs update-express-gateway-service --primary-container`, not

@@ -2,9 +2,9 @@ name: Deploy lean (AWS ECS Express Mode)
 
 # Lean-deployment pipeline (see infrastructure/README.md):
 #   build theme assets -> build image -> push to ECR -> register new
-#   mmgis-admin + mmgis-publish task-definition revisions -> point the
-#   ECS Express Mode gateway service's primary container at the new
-#   image and let the managed rollout run.
+#   admin + publish task-definition revisions (families from vars) ->
+#   point the ECS Express Mode gateway service's primary container at
+#   the new image and let the managed rollout run.
 #
 # Per the D1 decision, ECS Express Mode owns the ALB, target groups,
 # rollout strategy, and scaling — this workflow deliberately defines and

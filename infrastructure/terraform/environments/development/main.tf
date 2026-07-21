@@ -20,7 +20,12 @@ module "mmgis" {
   github_repo        = "NASA-IMPACT/MMGIS"
   deploy_role_branch = "development"
 
+  # Development is disposable: no recovery window, so destroy/re-apply
+  # doesn't collide with secret names held for 30 days.
+  secret_recovery_window_days = 0
+
   # CloudFront two-phase inputs (empty on the first apply).
-  express_internal_alb_arn = var.express_internal_alb_arn
-  express_onaws_endpoint   = var.express_onaws_endpoint
+  express_internal_alb_arn      = var.express_internal_alb_arn
+  express_onaws_endpoint        = var.express_onaws_endpoint
+  express_alb_security_group_id = var.express_alb_security_group_id
 }

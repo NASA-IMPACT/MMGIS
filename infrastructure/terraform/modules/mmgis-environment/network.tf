@@ -1,9 +1,12 @@
 # Three security groups govern this environment, but only two are ours to
 # create. The third — the admin service's ALB security group — is created and
-# owned by ECS Express Mode via the infrastructure role and CANNOT be managed
-# here. After the service exists it needs a :443 ingress rule from the VPC CIDR
-# so CloudFront's VPC-origin ENIs can reach it; that is a documented post-apply
-# step in the README (the ALB SG id is only knowable once the service is up).
+# owned by ECS Express Mode via the infrastructure role and CANNOT be created
+# here. It does need a :443 ingress rule from the VPC CIDR so CloudFront's
+# VPC-origin ENIs can reach the ALB. The SG id is only knowable once the
+# service is up, so that rule is a PHASE-2 resource (bottom of this file),
+# driven by var.express_alb_security_group_id — read from the same
+# describe-express-gateway-service call as the ALB ARN. No hand-executed
+# mutation remains.
 
 # Shared task security group — used by BOTH the admin service and the publish
 # task (RunTask). The RDS ingress rule references this SG, so sharing it is what
@@ -47,4 +50,18 @@ resource "aws_security_group" "rds" {
   }
 
   tags = { Name = "${local.name_prefix}-rds-sg" }
+}
+
+# Phase 2: allow CloudFront's VPC-origin ENIs (in-VPC) to reach the
+# ECS-managed ALB on :443. The ALB SG is Express-Mode-owned, but adding a rule
+# to it is fair game — only creation/deletion of the SG belongs to ECS.
+resource "aws_vpc_security_group_ingress_rule" "express_alb_https" {
+  count = var.express_alb_security_group_id != "" ? 1 : 0
+
+  security_group_id = var.express_alb_security_group_id
+  description       = "HTTPS from in-VPC CloudFront VPC-origin ENIs (MMGIS ${var.environment})."
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = data.aws_vpc.this.cidr_block
 }

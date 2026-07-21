@@ -13,3 +13,6 @@ rds_ca_bundle_base64 = "PASTE_BASE64_HERE"
 # ── Phase 2 only (leave empty/omit for the first apply) ──
 # express_internal_alb_arn = "arn:aws:elasticloadbalancing:us-west-2:ACCOUNT:loadbalancer/app/ecs-express-gateway-alb-xxxx/xxxx"
 # express_onaws_endpoint   = "mm-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.ecs.us-west-2.on.aws"
+
+# Phase 2 (see README): SG id of the ECS-managed ALB
+# express_alb_security_group_id = "sg-xxxxxxxxxxxxxxxxx"

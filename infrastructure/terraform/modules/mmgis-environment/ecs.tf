@@ -1,4 +1,11 @@
 locals {
+  # ⚠️ TRAP — this tag never exists in ECR (CI pushes commit-SHA tags only).
+  # The Express service ignores image drift (lifecycle ignore_changes below),
+  # but the task DEFINITIONS don't: any Terraform change that touches a task
+  # def registers a new revision pointing at this nonexistent tag, and Publish
+  # RunTasks the family's LATEST revision — silently broken until the next CI
+  # deploy re-registers both families with a real image. After ANY task-def
+  # change here, run deploy-lean.yml. (See README "Operational notes".)
   placeholder_image = "${aws_ecr_repository.this.repository_url}:latest"
   db_secret_arn     = aws_secretsmanager_secret.db.arn
 
