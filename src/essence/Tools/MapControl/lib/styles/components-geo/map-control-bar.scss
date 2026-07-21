@@ -59,6 +59,27 @@
         background: var(--theme-color-base-lighter, #dfe1e2);
     }
 
+    // The hosted share control ("Share map") in the bar's end slot — the
+    // dropdown stays the component's own; only the trigger is restyled to the
+    // bar's dark filled-button design.
+    &__share {
+        display: flex;
+        align-items: center;
+
+        &.shareExport-tool-host .share-menu__trigger {
+            background: var(--theme-color-primary-darker, #162e51);
+            color: var(--theme-color-white, #ffffff);
+            font-family: var(--theme-font-ui);
+            font-size: var(--theme-font-size-2xs, 0.88rem);
+            border-radius: var(--theme-radius-md, 0.25rem);
+            box-shadow: 0 1px 3px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+
+            &:hover {
+                background: var(--theme-color-primary-dark, #1a4480);
+            }
+        }
+    }
+
     &__hint {
         margin-top: var(--theme-spacing-05, 0.25rem);
         align-self: flex-end;

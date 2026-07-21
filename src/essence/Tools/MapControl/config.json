@@ -58,6 +58,14 @@
                         "type": "checkbox",
                         "width": 3,
                         "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.showShare",
+                        "name": "Share",
+                        "description": "Show the share button (copy link, export PNG/PDF).",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
                     }
                 ]
             }
