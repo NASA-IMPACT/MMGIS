@@ -1,5 +1,4 @@
 import React from 'react'
-import { createPortal } from 'react-dom'
 import { LinkIcon, CloseIcon } from '../../utils/icons'
 
 export type AddLayerModalProps = {
@@ -27,14 +26,12 @@ export function AddLayerModal({
     onSubmit,
     onClose,
 }: AddLayerModalProps) {
-    return createPortal(
-        <div className="blocks-add-layer-modal__overlay">
-            <div
-                className="blocks-add-layer-modal__dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Add layer from URL"
-            >
+    return (
+        <div
+            className="blocks-add-layer-modal__dialog"
+            role="dialog"
+            aria-label="Add layer from URL"
+        >
                 <div className="blocks-add-layer-modal__header">
                     <span className="blocks-add-layer-modal__title">
                         <LinkIcon />
@@ -104,8 +101,6 @@ export function AddLayerModal({
                         {submitting ? 'Adding…' : 'Add layer'}
                     </button>
                 </div>
-            </div>
-        </div>,
-        document.body,
+        </div>
     )
 }

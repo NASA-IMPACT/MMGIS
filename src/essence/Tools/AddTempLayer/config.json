@@ -2,22 +2,26 @@
     "defaultIcon": "add",
     "description": "Add an external layer (WMS/WMTS/XYZ/GeoJSON) to the map for the current session.",
     "descriptionFull": {
-        "title": "Opens a modal to add a temporary external layer from a URL. The layer is session-only and is lost on reload."
+        "title": "An 'Add layer from URL' form in a floating panel over the map. It starts hidden — any plugin reveals it by emitting the 'addTempLayer:show' bus event; its close button hides it again. Added layers are session-only and lost on reload."
     },
     "hasVars": false,
     "name": "AddTempLayer",
     "toolbarPriority": 6,
-    "separatedTool": true,
     "paths": {
         "AddTempLayerTool": "essence/Tools/AddTempLayer/AddTempLayerTool"
     },
     "metadata": {
         "icon": "add",
-        "requiredOrientation": "vertical",
-        "compatiblePositions": ["left", "right"],
-        "preferredPosition": "left",
-        "modernLayoutSupport": true,
-        "width": 300,
-        "height": 0
+        "compatiblePositions": [
+            "float-top-left",
+            "float-top-center",
+            "float-top-right",
+            "float-bottom-left",
+            "float-bottom-center",
+            "float-bottom-right"
+        ],
+        "preferredPosition": "float-top-right",
+        "startHidden": true,
+        "modernLayoutSupport": true
     }
 }

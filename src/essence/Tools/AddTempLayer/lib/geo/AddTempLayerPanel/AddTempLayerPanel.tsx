@@ -1,25 +1,25 @@
 import React, { useState } from 'react'
 import type { AddTempLayerInput } from '../../types'
 import { validateUrl, detectLayerType, validateForType } from '../../utils/url'
-import { PlusIcon } from '../../utils/icons'
 import { AddLayerModal } from '../AddLayerModal/AddLayerModal'
 
 export type AddTempLayerPanelProps = {
     /** Submit a layer to add. Resolves on success, rejects to show an error. */
     onAddLayer?: (input: AddTempLayerInput) => void | Promise<unknown>
+    /** Dismiss the form — the host hides the hosting panel/plugin. */
+    onClose?: () => void
 }
 
-export function AddTempLayerPanel({ onAddLayer }: AddTempLayerPanelProps) {
-    const [open, setOpen] = useState(false)
+export function AddTempLayerPanel({ onAddLayer, onClose }: AddTempLayerPanelProps) {
     const [url, setUrl] = useState('')
     const [displayName, setDisplayName] = useState('')
     const [error, setError] = useState<string | null>(null)
     const [submitting, setSubmitting] = useState(false)
 
     function close() {
-        setOpen(false)
         setError(null)
         setSubmitting(false)
+        onClose?.()
     }
 
     function onUrlChange(next: string) {
@@ -73,28 +73,15 @@ export function AddTempLayerPanel({ onAddLayer }: AddTempLayerPanelProps) {
     }
 
     return (
-        <div className="blocks-add-temp-layer">
-            <button
-                type="button"
-                className="blocks-add-temp-layer__trigger"
-                onClick={() => setOpen(true)}
-            >
-                <PlusIcon />
-                <span className="blocks-add-temp-layer__trigger-label">Add layer from URL</span>
-            </button>
-
-            {open && (
-                <AddLayerModal
-                    url={url}
-                    displayName={displayName}
-                    error={error}
-                    submitting={submitting}
-                    onUrlChange={onUrlChange}
-                    onDisplayNameChange={setDisplayName}
-                    onSubmit={handleAdd}
-                    onClose={close}
-                />
-            )}
-        </div>
+        <AddLayerModal
+            url={url}
+            displayName={displayName}
+            error={error}
+            submitting={submitting}
+            onUrlChange={onUrlChange}
+            onDisplayNameChange={setDisplayName}
+            onSubmit={handleAdd}
+            onClose={close}
+        />
     )
 }

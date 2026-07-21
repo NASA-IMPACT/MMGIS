@@ -16,14 +16,6 @@ export function Icon({ size = 18, children }: { size?: number; children: React.R
     )
 }
 
-export function PlusIcon() {
-    return (
-        <Icon size={16}>
-            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-        </Icon>
-    )
-}
-
 export function LinkIcon() {
     return (
         <Icon>

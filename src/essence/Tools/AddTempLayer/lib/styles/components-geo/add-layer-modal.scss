@@ -1,19 +1,7 @@
-// "Add layer from URL" modal — portaled to document.body, anchored top-right.
+// "Add layer from URL" form card — rendered in place inside the floating
+// panel the layout assigns; the panel system owns placement.
 
 .blocks-add-layer-modal {
-    &__overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 2000;
-        display: flex;
-        // Anchor top-right, just below the top map toolbar (search / zoom / share).
-        align-items: flex-start;
-        justify-content: flex-end;
-        box-sizing: border-box;
-        padding-top: var(--theme-spacing-8, 64px);
-        padding-right: var(--theme-spacing-2, 16px);
-    }
-
     &__dialog {
         display: flex;
         flex-direction: column;
