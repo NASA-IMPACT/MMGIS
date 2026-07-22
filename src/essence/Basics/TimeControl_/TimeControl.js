@@ -6,7 +6,11 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
 import TimeUI from './TimeUI'
-import { compileTileUrl } from '../Layers_/tileUrlUtils'
+import {
+    compileTileUrl,
+    formatLayerTime,
+    buildTileUrlOptions,
+} from '../Layers_/tileUrlUtils'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 
 import './TimeControl.css'
@@ -238,8 +242,6 @@ var TimeControl = {
             layer,
             forceRequery
         )
-        let changedUrl = null
-        if (layer.url !== originalUrl) changedUrl = layer.url
 
         // Check for both 'tile' and 'TileLayer' (case-insensitive comparison)
         const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
@@ -250,53 +252,49 @@ var TimeControl = {
             }
             if (evenIfControlled === true || layer.controlled !== true) {
                 const tileLayer = L_.layers.layer[layer.name]
-                // Check if layer is "on" in tracking OR if layer object exists (which means it's actually on the map)
-                const isLayerVisible = L_.layers.on[layer.name] || evenIfOff || (tileLayer && tileLayer !== false && tileLayer !== null)
-                if (isLayerVisible) {
-                    const timeConfig = layer.time || {};
-                    const deckOptions = {
-                        ...layer,
-                        timeEnabled: timeConfig.enabled === true,
-                        time: timeConfig.end ?? '',
-                        compositeTile: timeConfig.compositeTile ?? false,
-                        starttime: timeConfig.start ?? '',
-                        endtime: timeConfig.end ?? '',
-                        customTimes: timeConfig.customTimes ?? '',
-                        tileFormat: layer.tileformat || 'tms',
-                        timeFormat: timeConfig.format,
-                    }
+                if (L_.layers.on[layer.name] || evenIfOff) {
+                    const sourceUrl = layer.url
+                    let resolvedUrl = L_.getUrl(layer.type, sourceUrl, layer)
 
-                    // Build the new resolved URL (e.g. for COG or STAC)
-                    let resolvedUrl = changedUrl != null && L_.getUrl ? L_.getUrl(layer.type, changedUrl, layer) : (changedUrl || layer.url)
-                    const splitColonLayerUrl = (changedUrl || layer.url || '').split(':')
+                    const splitColonLayerUrl = (sourceUrl || '').split(':')
                     let splitColonType = undefined
-                    if (splitColonLayerUrl[1] != null && ['stac-collection', 'COG', 'titiler-url'].includes(splitColonLayerUrl[0])) {
+                    if (
+                        splitColonLayerUrl[1] != null &&
+                        ['stac-collection', 'COG', 'titiler-url'].includes(
+                            splitColonLayerUrl[0]
+                        )
+                    ) {
                         splitColonType = splitColonLayerUrl[0]
-                        deckOptions.splitColonType = splitColonType
-                        if (splitColonType === 'stac-collection') {
-                            resolvedUrl = L_.transformStacUrl(resolvedUrl, layer, 'tile')
-                        } else if (splitColonType === 'COG') {
-                            resolvedUrl = ServiceUrls.buildTiTilerCogTilesUrl(resolvedUrl, layer, {
-                                tileMatrixSet: layer.tileMatrixSet,
-                                bands: (!layer.cogExpression || layer.cogExpression.trim() === '') ? layer.cogBands : null,
-                                resampling: layer.cogResampling
-                            })
-                        } else if (splitColonType === 'titiler-url') {
-                            resolvedUrl = splitColonLayerUrl.slice(1).join(':')
-                            if (!F_.isUrlAbsolute(resolvedUrl)) {
-                                resolvedUrl = L_.missionPath + resolvedUrl
-                            }
+                        if (splitColonType === 'COG') {
+                            // getUrl resolves the COG file URL; TiTiler wraps it.
+                            resolvedUrl = ServiceUrls.buildTiTilerCogTilesUrl(
+                                resolvedUrl,
+                                layer,
+                                {
+                                    tileMatrixSet: layer.tileMatrixSet,
+                                    bands:
+                                        !layer.cogExpression ||
+                                        layer.cogExpression.trim() === ''
+                                            ? layer.cogBands
+                                            : null,
+                                    resampling: layer.cogResampling,
+                                }
+                            )
                         }
+                        // 'stac-collection' and 'titiler-url' need no extra work:
+                        // L_.getUrl already fully resolved them.
                     }
 
-                    // TODO: Refactor this to push URL compilation and refreshing into the map engine adapters
-                    // so that TimeControl.js doesn't need to check Map_.engine.engineType === 'deckgl'
-                    // or rely on tileLayer.refresh().
+                    const tileOptions = buildTileUrlOptions(layer, splitColonType)
+
+                    // TODO: Refactor this to push URL compilation and refreshing
+                    // into the map engine adapters so TimeControl doesn't branch
+                    // on Map_.engine.engineType
+                    // https://github.com/NASA-IMPACT/MMGIS/issues/212 tracks this
                     if (tileLayer && typeof tileLayer.refresh === 'function') {
-                        // Pass deckOptions to refresh so it updates this.options with new COG fields
-                        tileLayer.refresh(resolvedUrl, true, deckOptions)
+                        tileLayer.refresh(resolvedUrl, true, tileOptions)
                     } else if (Map_.engine?.engineType === 'deckgl') {
-                        const newUrl = compileTileUrl(resolvedUrl, deckOptions)
+                        const newUrl = compileTileUrl(resolvedUrl, tileOptions)
                         Map_.engine.updateLayer(layer.name, { url: newUrl })
                         return true
                     }
@@ -633,17 +631,19 @@ var TimeControl = {
         return updatedLayers
     },
     setLayerWmsParams: function (layer) {
-        let layerTimeFormat =
-            layer.time?.format == null || layer.time?.format == ''
-                ? utcFormat('%Y-%m-%dT%H:%M:%SZ')
-                : utcFormat(layer.time.format)
+        // Shared time formatter (see tileUrlUtils.formatLayerTime).
+        const layerTimeFormatter = formatLayerTime(layer.time?.format)
         const l = L_.layers.layer[layer.name]
-        const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+        const isTileLayer =
+            layer.type &&
+            (layer.type.toLowerCase() === 'tile' ||
+                layer.type.toLowerCase() === 'tilelayer')
 
         if (l != null && isTileLayer) {
-            const formattedTime = layerTimeFormat(Date.parse(layer.time.end))
-            const formattedStart = layerTimeFormat(Date.parse(layer.time.start))
+            const formattedTime = layerTimeFormatter(layer.time.end)
+            const formattedStart = layerTimeFormatter(layer.time.start)
 
+            // Deck layers expose `props`, not `options`
             // Ensure options object exists (needed for middleware-based layers)
             if (!l.options) {
                 l.options = {}
