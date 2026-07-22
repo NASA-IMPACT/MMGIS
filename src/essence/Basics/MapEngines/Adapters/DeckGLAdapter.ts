@@ -1200,7 +1200,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // DeckGL expects new layer instances to trigger a proper re-render and re-order.
         // Since we manage layers imperatively, we clone them here to ensure DeckGL
         // correctly detects changes in the layers array and their drawing order.
-        const layers = [...this._layers.values()].map(layer => layer.clone({}))
+        const layers = [...this._layers.values()]
         if (this._isOverlayMode) {
             this._overlay?.setProps({ layers })
         } else {
