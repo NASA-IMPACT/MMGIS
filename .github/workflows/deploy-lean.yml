@@ -128,21 +128,23 @@ jobs:
           echo "Registered $ADMIN_TASK_DEF_ARN"
           echo "Registered $PUBLISH_TASK_DEF_ARN"
 
-      # Express gateway services are updated through their own API: point
-      # the primary container at the new image and Express Mode rolls it.
-      # `update-service --task-definition` does not apply here.
+      # Express Mode services deploy through their own API: point the
+      # primary container at the new image and AWS rolls it out.
+      # (`update-service --task-definition` does not apply to them.)
       #
-      # We poll `describe-express-gateway-service` rather than use
-      # `monitor-express-gateway-service`: monitor is an interactive,
-      # open-ended streamer meant for a human terminal, while describe
-      # returns discrete state we can bound with a timeout and a clean
-      # exit code in CI. The response exposes no per-deployment
-      # rolloutState; convergence is when service.status.statusCode is
-      # ACTIVE and every entry in service.activeConfigurations[] runs the
-      # target image (during a rollout the old and new revisions are both
-      # listed until the old one drains). statusCode has no failure value
-      # (only ACTIVE | DRAINING | INACTIVE), so a rollout that cannot
-      # converge is caught by the timeout, not a status check.
+      # Progress is polled with `describe-express-gateway-service` —
+      # `monitor-...` is a live stream meant for a human terminal, while
+      # describe gives CI a bounded loop with a clean exit code.
+      #
+      # How we know it's DONE: the API has no rolloutState field. A
+      # rollout is complete when statusCode is ACTIVE and every entry in
+      # activeConfigurations[] runs the new image — old and new are
+      # listed side by side until the old one drains away.
+      #
+      # How we know it FAILED: we can't, directly — statusCode is only
+      # ever ACTIVE | DRAINING | INACTIVE, never "failed". A rollout
+      # that can't converge simply never finishes, so the timeout below
+      # is the failure detector, not any status check.
       - name: Roll the Express Mode gateway service
         env:
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
