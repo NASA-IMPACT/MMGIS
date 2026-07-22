@@ -16,7 +16,11 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
-import { applyCogFieldsToUrl } from '../Layers_/cogUrlUtils'
+import {
+    compileTileUrl,
+    buildTileUrlOptions,
+    resolveTileFormat,
+} from '../Layers_/tileUrlUtils'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -1583,19 +1587,17 @@ async function makeTileLayer(layerObj, mapContext = null) {
         null
     )
 
-    let tileFormat = 'tms'
-    // For backward compatibility with the .tms option
-    if (typeof layerObj.tileformat === 'undefined') {
-        tileFormat = typeof layerObj.tms === 'undefined' ? true : layerObj.tms
-        tileFormat = tileFormat ? 'tms' : 'wmts'
-    } else tileFormat = layerObj.tileformat
+    // Resolved centrally so the Leaflet and DeckGL paths cannot diverge.
+    const tileFormat = resolveTileFormat(layerObj)
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
         // would normally add per-tile in getTileUrl.
-        if (splitColonType === 'COG' || splitColonType === 'stac-collection' || layerObj.cogTransform === true) {
-            layerUrl = applyCogFieldsToUrl(layerUrl, layerObj)
-        }
+        layerUrl = compileTileUrl(
+            layerUrl,
+            buildTileUrlOptions(layerObj, splitColonType)
+        )
+
 
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'tile',
@@ -1611,6 +1613,10 @@ async function makeTileLayer(layerObj, mapContext = null) {
         return
     }
 
+    // Same builder the DeckGL path uses, so both engines see identical,
+    // already-formatted time values from the moment the layer is created.
+    const tileOptions = buildTileUrlOptions(layerObj, splitColonType)
+
     ctx.layerRegistry.layer[layerObj.name] = L.tileLayer.colorFilter(layerUrl, {
         minZoom: parseInt(layerObj.minZoom),
         maxZoom: parseInt(layerObj.maxZoom),
@@ -1622,19 +1628,12 @@ async function makeTileLayer(layerObj, mapContext = null) {
         continuousWorld: true,
         reuseTiles: true,
         bounds: bb,
-        timeEnabled: layerObj.time != null && layerObj.time.enabled === true,
-        time: typeof layerObj.time === 'undefined' ? '' : layerObj.time.end,
-        compositeTile:
-            typeof layerObj.time === 'undefined'
-                ? false
-                : layerObj.time.compositeTile || false,
-        starttime:
-            typeof layerObj.time === 'undefined' ? '' : layerObj.time.start,
-        endtime: typeof layerObj.time === 'undefined' ? '' : layerObj.time.end,
-        customTimes:
-            typeof layerObj.time === 'undefined'
-                ? null
-                : layerObj.time.customTimes,
+        timeEnabled: tileOptions.timeEnabled,
+        time: tileOptions.time,
+        compositeTile: tileOptions.compositeTile,
+        starttime: tileOptions.starttime,
+        endtime: tileOptions.endtime,
+        customTimes: tileOptions.customTimes,
         cogTransform: layerObj.cogTransform,
         cogMin: layerObj.cogMin,
         currentCogMin: layerObj.currentCogMin,

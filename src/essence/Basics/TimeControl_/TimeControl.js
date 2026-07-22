@@ -6,6 +6,14 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
+import {
+    compileTileUrl,
+    formatLayerTime,
+    buildTileUrlOptions,
+} from '../Layers_/tileUrlUtils'
+import ServiceUrls from '../ServiceUrls/ServiceUrls'
+
+import './TimeControl.css'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
@@ -234,7 +242,8 @@ var TimeControl = {
                 layer.time.end
             )
 
-            if (layer.type == 'tile') {
+            const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+            if (isTileLayer) {
                 TimeControl.setLayerWmsParams(layer)
             }
         }
@@ -293,16 +302,62 @@ var TimeControl = {
             layer,
             forceRequery
         )
-        let changedUrl = null
-        if (layer.url !== originalUrl) changedUrl = layer.url
 
-        if (layer.type === 'tile') {
+        // Check for both 'tile' and 'TileLayer' (case-insensitive comparison)
+        const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+
+        if (isTileLayer) {
             if (layer.time && layer.time.enabled === true) {
                 TimeControl.setLayerWmsParams(layer)
             }
             if (evenIfControlled === true || layer.controlled !== true) {
+                const tileLayer = L_.layers.layer[layer.name]
                 if (L_.layers.on[layer.name] || evenIfOff) {
-                    L_.layers.layer[layer.name].refresh(changedUrl)
+                    const sourceUrl = layer.url
+                    let resolvedUrl = L_.getUrl(layer.type, sourceUrl, layer)
+
+                    const splitColonLayerUrl = (sourceUrl || '').split(':')
+                    let splitColonType = undefined
+                    if (
+                        splitColonLayerUrl[1] != null &&
+                        ['stac-collection', 'COG', 'titiler-url'].includes(
+                            splitColonLayerUrl[0]
+                        )
+                    ) {
+                        splitColonType = splitColonLayerUrl[0]
+                        if (splitColonType === 'COG') {
+                            // getUrl resolves the COG file URL; TiTiler wraps it.
+                            resolvedUrl = ServiceUrls.buildTiTilerCogTilesUrl(
+                                resolvedUrl,
+                                layer,
+                                {
+                                    tileMatrixSet: layer.tileMatrixSet,
+                                    bands:
+                                        !layer.cogExpression ||
+                                        layer.cogExpression.trim() === ''
+                                            ? layer.cogBands
+                                            : null,
+                                    resampling: layer.cogResampling,
+                                }
+                            )
+                        }
+                        // 'stac-collection' and 'titiler-url' need no extra work:
+                        // L_.getUrl already fully resolved them.
+                    }
+
+                    const tileOptions = buildTileUrlOptions(layer, splitColonType)
+
+                    // TODO: Refactor this to push URL compilation and refreshing
+                    // into the map engine adapters so TimeControl doesn't branch
+                    // on Map_.engine.engineType
+                    // https://github.com/NASA-IMPACT/MMGIS/issues/212 tracks this
+                    if (tileLayer && typeof tileLayer.refresh === 'function') {
+                        tileLayer.refresh(resolvedUrl, true, tileOptions)
+                    } else if (Map_.engine?.engineType === 'deckgl') {
+                        const newUrl = compileTileUrl(resolvedUrl, tileOptions)
+                        Map_.engine.updateLayer(layer.name, { url: newUrl })
+                        return true
+                    }
                 }
             }
         } else if (layer.type == 'velocity') {
@@ -597,7 +652,8 @@ var TimeControl = {
                     layer.time.end
                 )
                 updatedLayers.push(layer.name)
-                if (layer.type === 'tile') {
+                const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+                if (isTileLayer) {
                     TimeControl.setLayerWmsParams(layer)
                 }
             }
@@ -634,16 +690,27 @@ var TimeControl = {
         return updatedLayers
     },
     setLayerWmsParams: function (layer) {
-        let layerTimeFormat =
-            layer.time?.format == null || layer.time?.format == ''
-                ? utcFormat('%Y-%m-%dT%H:%M:%SZ')
-                : utcFormat(layer.time.format)
+        // Shared time formatter (see tileUrlUtils.formatLayerTime).
+        const layerTimeFormatter = formatLayerTime(layer.time?.format)
         const l = L_.layers.layer[layer.name]
+        const isTileLayer =
+            layer.type &&
+            (layer.type.toLowerCase() === 'tile' ||
+                layer.type.toLowerCase() === 'tilelayer')
 
-        if (l != null && layer.type === 'tile') {
-            l.options.time = layerTimeFormat(Date.parse(layer.time.end))
-            l.options.starttime = layerTimeFormat(Date.parse(layer.time.start))
-            l.options.endtime = layerTimeFormat(Date.parse(layer.time.end))
+        if (l != null && isTileLayer) {
+            const formattedTime = layerTimeFormatter(layer.time.end)
+            const formattedStart = layerTimeFormatter(layer.time.start)
+
+            // Deck layers expose `props`, not `options`
+            // Ensure options object exists (needed for middleware-based layers)
+            if (!l.options) {
+                l.options = {}
+            }
+
+            l.options.time = formattedTime
+            l.options.starttime = formattedStart
+            l.options.endtime = formattedTime
         }
     },
 }

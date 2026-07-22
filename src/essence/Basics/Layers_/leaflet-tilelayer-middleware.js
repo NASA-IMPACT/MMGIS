@@ -12,7 +12,7 @@
 */
 
 import F_ from '../../Basics/Formulae_/Formulae_'
-import { applyCogFieldsToUrl } from './cogUrlUtils'
+import { compileTileUrl } from './tileUrlUtils'
 
 var colorFilterExtension = {
     intialize: function (url, options) {
@@ -20,89 +20,7 @@ var colorFilterExtension = {
     },
     getTileUrl: function (coords) {
         let url = L.TileLayer.prototype.getTileUrl.call(this, coords)
-
-        if (
-            this.options.splitColonType === 'stac-collection' ||
-            this.options.splitColonType === 'COG' ||
-            this.options.splitColonType === 'titiler-url'
-        ) {
-            let datetime
-            if (this.options.endtime != null) {
-                if (this.options.starttime != null) {
-                    datetime = `${this.options.starttime}/${this.options.endtime}`
-                } else {
-                    datetime = `../${this.options.endtime}`
-                }
-            }
-            if (datetime != null)
-                url += `${
-                    url.indexOf('?') === -1 ? '?' : '&'
-                }datetime=${datetime}`
-
-            if (this.options.splitColonType === 'stac-collection') {
-                url += `${
-                    url.indexOf('?') === -1 ? '?' : '&'
-                }exitwhenfull=false&skipcovered=false`
-            }
-
-            url = applyCogFieldsToUrl(url, this.options)
-
-            if (mmgisglobal.options?.stac?.mosaicItemLimit != null) {
-                url += `${url.indexOf('?') === -1 ? '?' : '&'}items_limit=${
-                    mmgisglobal.options.stac.mosaicItemLimit
-                }`
-            }
-            if (mmgisglobal.options?.stac?.mosaicScanLimit != null) {
-                url += `${url.indexOf('?') === -1 ? '?' : '&'}scan_limit=${
-                    mmgisglobal.options.stac.mosaicScanLimit
-                }`
-            }
-            if (mmgisglobal.options?.stac?.mosaicTimeLimit != null) {
-                url += `${url.indexOf('?') === -1 ? '?' : '&'}time_limit=${
-                    mmgisglobal.options.stac.mosaicTimeLimit
-                }`
-            }
-        }
-
-        url = url
-            .replace(/{time}/g, this.options.time)
-            .replace(/{starttime}/g, this.options.starttime)
-            .replace(/{endtime}/g, this.options.endtime)
-
-        if (
-            this.options.customTimes?.times &&
-            this.options.customTimes?.times.length > 0
-        ) {
-            for (let i = 0; i < this.options.customTimes.times.length; i++) {
-                url = url.replace(
-                    new RegExp(`{customtime.${i}}`, 'g'),
-                    this.options.customTimes.times[i]
-                )
-            }
-        }
-
-        if (this.options.time && this.options.tileFormat === 'tms') {
-            let paramDelimiter = '?'
-            let urlParams = false
-            if (url.indexOf('?') !== -1) {
-                urlParams = new URLSearchParams(url.split('?')[1])
-                paramDelimiter = '&'
-            }
-
-            if (urlParams == false || !urlParams.has('starttime')) {
-                url += `${paramDelimiter}starttime=${this.options.starttime}`
-                paramDelimiter = '&'
-            }
-            if (urlParams == false || !urlParams.has('time')) {
-                url += `${paramDelimiter}time=${this.options.endtime}`
-                paramDelimiter = '&'
-            }
-            if (urlParams == false || !urlParams.has('composite')) {
-                if (this.options.compositeTile === true)
-                    url += `${paramDelimiter}composite=true`
-            }
-        }
-        return url
+        return compileTileUrl(url, this.options)
     },
     colorFilter: function () {
         let VALIDFILTERS = [

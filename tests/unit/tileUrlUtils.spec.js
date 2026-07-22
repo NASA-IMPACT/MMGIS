@@ -1,0 +1,304 @@
+import { test, expect, describe } from 'vitest'
+import {
+    processExpression,
+    applyCogFieldsToUrl,
+    compileTileUrl,
+    resolveTileFormat,
+    formatLayerTime,
+    buildTileUrlOptions,
+} from '../../src/essence/Basics/Layers_/tileUrlUtils.ts'
+
+describe('tileUrlUtils', () => {
+    describe('processExpression', () => {
+        test('returns empty string unchanged', () => {
+            expect(processExpression('')).toBe('')
+        })
+
+        test('returns undefined/null unchanged', () => {
+            expect(processExpression(undefined)).toBeUndefined()
+            expect(processExpression(null)).toBeNull()
+        })
+
+        test('adds asset_ prefix to bare band references', () => {
+            expect(processExpression('b1')).toBe('asset_b1')
+            expect(processExpression('B2')).toBe('asset_B2')
+        })
+
+        test('handles expression with multiple band references', () => {
+            expect(processExpression('b1/b2')).toBe('asset_b1/asset_b2')
+        })
+
+        test('does not double-prefix already-prefixed bands', () => {
+            expect(processExpression('asset_b1')).toBe('asset_b1')
+        })
+
+        test('handles mixed prefixed and bare bands', () => {
+            expect(processExpression('asset_b1+b2')).toBe('asset_b1+asset_b2')
+        })
+    })
+
+    describe('applyCogFieldsToUrl', () => {
+        test('returns url unchanged when no cog fields set', () => {
+            const url = 'https://example.com/tiles/{z}/{x}/{y}'
+            expect(applyCogFieldsToUrl(url, {})).toBe(url)
+        })
+
+        test('returns empty string unchanged', () => {
+            expect(applyCogFieldsToUrl('', {})).toBe('')
+        })
+
+        test('appends colormap_name when cogColormap is set and cogTransform is true', () => {
+            const result = applyCogFieldsToUrl('https://example.com/tiles/{z}/{x}/{y}', {
+                cogTransform: true,
+                cogColormap: 'viridis',
+            })
+            expect(result).toContain('colormap_name=viridis')
+        })
+
+        test('does not append colormap_name without cogTransform', () => {
+            const result = applyCogFieldsToUrl('https://example.com/tiles/{z}/{x}/{y}', {
+                cogColormap: 'viridis',
+            })
+            expect(result).not.toContain('colormap_name')
+        })
+
+        test('does not override existing colormap_name in url', () => {
+            const url = 'https://example.com/tiles/{z}/{x}/{y}?colormap_name=plasma'
+            const result = applyCogFieldsToUrl(url, { cogTransform: true, cogColormap: 'viridis' })
+            expect(result).toContain('colormap_name=plasma')
+            expect(result).not.toContain('colormap_name=viridis')
+        })
+
+        test('appends rescale when cogMin and cogMax are set and cogTransform is true', () => {
+            const result = applyCogFieldsToUrl('https://example.com/tiles/{z}/{x}/{y}', {
+                cogTransform: true,
+                cogMin: 0,
+                cogMax: 100,
+            })
+            expect(result).toContain('rescale=0%2C100')
+        })
+
+        test('does not append rescale without cogTransform', () => {
+            const result = applyCogFieldsToUrl('https://example.com/tiles/{z}/{x}/{y}', {
+                cogMin: 0,
+                cogMax: 100,
+            })
+            expect(result).not.toContain('rescale')
+        })
+
+        test('does not override existing rescale in url', () => {
+            const url = 'https://example.com/tiles/{z}/{x}/{y}?rescale=10,90'
+            const result = applyCogFieldsToUrl(url, { cogTransform: true, cogMin: 0, cogMax: 100 })
+            expect(result).toContain('rescale=10%2C90')
+            expect(result).not.toContain('rescale=0%2C100')
+        })
+
+        test('prefers currentCogMin/Max over cogMin/Max', () => {
+            const result = applyCogFieldsToUrl('https://example.com/tiles/{z}/{x}/{y}', {
+                cogTransform: true,
+                cogMin: 0,
+                cogMax: 100,
+                currentCogMin: 20,
+                currentCogMax: 80,
+            })
+            expect(result).toContain('rescale=20%2C80')
+        })
+
+        test('expression takes precedence: removes bidx and sets expression', () => {
+            const url = 'https://example.com/tiles/{z}/{x}/{y}?bidx=1'
+            const result = applyCogFieldsToUrl(url, { cogExpression: 'b1/b2' })
+            expect(result).not.toContain('bidx')
+            expect(result).toContain('expression=asset_b1%2Fasset_b2')
+        })
+
+        test('prefers currentCogExpression over cogExpression', () => {
+            const result = applyCogFieldsToUrl('https://example.com/tiles/{z}/{x}/{y}', {
+                cogExpression: 'b1',
+                currentCogExpression: 'b2',
+            })
+            expect(result).toContain('expression=asset_b2')
+        })
+
+        test('appends resampling when cogResampling is set', () => {
+            const result = applyCogFieldsToUrl('https://example.com/tiles/{z}/{x}/{y}', {
+                cogResampling: 'bilinear',
+            })
+            expect(result).toContain('resampling=bilinear')
+        })
+    })
+
+    describe('resolveTileFormat', () => {
+        test('defaults to tms when neither tileformat nor tms is set', () => {
+            expect(resolveTileFormat({})).toBe('tms')
+        })
+        test('honours tms:false as wmts', () => {
+            expect(resolveTileFormat({ tms: false })).toBe('wmts')
+        })
+        test('honours tms:true as tms', () => {
+            expect(resolveTileFormat({ tms: true })).toBe('tms')
+        })
+        test('explicit tileformat wins over tms', () => {
+            expect(resolveTileFormat({ tileformat: 'wmts', tms: true })).toBe('wmts')
+        })
+    })
+
+    describe('formatLayerTime', () => {
+        test('defaults to ISO when format is absent', () => {
+            expect(formatLayerTime()('2024-03-04T14:05:00Z')).toBe('2024-03-04T14:05:00Z')
+        })
+        test('defaults to ISO when format is empty string', () => {
+            expect(formatLayerTime('')('2024-03-04T14:05:00Z')).toBe('2024-03-04T14:05:00Z')
+        })
+        test('supports day-of-year (%j)', () => {
+            expect(formatLayerTime('%Y-%j')('2024-03-04T14:05:00Z')).toBe('2024-064')
+        })
+        test('returns empty string for missing/invalid input rather than NaN garbage', () => {
+            const f = formatLayerTime('%Y-%m-%d')
+            expect(f(undefined)).toBe('')
+            expect(f(null)).toBe('')
+            expect(f('')).toBe('')
+            expect(f('garbage')).toBe('')
+        })
+        test('formats in UTC — a late-day UTC time keeps its UTC date regardless of TZ', () => {
+            // 23:00Z is the previous local day west of UTC and the next local
+            // day far east; a UTC formatter must still report 2024-03-04. This
+            // is the whole reason d3 utcFormat is used instead of local Date.
+            expect(formatLayerTime('%Y-%m-%d')('2024-03-04T23:00:00Z')).toBe('2024-03-04')
+            expect(formatLayerTime('%H')('2024-03-04T23:00:00Z')).toBe('23')
+        })
+    })
+
+    describe('buildTileUrlOptions', () => {
+        test('formats times once using the layer format', () => {
+            const o = buildTileUrlOptions(
+                { name: 'x', time: { enabled: true, format: '%m/%d/%Y',
+                                     start: '2024-03-01T00:00:00Z', end: '2024-03-04T00:00:00Z' } },
+                undefined
+            )
+            expect(o.starttime).toBe('03/01/2024')
+            expect(o.endtime).toBe('03/04/2024')
+            expect(o.time).toBe('03/04/2024')
+            expect(o.timeEnabled).toBe(true)
+        })
+        test('yields empty time strings when no time config', () => {
+            const o = buildTileUrlOptions({ name: 'x' }, 'COG')
+            expect(o.starttime).toBe('')
+            expect(o.endtime).toBe('')
+            expect(o.timeEnabled).toBe(false)
+            expect(o.splitColonType).toBe('COG')
+        })
+        test('resolves tileFormat from tms', () => {
+            expect(buildTileUrlOptions({ tms: false }, undefined).tileFormat).toBe('wmts')
+        })
+        test('preserves COG fields for applyCogFieldsToUrl', () => {
+            const o = buildTileUrlOptions({ cogTransform: true, cogColormap: 'viridis' }, 'COG')
+            expect(o.cogTransform).toBe(true)
+            expect(o.cogColormap).toBe('viridis')
+        })
+        test('applies chosen defaults for compositeTile and customTimes', () => {
+            const o = buildTileUrlOptions({ name: 'x' }, undefined)
+            expect(o.compositeTile).toBe(false)
+            expect(o.customTimes).toBe(null)
+        })
+        test('passes through compositeTile and customTimes when present', () => {
+            const times = ['2024-01-01T00:00:00Z']
+            const o = buildTileUrlOptions(
+                { time: { compositeTile: true, customTimes: { times } } },
+                undefined
+            )
+            expect(o.compositeTile).toBe(true)
+            expect(o.customTimes).toEqual({ times })
+        })
+    })
+
+    describe('compileTileUrl — datetime', () => {
+        test('omits datetime entirely when the layer has no time config', () => {
+            const opts = buildTileUrlOptions({ cogTransform: true, cogColormap: 'viridis' }, 'COG')
+            const url = compileTileUrl('https://t/{z}/{x}/{y}.png', opts)
+            expect(url).not.toContain('datetime')
+            expect(url).toContain('colormap_name=viridis')
+        })
+        test('uses ../end when only endtime is present', () => {
+            const opts = buildTileUrlOptions(
+                { time: { enabled: true, end: '2024-03-04T00:00:00Z' } }, 'stac-collection')
+            const url = compileTileUrl('https://t/{z}/{x}/{y}.png', opts)
+            // datetime is asserted via URLSearchParams (decoded) rather than a raw
+            // substring match: applyCogFieldsToUrl round-trips the whole query
+            // string through URLSearchParams, which percent-encodes ':' and '/'
+            // in the already-appended datetime value. That's pre-existing,
+            // unrelated behavior — out of scope here — so we compare semantics.
+            expect(new URL(url).searchParams.get('datetime')).toBe('../2024-03-04T00:00:00Z')
+        })
+        test('uses start/end when both are present', () => {
+            const opts = buildTileUrlOptions(
+                { time: { enabled: true, start: '2024-03-01T00:00:00Z', end: '2024-03-04T00:00:00Z' } },
+                'stac-collection')
+            const url = compileTileUrl('https://t/{z}/{x}/{y}.png', opts)
+            expect(new URL(url).searchParams.get('datetime'))
+                .toBe('2024-03-01T00:00:00Z/2024-03-04T00:00:00Z')
+        })
+    })
+
+    describe('compileTileUrl — never re-formats', () => {
+        test('passes pre-formatted times through unchanged (timezone independent)', () => {
+            const opts = {
+                time: '03/04/2024', starttime: '03/04/2024', endtime: '03/04/2024',
+                tileFormat: 'wmts',
+            }
+            const url = compileTileUrl('https://t/{z}/{x}/{y}.png?d={time}', opts)
+            expect(url).toContain('d=03/04/2024')
+        })
+        test('ignores a stray timeFormat option — no reformatting in any timezone', () => {
+            // If the deleted formatter came back, %Y would collapse this to
+            // "2024". The pass-through keeps the full string. The two differ in
+            // EVERY timezone (the format changes the string itself, not just the
+            // date), so this fails deterministically on a UTC CI runner too —
+            // unlike a M/D/Y fixture, which only shifts east of UTC.
+            const opts = {
+                time: '2024-03-04T23:00:00Z',
+                starttime: '2024-03-04T23:00:00Z',
+                endtime: '2024-03-04T23:00:00Z',
+                timeFormat: '%Y', tileFormat: 'wmts',
+            }
+            const url = compileTileUrl('https://t/{z}/{x}/{y}.png?d={time}', opts)
+            expect(url).toContain('d=2024-03-04T23:00:00Z')
+            expect(url).not.toContain('d=2024&')
+        })
+    })
+
+    describe('compileTileUrl — tms params', () => {
+        test('appends starttime/time for tms layers', () => {
+            const opts = buildTileUrlOptions(
+                { tms: true, time: { enabled: true, start: '2024-03-01T00:00:00Z', end: '2024-03-04T00:00:00Z' } },
+                undefined)
+            const url = compileTileUrl('https://t/{z}/{x}/{y}.png', opts)
+            expect(url).toContain('starttime=2024-03-01T00:00:00Z')
+            expect(url).toContain('time=2024-03-04T00:00:00Z')
+        })
+        test('does NOT append tms params for a tms:false layer', () => {
+            const opts = buildTileUrlOptions(
+                { tms: false, time: { enabled: true, start: '2024-03-01T00:00:00Z', end: '2024-03-04T00:00:00Z' } },
+                undefined)
+            const url = compileTileUrl('https://t/{z}/{x}/{y}.png', opts)
+            expect(url).not.toContain('starttime=')
+        })
+        test('appends composite=true only when compositeTile is set', () => {
+            const opts = buildTileUrlOptions(
+                { tms: true, time: { enabled: true, compositeTile: true,
+                                     start: '2024-03-01T00:00:00Z', end: '2024-03-04T00:00:00Z' } },
+                undefined)
+            expect(compileTileUrl('https://t/{z}/{x}/{y}.png', opts)).toContain('composite=true')
+        })
+    })
+
+    describe('compileTileUrl — custom time tokens', () => {
+        test('substitutes {customtime.N} for each entry', () => {
+            const opts = {
+                time: '', starttime: '', endtime: '',
+                customTimes: { times: ['2024-01-01T00:00:00Z', '2024-02-02T00:00:00Z'] },
+            }
+            const url = compileTileUrl('https://t/{customtime.0}/{customtime.1}.png', opts)
+            expect(url).toBe('https://t/2024-01-01T00:00:00Z/2024-02-02T00:00:00Z.png')
+        })
+    })
+})
