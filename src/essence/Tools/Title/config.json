@@ -1,4 +1,10 @@
 {
+    "defaults": {
+        "variables": {
+            "showLogo": true,
+            "showTitleText": true
+        }
+    },
     "name": "Title",
     "description": "Display mission icon and title from the mission config file.",
     "descriptionFull": {
@@ -63,7 +69,7 @@
                     {
                         "field": "variables.actionButtonLink",
                         "name": "Button Link",
-                        "description": "An external http(s) URL (opened in a new tab), or a bus event name emitted under this plugin's namespace as 'plugin:title:<value>' for another plugin to handle. Leave empty to hide the button.",
+                        "description": "An external http(s) URL (opened in a new tab); a core command using 'core:action:target' (e.g. 'core:showPlugin:LayersTool', 'core:togglePanel:left-panel'); or a custom event name like 'LayerManager:someEvent'. Simple strings without colons are emitted as 'plugin:title:<value>'. Leave empty to hide the button.",
                         "type": "text",
                         "width": 6
                     }

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import { getTiTilerBaseUrl, getTiTilerUrl } from '../../../src/essence/Tools/LayerManager/lib/utils/titiler.ts'
 
 test.describe('titiler', () => {

@@ -1,5 +1,9 @@
 import { PANEL_POSITION, PANEL_STATE, PANEL_LAYOUT_TYPE } from '../../../src/essence/Basics/PanelManager_/types/layout.ts'
 import { TOOL_ORIENTATION } from '../../../src/essence/Basics/ToolController_/types/tool.ts'
+import { mmgisAPI } from '../../../src/essence/mmgisAPI/mmgisAPI'
+import { onTestFinished } from 'vitest'
+
+const LAYOUT_CHANGED_EVENT = 'mmgis-panel-layout-changed'
 
 /**
  * Create a basic mock panel configuration for testing
@@ -34,31 +38,32 @@ export function createMockToolMetadata(overrides = {}) {
 }
 
 /**
- * Mock window.dispatchEvent for testing layout changes
+ * Capture panel layout-changed notifications fired over the in-app event bus.
+ *
+ * PanelManager_ broadcasts layout changes via mmgisAPI.emit (mitt), not a
+ * window event. This subscribes to that bus and collects each notification,
+ * normalizing them to the shape the panel specs assert on:
+ *   { type: 'mmgis-panel-layout-changed', detail: { panels } }
  */
-export function mockWindowDispatchEvent() {
+export function mockLayoutChangedEvents() {
     const events = []
 
-    // Ensure global window object exists
-    if (typeof global.window === 'undefined') {
-        global.window = {}
+    const handler = (payload) => {
+        events.push({
+            type: LAYOUT_CHANGED_EVENT,
+            detail: payload,
+        })
     }
 
-    const originalDispatchEvent = global.window.dispatchEvent
-
-    global.window.dispatchEvent = (event) => {
-        events.push(event)
-        return true
-    }
+    mmgisAPI.on(LAYOUT_CHANGED_EVENT, handler)
+    // Auto-unsubscribe when the current test ends, so a forgotten restore()
+    // cannot leak this handler onto the shared singleton bus.
+    onTestFinished(() => mmgisAPI.off(LAYOUT_CHANGED_EVENT, handler))
 
     return {
         events,
         restore: () => {
-            if (originalDispatchEvent) {
-                global.window.dispatchEvent = originalDispatchEvent
-            } else {
-                delete global.window.dispatchEvent
-            }
+            mmgisAPI.off(LAYOUT_CHANGED_EVENT, handler)
         },
     }
 }

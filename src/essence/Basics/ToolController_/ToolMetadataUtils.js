@@ -298,6 +298,24 @@ export function sanitizeToolMetadata(metadata) {
         )
     }
 
+    if (metadata.startHidden !== undefined) {
+        sanitized.startHidden = sanitizeBoolean(
+            metadata.startHidden,
+            false,
+            'startHidden',
+            sanitized.id
+        )
+    }
+
+    if (metadata.startUnloaded !== undefined) {
+        sanitized.startUnloaded = sanitizeBoolean(
+            metadata.startUnloaded,
+            false,
+            'startUnloaded',
+            sanitized.id
+        )
+    }
+
     return sanitized
 }
 
@@ -381,6 +399,14 @@ export function validateToolMetadata(metadata) {
 
     if (metadata.modernLayoutSupport !== undefined && typeof metadata.modernLayoutSupport !== 'boolean') {
         warnings.push('modernLayoutSupport must be a boolean')
+    }
+
+    if (metadata.startHidden !== undefined && typeof metadata.startHidden !== 'boolean') {
+        warnings.push('startHidden must be a boolean')
+    }
+
+    if (metadata.startUnloaded !== undefined && typeof metadata.startUnloaded !== 'boolean') {
+        warnings.push('startUnloaded must be a boolean')
     }
 
     if (warnings.length > 0) {
@@ -540,6 +566,14 @@ export function generateToolMetadata(toolConfig) {
 
     if (declaredMetadata.height !== undefined || toolConfig.height !== undefined) {
         rawMetadata.height = declaredMetadata.height || toolConfig.height
+    }
+
+    if (declaredMetadata.startHidden !== undefined) {
+        rawMetadata.startHidden = declaredMetadata.startHidden
+    }
+
+    if (declaredMetadata.startUnloaded !== undefined) {
+        rawMetadata.startUnloaded = declaredMetadata.startUnloaded
     }
 
     // Validate metadata to catch configuration errors

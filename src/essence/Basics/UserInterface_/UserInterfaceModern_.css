@@ -5,6 +5,25 @@
 
 /* Modern UI uses theme tokens directly - no local overrides needed */
 
+/* Plugin-level visibility control (show/hide API and startHidden config).
+ * Applied to individual .ui-tool-card elements, not the panel itself,
+ * so other tools sharing the same panel are not affected. */
+.ui-tool-card.plugin-hidden {
+    display: none !important;
+}
+
+/* Same visibility control applied to a tabbed panel's tab button, so a
+ * hidden/unloaded tool's tab isn't left clickable with nothing behind it. */
+.ui-panel-tab.plugin-hidden {
+    display: none !important;
+}
+
+/* Same visibility control applied to an iconified-panel's icon-tray button,
+ * so a hidden/unloaded tool's icon isn't left clickable with nothing behind it. */
+.ui-panel-icon-btn.plugin-hidden {
+    display: none !important;
+}
+
 /* Full screen grid layout */
 .ui-modern-grid {
     display: grid;
@@ -41,8 +60,6 @@
 /* Base Panel Styling */
 .ui-panel {
     background: var(--theme-color-white, #ffffff);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
     box-shadow: 0 4px 6px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
     display: flex;
     flex-direction: column;
@@ -476,4 +493,92 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     border: none;
 }
 
-/* Z-index management (no longer needed as variables, kept for reference) */
+/* ============================================
+   Floating Panels (center area overlays)
+   ============================================ */
+
+:root {
+    --ui-float-gap: var(--theme-spacing-1, 0.5rem);
+    --ui-float-outer-gap: var(--theme-spacing-2, 1rem);
+}
+
+/* Invisible wrapper that holds all float zones */
+.ui-float-regions {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+
+/* Each zone is an absolutely-positioned column of tool cards */
+/* No padding in overlay mode — .ui-panel margin already provides the outer gap */
+.ui-float-zone {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ui-float-gap);
+    pointer-events: none;
+}
+
+/* Compact mode has no panel margin, so add outer gap on the zone instead */
+.ui-layout-compact .ui-float-zone {
+    padding: var(--ui-float-outer-gap);
+}
+
+/* Zone positions */
+.ui-float-zone-top-left     { top: 0; left: 0; }
+.ui-float-zone-top-center   { top: 0; left: 50%; transform: translateX(-50%); }
+.ui-float-zone-top-right    { top: 0; right: 0; }
+.ui-float-zone-bottom-left  { bottom: 0; left: 0; }
+.ui-float-zone-bottom-center { bottom: 0; left: 50%; transform: translateX(-50%); }
+.ui-float-zone-bottom-right { bottom: 0; right: 0; }
+
+/* Float panels re-enable pointer events */
+.ui-float-panel {
+    pointer-events: auto;
+    position: relative;
+    background-color: transparent;
+}
+
+/* Compact layout: no margin */
+.ui-modern-grid.ui-layout-compact .ui-float-panel {
+    margin: 0;
+}
+
+/* Overlay mode: tool cards have rounded corners (panel container is transparent) */
+.ui-modern-grid:not(.ui-layout-compact) .ui-float-panel .ui-tool-card {
+    border-radius: var(--theme-radius-md, 8px);
+}
+
+/* Compact mode: tool cards are square */
+.ui-modern-grid.ui-layout-compact .ui-float-panel .ui-tool-card {
+    border-radius: 0;
+}
+
+/* Collapsed float panels are hidden */
+.ui-float-panel[data-panel-state="collapsed"] {
+    display: none;
+}
+
+/* Float panel body: stacks tools vertically with gaps; scrolls if content exceeds max-height */
+.ui-float-panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ui-float-gap, 0.5rem);
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Thin, subtle scrollbar inside float panels */
+.ui-float-panel-body::-webkit-scrollbar { width: 4px; }
+.ui-float-panel-body::-webkit-scrollbar-track { background: transparent; }
+.ui-float-panel-body::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); border-radius: 2px; }
+
+/* Float tool cards size to their content; panel body handles overflow */
+.ui-float-panel .ui-tool-card {
+    display: flex;
+    flex-shrink: 0;
+    padding: 2px;
+    overflow: hidden;
+}

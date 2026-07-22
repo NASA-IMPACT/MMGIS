@@ -65,13 +65,13 @@ else
   mw_info "wrote .env: port=$port db=$dbname"
 fi
 
-# --- database (clone the frozen golden; before npm install so a missing golden fails fast) ---
+# --- database (clone the frozen template DB; before npm install so a missing template DB fails fast) ---
 if mw_db_exists "$dbname"; then
   mw_info "database $dbname already exists (skipping clone)"
 else
-  mw_db_exists mmgis_golden || mw_die "mmgis_golden does not exist — run seed-golden.sh (builds it from the committed baseline) or refresh-golden.sh (snapshots a live DB)"
-  mw_psql postgres "CREATE DATABASE \"$dbname\" TEMPLATE mmgis_golden"
-  mw_info "cloned mmgis_golden -> $dbname"
+  mw_db_exists mmgis_template_db || mw_die "mmgis_template_db does not exist — run seed-template-db.sh (builds it from the committed baseline) or refresh-template-db.sh (snapshots a live DB)"
+  mw_psql postgres "CREATE DATABASE \"$dbname\" TEMPLATE mmgis_template_db"
+  mw_info "cloned mmgis_template_db -> $dbname"
 fi
 
 # --- node_modules ---
@@ -82,7 +82,25 @@ else
   (cd "$dir" && npm install --force)
 fi
 
+# --- configure CMS bundle ---
+# configure/build is gitignored and the server never builds it live (unlike the
+# dashboard), so /configure has no app to serve unless we build one. Always
+# build from this worktree's own sources: a bundle copied from another checkout
+# goes silently stale whenever either side's configure/src changes. The build
+# itself is ~20s; configure/ has its own package.json, so first provision also
+# pays an npm install here.
+if [ -d "$dir/configure/node_modules" ]; then
+  mw_info "configure/node_modules present (skipping npm install)"
+else
+  mw_info "running npm install in configure/ (takes a few minutes)..."
+  (cd "$dir/configure" && npm install)
+fi
+mw_info "building configure (~20s)..."
+(cd "$dir/configure" && npm run build)
+
 echo
 echo "ready: $dir"
-echo "  port $port  ·  db $dbname  ·  dashboard $(mw_dashboard_url "$port") (after start)"
+echo "  port $port  ·  db $dbname"
+echo "  dashboard  $(mw_dashboard_url "$port")  (after start)"
+echo "  configure  $(mw_configure_url "$port")  (after start; log in admin / admin)"
 echo "  start it:  $HERE/start.sh \"$dir\""

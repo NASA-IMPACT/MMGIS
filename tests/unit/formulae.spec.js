@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from 'vitest';
 import F_ from '../../src/essence/Basics/Formulae_/Formulae_.js';
 import { coordinatePairs, bearingTestCases } from '../fixtures/coordinate-samples.js';
 import { validGeoJSON, colorTestCases } from '../fixtures/geojson-samples.js';
