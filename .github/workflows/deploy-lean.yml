@@ -16,7 +16,9 @@ name: Deploy lean (AWS ECS Express Mode)
 #
 # Repository configuration:
 #   vars:    AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE,
-#            ADMIN_URL (optional; shown in the run summary)
+#            ADMIN_URL (optional; shown in the run summary — manually
+#            maintained by design, CI cannot derive it; it changes when
+#            the environment is rebuilt, so re-set it then)
 #   secrets: AWS_DEPLOY_ROLE_ARN (OIDC-assumable deploy role; no
 #            long-lived keys)
 #
