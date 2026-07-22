@@ -211,7 +211,7 @@ environment's GitHub Actions variables (and the one secret):
 | `ECS_SERVICE` | `ecs_service_name` | |
 | `ADMIN_TASK_FAMILY` | `admin_task_family` | `mmgis-<env>-admin` — **new**; the workflow now reads this (falls back to `mmgis-admin`) |
 | `PUBLISH_TASK_FAMILY` | `publish_task_family` | `mmgis-<env>-publish` — **new** (falls back to `mmgis-publish`) |
-| `ADMIN_URL` | `admin_url` | optional; shown in the run summary (phase 2) |
+| `ADMIN_URL` | `admin_url` | optional; shown in the run summary (phase 2). Manually maintained by design (CI cannot derive it) — re-set it here after any rebuild, since the distribution URL changes |
 | `AWS_DEPLOY_ROLE_ARN` (secret) | `deploy_role_arn` | OIDC-assumable; no long-lived keys |
 
 The two `*_TASK_FAMILY` variables are the one required change to
