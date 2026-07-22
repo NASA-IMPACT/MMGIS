@@ -432,11 +432,7 @@ const L_ = {
                 nextUrl = `/${nextUrl}`
             }
         }
-        if (
-            process.env.NODE_ENV === 'development' &&
-            process.env.ENABLE_CORS_PROXY === 'true' &&
-            F_.isUrlAbsolute(nextUrl)
-        ) {
+        if (process.env.NODE_ENV === 'development' && F_.isUrlAbsolute(nextUrl)) {
             try {
                 if (new URL(nextUrl).origin !== window.location.origin) {
                     const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
