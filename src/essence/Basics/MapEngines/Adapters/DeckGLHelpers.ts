@@ -10,10 +10,15 @@ import {
     type TransitionInterpolator,
 } from '@deck.gl/core'
 import { GeoJsonLayer, BitmapLayer, PointCloudLayer, ScatterplotLayer } from '@deck.gl/layers'
+// _WMSLayer is experimental (underscore prefix): deck.gl gives no semver
+// guarantee, so re-verify WMS rendering on every deck.gl upgrade. It also
+// behaves unlike the tile layers — one whole-viewport GetMap request per view
+// change instead of per-tile fetches.
 import { TileLayer, Tile3DLayer, MVTLayer, _WMSLayer as WMSLayer } from '@deck.gl/geo-layers'
 import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
-// Transitive dep of @deck.gl/geo-layers — import the same (hoisted) copy the
-// WMSLayer uses so its `data instanceof ImageSource` check holds.
+// Transitive dep of @deck.gl/geo-layers (same experimental WMS family as
+// _WMSLayer) — import the same (hoisted) copy the WMSLayer uses so its
+// `data instanceof ImageSource` check holds.
 import { WMSImageSource } from '@loaders.gl/wms'
 import { color as parseColor } from 'd3'
 
