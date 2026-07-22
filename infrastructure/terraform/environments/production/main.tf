@@ -8,11 +8,16 @@ module "mmgis" {
   vpc_id             = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
 
-  # RDS — production keeps its data: no skip-final-snapshot, Multi-AZ on.
-  db_instance_class      = "db.t3.medium"
-  db_allocated_storage   = 50
+  # RDS — runtime spec is IDENTICAL to development (the admin is internal
+  # tooling; the shipped product is the published dashboards, which serve
+  # independently of this stack). The environments differ only in DELETION
+  # POLICY: production always leaves a final snapshot on destroy and keeps
+  # the default 30-day secret recovery window, while development skips both
+  # so destroy/rebuild cycles leave no residue.
+  db_instance_class      = "db.t3.micro"
+  db_allocated_storage   = 20
   db_engine_version      = "17"
-  db_multi_az            = true
+  db_multi_az            = false
   db_skip_final_snapshot = false
   rds_ca_bundle_base64   = var.rds_ca_bundle_base64
 
