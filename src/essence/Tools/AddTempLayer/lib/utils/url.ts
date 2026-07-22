@@ -80,6 +80,7 @@ const SAMPLE_URLS = {
  *   xyz / wmts → must be a tile template containing {z}/{x}/{y}
  *   wms        → must carry a LAYERS parameter
  *   geojson    → nothing to check; identity is the response body, not the URL
+ *   any tile type → must not contain the {s} subdomain placeholder
  */
 export function validateForType(
     type: TempLayerType,
@@ -89,6 +90,16 @@ export function validateForType(
 
     if (type === 'geojson') {
         return { ok: true }
+    }
+
+    // {s} is Leaflet's pick-a-subdomain placeholder. We never substitute it,
+    // and the deck.gl engine sends it to the network literally — every request
+    // fails after an apparently successful add. Make the user pick one.
+    if (u.includes('{s}')) {
+        return {
+            ok: false,
+            message: `We can’t add this layer — {s} is a subdomain placeholder we don’t fill in. Replace it with a real subdomain, e.g. https://a.tile.host/{z}/{x}/{y}.png`,
+        }
     }
 
     if (type === 'wms') {

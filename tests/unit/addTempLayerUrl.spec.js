@@ -76,6 +76,9 @@ test.describe('AddTempLayer url utils', () => {
             ['xyz', 'https://h/5/12/20.png', 'fail'],
             ['wmts', 'https://h/x?service=WMTS&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', 'ok'],
             ['wmts', 'https://h/x?service=WMTS&request=GetTile&tilematrix=5&tilerow=12&tilecol=20', 'fail'],
+            // {s} subdomain placeholder — never substituted, so rejected
+            ['xyz', 'https://{s}.h/{z}/{x}/{y}.png', 'fail'],
+            ['wms', 'https://{s}.h/wms?service=WMS&layers=a', 'fail'],
         ]
         for (const [type, url, expected] of cases) {
             test(`${type}: ${url} -> ${expected}`, () => {
@@ -107,6 +110,13 @@ test.describe('AddTempLayer url utils', () => {
             expect(r.message).toContain('LAYERS')
             expect(r.message.toLowerCase()).toContain('service=wms')
         })
+
+        test('{s} failure message tells the user to pick a real subdomain', () => {
+            const r = validateForType('xyz', 'https://{s}.h/{z}/{x}/{y}.png')
+            expect(r.ok).toBe(false)
+            expect(r.message).toContain('{s}')
+            expect(r.message).toContain('subdomain')
+        })
     })
 
     test.describe('buildLayerObj passes the URL through verbatim', () => {
@@ -125,7 +135,9 @@ test.describe('AddTempLayer url utils', () => {
         test('xyz -> tile/wmts, url unchanged (incl. {s})', () => {
             const url = 'https://{s}.h/{z}/{x}/{y}.png'
             const obj = buildLayerObj({ url, type: 'xyz' })
-            // {s} is NOT substituted — passed through exactly as given.
+            // {s} is NOT substituted here either — buildLayerObj always passes
+            // the URL through verbatim. The form never reaches this point with
+            // {s}: validateForType (stage 2) rejects it.
             expect(obj).toMatchObject({ type: 'tile', tileformat: 'wmts', url })
         })
 
