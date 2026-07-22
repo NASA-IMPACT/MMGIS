@@ -166,14 +166,14 @@ export const TimelineAdapter: React.FC = () => {
             console.log('[Timeline] User changed current time:', newTime.toISOString())
             setCurrentTime(newTime)
 
-            // Emit time:userChanged event for TimeControl to respond
+            // Emit time:changeRequested event for TimeControl to respond
             const payload = {
                 startTime: startTime.toISOString(),
                 endTime: endTime.toISOString(),
                 currentTime: newTime.toISOString(),
             }
-            console.log('[Timeline] Emitting time:userChanged:', payload)
-            mmgisEmit('time:userChanged', payload)
+            console.log('[Timeline] Emitting time:changeRequested:', payload)
+            mmgisEmit('time:changeRequested', payload)
         },
         [startTime, endTime]
     )
@@ -183,8 +183,8 @@ export const TimelineAdapter: React.FC = () => {
         (newCurrent: Date) => {
             setCurrentTime(newCurrent)
 
-            // Emit time:userChanged event for TimeControl to respond
-            mmgisEmit('time:userChanged', {
+            // Emit time:changeRequested event for TimeControl to respond
+            mmgisEmit('time:changeRequested', {
                 startTime: startTime.toISOString(),
                 endTime: endTime.toISOString(),
                 currentTime: newCurrent.toISOString(),
@@ -229,14 +229,14 @@ export const TimelineAdapter: React.FC = () => {
             setCurrentTime(prev => {
                 const nextTime = moment(prev).add(value, unit as moment.unitOfTime.DurationConstructor).toDate()
                 if (nextTime <= endTime) {
-                    // Emit time:userChanged event to notify TimeControl
+                    // Emit time:changeRequested event to notify TimeControl
                     const payload = {
                         startTime: startTime.toISOString(),
                         endTime: endTime.toISOString(),
                         currentTime: nextTime.toISOString(),
                     }
-                    console.log('[Timeline] Playback emitting time:userChanged:', payload)
-                    mmgisEmit('time:userChanged', payload)
+                    console.log('[Timeline] Playback emitting time:changeRequested:', payload)
+                    mmgisEmit('time:changeRequested', payload)
                     return nextTime
                 } else {
                     console.log('[Timeline] Playback reached end, stopping')
