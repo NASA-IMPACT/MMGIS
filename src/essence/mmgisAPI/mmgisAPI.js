@@ -364,7 +364,8 @@ var mmgisAPI_ = {
         } else return L_.layers.data
     },
     getRawConfigData: function () {
-        return L_.configData
+        // Deep clone so callers can't mutate the live L_.configData.
+        return JSON.parse(JSON.stringify(L_.configData))
     },
     getLayers: function () {
         return L_.layers.layer

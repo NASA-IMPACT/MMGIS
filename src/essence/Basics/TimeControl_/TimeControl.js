@@ -38,6 +38,11 @@ var TimeControl = {
         times: [],
     },
     init: function () {
+        // Clear any cleanups left over from a prior lifecycle so re-init
+        // (e.g. mission swap) can't accumulate stale providers/listeners.
+        _providerCleanups.forEach((cleanup) => cleanup())
+        _providerCleanups = []
+
         if (L_.configData.time && L_.configData.time.enabled === true) {
             TimeControl.enabled = true
             TimeControl.globalTimeFormat = utcFormat(
@@ -80,35 +85,19 @@ var TimeControl = {
         TimeControl.endTime = initialEnd.toISOString()
         TimeControl.currentTime = initialEnd.toISOString()
 
-        // Subscribe to user-initiated time changes from UI elements via Event Bus
-        // and emit controlReady event for UI elements to initialize
-        if (window.mmgisAPI) {
-            const cleanup = window.mmgisAPI.on('time:userChanged', ({ startTime, endTime, currentTime }) => {
-                timeInputChange(startTime, endTime, currentTime)
-            })
-            _providerCleanups.push(cleanup)
-
-            // Notify that TimeControl is ready for UI elements to initialize
-            window.mmgisAPI.emit('time:controlReady', {
-                enabled: TimeControl.enabled,
-                startTime: TimeControl.startTime,
-                endTime: TimeControl.endTime,
-                currentTime: TimeControl.currentTime,
-                timeInputChangeCallback: timeInputChange,
-            })
-        }
-
         //updateTime()
 
         initLayerTimes()
         initLayerDataTimes()
 
-        // Ensure layers are updated and reloaded with initial time parameters,
-        // particularly when TimeUI is missing or skipped.
+        // Seed TimeControl state (start/end/current) and notify subscribers.
+        // Do NOT reload here: Map_.init() runs after TimeControl.init(), so
+        // time-enabled layers aren't on the map yet — reloading now is a no-op.
         timeInputChange(
             TimeControl.startTime,
             TimeControl.endTime,
-            TimeControl.currentTime
+            TimeControl.currentTime,
+            true
         )
     },
     fina: function () {
@@ -117,8 +106,7 @@ var TimeControl = {
             // Clean up previous providers if re-initializing
             _providerCleanups.forEach((cleanup) => cleanup())
             _providerCleanups = [
-                // Re-register the time:userChanged listener that was registered in init()
-                window.mmgisAPI.on('time:userChanged', ({ startTime, endTime, currentTime }) => {
+                window.mmgisAPI.on('time:changeRequested', ({ startTime, endTime, currentTime }) => {
                     timeInputChange(startTime, endTime, currentTime)
                 }),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
@@ -138,6 +126,19 @@ var TimeControl = {
                     return false
                 }),
             ]
+        }
+
+        // Map_.init() has now loaded the time-enabled layers. The startup
+        // seed in init() used skipUpdate=true (layers weren't on the map yet),
+        // and legacy TimeUI's startup change() emitted time:changeRequested before
+        // this listener was registered (mitt has no replay), so it was lost.
+        // Drive the single real initial reload here, once, in every mode.
+        if (TimeControl.enabled) {
+            timeInputChange(
+                TimeControl.startTime,
+                TimeControl.endTime,
+                TimeControl.currentTime
+            )
         }
     },
     subscribe: function () {},

@@ -101,17 +101,6 @@ const TimeUI = {
         // Subscribe to TimeControl events via Event Bus
         if (window.mmgisAPI) {
             TimeUI._cleanups.push(
-                // Listen for TimeControl ready event (new event-based initialization)
-                window.mmgisAPI.on('time:controlReady', (data) => {
-                    // Use callback from event if provided (new pattern)
-                    if (data.timeInputChangeCallback) {
-                        TimeUI.timeChange = data.timeInputChangeCallback
-                    }
-                    // Update enabled state from TimeControl
-                    if (data.enabled != null) {
-                        TimeUI.enabled = data.enabled
-                    }
-                }),
                 window.mmgisAPI.on('time:setRequested', (data) => {
                     TimeUI.updateTimes(data.startTime, data.endTime, data.currentTime)
                 }),
@@ -3251,17 +3240,15 @@ const TimeUI = {
                   ).toISOString()
             const currentTime = new Date(TimeUI.getCurrentTimestamp(true)).toISOString()
 
-            // Emit event via Event Bus for TimeControl to respond
+            // Event Bus is the single canonical path for user time changes.
+            // Direct callback only used in a no-mmgisAPI build.
             if (window.mmgisAPI) {
-                window.mmgisAPI.emit('time:userChanged', {
+                window.mmgisAPI.emit('time:changeRequested', {
                     startTime,
                     endTime,
                     currentTime,
                 })
-            }
-
-            // Keep callback for backward compatibility
-            if (typeof TimeUI.timeChange === 'function') {
+            } else if (typeof TimeUI.timeChange === 'function') {
                 TimeUI.timeChange(startTime, endTime, currentTime)
             }
         }
