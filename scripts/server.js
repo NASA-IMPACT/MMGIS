@@ -623,10 +623,6 @@ setups.getBackendSetups(function (setups) {
     express.static(path.join(rootDir, "/docs"))
   );
   app.use(
-    `${ROOT_PATH}/README.md`,
-    express.static(path.join(rootDir, "/README.md"))
-  );
-  app.use(
     `${ROOT_PATH}/configure/build`,
     ensureUser(),
     express.static(path.join(rootDir, "/configure/build"))
