@@ -3371,10 +3371,20 @@ const L_ = {
             await L_.removeLayerFromLayersData(layerName)
         }
 
-        // Notify subscribers (e.g. the Layers panel) that the layer list
-        // changed, so they rebuild. Works in classic and modern layouts.
+        // Notify subscribers (e.g. the modern-layout Layers panel) that the
+        // layer list changed, so they rebuild.
         if (window.mmgisAPI) {
             window.mmgisAPI.emit('layers:listChanged')
+        }
+
+        // The classic-layout LayersTool doesn't subscribe to the bus, so
+        // rebuild it directly when it's the active tool.
+        if (ToolController_.activeToolName === 'LayersTool') {
+            const layersTool = ToolController_.getTool('LayersTool')
+            if (layersTool.destroy && layersTool.make) {
+                layersTool.destroy()
+                layersTool.make()
+            }
         }
     },
     addLayerToLayersData: async function (layerName) {
