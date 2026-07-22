@@ -23,8 +23,11 @@ export function uniqueLayerName(): string {
  *
  * Type → MMGIS mapping:
  *   geojson    → { type: 'vector', url }
- *   wms        → { type: 'tile', tileformat: 'wms', url } — the engine appends
- *                BBOX/WIDTH/HEIGHT per tile and parses LAYERS/FORMAT from the url.
+ *   wms        → { type: 'tile', tileformat: 'wms', url } — the engine computes
+ *                BBOX/WIDTH/HEIGHT/CRS per request, takes LAYERS from the url,
+ *                forwards its recognized GetMap params (FORMAT, TRANSPARENT,
+ *                STYLES, VERSION, TIME, ELEVATION) and passes any other query
+ *                params (e.g. API keys) through as vendor params.
  *   wmts / xyz → { type: 'tile', tileformat: 'wmts', url } — a {z}/{x}/{y}
  *                template the engine fills per tile; must already be one.
  */

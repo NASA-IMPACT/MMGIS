@@ -12,6 +12,9 @@ import {
 import { GeoJsonLayer, BitmapLayer, PointCloudLayer, ScatterplotLayer } from '@deck.gl/layers'
 import { TileLayer, Tile3DLayer, MVTLayer, _WMSLayer as WMSLayer } from '@deck.gl/geo-layers'
 import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
+// Transitive dep of @deck.gl/geo-layers — import the same (hoisted) copy the
+// WMSLayer uses so its `data instanceof ImageSource` check holds.
+import { WMSImageSource } from '@loaders.gl/wms'
 import { color as parseColor } from 'd3'
 
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
@@ -187,19 +190,61 @@ function getPropValue(object: unknown, path: string | undefined): unknown {
  * param parsing Leaflet's WMSColorFilter does, so a single layer url renders
  * the same way in both engines.
  */
-function parseWmsUrl(url: string): { base: string; layers: string[] } {
+// Per-request params the engine computes per viewport (or props we set
+// explicitly) — forwarding stale pasted values would corrupt every request.
+// TILED is a GeoServer cache directive expecting grid-aligned tile requests;
+// WMSLayer issues one whole-viewport GetMap, which a cache grid rejects.
+const WMS_MANAGED_KEYS = new Set([
+    'service',
+    'request',
+    'layers',
+    'bbox',
+    'width',
+    'height',
+    'srs',
+    'crs',
+    'tiled',
+])
+// Standard GetMap params loaders.gl accepts as typed wmsParameters (it handles
+// version-specific encoding itself, e.g. SRS= for 1.1.1 vs CRS= for 1.3.0).
+const WMS_STANDARD_KEYS = new Set([
+    'version',
+    'format',
+    'transparent',
+    'styles',
+    'time',
+    'elevation',
+])
+
+// The base URL must be split from its query string: loaders.gl appends
+// '?SERVICE=WMS&...' to it blindly, so a leftover '?' would malform every
+// request. LAYERS becomes the layers prop; recognized GetMap params become
+// wmsParameters; everything else (API keys, vendor params) is preserved as
+// vendorParameters.
+function parseWmsUrl(url: string): {
+    base: string
+    layers: string[]
+    wmsParameters: Record<string, unknown>
+    vendorParameters: Record<string, unknown>
+} {
     const qIdx = url.indexOf('?')
     const base = qIdx === -1 ? url : url.slice(0, qIdx)
     const search = qIdx === -1 ? '' : url.slice(qIdx + 1)
     let layersVal = ''
+    const wmsParameters: Record<string, unknown> = {}
+    const vendorParameters: Record<string, unknown> = {}
     for (const [key, val] of new URLSearchParams(search)) {
-        if (key.toLowerCase() === 'layers') {
+        const lower = key.toLowerCase()
+        if (lower === 'layers') {
             layersVal = val
-            break
+        } else if (WMS_STANDARD_KEYS.has(lower)) {
+            wmsParameters[lower] = lower === 'transparent' ? val.toLowerCase() === 'true' : val
+        } else if (!WMS_MANAGED_KEYS.has(lower)) {
+            vendorParameters[key] = val
         }
     }
     const layers = layersVal ? layersVal.split(',').filter(Boolean) : []
-    return { base, layers }
+    return { base, layers, wmsParameters, vendorParameters }
 }
 
 /**
@@ -222,10 +267,16 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             // per view. Route to deck.gl's WMSLayer, parsing the service URL and
             // LAYERS out of the full WMS url (same params Leaflet reads).
             if (o.tileformat === 'wms') {
-                const { base, layers } = parseWmsUrl(o.url)
+                const { base, layers, wmsParameters, vendorParameters } =
+                    parseWmsUrl(o.url)
                 return new WMSLayer({
                     id,
-                    data: base,
+                    // A pre-built source (instead of the base-URL string) is the
+                    // only channel WMSLayer offers for forwarding the pasted
+                    // URL's GetMap/vendor params on every request.
+                    data: new WMSImageSource(base, {
+                        wms: { wmsParameters, vendorParameters },
+                    } as ConstructorParameters<typeof WMSImageSource>[1]),
                     serviceType: 'wms',
                     layers,
                     srs: 'EPSG:3857',
