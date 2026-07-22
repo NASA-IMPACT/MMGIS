@@ -17,10 +17,7 @@ name: Deploy lean (AWS ECS Express Mode)
 # Repository configuration:
 #   vars:    AWS_REGION, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE,
 #            ADMIN_TASK_FAMILY, PUBLISH_TASK_FAMILY (per-environment
-#            task-def families; default to mmgis-admin / mmgis-publish),
-#            ADMIN_URL (optional; shown in the run summary — manually
-#            maintained by design, CI cannot derive it; it changes when
-#            the environment is rebuilt, so re-set it then)
+#            task-def families; default to mmgis-admin / mmgis-publish)
 #   secrets: AWS_DEPLOY_ROLE_ARN (OIDC-assumable deploy role; no
 #            long-lived keys)
 #
@@ -208,17 +205,17 @@ jobs:
           echo "Rollout did not converge within 20 minutes; still serving: $IMAGES" >&2
           exit 1
 
-      # Surface where this deploy landed in the run summary. Runs even when
+      # Surface what this deploy shipped in the run summary. Runs even when
       # the rollout step fails or times out — the image is already in ECR by
       # then, and recording its URI aids debugging — but only once an image
       # was actually pushed. The rollout line reports the job status so a
-      # failed rollout is not mistaken for a completed deploy. ADMIN_URL is
-      # a repo variable; if it is unset, note that rather than print a blank.
+      # failed rollout is not mistaken for a completed deploy. Only values
+      # CI itself produces appear here — deliberately nothing hand-set (the
+      # admin URL lives in `terraform output admin_url` / the CF console).
       - name: Write deployment summary
         if: ${{ !cancelled() && steps.build-image.outputs.IMAGE_URI != '' }}
         env:
           IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
-          ADMIN_URL: ${{ vars.ADMIN_URL }}
           JOB_STATUS: ${{ job.status }}
         run: |
           {
@@ -226,9 +223,4 @@ jobs:
             echo ""
             echo "- **Image pushed:** \`$IMAGE_URI\`"
             echo "- **Rollout:** $JOB_STATUS"
-            if [ -n "$ADMIN_URL" ]; then
-              echo "- **Admin URL:** $ADMIN_URL"
-            else
-              echo "- **Admin URL:** _not set (repo variable \`ADMIN_URL\` is empty)_"
-            fi
           } >> "$GITHUB_STEP_SUMMARY"

@@ -87,6 +87,6 @@ output "admin_distribution_id" {
 }
 
 output "admin_url" {
-  description = "vars.ADMIN_URL — the admin CloudFront domain (phase 2)."
+  description = "The admin CloudFront URL (phase 2) — the authoritative place to read it (deliberately surfaced nowhere in CI)."
   value       = local.enable_cloudfront ? "https://${aws_cloudfront_distribution.admin[0].domain_name}" : null
 }

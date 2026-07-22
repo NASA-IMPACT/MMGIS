@@ -7,7 +7,6 @@ output "workflow_variables" {
     ECS_SERVICE         = module.mmgis.ecs_service_name
     ADMIN_TASK_FAMILY   = module.mmgis.admin_task_family
     PUBLISH_TASK_FAMILY = module.mmgis.publish_task_family
-    ADMIN_URL           = module.mmgis.admin_url
     AWS_DEPLOY_ROLE_ARN = module.mmgis.deploy_role_arn
   }
 }
