@@ -132,6 +132,7 @@ MMGIS/
 │       └── Ancillary/            # UI components and helpers
 ├── configure/                    # Admin configuration interface
 │   └── build/                    # Configuration UI
+├── mcp/                          # MCP server: agents drive MMGIS + generate dashboards
 ├── docs/                         # Documentation (Jekyll site)
 ├── public/                       # Static assets
 ├── Missions/                     # Mission data storage

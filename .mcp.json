@@ -1,0 +1,12 @@
+{
+    "mcpServers": {
+        "mmgis": {
+            "command": "node",
+            "args": ["mcp/dist/index.js"],
+            "env": {
+                "MMGIS_URL": "http://localhost:8888",
+                "MMGIS_TOKEN": "${MMGIS_TOKEN}"
+            }
+        }
+    }
+}
