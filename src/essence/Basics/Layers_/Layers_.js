@@ -41,6 +41,9 @@ const L_ = {
         nameToUUID: {},
         refreshIntervals: {}, // In order to reloadLayer
         refreshFailed: {}, // Track layers with failed refreshes
+        // Name -> { status: 'ok' | 'error', message } as reported by the map
+        // engine's request hooks. Written only via L_.setLayerLoadStatus.
+        loadStatus: {},
     },
     // ===== Private ======
     //Index -> layer name
@@ -224,6 +227,16 @@ const L_ = {
                 ),
                 window.mmgisAPI.provide('layers:removeLayer', (layerUUID) =>
                     window.mmgisAPI.removeLayer(layerUUID)
+                ),
+                // Engine-reported load health. With a layerUUID returns that
+                // layer's { status, message } (null if none reported yet);
+                // without, the whole name-keyed map. Live updates broadcast
+                // as 'layers:loadStatusChanged'.
+                window.mmgisAPI.provide('layers:getLoadStatus', (layerUUID) =>
+                    layerUUID != null
+                        ? L_.layers.loadStatus[L_.asLayerUUID(layerUUID)] ??
+                          null
+                        : L_.layers.loadStatus
                 ),
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
@@ -1902,6 +1915,23 @@ const L_ = {
                 }
             )
     },
+    // Records engine-reported load health for a layer and broadcasts
+    // transitions on the bus. Engines call this from their request hooks
+    // (tile load/error, WMS image load/error, GeoJSON fetch); repeated
+    // identical reports (e.g. per tile) are deduped so consumers only hear
+    // actual changes.
+    setLayerLoadStatus: function (name, status, message) {
+        message = message ?? null
+        const prev = L_.layers.loadStatus[name]
+        if (prev && prev.status === status && prev.message === message) return
+        L_.layers.loadStatus[name] = { status, message }
+        if (window.mmgisAPI)
+            window.mmgisAPI.emit('layers:loadStatusChanged', {
+                layerName: name,
+                status,
+                message,
+            })
+    },
     setLayerOpacity: function (name, newOpacity) {
         newOpacity = parseFloat(newOpacity)
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
@@ -3344,6 +3374,7 @@ const L_ = {
         L_._layersOrdered = []
         L_.layers.dataFlat = []
         L_._layersLoaded = []
+        L_.layers.loadStatus = {}
 
         await L_.parseConfig(data)
 
@@ -3442,6 +3473,7 @@ const L_ = {
                 delete L_.layers.on[layerUUID]
                 delete L_.layers.attachments[layerUUID]
                 delete L_.layers.opacity[layerUUID]
+                delete L_.layers.loadStatus[layerUUID]
             }
         }
     },

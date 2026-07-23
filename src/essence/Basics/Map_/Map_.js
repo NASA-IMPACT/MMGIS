@@ -1608,6 +1608,32 @@ async function makeTileLayer(layerObj, mapContext = null) {
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
             tileElevation,
+            nativeOptions:
+                tileFormat === 'wms'
+                    ? {
+                          onImageLoad: () =>
+                              L_.setLayerLoadStatus(layerObj.name, 'ok'),
+                          onImageLoadError: (requestId, error) =>
+                              L_.setLayerLoadStatus(
+                                  layerObj.name,
+                                  'error',
+                                  `WMS request failed: ${
+                                      error?.message || error
+                                  }`
+                              ),
+                      }
+                    : {
+                          onTileLoad: () =>
+                              L_.setLayerLoadStatus(layerObj.name, 'ok'),
+                          onTileError: (error) =>
+                              L_.setLayerLoadStatus(
+                                  layerObj.name,
+                                  'error',
+                                  `Tile request failed: ${
+                                      error?.message || error
+                                  }`
+                              ),
+                      },
         })
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
@@ -1663,6 +1689,18 @@ async function makeTileLayer(layerObj, mapContext = null) {
     ctx.layerRegistry.layer[layerObj.name].off('loading')
     ctx.layerRegistry.layer[layerObj.name].on('loading', () => {
         L_.setGlobalLoading(layerObj.name)
+    })
+    ctx.layerRegistry.layer[layerObj.name].off('tileload')
+    ctx.layerRegistry.layer[layerObj.name].on('tileload', () => {
+        L_.setLayerLoadStatus(layerObj.name, 'ok')
+    })
+    ctx.layerRegistry.layer[layerObj.name].off('tileerror')
+    ctx.layerRegistry.layer[layerObj.name].on('tileerror', (e) => {
+        L_.setLayerLoadStatus(
+            layerObj.name,
+            'error',
+            `Tile request failed: ${e?.tile?.src || layerUrl}`
+        )
     })
     ctx.layerRegistry.layer[layerObj.name].off('load')
     ctx.layerRegistry.layer[layerObj.name].on('load', () => {
