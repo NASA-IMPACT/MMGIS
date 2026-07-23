@@ -11,7 +11,10 @@
     "metadata": {
         "icon": "filter-outline",
         "requiredOrientation": "vertical",
-        "compatiblePositions": ["left", "right"],
+        "compatiblePositions": [
+            "left",
+            "right"
+        ],
         "preferredPosition": "left",
         "modernLayoutSupport": true,
         "width": 320,
@@ -84,7 +87,11 @@
                     }
                 ]
             }
-        ]
+        ],
+        "catalog": {
+            "type": "FeatureCollection",
+            "features": []
+        }
     },
     "config": {
         "rows": [
