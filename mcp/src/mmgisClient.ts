@@ -35,7 +35,15 @@ export class MmgisClient {
                 'Check MMGIS_URL and that MMGIS_TOKEN is a valid, unexpired long-term token.'
             )
         }
-        const json = await res.json()
+        let json
+        try {
+            json = await res.json()
+        } catch (err) {
+            throw new MMGISError(
+                `MMGIS returned a non-JSON response for ${apiPath}`,
+                'Check MMGIS_URL — it may be pointing at a proxy, login page, or the wrong port instead of the MMGIS API.'
+            )
+        }
         if (json && json.status === 'failure') {
             throw new MMGISError(json.message || `MMGIS reported failure for ${apiPath}`)
         }

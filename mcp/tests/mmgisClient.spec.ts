@@ -34,6 +34,21 @@ describe('MmgisClient', () => {
         const client = new MmgisClient('http://mm:8888', 'tok', f)
         await expect(client.addMission('X', {})).rejects.toThrow('Mission already exists.')
     })
+    it('throws MMGISError when the response body is not valid JSON (e.g. a proxy/login-page response)', async () => {
+        const f = vi.fn(async () => ({
+            ok: true,
+            status: 200,
+            json: async () => {
+                throw new SyntaxError('Unexpected token < in JSON at position 0')
+            },
+        })) as unknown as typeof fetch
+        const client = new MmgisClient('http://mm:8888', 'tok', f)
+        const err = await client.listMissions().catch((e) => e)
+        expect(err).toBeInstanceOf(MMGISError)
+        expect(err.message).toMatch(/non-JSON response/)
+        expect(err.message).toMatch(/api\/configure\/missions/)
+        expect(err.hint).toMatch(/MMGIS_URL/)
+    })
     it('throws MMGISError with a hint on HTTP errors', async () => {
         const f = fakeFetch(500, {})
         const client = new MmgisClient('http://mm:8888', 'tok', f)
