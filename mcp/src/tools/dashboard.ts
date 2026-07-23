@@ -35,8 +35,31 @@ const LAYER_EXAMPLES = {
     },
 }
 
+// Mirrors the mission-name validation in API/Backend/Config/routes/configs.js's
+// `add()` handler (~line 265: "Bad mission name."). Checked here too so a bad
+// name fails fast, before the (expensive) profile-build + config-generation
+// work, instead of surfacing only after /api/configure/add rejects it.
+const MISSION_NAME_FORBIDDEN_CHARS = /[`~!@#$%^&*()|+\-=?;:'",.<>{}[\]\\/]/gi
+const MISSION_NAME_RULE =
+    'Mission names must be non-empty, must not start with a digit, must not contain "../" or "..\\\\", ' +
+    'and must not contain any of: ` ~ ! @ # $ % ^ & * ( ) | + - = ? ; : \' " , . < > { } [ ] \\ /'
+
+function validateMissionName(missionName: string): { message: string; hint: string } | null {
+    const isInvalid =
+        missionName !== missionName.replace(MISSION_NAME_FORBIDDEN_CHARS, '') ||
+        missionName.length === 0 ||
+        !isNaN(missionName[0] as any) ||
+        missionName.includes('../') ||
+        missionName.includes('..\\')
+    if (!isInvalid) return null
+    return {
+        message: `Invalid mission name: "${missionName}"`,
+        hint: MISSION_NAME_RULE,
+    }
+}
+
 const dashboardGenerateSchema = {
-    missionName: z.string().describe('Name for the new mission/dashboard'),
+    missionName: z.string().describe(`Name for the new mission/dashboard. ${MISSION_NAME_RULE}`),
     layers: z
         .array(z.record(z.any()))
         .optional()
@@ -63,7 +86,7 @@ export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef
             handler: async () =>
                 toToolResult({
                     spec: {
-                        missionName: 'string (required)',
+                        missionName: `string (required). ${MISSION_NAME_RULE}`,
                         layers: 'array of MMGIS layer entries — see layerExamples',
                         view: '{lat, lon, zoom} initial map view',
                         tools: 'string[] extra tools (dashboard_tool_options lists valid names)',
@@ -95,8 +118,11 @@ export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef
             schema: dashboardGenerateSchema,
             handler: async (args: DashboardSpec & { updateExisting?: boolean }) => {
                 try {
+                    const nameError = validateMissionName(args.missionName)
+                    if (nameError) return toErrorResult(nameError)
                     const profile = buildProfile(args, cfg.repoRoot)
                     let config = await generateConfig(profile, cfg.repoRoot)
+                    const neededMapboxToken = JSON.stringify(config).includes('{{MAPBOX_TOKEN}}')
                     config = resolvePlaceholders(config, cfg.mapboxToken)
                     // Injected after generation: `components` is not a template key,
                     // and /api/configure/add does not run backend validation.
@@ -114,10 +140,15 @@ export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef
                             throw err
                         }
                     }
+                    const warnings: string[] = []
+                    if (neededMapboxToken && cfg.mapboxToken === '') {
+                        warnings.push('MAPBOX_TOKEN is not set — the basemap will not render')
+                    }
                     return toToolResult({
                         mission: out.mission,
                         version: out.version,
                         url: `${cfg.mmgisUrl}/?mission=${encodeURIComponent(args.missionName)}`,
+                        ...(warnings.length > 0 ? { warnings } : {}),
                     })
                 } catch (err) {
                     return toErrorResult(err)
