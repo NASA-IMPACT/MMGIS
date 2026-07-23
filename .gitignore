@@ -55,8 +55,6 @@ sessions
 .terraform/
 .terraform.lock.hcl
 
-
-.mcp.json
 .serena
 .claude/*
 !.claude/skills/
