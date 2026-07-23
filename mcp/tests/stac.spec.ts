@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { searchStac, searchCollections, stacItemToTileLayer } from '../src/stac.js'
+import { MMGISError } from '../src/mmgisClient.js'
 
 const ITEM = {
     id: 'i1',
@@ -32,6 +33,17 @@ describe('searchStac', () => {
             selfHref: 'https://stac.test/collections/no2-monthly/items/i1',
             assets: [{ key: 'cog_default', title: 'COG', type: 'image/tiff', href: 'https://data.test/i1.tif' }],
         })
+    })
+
+    it('rejects with degradation hint when STAC responds with non-OK status', async () => {
+        const f = vi.fn(async () => ({ ok: false, status: 503 })) as unknown as typeof fetch
+        try {
+            await searchStac('https://stac.test', {}, f)
+            expect.fail('Should have thrown MMGISError')
+        } catch (err) {
+            expect(err).toBeInstanceOf(MMGISError)
+            expect((err as MMGISError).hint).toMatch(/another configured catalog/)
+        }
     })
 })
 
@@ -66,6 +78,34 @@ describe('stacItemToTileLayer', () => {
             'https://titiler.xyz/stac/tiles/WebMercatorQuad/{z}/{x}/{y}@1x.png?url=' +
                 encodeURIComponent('https://stac.test/collections/no2-monthly/items/i1') +
                 '&assets=cog_default'
+        )
+    })
+
+    it('encodes rescale and colormap parameters correctly', () => {
+        const item = {
+            id: 'i1',
+            collection: 'no2-monthly',
+            datetime: '2026-06-01T00:00:00Z',
+            bbox: [-90, 30, -80, 40],
+            selfHref: 'https://stac.test/collections/no2-monthly/items/i1',
+            assets: [{ key: 'cog_default', href: 'https://data.test/i1.tif' }],
+        }
+        const layer = stacItemToTileLayer(item as any, {
+            name: 'NO2 June',
+            titilerUrl: 'https://titiler.xyz',
+            asset: 'cog_default',
+            rescale: '0,255',
+            colormap: 'viridis',
+        })
+        expect(layer.url).toBe(
+            'https://titiler.xyz/stac/tiles/WebMercatorQuad/{z}/{x}/{y}@1x.png?url=' +
+                encodeURIComponent('https://stac.test/collections/no2-monthly/items/i1') +
+                '&assets=' +
+                encodeURIComponent('cog_default') +
+                '&rescale=' +
+                encodeURIComponent('0,255') +
+                '&colormap_name=' +
+                encodeURIComponent('viridis')
         )
     })
 })

@@ -19,7 +19,10 @@ async function stacFetch(url: string, init: RequestInit | undefined, fetchFn: ty
             'The catalog may be down — try another configured catalog, or use layers already in the deployment.'
         )
     }
-    if (!res.ok) throw new MMGISError(`STAC catalog responded ${res.status} for ${url}`)
+    if (!res.ok) throw new MMGISError(
+        `STAC catalog responded ${res.status} for ${url}`,
+        'The catalog may be down — try another configured catalog, or use layers already in the deployment.'
+    )
     return await res.json()
 }
 
@@ -87,9 +90,9 @@ export function stacItemToTileLayer(
     if (!asset) throw new MMGISError(`STAC item ${item.id} has no assets`)
     let url =
         `${opts.titilerUrl}/stac/tiles/WebMercatorQuad/{z}/{x}/{y}@1x.png` +
-        `?url=${encodeURIComponent(item.selfHref)}&assets=${asset}`
-    if (opts.rescale) url += `&rescale=${opts.rescale}`
-    if (opts.colormap) url += `&colormap_name=${opts.colormap}`
+        `?url=${encodeURIComponent(item.selfHref)}&assets=${encodeURIComponent(asset)}`
+    if (opts.rescale) url += `&rescale=${encodeURIComponent(opts.rescale)}`
+    if (opts.colormap) url += `&colormap_name=${encodeURIComponent(opts.colormap)}`
     return {
         name: opts.name,
         type: 'TileLayer',
