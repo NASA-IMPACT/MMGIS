@@ -181,7 +181,7 @@
             {
               "field": "capabilities.minSize",
               "name": "Min Size (px)",
-              "description": "Minimum size in pixels when resizing (requires resizable: true).",
+              "description": "Minimum size in pixels when drag-resizing (requires resizable: true).",
               "type": "number",
               "width": 6,
               "min": 0
@@ -189,7 +189,7 @@
             {
               "field": "capabilities.maxSize",
               "name": "Max Size (px)",
-              "description": "Maximum size in pixels when resizing (requires resizable: true).",
+              "description": "Maximum size in pixels. Caps drag-resizing and caps a content-sized panel (one with no Expanded Size) so overflow scrolls internally. Works with or without resizable.",
               "type": "number",
               "width": 6,
               "min": 0
@@ -197,29 +197,15 @@
             {
               "field": "dimensions.iconifiedSize",
               "name": "Iconified Size (px)",
-              "description": "Size of icon bar when in iconified state (width for left/right, height for top/bottom).",
+              "description": "Size of the icon bar when iconified (width for left/right, height for top/bottom). Leave empty to size to the icons.",
               "type": "number",
               "width": 6,
               "min": 0
             },
             {
-              "field": "dimensions.focusedWidth",
-              "name": "Focused Width (px)",
-              "description": "Width when in focused state (for vertical/left/right panels). Use number or 'content'.",
-              "type": "text",
-              "width": 6
-            },
-            {
-              "field": "dimensions.focusedHeight",
-              "name": "Focused Height (px)",
-              "description": "Height when in focused state (for horizontal/top/bottom panels). Use number or 'content'.",
-              "type": "text",
-              "width": 6
-            },
-            {
               "field": "dimensions.expandedSize",
-              "name": "Expanded Size (px)",
-              "description": "Size when in expanded state (width for left/right, height for top/bottom). Use number or 'content'.",
+              "name": "Expanded Size",
+              "description": "Size when expanded (width for left/right, height for top/bottom). The panel is exactly this size and its content scrolls; leave empty to size to content. A plain number is pixels; a CSS length with a unit also works (e.g. '320px', '40vh', '20vw', '30%').",
               "type": "text",
               "width": 6
             },

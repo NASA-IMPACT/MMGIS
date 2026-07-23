@@ -611,27 +611,87 @@ const UserInterfaceModern_ = {
 
             // Float panels are sized via dimensions.defaultWidth/defaultHeight applied
             // once at render time (see _renderFloatRegions) — the edge-panel
-            // expandedSize/iconifiedSize logic below doesn't apply and would clobber them.
+            // expandedSize/maxSize logic below doesn't apply and would clobber them.
             if (isFloatingPanel) {
                 // no-op
             } else if (panel.state === 'iconified') {
-                $panel.css({ width: '', height: '', flex: 'none' })
+                // Collapse to the icon bar. Clear any min-/max-* the expanded branch
+                // left inline (or the panel would stay constrained to the former
+                // expanded floor/cap) and let it shrink-wrap to the icon bar. The bar
+                // itself is sized below — shared with the focused state so it looks
+                // identical in both.
+                $panel.css({ width: '', height: '', minWidth: '', maxWidth: '',
+                             minHeight: '', maxHeight: '', flex: 'none' })
             } else if (panel.state === 'expanded' || panel.state === 'focused') {
-                let targetSize = panel.currentSize;
+                // Size the panel on its resize axis (width for left/right, height for
+                // top/bottom):
+                //   - draggedSize (currentSize): a user drag wins and fixes the size.
+                //   - expandedSize: with no drag, fixes the size to this value. Applied
+                //     as an explicit width/height with flex:none, so the panel is
+                //     exactly this big and its content scrolls internally rather than
+                //     resizing the panel.
+                //   - neither set: the panel sizes to its content.
+                //   - maxSize: hard cap, written whenever configured, so it caps the
+                //     dragged size, caps the content-sized case, and still bounds a
+                //     fixed size that exceeds it.
+                // Every property is written each pass (to '' or a value) so stale inline
+                // styles left by the drag handler can't linger.
+                const region = panel.config.position
+                if (region === 'left' || region === 'right' || region === 'top' || region === 'bottom') {
+                    const capabilities = panel.config.capabilities || {}
+                    const expandedSize = panel.config.dimensions?.expandedSize
+                    const draggedSize = panel.currentSize
+                    // DEFAULT_MAX_PANEL_SIZE (9999) is a drag-clamp sentinel, not a real
+                    // max — only write a CSS cap when maxSize is explicitly configured.
+                    const maxPx = capabilities.maxSize !== undefined ? capabilities.maxSize + 'px' : ''
 
-                if (!targetSize) {
-                    targetSize = panel.config.dimensions?.expandedSize;
-                }
+                    const isVertical = region === 'left' || region === 'right'
+                    const size = isVertical ? 'width' : 'height'
+                    const min = isVertical ? 'minWidth' : 'minHeight'
+                    const max = isVertical ? 'maxWidth' : 'maxHeight'
+                    const crossMin = isVertical ? 'minHeight' : 'minWidth'
+                    const crossMax = isVertical ? 'maxHeight' : 'maxWidth'
 
-                if (targetSize) {
-                    const region = panel.config.position
-                    if (region === 'left' || region === 'right') {
-                        $panel.css({ width: targetSize + 'px', flex: 'none' })
-                    } else if (region === 'top' || region === 'bottom') {
-                        $panel.css({ height: targetSize + 'px', flex: 'none' })
+                    if (!draggedSize && !expandedSize && !maxPx) {
+                        // No size hints at all — fall back to the CSS-driven default.
+                        $panel.css({ width: '', height: '', minWidth: '', maxWidth: '',
+                                     minHeight: '', maxHeight: '', flex: '' })
+                    } else {
+                        // A user drag wins; otherwise a configured expandedSize fixes the
+                        // size. An empty size sizes the panel to its content. min-* is
+                        // always cleared (no floor); max-* carries the maxSize cap.
+                        const fixedSize = draggedSize
+                            ? draggedSize + 'px'
+                            : (expandedSize ? _toCssValue(expandedSize) : '')
+                        $panel.css({ flex: 'none', [size]: fixedSize,
+                                     [min]: '', [max]: maxPx,
+                                     [crossMin]: '', [crossMax]: '' })
                     }
-                } else {
-                    $panel.css({ width: '', height: '', flex: '' })
+                }
+            }
+
+            // Icon-bar sizing — shared by iconified and focused so the bar is
+            // identical in both states. iconifiedSize pins the bar's own axis
+            // (width for left/right, height for top/bottom); unset lets it size to
+            // its icons. Sizing the bar (not the panel) preserves its padding and
+            // keeps iconified and focused consistent.
+            if (!isFloatingPanel && (panel.state === 'iconified' || panel.state === 'focused')) {
+                const iconifiedSize = panel.config.dimensions?.iconifiedSize
+                const region = panel.config.position
+                const $icons = $panel.children('.ui-panel-icons')
+                if ($icons.length) {
+                    if (iconifiedSize && (region === 'left' || region === 'right')) {
+                        $icons.css({ width: iconifiedSize + 'px', height: '' })
+                    } else if (iconifiedSize && (region === 'top' || region === 'bottom')) {
+                        $icons.css({ width: '', height: iconifiedSize + 'px' })
+                    } else {
+                        $icons.css({ width: '', height: '' })
+                    }
+                    // Scale the icon buttons to the bar via a CSS var that cascades to
+                    // them (.ui-panel-icon-btn font-size/padding read it); unset falls
+                    // back to the default icon size.
+                    if (iconifiedSize) $icons[0].style.setProperty('--ui-icon-size', iconifiedSize + 'px')
+                    else $icons[0].style.removeProperty('--ui-icon-size')
                 }
             }
         })

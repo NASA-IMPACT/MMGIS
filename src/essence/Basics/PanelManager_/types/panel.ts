@@ -8,15 +8,6 @@ import {
 } from './layout';
 
 /**
- * Panel size configuration.
- * Can be fixed pixels, full viewport, content-based, or constrained.
- */
-export type PanelSize =
-    | number                                    // Fixed pixels (e.g., 300)
-    | 'content'                                 // Size based on content (grows to fit)
-    | { min?: number; max?: number };           // Content-based with constraints
-
-/**
  * Panel layout priority for viewport space allocation.
  * Lower numbers = higher priority (claim space first).
  *
@@ -50,24 +41,20 @@ export interface PanelStateConstraints {
 export interface PanelDimensions {
     /**
      * Size of the icon bar when in iconified state (pixels).
-     * Always a fixed number.
-     * - For left/right panels: width of vertical icon bar
-     * - For top/bottom panels: height of horizontal icon bar
+     * - For left/right panels: width of the vertical icon bar
+     * - For top/bottom panels: height of the horizontal icon bar
+     * If omitted, the bar sizes to its icons.
      */
     iconifiedSize?: number;
 
     /**
-     * Size when a single tool is opened from iconified state (focused state).
+     * Expanded-state size: height for top/bottom panels, width for left/right.
+     * A number is pixels; a string is any single CSS length (e.g. "320px",
+     * "40vh", "30%"). Sets the panel to exactly this size — content scrolls
+     * internally rather than resizing it. Omit to size the panel to its content.
+     * A user drag-resize overrides it with a pixel currentSize.
      */
-    focusedHeight?: PanelSize;
-    focusedWidth?: PanelSize;
-
-    /**
-     * Size when all tools are visible (expanded state).
-     * - For top/bottom: this is the height
-     * - For left/right: this is the width
-     */
-    expandedSize?: PanelSize;
+    expandedSize?: number | string;
 
     /**
      * CSS sizing for floating panels — applied directly as CSS properties on the panel element.
@@ -110,14 +97,16 @@ export interface PanelCapabilities {
     resizable?: boolean;
 
     /**
-     * Minimum size constraint for user resizing (pixels).
+     * Minimum size constraint for drag-resizing (pixels).
      * Only relevant if resizable = true.
      */
     minSize?: number;
 
     /**
-     * Maximum size constraint for user resizing (pixels).
-     * Only relevant if resizable = true.
+     * Maximum size constraint (pixels). Written whenever configured: caps
+     * drag-resizing, caps a content-sized panel (one with no expandedSize) so
+     * overflow scrolls internally instead of growing the panel unbounded, and
+     * still bounds a fixed expandedSize that exceeds it.
      */
     maxSize?: number;
 }

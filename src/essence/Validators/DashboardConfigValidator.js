@@ -330,19 +330,12 @@ function validatePanelConfig(panel, index, isFloat = false) {
             }
         }
 
-        // expandedSize can be number, 'content', or object
-        if (dim.expandedSize !== undefined) {
-            if (dim.expandedSize === 'content' || (typeof dim.expandedSize === 'object' && dim.expandedSize !== null)) {
-                // Valid: 'content' or object
-            } else {
-                // Try to convert to number
-                const expandedSizeNum = Number(dim.expandedSize)
-                if (isNaN(expandedSizeNum)) {
-                    errors.push(
-                        `${prefix}.dimensions: "expandedSize" must be a valid number, "content", or object with min/max (got "${dim.expandedSize}")`
-                    )
-                }
-            }
+        // expandedSize: a number (px) or a single CSS length (e.g. "40vh").
+        // Empty strings mean "not provided" and are skipped.
+        if (dim.expandedSize !== undefined && dim.expandedSize !== '' && !isValidCssDimension(dim.expandedSize)) {
+            errors.push(
+                `${prefix}.dimensions: "expandedSize" must be a number (px), unitless "0", or a CSS string with a unit (px, %, vh, vw, svh, dvh, vmin, vmax, ch, rem, em) — got "${dim.expandedSize}"`
+            )
         }
 
         // CSS dimension fields for floating panels (number or CSS string e.g. "50%", "40vh")

@@ -305,9 +305,10 @@
 .ui-region-bottom .ui-panel-body {
     flex-direction: row;
     flex-wrap: nowrap;
-    align-items: center;
+    align-items: stretch; /* fill panel height so full tools (e.g. Timeline) can scroll internally */
     overflow-x: auto;
-    overflow-y: hidden;
+    overflow-y: auto; /* scroll when a tool exceeds the panel's capped (maxSize) height */
+    min-height: 0; /* allow the flex child to shrink below content so it scrolls, not overflows */
 }
 
 .ui-region-top .ui-tool-card-stacked,
@@ -344,6 +345,8 @@
     color: var(--theme-color-white, #ffffff);
     padding: var(--theme-spacing-05, 0.25rem);
     gap: var(--theme-spacing-05, 0.25rem);
+    align-items: center; /* keep icon buttons at their natural size, centered, so a
+                            wide (iconifiedSize) bar doesn't stretch them to its edges */
     z-index: 2;
     overflow-y: auto;
     overflow-x: hidden;
@@ -355,8 +358,11 @@
     color: var(--theme-color-primary, #005ea2);
     opacity: 1;
     cursor: pointer;
-    font-size: var(--theme-font-size-xl, 2rem);
-    padding: var(--theme-spacing-1, 0.5rem);
+    /* Icon + padding scale off --ui-icon-size (set to the panel's iconifiedSize by
+       syncDOMState). Default 4rem keeps the icon at ~2rem / padding ~0.5rem, matching
+       the pre-scaling look when iconifiedSize is not configured. */
+    font-size: calc(var(--ui-icon-size, 4rem) * 0.5);
+    padding: calc(var(--ui-icon-size, 4rem) * 0.12);
     border-radius: var(--theme-radius-sm, 4px);
     display: flex;
     align-items: center;
