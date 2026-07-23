@@ -4,6 +4,7 @@ import { MMGISError } from './mmgisClient.js'
 
 export class BridgeClient {
     private ws: WebSocket | null = null
+    private connecting: Promise<WebSocket> | null = null
 
     constructor(private wsUrl: string, private timeoutMs = 5000) {}
 
@@ -11,13 +12,18 @@ export class BridgeClient {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             return Promise.resolve(this.ws)
         }
-        return new Promise((resolve, reject) => {
+        if (this.connecting) {
+            return this.connecting
+        }
+        this.connecting = new Promise((resolve, reject) => {
             const ws = new WebSocket(this.wsUrl)
             ws.once('open', () => {
                 this.ws = ws
+                this.connecting = null
                 resolve(ws)
             })
             ws.once('error', (err) => {
+                this.connecting = null
                 reject(
                     new MMGISError(
                         `Could not connect to the MMGIS websocket at ${this.wsUrl}: ${err.message}`,
@@ -26,6 +32,7 @@ export class BridgeClient {
                 )
             })
         })
+        return this.connecting
     }
 
     async sendCommand(mission: string, command: string, args: object): Promise<any> {
@@ -71,5 +78,6 @@ export class BridgeClient {
     close() {
         this.ws?.close()
         this.ws = null
+        this.connecting = null
     }
 }
