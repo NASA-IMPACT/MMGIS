@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import type { AddTempLayerInput } from '../../types'
-import { validateUrl, detectLayerType, validateForType } from '../../utils/url'
+import { validateUrl, detectLayerType } from '../../utils/url'
 import { AddLayerModal } from '../AddLayerModal/AddLayerModal'
 
 export type AddTempLayerPanelProps = {
@@ -8,9 +8,19 @@ export type AddTempLayerPanelProps = {
     onAddLayer?: (input: AddTempLayerInput) => void | Promise<unknown>
     /** Dismiss the form — the host hides the hosting panel/plugin. */
     onClose?: () => void
+    /**
+     * The map engine's verdict on the most recently added layer, reported
+     * after the add (null while unknown or once the layer loads fine). Layers
+     * are added optimistically — this is how load failures reach the user.
+     */
+    engineError?: string | null
 }
 
-export function AddTempLayerPanel({ onAddLayer, onClose }: AddTempLayerPanelProps) {
+export function AddTempLayerPanel({
+    onAddLayer,
+    onClose,
+    engineError,
+}: AddTempLayerPanelProps) {
     const [url, setUrl] = useState('')
     const [displayName, setDisplayName] = useState('')
     const [error, setError] = useState<string | null>(null)
@@ -34,18 +44,14 @@ export function AddTempLayerPanel({ onAddLayer, onClose }: AddTempLayerPanelProp
             setError('Please enter a valid http(s) URL.')
             return
         }
-        // Stage 1 — detect the type, or reject as an unsupported kind of URL.
+        // Detect the type, or reject as an unsupported kind of URL. That's the
+        // only gate — the layer is added optimistically and the map engine
+        // reports whether it actually loads (surfaced via engineError).
         const type = detectLayerType(trimmedUrl)
         if (!type) {
             setError(
                 'We can’t add that layer — this URL isn’t supported. We support XYZ, WMS, WMTS, and GeoJSON.',
             )
-            return
-        }
-        // Stage 2 — validate the URL is structurally usable for that type.
-        const result = validateForType(type, trimmedUrl)
-        if (!result.ok) {
-            setError(result.message || 'This URL isn’t valid for its type.')
             return
         }
 
@@ -76,7 +82,7 @@ export function AddTempLayerPanel({ onAddLayer, onClose }: AddTempLayerPanelProp
         <AddLayerModal
             url={url}
             displayName={displayName}
-            error={error}
+            error={error || engineError || null}
             submitting={submitting}
             onUrlChange={onUrlChange}
             onDisplayNameChange={setDisplayName}

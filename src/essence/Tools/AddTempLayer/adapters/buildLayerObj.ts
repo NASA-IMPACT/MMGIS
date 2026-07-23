@@ -18,8 +18,9 @@ export function uniqueLayerName(): string {
  *
  * The URL is passed through VERBATIM — we never construct, rewrite, or
  * substitute anything in it. We assume the user pasted a URL already in a
- * supported, ready-to-use form (the modal documents those forms); if it isn't,
- * it simply won't render, which is the user's responsibility, not ours.
+ * supported, ready-to-use form (the modal documents those forms); if it
+ * doesn't render, the engine reports the failure via the
+ * layers:loadStatusChanged bus event and the form surfaces it.
  *
  * Type → MMGIS mapping:
  *   geojson    → { type: 'vector', url }

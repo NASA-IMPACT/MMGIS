@@ -18,12 +18,14 @@ export function validateUrl(url: string): boolean {
 }
 
 /**
- * Stage 1 — detect which supported type a URL is, so we can build the right
- * layerObj. Returns null when it's none of our supported types, in which case
- * the caller tells the user we only support XYZ / WMS / WMTS / GeoJSON.
+ * Detect which supported type a URL is, so we can build the right layerObj.
+ * Returns null when it's none of our supported types, in which case the
+ * caller tells the user we only support XYZ / WMS / WMTS / GeoJSON.
  *
- * Detection only classifies; it does not check that the URL is well-formed for
- * its type — that's `validateForType` (stage 2). Checked most-specific first.
+ * Detection only classifies — it holds no opinion on whether the URL will
+ * actually render. The layer is added optimistically and the map engine
+ * reports the real outcome (via the layers:loadStatusChanged bus event).
+ * Checked most-specific first.
  */
 export function detectLayerType(url: string): TempLayerType | null {
     const u = url.toLowerCase()
@@ -57,68 +59,3 @@ export function detectLayerType(url: string): TempLayerType | null {
     return null
 }
 
-/** Result of stage-2 structural validation. `message` is user-facing on failure. */
-export interface ValidationResult {
-    ok: boolean
-    message?: string
-}
-
-/** A working example URL per type, shown in the error when validation fails. */
-const SAMPLE_URLS = {
-    xyz: 'https://host/tiles/{z}/{x}/{y}.png',
-    wms: 'https://host/wms?SERVICE=WMS&REQUEST=GetMap&LAYERS=name',
-    wmts: 'https://host/wmts?SERVICE=WMTS&REQUEST=GetTile&LAYER=name&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
-}
-
-/**
- * Stage 2 — once the type is known, check the URL is structurally usable for
- * that type (the URL is never modified; it must already be in a usable form).
- * On failure the message names the problem and gives a working example for that
- * specific type.
- *
- *   xyz / wmts → must be a tile template containing {z}/{x}/{y}
- *   wms        → must carry a LAYERS parameter
- *   geojson    → nothing to check; identity is the response body, not the URL
- *   any tile type → must not contain the {s} subdomain placeholder
- */
-export function validateForType(
-    type: TempLayerType,
-    url: string,
-): ValidationResult {
-    const u = url.toLowerCase()
-
-    if (type === 'geojson') {
-        return { ok: true }
-    }
-
-    // {s} is Leaflet's pick-a-subdomain placeholder. We never substitute it,
-    // and the deck.gl engine sends it to the network literally — every request
-    // fails after an apparently successful add. Make the user pick one.
-    if (u.includes('{s}')) {
-        return {
-            ok: false,
-            message: `We can’t add this layer — {s} is a subdomain placeholder we don’t fill in. Replace it with a real subdomain, e.g. https://a.tile.host/{z}/{x}/{y}.png`,
-        }
-    }
-
-    if (type === 'wms') {
-        if (!/[?&]layers=[^&]+/.test(u)) {
-            return {
-                ok: false,
-                message: `We can’t add this layer — the WMS URL needs a LAYERS parameter. Example: ${SAMPLE_URLS.wms}`,
-            }
-        }
-        return { ok: true }
-    }
-
-    // xyz / wmts — both render through the template-tile path, so the URL must
-    // already contain the {z}/{x}/{y} placeholders the engine fills per tile.
-    if (!(u.includes('{z}') && u.includes('{x}') && u.includes('{y}'))) {
-        const kind = type === 'wmts' ? 'WMTS' : 'XYZ'
-        return {
-            ok: false,
-            message: `We can’t add this layer — the ${kind} URL needs a {z}/{x}/{y} template. Example: ${SAMPLE_URLS[type]}`,
-        }
-    }
-    return { ok: true }
-}

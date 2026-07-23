@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AddTempLayerPanel } from './lib'
 import type { AddTempLayerInput } from './lib'
 import { buildLayerObj } from './adapters/buildLayerObj'
@@ -26,10 +26,35 @@ const lifecycle = (): PluginLifecycle =>
     (window as { mmgisAPI?: PluginLifecycle }).mmgisAPI ?? {}
 
 export function MMGISAddTempLayerAdapter() {
+    // Engine-reported load failure for the most recently added layer. Layers
+    // are added optimistically; the engine's request hooks broadcast the real
+    // outcome and we surface it in the form. An 'ok' report clears it.
+    const [engineError, setEngineError] = useState<string | null>(null)
+    const lastAddedRef = useRef<string | null>(null)
+
     useEffect(
         () =>
             mmgisOn(ADD_TEMP_LAYER_SHOW_EVENT, () => {
                 lifecycle().showPlugin?.(TOOL_ID)
+            }),
+        [],
+    )
+
+    useEffect(
+        () =>
+            mmgisOn('layers:loadStatusChanged', (payload) => {
+                const p = payload as {
+                    layerName?: string
+                    status?: string
+                    message?: string | null
+                }
+                if (!p?.layerName || p.layerName !== lastAddedRef.current) return
+                setEngineError(
+                    p.status === 'error'
+                        ? p.message ||
+                              'The map engine reported an error loading this layer.'
+                        : null,
+                )
             }),
         [],
     )
@@ -43,8 +68,16 @@ export function MMGISAddTempLayerAdapter() {
         if (!layerObj) {
             return Promise.reject(new Error('Invalid or unrecognized layer URL'))
         }
+        lastAddedRef.current = layerObj.name
+        setEngineError(null)
         return mmgisRequest('layers:addLayer', layerObj)
     }, [])
 
-    return <AddTempLayerPanel onAddLayer={onAddLayer} onClose={onClose} />
+    return (
+        <AddTempLayerPanel
+            onAddLayer={onAddLayer}
+            onClose={onClose}
+            engineError={engineError}
+        />
+    )
 }

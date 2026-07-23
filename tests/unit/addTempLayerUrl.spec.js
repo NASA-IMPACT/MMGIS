@@ -2,7 +2,6 @@ import { test, expect } from 'vitest'
 import {
     validateUrl,
     detectLayerType,
-    validateForType,
 } from '../../src/essence/Tools/AddTempLayer/lib/utils/url.ts'
 import { buildLayerObj } from '../../src/essence/Tools/AddTempLayer/adapters/buildLayerObj.ts'
 
@@ -58,67 +57,6 @@ test.describe('AddTempLayer url utils', () => {
         }
     })
 
-    test.describe('validateForType (stage 2)', () => {
-        const outcome = (r) => (r.ok ? 'ok' : 'fail')
-
-        // [type, url, expected outcome]
-        const cases = [
-            // geojson — nothing to check
-            ['geojson', 'https://h/data.geojson', 'ok'],
-            ['geojson', 'https://h/anything', 'ok'],
-            // wms — needs LAYERS
-            ['wms', 'https://h/wms?service=WMS&request=GetMap&layers=a', 'ok'],
-            ['wms', 'https://h/wms?SERVICE=WMS&LAYERS=a', 'ok'], // case-insensitive
-            ['wms', 'https://h/wms?service=WMS&request=GetMap', 'fail'],
-            ['wms', 'https://h/wms?service=WMS&layers=', 'fail'], // empty value
-            // xyz / wmts — need a {z}/{x}/{y} template
-            ['xyz', 'https://h/{z}/{x}/{y}.png', 'ok'],
-            ['xyz', 'https://h/5/12/20.png', 'fail'],
-            ['wmts', 'https://h/x?service=WMTS&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', 'ok'],
-            ['wmts', 'https://h/x?service=WMTS&request=GetTile&tilematrix=5&tilerow=12&tilecol=20', 'fail'],
-            // {s} subdomain placeholder — never substituted, so rejected
-            ['xyz', 'https://{s}.h/{z}/{x}/{y}.png', 'fail'],
-            ['wms', 'https://{s}.h/wms?service=WMS&layers=a', 'fail'],
-        ]
-        for (const [type, url, expected] of cases) {
-            test(`${type}: ${url} -> ${expected}`, () => {
-                expect(outcome(validateForType(type, url))).toBe(expected)
-            })
-        }
-
-        test('xyz failure message includes a working {z}/{x}/{y} example', () => {
-            const r = validateForType('xyz', 'https://h/5/12/20.png')
-            expect(r.ok).toBe(false)
-            expect(r.message).toContain('XYZ')
-            expect(r.message).toContain('Example:')
-            expect(r.message).toContain('{z}/{x}/{y}')
-        })
-
-        test('wmts failure message gives a WMTS example (not the XYZ one)', () => {
-            const r = validateForType(
-                'wmts',
-                'https://h/x?service=WMTS&request=GetTile&tilematrix=5',
-            )
-            expect(r.ok).toBe(false)
-            expect(r.message).toContain('WMTS')
-            expect(r.message.toLowerCase()).toContain('service=wmts')
-        })
-
-        test('wms failure message gives a WMS example with LAYERS', () => {
-            const r = validateForType('wms', 'https://h/wms?service=WMS')
-            expect(r.ok).toBe(false)
-            expect(r.message).toContain('LAYERS')
-            expect(r.message.toLowerCase()).toContain('service=wms')
-        })
-
-        test('{s} failure message tells the user to pick a real subdomain', () => {
-            const r = validateForType('xyz', 'https://{s}.h/{z}/{x}/{y}.png')
-            expect(r.ok).toBe(false)
-            expect(r.message).toContain('{s}')
-            expect(r.message).toContain('subdomain')
-        })
-    })
-
     test.describe('buildLayerObj passes the URL through verbatim', () => {
         test('geojson -> vector, url unchanged', () => {
             const url = 'https://h/data.geojson'
@@ -135,9 +73,9 @@ test.describe('AddTempLayer url utils', () => {
         test('xyz -> tile/wmts, url unchanged (incl. {s})', () => {
             const url = 'https://{s}.h/{z}/{x}/{y}.png'
             const obj = buildLayerObj({ url, type: 'xyz' })
-            // {s} is NOT substituted here either — buildLayerObj always passes
-            // the URL through verbatim. The form never reaches this point with
-            // {s}: validateForType (stage 2) rejects it.
+            // {s} is NOT substituted — buildLayerObj always passes the URL
+            // through verbatim; if it can't render, the engine reports it
+            // via layers:loadStatusChanged.
             expect(obj).toMatchObject({ type: 'tile', tileformat: 'wmts', url })
         })
 
