@@ -24,13 +24,16 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
 
     // Format the selected date for display
     let formattedDate = moment(selectedDate).format('MMM D, YYYY')
-    if (timeMode === 'MONTH') {
+    if (timeMode === 'YEAR') {
+        formattedDate = moment(selectedDate).format('YYYY')
+    } else if (timeMode === 'MONTH') {
         formattedDate = moment(selectedDate).format('MMMM YYYY')
     } else if (timeMode === 'HOUR') {
         formattedDate = moment(selectedDate).format('MMM D, YYYY, HH:mm')
     }
 
     const getFormatPattern = () => {
+        if (timeMode === 'YEAR') return 'YYYY'
         if (timeMode === 'MONTH') return 'YYYY-MM'
         if (timeMode === 'HOUR') return 'YYYY-MM-DDTHH:mm'
         return 'YYYY-MM-DD'
@@ -53,10 +56,22 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
 
     const handleInputSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        const newDate = moment(inputValue)
+        const newDate = timeMode === 'YEAR' ? moment(inputValue, 'YYYY') : moment(inputValue)
 
         if (newDate.isValid()) {
-            const date = newDate.toDate()
+            let date = newDate.toDate()
+
+            // For YEAR granularity the value is Jan 1 of the year; if that year
+            // overlaps the timeline range, clamp it to the range boundary so an
+            // in-range year is accepted rather than rejected as out of range.
+            if (timeMode === 'YEAR') {
+                const year = newDate.year()
+                if (year >= moment(startTime).year() && year <= moment(endTime).year()) {
+                    if (date < startTime) date = new Date(startTime)
+                    if (date > endTime) date = new Date(endTime)
+                }
+            }
+
             // Clamp to valid range
             if (date >= startTime && date <= endTime) {
                 onDateChange(date)
@@ -97,9 +112,23 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 <div className="date-selector-dropdown" style={{ position: 'relative', top: 0, left: 0 }}>
                     <form onSubmit={handleInputSubmit} className="date-input-form">
                         <label htmlFor="date-input">
-                            {timeMode === 'MONTH' ? 'Select Month' : timeMode === 'HOUR' ? 'Select Date & Time' : 'Select Date'}
+                            {timeMode === 'YEAR' ? 'Select Year' : timeMode === 'MONTH' ? 'Select Month' : timeMode === 'HOUR' ? 'Select Date & Time' : 'Select Date'}
                         </label>
-                        
+
+                        {timeMode === 'YEAR' && (
+                            <input
+                                id="date-input"
+                                type="number"
+                                value={inputValue}
+                                onChange={handleInputChange}
+                                min={moment(startTime).year()}
+                                max={moment(endTime).year()}
+                                step={1}
+                                placeholder="YYYY"
+                                className="time-input-field"
+                            />
+                        )}
+
                         {timeMode === 'MONTH' && (() => {
                             const currentMonth = moment(inputValue || selectedDate).month() + 1
                             const currentYear = moment(inputValue || selectedDate).year()

@@ -9,6 +9,8 @@ export function getTimeStep(mode: TimeMode): {
     value: number
 } {
     switch (mode) {
+        case 'YEAR':
+            return { unit: 'years', value: 1 }
         case 'MONTH':
             return { unit: 'months', value: 1 }
         case 'DAY':
@@ -81,6 +83,8 @@ export function generateTimeTicks(
 export function formatDateByMode(date: Date, mode: TimeMode): string {
     const m = moment(date)
     switch (mode) {
+        case 'YEAR':
+            return m.format('YYYY')
         case 'MONTH':
             return m.format('MMM YYYY')
         case 'DAY':
@@ -107,6 +111,8 @@ export function calculateZoomExtent(
 
 function getMillisecondsPerUnit(mode: TimeMode): number {
     switch (mode) {
+        case 'YEAR':
+            return 365 * 24 * 60 * 60 * 1000 // Approximate
         case 'MONTH':
             return 30 * 24 * 60 * 60 * 1000 // Approximate
         case 'DAY':

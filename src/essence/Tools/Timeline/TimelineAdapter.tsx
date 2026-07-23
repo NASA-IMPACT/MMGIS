@@ -7,6 +7,7 @@ import {
     TimeModeControl,
     DateSelector,
     PlaybackControls,
+    TIME_MODE_ORDER,
     type TimeMode,
     type LayerTimeData
 } from './lib'
@@ -32,6 +33,7 @@ export const TimelineAdapter: React.FC = () => {
         return d
     })
     const [timeMode, setTimeMode] = useState<TimeMode>('DAY')
+    const [shownTimeModes, setShownTimeModes] = useState<TimeMode[]>(TIME_MODE_ORDER)
     const [layers, setLayers] = useState<LayerTimeData[]>([])
     const [isReady, setIsReady] = useState(false)
 
@@ -43,6 +45,48 @@ export const TimelineAdapter: React.FC = () => {
 
     const handleResetZoomReady = useCallback((fn: () => void) => {
         setResetZoomFn(() => fn)
+    }, [])
+
+    // Fetch tool variables (e.g. allowPlayback) from the mission config
+    useEffect(() => {
+        let cancelled = false
+        const fetchVars = async () => {
+            try {
+                const vars = await mmgisRequest<{
+                    defaultTimeMode?: string
+                    shownTimeModes?: string[]
+                }>('tool:getVars', 'timeline')
+                if (cancelled || !vars) return
+
+                // Determine which mode buttons to show (canonical order, empty = all)
+                let effectiveModes = TIME_MODE_ORDER
+                if (Array.isArray(vars.shownTimeModes)) {
+                    const requested = vars.shownTimeModes.map((m) => String(m).toUpperCase())
+                    const normalized = TIME_MODE_ORDER.filter((m) => requested.includes(m))
+                    if (normalized.length > 0) effectiveModes = normalized
+                }
+                setShownTimeModes(effectiveModes)
+
+                // Determine the initial mode: configured default (if valid),
+                // otherwise the prior 'DAY' fallback; then clamp to a shown mode.
+                const requestedDefault = vars.defaultTimeMode?.toUpperCase()
+                let mode: TimeMode =
+                    requestedDefault === 'YEAR' ||
+                    requestedDefault === 'MONTH' ||
+                    requestedDefault === 'DAY' ||
+                    requestedDefault === 'HOUR'
+                        ? (requestedDefault as TimeMode)
+                        : 'DAY'
+                if (!effectiveModes.includes(mode)) mode = effectiveModes[0]
+                setTimeMode(mode)
+            } catch (err) {
+                console.warn('[Timeline] Failed to fetch tool vars:', err)
+            }
+        }
+        fetchVars()
+        return () => {
+            cancelled = true
+        }
     }, [])
 
     // Subscribe to layer visibility changes
@@ -283,6 +327,7 @@ export const TimelineAdapter: React.FC = () => {
                     <TimeModeControl
                         currentMode={timeMode}
                         onModeChange={setTimeMode}
+                        modes={shownTimeModes}
                     />
                     <div className="timeline-toolbar">
                         <button

@@ -6,4 +6,5 @@ export { TimeModeControl, type TimeModeControlProps } from './geo/TimeModeContro
 export { TimelineView, type TimelineViewProps } from './geo/TimelineView/TimelineView'
 
 // Shared domain types
+export { TIME_MODE_ORDER } from './types'
 export type { TimeMode, TimeRange, LayerTimeData } from './types'

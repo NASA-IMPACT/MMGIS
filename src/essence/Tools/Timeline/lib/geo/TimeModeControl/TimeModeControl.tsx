@@ -1,16 +1,17 @@
 import React from 'react'
-import type { TimeMode } from '../../types'
+import { TIME_MODE_ORDER, type TimeMode } from '../../types'
 
 export interface TimeModeControlProps {
     currentMode: TimeMode
     onModeChange: (mode: TimeMode) => void
+    /** Which modes to show, in display order. Defaults to all modes. */
+    modes?: TimeMode[]
 }
-
-const modes: TimeMode[] = ['MONTH', 'DAY', 'HOUR']
 
 export const TimeModeControl: React.FC<TimeModeControlProps> = ({
     currentMode,
     onModeChange,
+    modes = TIME_MODE_ORDER,
 }) => {
     return (
         <div className="time-mode-control">
