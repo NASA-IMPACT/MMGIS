@@ -23,6 +23,8 @@ export interface FilterDef {
     matchAll?: boolean
     /** Label for the "no selection / all" option (e.g. "All Sectors"). */
     allLabel?: string
+    /** isEntry pickers: noun for the count line (e.g. "activations"). */
+    countLabel?: string
 }
 
 /** One step-1 theme: a rail entry + the step-2 filters it reveals. */

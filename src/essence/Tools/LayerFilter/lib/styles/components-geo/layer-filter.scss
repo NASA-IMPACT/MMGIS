@@ -68,4 +68,71 @@
             box-shadow: 0 0 0 2px var(--theme-color-primary-light, #97d4ea);
         }
     }
+
+    // Multi-select facets: checkbox rows with per-option counts.
+    &__option {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 8px);
+        padding: var(--theme-spacing-05, 4px) 0;
+        color: var(--theme-color-ink, #1b1b1b);
+        font-size: var(--theme-font-size-2xs, 14px);
+        cursor: pointer;
+    }
+
+    &__count {
+        margin-left: auto;
+        padding: 0 var(--theme-spacing-1, 8px);
+        background: var(--theme-color-base-lightest, #f0f0f0);
+        border-radius: var(--theme-radius-md, 4px);
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: var(--theme-font-size-3xs, 13px);
+    }
+
+    // Selected-count chip beside a multi-select's label.
+    &__badge {
+        display: inline-block;
+        margin-left: var(--theme-spacing-1, 8px);
+        padding: 0 var(--theme-spacing-1, 8px);
+        background: var(--theme-color-primary-lightest, #e7f6f8);
+        border-radius: var(--theme-radius-md, 4px);
+        color: var(--theme-color-primary-dark, #2e6276);
+        font-size: var(--theme-font-size-3xs, 13px);
+    }
+
+    // "N activations" line above the entry picker.
+    &__countline {
+        color: var(--theme-color-ink, #1b1b1b);
+        font-size: var(--theme-font-size-md, 22px);
+
+        strong {
+            font-weight: var(--theme-font-weight-bold, 700);
+        }
+    }
+
+    // Selected entry's date range + status, under the picker.
+    &__entry-meta {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 8px);
+        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
+        background: var(--theme-color-primary-lightest, #e7f6f8);
+        border-radius: var(--theme-radius-md, 4px);
+    }
+
+    &__entry-dates {
+        color: var(--theme-color-ink, #1b1b1b);
+        font-size: var(--theme-font-size-2xs, 14px);
+    }
+
+    &__pill {
+        margin-left: auto;
+        padding: 0 var(--theme-spacing-1, 8px);
+        background: var(--theme-color-success-lighter, #ecf3ec);
+        border-radius: var(--theme-radius-md, 4px);
+        color: var(--theme-color-success-dark, #4d8055);
+        font-size: var(--theme-font-size-3xs, 13px);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        letter-spacing: 0.5px;
+    }
 }

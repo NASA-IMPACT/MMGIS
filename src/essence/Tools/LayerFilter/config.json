@@ -81,7 +81,8 @@
                         "label": "Activation",
                         "from": "catalog",
                         "isEntry": true,
-                        "allLabel": "Select an activation"
+                        "allLabel": "Select an activation",
+                        "countLabel": "activations"
                     }
                 ]
             }

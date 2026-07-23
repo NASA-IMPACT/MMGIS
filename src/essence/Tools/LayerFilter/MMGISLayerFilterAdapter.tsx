@@ -7,6 +7,7 @@ import { applyTheme } from './lib/engine'
 import { toEngineTheme } from './lib/utils/toEngineTheme'
 import { parseCatalog } from './lib/catalog/parseCatalog'
 import { buildRows, type LayerInput } from './lib/catalog/buildRows'
+import { buildEntryDisplays } from './lib/utils/entryDisplay'
 import type { LayerLike } from './lib/utils/listedUpdates'
 import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -49,6 +50,8 @@ export function MMGISLayerFilterAdapter() {
     // too early and silently get null (then never retry).
     useMMGISHandlerReady('layers:getAllConfigs', loadLayerConfigs)
 
+    const catalog = useMemo(() => parseCatalog(vars.catalog), [vars.catalog])
+
     // The engine's working set: rows joining layers to catalogue entries.
     // Parse warnings surface once per catalogue/config change.
     const rows = useMemo(() => {
@@ -57,13 +60,19 @@ export function MMGISLayerFilterAdapter() {
             if (!cfg || cfg.type === 'header') continue
             layers.push({ layerKey: uuid, layerProps: cfg.properties ?? {} })
         }
-        const catalog = parseCatalog(vars.catalog)
         const built = buildRows(layers, catalog)
         for (const warning of [...catalog.warnings, ...built.warnings]) {
             console.warn(`[LayerFilter] ${warning}`)
         }
         return built.rows
-    }, [layerConfigs, vars.catalog])
+    }, [layerConfigs, catalog])
+
+    // Presentation data for the pick-one-entry control (titles, year badges,
+    // date ranges, ACTIVE state).
+    const entriesById = useMemo(
+        () => buildEntryDisplays(catalog.entries),
+        [catalog],
+    )
 
     // Pick the default theme once the config loads.
     useEffect(() => {
@@ -140,6 +149,7 @@ export function MMGISLayerFilterAdapter() {
             theme={activeTheme}
             selections={selections}
             optionsByFilter={result?.options}
+            entriesById={entriesById}
             onChange={handleChange}
         />
     )

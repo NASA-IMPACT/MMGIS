@@ -1,6 +1,7 @@
 import React from 'react'
 import type { ThemeDef, FilterSelections } from '../../types'
 import type { FacetOption } from '../../engine/types'
+import type { EntryDisplay } from '../../utils/entryDisplay'
 
 export interface FilterPanelProps {
     /** The active theme (step 2 content), or null until one is selected. */
@@ -9,6 +10,8 @@ export interface FilterPanelProps {
     selections: FilterSelections
     /** Engine-derived options (value + count) per filter id. */
     optionsByFilter?: Record<string, FacetOption[]>
+    /** Presentation data for catalogue entries (isEntry pickers). */
+    entriesById?: Record<string, EntryDisplay>
     onChange: (filterId: string, value: string | string[]) => void
 }
 
@@ -22,6 +25,7 @@ export function FilterPanel({
     theme,
     selections,
     optionsByFilter,
+    entriesById,
     onChange,
 }: FilterPanelProps) {
     if (!theme) return null
@@ -75,6 +79,54 @@ export function FilterPanel({
                 }
 
                 const value = selections[filter.id]
+
+                if (filter.isEntry === true) {
+                    const selectedEntry =
+                        typeof value === 'string' && value !== ''
+                            ? entriesById?.[value]
+                            : undefined
+                    return (
+                        <div key={filter.id} className="blocks-layer-filter__field">
+                            <div className="blocks-layer-filter__countline">
+                                <strong>{options.length}</strong>{' '}
+                                {filter.countLabel ?? filter.label ?? 'entries'}
+                            </div>
+                            <select
+                                className="blocks-layer-filter__select"
+                                value={typeof value === 'string' ? value : ''}
+                                onChange={(e) => onChange(filter.id, e.target.value)}
+                            >
+                                <option value="">
+                                    {filter.allLabel ?? 'Select…'}
+                                </option>
+                                {options.map((opt) => {
+                                    const entry = entriesById?.[opt.value]
+                                    const label = entry
+                                        ? `${entry.yearBadge}  ${entry.title}`
+                                        : opt.value
+                                    return (
+                                        <option key={opt.value} value={opt.value}>
+                                            {label}
+                                        </option>
+                                    )
+                                })}
+                            </select>
+                            {selectedEntry && selectedEntry.dateRange && (
+                                <div className="blocks-layer-filter__entry-meta">
+                                    <span className="blocks-layer-filter__entry-dates">
+                                        {selectedEntry.dateRange}
+                                    </span>
+                                    {selectedEntry.isActive && (
+                                        <span className="blocks-layer-filter__pill">
+                                            ACTIVE
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )
+                }
+
                 return (
                     <label key={filter.id} className="blocks-layer-filter__field">
                         <span className="blocks-layer-filter__label">{filter.label}</span>
