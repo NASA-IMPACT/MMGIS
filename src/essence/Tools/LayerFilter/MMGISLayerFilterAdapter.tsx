@@ -27,6 +27,10 @@ export function MMGISLayerFilterAdapter() {
     const [selectionsByTheme, setSelectionsByTheme] = useState<
         Record<string, FilterSelections>
     >({})
+    // The filter only narrows the layers list after a real user interaction
+    // (rail click or filter change) — never on boot, where the default theme
+    // is auto-selected and would otherwise hide layers unprompted.
+    const [hasInteracted, setHasInteracted] = useState(false)
 
     // Data the filter derives from: layer configs (matching + data-driven
     // options) and the mission's configured time range (year options).
@@ -60,10 +64,15 @@ export function MMGISLayerFilterAdapter() {
         }
     }, [themes, vars.defaultThemeId, selectedThemeId])
 
-    // Follow the rail's selection.
+    // Follow the rail's selection. The rail only emits on user clicks (its
+    // boot-time default selection is set locally, not emitted), so hearing
+    // this event counts as interaction.
     const onThemeChanged = useCallback((payload?: unknown) => {
         const id = (payload as { themeId?: string })?.themeId
-        if (id) setSelectedThemeId(id)
+        if (id) {
+            setSelectedThemeId(id)
+            setHasInteracted(true)
+        }
     }, [])
     useMMGISEvent(SELECTED_THEME_EVENT, onThemeChanged)
 
@@ -82,14 +91,22 @@ export function MMGISLayerFilterAdapter() {
     }, [activeTheme, layerConfigs, timeConfig])
 
     // Recompute + emit matches whenever the theme, its selections, or the
-    // loaded layer configs change.
+    // loaded layer configs change; apply to the layers list only after the
+    // user has engaged the filter.
     useEffect(() => {
         if (!selectedThemeId) return
-        emitFilterChange(themeProperty, selectedThemeId, selections, layerConfigs)
-    }, [selectedThemeId, selections, themeProperty, layerConfigs])
+        emitFilterChange(
+            themeProperty,
+            selectedThemeId,
+            selections,
+            layerConfigs,
+            hasInteracted,
+        )
+    }, [selectedThemeId, selections, themeProperty, layerConfigs, hasInteracted])
 
     const handleChange = useCallback(
         (property: string, value: string) => {
+            setHasInteracted(true)
             setSelectionsByTheme((prev) => ({
                 ...prev,
                 [selectedThemeId]: {

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { describe, test, expect } from 'vitest'
 import {
     distinctValues,
     yearsFromTimeConfig,
@@ -13,7 +13,7 @@ const layers = {
     e: {},
 }
 
-test.describe('LayerFilter resolveOptions', () => {
+describe('LayerFilter resolveOptions', () => {
     test('distinctValues: sorted, deduped, scalar + array, skips empty', () => {
         expect(distinctValues(layers, 'sector')).toEqual(['energy', 'water'])
         expect(distinctValues(layers, 'hazard')).toEqual(['fire', 'flood', 'storm'])

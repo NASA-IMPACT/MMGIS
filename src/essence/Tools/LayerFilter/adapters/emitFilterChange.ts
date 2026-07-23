@@ -1,10 +1,16 @@
-// Compute the matched layer set for the active theme + selections and announce
-// it on the bus. Per current scope we only EMIT (and log) — nothing changes
-// layers; LayerManager will consume `layerFilter:changed` later. The layer
-// configs are passed in (the adapter loads them once for both matching and
-// option derivation).
-import { mmgisEmit } from '../../_shared/adapters/mmgisAPI'
-import { matchLayers, type LayerLike } from '../lib/utils/matchLayers'
+// Compute the matched layer set for the active theme + selections, announce it
+// on the bus, and — once the user has actually interacted with the filter —
+// apply it to the layers list via the core's `layers:setListed` channel
+// (matched → listed, everything else → unlisted). Before first interaction we
+// only announce, so the app boots with the full layers list. The layer configs
+// are passed in (the adapter loads them once for both matching and option
+// derivation).
+import { mmgisEmit, mmgisRequest } from '../../_shared/adapters/mmgisAPI'
+import {
+    matchLayers,
+    buildListedUpdates,
+    type LayerLike,
+} from '../lib/utils/matchLayers'
 import type { FilterSelections } from '../lib/types'
 
 export interface FilterChangePayload {
@@ -18,6 +24,7 @@ export function emitFilterChange(
     themeId: string,
     selections: FilterSelections,
     layerConfigs: Record<string, LayerLike> | null | undefined,
+    applyToList: boolean,
 ): FilterChangePayload {
     const matchedLayerNames = matchLayers(
         layerConfigs,
@@ -27,7 +34,11 @@ export function emitFilterChange(
     )
     const payload: FilterChangePayload = { themeId, selections, matchedLayerNames }
     mmgisEmit('layerFilter:changed', payload)
-    // Visibility for now (LayerManager isn't wired to react yet).
-    console.log('[LayerFilter] layerFilter:changed', payload)
+    if (applyToList) {
+        void mmgisRequest('layers:setListed', {
+            updates: buildListedUpdates(layerConfigs, matchedLayerNames),
+            source: 'layerFilter',
+        })
+    }
     return payload
 }

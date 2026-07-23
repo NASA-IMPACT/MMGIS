@@ -10,6 +10,9 @@ export const getVisibleLayersWithLegends = async ({
     const layerConfigs = await mmgisRequest<Record<string, Record<string, unknown>>>('layers:getAllConfigs')
     const visibleLayers = await mmgisRequest<Record<string, boolean>>('layers:getVisible')
     const opacities = await mmgisRequest<Record<string, number>>('layers:getAllOpacities')
+    // Runtime "shown in layer lists" flags; absent = listed, false = hidden
+    // (e.g. filtered out by the LayerFilter plugin, though we don't know who).
+    const listed = await mmgisRequest<Record<string, boolean>>('layers:getListed')
     if (!layerConfigs) return []
 
     const result: Layer[] = []
@@ -17,6 +20,7 @@ export const getVisibleLayersWithLegends = async ({
         const cfg = layerConfigs[layerName]
         if (!cfg) continue
         if (cfg.type === 'header') continue
+        if (listed?.[layerName] === false) continue
         const isVisible = visibleLayers?.[layerName] === true
         if (showOnlyVisible && !isVisible) continue
         result.push(

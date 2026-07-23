@@ -10,6 +10,7 @@
 import type { FilterSelections } from '../types'
 
 export interface LayerLike {
+    type?: unknown
     properties?: Record<string, unknown>
 }
 
@@ -54,4 +55,23 @@ export function matchLayers(
         if (ok) matched.push(name)
     }
     return matched
+}
+
+/**
+ * The full listed-flag map to apply for a match result: every real layer gets
+ * an entry (matched → true, unmatched → false) so applying a new filter also
+ * restores layers the previous one hid. Headers are skipped — they're
+ * grouping nodes, not listable layers.
+ */
+export function buildListedUpdates(
+    layerConfigs: Record<string, LayerLike> | null | undefined,
+    matchedLayerNames: string[],
+): Record<string, boolean> {
+    const matched = new Set(matchedLayerNames)
+    const updates: Record<string, boolean> = {}
+    for (const [name, cfg] of Object.entries(layerConfigs || {})) {
+        if (cfg?.type === 'header') continue
+        updates[name] = matched.has(name)
+    }
+    return updates
 }

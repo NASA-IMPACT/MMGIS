@@ -1,5 +1,8 @@
-import { test, expect } from '@playwright/test'
-import { matchLayers } from '../../src/essence/Tools/LayerFilter/lib/utils/matchLayers.ts'
+import { describe, test, expect } from 'vitest'
+import {
+    matchLayers,
+    buildListedUpdates,
+} from '../../src/essence/Tools/LayerFilter/lib/utils/matchLayers.ts'
 
 const layers = {
     floodPrecip: { properties: { theme: 'hazard', hazard: 'flood', year: '2024' } },
@@ -9,7 +12,7 @@ const layers = {
     noProps: {}, // missing properties entirely
 }
 
-test.describe('LayerFilter matchLayers', () => {
+describe('LayerFilter matchLayers', () => {
     test('theme gate: only layers in the selected theme', () => {
         expect(matchLayers(layers, 'theme', 'hazard', {}).sort()).toEqual(
             ['fireExtent', 'floodPrecip'],
@@ -72,5 +75,38 @@ test.describe('LayerFilter matchLayers', () => {
         expect(matchLayers(multi, 'theme', 'hazard', { hazard: 'fire' })).toEqual(['both'])
         expect(matchLayers(multi, 'theme', 'hazard', { hazard: 'flood' })).toEqual(['both'])
         expect(matchLayers(multi, 'theme', 'hazard', { hazard: 'storm' })).toEqual([])
+    })
+})
+
+describe('LayerFilter buildListedUpdates', () => {
+    test('every real layer gets an entry: matched true, unmatched false', () => {
+        expect(buildListedUpdates(layers, ['floodPrecip', 'sectorAg'])).toEqual({
+            floodPrecip: true,
+            fireExtent: false,
+            caWildfire: false,
+            sectorAg: true,
+            noProps: false,
+        })
+    })
+
+    test('headers are skipped (grouping nodes, not listable layers)', () => {
+        const withHeader = {
+            group: { type: 'header' },
+            child: { properties: { theme: 'hazard' } },
+        }
+        expect(buildListedUpdates(withHeader, ['child'])).toEqual({
+            child: true,
+        })
+    })
+
+    test('no matches unlists everything; null configs are safe', () => {
+        expect(buildListedUpdates(layers, [])).toEqual({
+            floodPrecip: false,
+            fireExtent: false,
+            caWildfire: false,
+            sectorAg: false,
+            noProps: false,
+        })
+        expect(buildListedUpdates(null, ['x'])).toEqual({})
     })
 })
