@@ -18,6 +18,8 @@ export interface FilterDef {
     from?: 'catalog'
     derived?: 'datetimes'
     isEntry?: boolean
+    /** 'geocode' renders a place search; entries pass by geometry intersection. */
+    type?: 'geocode'
     multi?: boolean
     /** Multi-select semantics: any-overlap (default) or contains-all. */
     matchAll?: boolean
@@ -51,10 +53,22 @@ export interface LayerFilterConfig {
     themes: ThemeDef[]
     /** The catalogue (GeoJSON FeatureCollection) — see SCHEMA.md §5. */
     catalog?: unknown
+    /** External geocoder for 'geocode' filters. Absent → those controls hide. */
+    geocoder?: { url?: string }
+}
+
+/** A chosen place: label for the chip, geometry for the intersection test. */
+export interface GeocodeSelection {
+    label: string
+    geometry: unknown
 }
 
 /**
  * Active step-2 choices, keyed by filter id. Single-select filters hold a
- * string; multi-select hold string[]. "" / [] / absent all mean "all".
+ * string; multi-select hold string[]; geocode filters hold a
+ * GeocodeSelection. "" / [] / null / absent all mean "all".
  */
-export type FilterSelections = Record<string, string | string[]>
+export type FilterSelections = Record<
+    string,
+    string | string[] | GeocodeSelection | null
+>

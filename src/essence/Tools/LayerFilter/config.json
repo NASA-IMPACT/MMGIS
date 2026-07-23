@@ -70,6 +70,13 @@
                         "allLabel": "All Hazards"
                     },
                     {
+                        "id": "location",
+                        "label": "Location",
+                        "from": "catalog",
+                        "type": "geocode",
+                        "allLabel": "Search places\u2026"
+                    },
+                    {
                         "id": "year",
                         "label": "Year",
                         "from": "catalog",
@@ -90,6 +97,9 @@
         "catalog": {
             "type": "FeatureCollection",
             "features": []
+        },
+        "geocoder": {
+            "url": ""
         }
     },
     "config": {

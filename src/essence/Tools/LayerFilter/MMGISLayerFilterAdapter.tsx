@@ -130,7 +130,7 @@ export function MMGISLayerFilterAdapter() {
     }, [selectedThemeId, result, selections, layerConfigs, hasInteracted])
 
     const handleChange = useCallback(
-        (filterId: string, value: string | string[]) => {
+        (filterId: string, value: FilterSelections[string]) => {
             setHasInteracted(true)
             changedFacetRef.current[selectedThemeId] = filterId
             setSelectionsByTheme((prev) => ({
@@ -150,6 +150,7 @@ export function MMGISLayerFilterAdapter() {
             selections={selections}
             optionsByFilter={result?.options}
             entriesById={entriesById}
+            geocoderUrl={vars.geocoder?.url || undefined}
             onChange={handleChange}
         />
     )
