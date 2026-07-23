@@ -26,8 +26,7 @@ export function validateUrl(url: string): boolean {
  * its type — that's `validateForType` (stage 2). Checked most-specific first.
  */
 export function detectLayerType(url: string): TempLayerType | null {
-    const u = (url || '').trim().toLowerCase()
-    if (u.length === 0) return null
+    const u = url.toLowerCase()
 
     // GeoJSON — by extension or output format (.json is a weaker fallback)
     if (
@@ -86,7 +85,7 @@ export function validateForType(
     type: TempLayerType,
     url: string,
 ): ValidationResult {
-    const u = (url || '').trim().toLowerCase()
+    const u = url.toLowerCase()
 
     if (type === 'geojson') {
         return { ok: true }
