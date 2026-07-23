@@ -445,16 +445,6 @@ const L_ = {
                 nextUrl = `/${nextUrl}`
             }
         }
-        if (process.env.NODE_ENV === 'development' && F_.isUrlAbsolute(nextUrl)) {
-            try {
-                if (new URL(nextUrl).origin !== window.location.origin) {
-                    const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
-                    nextUrl = `${rootPath}/corsproxy/${nextUrl}`
-                }
-            } catch (e) {
-                // Invalid URL, leave unchanged
-            }
-        }
         return nextUrl
     },
     //Takes in config layer obj
@@ -1917,12 +1907,15 @@ const L_ = {
     },
     // Records engine-reported load health for a layer and broadcasts
     // transitions on the bus. Engines call this from their request hooks
-    // (tile load/error, WMS image load/error, GeoJSON fetch); repeated
-    // identical reports (e.g. per tile) are deduped so consumers only hear
-    // actual changes.
+    // (tile load/error, WMS image load/error, GeoJSON fetch), but the status
+    // is per LAYER, not per request: once a layer has loaded anything
+    // successfully it stays 'ok' — later individual failures (tiles outside
+    // a regional dataset's coverage, transient requests) don't flip it back.
+    // 'error' therefore means the layer has never loaded anything.
     setLayerLoadStatus: function (name, status, message) {
         message = message ?? null
         const prev = L_.layers.loadStatus[name]
+        if (prev && prev.status === 'ok' && status === 'error') return
         if (prev && prev.status === status && prev.message === message) return
         L_.layers.loadStatus[name] = { status, message }
         if (window.mmgisAPI)
