@@ -377,15 +377,27 @@ export const TimelineAdapter: React.FC = () => {
                 </div>
             </div>
             <div className="timeline-content">
-                <TimelineView
-                    startTime={startTime}
-                    endTime={endTime}
-                    currentTime={currentTime}
-                    timeMode={timeMode}
-                    layers={layers}
-                    onCurrentTimeChange={handleCurrentTimeChange}
-                    onResetZoomReady={handleResetZoomReady}
-                />
+                {layers.length === 0 ? (
+                    <div className="timeline-empty">
+                        <div className="timeline-empty-message">
+                            No layers on the timeline yet
+                        </div>
+                        <div className="timeline-empty-hint">
+                            Add or enable time-enabled layers on the map to see
+                            them here.
+                        </div>
+                    </div>
+                ) : (
+                    <TimelineView
+                        startTime={startTime}
+                        endTime={endTime}
+                        currentTime={currentTime}
+                        timeMode={timeMode}
+                        layers={layers}
+                        onCurrentTimeChange={handleCurrentTimeChange}
+                        onResetZoomReady={handleResetZoomReady}
+                    />
+                )}
             </div>
             <FloatingPopover
                 anchorRef={infoButtonRef}
