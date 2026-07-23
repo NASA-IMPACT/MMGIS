@@ -21,6 +21,17 @@ export class BridgeClient {
                 this.ws = ws
                 this.connecting = null
                 resolve(ws)
+                // The `once('error', ...)` below only guards the connect phase —
+                // it's still attached (it hasn't fired) but a socket that errors
+                // post-open would otherwise leave us holding a dead `this.ws`
+                // forever. Keep a persistent handler so a later socket error
+                // can't crash the process (EventEmitter throws on an unhandled
+                // 'error' with zero listeners) and so the next sendCommand()
+                // reconnects instead of reusing the broken socket.
+                ws.on('error', () => {
+                    if (this.ws === ws) this.ws = null
+                    if (this.connecting) this.connecting = null
+                })
             })
             ws.once('error', (err) => {
                 this.connecting = null

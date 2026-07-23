@@ -116,6 +116,39 @@ describe('BridgeClient', () => {
         expect(connectionCount - 1).toBe(1)
     })
 
+    it('recovers from a post-open socket error instead of crashing, reconnecting on the next command', async () => {
+        const relay = await startRelay()
+        wss = relay.wss
+        let connectionCount = 0
+        wss.on('connection', () => {
+            connectionCount++
+        })
+        browser = fakeBrowser(relay.url, 'Demo', (agent) => ({ ok: true, result: { echoed: agent.command } }))
+        await new Promise((r) => browser!.on('open', r))
+
+        bridge = new BridgeClient(relay.url, 2000)
+        await bridge.sendCommand('Demo', 'fly_to', { lat: 1, lon: 2 })
+        expect(connectionCount).toBe(2) // browser's connection + the bridge's first connection
+
+        // Simulate a post-open socket error (e.g. a proxy dropping the
+        // connection). Emitting 'error' directly on the live socket is the
+        // reliable way to trigger this deterministically, without racing real
+        // network teardown timing. If the client left this socket without a
+        // persistent 'error' listener, this emit would throw and crash the
+        // process (Node's EventEmitter behavior for unhandled 'error' events)
+        // — reaching the assertions below is itself part of the proof.
+        const liveWs = (bridge as any).ws
+        expect(liveWs).toBeTruthy()
+        liveWs.emit('error', new Error('simulated socket error'))
+        expect((bridge as any).ws).toBe(null)
+
+        // The next command must open a brand-new connection rather than
+        // reusing (or hanging on) the broken one.
+        const result = await bridge.sendCommand('Demo', 'toggle_layer', { layer: 'X' })
+        expect(result).toEqual({ echoed: 'toggle_layer' })
+        expect(connectionCount).toBe(3)
+    })
+
     it('rejects with an actionable hint when the relay is unreachable', async () => {
         bridge = new BridgeClient('ws://127.0.0.1:1/', 300)
         const err = await bridge.sendCommand('Demo', 'fly_to', {}).catch((e) => e)
