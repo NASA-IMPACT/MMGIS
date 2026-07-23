@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import moment from 'moment'
-import { FloatingPopover } from '../../Ancillary/FloatingPopover'
+import { FloatingPopover } from './lib/FloatingPopover'
 import { mmgisRequest, mmgisOn, mmgisEmit, mmgisGetLayerConfigs, mmgisGetRawConfigData, mmgisGetVisibleLayers } from './adapters/mmgisAPI'
 import {
     TimelineView,

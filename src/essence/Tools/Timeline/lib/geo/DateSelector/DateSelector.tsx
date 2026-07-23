@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react'
 import moment from 'moment'
-import { FloatingPopover } from '../../../../../Ancillary/FloatingPopover'
+import { FloatingPopover } from '../../FloatingPopover'
 import { TimeMode } from '../../types'
 
 export interface DateSelectorProps {
