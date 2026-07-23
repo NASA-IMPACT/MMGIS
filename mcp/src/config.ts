@@ -24,7 +24,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     }
     const mmgisUrl = (env.MMGIS_URL || 'http://localhost:8888').replace(/\/+$/, '')
     // MMGIS's WS upgrade only accepts path (WEBSOCKET_ROOT_PATH || ROOT_PATH || '') + '/'
-    const wsUrl = env.MMGIS_WS_URL || mmgisUrl.replace(/^http/, 'ws') + '/'
+    const rawWsUrl = env.MMGIS_WS_URL || mmgisUrl.replace(/^http/, 'ws') + '/'
+    const wsUrl = rawWsUrl.replace(/\/+$/, '') + '/'
     // mcp/src (dev) and mcp/dist (built) are both one level below mcp/
     const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
     let stacCatalogs = DEFAULT_STAC_CATALOGS

@@ -15,6 +15,7 @@ describe('loadConfig', () => {
         expect(loadConfig({ ...base }).wsUrl).toBe('ws://localhost:8888/')
         expect(loadConfig({ ...base, MMGIS_URL: 'https://gis.example.com' }).wsUrl).toBe('wss://gis.example.com/')
         expect(loadConfig({ ...base, MMGIS_WS_URL: 'ws://elsewhere:9000/' }).wsUrl).toBe('ws://elsewhere:9000/')
+        expect(loadConfig({ ...base, MMGIS_WS_URL: 'ws://elsewhere:9000' }).wsUrl).toBe('ws://elsewhere:9000/')
     })
     it('parses STAC_CATALOGS JSON and falls back to defaults', () => {
         expect(loadConfig({ ...base, STAC_CATALOGS: '{"mine":"https://stac.me"}' }).stacCatalogs).toEqual({ mine: 'https://stac.me' })
