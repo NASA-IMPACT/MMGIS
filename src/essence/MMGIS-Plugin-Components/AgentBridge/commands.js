@@ -6,19 +6,22 @@ function isFiniteNumber(v) {
 }
 
 export function getViewState(deps) {
-    const { Map_, L_, ToolController_, TimeControl } = deps
+    const { Map_, L_, ToolAdapter, TimeControl } = deps
     return {
         mission: L_.mission || null,
         center: Map_.map && Map_.map.getCenter ? Map_.map.getCenter() : null,
         zoom: Map_.map && Map_.map.getZoom ? Map_.map.getZoom() : null,
         layersOn: L_.layers ? L_.layers.on : {},
-        activeTool: ToolController_ ? ToolController_.activeToolName : null,
+        activeTool:
+            ToolAdapter && typeof ToolAdapter.activeToolName === 'function'
+                ? ToolAdapter.activeToolName()
+                : null,
         currentTime: TimeControl && TimeControl.getTime ? TimeControl.getTime() : null,
     }
 }
 
 export async function executeCommand(command, args, deps) {
-    const { Map_, L_, ToolController_, TimeControl } = deps
+    const { Map_, L_, ToolAdapter, TimeControl } = deps
     const a = args || {}
     switch (command) {
         case 'fly_to': {
@@ -42,8 +45,15 @@ export async function executeCommand(command, args, deps) {
         case 'open_tool': {
             if (typeof a.name !== 'string')
                 return { ok: false, error: 'open_tool requires a tool name' }
-            ToolController_.makeTool(a.name)
-            return { ok: true, result: { activeTool: ToolController_.activeToolName } }
+            if (!ToolAdapter || typeof ToolAdapter.openTool !== 'function')
+                return { ok: false, error: 'open_tool is not supported in this session' }
+            const outcome = ToolAdapter.openTool(a.name)
+            if (!outcome || outcome.ok !== true)
+                return {
+                    ok: false,
+                    error: (outcome && outcome.error) || `Unknown or unopenable tool: ${a.name}`,
+                }
+            return { ok: true, result: { activeTool: outcome.activeTool ?? null } }
         }
         case 'set_time': {
             if (!a.startTime || !a.endTime)

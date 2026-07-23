@@ -9,6 +9,78 @@ import { executeCommand } from './commands'
 const FRAME_TYPE = 'agent-bridge'
 const RECONNECT_MS = 10000
 
+// Builds the tool-activation adapter `commands.js` uses for `open_tool` /
+// `get_view_state`. Classic missions run the exclusive-panel ToolController_;
+// modern missions (L_.configData.msv.mode === 'modern') never instantiate it
+// — only ToolControllerModern_ runs, wired up behind window.mmgisAPI's
+// show/hide/load-plugin API. Keeping the mode switch here (not in commands.js)
+// lets commands.js stay a plain, dependency-injected, unit-testable module.
+function buildToolAdapter() {
+    const isModern = L_.configData && L_.configData.msv && L_.configData.msv.mode === 'modern'
+
+    if (isModern) {
+        return {
+            mode: 'modern',
+            // Modern layout has no single exclusive "active tool" — panels can
+            // show many tools at once — so there is nothing honest to report here.
+            activeToolName: function () {
+                return null
+            },
+            openTool: function (name) {
+                const api = window.mmgisAPI
+                if (!api || typeof api.isPluginLoaded !== 'function') {
+                    return {
+                        ok: false,
+                        error: 'open_tool is not supported in modern mode yet',
+                    }
+                }
+                const loaded = api.isPluginLoaded(name)
+                const hidden = api.isPluginHidden(name)
+
+                if (loaded && !hidden) {
+                    // Already visible; treat as a success (idempotent open).
+                    return { ok: true, activeTool: name }
+                }
+                if (loaded && hidden) {
+                    // Loaded but hidden (hidePlugin / startHidden) — reveal it.
+                    return api.showPlugin(name)
+                        ? { ok: true, activeTool: name }
+                        : { ok: false, error: `Unknown or unopenable tool: ${name}` }
+                }
+                if (!loaded && hidden) {
+                    // Deferred (startUnloaded / previously unloadPlugin'd) — load it.
+                    return api.loadPlugin(name)
+                        ? { ok: true, activeTool: name }
+                        : { ok: false, error: `Unknown or unopenable tool: ${name}` }
+                }
+                // Neither loaded nor deferred: this name was never assigned to a
+                // panel in this mission's config — there is no ground truth that
+                // says opening it did anything.
+                return { ok: false, error: `Unknown or unopenable tool: ${name}` }
+            },
+        }
+    }
+
+    return {
+        mode: 'classic',
+        activeToolName: function () {
+            return ToolController_.activeToolName
+        },
+        openTool: function (name) {
+            const tool = ToolController_.toolModules && ToolController_.toolModules[name]
+            if (
+                !tool ||
+                typeof tool.make !== 'function' ||
+                typeof tool.destroy !== 'function'
+            ) {
+                return { ok: false, error: `Unknown or unopenable tool: ${name}` }
+            }
+            ToolController_.makeTool(name)
+            return { ok: true, activeTool: ToolController_.activeToolName }
+        },
+    }
+}
+
 const AgentBridge = {
     ws: null,
     sessionId: null,
@@ -89,7 +161,7 @@ const AgentBridge = {
             outcome = await executeCommand(command, args, {
                 Map_,
                 L_,
-                ToolController_,
+                ToolAdapter: buildToolAdapter(),
                 TimeControl,
             })
         } catch (err) {

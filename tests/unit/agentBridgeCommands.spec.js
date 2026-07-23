@@ -18,7 +18,15 @@ function makeDeps() {
                 this.layers.on['uuid-1'] = !this.layers.on['uuid-1']
             }),
         },
-        ToolController_: { makeTool: vi.fn(), activeToolName: 'LayerManager' },
+        ToolAdapter: {
+            mode: 'classic',
+            activeToolName: vi.fn(() => 'LayerManager'),
+            openTool: vi.fn((name) =>
+                name === 'Chart'
+                    ? { ok: true, activeTool: 'Chart' }
+                    : { ok: false, error: `Unknown or unopenable tool: ${name}` }
+            ),
+        },
         TimeControl: {
             setTime: vi.fn(() => true),
             getTime: () => '2026-06-01T00:00:00Z',
@@ -55,11 +63,30 @@ describe('executeCommand', () => {
         expect(res.ok).toBe(false)
         expect(res.error).toMatch(/Unknown layer/)
     })
-    it('open_tool calls ToolController_.makeTool', async () => {
+    it('open_tool delegates to ToolAdapter.openTool and reports the resulting active tool', async () => {
         const deps = makeDeps()
         const res = await executeCommand('open_tool', { name: 'Chart' }, deps)
         expect(res.ok).toBe(true)
-        expect(deps.ToolController_.makeTool).toHaveBeenCalledWith('Chart')
+        expect(deps.ToolAdapter.openTool).toHaveBeenCalledWith('Chart')
+        expect(res.result).toEqual({ activeTool: 'Chart' })
+    })
+    it('open_tool requires a tool name', async () => {
+        const res = await executeCommand('open_tool', {}, makeDeps())
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/tool name/)
+    })
+    it('open_tool returns ok:false for unknown/unopenable tools instead of faking success', async () => {
+        const deps = makeDeps()
+        const res = await executeCommand('open_tool', { name: 'NotARealTool' }, deps)
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/Unknown or unopenable tool: NotARealTool/)
+    })
+    it('open_tool is honest when no ToolAdapter is available', async () => {
+        const deps = makeDeps()
+        deps.ToolAdapter = undefined
+        const res = await executeCommand('open_tool', { name: 'Chart' }, deps)
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/not supported/)
     })
     it('set_time requires startTime and endTime', async () => {
         const res = await executeCommand('set_time', { startTime: '2026-01-01T00:00:00Z' }, makeDeps())
