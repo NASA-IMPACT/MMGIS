@@ -55,6 +55,30 @@
     position: relative;
     display: flex;
     flex-direction: column;
+    padding-bottom: 8px;
+}
+
+/* Empty state shown when no layers are on the timeline */
+.timeline-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 16px;
+    text-align: center;
+}
+
+.timeline-empty-message {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--theme-color-base-darker, #565c65);
+}
+
+.timeline-empty-hint {
+    font-size: 12px;
+    color: var(--theme-color-base, #71767a);
 }
 
 /* Date Selector */
@@ -316,6 +340,11 @@
     height: 24px; /* matches timeline-top-bar */
     border-bottom: 1px solid var(--theme-color-base-lighter, #f0f3f5);
     box-sizing: border-box;
+    /* Pinned so the layer list scrolls beneath it when the panel is short. */
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--theme-color-white, #ffffff);
 }
 
 .timeline-sidebar-layers {
@@ -351,7 +380,9 @@
 
 .timeline-svg-container {
     flex-grow: 1;
-    overflow: hidden;
+    /* Must stay visible (not hidden) so the sticky date bar below pins to the
+       outer scroll container rather than to this element. */
+    overflow: visible;
     position: relative;
     display: flex;
     flex-direction: column;
@@ -362,6 +393,10 @@
     background-color: var(--theme-color-base-lightest, #f9f9f9);
     border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     overflow: hidden;
+    /* Pinned alongside the sidebar header so the date axis stays constant. */
+    position: sticky;
+    top: 0;
+    z-index: 3;
 }
 
 .timeline-top-axis .domain,
