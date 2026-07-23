@@ -3,12 +3,15 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { loadConfig } from './config.js'
 import { MmgisClient } from './mmgisClient.js'
 import { makeAdminTools } from './tools/admin.js'
+import { makeDashboardTools } from './tools/dashboard.js'
 import { buildServer } from './server.js'
 
 async function main() {
     const cfg = loadConfig()
     const client = new MmgisClient(cfg.mmgisUrl, cfg.mmgisToken)
-    const server = buildServer({ tools: [...makeAdminTools(client)] })
+    const server = buildServer({
+        tools: [...makeAdminTools(client), ...makeDashboardTools(client, cfg)],
+    })
     await server.connect(new StdioServerTransport())
     // stdio server runs until the client disconnects
 }
