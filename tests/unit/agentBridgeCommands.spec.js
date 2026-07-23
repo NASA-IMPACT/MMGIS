@@ -65,13 +65,33 @@ describe('executeCommand', () => {
         const res = await executeCommand('set_time', { startTime: '2026-01-01T00:00:00Z' }, makeDeps())
         expect(res.ok).toBe(false)
     })
+    it('set_time sets the time range and returns the current time', async () => {
+        const deps = makeDeps()
+        const res = await executeCommand(
+            'set_time',
+            { startTime: '2026-01-01T00:00:00Z', endTime: '2026-06-01T00:00:00Z' },
+            deps
+        )
+        expect(res.ok).toBe(true)
+        expect(res.result.currentTime).toBe('2026-06-01T00:00:00Z')
+        expect(deps.TimeControl.setTime).toHaveBeenCalledWith(
+            '2026-01-01T00:00:00Z',
+            '2026-06-01T00:00:00Z',
+            false,
+            '00:00:00',
+            undefined
+        )
+    })
     it('get_view_state reports mission, center, zoom, layers, tool', async () => {
-        const res = await executeCommand('get_view_state', {}, makeDeps())
+        const deps = makeDeps()
+        const res = await executeCommand('get_view_state', {}, deps)
         expect(res.ok).toBe(true)
         expect(res.result.mission).toBe('Demo')
         expect(res.result.center).toEqual({ lat: 1, lng: 2 })
         expect(res.result.zoom).toBe(5)
         expect(res.result.activeTool).toBe('LayerManager')
+        expect(res.result.layersOn).toEqual(deps.L_.layers.on)
+        expect(res.result.currentTime).toBe('2026-06-01T00:00:00Z')
     })
     it('rejects unknown commands', async () => {
         const res = await executeCommand('rm_rf', {}, makeDeps())

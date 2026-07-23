@@ -2,6 +2,7 @@ import Map_ from '../../Basics/Map_/Map_'
 import L_ from '../../Basics/Layers_/Layers_'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import TimeControl from '../../Basics/TimeControl_/TimeControl'
+import { isStaticBuild } from '../../../pre/capabilities'
 import { executeCommand } from './commands'
 
 // Envelope contract shared with mcp/src/bridge.ts — keep in sync.
@@ -22,6 +23,8 @@ const AgentBridge = {
 
     getWsPath: function () {
         const g = window.mmgisglobal || {}
+        if (isStaticBuild()) return null
+        if (!g.PORT) return null
         if (g.ENABLE_MMGIS_WEBSOCKETS !== 'true') return null
         const protocol =
             window.location.protocol.indexOf('https') !== -1 ? 'wss' : 'ws'
@@ -37,7 +40,7 @@ const AgentBridge = {
         const path = this.getWsPath()
         if (path == null) {
             console.warn(
-                '[AgentBridge] Websockets disabled (ENABLE_MMGIS_WEBSOCKETS != true); agent bridge inactive.'
+                '[AgentBridge] Websockets disabled (static build, no PORT, or ENABLE_MMGIS_WEBSOCKETS != true); agent bridge inactive.'
             )
             return
         }
