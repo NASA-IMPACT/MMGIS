@@ -1,19 +1,18 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { FilterPanel } from './lib'
-import type {
-    LayerFilterConfig,
-    FilterSelections,
-    FilterOption,
-} from './lib/types'
+import type { LayerFilterConfig, FilterSelections } from './lib/types'
 import { useMMGISToolVars, useMMGISEvent } from './adapters/hooks'
 import { emitFilterChange } from './adapters/emitFilterChange'
-import { resolveOptions, type TimeConfigLike } from './lib/utils/resolveOptions'
-import type { LayerLike } from './lib/utils/matchLayers'
+import { applyTheme } from './lib/engine'
+import { toEngineTheme } from './lib/utils/toEngineTheme'
+import { parseCatalog } from './lib/catalog/parseCatalog'
+import { buildRows, type LayerInput } from './lib/catalog/buildRows'
+import type { LayerLike } from './lib/utils/listedUpdates'
 import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 
 const SELECTED_THEME_EVENT = 'layerFilter:selectedThemeChanged'
-// Stable empty object so the emit effect doesn't fire every render.
+// Stable empty object so effects don't fire every render.
 const EMPTY: FilterSelections = {}
 
 export function MMGISLayerFilterAdapter() {
@@ -21,24 +20,23 @@ export function MMGISLayerFilterAdapter() {
         'layerfilter',
     )
     const themes = vars.themes ?? []
-    const themeProperty = vars.themeProperty || 'theme'
 
     const [selectedThemeId, setSelectedThemeId] = useState('')
     const [selectionsByTheme, setSelectionsByTheme] = useState<
         Record<string, FilterSelections>
     >({})
+    // Which facet the user touched last (per theme) — the engine treats it as
+    // authoritative when selections contradict ("most recent action wins").
+    const changedFacetRef = useRef<Record<string, string | undefined>>({})
     // The filter only narrows the layers list after a real user interaction
     // (rail click or filter change) — never on boot, where the default theme
     // is auto-selected and would otherwise hide layers unprompted.
     const [hasInteracted, setHasInteracted] = useState(false)
 
-    // Data the filter derives from: layer configs (matching + data-driven
-    // options) and the mission's configured time range (year options).
     const [layerConfigs, setLayerConfigs] = useState<Record<
         string,
         LayerLike
     > | null>(null)
-    const [timeConfig, setTimeConfig] = useState<TimeConfigLike | null>(null)
 
     const loadLayerConfigs = useCallback(() => {
         void mmgisRequest<Record<string, LayerLike>>('layers:getAllConfigs').then(
@@ -47,15 +45,25 @@ export function MMGISLayerFilterAdapter() {
             },
         )
     }, [])
-    const loadTimeConfig = useCallback(() => {
-        void mmgisRequest<TimeConfigLike>('time:getConfig').then((r) => {
-            if (r) setTimeConfig(r)
-        })
-    }, [])
-    // These handlers register during mission load; wait until they exist so we
-    // don't fetch too early and silently get null (then never retry).
+    // Registers during mission load; wait until it exists so we don't fetch
+    // too early and silently get null (then never retry).
     useMMGISHandlerReady('layers:getAllConfigs', loadLayerConfigs)
-    useMMGISHandlerReady('time:getConfig', loadTimeConfig)
+
+    // The engine's working set: rows joining layers to catalogue entries.
+    // Parse warnings surface once per catalogue/config change.
+    const rows = useMemo(() => {
+        const layers: LayerInput[] = []
+        for (const [uuid, cfg] of Object.entries(layerConfigs ?? {})) {
+            if (!cfg || cfg.type === 'header') continue
+            layers.push({ layerKey: uuid, layerProps: cfg.properties ?? {} })
+        }
+        const catalog = parseCatalog(vars.catalog)
+        const built = buildRows(layers, catalog)
+        for (const warning of [...catalog.warnings, ...built.warnings]) {
+            console.warn(`[LayerFilter] ${warning}`)
+        }
+        return built.rows
+    }, [layerConfigs, vars.catalog])
 
     // Pick the default theme once the config loads.
     useEffect(() => {
@@ -79,39 +87,48 @@ export function MMGISLayerFilterAdapter() {
     const activeTheme = themes.find((t) => t.id === selectedThemeId) || null
     const selections = selectionsByTheme[selectedThemeId] || EMPTY
 
-    // Resolve each filter's options (config override → time → data).
-    const optionsByFilter = useMemo(() => {
-        const map: Record<string, FilterOption[]> = {}
-        if (activeTheme) {
-            for (const f of activeTheme.filters) {
-                map[f.id] = resolveOptions(f, layerConfigs, timeConfig)
-            }
-        }
-        return map
-    }, [activeTheme, layerConfigs, timeConfig])
+    // Run the engine: options+counts per facet, surviving layers, and
+    // selections after invalidation (stale values auto-clear).
+    const result = useMemo(() => {
+        if (!activeTheme) return null
+        return applyTheme(rows, toEngineTheme(activeTheme), selections, {
+            changedFacetId: changedFacetRef.current[activeTheme.id],
+        })
+    }, [activeTheme, rows, selections])
 
-    // Recompute + emit matches whenever the theme, its selections, or the
-    // loaded layer configs change; apply to the layers list only after the
-    // user has engaged the filter.
+    // Write engine-cleared selections back so the UI reflects them.
     useEffect(() => {
-        if (!selectedThemeId) return
+        if (!result || !selectedThemeId) return
+        const cleaned = result.selections as FilterSelections
+        if (JSON.stringify(cleaned) !== JSON.stringify(selections)) {
+            setSelectionsByTheme((prev) => ({
+                ...prev,
+                [selectedThemeId]: cleaned,
+            }))
+        }
+    }, [result, selections, selectedThemeId])
+
+    // Announce + apply whenever the outcome changes.
+    useEffect(() => {
+        if (!selectedThemeId || !result) return
         emitFilterChange(
-            themeProperty,
             selectedThemeId,
             selections,
+            result.layerKeys,
             layerConfigs,
             hasInteracted,
         )
-    }, [selectedThemeId, selections, themeProperty, layerConfigs, hasInteracted])
+    }, [selectedThemeId, result, selections, layerConfigs, hasInteracted])
 
     const handleChange = useCallback(
-        (property: string, value: string) => {
+        (filterId: string, value: string | string[]) => {
             setHasInteracted(true)
+            changedFacetRef.current[selectedThemeId] = filterId
             setSelectionsByTheme((prev) => ({
                 ...prev,
                 [selectedThemeId]: {
                     ...(prev[selectedThemeId] || {}),
-                    [property]: value,
+                    [filterId]: value,
                 },
             }))
         },
@@ -122,7 +139,7 @@ export function MMGISLayerFilterAdapter() {
         <FilterPanel
             theme={activeTheme}
             selections={selections}
-            optionsByFilter={optionsByFilter}
+            optionsByFilter={result?.options}
             onChange={handleChange}
         />
     )

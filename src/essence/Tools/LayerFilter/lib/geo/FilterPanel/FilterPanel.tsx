@@ -1,14 +1,20 @@
 import React from 'react'
-import type { ThemeDef, FilterSelections, FilterOption } from '../../types'
+import type { ThemeDef, FilterSelections } from '../../types'
+import type { FacetOption } from '../../engine/types'
 
 export interface FilterPanelProps {
     /** The active theme (step 2 content), or null until one is selected. */
     theme: ThemeDef | null
-    /** Current selections for the active theme: property -> value ("" = all). */
+    /** Current selections for the active theme, keyed by filter id. */
     selections: FilterSelections
-    /** Resolved options per filter id (derived from data/time, or config). */
-    optionsByFilter?: Record<string, FilterOption[]>
-    onChange: (property: string, value: string) => void
+    /** Engine-derived options (value + count) per filter id. */
+    optionsByFilter?: Record<string, FacetOption[]>
+    onChange: (filterId: string, value: string | string[]) => void
+}
+
+function toArray(value: string | string[] | undefined): string[] {
+    if (value == null || value === '') return []
+    return Array.isArray(value) ? value : [value]
 }
 
 /** Presentational step-2 panel: theme heading + its configured filters. */
@@ -28,19 +34,59 @@ export function FilterPanel({
             )}
 
             {theme.filters.map((filter) => {
-                const options = optionsByFilter?.[filter.id] ?? filter.options ?? []
+                const options = optionsByFilter?.[filter.id] ?? []
+
+                if (filter.multi === true) {
+                    const selected = toArray(selections[filter.id])
+                    const toggle = (value: string) => {
+                        const next = selected.includes(value)
+                            ? selected.filter((v) => v !== value)
+                            : [...selected, value]
+                        onChange(filter.id, next)
+                    }
+                    return (
+                        <fieldset key={filter.id} className="blocks-layer-filter__field">
+                            <legend className="blocks-layer-filter__label">
+                                {filter.label}
+                                {selected.length > 0 && (
+                                    <span className="blocks-layer-filter__badge">
+                                        {selected.length}
+                                    </span>
+                                )}
+                            </legend>
+                            {options.map((opt) => (
+                                <label
+                                    key={opt.value}
+                                    className="blocks-layer-filter__option"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selected.includes(opt.value)}
+                                        onChange={() => toggle(opt.value)}
+                                    />
+                                    <span>{opt.value}</span>
+                                    <span className="blocks-layer-filter__count">
+                                        {opt.count}
+                                    </span>
+                                </label>
+                            ))}
+                        </fieldset>
+                    )
+                }
+
+                const value = selections[filter.id]
                 return (
                     <label key={filter.id} className="blocks-layer-filter__field">
                         <span className="blocks-layer-filter__label">{filter.label}</span>
                         <select
                             className="blocks-layer-filter__select"
-                            value={selections[filter.property] ?? ''}
-                            onChange={(e) => onChange(filter.property, e.target.value)}
+                            value={typeof value === 'string' ? value : ''}
+                            onChange={(e) => onChange(filter.id, e.target.value)}
                         >
                             <option value="">{filter.allLabel ?? 'All'}</option>
                             {options.map((opt) => (
                                 <option key={opt.value} value={opt.value}>
-                                    {opt.label}
+                                    {opt.value} ({opt.count})
                                 </option>
                             ))}
                         </select>
