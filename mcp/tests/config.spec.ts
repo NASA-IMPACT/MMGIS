@@ -21,6 +21,10 @@ describe('loadConfig', () => {
         expect(loadConfig({ ...base, STAC_CATALOGS: '{"mine":"https://stac.me"}' }).stacCatalogs).toEqual({ mine: 'https://stac.me' })
         expect(Object.keys(loadConfig({ ...base }).stacCatalogs)).toContain('veda')
     })
+    it('rejects STAC_CATALOGS that parses but is not a {name: url} object', () => {
+        expect(() => loadConfig({ ...base, STAC_CATALOGS: '[1,2]' })).toThrow(/STAC_CATALOGS must be/)
+        expect(() => loadConfig({ ...base, STAC_CATALOGS: '{"a": 5}' })).toThrow(/STAC_CATALOGS must be/)
+    })
     it('resolves repoRoot to the MMGIS checkout by default', () => {
         expect(loadConfig({ ...base }).repoRoot.endsWith('MMGIS')).toBe(true)
     })

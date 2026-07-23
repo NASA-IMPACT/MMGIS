@@ -16,6 +16,20 @@ const DEFAULT_STAC_CATALOGS: Record<string, string> = {
     'earth-search': 'https://earth-search.aws.element84.com/v1',
 }
 
+const STAC_CATALOGS_SHAPE_ERROR =
+    'STAC_CATALOGS must be a JSON object mapping catalog name (string) to URL (string), ' +
+    'e.g. {"veda": "https://openveda.cloud/api/stac"}'
+
+// JSON.parse alone doesn't guarantee the *shape* we depend on elsewhere
+// (stac.ts indexes it as Record<string, string>) — an array or an object with
+// non-string values would parse fine but blow up downstream in a confusing way.
+function assertStacCatalogsShape(value: unknown): asserts value is Record<string, string> {
+    const isPlainObject = typeof value === 'object' && value !== null && !Array.isArray(value)
+    if (!isPlainObject || Object.values(value as Record<string, unknown>).some((v) => typeof v !== 'string')) {
+        throw new Error(STAC_CATALOGS_SHAPE_ERROR)
+    }
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): McpConfig {
     if (!env.MMGIS_TOKEN) {
         throw new Error(
@@ -30,11 +44,14 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
     let stacCatalogs = DEFAULT_STAC_CATALOGS
     if (env.STAC_CATALOGS) {
+        let parsed: unknown
         try {
-            stacCatalogs = JSON.parse(env.STAC_CATALOGS)
+            parsed = JSON.parse(env.STAC_CATALOGS)
         } catch {
-            throw new Error('STAC_CATALOGS must be a JSON object of {name: url}')
+            throw new Error(STAC_CATALOGS_SHAPE_ERROR)
         }
+        assertStacCatalogsShape(parsed)
+        stacCatalogs = parsed
     }
     return {
         mmgisUrl,
