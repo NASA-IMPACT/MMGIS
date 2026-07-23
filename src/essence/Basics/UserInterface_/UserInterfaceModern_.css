@@ -345,8 +345,7 @@
     color: var(--theme-color-white, #ffffff);
     padding: var(--theme-spacing-05, 0.25rem);
     gap: var(--theme-spacing-05, 0.25rem);
-    align-items: center; /* keep icon buttons at their natural size, centered, so a
-                            wide (iconifiedSize) bar doesn't stretch them to its edges */
+    align-items: center;
     z-index: 2;
     overflow-y: auto;
     overflow-x: hidden;
