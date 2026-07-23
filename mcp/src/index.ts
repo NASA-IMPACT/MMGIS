@@ -5,13 +5,21 @@ import { MmgisClient } from './mmgisClient.js'
 import { makeAdminTools } from './tools/admin.js'
 import { makeDashboardTools } from './tools/dashboard.js'
 import { makeCatalogTools } from './tools/catalog.js'
+import { BridgeClient } from './bridge.js'
+import { makeViewTools } from './tools/view.js'
 import { buildServer } from './server.js'
 
 async function main() {
     const cfg = loadConfig()
     const client = new MmgisClient(cfg.mmgisUrl, cfg.mmgisToken)
+    const bridge = new BridgeClient(cfg.wsUrl)
     const server = buildServer({
-        tools: [...makeAdminTools(client), ...makeDashboardTools(client, cfg), ...makeCatalogTools(cfg)],
+        tools: [
+            ...makeAdminTools(client),
+            ...makeDashboardTools(client, cfg),
+            ...makeCatalogTools(cfg),
+            ...makeViewTools(bridge),
+        ],
     })
     await server.connect(new StdioServerTransport())
     // stdio server runs until the client disconnects
