@@ -381,7 +381,10 @@ function add(req, res, next, cb) {
 
 if (fullAccess)
   router.post("/add", function (req, res, next) {
-    if (req.session.permission !== "111") {
+    const isSuperAdmin =
+      req.session.permission === "111" ||
+      (req.isLongTermToken === true && req.tokenUserPermission === "111");
+    if (!isSuperAdmin) {
       res.send({
         status: "failure",
         message: "Only SuperAdmins can add new missions.",

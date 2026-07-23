@@ -41,4 +41,24 @@ describe('MmgisClient', () => {
         expect(err).toBeInstanceOf(MMGISError)
         expect(err.hint).toMatch(/MMGIS_URL/)
     })
+    it('upsertMission POSTs {mission, config} with no makedir and returns the parsed response', async () => {
+        const f = fakeFetch(200, { status: 'success', mission: 'X', version: 1 })
+        const client = new MmgisClient('http://mm:8888', 'tok', f)
+        const out = await client.upsertMission('X', { msv: {} })
+        const [url, init] = (f as any).mock.calls[0]
+        expect(url).toBe('http://mm:8888/api/configure/upsert')
+        expect(init.method).toBe('POST')
+        expect(JSON.parse(init.body)).toEqual({ mission: 'X', config: { msv: {} } })
+        expect(out).toEqual({ status: 'success', mission: 'X', version: 1 })
+    })
+    it('throws MMGISError with the base URL and an MMGIS_URL hint when the transport fails', async () => {
+        const f = vi.fn(async () => {
+            throw new Error('ECONNREFUSED')
+        }) as unknown as typeof fetch
+        const client = new MmgisClient('http://mm:8888', 'tok', f)
+        const err = await client.listMissions().catch((e) => e)
+        expect(err).toBeInstanceOf(MMGISError)
+        expect(err.message).toMatch('http://mm:8888')
+        expect(err.hint).toMatch(/MMGIS_URL/)
+    })
 })
