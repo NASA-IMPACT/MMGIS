@@ -7,6 +7,8 @@ import {
     TimeModeControl,
     DateSelector,
     PlaybackControls,
+    PlaybackSpeedControl,
+    getNextPlaybackSpeed,
     TIME_MODE_ORDER,
     type TimeMode,
     type LayerTimeData
@@ -38,6 +40,8 @@ export const TimelineAdapter: React.FC = () => {
     const [isReady, setIsReady] = useState(false)
 
     const [isPlaying, setIsPlaying] = useState(false)
+    const [playbackSpeed, setPlaybackSpeed] = useState<number>(1)
+    const [allowPlayback, setAllowPlayback] = useState(true)
     const [layerVisibilityVersion, setLayerVisibilityVersion] = useState(0)
     const [showInfoPopup, setShowInfoPopup] = useState(false)
     const [resetZoomFn, setResetZoomFn] = useState<(() => void) | null>(null)
@@ -53,10 +57,15 @@ export const TimelineAdapter: React.FC = () => {
         const fetchVars = async () => {
             try {
                 const vars = await mmgisRequest<{
+                    allowPlayback?: boolean
                     defaultTimeMode?: string
                     shownTimeModes?: string[]
                 }>('tool:getVars', 'timeline')
                 if (cancelled || !vars) return
+
+                if (typeof vars.allowPlayback === 'boolean') {
+                    setAllowPlayback(vars.allowPlayback)
+                }
 
                 // Determine which mode buttons to show (canonical order, empty = all)
                 let effectiveModes = TIME_MODE_ORDER
@@ -88,6 +97,11 @@ export const TimelineAdapter: React.FC = () => {
             cancelled = true
         }
     }, [])
+
+    // Stop playback if it becomes disabled via config
+    useEffect(() => {
+        if (!allowPlayback && isPlaying) setIsPlaying(false)
+    }, [allowPlayback, isPlaying])
 
     // Subscribe to layer visibility changes
     useEffect(() => {
@@ -141,8 +155,8 @@ export const TimelineAdapter: React.FC = () => {
                             start = parsedStart
                         }
                     }
-                    if (timeConfig.dateEndTime) {
-                        const parsedEnd = timeConfig.dateEndTime === 'now' ? new Date() : new Date(timeConfig.dateEndTime)
+                    if (timeConfig.dataEndTime) {
+                        const parsedEnd = timeConfig.dataEndTime === 'now' ? new Date() : new Date(timeConfig.dataEndTime)
                         if (!isNaN(parsedEnd.getTime())) {
                             end = parsedEnd
                         }
@@ -266,8 +280,9 @@ export const TimelineAdapter: React.FC = () => {
         if (!isPlaying) return
 
         const { unit, value } = getTimeStep(timeMode)
-        // Adjust interval speed based on mode (e.g. DAY is faster than MONTH)
-        const speed = 1000
+        // Base cadence is one step per second, divided by the playback speed
+        // multiplier (2x -> 500ms, 4x -> 250ms, 0.5x -> 2000ms).
+        const speed = 1000 / playbackSpeed
 
         const interval = setInterval(() => {
             setCurrentTime(prev => {
@@ -291,7 +306,7 @@ export const TimelineAdapter: React.FC = () => {
         }, speed)
 
         return () => clearInterval(interval)
-    }, [isPlaying, timeMode, endTime, startTime])
+    }, [isPlaying, timeMode, endTime, startTime, playbackSpeed])
 
     if (!isReady) {
         return (
@@ -316,12 +331,19 @@ export const TimelineAdapter: React.FC = () => {
                 <div className="timeline-header-center">
                     <PlaybackControls
                         isPlaying={isPlaying}
+                        showPlayButton={allowPlayback}
                         onPlayToggle={() => setIsPlaying(!isPlaying)}
                         onStepForward={handleStepForward}
                         onStepBackward={handleStepBackward}
                         onGoToStart={handleGoToStart}
                         onGoToEnd={handleGoToEnd}
                     />
+                    {allowPlayback && (
+                        <PlaybackSpeedControl
+                            speed={playbackSpeed}
+                            onCycleSpeed={() => setPlaybackSpeed((s) => getNextPlaybackSpeed(s))}
+                        />
+                    )}
                 </div>
                 <div className="timeline-header-right">
                     <TimeModeControl
