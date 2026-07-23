@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
     executeCommand,
     getViewState,
+    resolveToolId,
 } from '../../src/essence/MMGIS-Plugin-Components/AgentBridge/commands'
 
 function makeDeps() {
@@ -134,5 +135,25 @@ describe('getViewState', () => {
         const state = getViewState(deps)
         expect(state.center).toBe(null)
         expect(state.zoom).toBe(null)
+    })
+})
+
+describe('resolveToolId', () => {
+    const tools = [
+        { name: 'LayerManager', js: 'LayerManagerTool' },
+        { name: 'Chart', js: 'ChartTool' },
+    ]
+
+    it('resolves a display name to its js id', () => {
+        expect(resolveToolId(tools, 'LayerManager')).toBe('LayerManagerTool')
+    })
+    it('passes through a js id unchanged', () => {
+        expect(resolveToolId(tools, 'ChartTool')).toBe('ChartTool')
+    })
+    it('falls back to the input when the tool is unknown', () => {
+        expect(resolveToolId(tools, 'NotARealTool')).toBe('NotARealTool')
+    })
+    it('tolerates a missing tools list', () => {
+        expect(resolveToolId(undefined, 'LayerManager')).toBe('LayerManager')
     })
 })

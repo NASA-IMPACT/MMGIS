@@ -5,6 +5,17 @@ function isFiniteNumber(v) {
     return typeof v === 'number' && isFinite(v)
 }
 
+// Mission configs (and our dashboard_tool_options) expose a tool's display
+// `name` (e.g. 'LayerManager'), but the id-keyed APIs that actually open a
+// tool — window.mmgisAPI.showPlugin/loadPlugin/isPluginLoaded/isPluginHidden
+// (modern) and ToolController_.toolModules/makeTool (classic) — are keyed by
+// the config's `js` id (e.g. 'LayerManagerTool'). Accept either form so
+// `open_tool` works whether the agent passes the display name or the js id.
+export function resolveToolId(tools, name) {
+    const entry = (tools || []).find((t) => t.name === name || t.js === name)
+    return entry ? entry.js : name
+}
+
 export function getViewState(deps) {
     const { Map_, L_, ToolAdapter, TimeControl } = deps
     return {

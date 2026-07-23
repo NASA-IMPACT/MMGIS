@@ -29,8 +29,13 @@ export class BridgeClient {
                 // 'error' with zero listeners) and so the next sendCommand()
                 // reconnects instead of reusing the broken socket.
                 ws.on('error', () => {
-                    if (this.ws === ws) this.ws = null
-                    if (this.connecting) this.connecting = null
+                    // Only clear state that still belongs to this socket — if a
+                    // newer reconnect has already replaced `this.ws`/`this.connecting`
+                    // (e.g. this ws was closed and connect() was called again before
+                    // this stale error fired), leave that newer in-flight state alone.
+                    const wasCurrent = this.ws === ws
+                    if (wasCurrent) this.ws = null
+                    if (wasCurrent && this.connecting) this.connecting = null
                 })
             })
             ws.once('error', (err) => {

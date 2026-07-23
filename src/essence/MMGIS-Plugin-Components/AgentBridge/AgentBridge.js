@@ -3,7 +3,7 @@ import L_ from '../../Basics/Layers_/Layers_'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import TimeControl from '../../Basics/TimeControl_/TimeControl'
 import { isStaticBuild } from '../../../pre/capabilities'
-import { executeCommand } from './commands'
+import { executeCommand, resolveToolId } from './commands'
 
 // Envelope contract shared with mcp/src/bridge.ts — keep in sync.
 const FRAME_TYPE = 'agent-bridge'
@@ -34,23 +34,24 @@ function buildToolAdapter() {
                         error: 'open_tool is not supported in modern mode yet',
                     }
                 }
-                const loaded = api.isPluginLoaded(name)
-                const hidden = api.isPluginHidden(name)
+                const toolId = resolveToolId(L_.configData && L_.configData.tools, name)
+                const loaded = api.isPluginLoaded(toolId)
+                const hidden = api.isPluginHidden(toolId)
 
                 if (loaded && !hidden) {
                     // Already visible; treat as a success (idempotent open).
-                    return { ok: true, activeTool: name }
+                    return { ok: true, activeTool: toolId }
                 }
                 if (loaded && hidden) {
                     // Loaded but hidden (hidePlugin / startHidden) — reveal it.
-                    return api.showPlugin(name)
-                        ? { ok: true, activeTool: name }
+                    return api.showPlugin(toolId)
+                        ? { ok: true, activeTool: toolId }
                         : { ok: false, error: `Unknown or unopenable tool: ${name}` }
                 }
                 if (!loaded && hidden) {
                     // Deferred (startUnloaded / previously unloadPlugin'd) — load it.
-                    return api.loadPlugin(name)
-                        ? { ok: true, activeTool: name }
+                    return api.loadPlugin(toolId)
+                        ? { ok: true, activeTool: toolId }
                         : { ok: false, error: `Unknown or unopenable tool: ${name}` }
                 }
                 // Neither loaded nor deferred: this name was never assigned to a
@@ -67,7 +68,8 @@ function buildToolAdapter() {
             return ToolController_.activeToolName
         },
         openTool: function (name) {
-            const tool = ToolController_.toolModules && ToolController_.toolModules[name]
+            const toolId = resolveToolId(L_.configData && L_.configData.tools, name)
+            const tool = ToolController_.toolModules && ToolController_.toolModules[toolId]
             if (
                 !tool ||
                 typeof tool.make !== 'function' ||
@@ -75,7 +77,7 @@ function buildToolAdapter() {
             ) {
                 return { ok: false, error: `Unknown or unopenable tool: ${name}` }
             }
-            ToolController_.makeTool(name)
+            ToolController_.makeTool(toolId)
             return { ok: true, activeTool: ToolController_.activeToolName }
         },
     }
