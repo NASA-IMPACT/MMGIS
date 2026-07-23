@@ -1,0 +1,12 @@
+{
+    "AgentBridge": {
+        "name": "AgentBridge",
+        "description": "Lets the MMGIS MCP server drive this browser session (fly, toggle layers, open tools, set time) over the MMGIS websocket.",
+        "defaultIcon": "robot",
+        "hasVars": false,
+        "config": { "rows": [] },
+        "paths": {
+            "AgentBridge": "essence/MMGIS-Plugin-Components/AgentBridge/AgentBridge"
+        }
+    }
+}

@@ -31,6 +31,7 @@ nul
 # Wildcard patterns for component plugins
 /src/essence/*Private-Components*
 /src/essence/*Plugin-Components*
+!/src/essence/MMGIS-Plugin-Components/
 
 /src/pre/tools.js
 /src/pre/components.js
