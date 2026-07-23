@@ -26,9 +26,9 @@ name: Deploy lean (AWS ECS Express Mode)
 concurrency: deploy_lean_mmgis
 
 on:
-  # Deploy on final releases (same release convention as docker-build.yml)
-  release:
-    types: [published]
+  # Deploy on every push to development
+  push:
+    branches: [development]
 
   # Plus manual rollouts
   workflow_dispatch:
@@ -78,9 +78,8 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
         run: |
-          # Tag with the release tag (or the short SHA for manual runs)
-          VERSION=$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')
-          [ "${{ github.event_name }}" == "workflow_dispatch" ] && VERSION=$(git rev-parse --short HEAD)
+          # Every trigger tags the image with the commit short SHA.
+          VERSION=$(git rev-parse --short HEAD)
           IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
 
           docker build \
@@ -128,15 +127,23 @@ jobs:
           echo "Registered $ADMIN_TASK_DEF_ARN"
           echo "Registered $PUBLISH_TASK_DEF_ARN"
 
-      # Express gateway services are updated through their own API: point
-      # the primary container at the new image and Express Mode rolls it.
-      # `update-service --task-definition` does not apply here.
+      # Express Mode services deploy through their own API: point the
+      # primary container at the new image and AWS rolls it out.
+      # (`update-service --task-definition` does not apply to them.)
       #
-      # We poll `describe-express-gateway-service` rather than use
-      # `monitor-express-gateway-service`: monitor is an interactive,
-      # open-ended streamer meant for a human terminal, while describe
-      # returns a discrete deployment status we can bound with a timeout
-      # and a clean exit code in CI.
+      # Progress is polled with `describe-express-gateway-service` —
+      # `monitor-...` is a live stream meant for a human terminal, while
+      # describe gives CI a bounded loop with a clean exit code.
+      #
+      # How we know it's DONE: the API has no rolloutState field. A
+      # rollout is complete when statusCode is ACTIVE and every entry in
+      # activeConfigurations[] runs the new image — old and new are
+      # listed side by side until the old one drains away.
+      #
+      # How we know it FAILED: we can't, directly — statusCode is only
+      # ever ACTIVE | DRAINING | INACTIVE, never "failed". A rollout
+      # that can't converge simply never finishes, so the timeout below
+      # is the failure detector, not any status check.
       - name: Roll the Express Mode gateway service
         env:
           ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
@@ -155,29 +162,58 @@ jobs:
             --output text)
           echo "Resolved $ECS_SERVICE -> $SERVICE_ARN"
 
+          # No --cluster here: current CLIs removed it from
+          # update-express-gateway-service (the service ARN fully
+          # qualifies the target).
           aws ecs update-express-gateway-service \
-            --cluster "$ECS_CLUSTER" \
             --service-arn "$SERVICE_ARN" \
             --primary-container "{\"image\": \"$IMAGE_URI\"}"
 
-          # Bounded poll (up to 20 minutes) until the managed deployment is
-          # steady. A deployment that is still converging reports an
-          # in-progress status; anything FAILED fails the job immediately.
+          # Bounded poll (up to 20 minutes) until the rollout converges:
+          # the service is ACTIVE and the target image is the only one
+          # across the active configurations.
+          IMAGES="(unknown)"
           for attempt in $(seq 1 80); do
-            STATUS=$(aws ecs describe-express-gateway-service \
+            # A transient describe failure should cost one attempt, not
+            # the whole rollout step.
+            if ! RESPONSE=$(aws ecs describe-express-gateway-service \
               --service-arn "$SERVICE_ARN" \
-              --query 'service.deployments[0].rolloutState' \
-              --output text)
-            echo "[$attempt/80] deployment status: $STATUS"
-            if [ "$STATUS" = "COMPLETED" ]; then
-              echo "Rollout steady."
-              exit 0
+              --output json); then
+              echo "[$attempt/80] describe failed; retrying" >&2
+              sleep 15
+              continue
             fi
-            if [ "$STATUS" = "FAILED" ]; then
-              echo "Rollout FAILED — see the ECS console / service events." >&2
-              exit 1
+            STATUS=$(echo "$RESPONSE" \
+              | jq -r '.service.status.statusCode')
+            IMAGES=$(echo "$RESPONSE" \
+              | jq -r '[.service.activeConfigurations[]?.primaryContainer.image]
+                       | unique | join(", ")')
+            echo "[$attempt/80] status: $STATUS; active images: $IMAGES"
+            if [ "$STATUS" = "ACTIVE" ] && [ "$IMAGES" = "$IMAGE_URI" ]; then
+              echo "Rollout converged on $IMAGE_URI."
+              exit 0
             fi
             sleep 15
           done
-          echo "Rollout did not reach a steady state within 20 minutes." >&2
+          echo "Rollout did not converge within 20 minutes; still serving: $IMAGES" >&2
           exit 1
+
+      # Surface what this deploy shipped in the run summary. Runs even when
+      # the rollout step fails or times out — the image is already in ECR by
+      # then, and recording its URI aids debugging — but only once an image
+      # was actually pushed. The rollout line reports the job status so a
+      # failed rollout is not mistaken for a completed deploy. Only values
+      # CI itself produces appear here — deliberately nothing hand-set (the
+      # admin URL lives in `terraform output admin_url` / the CF console).
+      - name: Write deployment summary
+        if: ${{ !cancelled() && steps.build-image.outputs.IMAGE_URI != '' }}
+        env:
+          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "## Lean deployment"
+            echo ""
+            echo "- **Image pushed:** \`$IMAGE_URI\`"
+            echo "- **Rollout:** $JOB_STATUS"
+          } >> "$GITHUB_STEP_SUMMARY"
