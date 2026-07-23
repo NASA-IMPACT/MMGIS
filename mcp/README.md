@@ -63,12 +63,28 @@ browser → `view_fly_to`.
 - [ ] With the mission open in a browser: `view_get_state` returns the mission name
 - [ ] `view_fly_to` visibly moves the map
 - [ ] `view_toggle_layer` flips a layer on/off (check LayerManager)
-- [ ] `view_open_tool` opens a tool panel (if not: wire `ToolControllerModern_` — see Task 7 note)
+- [ ] `view_open_tool` opens a tool panel in both classic missions (exclusive
+      `ToolController_` panel) and modern missions (`msv.mode: "modern"`,
+      shown/loaded via `window.mmgisAPI`); an unknown tool name returns
+      `ok: false` rather than a false success
 - [ ] `view_*` with no browser open returns the "No browser session" hint
 
 ## Security notes
 
 - Bridge commands are view-only and whitelist-validated in the browser
   (`src/essence/MMGIS-Plugin-Components/AgentBridge/commands.js`).
-- The MMGIS websocket relay is unauthenticated upstream; do not expose it
+- The MMGIS websocket relay (`API/websocket.js`) is a single unauthenticated
+  broadcast: it forwards every frame to every connected client, with no
+  per-mission routing at the relay layer. Mission scoping happens only
+  client-side (the browser and `BridgeClient` both drop frames whose
+  `body.mission` doesn't match). Practically, this means **any** websocket
+  peer on the relay can both issue view commands for *any* mission and read
+  every mission's view-state acks (mission name, layer visibility, current
+  time) — restrict who can reach the relay accordingly; do not expose it
   publicly on deployments where that matters (Phase 2 hardening candidate).
+- If more than one browser session has the same mission open, all of them
+  receive and execute every command for that mission; `BridgeClient` resolves
+  on whichever session's ack arrives first and ignores the rest.
+- Each AgentBridge session also broadcasts a `{kind: 'presence', sessionId}`
+  frame on connect. Nothing currently consumes it server- or MCP-side — it's
+  reserved for a future session-listing tool (Phase 2).
