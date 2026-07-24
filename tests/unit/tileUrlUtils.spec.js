@@ -301,4 +301,77 @@ describe('tileUrlUtils', () => {
             expect(url).toBe('https://t/2024-01-01T00:00:00Z/2024-02-02T00:00:00Z.png')
         })
     })
+
+    describe('compileTileUrl — empty-time placeholders', () => {
+        test('collapses {time}/{starttime}/{endtime} to empty when no time configured', () => {
+            // No time config → buildTileUrlOptions yields '' for every time value.
+            // The placeholders must be removed, not left as literal {time} the
+            // server would 404 on.
+            const opts = buildTileUrlOptions({ name: 'x' }, undefined)
+            const url = compileTileUrl(
+                'https://t/{starttime}/{endtime}/{time}.png',
+                opts
+            )
+            expect(url).toBe('https://t///.png')
+            expect(url).not.toContain('{time}')
+            expect(url).not.toContain('{starttime}')
+            expect(url).not.toContain('{endtime}')
+        })
+    })
+
+    describe('buildTileUrlOptions — closed key set', () => {
+        // TimeControl hands this object straight to the middleware's
+        // refresh(), which copies every key onto this.options. Anything that
+        // leaks out of the layer config would clobber the creation-time
+        // options built in Map_.makeTileLayer.
+        const opts = buildTileUrlOptions(
+            {
+                name: 'x',
+                minZoom: '3',
+                maxZoom: '18',
+                maxNativeZoom: '18',
+                boundingBox: [0, 0, 1, 1],
+                style: { color: 'red' },
+                url: 'https://raw/{z}/{x}/{y}.png',
+                variables: { a: 1 },
+                cogTransform: true,
+                cogColormap: 'viridis',
+                cogResampling: 'bilinear',
+                time: { enabled: true, end: '2024-03-04T00:00:00Z' },
+            },
+            'COG'
+        )
+
+        test('carries every key compileTileUrl reads', () => {
+            expect(opts.splitColonType).toBe('COG')
+            expect(opts.timeEnabled).toBe(true)
+            expect(opts.time).toBe('2024-03-04T00:00:00Z')
+            expect(opts.tileFormat).toBe('tms')
+            expect(opts.cogTransform).toBe(true)
+            expect(opts.cogColormap).toBe('viridis')
+            expect(opts.cogResampling).toBe('bilinear')
+        })
+
+        test('carries nothing else from the layer config', () => {
+            expect(Object.keys(opts).sort()).toEqual([
+                'cogColormap',
+                'cogExpression',
+                'cogMax',
+                'cogMin',
+                'cogResampling',
+                'cogTransform',
+                'compositeTile',
+                'currentCogExpression',
+                'currentCogMax',
+                'currentCogMin',
+                'customTimes',
+                'endtime',
+                'splitColonType',
+                'starttime',
+                'tileFormat',
+                'time',
+                'timeEnabled',
+            ])
+        })
+    })
 })

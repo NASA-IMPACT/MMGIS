@@ -64,15 +64,15 @@ which `compileTileUrl` later keys off of). This is entirely upstream of
 > before the engine branch. Despite the name, it does **not** substitute the
 > `{time}` / `{starttime}` / `{endtime}` family into the tile template — that is
 > Stage 3's job alone. It does two unrelated things
-> (`TimeControl.js:422-476`):
+> (`TimeControl.js:417-471`):
 >
-> 1. **Custom variable URL replacements** (`:435-467`) — for layers configured
+> 1. **Custom variable URL replacements** (`:430-462`) — for layers configured
 >    with `layer.variables.urlReplacements` where `on === 'timeChange'`. It
 >    `fetch`es an **external API** and substitutes a user-defined `{key}`
->    placeholder with the response value (`:461-464`). The `{starttime}` /
->    `{endtime}` formatting here (`:447-456`) is applied only to the **fetch
+>    placeholder with the response value (`:455-459`). The `{starttime}` /
+>    `{endtime}` formatting here (`:442-451`) is applied only to the **fetch
 >    request body**, not to the tile URL.
-> 2. **Cache-busting** (`:469-473`) — appends `nocache=<timestamp>` when
+> 2. **Cache-busting** (`:464-468`) — appends `nocache=<timestamp>` when
 >    `forceRequery === true`.
 >
 > At `Map_.js:1584` it's called with `forceRequery = null`, so for a plain tile
@@ -82,7 +82,7 @@ which `compileTileUrl` later keys off of). This is entirely upstream of
 
 ### Stage 2 — Option building (`buildTileUrlOptions`)
 
-[`tileUrlUtils.ts:52-70`](./tileUrlUtils.ts). Formats the time strings **once**
+[`tileUrlUtils.ts:61-89`](./tileUrlUtils.ts). Formats the time strings **once**
 via `formatLayerTime` (`tileUrlUtils.ts:34-44`, d3 `utcFormat`, empty string on
 unparseable input), and resolves `tms → tileFormat` via `resolveTileFormat`
 (`tileUrlUtils.ts:16-22`). Both engines call this.
@@ -92,50 +92,73 @@ unparseable input), and resolves `tms → tileFormat` via `resolveTileFormat`
 > and never re-formats. Breaking this invariant re-introduces the double-format
 > bug (see below).
 
+> **Invariant** (`tileUrlUtils.ts:52-55`): the result is a **closed set**
+> of tile-URL keys — nothing from the layer config is spread in. See "closed key set" below.
+
 ### Stage 3 — Substitution (`compileTileUrl`)
 
-[`tileUrlUtils.ts:140-220`](./tileUrlUtils.ts). The pure substituter:
+[`tileUrlUtils.ts:159-239`](./tileUrlUtils.ts). The pure substituter:
 
-- STAC/COG/titiler `datetime=` injection — `:150-164`
-- STAC `exitwhenfull` / `skipcovered` — `:166-168`
-- COG params via `applyCogFieldsToUrl` — `:170`
-- global STAC mosaic limits — `:172-183`
-- `{time}` / `{starttime}` / `{endtime}` replacement — `:187-189`
-- `{customtime.N}` replacement — `:192-199`
-- TMS `starttime` / `time` / `composite` params — `:202-217`
+- STAC/COG/titiler `datetime=` injection — `:164-183`
+- STAC `exitwhenfull` / `skipcovered` — `:185-187`
+- COG params via `applyCogFieldsToUrl` — `:189`
+- global STAC mosaic limits — `:194-202`
+- `{time}` / `{starttime}` / `{endtime}` replacement — `:205-208`
+- `{customtime.N}` replacement — `:210-218`
+- TMS `starttime` / `time` / `composite` params — `:220-236`
+
+Time placeholders are always replaced, even when the value is `''` (no time
+configured, or times not yet resolved): `https://t/{time}.png` becomes
+`https://t/.png`, not a literal `{time}` the tile server would reject. The
+substitution reads the layer's URL template each time, so an emptied URL is
+never sticky — the next compile with real times fills them in.
 
 ## The three call sites
 
 | Engine       | Cadence               | Creation                        | Time-change                                             |
 | ------------ | --------------------- | ------------------------------- | ------------------------------------------------------- |
-| **DeckGL**   | compile **once**      | `Map_.js:1596-1609`             | rebuild URL: `TimeControl.js:308-311`                   |
-| **Leaflet**  | compile **per tile**  | `Map_.js:1617-1635`             | `tileLayer.refresh(...)`: `TimeControl.js:304-307`      |
+| **DeckGL**   | compile **once**      | `Map_.js:1596-1611`             | rebuild URL: `TimeControl.js:301-302`                   |
+| **Leaflet**  | compile **per tile**  | `Map_.js:1618-1634`             | `tileLayer.refresh(...)`: `TimeControl.js:299`          |
 | **WMS**      | own substitution      | `middleware.js:288-315`         | reads shared `this.options` times                       |
 
 ### DeckGL — resolves once, eagerly
 
 `Map_.js:1596-1599`. Deck needs a complete static URL upfront (no per-tile
 hook), so `compileTileUrl` runs a single time at layer creation and the baked
-URL is frozen into the deck layer (`Map_.js:1601-1609`). On a time change the
-layer's URL is rebuilt — `TimeControl.js:308-311` (`compileTileUrl` →
+URL is frozen into the deck layer (`Map_.js:1602-1611`). On a time change the
+layer's URL is rebuilt — `TimeControl.js:301-302` (`compileTileUrl` →
 `Map_.engine.updateLayer`).
 
 ### Leaflet ColorFilter — resolves lazily, per tile
 
-`buildTileUrlOptions` output is stored as `this.options` at creation
-(`Map_.js:1617-1635`), but `compileTileUrl` runs inside `getTileUrl` —
+`buildTileUrlOptions` output is spread into `this.options` at creation
+(`Map_.js:1618-1634`), but `compileTileUrl` runs inside `getTileUrl` —
 [`leaflet-tilelayer-middleware.js:21-24`](./leaflet-tilelayer-middleware.js) —
 once per tile fetch, **after** Leaflet has already substituted `{z}/{x}/{y}`. On
 a time change, `refresh(newUrl, force, updateOptions)`
-(`middleware.js:106-127`) merges new values into `this.options` (`:108-110`)
+(`middleware.js:106-127`) merges new values into `this.options` (`:107-110`)
 and `this._url` (`:113`); the next `getTileUrl` per tile picks them up.
+
+### Why `buildTileUrlOptions` returns a closed key set
+
+`refresh()` copies **every** key it is handed onto `this.options`, and
+`this.options` also holds Leaflet's own creation options — several of which are
+not plain copies of the layer config: `bounds` is an `L.latLngBounds` built from
+`boundingBox`, `tms` comes from the resolved tile format rather than
+`layerObj.tms`, `minZoom`/`maxZoom`/`maxNativeZoom` are `parseInt`'d, and
+`continuousWorld`/`reuseTiles` are constants. So `buildTileUrlOptions` returns
+only the keys `compileTileUrl` reads and never spreads the layer config — that is
+what lets both creation and `refresh()` take the object whole. **Add a new
+tile-URL option there and nowhere else**; both paths then pick it up.
 
 ### `TimeControl.reloadLayer` — the time-change entry point
 
-[`TimeControl.js:217`](../TimeControl_/TimeControl.js). Re-runs
-`buildTileUrlOptions` (`:299`) then dispatches: Leaflet via
-`tileLayer.refresh(...)` (`:304-307`), Deck via `compileTileUrl` +
-`updateLayer` (`:308-311`).
+[`TimeControl.js:218`](../TimeControl_/TimeControl.js). Re-runs
+`buildTileUrlOptions` (`:289`) then dispatches: Leaflet via
+`tileLayer.refresh(...)` (`:299`), Deck via `compileTileUrl` +
+`updateLayer` (`:301-302`). The Deck branch does not return early — both
+branches fall through to a shared tail that restores `layer.url` to the
+pre-substitution original.
 
 > Deck and Leaflet run **identical** code, differing only in cadence
 > (frozen-once vs per-tile). This is by design, not a bypass.
@@ -161,16 +184,16 @@ The globe path [`GlobeRenderer.js:776-810`](../Globe_/GlobeRenderer.js) has its
 own `d3.utcFormat` block. **Known divergence:** it **re-formats `customTimes`** —
 `timeFormat(Date.parse(customTimes.times[i]))` at `:803-805`. The `tileUrlUtils`
 path does not — `buildTileUrlOptions` passes `customTimes` through raw
-(`tileUrlUtils.ts:67`) and `compileTileUrl` substitutes them verbatim
-(`:192-199`). So `{customtime.N}` gets d3-formatted on the globe but injected
+(`tileUrlUtils.ts:76`) and `compileTileUrl` substitutes them verbatim
+(`:210-218`). So `{customtime.N}` gets d3-formatted on the globe but injected
 as-is on Leaflet/Deck. This is a tracked follow-up ("third formatter"), separate
 from the `tileUrlUtils` flow.
 
-## Why the double-format bug was Leaflet-only
+## Invariant: format once, substitute verbatim
 
-The old code re-formatted time values **inside** `compileTileUrl`. Because
-Leaflet calls `compileTileUrl` per tile, the re-format re-bit on every tile
-fetch, compounding the shift. DeckGL's single bake hid it — one compile, one
-format. Moving all formatting into `buildTileUrlOptions` (once) and making
-`compileTileUrl` a pure substituter fixed it for both engines. **Do not
+Time values are formatted exactly once, in `buildTileUrlOptions`. `compileTileUrl`
+is a **pure substituter** — it injects the already-formatted strings and never
+parses or re-formats them. This matters because Leaflet calls `compileTileUrl`
+per tile: if formatting lived there it would re-bite on every tile fetch and shift
+dates across timezones, while DeckGL's single URL bake would hide it. **Do not
 re-introduce formatting into `compileTileUrl`.**

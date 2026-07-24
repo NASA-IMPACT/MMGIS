@@ -48,6 +48,15 @@ export function formatLayerTime(format?: string): (time: unknown) => string {
  *
  * Invariant: the time strings on the returned object are ALREADY FORMATTED.
  * compileTileUrl substitutes them verbatim and never re-formats.
+ *
+ * Invariant: the result is a closed set of tile-URL keys — nothing from the
+ * layer config is spread in. It is copied wholesale onto a Leaflet tile layer's
+ * `options`, where it sits alongside Leaflet's own creation options, so a stray
+ * config key would silently overwrite one of those (see docs/tile-url-pipeline.md).
+ *
+ * Add a tile-URL option here and only here: Map_.makeTileLayer spreads the
+ * result into the layer's creation options and TimeControl passes the same
+ * object to refresh(), so both paths pick it up.
  */
 export function buildTileUrlOptions(
     layerObj: Record<string, any>,
@@ -58,7 +67,6 @@ export function buildTileUrlOptions(
     const formattedStart = formatter(timeConfig.start)
     const formattedEnd = formatter(timeConfig.end)
     return {
-        ...layerObj,
         splitColonType,
         timeEnabled: timeConfig.enabled === true,
         time: formattedEnd,
@@ -67,6 +75,16 @@ export function buildTileUrlOptions(
         compositeTile: timeConfig.compositeTile ?? false,
         customTimes: timeConfig.customTimes ?? null,
         tileFormat: resolveTileFormat(layerObj),
+        // COG/TiTiler fields read by applyCogFieldsToUrl
+        cogTransform: layerObj.cogTransform,
+        cogColormap: layerObj.cogColormap,
+        cogExpression: layerObj.cogExpression,
+        currentCogExpression: layerObj.currentCogExpression,
+        cogMin: layerObj.cogMin,
+        currentCogMin: layerObj.currentCogMin,
+        cogMax: layerObj.cogMax,
+        currentCogMax: layerObj.currentCogMax,
+        cogResampling: layerObj.cogResampling,
     }
 }
 
@@ -77,7 +95,7 @@ export function buildTileUrlOptions(
  * @param {string} expression
  * @returns {string}
  */
-export function processExpression(expression) {
+export function processExpression(expression: string): string {
     if (!expression || expression.trim() === '') return expression
     return expression.replace(/(?<!\w)([bB])(\d+)/g, 'asset_$1$2')
 }
@@ -185,9 +203,9 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
     }
 
     // 2. Perform placeholder replacements
-    if (timeStr) nextUrl = nextUrl.replace(/{time}/g, timeStr)
-    if (startTimeStr) nextUrl = nextUrl.replace(/{starttime}/g, startTimeStr)
-    if (endTimeStr) nextUrl = nextUrl.replace(/{endtime}/g, endTimeStr)
+    nextUrl = nextUrl.replace(/{time}/g, timeStr || '')
+    nextUrl = nextUrl.replace(/{starttime}/g, startTimeStr || '')
+    nextUrl = nextUrl.replace(/{endtime}/g, endTimeStr || '')
 
     // 3. Custom time replacements
     if (options.customTimes?.times && options.customTimes.times.length > 0) {

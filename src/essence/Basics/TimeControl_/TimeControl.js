@@ -11,6 +11,7 @@ import {
     formatLayerTime,
     buildTileUrlOptions,
 } from '../Layers_/tileUrlUtils'
+import { MAP_ENGINE } from '../MapEngines/types/engine'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 
 import './TimeControl.css'
@@ -292,11 +293,17 @@ var TimeControl = {
                     // on Map_.engine.engineType
                     // https://github.com/NASA-IMPACT/MMGIS/issues/212 tracks this
                     if (tileLayer && typeof tileLayer.refresh === 'function') {
+                        // refresh() copies every key onto this.options, which the
+                        // per-tile getTileUrl then reads. Safe to pass whole:
+                        // buildTileUrlOptions returns only tile-URL keys.
                         tileLayer.refresh(resolvedUrl, true, tileOptions)
-                    } else if (Map_.engine?.engineType === 'deckgl') {
+                    } else if (Map_.engine?.engineType === MAP_ENGINE.DECKGL) {
                         const newUrl = compileTileUrl(resolvedUrl, tileOptions)
                         Map_.engine.updateLayer(layer.name, { url: newUrl })
-                        return true
+                        // Fall through to the shared tail so layer.url is restored
+                        // to originalUrl (performTimeUrlReplacements is not
+                        // idempotent — it consumes {key} placeholders and appends
+                        // nocache=). Do NOT early-return here.
                     }
                 }
             }
@@ -639,19 +646,14 @@ var TimeControl = {
             (layer.type.toLowerCase() === 'tile' ||
                 layer.type.toLowerCase() === 'tilelayer')
 
-        if (l != null && isTileLayer) {
-            const formattedTime = layerTimeFormatter(layer.time.end)
-            const formattedStart = layerTimeFormatter(layer.time.start)
-
-            // Deck layers expose `props`, not `options`
-            // Ensure options object exists (needed for middleware-based layers)
-            if (!l.options) {
-                l.options = {}
-            }
-
-            l.options.time = formattedTime
-            l.options.starttime = formattedStart
-            l.options.endtime = formattedTime
+        // Leaflet-only: `options` is where the per-tile getTileUrl and the WMS
+        // substitution read their times from. Deck layers expose `props`
+        // instead and get their times baked into the URL by reloadLayer, so the
+        // guard skips them rather than growing them an `options` nothing reads.
+        if (l != null && isTileLayer && l.options != null) {
+            l.options.time = layerTimeFormatter(layer.time.end)
+            l.options.starttime = layerTimeFormatter(layer.time.start)
+            l.options.endtime = layerTimeFormatter(layer.time.end)
         }
     },
 }

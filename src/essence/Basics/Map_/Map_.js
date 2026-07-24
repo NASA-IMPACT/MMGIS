@@ -1618,30 +1618,18 @@ async function makeTileLayer(layerObj, mapContext = null) {
     const tileOptions = buildTileUrlOptions(layerObj, splitColonType)
 
     ctx.layerRegistry.layer[layerObj.name] = L.tileLayer.colorFilter(layerUrl, {
+        // Tile-URL options, spread from the same builder TimeControl passes to
+        // refresh() so a layer's creation and refresh options cannot diverge.
+        // The Leaflet-only options follow, so they win on any name overlap.
+        ...tileOptions,
         minZoom: parseInt(layerObj.minZoom),
         maxZoom: parseInt(layerObj.maxZoom),
         maxNativeZoom: parseInt(layerObj.maxNativeZoom),
-        tileFormat: tileFormat,
         tms: tileFormat === 'tms',
-        splitColonType: splitColonType,
         //noWrap: true,
         continuousWorld: true,
         reuseTiles: true,
         bounds: bb,
-        timeEnabled: tileOptions.timeEnabled,
-        time: tileOptions.time,
-        compositeTile: tileOptions.compositeTile,
-        starttime: tileOptions.starttime,
-        endtime: tileOptions.endtime,
-        customTimes: tileOptions.customTimes,
-        cogTransform: layerObj.cogTransform,
-        cogMin: layerObj.cogMin,
-        currentCogMin: layerObj.currentCogMin,
-        cogMax: layerObj.cogMax,
-        currentCogMax: layerObj.currentCogMax,
-        cogColormap: layerObj.cogColormap,
-        cogExpression: layerObj.cogExpression,
-        currentCogExpression: layerObj.currentCogExpression,
         variables: layerObj.variables || {},
     })
 
