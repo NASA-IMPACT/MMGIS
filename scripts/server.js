@@ -419,6 +419,9 @@ function validateLongTermToken(token, successCallback, failureCallback) {
       } else {
         failureCallback();
       }
+    })
+    .catch((err) => {
+      failureCallback();
     });
 }
 
