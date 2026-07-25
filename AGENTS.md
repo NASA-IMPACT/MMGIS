@@ -133,6 +133,7 @@ MMGIS/
 ├── configure/                    # Admin configuration interface
 │   └── build/                    # Configuration UI
 ├── mcp/                          # MCP server: agents drive MMGIS + generate dashboards
+├── chat/                         # Standalone chat UI: OpenAI-driven MMGIS control via the MCP server
 ├── docs/                         # Documentation (Jekyll site)
 ├── public/                       # Static assets
 ├── Missions/                     # Mission data storage
