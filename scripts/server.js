@@ -405,6 +405,7 @@ function validateLongTermToken(token, successCallback, failureCallback) {
         result = result[0][0];
       } catch (err) {
         failureCallback();
+        return;
       }
 
       if (

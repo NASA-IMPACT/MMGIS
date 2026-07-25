@@ -51,6 +51,14 @@ describe('edit tools', () => {
         expect(client.upsertMission.mock.calls[0][2].info).toEqual({ type: 'addLayer', layerName: 'NewLayer' })
     })
 
+    it('layer_add errors early when layer.name is missing', async () => {
+        const client = fakeClient(baseConfig())
+        const res = await tools(client).layer_add.handler({ missionName: 'M', layer: { type: 'vector' } })
+        expect(res.isError).toBe(true)
+        expect(parse(res).hint).toBe('Layer entries need a name.')
+        expect(client.upsertMission).not.toHaveBeenCalled()
+    })
+
     it('layer_update merge-patches one layer found by name or uuid', async () => {
         const client = fakeClient(baseConfig())
         await tools(client).layer_update.handler({ missionName: 'M', layer: 'u1', patch: { visibility: false } })

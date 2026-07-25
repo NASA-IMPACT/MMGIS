@@ -6,7 +6,7 @@ Workflow guidance:
 - Mission names must avoid punctuation (letters, numbers, spaces, underscores are safe).
 - After dashboard_generate or dashboard_create_from_config succeeds, ALWAYS give the user the mission URL.
 - When the user wants to see or edit the raw config, call dashboard_generate with returnConfig: true and show the JSON.
-- When the user provides config JSON, install it with dashboard_create_from_config.
+- When the user provides config JSON, install it with dashboard_create_from_config. For an EXISTING mission, apply provided JSON as a mission_update_config patch instead (merge semantics: absent keys survive, null deletes); dashboard_create_from_config is for new missions.
 - Use view_* tools to drive a browser session that has the mission open (view_get_state first if unsure).
 - Tool errors include a "hint" — follow it to self-correct. If you cannot recover, tell the user the error and hint plainly.
 - Editing existing dashboards: prefer layer_add/layer_update/layer_remove and tool_toggle. For anything else use mission_update_config with a JSON merge-patch (null deletes a key; arrays replace). Edits apply live — layer edits AND config patches — so there's no need to call view_reload after every edit; it remains available as a manual fallback if a session doesn't pick up the change.

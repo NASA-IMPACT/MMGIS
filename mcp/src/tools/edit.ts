@@ -4,9 +4,10 @@ import type { MmgisClient } from '../mmgisClient.js'
 import { mergePatch, editConfig, findLayerIndex } from '../configEdit.js'
 import { type ToolDef, toToolResult, toErrorResult } from './result.js'
 
+const LIVE_NOTE =
+    'Change saved. Classic sessions apply it live; modern sessions auto-reload within about a second (AgentBridge).'
 const RELOAD_NOTE =
-    'Change saved. Open sessions auto-reload within about a second (AgentBridge); call view_reload as a manual fallback if that lag matters.'
-const LIVE_NOTE = 'Change saved and pushed live to open sessions.'
+    'Change saved. Modern sessions auto-reload within about a second (AgentBridge); classic sessions show a RELOAD button. view_reload is a manual fallback.'
 
 function layerNames(config: any): string {
     return (config?.layers ?? []).map((l: any) => l.name).join(', ') || '(none)'
@@ -46,6 +47,13 @@ export function makeEditTools(client: MmgisClient): ToolDef[] {
             },
             handler: async ({ missionName, layer, position }: any) => {
                 try {
+                    if (!layer || typeof layer.name !== 'string' || layer.name.trim() === '') {
+                        return toErrorResult(
+                            Object.assign(new Error('layer.name is required'), {
+                                hint: 'Layer entries need a name.',
+                            })
+                        )
+                    }
                     const entry = { uuid: randomUUID(), sublayers: [], visibility: true, ...layer }
                     const out = await editConfig(client, missionName, (config) => {
                         config.layers = config.layers ?? []
