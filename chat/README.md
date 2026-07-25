@@ -52,7 +52,7 @@ MMGIS REST + websocket. Conversation state lives in your browser
 
 ## Manual E2E checklist
 
-- [ ] `/api/health` shows the model and `MCP connected` with 14 tools
+- [ ] `/api/health` shows the model and `MCP connected` with 28 tools
 - [ ] Simple prompt streams a text reply
 - [ ] Dashboard request shows tool cards and an "Open dashboard →" button that loads in MMGIS
 - [ ] "show me the config JSON" returns the full config in a tool card

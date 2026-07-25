@@ -91,4 +91,17 @@ browser → `view_fly_to`.
 - Each AgentBridge session also broadcasts a `{kind: 'presence', sessionId}`
   frame on connect. Nothing currently consumes it server- or MCP-side — it's
   reserved for a future session-listing tool (Phase 2).
+- Same relay-hardening caveat family: because the relay is unauthenticated
+  and forwards every frame, any websocket peer can forge a
+  `{forceClientUpdate, info, body}` config-mutation frame and force-reload
+  every open **modern**-mode session of any mission (AgentBridge treats it as
+  a legitimate save broadcast) — restrict relay access accordingly (Phase 2
+  hardening candidate).
 - `/api/configure/clone` and `/destroy` have no per-permission check upstream — ANY valid long-term token can invoke them (pre-existing MMGIS behavior); scope who gets tokens accordingly. `mission_clone` shells out to a `python` binary on the MMGIS server; hosts with only `python3` will see clone failures.
+- `/api/accounts/entries` and `/api/accounts/update` are likewise reachable
+  by ANY valid long-term token (pre-existing MMGIS permission-less token
+  path, not something this MCP server adds) — so any token holder can list
+  every user account and change permissions via `user_list` /
+  `user_set_permission`'s underlying endpoints. Scope token issuance
+  accordingly; a token is effectively as powerful as an admin session for
+  these routes.
