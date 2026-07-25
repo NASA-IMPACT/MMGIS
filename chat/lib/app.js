@@ -44,7 +44,7 @@ export function createApp({ cfg, openai, bridge }) {
         try {
             await runAgentLoop({ messages, openai, bridge, model: cfg.model, onEvent: send })
         } catch (err) {
-            send({ type: 'error', message: err.message })
+            send({ type: 'error', message: String(err?.message ?? err) })
         }
         res.end()
     })

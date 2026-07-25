@@ -46,7 +46,25 @@ describe('McpBridge', () => {
         expect(out.isError).toBe(true)
         expect(out.text).toContain('transport closed')
         expect(bridge.isConnected()).toBe(false)
+        expect(dead.close).toHaveBeenCalledTimes(1)
         const retry = await bridge.callTool('mission_list', {})
         expect(retry.isError).toBe(false)
+    })
+    it('concurrent connect() callers only invoke the clientFactory once', async () => {
+        const client = fakeClient()
+        const factory = vi.fn(async () => {
+            await new Promise((r) => setTimeout(r, 20))
+            return { client }
+        })
+        const bridge = new McpBridge({}, factory)
+        await Promise.all([bridge.callTool('mission_list', {}), bridge.callTool('mission_list', {})])
+        expect(factory).toHaveBeenCalledTimes(1)
+    })
+    it('callTool serializes a non-Error throw into the error text', async () => {
+        const client = fakeClient({ callTool: vi.fn(async () => { throw 'boom string' }) })
+        const bridge = new McpBridge({}, async () => ({ client }))
+        const out = await bridge.callTool('mission_list', {})
+        expect(out.isError).toBe(true)
+        expect(out.text).toContain('boom string')
     })
 })

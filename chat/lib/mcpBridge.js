@@ -19,12 +19,21 @@ export class McpBridge {
         this.clientFactory = clientFactory
         this.client = null
         this.tools = null
+        this.connecting = null
     }
 
     async connect() {
         if (this.client) return
-        const { client } = await this.clientFactory(this.cfg)
-        this.client = client
+        if (this.connecting) return this.connecting
+        this.connecting = (async () => {
+            const { client } = await this.clientFactory(this.cfg)
+            this.client = client
+        })()
+        try {
+            await this.connecting
+        } finally {
+            this.connecting = null
+        }
     }
 
     isConnected() {
@@ -49,10 +58,12 @@ export class McpBridge {
             const res = await this.client.callTool({ name, arguments: args })
             return { text: res.content?.[0]?.text ?? '', isError: Boolean(res.isError) }
         } catch (err) {
-            // Drop the connection so the next call reconnects (fresh MCP process)
+            // Drop the connection so the next call reconnects (fresh MCP process).
+            // Close the dead client first so its subprocess/transport doesn't leak.
+            void this.client?.close?.().catch(() => {})
             this.client = null
             this.tools = null
-            return { text: JSON.stringify({ error: err.message }), isError: true }
+            return { text: JSON.stringify({ error: String(err?.message ?? err) }), isError: true }
         }
     }
 

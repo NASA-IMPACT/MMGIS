@@ -12,3 +12,10 @@ const app = createApp({ cfg, openai, bridge })
 app.listen(cfg.port, () => {
     console.log(`MMGIS chat UI: http://localhost:${cfg.port} (model: ${cfg.model})`)
 })
+
+const shutdown = async () => {
+    await bridge.close().catch(() => {})
+    process.exit(0)
+}
+process.on('SIGINT', shutdown)
+process.on('SIGTERM', shutdown)

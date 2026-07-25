@@ -40,6 +40,15 @@ MMGIS REST + websocket. Conversation state lives in your browser
 | `MCP_COMMAND` / `MCP_ARGS` | `node` / `../mcp/dist/index.js` | MCP server launch (paths relative to `chat/`) |
 | `MMGIS_URL`, `MMGIS_TOKEN`, `MAPBOX_TOKEN`, ... | — | Passed through to the MCP server |
 
+## Known limitations
+
+- Cross-turn memory only replays user/assistant text — tool results are not
+  persisted between turns. If you need the model to recall a config from
+  earlier in the conversation, ask it to echo the config back rather than
+  relying on it to remember the raw tool output.
+- Very large configs may not round-trip faithfully through the JSON drawer
+  (the model can hit output length limits when repeating them back).
+
 ## Manual E2E checklist
 
 - [ ] `/api/health` shows the model and `MCP connected` with 14 tools

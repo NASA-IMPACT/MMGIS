@@ -82,6 +82,18 @@ describe('chat app', () => {
         expect(events.at(-1)).toEqual({ type: 'error', message: 'bad key' })
     })
 
+    it('maps non-Error loop failures to an SSE error event', async () => {
+        const openai = { chat: { completions: { create: async () => { throw 'bad key' } } } }
+        const url = await start(createApp({ cfg, openai, bridge: fakeBridge() }))
+        const res = await fetch(`${url}/api/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages: [{ role: 'user', content: 'x' }] }),
+        })
+        const events = await readSse(res)
+        expect(events.at(-1)).toEqual({ type: 'error', message: 'bad key' })
+    })
+
     it('GET /api/health degrades gracefully when the bridge is down', async () => {
         const downBridge = {
             isConnected: () => false,
