@@ -22,6 +22,7 @@ all from a browser chat.
   from JSON" (runs `dashboard_create_from_config` through the agent, visibly).
 - With a dashboard open in another tab: "fly the map to Huntsville" (`view_*`
   tools drive that session over the MMGIS websocket).
+- "Make the OSM layer 50% transparent", "rename the page to Flood Watch then reload the view", "upload this GeoJSON and add it as a layer", "delete the JSON Demo mission" → live config editing and confirmation workflows.
 
 ## How it works
 
@@ -58,3 +59,9 @@ MMGIS REST + websocket. Conversation state lives in your browser
 - [ ] JSON drawer creates a mission from pasted (edited) config
 - [ ] `view_fly_to` request visibly moves an open dashboard's map
 - [ ] Bad OpenAI key shows a red error bubble, conversation survives a retry
+- [ ] layer_update from chat visibly changes an open dashboard WITHOUT reloading (e.g. opacity)
+- [ ] mission_update_config + view_reload applies a basemap/page-name change
+- [ ] geodataset_ingest (inline) → layer_add with geodatasets:<name> renders the data
+- [ ] mission_delete asks for confirmation in chat before acting
+- [ ] user_create + user_set_permission work with the long-term token (exercises the flagged backend change)
+- [ ] mission_clone (may fail if the MMGIS host lacks a `python` binary — record outcome)
