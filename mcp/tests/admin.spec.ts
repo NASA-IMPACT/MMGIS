@@ -15,7 +15,7 @@ describe('admin tools', () => {
     const tools = Object.fromEntries(makeAdminTools(fakeClient).map((t) => [t.name, t]))
 
     it('exposes mission_list and mission_get', () => {
-        expect(Object.keys(tools).sort()).toEqual(['geodataset_delete', 'geodataset_ingest', 'geodataset_list', 'mission_clone', 'mission_delete', 'mission_get', 'mission_list'])
+        expect(Object.keys(tools).sort()).toEqual(['geodataset_delete', 'geodataset_ingest', 'geodataset_list', 'mission_clone', 'mission_delete', 'mission_get', 'mission_list', 'user_create', 'user_list', 'user_set_permission'])
     })
     it('mission_list returns mission names', async () => {
         expect(parse(await tools.mission_list.handler({}))).toEqual({ missions: ['Demo', 'Mars2020'] })
@@ -92,5 +92,37 @@ describe('admin tools', () => {
         expect(client.geodatasetRemove).not.toHaveBeenCalled()
         parse(await t.geodataset_delete.handler({ name: 'g1', confirm: true }))
         expect(client.geodatasetRemove).toHaveBeenCalledWith('g1')
+    })
+
+    it('user_list returns account entries without passwords', async () => {
+        const client = { accountEntries: vi.fn(async () => [{ id: 1, username: 'admin', permission: '111' }]) } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        expect(parse(await t.user_list.handler({})).users).toEqual([{ id: 1, username: 'admin', permission: '111' }])
+    })
+
+    it('user_create requires confirm, calls signup, and never echoes the password', async () => {
+        const client = { userSignup: vi.fn(async () => ({ status: 'success', username: 'alice' })) } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        const preview = parse(await t.user_create.handler({ username: 'alice', password: 'Str0ng!Pass' }))
+        expect(preview.needsConfirmation).toBe(true)
+        expect(client.userSignup).not.toHaveBeenCalled()
+        const res = await t.user_create.handler({ username: 'alice', password: 'Str0ng!Pass', confirm: true })
+        expect(res.content[0].text).not.toContain('Str0ng!Pass')
+        expect(parse(res).username).toBe('alice')
+        expect(client.userSignup).toHaveBeenCalledWith('alice', 'Str0ng!Pass')
+    })
+
+    it('user_set_permission resolves username to id and requires confirm', async () => {
+        const client = {
+            accountEntries: vi.fn(async () => [{ id: 1, username: 'admin', permission: '111' }, { id: 2, username: 'bob', permission: '001' }]),
+            accountUpdate: vi.fn(async () => ({ status: 'success' })),
+        } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        const preview = parse(await t.user_set_permission.handler({ username: 'bob', permission: '110', missionsManaging: ['Demo'] }))
+        expect(preview.needsConfirmation).toBe(true)
+        await t.user_set_permission.handler({ username: 'bob', permission: '110', missionsManaging: ['Demo'], confirm: true })
+        expect(client.accountUpdate).toHaveBeenCalledWith({ id: 2, permission: '110', missionsManaging: ['Demo'] })
+        const unknown = await t.user_set_permission.handler({ username: 'nope', permission: '001', confirm: true })
+        expect(unknown.isError).toBe(true)
     })
 })

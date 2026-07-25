@@ -479,6 +479,22 @@ function ensureUser() {
   };
 }
 
+function annotateLongTermToken(req, res, next) {
+  if (req.headers.authorization) {
+    validateLongTermToken(
+      req.headers.authorization,
+      (tokenData) => {
+        req.isLongTermToken = true;
+        req.tokenUserPermission = tokenData.permission;
+        req.tokenUserMissions = tokenData.missions_managing;
+        req.user = tokenData.username;
+        next();
+      },
+      () => next()
+    );
+  } else next();
+}
+
 var swaggerOptions = {
   customCssUrl: "/docs/swagger/swaggerCSS.css",
   customJs: "/docs/swagger/swaggerJS.js",
@@ -503,6 +519,7 @@ let s = {
   ensureGroup,
   ensureAdmin,
   ensureUser,
+  annotateLongTermToken,
   swaggerUi,
   useSwaggerSchema,
   permissions,

@@ -137,5 +137,63 @@ export function makeAdminTools(client: MmgisClient, fetchFn: typeof fetch = fetc
                 }
             },
         },
+        {
+            name: 'user_list',
+            description: 'List MMGIS user accounts (id, username, permission: 111=SuperAdmin, 110=Admin, 001=Viewer).',
+            schema: {},
+            handler: async () => {
+                try {
+                    return toToolResult({ users: await client.accountEntries() })
+                } catch (err) {
+                    return toErrorResult(err)
+                }
+            },
+        },
+        {
+            name: 'user_create',
+            description: "Create a user account (created as Viewer '001'; use user_set_permission to promote to Admin '110'). Password needs 8+ chars with upper, lower, number, symbol. Requires confirm: true after the user agrees. Never repeat the password back in chat.",
+            schema: {
+                username: z.string(),
+                password: z.string().describe('8+ chars with upper, lower, number, symbol'),
+                confirm: z.boolean().optional(),
+            },
+            handler: async ({ username, password, confirm }: any) => {
+                try {
+                    if (confirm !== true) {
+                        return toToolResult({ needsConfirmation: true, wouldCreate: `User "${username}" with Viewer (001) permission.` })
+                    }
+                    const out = await client.userSignup(username, password)
+                    return toToolResult({ username: out.username ?? username, created: true })
+                } catch (err) {
+                    return toErrorResult(err)
+                }
+            },
+        },
+        {
+            name: 'user_set_permission',
+            description: "Change a user's permission: '110' (Admin, optionally with missionsManaging list) or '001' (Viewer). SuperAdmin (111) cannot be granted, and user id 1 cannot be changed (backend rules). Requires confirm: true.",
+            schema: {
+                username: z.string(),
+                permission: z.enum(['110', '001']),
+                missionsManaging: z.array(z.string()).optional().describe("Missions an Admin ('110') manages"),
+                confirm: z.boolean().optional(),
+            },
+            handler: async ({ username, permission, missionsManaging, confirm }: any) => {
+                try {
+                    if (confirm !== true) {
+                        return toToolResult({ needsConfirmation: true, wouldChange: `Set "${username}" permission to ${permission}${missionsManaging ? ` managing [${missionsManaging.join(', ')}]` : ''}.` })
+                    }
+                    const users = await client.accountEntries()
+                    const user = users.find((u: any) => u.username === username)
+                    if (!user) {
+                        return toErrorResult(Object.assign(new Error(`Unknown user: ${username}`), { hint: `Users: ${users.map((u: any) => u.username).join(', ')}` }))
+                    }
+                    await client.accountUpdate({ id: user.id, permission, ...(missionsManaging ? { missionsManaging } : {}) })
+                    return toToolResult({ username, permission, ...(missionsManaging ? { missionsManaging } : {}) })
+                } catch (err) {
+                    return toErrorResult(err)
+                }
+            },
+        },
     ]
 }

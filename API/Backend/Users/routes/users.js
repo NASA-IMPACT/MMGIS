@@ -82,11 +82,14 @@ router.post("/signup", function (req, res, next) {
   if (
     (process.env.AUTH === "local" &&
       req.session.permission !== "111" &&
+      !(req.isLongTermToken === true && req.tokenUserPermission === "111") &&
       !(
         process.env.AUTH_LOCAL_ALLOW_SIGNUP === true ||
         process.env.AUTH_LOCAL_ALLOW_SIGNUP === "true"
       )) ||
-    (process.env.AUTH === "off" && req.session.permission !== "111")
+    (process.env.AUTH === "off" &&
+      req.session.permission !== "111" &&
+      !(req.isLongTermToken === true && req.tokenUserPermission === "111"))
   ) {
     res.send({
       status: "failure",
