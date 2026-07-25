@@ -12,6 +12,14 @@ const RECONNECT_MS = 10000
 // calls in a row) into a single reload instead of reloading per-frame.
 const RELOAD_DEBOUNCE_MS = 800
 
+// Shared modern-vs-classic mode check. Modern missions set
+// L_.configData.msv.mode === 'modern'; everything else is classic.
+// Kept as a single source of truth so the tool adapter and the
+// auto-reload gate below never disagree about which mode is active.
+function isModernMission() {
+    return !!(L_.configData && L_.configData.msv && L_.configData.msv.mode === 'modern')
+}
+
 // Builds the tool-activation adapter `commands.js` uses for `open_tool` /
 // `get_view_state`. Classic missions run the exclusive-panel ToolController_;
 // modern missions (L_.configData.msv.mode === 'modern') never instantiate it
@@ -19,7 +27,7 @@ const RELOAD_DEBOUNCE_MS = 800
 // show/hide/load-plugin API. Keeping the mode switch here (not in commands.js)
 // lets commands.js stay a plain, dependency-injected, unit-testable module.
 function buildToolAdapter() {
-    const isModern = L_.configData && L_.configData.msv && L_.configData.msv.mode === 'modern'
+    const isModern = isModernMission()
 
     if (isModern) {
         return {
@@ -162,7 +170,10 @@ const AgentBridge = {
         // has no websocket client of its own, so this is the only place
         // that can notice a saved config change and bring the session
         // current. Debounced so a burst of edits reloads once, not per-frame.
-        if (shouldReloadForFrame(parsed, L_.mission)) {
+        // Modern-only: classic sessions already live-apply layer frames
+        // natively via essence.js, so reloading there would be redundant
+        // (and destructive to any unsaved local UI state).
+        if (shouldReloadForFrame(parsed, L_.mission) && isModernMission()) {
             clearTimeout(this.reloadTimer)
             this.reloadTimer = setTimeout(() => {
                 window.location.reload()
