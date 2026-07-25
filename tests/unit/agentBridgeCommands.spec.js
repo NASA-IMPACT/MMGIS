@@ -3,6 +3,7 @@ import {
     executeCommand,
     getViewState,
     resolveToolId,
+    shouldReloadForFrame,
 } from '../../src/essence/MMGIS-Plugin-Components/AgentBridge/commands'
 
 function makeDeps() {
@@ -143,6 +144,40 @@ describe('getViewState', () => {
         const state = getViewState(deps)
         expect(state.center).toBe(null)
         expect(state.zoom).toBe(null)
+    })
+})
+
+describe('shouldReloadForFrame', () => {
+    const validFrame = {
+        type: undefined,
+        forceClientUpdate: true,
+        body: { mission: 'M' },
+        info: { type: 'updateLayer' },
+    }
+
+    it('is true for a config-mutation broadcast matching the current mission', () => {
+        expect(shouldReloadForFrame(validFrame, 'M')).toBe(true)
+    })
+    it('is false for agent-bridge frames', () => {
+        expect(shouldReloadForFrame({ ...validFrame, type: 'agent-bridge' }, 'M')).toBe(false)
+    })
+    it('is false when forceClientUpdate is absent', () => {
+        const { forceClientUpdate, ...rest } = validFrame
+        expect(shouldReloadForFrame(rest, 'M')).toBe(false)
+    })
+    it('is false when forceClientUpdate is false', () => {
+        expect(shouldReloadForFrame({ ...validFrame, forceClientUpdate: false }, 'M')).toBe(false)
+    })
+    it('is false for a different mission', () => {
+        expect(shouldReloadForFrame(validFrame, 'Other')).toBe(false)
+    })
+    it("is false when info.type isn't a reload-worthy mutation", () => {
+        expect(
+            shouldReloadForFrame({ ...validFrame, info: { type: 'somethingElse' } }, 'M')
+        ).toBe(false)
+    })
+    it('is false for a null frame', () => {
+        expect(shouldReloadForFrame(null, 'M')).toBe(false)
     })
 })
 

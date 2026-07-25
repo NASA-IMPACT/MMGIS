@@ -31,6 +31,20 @@ export function getViewState(deps) {
     }
 }
 
+// Config-mutation broadcasts (POST /api/configure/upsert with
+// forceClientUpdate: true) arrive over the same websocket as agent-bridge
+// frames. The classic client (essence.js) auto-applies/shows RELOAD for
+// these; modern.js has no websocket client at all, so AgentBridge (which
+// connects in every mode) is the only thing that can notice and react.
+// Kept dependency-free so it's trivially unit-testable.
+export function shouldReloadForFrame(parsed, mission) {
+    if (parsed == null || parsed.type === 'agent-bridge') return false
+    if (parsed.forceClientUpdate !== true) return false
+    if (parsed.body == null || parsed.body.mission !== mission) return false
+    const type = parsed.info == null ? null : parsed.info.type
+    return ['upsert', 'addLayer', 'updateLayer', 'removeLayer'].includes(type)
+}
+
 export async function executeCommand(command, args, deps) {
     const { Map_, L_, ToolAdapter, TimeControl } = deps
     const a = args || {}

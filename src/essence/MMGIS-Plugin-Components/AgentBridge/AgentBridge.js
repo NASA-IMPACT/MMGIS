@@ -3,11 +3,14 @@ import L_ from '../../Basics/Layers_/Layers_'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import TimeControl from '../../Basics/TimeControl_/TimeControl'
 import { isStaticBuild } from '../../../pre/capabilities'
-import { executeCommand, resolveToolId } from './commands'
+import { executeCommand, resolveToolId, shouldReloadForFrame } from './commands'
 
 // Envelope contract shared with mcp/src/bridge.ts — keep in sync.
 const FRAME_TYPE = 'agent-bridge'
 const RECONNECT_MS = 10000
+// Coalesce bursts of config-mutation broadcasts (e.g. several layer_add
+// calls in a row) into a single reload instead of reloading per-frame.
+const RELOAD_DEBOUNCE_MS = 800
 
 // Builds the tool-activation adapter `commands.js` uses for `open_tool` /
 // `get_view_state`. Classic missions run the exclusive-panel ToolController_;
@@ -86,6 +89,7 @@ function buildToolAdapter() {
 const AgentBridge = {
     ws: null,
     sessionId: null,
+    reloadTimer: null,
 
     init: function (vars) {
         this.sessionId =
@@ -153,6 +157,18 @@ const AgentBridge = {
         } catch (err) {
             return
         }
+
+        // Config-mutation broadcast (not an agent-bridge frame): modern.js
+        // has no websocket client of its own, so this is the only place
+        // that can notice a saved config change and bring the session
+        // current. Debounced so a burst of edits reloads once, not per-frame.
+        if (shouldReloadForFrame(parsed, L_.mission)) {
+            clearTimeout(this.reloadTimer)
+            this.reloadTimer = setTimeout(() => {
+                window.location.reload()
+            }, RELOAD_DEBOUNCE_MS)
+        }
+
         if (parsed == null || parsed.type !== FRAME_TYPE) return
         if (parsed.agent == null || parsed.agent.kind !== 'command') return
         if (parsed.body == null || parsed.body.mission !== L_.mission) return

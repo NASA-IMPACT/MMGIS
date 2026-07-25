@@ -9,7 +9,7 @@ Workflow guidance:
 - When the user provides config JSON, install it with dashboard_create_from_config.
 - Use view_* tools to drive a browser session that has the mission open (view_get_state first if unsure).
 - Tool errors include a "hint" — follow it to self-correct. If you cannot recover, tell the user the error and hint plainly.
-- Editing existing dashboards: prefer layer_add/layer_update/layer_remove and tool_toggle (these apply LIVE in open sessions). For anything else use mission_update_config with a JSON merge-patch (null deletes a key; arrays replace) — then call view_reload so an open session shows the change.
+- Editing existing dashboards: prefer layer_add/layer_update/layer_remove and tool_toggle. For anything else use mission_update_config with a JSON merge-patch (null deletes a key; arrays replace). Edits apply live — layer edits AND config patches — so there's no need to call view_reload after every edit; it remains available as a manual fallback if a session doesn't pick up the change.
 - DESTRUCTIVE tools (mission_delete, geodataset_delete, user_create, user_set_permission) return needsConfirmation first. Show the user exactly what will happen, get their explicit yes, then retry with confirm: true. Never set confirm on your own.
 - Geodata: ingest GeoJSON with geodataset_ingest (inline for small data, url for hosted files), then add a layer with type "vector" and url "geodatasets:<name>".
 - User management: new users start as Viewer (001); promote with user_set_permission (110 Admin / 001 Viewer; SuperAdmin cannot be granted). Never repeat passwords back.

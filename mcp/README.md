@@ -44,7 +44,7 @@ catalogs for data layers, and control a live browser session.
 - `dashboard_profile_schema`, `dashboard_tool_options`, `dashboard_generate` (supports `returnConfig` to get the full config JSON back), `dashboard_create_from_config` (install a dashboard from raw config JSON) — NL → dashboard
 - `catalog_collections`, `catalog_search`, `catalog_item_to_layer` — STAC data discovery
 - `view_fly_to`, `view_toggle_layer`, `view_open_tool`, `view_set_time`, `view_get_state` — live browser control (requires an open browser session on the mission; `dashboard_generate` enables the AgentBridge component automatically)
-- `mission_update_config`, `layer_add`, `layer_update`, `layer_remove`, `tool_toggle` — live config editing (layer changes auto-apply in open sessions; others need one RELOAD click or `view_reload`)
+- `mission_update_config`, `layer_add`, `layer_update`, `layer_remove`, `tool_toggle` — live config editing (in modern mode, the AgentBridge component auto-reloads open sessions on config changes; classic mode applies via MMGIS's native update flow; `view_reload` remains a manual fallback)
 - `mission_clone`, `mission_delete`†, `geodataset_list`, `geodataset_ingest`, `geodataset_delete`†, `user_list`, `user_create`†, `user_set_permission`† — admin operations († = requires `confirm: true` after a preview)
 - `view_reload` — reload an open session to apply non-layer config changes
 

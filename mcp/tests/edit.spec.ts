@@ -33,7 +33,7 @@ describe('edit tools', () => {
             missionName: 'M', patch: { look: { pagename: 'New' } },
         }))
         expect(out.version).toBe(2)
-        expect(out.refresh).toMatch(/RELOAD|view_reload/)
+        expect(out.refresh).toMatch(/reload/i)
         const sent = client.upsertMission.mock.calls[0][1]
         expect(sent.look.pagename).toBe('New')
         expect(sent.layers).toHaveLength(1)

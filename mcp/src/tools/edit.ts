@@ -5,7 +5,7 @@ import { mergePatch, editConfig, findLayerIndex } from '../configEdit.js'
 import { type ToolDef, toToolResult, toErrorResult } from './result.js'
 
 const RELOAD_NOTE =
-    'Change saved. Open sessions show a RELOAD button; or call view_reload to apply it immediately.'
+    'Change saved. Open sessions auto-reload within about a second (AgentBridge); call view_reload as a manual fallback if that lag matters.'
 const LIVE_NOTE = 'Change saved and pushed live to open sessions.'
 
 function layerNames(config: any): string {
