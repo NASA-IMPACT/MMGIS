@@ -92,11 +92,20 @@ export function makeAdminTools(client: MmgisClient, fetchFn: typeof fetch = fetc
                 name: z.string().describe('Geodataset name'),
                 geojson: z.record(z.any()).optional().describe('Inline GeoJSON FeatureCollection'),
                 url: z.string().optional().describe('URL of a GeoJSON file to fetch'),
+                confirm: z.boolean().optional().describe('Must be true to overwrite an existing geodataset'),
             },
-            handler: async ({ name, geojson, url }: any) => {
+            handler: async ({ name, geojson, url, confirm }: any) => {
                 try {
                     if (!geojson === !url) {
                         return toErrorResult(new MMGISError('Provide exactly one of geojson or url'))
+                    }
+                    const existing = await client.geodatasetEntries()
+                    const match = (existing as any[]).find((e: any) => e.name === name)
+                    if (match && confirm !== true) {
+                        return toToolResult({
+                            needsConfirmation: true,
+                            wouldReplace: `Geodataset "${name}" already exists with ${match.num_features} features — ingesting replaces ALL of them.`,
+                        })
                     }
                     let data = geojson
                     if (url) {

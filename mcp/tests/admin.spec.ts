@@ -59,7 +59,10 @@ describe('admin tools', () => {
     })
 
     it('geodataset_ingest accepts inline FeatureCollections and rejects bad shapes', async () => {
-        const client = { geodatasetRecreate: vi.fn(async () => ({ status: 'success' })) } as any
+        const client = {
+            geodatasetRecreate: vi.fn(async () => ({ status: 'success' })),
+            geodatasetEntries: async () => [],
+        } as any
         const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
         const fc = { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: null, properties: {} }] }
         const out = parse(await t.geodataset_ingest.handler({ name: 'g1', geojson: fc }))
@@ -75,7 +78,10 @@ describe('admin tools', () => {
         const fetcher = vi.fn(async () => ({
             ok: true, headers: { get: () => null }, text: async () => JSON.stringify(fc),
         })) as any
-        const client = { geodatasetRecreate: vi.fn(async () => ({ status: 'success' })) } as any
+        const client = {
+            geodatasetRecreate: vi.fn(async () => ({ status: 'success' })),
+            geodatasetEntries: async () => [],
+        } as any
         const t = Object.fromEntries(makeAdminTools(client, fetcher).map((x) => [x.name, x]))
         const out = parse(await t.geodataset_ingest.handler({ name: 'g2', url: 'https://x/y.geojson' }))
         expect(out.features).toBe(0)
@@ -83,6 +89,23 @@ describe('admin tools', () => {
         const big = vi.fn(async () => ({ ok: true, headers: { get: () => String(30 * 1024 * 1024) }, text: async () => '' })) as any
         const t2 = Object.fromEntries(makeAdminTools(client, big).map((x) => [x.name, x]))
         expect((await t2.geodataset_ingest.handler({ name: 'g3', url: 'https://x/big.geojson' })).isError).toBe(true)
+    })
+
+    it('geodataset_ingest requires confirm to replace an existing geodataset', async () => {
+        const client = {
+            geodatasetRecreate: vi.fn(async () => ({ status: 'success' })),
+            geodatasetEntries: async () => [{ name: 'g1', num_features: 5 }],
+        } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        const fc = { type: 'FeatureCollection', features: [] }
+        const preview = parse(await t.geodataset_ingest.handler({ name: 'g1', geojson: fc }))
+        expect(preview.needsConfirmation).toBe(true)
+        expect(preview.wouldReplace).toContain('g1')
+        expect(preview.wouldReplace).toContain('5 features')
+        expect(client.geodatasetRecreate).not.toHaveBeenCalled()
+        const out = parse(await t.geodataset_ingest.handler({ name: 'g1', geojson: fc, confirm: true }))
+        expect(out.name).toBe('g1')
+        expect(client.geodatasetRecreate).toHaveBeenCalledWith('g1', fc)
     })
 
     it('geodataset_delete requires confirm', async () => {
