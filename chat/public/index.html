@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MMGIS Chat</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <header>
+        <h1>MMGIS Chat</h1>
+        <div id="status" class="status">connecting…</div>
+        <div class="header-actions">
+            <button id="jsonDrawerToggle" type="button">JSON config</button>
+            <button id="newChat" type="button">New chat</button>
+        </div>
+    </header>
+
+    <section id="jsonDrawer" class="drawer hidden">
+        <label>Mission name <input id="jsonMissionName" type="text" placeholder="My Dashboard" /></label>
+        <label>Mission config JSON
+            <textarea id="jsonConfig" rows="10" placeholder='Paste config JSON here (tip: ask for a dashboard with "show me the config JSON" to get one)'></textarea>
+        </label>
+        <button id="jsonCreate" type="button">Create dashboard from JSON</button>
+    </section>
+
+    <main id="transcript"></main>
+
+    <form id="composer">
+        <textarea id="input" rows="2" placeholder="e.g. Create an air quality dashboard over Atlanta"></textarea>
+        <button id="send" type="submit">Send</button>
+    </form>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
