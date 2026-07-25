@@ -42,12 +42,18 @@ if (typeof document !== 'undefined') {
     const composer = document.getElementById('composer')
     const input = document.getElementById('input')
     const status = document.getElementById('status')
+    const send = document.getElementById('send')
     const newChat = document.getElementById('newChat')
     const drawerToggle = document.getElementById('jsonDrawerToggle')
     const drawer = document.getElementById('jsonDrawer')
     const jsonCreate = document.getElementById('jsonCreate')
 
-    let messages = JSON.parse(localStorage.getItem('mmgisChat') || '[]')
+    let messages = []
+    try {
+        messages = JSON.parse(localStorage.getItem('mmgisChat') || '[]')
+    } catch {
+        messages = []
+    }
     let busy = false
 
     const save = () => localStorage.setItem('mmgisChat', JSON.stringify(messages))
@@ -64,7 +70,9 @@ if (typeof document !== 'undefined') {
     function addToolCard(name, args) {
         const details = document.createElement('details')
         details.className = 'tool'
-        details.innerHTML = `<summary>🔧 ${name}</summary>`
+        const summary = document.createElement('summary')
+        summary.textContent = `🔧 ${name}`
+        details.appendChild(summary)
         const argsPre = document.createElement('pre')
         argsPre.textContent = `args: ${JSON.stringify(args, null, 2)}`
         details.appendChild(argsPre)
@@ -110,9 +118,12 @@ if (typeof document !== 'undefined') {
 
     async function sendConversation() {
         busy = true
+        send.disabled = true
+        newChat.disabled = true
         const toolCards = new Map()
         let assistantDiv = null
-        let assistantText = ''
+        let bubbleText = ''
+        let fullText = ''
         try {
             const res = await fetch('/api/chat', {
                 method: 'POST',
@@ -131,9 +142,14 @@ if (typeof document !== 'undefined') {
                 buffer = rest
                 for (const ev of events) {
                     if (ev.type === 'text') {
-                        if (!assistantDiv) assistantDiv = addBubble('assistant', '')
-                        assistantText += ev.delta
-                        assistantDiv.textContent = assistantText
+                        if (!assistantDiv) {
+                            assistantDiv = addBubble('assistant', '')
+                            bubbleText = ''
+                            if (fullText) fullText += '\n'
+                        }
+                        bubbleText += ev.delta
+                        fullText += ev.delta
+                        assistantDiv.textContent = bubbleText
                         transcript.scrollTop = transcript.scrollHeight
                     } else if (ev.type === 'tool_call') {
                         // a new assistant bubble will follow the tool round
@@ -147,14 +163,16 @@ if (typeof document !== 'undefined') {
                     }
                 }
             }
-            if (assistantText) {
-                messages.push({ role: 'assistant', content: assistantText })
+            if (fullText) {
+                messages.push({ role: 'assistant', content: fullText })
                 save()
             }
         } catch (err) {
             addBubble('error', `Error: ${err.message}`)
         } finally {
             busy = false
+            send.disabled = false
+            newChat.disabled = false
         }
     }
 
@@ -168,6 +186,7 @@ if (typeof document !== 'undefined') {
 
     composer.addEventListener('submit', (e) => {
         e.preventDefault()
+        if (busy) return
         const content = input.value
         input.value = ''
         submitUserMessage(content)
@@ -179,6 +198,7 @@ if (typeof document !== 'undefined') {
         }
     })
     newChat.addEventListener('click', () => {
+        if (busy) return
         messages = []
         save()
         render()
