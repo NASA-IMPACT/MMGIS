@@ -81,4 +81,16 @@ describe('chat app', () => {
         const events = await readSse(res)
         expect(events.at(-1)).toEqual({ type: 'error', message: 'bad key' })
     })
+
+    it('GET /api/health degrades gracefully when the bridge is down', async () => {
+        const downBridge = {
+            isConnected: () => false,
+            getOpenAiTools: async () => { throw new Error('mcp process dead') },
+            callTool: async () => ({ text: '', isError: true }),
+        }
+        const url = await start(createApp({ cfg, openai: fakeOpenai([]), bridge: downBridge }))
+        const res = await fetch(`${url}/api/health`)
+        expect(res.status).toBe(200)
+        expect(await res.json()).toEqual({ ok: true, model: 'test-model', mcpConnected: false, toolCount: 0 })
+    })
 })
