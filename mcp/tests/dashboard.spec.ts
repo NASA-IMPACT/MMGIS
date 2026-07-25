@@ -137,4 +137,59 @@ describe('dashboard tools', () => {
         expect(res.isError).toBe(true)
         expect(parse(res).hint).toMatch(/updateExisting/)
     }, 30000)
+
+    it('dashboard_generate includes the full config when returnConfig is true', async () => {
+        const client = { addMission: async (m: string) => ({ mission: m, version: 0 }) } as any
+        const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
+        const out = parse(await tools.dashboard_generate.handler({ missionName: 'RC Test', returnConfig: true }))
+        expect(out.config.msv.mission).toBe('RC Test')
+        const without = parse(await tools.dashboard_generate.handler({ missionName: 'RC Test' }))
+        expect(without.config).toBeUndefined()
+    }, 30000)
+
+    it('dashboard_create_from_config installs raw config with placeholder resolution and component injection', async () => {
+        const calls: any[] = []
+        const client = {
+            addMission: async (mission: string, config: any) => {
+                calls.push({ mission, config })
+                return { mission, version: 0 }
+            },
+        } as any
+        const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
+        const rawConfig = {
+            msv: { mission: 'From JSON', basemap: { accessToken: '{{MAPBOX_TOKEN}}' } },
+            layers: [],
+        }
+        const out = parse(
+            await tools.dashboard_create_from_config.handler({ missionName: 'From JSON', config: rawConfig })
+        )
+        expect(out.url).toBe('http://mm:8888/?mission=From%20JSON')
+        expect(calls[0].config.components).toEqual([
+            { name: 'AgentBridge', js: 'AgentBridge', on: true, variables: {} },
+        ])
+        expect(calls[0].config.msv.basemap.accessToken).toBe('pk.test')
+    })
+
+    it('dashboard_create_from_config keeps caller-provided components untouched', async () => {
+        const calls: any[] = []
+        const client = {
+            addMission: async (mission: string, config: any) => {
+                calls.push({ mission, config })
+                return { mission, version: 0 }
+            },
+        } as any
+        const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
+        await tools.dashboard_create_from_config.handler({
+            missionName: 'From JSON',
+            config: { components: [{ name: 'X', js: 'X', on: false, variables: {} }] },
+        })
+        expect(calls[0].config.components).toEqual([{ name: 'X', js: 'X', on: false, variables: {} }])
+    })
+
+    it('dashboard_create_from_config rejects bad mission names before any client call', async () => {
+        const client = { addMission: async () => { throw new Error('should not be called') } } as any
+        const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
+        const res = await tools.dashboard_create_from_config.handler({ missionName: 'bad-name!', config: {} })
+        expect(res.isError).toBe(true)
+    })
 })

@@ -41,7 +41,7 @@ catalogs for data layers, and control a live browser session.
 ## Tools
 
 - `mission_list`, `mission_get` — admin plane
-- `dashboard_profile_schema`, `dashboard_tool_options`, `dashboard_generate` — NL → dashboard
+- `dashboard_profile_schema`, `dashboard_tool_options`, `dashboard_generate` (supports `returnConfig` to get the full config JSON back), `dashboard_create_from_config` (install a dashboard from raw config JSON) — NL → dashboard
 - `catalog_collections`, `catalog_search`, `catalog_item_to_layer` — STAC data discovery
 - `view_fly_to`, `view_toggle_layer`, `view_open_tool`, `view_set_time`, `view_get_state` — live browser control (requires an open browser session on the mission; `dashboard_generate` enables the AgentBridge component automatically)
 

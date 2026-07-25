@@ -58,6 +58,23 @@ function validateMissionName(missionName: string): { message: string; hint: stri
     }
 }
 
+async function installMission(
+    client: MmgisClient,
+    missionName: string,
+    config: any,
+    updateExisting: boolean | undefined
+): Promise<{ mission: string; version: number }> {
+    try {
+        return await client.addMission(missionName, config)
+    } catch (err: any) {
+        if (/already exists/i.test(err?.message || '')) {
+            if (updateExisting) return await client.upsertMission(missionName, config)
+            err.hint = 'Pass updateExisting: true to replace the existing mission config.'
+        }
+        throw err
+    }
+}
+
 const dashboardGenerateSchema = {
     missionName: z.string().describe(`Name for the new mission/dashboard. ${MISSION_NAME_RULE}`),
     layers: z
@@ -74,6 +91,10 @@ const dashboardGenerateSchema = {
     overrides: z.record(z.object({ variables: z.record(z.any()) })).optional(),
     pageName: z.string().optional().describe('Browser page title / branding'),
     updateExisting: z.boolean().optional().describe('If the mission exists, replace its config (new version)'),
+    returnConfig: z
+        .boolean()
+        .optional()
+        .describe('Include the full generated mission config JSON in the result'),
 }
 
 export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef[] {
@@ -116,7 +137,7 @@ export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef
             description:
                 'Generate a complete MMGIS mission (dashboard) from a description of layers, view, and tools, and install it. Returns the mission URL.',
             schema: dashboardGenerateSchema,
-            handler: async (args: DashboardSpec & { updateExisting?: boolean }) => {
+            handler: async (args: DashboardSpec & { updateExisting?: boolean; returnConfig?: boolean }) => {
                 try {
                     const nameError = validateMissionName(args.missionName)
                     if (nameError) return toErrorResult(nameError)
@@ -127,19 +148,42 @@ export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef
                     // Injected after generation: `components` is not a template key,
                     // and /api/configure/add does not run backend validation.
                     config.components = [AGENT_BRIDGE_COMPONENT]
-                    let out
-                    try {
-                        out = await client.addMission(args.missionName, config)
-                    } catch (err: any) {
-                        if (/already exists/i.test(err?.message || '') && args.updateExisting) {
-                            out = await client.upsertMission(args.missionName, config)
-                        } else if (/already exists/i.test(err?.message || '')) {
-                            err.hint = 'Pass updateExisting: true to replace the existing mission config.'
-                            throw err
-                        } else {
-                            throw err
-                        }
+                    const out = await installMission(client, args.missionName, config, args.updateExisting)
+                    const warnings: string[] = []
+                    if (neededMapboxToken && cfg.mapboxToken === '') {
+                        warnings.push('MAPBOX_TOKEN is not set — the basemap will not render')
                     }
+                    return toToolResult({
+                        mission: out.mission,
+                        version: out.version,
+                        url: `${cfg.mmgisUrl}/?mission=${encodeURIComponent(args.missionName)}`,
+                        ...(warnings.length > 0 ? { warnings } : {}),
+                        ...(args.returnConfig ? { config } : {}),
+                    })
+                } catch (err) {
+                    return toErrorResult(err)
+                }
+            },
+        },
+        {
+            name: 'dashboard_create_from_config',
+            description:
+                'Install an MMGIS mission (dashboard) from a complete raw mission config JSON — use when the user provides or edits config JSON directly. Returns the mission URL.',
+            schema: {
+                missionName: z.string().describe(`Name for the mission. ${MISSION_NAME_RULE}`),
+                config: z.record(z.any()).describe('Complete MMGIS mission config object (e.g. from dashboard_generate with returnConfig)'),
+                updateExisting: z.boolean().optional().describe('If the mission exists, replace its config (new version)'),
+            },
+            handler: async (args: { missionName: string; config: any; updateExisting?: boolean }) => {
+                try {
+                    const nameError = validateMissionName(args.missionName)
+                    if (nameError) return toErrorResult(nameError)
+                    const neededMapboxToken = JSON.stringify(args.config).includes('{{MAPBOX_TOKEN}}')
+                    const config = resolvePlaceholders(args.config, cfg.mapboxToken)
+                    if (!Array.isArray(config.components)) {
+                        config.components = [AGENT_BRIDGE_COMPONENT]
+                    }
+                    const out = await installMission(client, args.missionName, config, args.updateExisting)
                     const warnings: string[] = []
                     if (neededMapboxToken && cfg.mapboxToken === '') {
                         warnings.push('MAPBOX_TOKEN is not set — the basemap will not render')
