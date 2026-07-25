@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { makeAdminTools } from '../src/tools/admin.js'
 import { MMGISError } from '../src/mmgisClient.js'
 
@@ -15,7 +15,7 @@ describe('admin tools', () => {
     const tools = Object.fromEntries(makeAdminTools(fakeClient).map((t) => [t.name, t]))
 
     it('exposes mission_list and mission_get', () => {
-        expect(Object.keys(tools).sort()).toEqual(['mission_get', 'mission_list'])
+        expect(Object.keys(tools).sort()).toEqual(['geodataset_delete', 'geodataset_ingest', 'geodataset_list', 'mission_clone', 'mission_delete', 'mission_get', 'mission_list'])
     })
     it('mission_list returns mission names', async () => {
         expect(parse(await tools.mission_list.handler({}))).toEqual({ missions: ['Demo', 'Mars2020'] })
@@ -31,5 +31,66 @@ describe('admin tools', () => {
         const res = await t.mission_list.handler({})
         expect(res.isError).toBe(true)
         expect(parse(res)).toEqual({ error: 'boom', hint: 'try this' })
+    })
+
+    it('mission_clone calls the clone endpoint', async () => {
+        const client = { cloneMission: vi.fn(async () => ({ status: 'success', mission: 'B', version: 0 })) } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        const out = parse(await t.mission_clone.handler({ fromMission: 'A', toMission: 'B' }))
+        expect(out.mission).toBe('B')
+        expect(client.cloneMission).toHaveBeenCalledWith('A', 'B')
+    })
+
+    it('mission_delete requires confirm and previews first', async () => {
+        const client = { destroyMission: vi.fn(async () => ({ message: 'Successfully Deleted Mission: A' })) } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        const preview = parse(await t.mission_delete.handler({ missionName: 'A' }))
+        expect(preview.needsConfirmation).toBe(true)
+        expect(client.destroyMission).not.toHaveBeenCalled()
+        const done = parse(await t.mission_delete.handler({ missionName: 'A', confirm: true }))
+        expect(done.message).toContain('Deleted')
+        expect(client.destroyMission).toHaveBeenCalledWith('A')
+    })
+
+    it('geodataset_list returns entries', async () => {
+        const client = { geodatasetEntries: vi.fn(async () => [{ name: 'g1', num_features: 5 }]) } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        expect(parse(await t.geodataset_list.handler({})).geodatasets).toEqual([{ name: 'g1', num_features: 5 }])
+    })
+
+    it('geodataset_ingest accepts inline FeatureCollections and rejects bad shapes', async () => {
+        const client = { geodatasetRecreate: vi.fn(async () => ({ status: 'success' })) } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        const fc = { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: null, properties: {} }] }
+        const out = parse(await t.geodataset_ingest.handler({ name: 'g1', geojson: fc }))
+        expect(out.name).toBe('g1')
+        expect(out.features).toBe(1)
+        expect(client.geodatasetRecreate).toHaveBeenCalledWith('g1', fc)
+        const bad = await t.geodataset_ingest.handler({ name: 'g1', geojson: { type: 'Point' } })
+        expect(bad.isError).toBe(true)
+    })
+
+    it('geodataset_ingest fetches from a url with a size cap', async () => {
+        const fc = { type: 'FeatureCollection', features: [] }
+        const fetcher = vi.fn(async () => ({
+            ok: true, headers: { get: () => null }, text: async () => JSON.stringify(fc),
+        })) as any
+        const client = { geodatasetRecreate: vi.fn(async () => ({ status: 'success' })) } as any
+        const t = Object.fromEntries(makeAdminTools(client, fetcher).map((x) => [x.name, x]))
+        const out = parse(await t.geodataset_ingest.handler({ name: 'g2', url: 'https://x/y.geojson' }))
+        expect(out.features).toBe(0)
+        expect(fetcher).toHaveBeenCalledWith('https://x/y.geojson')
+        const big = vi.fn(async () => ({ ok: true, headers: { get: () => String(30 * 1024 * 1024) }, text: async () => '' })) as any
+        const t2 = Object.fromEntries(makeAdminTools(client, big).map((x) => [x.name, x]))
+        expect((await t2.geodataset_ingest.handler({ name: 'g3', url: 'https://x/big.geojson' })).isError).toBe(true)
+    })
+
+    it('geodataset_delete requires confirm', async () => {
+        const client = { geodatasetRemove: vi.fn(async () => ({ message: "Successfully deleted geodataset 'g1'." })) } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        expect(parse(await t.geodataset_delete.handler({ name: 'g1' })).needsConfirmation).toBe(true)
+        expect(client.geodatasetRemove).not.toHaveBeenCalled()
+        parse(await t.geodataset_delete.handler({ name: 'g1', confirm: true }))
+        expect(client.geodatasetRemove).toHaveBeenCalledWith('g1')
     })
 })
