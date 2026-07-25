@@ -12,7 +12,7 @@ export class MmgisClient {
         private fetchFn: typeof fetch = fetch
     ) {}
 
-    private async request(method: 'GET' | 'POST', apiPath: string, body?: unknown): Promise<any> {
+    private async request(method: 'GET' | 'POST' | 'DELETE', apiPath: string, body?: unknown): Promise<any> {
         let res
         try {
             res = await this.fetchFn(`${this.baseUrl}${apiPath}`, {
@@ -63,7 +63,54 @@ export class MmgisClient {
         return await this.request('POST', '/api/configure/add', { mission, config, makedir: true })
     }
 
-    async upsertMission(mission: string, config: any): Promise<{ mission: string; version: number }> {
-        return await this.request('POST', '/api/configure/upsert', { mission, config })
+    async upsertMission(
+        mission: string,
+        config: any,
+        opts?: { forceClientUpdate?: boolean; info?: { type: string; layerName?: string | string[] } }
+    ): Promise<{ mission: string; version: number }> {
+        return await this.request('POST', '/api/configure/upsert', {
+            mission,
+            config,
+            ...(opts?.forceClientUpdate !== undefined ? { forceClientUpdate: opts.forceClientUpdate } : {}),
+            ...(opts?.info ? { info: opts.info } : {}),
+        })
+    }
+
+    async cloneMission(existingMission: string, cloneMission: string): Promise<any> {
+        return await this.request('POST', '/api/configure/clone', { existingMission, cloneMission })
+    }
+
+    async destroyMission(mission: string): Promise<{ message: string }> {
+        return await this.request('POST', '/api/configure/destroy', { mission })
+    }
+
+    async geodatasetEntries(): Promise<any[]> {
+        const json = await this.request('POST', '/api/geodatasets/entries', {})
+        return json.body?.entries ?? []
+    }
+
+    async geodatasetRecreate(name: string, geojson: any): Promise<any> {
+        return await this.request('POST', `/api/geodatasets/recreate/${encodeURIComponent(name)}`, geojson)
+    }
+
+    async geodatasetRemove(name: string): Promise<{ message: string }> {
+        return await this.request('DELETE', `/api/geodatasets/remove/${encodeURIComponent(name)}`)
+    }
+
+    async accountEntries(): Promise<any[]> {
+        const json = await this.request('GET', '/api/accounts/entries')
+        return json.body?.entries ?? []
+    }
+
+    async accountUpdate(input: { id: number; permission?: '110' | '001'; missionsManaging?: string[] }): Promise<any> {
+        return await this.request('POST', '/api/accounts/update', {
+            id: input.id,
+            ...(input.permission ? { permission: input.permission } : {}),
+            ...(input.missionsManaging ? { missions_managing: input.missionsManaging } : {}),
+        })
+    }
+
+    async userSignup(username: string, password: string): Promise<any> {
+        return await this.request('POST', '/api/users/signup', { username, password, skipLogin: true })
     }
 }
