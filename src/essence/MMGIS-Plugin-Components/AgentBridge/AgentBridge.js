@@ -165,6 +165,7 @@ const AgentBridge = {
                 L_,
                 ToolAdapter: buildToolAdapter(),
                 TimeControl,
+                reload: () => window.location.reload(),
             })
         } catch (err) {
             outcome = { ok: false, error: `Command threw: ${err.message}` }

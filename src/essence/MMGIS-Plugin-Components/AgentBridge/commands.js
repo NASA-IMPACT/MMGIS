@@ -76,6 +76,10 @@ export async function executeCommand(command, args, deps) {
         }
         case 'get_view_state':
             return { ok: true, result: getViewState(deps) }
+        case 'reload': {
+            deps.reload()
+            return { ok: true, result: { reloading: true } }
+        }
         default:
             return { ok: false, error: `Unknown command: ${command}` }
     }

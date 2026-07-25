@@ -51,5 +51,11 @@ export function makeViewTools(bridge: BridgeClient): ToolDef[] {
             schema: { mission },
             handler: ({ mission }: any) => run(mission, 'get_view_state', {}),
         },
+        {
+            name: 'view_reload',
+            description: 'Reload an open browser session so non-layer config changes (basemap, page name, tools) take effect. A timeout after sending can mean the page reloaded before acking — treat that as success if view_get_state works afterwards.',
+            schema: { mission },
+            handler: ({ mission }: any) => run(mission, 'reload', {}),
+        },
     ]
 }

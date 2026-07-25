@@ -32,6 +32,7 @@ function makeDeps() {
             setTime: vi.fn(() => true),
             getTime: () => '2026-06-01T00:00:00Z',
         },
+        reload: vi.fn(),
     }
 }
 
@@ -120,6 +121,13 @@ describe('executeCommand', () => {
         expect(res.result.activeTool).toBe('LayerManager')
         expect(res.result.layersOn).toEqual(deps.L_.layers.on)
         expect(res.result.currentTime).toBe('2026-06-01T00:00:00Z')
+    })
+    it('reload calls the injected reload and reports', async () => {
+        const deps = makeDeps()
+        const res = await executeCommand('reload', {}, deps)
+        expect(res.ok).toBe(true)
+        expect(res.result).toEqual({ reloading: true })
+        expect(deps.reload).toHaveBeenCalled()
     })
     it('rejects unknown commands', async () => {
         const res = await executeCommand('rm_rf', {}, makeDeps())
