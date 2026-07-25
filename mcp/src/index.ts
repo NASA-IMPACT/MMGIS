@@ -7,6 +7,7 @@ import { makeDashboardTools } from './tools/dashboard.js'
 import { makeCatalogTools } from './tools/catalog.js'
 import { BridgeClient } from './bridge.js'
 import { makeViewTools } from './tools/view.js'
+import { makeEditTools } from './tools/edit.js'
 import { buildServer } from './server.js'
 
 async function main() {
@@ -19,6 +20,7 @@ async function main() {
             ...makeDashboardTools(client, cfg),
             ...makeCatalogTools(cfg),
             ...makeViewTools(bridge),
+            ...makeEditTools(client),
         ],
     })
     await server.connect(new StdioServerTransport())
