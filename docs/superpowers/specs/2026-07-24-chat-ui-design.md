@@ -117,6 +117,26 @@ every var. Root `.gitignore` needs no change (chat/.env handled locally).
   demo — "create an air-quality dashboard over Atlanta", open URL, "fly to
   Huntsville", watch the open dashboard move.
 
+## JSON Config Round-Trip (stakeholder addition, 2026-07-24)
+
+The stakeholder must be able to *see* the generated mission config JSON and to
+*create a dashboard from raw JSON* they edit or paste. Three pieces:
+
+1. **`dashboard_generate` gains `returnConfig: boolean`** — when true, the tool
+   result includes the full generated config JSON (so it renders in the chat's
+   tool-result card and can be copied out).
+2. **New MCP tool `dashboard_create_from_config`** — inputs `{missionName,
+   config, updateExisting?}` where `config` is a complete MMGIS mission config
+   object. Applies the same mission-name preflight, `{{MAPBOX_TOKEN}}`
+   resolution, and AgentBridge component injection (only when `config.components`
+   is absent) as `dashboard_generate`, then installs via the same add→upsert
+   path (shared helper — no duplicated install logic).
+3. **Chat UI JSON drawer** — a collapsible panel with a mission-name input and a
+   JSON textarea; "Create dashboard from JSON" sends a structured chat message
+   instructing the model to call `dashboard_create_from_config` with exactly that
+   JSON, so the action still flows visibly through the agent loop like every
+   other operation.
+
 ## Non-Goals
 
 - Not embedded in MMGIS (future: same agent loop behind an in-app panel).
