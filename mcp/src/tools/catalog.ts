@@ -7,19 +7,24 @@ import { type ToolDef, toToolResult, toErrorResult } from './result.js'
 // Some catalogs (e.g. VEDA) keep imagery in protected buckets only their own
 // tile server can read — match the item's self link to a catalog origin and
 // use that catalog's dedicated tiler when one is configured.
-export function tilerForItem(cfg: McpConfig, selfHref: string | null): string {
+export function tilerForItem(
+    cfg: McpConfig,
+    selfHref: string | null
+): { titilerUrl: string; urlStyle: 'stac-url' | 'item-path' } {
     if (selfHref) {
         for (const [name, catalogUrl] of Object.entries(cfg.stacCatalogs)) {
             try {
                 if (new URL(selfHref).origin === new URL(catalogUrl).origin && cfg.stacTilers[name]) {
-                    return cfg.stacTilers[name].replace(/\/+$/, '')
+                    // Dedicated tilers are titiler-pgstac (eoAPI) deployments —
+                    // they serve items by path, not by a ?url= parameter.
+                    return { titilerUrl: cfg.stacTilers[name].replace(/\/+$/, ''), urlStyle: 'item-path' }
                 }
             } catch {
                 // unparseable URL — fall through to the generic tiler
             }
         }
     }
-    return cfg.titilerUrl
+    return { titilerUrl: cfg.titilerUrl, urlStyle: 'stac-url' }
 }
 
 function resolveCatalog(cfg: McpConfig, catalog: string): string {
@@ -94,9 +99,16 @@ export function makeCatalogTools(cfg: McpConfig, fetchFn: typeof fetch = fetch):
             },
             handler: async ({ item, name, asset, rescale, colormap }: any) => {
                 try {
-                    const titilerUrl = tilerForItem(cfg, item?.selfHref ?? null)
+                    const tiler = tilerForItem(cfg, item?.selfHref ?? null)
                     return toToolResult({
-                        layer: stacItemToTileLayer(item, { name, titilerUrl, asset, rescale, colormap }),
+                        layer: stacItemToTileLayer(item, {
+                            name,
+                            titilerUrl: tiler.titilerUrl,
+                            urlStyle: tiler.urlStyle,
+                            asset,
+                            rescale,
+                            colormap,
+                        }),
                     })
                 } catch (err) {
                     return toErrorResult(err)

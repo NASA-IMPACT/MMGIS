@@ -92,16 +92,37 @@ export async function searchCollections(
 
 export function stacItemToTileLayer(
     item: StacItemSummary,
-    opts: { name: string; titilerUrl: string; asset?: string; rescale?: string; colormap?: string }
+    opts: {
+        name: string
+        titilerUrl: string
+        asset?: string
+        rescale?: string
+        colormap?: string
+        // 'item-path' targets titiler-pgstac deployments (eoAPI, e.g. VEDA's
+        // /api/raster) which have no /stac/tiles?url= route; 'stac-url' is
+        // plain TiTiler's generic endpoint.
+        urlStyle?: 'stac-url' | 'item-path'
+    }
 ): any {
     if (!item.selfHref) {
         throw new MMGISError(`STAC item ${item.id} has no self link; cannot build a tile URL`)
     }
     const asset = opts.asset || item.assets[0]?.key
     if (!asset) throw new MMGISError(`STAC item ${item.id} has no assets`)
-    let url =
-        `${opts.titilerUrl}/stac/tiles/WebMercatorQuad/{z}/{x}/{y}.png` +
-        `?url=${encodeURIComponent(item.selfHref)}&assets=${encodeURIComponent(asset)}`
+    let url: string
+    if (opts.urlStyle === 'item-path') {
+        if (!item.collection) {
+            throw new MMGISError(`STAC item ${item.id} has no collection; cannot build an item-path tile URL`)
+        }
+        url =
+            `${opts.titilerUrl}/collections/${encodeURIComponent(item.collection)}` +
+            `/items/${encodeURIComponent(item.id)}/tiles/WebMercatorQuad/{z}/{x}/{y}.png` +
+            `?assets=${encodeURIComponent(asset)}`
+    } else {
+        url =
+            `${opts.titilerUrl}/stac/tiles/WebMercatorQuad/{z}/{x}/{y}.png` +
+            `?url=${encodeURIComponent(item.selfHref)}&assets=${encodeURIComponent(asset)}`
+    }
     if (opts.rescale) url += `&rescale=${encodeURIComponent(opts.rescale)}`
     if (opts.colormap) url += `&colormap_name=${encodeURIComponent(opts.colormap)}`
     return {

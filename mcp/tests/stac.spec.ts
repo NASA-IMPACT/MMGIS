@@ -133,3 +133,22 @@ describe('stacItemToTileLayer', () => {
         )
     })
 })
+
+describe('stacItemToTileLayer item-path style', () => {
+    it('builds titiler-pgstac item-path URLs', () => {
+        const item = {
+            id: 'OMI_x.nc',
+            collection: 'no2-monthly',
+            datetime: null,
+            bbox: [-180, -90, 180, 90],
+            selfHref: 'https://openveda.cloud/api/stac/collections/no2-monthly/items/OMI_x.nc',
+            assets: [{ key: 'cog_default', href: 'https://x/y.tif' }],
+        }
+        const layer = stacItemToTileLayer(item as any, {
+            name: 'NO2', titilerUrl: 'https://openveda.cloud/api/raster', urlStyle: 'item-path', rescale: '0,3e15', colormap: 'reds',
+        })
+        expect(layer.url).toBe(
+            'https://openveda.cloud/api/raster/collections/no2-monthly/items/OMI_x.nc/tiles/WebMercatorQuad/{z}/{x}/{y}.png?assets=cog_default&rescale=0%2C3e15&colormap_name=reds'
+        )
+    })
+})
