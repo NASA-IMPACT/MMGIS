@@ -145,14 +145,20 @@ export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef
                     let config = await generateConfig(profile, cfg.repoRoot)
                     const neededMapboxToken = JSON.stringify(config).includes('{{MAPBOX_TOKEN}}')
                     config = resolvePlaceholders(config, cfg.mapboxToken)
+                    const warnings: string[] = []
+                    // Without a Mapbox token the default basemap renders black; fall
+                    // back to the token-free MapLibre demo style so maps always show.
+                    if (neededMapboxToken && cfg.mapboxToken === '' && config?.msv?.basemap?.provider === 'mapbox') {
+                        config.msv.basemap = {
+                            provider: 'maplibre',
+                            style: 'https://demotiles.maplibre.org/style.json',
+                        }
+                        warnings.push('MAPBOX_TOKEN is not set — using the free MapLibre demo basemap instead')
+                    }
                     // Injected after generation: `components` is not a template key,
                     // and /api/configure/add does not run backend validation.
                     config.components = [AGENT_BRIDGE_COMPONENT]
                     const out = await installMission(client, args.mission, config, args.updateExisting)
-                    const warnings: string[] = []
-                    if (neededMapboxToken && cfg.mapboxToken === '') {
-                        warnings.push('MAPBOX_TOKEN is not set — the basemap will not render')
-                    }
                     return toToolResult({
                         mission: out.mission,
                         version: out.version,

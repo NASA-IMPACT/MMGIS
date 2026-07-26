@@ -114,7 +114,11 @@ describe('dashboard tools', () => {
         const noTokenCfg = { ...cfg, mapboxToken: '' }
         const tools = Object.fromEntries(makeDashboardTools(client, noTokenCfg).map((t) => [t.name, t]))
         const out = parse(await tools.dashboard_generate.handler({ mission: 'AQ Test' }))
-        expect(out.warnings).toEqual(['MAPBOX_TOKEN is not set — the basemap will not render'])
+        expect(out.warnings).toEqual(['MAPBOX_TOKEN is not set — using the free MapLibre demo basemap instead'])
+        expect(calls[0].config.msv.basemap).toEqual({
+            provider: 'maplibre',
+            style: 'https://demotiles.maplibre.org/style.json',
+        })
     }, 30000)
 
     it('does not warn about MAPBOX_TOKEN when it is set', async () => {
