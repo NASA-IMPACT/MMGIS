@@ -40,7 +40,7 @@ describe('chat app', () => {
     it('GET /api/health reports model and mcp status', async () => {
         const url = await start(createApp({ cfg, openai: fakeOpenai([]), bridge: fakeBridge() }))
         const out = await (await fetch(`${url}/api/health`)).json()
-        expect(out).toEqual({ ok: true, model: 'test-model', mcpConnected: true, toolCount: 1, mmgisUrl: null })
+        expect(out).toEqual({ ok: true, model: 'test-model', mcpConnected: true, toolCount: 1, mmgisUrl: null, dashboardUrl: null })
     })
 
     it('GET /api/tools lists tool names and descriptions', async () => {
@@ -103,7 +103,7 @@ describe('chat app', () => {
         const url = await start(createApp({ cfg, openai: fakeOpenai([]), bridge: downBridge }))
         const res = await fetch(`${url}/api/health`)
         expect(res.status).toBe(200)
-        expect(await res.json()).toEqual({ ok: true, model: 'test-model', mcpConnected: false, toolCount: 0, mmgisUrl: null })
+        expect(await res.json()).toEqual({ ok: true, model: 'test-model', mcpConnected: false, toolCount: 0, mmgisUrl: null, dashboardUrl: null })
     })
 })
 

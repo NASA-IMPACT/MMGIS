@@ -23,6 +23,8 @@ export function createApp({ cfg, openai, bridge }) {
             mcpConnected: bridge.isConnected(),
             toolCount,
             mmgisUrl: cfg.mcpEnv?.MMGIS_URL ?? null,
+            // Where the dashboard UI is served (webpack dev server differs from the API port)
+            dashboardUrl: cfg.mcpEnv?.MMGIS_DASHBOARD_URL ?? cfg.mcpEnv?.MMGIS_URL ?? null,
         })
     })
 

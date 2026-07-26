@@ -28,3 +28,17 @@ describe('extractUrls', () => {
         expect(extractUrls('{"result":{"url":"http://x/y"}}')).toEqual(['http://x/y'])
     })
 })
+
+describe('rewriteDashboardUrl', () => {
+    it('swaps the API origin for the dashboard origin, keeping path and query', async () => {
+        const { rewriteDashboardUrl } = await import('../public/app.js')
+        expect(rewriteDashboardUrl('http://localhost:8891/?mission=A%20B', 'http://localhost:8891', 'http://localhost:8892'))
+            .toBe('http://localhost:8892/?mission=A%20B')
+    })
+    it('passes through non-matching, identical-base, or unparseable urls', async () => {
+        const { rewriteDashboardUrl } = await import('../public/app.js')
+        expect(rewriteDashboardUrl('http://other:1234/?mission=X', 'http://localhost:8891', 'http://localhost:8892')).toBe('http://other:1234/?mission=X')
+        expect(rewriteDashboardUrl('http://localhost:8891/?mission=X', 'http://localhost:8891', 'http://localhost:8891')).toBe('http://localhost:8891/?mission=X')
+        expect(rewriteDashboardUrl('not a url', 'http://localhost:8891', 'http://localhost:8892')).toBe('not a url')
+    })
+})

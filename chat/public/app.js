@@ -35,6 +35,22 @@ export function extractUrls(resultText) {
     return urls
 }
 
+// Rewrite a mission URL from the API origin to the dashboard-UI origin (in dev
+// the webpack server lives on another port and the API's redirect drops the
+// ?mission= query). Non-matching or unparseable URLs pass through unchanged.
+export function rewriteDashboardUrl(url, apiBase, dashBase) {
+    if (!apiBase || !dashBase || apiBase === dashBase) return url
+    try {
+        const u = new URL(url)
+        const api = new URL(apiBase)
+        if (u.origin !== api.origin) return url
+        const dash = new URL(dashBase)
+        return `${dash.origin}${u.pathname}${u.search}${u.hash}`
+    } catch {
+        return url
+    }
+}
+
 // --- Browser wiring ---
 
 if (typeof document !== 'undefined') {
@@ -111,6 +127,7 @@ if (typeof document !== 'undefined') {
     // --- Dashboard panel ---
 
     let mmgisUrl = null
+    let dashboardUrl = null
 
     function missionFromUrl(url) {
         try {
@@ -120,7 +137,8 @@ if (typeof document !== 'undefined') {
         }
     }
 
-    function showDashboard(url) {
+    function showDashboard(rawUrl) {
+        const url = rewriteDashboardUrl(rawUrl, mmgisUrl, dashboardUrl)
         if (dashFrame.src !== url) dashFrame.src = url
         dashPop.href = url
         split.classList.add('has-dash')
@@ -185,6 +203,7 @@ if (typeof document !== 'undefined') {
             status.className = `status ${h.mcpConnected ? 'ok' : 'bad'}`
             if (h.mmgisUrl && !mmgisUrl) {
                 mmgisUrl = h.mmgisUrl.replace(/\/+$/, '')
+                dashboardUrl = (h.dashboardUrl || h.mmgisUrl).replace(/\/+$/, '')
                 const remembered = localStorage.getItem('mmgisChatMission')
                 if (remembered && !split.classList.contains('has-dash')) {
                     showDashboard(`${mmgisUrl}/?mission=${encodeURIComponent(remembered)}`)
