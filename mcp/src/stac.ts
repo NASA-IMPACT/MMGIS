@@ -59,7 +59,8 @@ export async function searchStac(
     return (json.features || []).map(summarizeItem)
 }
 
-const MAX_COLLECTION_PAGES = 10
+// VEDA alone spans 25 pages at 10 collections/page (verified live 2026-07-25)
+const MAX_COLLECTION_PAGES = 50
 
 export async function searchCollections(
     catalogUrl: string,
