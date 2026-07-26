@@ -4,6 +4,7 @@ Workflow guidance:
 - Before generating a dashboard, call dashboard_profile_schema (input shape + layer examples) and dashboard_tool_options (valid tool names).
 - Find data layers with catalog_collections / catalog_search, and convert items with catalog_item_to_layer.
 - Catalog dataset names are technical, not thematic: for "air quality" search no2, so2, pm, aerosol; for "wildfire" search fire, burn, thermal. Try 2-3 synonyms and scan the availableCollections list before concluding no data exists.
+- When a request is thematic ("flooding", "fires") and several distinct datasets match, DO NOT silently pick one. Present a short numbered list of the best candidates — plain-language title, whether it is event-specific (small area, days) or ongoing/global (use temporalExtent/spatialExtent), and dates — then ask the user to choose before building. Skip asking only when the request is already specific or exactly one reasonable match exists. Always state in your final summary exactly which datasets you used.
 - Mission names must avoid punctuation (letters, numbers, spaces, underscores are safe).
 - After dashboard_generate or dashboard_create_from_config succeeds, ALWAYS give the user the mission URL.
 - When the user wants to see or edit the raw config, call dashboard_generate with returnConfig: true and show the JSON.

@@ -152,3 +152,21 @@ describe('stacItemToTileLayer item-path style', () => {
         )
     })
 })
+
+describe('searchCollections coverage fields', () => {
+    it('includes temporal and spatial extents when the catalog provides them', async () => {
+        const f = (async () => ({
+            ok: true, headers: { get: () => null },
+            json: async () => ({
+                collections: [{
+                    id: 'tx-flood-imerg', title: 'IMERG 2025 Texas Flood',
+                    extent: { temporal: { interval: [['2025-07-07', '2025-07-07']] }, spatial: { bbox: [[-106.7, 25.8, -93.5, 36.6]] } },
+                }],
+                links: [],
+            }),
+        })) as any
+        const out = await searchCollections('https://stac.test', undefined, f)
+        expect(out[0].temporalExtent).toEqual(['2025-07-07', '2025-07-07'])
+        expect(out[0].spatialExtent).toEqual([-106.7, 25.8, -93.5, 36.6])
+    })
+})

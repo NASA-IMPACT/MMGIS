@@ -76,11 +76,19 @@ export async function searchCollections(
         if (!nextHref) break
         url = new URL(nextHref, url).toString()
     }
-    let collections = rawCollections.map((c: any) => ({
-        id: c.id,
-        ...(c.title ? { title: c.title } : {}),
-        ...(c.description ? { description: c.description } : {}),
-    }))
+    let collections = rawCollections.map((c: any) => {
+        const temporal = c.extent?.temporal?.interval?.[0]
+        const spatial = c.extent?.spatial?.bbox?.[0]
+        return {
+            id: c.id,
+            ...(c.title ? { title: c.title } : {}),
+            ...(c.description ? { description: c.description } : {}),
+            // Coverage helps distinguish event-specific snapshots (one day,
+            // small bbox) from ongoing/global datasets when presenting options.
+            ...(temporal ? { temporalExtent: temporal } : {}),
+            ...(spatial ? { spatialExtent: spatial } : {}),
+        }
+    })
     if (keyword) {
         const k = keyword.toLowerCase()
         collections = collections.filter((c: any) =>
