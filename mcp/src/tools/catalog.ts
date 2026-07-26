@@ -4,6 +4,24 @@ import { searchStac, searchCollections, stacItemToTileLayer } from '../stac.js'
 import { MMGISError } from '../mmgisClient.js'
 import { type ToolDef, toToolResult, toErrorResult } from './result.js'
 
+// Some catalogs (e.g. VEDA) keep imagery in protected buckets only their own
+// tile server can read — match the item's self link to a catalog origin and
+// use that catalog's dedicated tiler when one is configured.
+export function tilerForItem(cfg: McpConfig, selfHref: string | null): string {
+    if (selfHref) {
+        for (const [name, catalogUrl] of Object.entries(cfg.stacCatalogs)) {
+            try {
+                if (new URL(selfHref).origin === new URL(catalogUrl).origin && cfg.stacTilers[name]) {
+                    return cfg.stacTilers[name].replace(/\/+$/, '')
+                }
+            } catch {
+                // unparseable URL — fall through to the generic tiler
+            }
+        }
+    }
+    return cfg.titilerUrl
+}
+
 function resolveCatalog(cfg: McpConfig, catalog: string): string {
     if (/^https?:\/\//.test(catalog)) return catalog
     const url = cfg.stacCatalogs[catalog]
@@ -76,8 +94,9 @@ export function makeCatalogTools(cfg: McpConfig, fetchFn: typeof fetch = fetch):
             },
             handler: async ({ item, name, asset, rescale, colormap }: any) => {
                 try {
+                    const titilerUrl = tilerForItem(cfg, item?.selfHref ?? null)
                     return toToolResult({
-                        layer: stacItemToTileLayer(item, { name, titilerUrl: cfg.titilerUrl, asset, rescale, colormap }),
+                        layer: stacItemToTileLayer(item, { name, titilerUrl, asset, rescale, colormap }),
                     })
                 } catch (err) {
                     return toErrorResult(err)

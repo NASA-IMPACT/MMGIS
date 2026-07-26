@@ -37,3 +37,21 @@ describe('catalog_collections empty-match fallback', () => {
         expect(out.totalCollections).toBe(2)
     })
 })
+
+describe('tilerForItem', () => {
+    const cfg3 = {
+        stacCatalogs: { veda: 'https://openveda.cloud/api/stac', 'earth-search': 'https://earth-search.aws.element84.com/v1' },
+        stacTilers: { veda: 'https://openveda.cloud/api/raster' },
+        titilerUrl: 'https://titiler.xyz',
+    } as any
+    it('uses the catalog-dedicated tiler when the item origin matches', async () => {
+        const { tilerForItem } = await import('../src/tools/catalog.js')
+        expect(tilerForItem(cfg3, 'https://openveda.cloud/api/stac/collections/no2-monthly/items/x')).toBe('https://openveda.cloud/api/raster')
+    })
+    it('falls back to the generic tiler otherwise', async () => {
+        const { tilerForItem } = await import('../src/tools/catalog.js')
+        expect(tilerForItem(cfg3, 'https://earth-search.aws.element84.com/v1/collections/c/items/i')).toBe('https://titiler.xyz')
+        expect(tilerForItem(cfg3, null)).toBe('https://titiler.xyz')
+        expect(tilerForItem(cfg3, 'not a url')).toBe('https://titiler.xyz')
+    })
+})

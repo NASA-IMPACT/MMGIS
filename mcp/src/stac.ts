@@ -100,7 +100,7 @@ export function stacItemToTileLayer(
     const asset = opts.asset || item.assets[0]?.key
     if (!asset) throw new MMGISError(`STAC item ${item.id} has no assets`)
     let url =
-        `${opts.titilerUrl}/stac/tiles/WebMercatorQuad/{z}/{x}/{y}@1x.png` +
+        `${opts.titilerUrl}/stac/tiles/WebMercatorQuad/{z}/{x}/{y}.png` +
         `?url=${encodeURIComponent(item.selfHref)}&assets=${encodeURIComponent(asset)}`
     if (opts.rescale) url += `&rescale=${encodeURIComponent(opts.rescale)}`
     if (opts.colormap) url += `&colormap_name=${encodeURIComponent(opts.colormap)}`

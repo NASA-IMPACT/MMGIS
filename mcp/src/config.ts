@@ -9,11 +9,19 @@ export interface McpConfig {
     mapboxToken: string
     stacCatalogs: Record<string, string>
     titilerUrl: string
+    stacTilers: Record<string, string>
 }
 
 const DEFAULT_STAC_CATALOGS: Record<string, string> = {
     veda: 'https://openveda.cloud/api/stac',
     'earth-search': 'https://earth-search.aws.element84.com/v1',
+}
+
+// Catalogs whose imagery needs their OWN tile server (protected buckets a
+// public TiTiler cannot read — verified live: titiler.xyz gets AccessDenied
+// on VEDA items while openveda.cloud/api/raster serves them fine).
+const DEFAULT_STAC_TILERS: Record<string, string> = {
+    veda: 'https://openveda.cloud/api/raster',
 }
 
 const STAC_CATALOGS_SHAPE_ERROR =
@@ -53,6 +61,17 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         assertStacCatalogsShape(parsed)
         stacCatalogs = parsed
     }
+    let stacTilers = DEFAULT_STAC_TILERS
+    if (env.STAC_TILERS) {
+        let parsedTilers: unknown
+        try {
+            parsedTilers = JSON.parse(env.STAC_TILERS)
+        } catch {
+            throw new Error('STAC_TILERS must be a JSON object mapping catalog name to tiler URL')
+        }
+        assertStacCatalogsShape(parsedTilers)
+        stacTilers = parsedTilers
+    }
     return {
         mmgisUrl,
         mmgisToken: env.MMGIS_TOKEN,
@@ -61,5 +80,6 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
         mapboxToken: env.MAPBOX_TOKEN || '',
         stacCatalogs,
         titilerUrl: (env.TITILER_URL || 'https://titiler.xyz').replace(/\/+$/, ''),
+        stacTilers,
     }
 }

@@ -99,7 +99,7 @@ describe('stacItemToTileLayer', () => {
         expect(layer.name).toBe('NO2 June')
         expect(layer.boundingBox).toEqual([-90, 30, -80, 40])
         expect(layer.url).toBe(
-            'https://titiler.xyz/stac/tiles/WebMercatorQuad/{z}/{x}/{y}@1x.png?url=' +
+            'https://titiler.xyz/stac/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=' +
                 encodeURIComponent('https://stac.test/collections/no2-monthly/items/i1') +
                 '&assets=cog_default'
         )
@@ -122,7 +122,7 @@ describe('stacItemToTileLayer', () => {
             colormap: 'viridis',
         })
         expect(layer.url).toBe(
-            'https://titiler.xyz/stac/tiles/WebMercatorQuad/{z}/{x}/{y}@1x.png?url=' +
+            'https://titiler.xyz/stac/tiles/WebMercatorQuad/{z}/{x}/{y}.png?url=' +
                 encodeURIComponent('https://stac.test/collections/no2-monthly/items/i1') +
                 '&assets=' +
                 encodeURIComponent('cog_default') +
