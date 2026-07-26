@@ -10,7 +10,7 @@ export function makeViewTools(bridge: BridgeClient): ToolDef[] {
             return toErrorResult(err)
         }
     }
-    const mission = z.string().describe('Mission name of the browser session to drive')
+    const mission = z.string().describe('Exact mission name as returned by mission_list (case and spaces matter)')
     return [
         {
             name: 'view_fly_to',

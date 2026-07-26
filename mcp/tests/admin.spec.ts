@@ -42,14 +42,35 @@ describe('admin tools', () => {
     })
 
     it('mission_delete requires confirm and previews first', async () => {
-        const client = { destroyMission: vi.fn(async () => ({ message: 'Successfully Deleted Mission: A' })) } as any
+        const client = {
+            listMissions: async () => ['A'],
+            destroyMission: vi.fn(async () => ({ message: 'Successfully Deleted Mission: A' })),
+        } as any
         const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
-        const preview = parse(await t.mission_delete.handler({ missionName: 'A' }))
+        const preview = parse(await t.mission_delete.handler({ mission: 'A' }))
         expect(preview.needsConfirmation).toBe(true)
+        expect(preview.hint).toBe('After the user explicitly agrees, retry the SAME call with confirm: true.')
         expect(client.destroyMission).not.toHaveBeenCalled()
-        const done = parse(await t.mission_delete.handler({ missionName: 'A', confirm: true }))
+        const done = parse(await t.mission_delete.handler({ mission: 'A', confirm: true }))
         expect(done.message).toContain('Deleted')
         expect(client.destroyMission).toHaveBeenCalledWith('A')
+    })
+
+    it('mission_delete errors on an unknown mission without calling destroyMission (preview or confirm path)', async () => {
+        const client = {
+            listMissions: async () => ['A'],
+            destroyMission: vi.fn(async () => ({ message: 'Successfully Deleted Mission: B' })),
+        } as any
+        const t = Object.fromEntries(makeAdminTools(client).map((x) => [x.name, x]))
+        const preview = await t.mission_delete.handler({ mission: 'B' })
+        expect(preview.isError).toBe(true)
+        expect(parse(preview).error).toBe('Unknown mission: B')
+        expect(parse(preview).hint).toContain('A')
+        expect(client.destroyMission).not.toHaveBeenCalled()
+
+        const confirmed = await t.mission_delete.handler({ mission: 'B', confirm: true })
+        expect(confirmed.isError).toBe(true)
+        expect(client.destroyMission).not.toHaveBeenCalled()
     })
 
     it('geodataset_list returns entries', async () => {

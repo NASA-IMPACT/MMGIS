@@ -58,6 +58,30 @@ describe('searchCollections', () => {
         const out = await searchCollections('https://stac.test', 'nitrogen', f)
         expect(out.map((c) => c.id)).toEqual(['no2-monthly'])
     })
+
+    it('follows rel=next links to collect paginated collections before filtering', async () => {
+        const page1Collections = Array.from({ length: 10 }, (_, i) => ({
+            id: `other-${i}`,
+            title: `Other ${i}`,
+            description: 'Not it',
+        }))
+        const page1 = {
+            collections: page1Collections,
+            links: [{ rel: 'next', href: 'https://stac.test/collections?page=2' }],
+        }
+        const page2 = {
+            collections: [{ id: 'no2-monthly', title: 'NO2 Monthly', description: 'Nitrogen dioxide' }],
+            links: [],
+        }
+        const f = vi
+            .fn()
+            .mockResolvedValueOnce({ ok: true, status: 200, json: async () => page1 })
+            .mockResolvedValueOnce({ ok: true, status: 200, json: async () => page2 }) as unknown as typeof fetch
+        const out = await searchCollections('https://stac.test', 'no2', f)
+        expect(out.map((c) => c.id)).toEqual(['no2-monthly'])
+        expect((f as any).mock.calls.length).toBe(2)
+        expect((f as any).mock.calls[1][0]).toBe('https://stac.test/collections?page=2')
+    })
 })
 
 describe('stacItemToTileLayer', () => {

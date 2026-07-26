@@ -23,7 +23,7 @@ describe('dashboard tools', () => {
     it('dashboard_profile_schema documents the DashboardSpec shape with layer examples', async () => {
         const tools = Object.fromEntries(makeDashboardTools({} as any, cfg).map((t) => [t.name, t]))
         const schema = parse(await tools.dashboard_profile_schema.handler({}))
-        expect(schema.spec.missionName).toBeDefined()
+        expect(schema.spec.mission).toBeDefined()
         expect(schema.layerExamples.tile.type).toBe('TileLayer')
         expect(schema.layerExamples.geojson.type).toBe('GeoJsonLayer')
     })
@@ -39,7 +39,7 @@ describe('dashboard tools', () => {
         const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
         const out = parse(
             await tools.dashboard_generate.handler({
-                missionName: 'AQ Test',
+                mission: 'AQ Test',
                 view: { lat: 33.7, lon: -84.4, zoom: 9 },
                 layers: [
                     {
@@ -73,7 +73,7 @@ describe('dashboard tools', () => {
             upsertMission: async (mission: string) => ({ mission, version: 4 }),
         } as any
         const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
-        const out = parse(await tools.dashboard_generate.handler({ missionName: 'AQ Test', updateExisting: true }))
+        const out = parse(await tools.dashboard_generate.handler({ mission: 'AQ Test', updateExisting: true }))
         expect(out.version).toBe(4)
     }, 30000)
 
@@ -89,7 +89,7 @@ describe('dashboard tools', () => {
         // Hyphens are in configs.js's forbidden-character set (`add()`, ~line 265),
         // so this mirrors what /api/configure/add would reject — but preflighted
         // here instead of after an expensive generate.
-        const res = await tools.dashboard_generate.handler({ missionName: 'air-quality-atlanta' })
+        const res = await tools.dashboard_generate.handler({ mission: 'air-quality-atlanta' })
         expect(res.isError).toBe(true)
         const parsed = parse(res)
         expect(parsed.error).toMatch(/air-quality-atlanta/)
@@ -100,7 +100,7 @@ describe('dashboard tools', () => {
     it('dashboard_profile_schema and the missionName schema describe the mission-name character rule', async () => {
         const tools = Object.fromEntries(makeDashboardTools({} as any, cfg).map((t) => [t.name, t]))
         const schema = parse(await tools.dashboard_profile_schema.handler({}))
-        expect(schema.spec.missionName).toMatch(/must not contain/)
+        expect(schema.spec.mission).toMatch(/must not contain/)
     })
 
     it('warns when MAPBOX_TOKEN is unset and the generated config needed it', async () => {
@@ -113,7 +113,7 @@ describe('dashboard tools', () => {
         } as any
         const noTokenCfg = { ...cfg, mapboxToken: '' }
         const tools = Object.fromEntries(makeDashboardTools(client, noTokenCfg).map((t) => [t.name, t]))
-        const out = parse(await tools.dashboard_generate.handler({ missionName: 'AQ Test' }))
+        const out = parse(await tools.dashboard_generate.handler({ mission: 'AQ Test' }))
         expect(out.warnings).toEqual(['MAPBOX_TOKEN is not set — the basemap will not render'])
     }, 30000)
 
@@ -122,7 +122,7 @@ describe('dashboard tools', () => {
             addMission: async (mission: string) => ({ mission, version: 0 }),
         } as any
         const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
-        const out = parse(await tools.dashboard_generate.handler({ missionName: 'AQ Test' }))
+        const out = parse(await tools.dashboard_generate.handler({ mission: 'AQ Test' }))
         expect(out.warnings).toBeUndefined()
     }, 30000)
 
@@ -133,7 +133,7 @@ describe('dashboard tools', () => {
             },
         } as any
         const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
-        const res = await tools.dashboard_generate.handler({ missionName: 'AQ Test' })
+        const res = await tools.dashboard_generate.handler({ mission: 'AQ Test' })
         expect(res.isError).toBe(true)
         expect(parse(res).hint).toMatch(/updateExisting/)
     }, 30000)
@@ -141,9 +141,9 @@ describe('dashboard tools', () => {
     it('dashboard_generate includes the full config when returnConfig is true', async () => {
         const client = { addMission: async (m: string) => ({ mission: m, version: 0 }) } as any
         const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
-        const out = parse(await tools.dashboard_generate.handler({ missionName: 'RC Test', returnConfig: true }))
+        const out = parse(await tools.dashboard_generate.handler({ mission: 'RC Test', returnConfig: true }))
         expect(out.config.msv.mission).toBe('RC Test')
-        const without = parse(await tools.dashboard_generate.handler({ missionName: 'RC Test' }))
+        const without = parse(await tools.dashboard_generate.handler({ mission: 'RC Test' }))
         expect(without.config).toBeUndefined()
     }, 30000)
 
@@ -161,7 +161,7 @@ describe('dashboard tools', () => {
             layers: [],
         }
         const out = parse(
-            await tools.dashboard_create_from_config.handler({ missionName: 'From JSON', config: rawConfig })
+            await tools.dashboard_create_from_config.handler({ mission: 'From JSON', config: rawConfig })
         )
         expect(out.url).toBe('http://mm:8888/?mission=From%20JSON')
         expect(calls[0].config.components).toEqual([
@@ -180,7 +180,7 @@ describe('dashboard tools', () => {
         } as any
         const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
         await tools.dashboard_create_from_config.handler({
-            missionName: 'From JSON',
+            mission: 'From JSON',
             config: { components: [{ name: 'X', js: 'X', on: false, variables: {} }] },
         })
         expect(calls[0].config.components).toEqual([{ name: 'X', js: 'X', on: false, variables: {} }])
@@ -189,7 +189,7 @@ describe('dashboard tools', () => {
     it('dashboard_create_from_config rejects bad mission names before any client call', async () => {
         const client = { addMission: async () => { throw new Error('should not be called') } } as any
         const tools = Object.fromEntries(makeDashboardTools(client, cfg).map((t) => [t.name, t]))
-        const res = await tools.dashboard_create_from_config.handler({ missionName: 'bad-name!', config: {} })
+        const res = await tools.dashboard_create_from_config.handler({ mission: 'bad-name!', config: {} })
         expect(res.isError).toBe(true)
     })
 })

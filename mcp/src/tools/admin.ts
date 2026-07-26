@@ -5,6 +5,8 @@ import { type ToolDef, toToolResult, toErrorResult } from './result.js'
 
 const MAX_GEOJSON_BYTES = 20 * 1024 * 1024
 
+const CONFIRM_RETRY_HINT = 'After the user explicitly agrees, retry the SAME call with confirm: true.'
+
 function isFeatureCollection(v: any): boolean {
     return v != null && v.type === 'FeatureCollection' && Array.isArray(v.features)
 }
@@ -56,18 +58,27 @@ export function makeAdminTools(client: MmgisClient, fetchFn: typeof fetch = fetc
             name: 'mission_delete',
             description: 'DESTRUCTIVE: delete a mission and all its config versions. Requires confirm: true — without it returns a preview. Always show the preview to the user and get their explicit yes first.',
             schema: {
-                missionName: z.string(),
+                mission: z.string(),
                 confirm: z.boolean().optional().describe('Must be true to actually delete'),
             },
-            handler: async ({ missionName, confirm }: any) => {
+            handler: async ({ mission, confirm }: any) => {
                 try {
+                    const missions = await client.listMissions()
+                    if (!missions.includes(mission)) {
+                        return toErrorResult(
+                            Object.assign(new Error(`Unknown mission: ${mission}`), {
+                                hint: `Missions: ${missions.join(', ') || '(none)'}`,
+                            })
+                        )
+                    }
                     if (confirm !== true) {
                         return toToolResult({
                             needsConfirmation: true,
-                            wouldDelete: `Mission "${missionName}" and every config version of it (the Missions/ folder is renamed, not erased).`,
+                            wouldDelete: `Mission "${mission}" and every config version of it (the Missions/ folder is renamed, not erased).`,
+                            hint: CONFIRM_RETRY_HINT,
                         })
                     }
-                    return toToolResult(await client.destroyMission(missionName))
+                    return toToolResult(await client.destroyMission(mission))
                 } catch (err) {
                     return toErrorResult(err)
                 }
@@ -105,6 +116,7 @@ export function makeAdminTools(client: MmgisClient, fetchFn: typeof fetch = fetc
                         return toToolResult({
                             needsConfirmation: true,
                             wouldReplace: `Geodataset "${name}" already exists with ${match.num_features} features — ingesting replaces ALL of them.`,
+                            hint: CONFIRM_RETRY_HINT,
                         })
                     }
                     let data = geojson
@@ -138,7 +150,11 @@ export function makeAdminTools(client: MmgisClient, fetchFn: typeof fetch = fetc
             handler: async ({ name, confirm }: any) => {
                 try {
                     if (confirm !== true) {
-                        return toToolResult({ needsConfirmation: true, wouldDelete: `Geodataset "${name}" and its feature table. Layers referencing geodatasets:${name} will break.` })
+                        return toToolResult({
+                            needsConfirmation: true,
+                            wouldDelete: `Geodataset "${name}" and its feature table. Layers referencing geodatasets:${name} will break.`,
+                            hint: CONFIRM_RETRY_HINT,
+                        })
                     }
                     return toToolResult(await client.geodatasetRemove(name))
                 } catch (err) {
@@ -169,7 +185,11 @@ export function makeAdminTools(client: MmgisClient, fetchFn: typeof fetch = fetc
             handler: async ({ username, password, confirm }: any) => {
                 try {
                     if (confirm !== true) {
-                        return toToolResult({ needsConfirmation: true, wouldCreate: `User "${username}" with Viewer (001) permission.` })
+                        return toToolResult({
+                            needsConfirmation: true,
+                            wouldCreate: `User "${username}" with Viewer (001) permission.`,
+                            hint: CONFIRM_RETRY_HINT,
+                        })
                     }
                     const out = await client.userSignup(username, password)
                     return toToolResult({ username: out.username ?? username, created: true })
@@ -190,7 +210,11 @@ export function makeAdminTools(client: MmgisClient, fetchFn: typeof fetch = fetc
             handler: async ({ username, permission, missionsManaging, confirm }: any) => {
                 try {
                     if (confirm !== true) {
-                        return toToolResult({ needsConfirmation: true, wouldChange: `Set "${username}" permission to ${permission}${missionsManaging ? ` managing [${missionsManaging.join(', ')}]` : ''}.` })
+                        return toToolResult({
+                            needsConfirmation: true,
+                            wouldChange: `Set "${username}" permission to ${permission}${missionsManaging ? ` managing [${missionsManaging.join(', ')}]` : ''}.`,
+                            hint: CONFIRM_RETRY_HINT,
+                        })
                     }
                     const users = await client.accountEntries()
                     const user = users.find((u: any) => u.username === username)

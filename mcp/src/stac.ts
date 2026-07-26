@@ -59,13 +59,23 @@ export async function searchStac(
     return (json.features || []).map(summarizeItem)
 }
 
+const MAX_COLLECTION_PAGES = 10
+
 export async function searchCollections(
     catalogUrl: string,
     keyword?: string,
     fetchFn: typeof fetch = fetch
 ): Promise<{ id: string; title?: string; description?: string }[]> {
-    const json = await stacFetch(`${catalogUrl.replace(/\/+$/, '')}/collections`, undefined, fetchFn)
-    let collections = (json.collections || []).map((c: any) => ({
+    const rawCollections: any[] = []
+    let url = `${catalogUrl.replace(/\/+$/, '')}/collections`
+    for (let page = 0; page < MAX_COLLECTION_PAGES; page++) {
+        const json = await stacFetch(url, undefined, fetchFn)
+        rawCollections.push(...(json.collections || []))
+        const nextHref = (json.links || []).find((l: any) => l.rel === 'next')?.href
+        if (!nextHref) break
+        url = new URL(nextHref, url).toString()
+    }
+    let collections = rawCollections.map((c: any) => ({
         id: c.id,
         ...(c.title ? { title: c.title } : {}),
         ...(c.description ? { description: c.description } : {}),
