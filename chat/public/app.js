@@ -124,11 +124,21 @@ if (typeof document !== 'undefined') {
         let assistantDiv = null
         let bubbleText = ''
         let fullText = ''
+        let thinkingDiv = addBubble('assistant thinking', 'thinking…')
+        const clearThinking = () => {
+            if (thinkingDiv) {
+                thinkingDiv.remove()
+                thinkingDiv = null
+            }
+        }
+        const ctrl = new AbortController()
+        const abortTimer = setTimeout(() => ctrl.abort(), 180000)
         try {
             const res = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ messages }),
+                signal: ctrl.signal,
             })
             if (!res.ok) throw new Error(`server ${res.status}`)
             const reader = res.body.getReader()
@@ -141,6 +151,7 @@ if (typeof document !== 'undefined') {
                 const { events, rest } = parseSseChunks(buffer)
                 buffer = rest
                 for (const ev of events) {
+                    clearThinking()
                     if (ev.type === 'text') {
                         if (!assistantDiv) {
                             assistantDiv = addBubble('assistant', '')
@@ -168,8 +179,14 @@ if (typeof document !== 'undefined') {
                 save()
             }
         } catch (err) {
-            addBubble('error', `Error: ${err.message}`)
+            const message =
+                err && err.name === 'AbortError'
+                    ? 'Request timed out after 3 minutes — the server may be down or overloaded. Reload the page and try again.'
+                    : err.message
+            addBubble('error', `Error: ${message}`)
         } finally {
+            clearTimeout(abortTimer)
+            clearThinking()
             busy = false
             send.disabled = false
             newChat.disabled = false
