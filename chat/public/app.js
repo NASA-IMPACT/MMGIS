@@ -47,6 +47,13 @@ if (typeof document !== 'undefined') {
     const drawerToggle = document.getElementById('jsonDrawerToggle')
     const drawer = document.getElementById('jsonDrawer')
     const jsonCreate = document.getElementById('jsonCreate')
+    const split = document.getElementById('split')
+    const chatCol = document.getElementById('chatCol')
+    const divider = document.getElementById('divider')
+    const dashToggle = document.getElementById('dashToggle')
+    const dashFrame = document.getElementById('dashFrame')
+    const dashPop = document.getElementById('dashPop')
+    const missionPicker = document.getElementById('missionPicker')
 
     let messages = []
     try {
@@ -97,8 +104,74 @@ if (typeof document !== 'undefined') {
             a.target = '_blank'
             a.textContent = 'Open dashboard →'
             card.appendChild(a)
+            if (url.includes('?mission=')) showDashboard(url)
         }
     }
+
+    // --- Dashboard panel ---
+
+    let mmgisUrl = null
+
+    function missionFromUrl(url) {
+        try {
+            return new URL(url).searchParams.get('mission')
+        } catch {
+            return null
+        }
+    }
+
+    function showDashboard(url) {
+        if (dashFrame.src !== url) dashFrame.src = url
+        dashPop.href = url
+        split.classList.add('has-dash')
+        const mission = missionFromUrl(url)
+        if (mission) {
+            if (![...missionPicker.options].some((o) => o.value === mission)) {
+                missionPicker.appendChild(new Option(mission, mission))
+            }
+            missionPicker.value = mission
+            localStorage.setItem('mmgisChatMission', mission)
+        }
+    }
+
+    async function refreshMissions() {
+        try {
+            const out = await (await fetch('/api/missions')).json()
+            const current = missionPicker.value
+            missionPicker.length = 1
+            for (const m of out.missions || []) missionPicker.appendChild(new Option(m, m))
+            if (current) missionPicker.value = current
+        } catch {
+            // panel picker stays as-is; status strip already reports server issues
+        }
+    }
+
+    missionPicker.addEventListener('change', () => {
+        if (missionPicker.value && mmgisUrl) {
+            showDashboard(`${mmgisUrl}/?mission=${encodeURIComponent(missionPicker.value)}`)
+        }
+    })
+
+    dashToggle.addEventListener('click', () => {
+        split.classList.toggle('panel-hidden')
+        localStorage.setItem('mmgisChatPanelHidden', split.classList.contains('panel-hidden') ? '1' : '')
+    })
+
+    divider.addEventListener('pointerdown', (e) => {
+        e.preventDefault()
+        divider.setPointerCapture(e.pointerId)
+        const move = (ev) => {
+            const min = 380
+            const max = window.innerWidth - 320
+            chatCol.style.flexBasis = `${Math.min(max, Math.max(min, ev.clientX))}px`
+        }
+        const up = () => {
+            divider.removeEventListener('pointermove', move)
+            divider.removeEventListener('pointerup', up)
+        }
+        divider.addEventListener('pointermove', move)
+        divider.addEventListener('pointerup', up)
+    })
 
     function render() {
         transcript.innerHTML = ''
@@ -110,6 +183,13 @@ if (typeof document !== 'undefined') {
             const h = await (await fetch('/api/health')).json()
             status.textContent = `${h.model} · ${h.toolCount} tools · MCP ${h.mcpConnected ? 'connected' : 'DISCONNECTED'}`
             status.className = `status ${h.mcpConnected ? 'ok' : 'bad'}`
+            if (h.mmgisUrl && !mmgisUrl) {
+                mmgisUrl = h.mmgisUrl.replace(/\/+$/, '')
+                const remembered = localStorage.getItem('mmgisChatMission')
+                if (remembered && !split.classList.contains('has-dash')) {
+                    showDashboard(`${mmgisUrl}/?mission=${encodeURIComponent(remembered)}`)
+                }
+            }
         } catch {
             status.textContent = 'server unreachable'
             status.className = 'status bad'
@@ -190,6 +270,7 @@ if (typeof document !== 'undefined') {
             busy = false
             send.disabled = false
             newChat.disabled = false
+            refreshMissions()
         }
     }
 
@@ -238,6 +319,8 @@ if (typeof document !== 'undefined') {
     })
 
     render()
+    if (localStorage.getItem('mmgisChatPanelHidden') === '1') split.classList.add('panel-hidden')
     refreshHealth()
+    refreshMissions()
     setInterval(refreshHealth, 15000)
 }

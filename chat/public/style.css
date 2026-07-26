@@ -58,3 +58,31 @@ details.tool pre {
     0%, 100% { opacity: 0.45; }
     50% { opacity: 1; }
 }
+
+/* --- Split layout: chat left, dashboard panel right --- */
+#split { flex: 1; display: flex; min-height: 0; }
+#chatCol { display: flex; flex-direction: column; min-width: 380px; flex: 0 0 45%; min-height: 0; }
+#divider {
+    width: 6px; cursor: col-resize; background: #1a1f27;
+    border-left: 1px solid #2a3040; border-right: 1px solid #2a3040; flex: none;
+}
+#divider:hover { background: #2a3550; }
+#dashCol { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; background: #0d1117; }
+#dashBar {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    background: #1a1f27; border-bottom: 1px solid #2a3040;
+}
+#missionPicker {
+    flex: 1; background: #0d1117; color: #e6e8eb; border: 1px solid #2a3040;
+    border-radius: 6px; padding: 5px 8px; font-size: 13px;
+}
+#dashPop { color: #9fb4d8; text-decoration: none; font-size: 16px; padding: 0 6px; }
+#dashFrame { flex: 1; border: 0; width: 100%; background: #fff; display: none; }
+#dashEmpty {
+    position: absolute; inset: 40px 0 0 0; display: flex; align-items: center; justify-content: center;
+    color: #8b94a3; font-size: 14px; pointer-events: none;
+}
+#split.panel-hidden #divider, #split.panel-hidden #dashCol { display: none; }
+#split.panel-hidden #chatCol { flex: 1; }
+#split.has-dash #dashFrame { display: block; }
+#split.has-dash #dashEmpty { display: none; }

@@ -40,7 +40,7 @@ describe('chat app', () => {
     it('GET /api/health reports model and mcp status', async () => {
         const url = await start(createApp({ cfg, openai: fakeOpenai([]), bridge: fakeBridge() }))
         const out = await (await fetch(`${url}/api/health`)).json()
-        expect(out).toEqual({ ok: true, model: 'test-model', mcpConnected: true, toolCount: 1 })
+        expect(out).toEqual({ ok: true, model: 'test-model', mcpConnected: true, toolCount: 1, mmgisUrl: null })
     })
 
     it('GET /api/tools lists tool names and descriptions', async () => {
@@ -103,6 +103,38 @@ describe('chat app', () => {
         const url = await start(createApp({ cfg, openai: fakeOpenai([]), bridge: downBridge }))
         const res = await fetch(`${url}/api/health`)
         expect(res.status).toBe(200)
-        expect(await res.json()).toEqual({ ok: true, model: 'test-model', mcpConnected: false, toolCount: 0 })
+        expect(await res.json()).toEqual({ ok: true, model: 'test-model', mcpConnected: false, toolCount: 0, mmgisUrl: null })
+    })
+})
+
+describe('GET /api/missions', () => {
+    let server
+    afterEach(() => server?.close())
+    async function start(app) {
+        await new Promise((resolve) => { server = app.listen(0, resolve) })
+        return `http://127.0.0.1:${server.address().port}`
+    }
+    it('proxies mission_list through the bridge', async () => {
+        const bridge = {
+            isConnected: () => true,
+            getOpenAiTools: async () => [],
+            callTool: async (name) => ({ text: JSON.stringify({ missions: ['A', 'B'] }), isError: false }),
+        }
+        const url = await start(createApp({ cfg: { model: 'm' }, openai: {}, bridge }))
+        expect(await (await fetch(`${url}/api/missions`)).json()).toEqual({ missions: ['A', 'B'] })
+    })
+    it('maps bridge errors to 502', async () => {
+        const bridge = {
+            isConnected: () => false,
+            getOpenAiTools: async () => [],
+            callTool: async () => ({ text: '{"error":"down"}', isError: true }),
+        }
+        const url = await start(createApp({ cfg: { model: 'm' }, openai: {}, bridge }))
+        expect((await fetch(`${url}/api/missions`)).status).toBe(502)
+    })
+    it('health reports mmgisUrl from the MCP env passthrough', async () => {
+        const bridge = { isConnected: () => true, getOpenAiTools: async () => [], callTool: async () => ({ text: '{}', isError: false }) }
+        const url = await start(createApp({ cfg: { model: 'm', mcpEnv: { MMGIS_URL: 'http://mm:8891' } }, openai: {}, bridge }))
+        expect((await (await fetch(`${url}/api/health`)).json()).mmgisUrl).toBe('http://mm:8891')
     })
 })

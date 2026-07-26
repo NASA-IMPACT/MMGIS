@@ -17,7 +17,23 @@ export function createApp({ cfg, openai, bridge }) {
         } catch {
             // leave toolCount 0; mcpConnected reflects reality below
         }
-        res.json({ ok: true, model: cfg.model, mcpConnected: bridge.isConnected(), toolCount })
+        res.json({
+            ok: true,
+            model: cfg.model,
+            mcpConnected: bridge.isConnected(),
+            toolCount,
+            mmgisUrl: cfg.mcpEnv?.MMGIS_URL ?? null,
+        })
+    })
+
+    app.get('/api/missions', async (req, res) => {
+        try {
+            const out = await bridge.callTool('mission_list', {})
+            if (out.isError) return res.status(502).json({ error: out.text })
+            res.json({ missions: JSON.parse(out.text).missions ?? [] })
+        } catch (err) {
+            res.status(502).json({ error: String(err?.message ?? err) })
+        }
     })
 
     app.get('/api/tools', async (req, res) => {
