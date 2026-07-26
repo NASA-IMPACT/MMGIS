@@ -16,18 +16,30 @@ function resolveCatalog(cfg: McpConfig, catalog: string): string {
     return url
 }
 
-export function makeCatalogTools(cfg: McpConfig): ToolDef[] {
+export function makeCatalogTools(cfg: McpConfig, fetchFn: typeof fetch = fetch): ToolDef[] {
     return [
         {
             name: 'catalog_collections',
-            description: 'List/search dataset collections in a STAC catalog. Use to find data for a dashboard.',
+            description:
+                'List/search dataset collections in a STAC catalog. Use to find data for a dashboard. Dataset ids are technical (e.g. no2-monthly, not "air quality") — try measurement-specific keywords, and on zero matches use the returned availableSample to pick real names.',
             schema: {
                 catalog: z.string().describe(`Catalog name (${Object.keys(cfg.stacCatalogs).join(', ')}) or a STAC API URL`),
                 keyword: z.string().optional().describe('Filter by keyword, e.g. "no2", "fire", "flood"'),
             },
             handler: async ({ catalog, keyword }: { catalog: string; keyword?: string }) => {
                 try {
-                    return toToolResult({ collections: await searchCollections(resolveCatalog(cfg, catalog), keyword) })
+                    const url = resolveCatalog(cfg, catalog)
+                    const collections = await searchCollections(url, keyword, fetchFn)
+                    if (keyword && collections.length === 0) {
+                        const all = await searchCollections(url, undefined, fetchFn)
+                        return toToolResult({
+                            collections: [],
+                            hint: `No collections matched "${keyword}". Dataset names are technical — try synonyms (e.g. air quality: no2, so2, pm, aerosol; fire: fire, burn, thermal; flood: flood, water, inundation) or pick from availableSample.`,
+                            availableSample: all.slice(0, 40).map((c) => c.id),
+                            totalCollections: all.length,
+                        })
+                    }
+                    return toToolResult({ collections })
                 } catch (err) {
                     return toErrorResult(err)
                 }

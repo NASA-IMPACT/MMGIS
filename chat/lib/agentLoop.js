@@ -3,6 +3,7 @@ export const SYSTEM_PROMPT = `You are an assistant that builds and drives MMGIS 
 Workflow guidance:
 - Before generating a dashboard, call dashboard_profile_schema (input shape + layer examples) and dashboard_tool_options (valid tool names).
 - Find data layers with catalog_collections / catalog_search, and convert items with catalog_item_to_layer.
+- Catalog dataset names are technical, not thematic: for "air quality" search no2, so2, pm, aerosol; for "wildfire" search fire, burn, thermal. Try 2-3 synonyms and check the availableSample list before concluding no data exists.
 - Mission names must avoid punctuation (letters, numbers, spaces, underscores are safe).
 - After dashboard_generate or dashboard_create_from_config succeeds, ALWAYS give the user the mission URL.
 - When the user wants to see or edit the raw config, call dashboard_generate with returnConfig: true and show the JSON.

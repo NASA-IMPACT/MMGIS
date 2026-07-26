@@ -14,3 +14,26 @@ describe('catalog tools', () => {
         expect(JSON.parse(res.content[0].text).hint).toContain('test')
     })
 })
+
+describe('catalog_collections empty-match fallback', () => {
+    it('returns a sample of available collections when the keyword matches nothing', async () => {
+        const fetcher = (async () => ({
+            ok: true,
+            headers: { get: () => null },
+            json: async () => ({
+                collections: [
+                    { id: 'no2-monthly', title: 'NO2' },
+                    { id: 'lis-global-da-evap', title: 'Evapotranspiration' },
+                ],
+                links: [],
+            }),
+        })) as any
+        const cfg2 = { stacCatalogs: { test: 'https://stac.test' }, titilerUrl: 'https://titiler.xyz' } as any
+        const t = Object.fromEntries(makeCatalogTools(cfg2, fetcher).map((x) => [x.name, x]))
+        const out = JSON.parse((await t.catalog_collections.handler({ catalog: 'test', keyword: 'air quality' })).content[0].text)
+        expect(out.collections).toEqual([])
+        expect(out.hint).toMatch(/synonyms/)
+        expect(out.availableSample).toContain('no2-monthly')
+        expect(out.totalCollections).toBe(2)
+    })
+})
