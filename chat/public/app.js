@@ -155,10 +155,21 @@ if (typeof document !== 'undefined') {
     async function refreshMissions() {
         try {
             const out = await (await fetch('/api/missions')).json()
+            const missions = out.missions || []
             const current = missionPicker.value
             missionPicker.length = 1
-            for (const m of out.missions || []) missionPicker.appendChild(new Option(m, m))
+            for (const m of missions) missionPicker.appendChild(new Option(m, m))
             if (current) missionPicker.value = current
+            // If the remembered/shown mission was deleted, reset the panel
+            const remembered = localStorage.getItem('mmgisChatMission')
+            if (remembered && !missions.includes(remembered)) {
+                localStorage.removeItem('mmgisChatMission')
+                if (missionFromUrl(dashFrame.src) === remembered) {
+                    dashFrame.src = 'about:blank'
+                    split.classList.remove('has-dash')
+                    missionPicker.value = ''
+                }
+            }
         } catch {
             // panel picker stays as-is; status strip already reports server issues
         }
