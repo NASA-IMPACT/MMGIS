@@ -37,10 +37,20 @@ export function getViewState(deps) {
 // these; modern.js has no websocket client at all, so AgentBridge (which
 // connects in every mode) is the only thing that can notice and react.
 // Kept dependency-free so it's trivially unit-testable.
+// Mission names travel through an LLM, which routinely reformats them
+// ("Air Quality Demo" for a mission stored as "Air_Quality_Demo"). Compare
+// leniently so a cosmetic difference doesn't look like a dead session.
+export function sameMission(a, b) {
+    const norm = (s) =>
+        typeof s === 'string' ? s.toLowerCase().replace(/[\s_-]+/g, ' ').trim() : null
+    const na = norm(a)
+    return na != null && na === norm(b)
+}
+
 export function shouldReloadForFrame(parsed, mission) {
     if (parsed == null || parsed.type === 'agent-bridge') return false
     if (parsed.forceClientUpdate !== true) return false
-    if (parsed.body == null || parsed.body.mission !== mission) return false
+    if (parsed.body == null || !sameMission(parsed.body.mission, mission)) return false
     const type = parsed.info == null ? null : parsed.info.type
     return ['upsert', 'addLayer', 'updateLayer', 'removeLayer'].includes(type)
 }

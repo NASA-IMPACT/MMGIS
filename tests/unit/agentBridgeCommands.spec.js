@@ -200,3 +200,18 @@ describe('resolveToolId', () => {
         expect(resolveToolId(undefined, 'LayerManager')).toBe('LayerManager')
     })
 })
+
+describe('sameMission', () => {
+    it('matches names that differ only by separators or case', async () => {
+        const { sameMission } = await import('../../src/essence/MMGIS-Plugin-Components/AgentBridge/commands')
+        expect(sameMission('Air Quality Demo', 'Air_Quality_Demo')).toBe(true)
+        expect(sameMission('air-quality-demo', 'Air Quality Demo')).toBe(true)
+        expect(sameMission('Agent Demo', 'Agent Demo')).toBe(true)
+    })
+    it('rejects genuinely different or missing names', async () => {
+        const { sameMission } = await import('../../src/essence/MMGIS-Plugin-Components/AgentBridge/commands')
+        expect(sameMission('Air Quality Demo', 'Flood Demo')).toBe(false)
+        expect(sameMission(null, 'Agent Demo')).toBe(false)
+        expect(sameMission('Agent Demo', null)).toBe(false)
+    })
+})

@@ -3,7 +3,7 @@ import L_ from '../../Basics/Layers_/Layers_'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import TimeControl from '../../Basics/TimeControl_/TimeControl'
 import { isStaticBuild } from '../../../pre/capabilities'
-import { executeCommand, resolveToolId, shouldReloadForFrame } from './commands'
+import { executeCommand, resolveToolId, sameMission, shouldReloadForFrame } from './commands'
 
 // Envelope contract shared with mcp/src/bridge.ts — keep in sync.
 const FRAME_TYPE = 'agent-bridge'
@@ -185,7 +185,7 @@ const AgentBridge = {
 
         if (parsed == null || parsed.type !== FRAME_TYPE) return
         if (parsed.agent == null || parsed.agent.kind !== 'command') return
-        if (parsed.body == null || parsed.body.mission !== L_.mission) return
+        if (parsed.body == null || !sameMission(parsed.body.mission, L_.mission)) return
 
         const { id, command, args } = parsed.agent
         let outcome
