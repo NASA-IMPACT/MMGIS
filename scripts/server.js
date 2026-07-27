@@ -297,6 +297,23 @@ function ensureGroup(allowedGroups) {
   };
 }
 
+/**
+ * decorateReqFromTokenData - Stamps a validated long-term token's user data
+ * onto the request object. Shared by ensureAdmin, ensureUser, and
+ * annotateLongTermToken so the three auth middlewares agree on exactly what
+ * a long-term token grants.
+ *
+ * @param {object} req - Express request object (mutated in place).
+ * @param {object} tokenData - Row returned by validateLongTermToken's
+ *   successCallback (has .permission, .missions_managing, .username).
+ */
+function decorateReqFromTokenData(req, tokenData) {
+  req.isLongTermToken = true;
+  req.tokenUserPermission = tokenData.permission;
+  req.tokenUserMissions = tokenData.missions_managing;
+  req.user = tokenData.username;
+}
+
 function ensureAdmin(
   toLoginPage,
   denyLongTermTokens,
@@ -358,10 +375,7 @@ function ensureAdmin(
       validateLongTermToken(
         req.headers.authorization,
         (tokenData) => {
-          req.isLongTermToken = true;
-          req.tokenUserPermission = tokenData.permission;
-          req.tokenUserMissions = tokenData.missions_managing;
-          req.user = tokenData.username;
+          decorateReqFromTokenData(req, tokenData);
           next();
         },
         () => {
@@ -454,10 +468,7 @@ function ensureUser() {
         validateLongTermToken(
           req.headers.authorization,
           (tokenData) => {
-            req.isLongTermToken = true;
-            req.tokenUserPermission = tokenData.permission;
-            req.tokenUserMissions = tokenData.missions_managing;
-            req.user = tokenData.username;
+            decorateReqFromTokenData(req, tokenData);
             next();
           },
           () => {
@@ -488,10 +499,7 @@ function annotateLongTermToken(req, res, next) {
     validateLongTermToken(
       req.headers.authorization,
       (tokenData) => {
-        req.isLongTermToken = true;
-        req.tokenUserPermission = tokenData.permission;
-        req.tokenUserMissions = tokenData.missions_managing;
-        req.user = tokenData.username;
+        decorateReqFromTokenData(req, tokenData);
         next();
       },
       () => next()

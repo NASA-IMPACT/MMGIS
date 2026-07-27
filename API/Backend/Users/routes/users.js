@@ -11,6 +11,7 @@ const buf = crypto.randomBytes(128);
 const logger = require("../../../logger");
 const userModel = require("../models/user");
 const User = userModel.User;
+const { isSuperAdminRequest } = require("../../Utils/permissions");
 
 function isStrongPassword(password) {
   const minLength = 8;
@@ -81,15 +82,12 @@ router.post("/first_signup", function (req, res, next) {
 router.post("/signup", function (req, res, next) {
   if (
     (process.env.AUTH === "local" &&
-      req.session.permission !== "111" &&
-      !(req.isLongTermToken === true && req.tokenUserPermission === "111") &&
+      !isSuperAdminRequest(req) &&
       !(
         process.env.AUTH_LOCAL_ALLOW_SIGNUP === true ||
         process.env.AUTH_LOCAL_ALLOW_SIGNUP === "true"
       )) ||
-    (process.env.AUTH === "off" &&
-      req.session.permission !== "111" &&
-      !(req.isLongTermToken === true && req.tokenUserPermission === "111"))
+    (process.env.AUTH === "off" && !isSuperAdminRequest(req))
   ) {
     res.send({
       status: "failure",

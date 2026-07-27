@@ -14,6 +14,7 @@ const Config = require("../models/config");
 const config_template = require("../../../templates/config_template");
 const userModel = require("../../Users/models/user");
 const User = userModel.User;
+const { isSuperAdminRequest } = require("../../Utils/permissions");
 
 // Sanitize user input to prevent XSS in error messages
 function sanitizeInput(input) {
@@ -381,9 +382,7 @@ function add(req, res, next, cb) {
 
 if (fullAccess)
   router.post("/add", function (req, res, next) {
-    const isSuperAdmin =
-      req.session.permission === "111" ||
-      (req.isLongTermToken === true && req.tokenUserPermission === "111");
+    const isSuperAdmin = isSuperAdminRequest(req);
     if (!isSuperAdmin) {
       res.send({
         status: "failure",
