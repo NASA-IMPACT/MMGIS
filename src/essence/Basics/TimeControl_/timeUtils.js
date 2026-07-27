@@ -45,7 +45,7 @@ export function parseTimeWithOffset(d) {
  * Supports both "hh:mm:ss" format and plain seconds
  *
  * @param {string|number} t - Time string in "hh:mm:ss" format or number of seconds
- * @returns {number} Total seconds (negative if prefixed with '-')
+ * @returns {number} Total seconds (negative if prefixed with '-'); 0 for null/undefined
  *
  * @example
  * parseTimeToSeconds("01:30:00") // Returns: 5400 (1.5 hours)
@@ -54,6 +54,7 @@ export function parseTimeWithOffset(d) {
  * parseTimeToSeconds(3600) // Returns: 3600
  */
 export function parseTimeToSeconds(t) {
+    if (t == null) return 0
     if (t.toString().indexOf(':') === -1) {
         return parseInt(t)
     }

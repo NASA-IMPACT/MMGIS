@@ -43,72 +43,17 @@ var TimeControl = {
         _providerCleanups.forEach((cleanup) => cleanup())
         _providerCleanups = []
 
-        if (L_.configData.time && L_.configData.time.enabled === true) {
-            TimeControl.enabled = true
-            TimeControl.globalTimeFormat = utcFormat(
-                L_.configData.time.format
-            )
-        } else {
-            return
-        }
-
-        let dateAddSec = null
-        let initialEnd = new Date()
-        if (L_.FUTURES.endTime != null) {
-            initialEnd = new Date(L_.FUTURES.endTime)
-        } else if (L_.configData.time.initialend != null && L_.configData.time.initialend !== 'now') {
-            dateAddSec = parseTimeWithOffset(L_.configData.time.initialend)
-            const dateStaged = new Date(dateAddSec.dateString)
-            if (dateStaged != 'Invalid Date') {
-                dateStaged.setSeconds(dateStaged.getSeconds() + dateAddSec.additionalSeconds)
-                initialEnd = dateStaged
-            }
-        }
-        
-        let initialStart = new Date(initialEnd)
-        initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
-        
-        if (L_.FUTURES.startTime != null) {
-            initialStart = new Date(L_.FUTURES.startTime)
-        } else if (L_.configData.time.initialstart != null) {
-            dateAddSec = parseTimeWithOffset(L_.configData.time.initialstart)
-            const dateStaged = new Date(dateAddSec.dateString)
-            if (dateStaged != 'Invalid Date') {
-                dateStaged.setSeconds(dateStaged.getSeconds() + dateAddSec.additionalSeconds)
-                if (dateStaged.getTime() <= initialEnd.getTime()) {
-                    initialStart = dateStaged
-                }
-            }
-        }
-
-        TimeControl.startTime = initialStart.toISOString()
-        TimeControl.endTime = initialEnd.toISOString()
-        TimeControl.currentTime = initialEnd.toISOString()
-
-        //updateTime()
-
-        initLayerTimes()
-        initLayerDataTimes()
-
-        // Seed TimeControl state (start/end/current) and notify subscribers.
-        // Do NOT reload here: Map_.init() runs after TimeControl.init(), so
-        // time-enabled layers aren't on the map yet — reloading now is a no-op.
-        timeInputChange(
-            TimeControl.startTime,
-            TimeControl.endTime,
-            TimeControl.currentTime,
-            true
-        )
-    },
-    fina: function () {
-        // Register time providers for mmgisAPI Event Bus
+        // Register bus handlers before any UI or plugin can emit, so a
+        // time:changeRequested is never lost to registration order.
         if (window.mmgisAPI) {
-            // Clean up previous providers if re-initializing
-            _providerCleanups.forEach((cleanup) => cleanup())
             _providerCleanups = [
-                window.mmgisAPI.on('time:changeRequested', ({ startTime, endTime, currentTime }) => {
-                    timeInputChange(startTime, endTime, currentTime)
-                }),
+                window.mmgisAPI.on(
+                    'time:changeRequested',
+                    ({ startTime, endTime, currentTime }) => {
+                        if (TimeControl.enabled)
+                            timeInputChange(startTime, endTime, currentTime)
+                    }
+                ),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
@@ -128,11 +73,96 @@ var TimeControl = {
             ]
         }
 
-        // Map_.init() has now loaded the time-enabled layers. The startup
-        // seed in init() used skipUpdate=true (layers weren't on the map yet),
-        // and legacy TimeUI's startup change() emitted time:changeRequested before
-        // this listener was registered (mitt has no replay), so it was lost.
-        // Drive the single real initial reload here, once, in every mode.
+        if (L_.configData.time && L_.configData.time.enabled === true) {
+            TimeControl.enabled = true
+            TimeControl.globalTimeFormat = utcFormat(
+                L_.configData.time.format
+            )
+        } else {
+            TimeControl.enabled = false
+            return
+        }
+
+        // Derive the initial start/end times. TimeControl owns this state
+        // and widgets (e.g. TimeUI) read the committed values from it.
+        // Deeplinked times (L_.FUTURES) override the configured ones and
+        // both support the "<date> + <seconds>"/"<date> - <seconds>" format.
+        const rawEnd =
+            L_.FUTURES.endTime != null
+                ? L_.FUTURES.endTime
+                : L_.configData.time.initialend
+        // parseTimeWithOffset strips any " + N"/" - N" suffix, so compare the
+        // parsed dateString (not the raw value) against 'now' — "now - 86400"
+        // is a valid relative time, not an invalid date.
+        let dateAddSec = parseTimeWithOffset(rawEnd)
+        let initialEnd
+        if (dateAddSec.dateString != null && dateAddSec.dateString !== 'now') {
+            const dateStaged = new Date(dateAddSec.dateString)
+            if (dateStaged == 'Invalid Date') {
+                initialEnd = new Date()
+                console.warn(
+                    "Invalid 'Initial End Time' provided. Defaulting to 'now'."
+                )
+            } else initialEnd = dateStaged
+        } else initialEnd = new Date()
+        initialEnd.setSeconds(
+            initialEnd.getSeconds() + dateAddSec.additionalSeconds
+        )
+
+        // Initial start defaults to 1 month before the end time
+        let initialStart = new Date(initialEnd)
+        const rawStart =
+            L_.FUTURES.startTime != null
+                ? L_.FUTURES.startTime
+                : L_.configData.time.initialstart
+        if (rawStart == null)
+            initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
+        else {
+            dateAddSec = parseTimeWithOffset(rawStart)
+            // 'now' (optionally with an offset, e.g. "now - 86400") is valid
+            const dateStaged =
+                dateAddSec.dateString === 'now'
+                    ? new Date()
+                    : new Date(dateAddSec.dateString)
+            if (dateStaged == 'Invalid Date') {
+                initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
+                console.warn(
+                    "Invalid 'Initial Start Time' provided. Defaulting to 1 month before the end time."
+                )
+            } else {
+                dateStaged.setSeconds(
+                    dateStaged.getSeconds() + dateAddSec.additionalSeconds
+                )
+                if (dateStaged.getTime() > initialEnd.getTime()) {
+                    initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
+                    console.warn(
+                        "'Initial Start Time' cannot be later than the end time. Defaulting to 1 month before the end time."
+                    )
+                } else initialStart = dateStaged
+            }
+        }
+
+        // Seed TimeControl state (start/end/current) and notify subscribers.
+        // Do NOT reload here: Map_.init() runs after TimeControl.init(), so
+        // time-enabled layers aren't on the map yet — reloading now is a no-op.
+        timeInputChange(
+            initialStart.toISOString(),
+            initialEnd.toISOString(),
+            initialEnd.toISOString(),
+            true
+        )
+
+        // Layer times read the seeded TimeControl state, so this must run
+        // after timeInputChange — otherwise the first Map_ load would build
+        // tile/WMS requests with null times.
+        initLayerTimes()
+        initLayerDataTimes()
+    },
+    fina: function () {
+        // Runs after Map_.init() has loaded the time-enabled layers (the
+        // seed in init() skips reloading because they aren't on the map yet).
+        // This is the single initial reload, in every layout; widgets mirror
+        // the committed state via the time:change broadcast.
         if (TimeControl.enabled) {
             timeInputChange(
                 TimeControl.startTime,
@@ -216,14 +246,14 @@ var TimeControl = {
                     .split('.')[0] + 'Z'
         }
 
-        // Emit event for UI elements to respond, instead of calling it directly
-        if (window.mmgisAPI) {
-            window.mmgisAPI.emit('time:setRequested', {
-                startTime: TimeControl.startTime,
-                endTime: TimeControl.endTime,
-                currentTime: TimeControl.currentTime,
-            })
-        }
+        // Commit directly — a programmatic time change must never depend on
+        // a UI being present. timeInputChange broadcasts 'time:change' for
+        // widgets/plugins (e.g. TimeUI) to sync themselves against.
+        timeInputChange(
+            TimeControl.startTime,
+            TimeControl.endTime,
+            TimeControl.currentTime
+        )
 
         return true
     },
