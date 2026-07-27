@@ -7,6 +7,10 @@ export interface StacItemSummary {
     bbox: number[] | null
     selfHref: string | null
     assets: { key: string; title?: string; type?: string; href: string }[]
+    // Name of the configured catalog (see McpConfig.stacCatalogs) this item
+    // came from, when searchStac was called with one — lets tilerForItem
+    // pick a dedicated tiler without re-deriving it from selfHref's origin.
+    catalogName?: string
 }
 
 async function stacFetch(url: string, init: RequestInit | undefined, fetchFn: typeof fetch): Promise<any> {
@@ -45,7 +49,8 @@ function summarizeItem(feature: any): StacItemSummary {
 export async function searchStac(
     catalogUrl: string,
     params: { bbox?: number[]; datetime?: string; collections?: string[]; limit?: number },
-    fetchFn: typeof fetch = fetch
+    fetchFn: typeof fetch = fetch,
+    catalogName?: string
 ): Promise<StacItemSummary[]> {
     const body: Record<string, unknown> = { limit: params.limit ?? 10 }
     if (params.bbox) body.bbox = params.bbox
@@ -56,17 +61,29 @@ export async function searchStac(
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
         fetchFn
     )
-    return (json.features || []).map(summarizeItem)
+    const items = (json.features || []).map(summarizeItem)
+    if (catalogName) {
+        for (const item of items) item.catalogName = catalogName
+    }
+    return items
 }
 
 // VEDA alone spans 25 pages at 10 collections/page (verified live 2026-07-25)
 const MAX_COLLECTION_PAGES = 50
 
-export async function searchCollections(
-    catalogUrl: string,
-    keyword?: string,
-    fetchFn: typeof fetch = fetch
-): Promise<{ id: string; title?: string; description?: string }[]> {
+type StacCollection = { id: string; title?: string; description?: string; temporalExtent?: unknown; spatialExtent?: unknown }
+
+// Per-process cache of each catalog's unfiltered collection list — repeated
+// catalog_collections calls (e.g. a keyword miss re-scanning availableCollections)
+// shouldn't re-page through a 25-page catalog every time.
+const COLLECTIONS_CACHE_TTL_MS = 5 * 60 * 1000
+const collectionsCache = new Map<string, { at: number; collections: StacCollection[] }>()
+
+async function fetchAllCollections(catalogUrl: string, fetchFn: typeof fetch): Promise<StacCollection[]> {
+    const cached = collectionsCache.get(catalogUrl)
+    if (cached && Date.now() - cached.at < COLLECTIONS_CACHE_TTL_MS) {
+        return cached.collections
+    }
     const rawCollections: any[] = []
     let url = `${catalogUrl.replace(/\/+$/, '')}/collections`
     for (let page = 0; page < MAX_COLLECTION_PAGES; page++) {
@@ -76,7 +93,7 @@ export async function searchCollections(
         if (!nextHref) break
         url = new URL(nextHref, url).toString()
     }
-    let collections = rawCollections.map((c: any) => {
+    const collections = rawCollections.map((c: any) => {
         const temporal = c.extent?.temporal?.interval?.[0]
         const spatial = c.extent?.spatial?.bbox?.[0]
         return {
@@ -89,13 +106,27 @@ export async function searchCollections(
             ...(spatial ? { spatialExtent: spatial } : {}),
         }
     })
-    if (keyword) {
-        const k = keyword.toLowerCase()
-        collections = collections.filter((c: any) =>
-            [c.id, c.title, c.description].some((s) => s && s.toLowerCase().includes(k))
-        )
-    }
+    collectionsCache.set(catalogUrl, { at: Date.now(), collections })
     return collections
+}
+
+// Test-only escape hatch — the cache is otherwise process-lifetime.
+export function clearCollectionsCache(): void {
+    collectionsCache.clear()
+}
+
+export function filterCollections(collections: StacCollection[], keyword: string): StacCollection[] {
+    const k = keyword.toLowerCase()
+    return collections.filter((c) => [c.id, c.title, c.description].some((s) => s && s.toLowerCase().includes(k)))
+}
+
+export async function searchCollections(
+    catalogUrl: string,
+    keyword?: string,
+    fetchFn: typeof fetch = fetch
+): Promise<StacCollection[]> {
+    const collections = await fetchAllCollections(catalogUrl, fetchFn)
+    return keyword ? filterCollections(collections, keyword) : collections
 }
 
 export function stacItemToTileLayer(

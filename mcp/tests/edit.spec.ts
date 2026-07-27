@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { makeEditTools } from '../src/tools/edit.js'
-
-function parse(res: { content: { text: string }[] }) {
-    return JSON.parse(res.content[0].text)
-}
+import { parse } from './helpers.js'
 
 function fakeClient(config: any) {
     return {

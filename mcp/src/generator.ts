@@ -34,14 +34,42 @@ export function resolvePlaceholders(config: any, mapboxToken: string): any {
     return JSON.parse(JSON.stringify(config).split('{{MAPBOX_TOKEN}}').join(mapboxToken))
 }
 
+// Substitutes {{MAPBOX_TOKEN}} (single stringify, reused for both the
+// placeholder check and the replace) and, when the config needed a token
+// that isn't configured, swaps a mapbox basemap for the token-free MapLibre
+// demo style so the map still renders.
+export function finalizeBasemap(config: any, mapboxToken: string): { config: any; warnings: string[] } {
+    const serialized = JSON.stringify(config)
+    const neededMapboxToken = serialized.includes('{{MAPBOX_TOKEN}}')
+    const resolved = JSON.parse(serialized.split('{{MAPBOX_TOKEN}}').join(mapboxToken))
+    const warnings: string[] = []
+    if (neededMapboxToken && mapboxToken === '' && resolved?.msv?.basemap?.provider === 'mapbox') {
+        resolved.msv.basemap = {
+            provider: 'maplibre',
+            style: 'https://demotiles.maplibre.org/style.json',
+        }
+        warnings.push('MAPBOX_TOKEN is not set — using the free MapLibre demo basemap instead')
+    }
+    return { config: resolved, warnings }
+}
+
+export function loadMinimalProfile(repoRoot: string): any {
+    return JSON.parse(fs.readFileSync(path.join(repoRoot, 'mission-profiles', 'minimal.json'), 'utf8'))
+}
+
+// listAvailableTools shells out to the generator to build a full-tools probe
+// config — that's deterministic per repoRoot within a process, so cache it.
+const availableToolsCache = new Map<string, string[]>()
+
 export async function listAvailableTools(repoRoot: string): Promise<string[]> {
-    const minimal = JSON.parse(
-        fs.readFileSync(path.join(repoRoot, 'mission-profiles', 'minimal.json'), 'utf8')
-    )
-    const probe = JSON.parse(JSON.stringify(minimal))
+    const cached = availableToolsCache.get(repoRoot)
+    if (cached) return cached
+    const probe = JSON.parse(JSON.stringify(loadMinimalProfile(repoRoot)))
     probe.tools = 'all'
     probe.on = []
     delete probe.output
     const config = await generateConfig(probe, repoRoot)
-    return config.tools.map((t: { name: string }) => t.name)
+    const names = config.tools.map((t: { name: string }) => t.name)
+    availableToolsCache.set(repoRoot, names)
+    return names
 }

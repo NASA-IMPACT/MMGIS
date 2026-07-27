@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { makeCatalogTools } from '../src/tools/catalog.js'
+import { clearCollectionsCache } from '../src/stac.js'
+import { parse } from './helpers.js'
 
 const cfg = { stacCatalogs: { test: 'https://stac.test' }, titilerUrl: 'https://titiler.xyz' } as any
 
@@ -11,12 +13,13 @@ describe('catalog tools', () => {
     it('rejects unknown catalog names with the configured list in the hint', async () => {
         const res = await tools.catalog_search.handler({ catalog: 'nope' })
         expect(res.isError).toBe(true)
-        expect(JSON.parse(res.content[0].text).hint).toContain('test')
+        expect(parse(res).hint).toContain('test')
     })
 })
 
 describe('catalog_collections empty-match fallback', () => {
     it('returns a sample of available collections when the keyword matches nothing', async () => {
+        clearCollectionsCache()
         const fetcher = (async () => ({
             ok: true,
             headers: { get: () => null },
@@ -30,7 +33,7 @@ describe('catalog_collections empty-match fallback', () => {
         })) as any
         const cfg2 = { stacCatalogs: { test: 'https://stac.test' }, titilerUrl: 'https://titiler.xyz' } as any
         const t = Object.fromEntries(makeCatalogTools(cfg2, fetcher).map((x) => [x.name, x]))
-        const out = JSON.parse((await t.catalog_collections.handler({ catalog: 'test', keyword: 'air quality' })).content[0].text)
+        const out = parse(await t.catalog_collections.handler({ catalog: 'test', keyword: 'air quality' }))
         expect(out.collections).toEqual([])
         expect(out.hint).toMatch(/re-search/)
         expect(out.availableCollections).toContain('no2-monthly')
@@ -53,5 +56,16 @@ describe('tilerForItem', () => {
         expect(tilerForItem(cfg3, 'https://earth-search.aws.element84.com/v1/collections/c/items/i')).toEqual({ titilerUrl: 'https://titiler.xyz', urlStyle: 'stac-url' })
         expect(tilerForItem(cfg3, null)).toEqual({ titilerUrl: 'https://titiler.xyz', urlStyle: 'stac-url' })
         expect(tilerForItem(cfg3, 'not a url')).toEqual({ titilerUrl: 'https://titiler.xyz', urlStyle: 'stac-url' })
+    })
+    it('prefers a direct catalogName -> tiler lookup over origin matching', async () => {
+        const { tilerForItem } = await import('../src/tools/catalog.js')
+        // Origin doesn't match any configured catalog, but the item carries
+        // catalogName 'veda' (stamped by searchStac) — direct lookup wins.
+        expect(tilerForItem(cfg3, 'https://unrelated.example.com/items/x', 'veda')).toEqual({
+            titilerUrl: 'https://openveda.cloud/api/raster',
+            urlStyle: 'item-path',
+        })
+        // Unknown catalogName falls back to origin matching / generic tiler.
+        expect(tilerForItem(cfg3, null, 'not-configured')).toEqual({ titilerUrl: 'https://titiler.xyz', urlStyle: 'stac-url' })
     })
 })

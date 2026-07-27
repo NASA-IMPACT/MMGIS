@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeDashboardTools } from '../src/tools/dashboard.js'
 import { MMGISError } from '../src/mmgisClient.js'
+import { parse } from './helpers.js'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const cfg = {
@@ -14,10 +15,6 @@ const cfg = {
     stacCatalogs: {},
     titilerUrl: 'https://titiler.xyz',
 } as any
-
-function parse(res: { content: { text: string }[] }) {
-    return JSON.parse(res.content[0].text)
-}
 
 describe('dashboard tools', () => {
     it('dashboard_profile_schema documents the DashboardSpec shape with layer examples', async () => {
@@ -172,6 +169,30 @@ describe('dashboard tools', () => {
             { name: 'AgentBridge', js: 'AgentBridge', on: true, variables: {} },
         ])
         expect(calls[0].config.msv.basemap.accessToken).toBe('pk.test')
+    })
+
+    it('dashboard_create_from_config swaps to the MapLibre demo basemap when tokenless and mapbox-provider', async () => {
+        const calls: any[] = []
+        const client = {
+            addMission: async (mission: string, config: any) => {
+                calls.push({ mission, config })
+                return { mission, version: 0 }
+            },
+        } as any
+        const noTokenCfg = { ...cfg, mapboxToken: '' }
+        const tools = Object.fromEntries(makeDashboardTools(client, noTokenCfg).map((t) => [t.name, t]))
+        const rawConfig = {
+            msv: { mission: 'From JSON', basemap: { provider: 'mapbox', accessToken: '{{MAPBOX_TOKEN}}' } },
+            layers: [],
+        }
+        const out = parse(
+            await tools.dashboard_create_from_config.handler({ mission: 'From JSON', config: rawConfig })
+        )
+        expect(out.warnings).toEqual(['MAPBOX_TOKEN is not set — using the free MapLibre demo basemap instead'])
+        expect(calls[0].config.msv.basemap).toEqual({
+            provider: 'maplibre',
+            style: 'https://demotiles.maplibre.org/style.json',
+        })
     })
 
     it('dashboard_create_from_config keeps caller-provided components untouched', async () => {

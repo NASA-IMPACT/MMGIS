@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
-import { searchStac, searchCollections, stacItemToTileLayer } from '../src/stac.js'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { searchStac, searchCollections, stacItemToTileLayer, clearCollectionsCache } from '../src/stac.js'
 import { MMGISError } from '../src/mmgisClient.js'
+import { fakeFetch } from './helpers.js'
 
 const ITEM = {
     id: 'i1',
@@ -11,13 +12,15 @@ const ITEM = {
     assets: { cog_default: { href: 'https://data.test/i1.tif', type: 'image/tiff', title: 'COG' } },
 }
 
-function fakeFetch(json: unknown) {
-    return vi.fn(async () => ({ ok: true, status: 200, json: async () => json })) as unknown as typeof fetch
-}
+beforeEach(() => {
+    // Collections are cached per catalogUrl for 5 minutes; several tests here
+    // reuse 'https://stac.test' with different fetch mocks, so start fresh.
+    clearCollectionsCache()
+})
 
 describe('searchStac', () => {
     it('POSTs to /search and summarizes items', async () => {
-        const f = fakeFetch({ features: [ITEM] })
+        const f = fakeFetch(200, { features: [ITEM] })
         const items = await searchStac('https://stac.test', { bbox: [-90, 30, -80, 40], collections: ['no2-monthly'], limit: 5 }, f)
         expect((f as any).mock.calls[0][0]).toBe('https://stac.test/search')
         expect(JSON.parse((f as any).mock.calls[0][1].body)).toEqual({
@@ -49,7 +52,7 @@ describe('searchStac', () => {
 
 describe('searchCollections', () => {
     it('filters collections by keyword across id/title/description', async () => {
-        const f = fakeFetch({
+        const f = fakeFetch(200, {
             collections: [
                 { id: 'no2-monthly', title: 'NO2 Monthly', description: 'Nitrogen dioxide' },
                 { id: 'dem', title: 'Elevation', description: 'Terrain' },

@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import type { MmgisClient } from '../mmgisClient.js'
 import type { McpConfig } from '../config.js'
-import { buildProfile, AGENT_BRIDGE_COMPONENT, type DashboardSpec } from '../profileBuilder.js'
-import { generateConfig, resolvePlaceholders, listAvailableTools } from '../generator.js'
-import { type ToolDef, toToolResult, toErrorResult } from './result.js'
+import { buildProfile, ensureAgentBridgeComponent, type DashboardSpec } from '../profileBuilder.js'
+import { generateConfig, finalizeBasemap, listAvailableTools } from '../generator.js'
+import { type ToolDef, toToolResult, toErrorResult, wrap } from './result.js'
 
 const LAYER_EXAMPLES = {
     tile: {
@@ -124,40 +124,24 @@ export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef
             name: 'dashboard_tool_options',
             description: 'List tool names that dashboard_generate can include in a dashboard.',
             schema: {},
-            handler: async () => {
-                try {
-                    return toToolResult({ tools: await listAvailableTools(cfg.repoRoot) })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+            handler: () =>
+                wrap(async () => toToolResult({ tools: await listAvailableTools(cfg.repoRoot) })),
         },
         {
             name: 'dashboard_generate',
             description:
                 'Generate a complete MMGIS mission (dashboard) from a description of layers, view, and tools, and install it. Returns the mission URL.',
             schema: dashboardGenerateSchema,
-            handler: async (args: Omit<DashboardSpec, 'missionName'> & { mission: string; updateExisting?: boolean; returnConfig?: boolean }) => {
-                try {
+            handler: (args: Omit<DashboardSpec, 'missionName'> & { mission: string; updateExisting?: boolean; returnConfig?: boolean }) =>
+                wrap(async () => {
                     const nameError = validateMissionName(args.mission)
                     if (nameError) return toErrorResult(nameError)
                     const profile = buildProfile({ ...args, missionName: args.mission }, cfg.repoRoot)
-                    let config = await generateConfig(profile, cfg.repoRoot)
-                    const neededMapboxToken = JSON.stringify(config).includes('{{MAPBOX_TOKEN}}')
-                    config = resolvePlaceholders(config, cfg.mapboxToken)
-                    const warnings: string[] = []
+                    const generated = await generateConfig(profile, cfg.repoRoot)
                     // Without a Mapbox token the default basemap renders black; fall
                     // back to the token-free MapLibre demo style so maps always show.
-                    if (neededMapboxToken && cfg.mapboxToken === '' && config?.msv?.basemap?.provider === 'mapbox') {
-                        config.msv.basemap = {
-                            provider: 'maplibre',
-                            style: 'https://demotiles.maplibre.org/style.json',
-                        }
-                        warnings.push('MAPBOX_TOKEN is not set — using the free MapLibre demo basemap instead')
-                    }
-                    // Injected after generation: `components` is not a template key,
-                    // and /api/configure/add does not run backend validation.
-                    config.components = [AGENT_BRIDGE_COMPONENT]
+                    const { config, warnings } = finalizeBasemap(generated, cfg.mapboxToken)
+                    ensureAgentBridgeComponent(config)
                     const out = await installMission(client, args.mission, config, args.updateExisting)
                     return toToolResult({
                         mission: out.mission,
@@ -166,10 +150,7 @@ export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef
                         ...(warnings.length > 0 ? { warnings } : {}),
                         ...(args.returnConfig ? { config } : {}),
                     })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+                }),
         },
         {
             name: 'dashboard_create_from_config',
@@ -180,30 +161,20 @@ export function makeDashboardTools(client: MmgisClient, cfg: McpConfig): ToolDef
                 config: z.record(z.any()).describe('Complete MMGIS mission config object (e.g. from dashboard_generate with returnConfig)'),
                 updateExisting: z.boolean().optional().describe('If the mission exists, replace its config (new version)'),
             },
-            handler: async (args: { mission: string; config: any; updateExisting?: boolean }) => {
-                try {
+            handler: (args: { mission: string; config: any; updateExisting?: boolean }) =>
+                wrap(async () => {
                     const nameError = validateMissionName(args.mission)
                     if (nameError) return toErrorResult(nameError)
-                    const neededMapboxToken = JSON.stringify(args.config).includes('{{MAPBOX_TOKEN}}')
-                    const config = resolvePlaceholders(args.config, cfg.mapboxToken)
-                    if (!Array.isArray(config.components)) {
-                        config.components = [AGENT_BRIDGE_COMPONENT]
-                    }
+                    const { config, warnings } = finalizeBasemap(args.config, cfg.mapboxToken)
+                    ensureAgentBridgeComponent(config)
                     const out = await installMission(client, args.mission, config, args.updateExisting)
-                    const warnings: string[] = []
-                    if (neededMapboxToken && cfg.mapboxToken === '') {
-                        warnings.push('MAPBOX_TOKEN is not set — the basemap will not render')
-                    }
                     return toToolResult({
                         mission: out.mission,
                         version: out.version,
                         url: `${cfg.mmgisUrl}/?mission=${encodeURIComponent(args.mission)}`,
                         ...(warnings.length > 0 ? { warnings } : {}),
                     })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+                }),
         },
     ]
 }

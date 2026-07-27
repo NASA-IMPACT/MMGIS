@@ -1,17 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { MmgisClient } from '../mmgisClient.js'
-import { mergePatch, editConfig, findLayerIndex } from '../configEdit.js'
-import { type ToolDef, toToolResult, toErrorResult } from './result.js'
+import { mergePatch, editConfig, requireLayerIndex } from '../configEdit.js'
+import { type ToolDef, toToolResult, toErrorResult, wrap } from './result.js'
 
 const LIVE_NOTE =
     'Change saved. Classic sessions apply it live; modern sessions auto-reload within about a second (AgentBridge).'
 const RELOAD_NOTE =
     'Change saved. Modern sessions auto-reload within about a second (AgentBridge); classic sessions show a RELOAD button. view_reload is a manual fallback.'
-
-function layerNames(config: any): string {
-    return (config?.layers ?? []).map((l: any) => l.name).join(', ') || '(none)'
-}
 
 export function makeEditTools(client: MmgisClient): ToolDef[] {
     const mission = z.string().describe('Mission to edit (see mission_list)')
@@ -24,18 +20,15 @@ export function makeEditTools(client: MmgisClient): ToolDef[] {
                 mission,
                 patch: z.record(z.any()).describe('Merge patch, e.g. {"look": {"pagename": "New Name"}} or {"msv": {"basemap": {...}}}'),
             },
-            handler: async ({ mission, patch }: any) => {
-                try {
+            handler: ({ mission, patch }: any) =>
+                wrap(async () => {
                     const out = await editConfig(client, mission, (config) => {
                         const merged = mergePatch(config, patch)
                         for (const key of Object.keys(config)) delete config[key]
                         Object.assign(config, merged)
                     })
                     return toToolResult({ ...out, refresh: RELOAD_NOTE })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+                }),
         },
         {
             name: 'layer_add',
@@ -45,8 +38,8 @@ export function makeEditTools(client: MmgisClient): ToolDef[] {
                 layer: z.record(z.any()).describe('MMGIS layer entry (see dashboard_profile_schema layerExamples; vector layers can use url "geodatasets:<name>")'),
                 position: z.number().optional().describe('Index to insert at (default: end)'),
             },
-            handler: async ({ mission, layer, position }: any) => {
-                try {
+            handler: ({ mission, layer, position }: any) =>
+                wrap(async () => {
                     if (!layer || typeof layer.name !== 'string' || layer.name.trim() === '') {
                         return toErrorResult(
                             Object.assign(new Error('layer.name is required'), {
@@ -62,10 +55,7 @@ export function makeEditTools(client: MmgisClient): ToolDef[] {
                         return { info: { type: 'addLayer', layerName: entry.name } }
                     })
                     return toToolResult({ ...out, layer: entry, refresh: LIVE_NOTE })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+                }),
         },
         {
             name: 'layer_update',
@@ -75,56 +65,40 @@ export function makeEditTools(client: MmgisClient): ToolDef[] {
                 layer: z.string().describe('Layer name or uuid'),
                 patch: z.record(z.any()).describe('Merge patch for the layer entry, e.g. {"visibility": false} or {"initialOpacity": 0.5}'),
             },
-            handler: async ({ mission, layer, patch }: any) => {
-                try {
+            handler: ({ mission, layer, patch }: any) =>
+                wrap(async () => {
                     let updatedName = ''
                     const out = await editConfig(client, mission, (config) => {
-                        const idx = findLayerIndex(config, layer)
-                        if (idx === -1) {
-                            throw Object.assign(new Error(`Unknown layer: ${layer}`), {
-                                hint: `Available layers: ${layerNames(config)}`,
-                            })
-                        }
+                        const idx = requireLayerIndex(config, layer)
                         config.layers[idx] = mergePatch(config.layers[idx], patch)
                         updatedName = config.layers[idx].name
                         return { info: { type: 'updateLayer', layerName: updatedName } }
                     })
                     return toToolResult({ ...out, layer: updatedName, refresh: LIVE_NOTE })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+                }),
         },
         {
             name: 'layer_remove',
             description: 'Remove a layer (by name or uuid). Applies live in open sessions.',
             schema: { mission, layer: z.string().describe('Layer name or uuid') },
-            handler: async ({ mission, layer }: any) => {
-                try {
+            handler: ({ mission, layer }: any) =>
+                wrap(async () => {
                     let removedName = ''
                     const out = await editConfig(client, mission, (config) => {
-                        const idx = findLayerIndex(config, layer)
-                        if (idx === -1) {
-                            throw Object.assign(new Error(`Unknown layer: ${layer}`), {
-                                hint: `Available layers: ${layerNames(config)}`,
-                            })
-                        }
+                        const idx = requireLayerIndex(config, layer)
                         removedName = config.layers[idx].name
                         config.layers.splice(idx, 1)
                         return { info: { type: 'removeLayer', layerName: removedName } }
                     })
                     return toToolResult({ ...out, removed: removedName, refresh: LIVE_NOTE })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+                }),
         },
         {
             name: 'tool_toggle',
             description: "Turn a mission's tool on or off (e.g. Chart, Measure).",
             schema: { mission, toolName: z.string(), on: z.boolean() },
-            handler: async ({ mission, toolName, on }: any) => {
-                try {
+            handler: ({ mission, toolName, on }: any) =>
+                wrap(async () => {
                     const out = await editConfig(client, mission, (config) => {
                         const tool = (config.tools ?? []).find((t: any) => t.name === toolName)
                         if (!tool) {
@@ -135,10 +109,7 @@ export function makeEditTools(client: MmgisClient): ToolDef[] {
                         tool.on = on
                     })
                     return toToolResult({ ...out, tool: toolName, on, refresh: RELOAD_NOTE })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+                }),
         },
     ]
 }

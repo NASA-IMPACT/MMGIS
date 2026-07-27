@@ -38,6 +38,24 @@ function assertStacCatalogsShape(value: unknown): asserts value is Record<string
     }
 }
 
+// Shared parse+validate for the STAC_CATALOGS/STAC_TILERS env vars: both are
+// optional JSON objects mapping a catalog name to a URL string.
+function parseJsonMap(
+    envValue: string | undefined,
+    defaults: Record<string, string>,
+    errorMessage: string
+): Record<string, string> {
+    if (!envValue) return defaults
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(envValue)
+    } catch {
+        throw new Error(errorMessage)
+    }
+    assertStacCatalogsShape(parsed)
+    return parsed
+}
+
 export function loadConfig(env: Record<string, string | undefined> = process.env): McpConfig {
     if (!env.MMGIS_TOKEN) {
         throw new Error(
@@ -50,28 +68,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     const wsUrl = rawWsUrl.replace(/\/+$/, '') + '/'
     // mcp/src (dev) and mcp/dist (built) are both one level below mcp/
     const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
-    let stacCatalogs = DEFAULT_STAC_CATALOGS
-    if (env.STAC_CATALOGS) {
-        let parsed: unknown
-        try {
-            parsed = JSON.parse(env.STAC_CATALOGS)
-        } catch {
-            throw new Error(STAC_CATALOGS_SHAPE_ERROR)
-        }
-        assertStacCatalogsShape(parsed)
-        stacCatalogs = parsed
-    }
-    let stacTilers = DEFAULT_STAC_TILERS
-    if (env.STAC_TILERS) {
-        let parsedTilers: unknown
-        try {
-            parsedTilers = JSON.parse(env.STAC_TILERS)
-        } catch {
-            throw new Error('STAC_TILERS must be a JSON object mapping catalog name to tiler URL')
-        }
-        assertStacCatalogsShape(parsedTilers)
-        stacTilers = parsedTilers
-    }
+    const stacCatalogs = parseJsonMap(env.STAC_CATALOGS, DEFAULT_STAC_CATALOGS, STAC_CATALOGS_SHAPE_ERROR)
+    const stacTilers = parseJsonMap(
+        env.STAC_TILERS,
+        DEFAULT_STAC_TILERS,
+        'STAC_TILERS must be a JSON object mapping catalog name to tiler URL'
+    )
     return {
         mmgisUrl,
         mmgisToken: env.MMGIS_TOKEN,

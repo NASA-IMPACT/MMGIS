@@ -1,9 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { MmgisClient, MMGISError } from '../src/mmgisClient.js'
-
-function fakeFetch(status: number, json: unknown) {
-    return vi.fn(async () => ({ ok: status < 400, status, json: async () => json })) as unknown as typeof fetch
-}
+import { fakeFetch } from './helpers.js'
 
 describe('MmgisClient', () => {
     it('sends the Authorization header and returns mission names', async () => {

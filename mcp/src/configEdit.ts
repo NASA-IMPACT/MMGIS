@@ -39,3 +39,19 @@ export function findLayerIndex(config: any, nameOrUuid: string): number {
     const layers = Array.isArray(config?.layers) ? config.layers : []
     return layers.findIndex((l: any) => l?.name === nameOrUuid || l?.uuid === nameOrUuid)
 }
+
+export function layerNames(config: any): string {
+    return (config?.layers ?? []).map((l: any) => l.name).join(', ') || '(none)'
+}
+
+// Looks up a layer by name/uuid or throws the shared "Unknown layer" error
+// (with the available-layer-names hint) tool handlers rely on.
+export function requireLayerIndex(config: any, layer: string): number {
+    const idx = findLayerIndex(config, layer)
+    if (idx === -1) {
+        throw Object.assign(new Error(`Unknown layer: ${layer}`), {
+            hint: `Available layers: ${layerNames(config)}`,
+        })
+    }
+    return idx
+}

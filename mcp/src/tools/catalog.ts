@@ -1,22 +1,27 @@
 import { z } from 'zod'
 import type { McpConfig } from '../config.js'
-import { searchStac, searchCollections, stacItemToTileLayer } from '../stac.js'
+import { searchStac, searchCollections, filterCollections, stacItemToTileLayer } from '../stac.js'
 import { MMGISError } from '../mmgisClient.js'
-import { type ToolDef, toToolResult, toErrorResult } from './result.js'
+import { type ToolDef, toToolResult, toErrorResult, wrap } from './result.js'
 
 // Some catalogs (e.g. VEDA) keep imagery in protected buckets only their own
-// tile server can read — match the item's self link to a catalog origin and
-// use that catalog's dedicated tiler when one is configured.
+// tile server can read — prefer a direct catalogName -> tiler lookup (set
+// when the item came from a search against a configured catalog name), then
+// fall back to matching the item's self link against a catalog origin.
 export function tilerForItem(
     cfg: McpConfig,
-    selfHref: string | null
+    selfHref: string | null,
+    catalogName?: string
 ): { titilerUrl: string; urlStyle: 'stac-url' | 'item-path' } {
+    if (catalogName && cfg.stacTilers[catalogName]) {
+        // Dedicated tilers are titiler-pgstac (eoAPI) deployments — they
+        // serve items by path, not by a ?url= parameter.
+        return { titilerUrl: cfg.stacTilers[catalogName].replace(/\/+$/, ''), urlStyle: 'item-path' }
+    }
     if (selfHref) {
         for (const [name, catalogUrl] of Object.entries(cfg.stacCatalogs)) {
             try {
                 if (new URL(selfHref).origin === new URL(catalogUrl).origin && cfg.stacTilers[name]) {
-                    // Dedicated tilers are titiler-pgstac (eoAPI) deployments —
-                    // they serve items by path, not by a ?url= parameter.
                     return { titilerUrl: cfg.stacTilers[name].replace(/\/+$/, ''), urlStyle: 'item-path' }
                 }
             } catch {
@@ -39,6 +44,12 @@ function resolveCatalog(cfg: McpConfig, catalog: string): string {
     return url
 }
 
+// The `catalog` input names a configured catalog (dashboard_profile_schema-
+// style short name) unless it's already a full STAC API URL.
+function resolveCatalogName(catalog: string): string | undefined {
+    return /^https?:\/\//.test(catalog) ? undefined : catalog
+}
+
 export function makeCatalogTools(cfg: McpConfig, fetchFn: typeof fetch = fetch): ToolDef[] {
     return [
         {
@@ -49,12 +60,12 @@ export function makeCatalogTools(cfg: McpConfig, fetchFn: typeof fetch = fetch):
                 catalog: z.string().describe(`Catalog name (${Object.keys(cfg.stacCatalogs).join(', ')}) or a STAC API URL`),
                 keyword: z.string().optional().describe('Filter by keyword, e.g. "no2", "fire", "flood"'),
             },
-            handler: async ({ catalog, keyword }: { catalog: string; keyword?: string }) => {
-                try {
+            handler: ({ catalog, keyword }: { catalog: string; keyword?: string }) =>
+                wrap(async () => {
                     const url = resolveCatalog(cfg, catalog)
-                    const collections = await searchCollections(url, keyword, fetchFn)
+                    const all = await searchCollections(url, undefined, fetchFn)
+                    const collections = keyword ? filterCollections(all, keyword) : all
                     if (keyword && collections.length === 0) {
-                        const all = await searchCollections(url, undefined, fetchFn)
                         return toToolResult({
                             collections: [],
                             hint: `No collections matched "${keyword}". Dataset names are technical — scan availableCollections below for related measurements (e.g. air quality: no2, so2, pm, aerosol; fire: burn, thermal; flood: water, inundation) and re-search with a matching id fragment.`,
@@ -63,10 +74,7 @@ export function makeCatalogTools(cfg: McpConfig, fetchFn: typeof fetch = fetch):
                         })
                     }
                     return toToolResult({ collections })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+                }),
         },
         {
             name: 'catalog_search',
@@ -78,13 +86,12 @@ export function makeCatalogTools(cfg: McpConfig, fetchFn: typeof fetch = fetch):
                 datetime: z.string().optional().describe('RFC3339 interval, e.g. "2026-01-01T00:00:00Z/2026-06-30T23:59:59Z"'),
                 limit: z.number().optional(),
             },
-            handler: async ({ catalog, ...params }: any) => {
-                try {
-                    return toToolResult({ items: await searchStac(resolveCatalog(cfg, catalog), params) })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+            handler: ({ catalog, ...params }: any) =>
+                wrap(async () => {
+                    const catalogName = resolveCatalogName(catalog)
+                    const items = await searchStac(resolveCatalog(cfg, catalog), params, undefined, catalogName)
+                    return toToolResult({ items })
+                }),
         },
         {
             name: 'catalog_item_to_layer',
@@ -97,9 +104,9 @@ export function makeCatalogTools(cfg: McpConfig, fetchFn: typeof fetch = fetch):
                 rescale: z.string().optional().describe('e.g. "0,255"'),
                 colormap: z.string().optional().describe('e.g. "viridis"'),
             },
-            handler: async ({ item, name, asset, rescale, colormap }: any) => {
-                try {
-                    const tiler = tilerForItem(cfg, item?.selfHref ?? null)
+            handler: ({ item, name, asset, rescale, colormap }: any) =>
+                wrap(async () => {
+                    const tiler = tilerForItem(cfg, item?.selfHref ?? null, item?.catalogName)
                     return toToolResult({
                         layer: stacItemToTileLayer(item, {
                             name,
@@ -110,10 +117,7 @@ export function makeCatalogTools(cfg: McpConfig, fetchFn: typeof fetch = fetch):
                             colormap,
                         }),
                     })
-                } catch (err) {
-                    return toErrorResult(err)
-                }
-            },
+                }),
         },
     ]
 }

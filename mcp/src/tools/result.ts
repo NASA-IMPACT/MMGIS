@@ -23,3 +23,13 @@ export function toErrorResult(err: unknown) {
         ],
     }
 }
+
+export async function wrap(
+    fn: () => Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }>
+) {
+    try {
+        return await fn()
+    } catch (err) {
+        return toErrorResult(err)
+    }
+}
