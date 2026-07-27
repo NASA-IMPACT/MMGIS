@@ -178,13 +178,11 @@ describe('tileUrlUtils', () => {
             expect(o.starttime).toBe('03/01/2024')
             expect(o.endtime).toBe('03/04/2024')
             expect(o.time).toBe('03/04/2024')
-            expect(o.timeEnabled).toBe(true)
         })
         test('yields empty time strings when no time config', () => {
             const o = buildTileUrlOptions({ name: 'x' }, 'COG')
             expect(o.starttime).toBe('')
             expect(o.endtime).toBe('')
-            expect(o.timeEnabled).toBe(false)
             expect(o.splitColonType).toBe('COG')
         })
         test('resolves tileFormat from tms', () => {
@@ -299,6 +297,285 @@ describe('tileUrlUtils', () => {
             }
             const url = compileTileUrl('https://t/{customtime.0}/{customtime.1}.png', opts)
             expect(url).toBe('https://t/2024-01-01T00:00:00Z/2024-02-02T00:00:00Z.png')
+        })
+    })
+
+    describe('compileTileUrl — empty-time placeholders', () => {
+        test('collapses {time}/{starttime}/{endtime} to empty when no time configured', () => {
+            // No time config → buildTileUrlOptions yields '' for every time value.
+            // The placeholders must be removed, not left as literal {time} the
+            // server would 404 on.
+            const opts = buildTileUrlOptions({ name: 'x' }, undefined)
+            const url = compileTileUrl(
+                'https://t/{starttime}/{endtime}/{time}.png',
+                opts
+            )
+            expect(url).toBe('https://t///.png')
+            expect(url).not.toContain('{time}')
+            expect(url).not.toContain('{starttime}')
+            expect(url).not.toContain('{endtime}')
+        })
+    })
+
+    describe('buildTileUrlOptions — closed key set', () => {
+        // TimeControl hands this object straight to the middleware's
+        // refresh(), which copies every key onto this.options. Anything that
+        // leaks out of the layer config would clobber the creation-time
+        // options built in Map_.makeTileLayer.
+        const opts = buildTileUrlOptions(
+            {
+                name: 'x',
+                minZoom: '3',
+                maxZoom: '18',
+                maxNativeZoom: '18',
+                boundingBox: [0, 0, 1, 1],
+                style: { color: 'red' },
+                url: 'https://raw/{z}/{x}/{y}.png',
+                variables: { a: 1 },
+                cogTransform: true,
+                cogColormap: 'viridis',
+                cogResampling: 'bilinear',
+                time: { enabled: true, end: '2024-03-04T00:00:00Z' },
+            },
+            'COG'
+        )
+
+        test('carries every key compileTileUrl reads', () => {
+            expect(opts.splitColonType).toBe('COG')
+            expect(opts.time).toBe('2024-03-04T00:00:00Z')
+            expect(opts.tileFormat).toBe('tms')
+            expect(opts.cogTransform).toBe(true)
+            expect(opts.cogColormap).toBe('viridis')
+            expect(opts.cogResampling).toBe('bilinear')
+        })
+
+        test('carries nothing else from the layer config', () => {
+            expect(Object.keys(opts).sort()).toEqual([
+                'cogColormap',
+                'cogExpression',
+                'cogMax',
+                'cogMin',
+                'cogResampling',
+                'cogTransform',
+                'compositeTile',
+                'currentCogExpression',
+                'currentCogMax',
+                'currentCogMin',
+                'customTimes',
+                'endtime',
+                'splitColonType',
+                'starttime',
+                'tileFormat',
+                'time',
+            ])
+        })
+    })
+
+    describe('compileTileUrl — placeholders inside a query string', () => {
+        // Regression: the param-injection block round-trips the query through
+        // URLSearchParams, which percent-encodes the braces. If it ran before
+        // the replacements, `{time}` became `%7Btime%7D` and never resolved.
+        // Leaflet masks that (L.Util.template substitutes from options first);
+        // DeckGL, which compiles the URL wholesale, does not.
+        const opts = buildTileUrlOptions(
+            {
+                cogTransform: true,
+                cogColormap: 'viridis',
+                time: {
+                    enabled: true,
+                    start: '2024-03-01T00:00:00Z',
+                    end: '2024-03-04T00:00:00Z',
+                },
+            },
+            'titiler-url'
+        )
+
+        test('substitutes {time} in a query param', () => {
+            const url = compileTileUrl(
+                'https://titiler/tiles/{z}/{x}/{y}?url=x.tif&date={time}',
+                opts
+            )
+            expect(url).not.toContain('%7Btime%7D')
+            expect(url).not.toContain('{time}')
+            expect(decodeURIComponent(url)).toContain(
+                'date=2024-03-04T00:00:00Z'
+            )
+        })
+
+        test('substitutes {starttime}/{endtime} in a query param', () => {
+            const url = decodeURIComponent(
+                compileTileUrl(
+                    'https://titiler/tiles/{z}/{x}/{y}?from={starttime}&to={endtime}',
+                    opts
+                )
+            )
+            expect(url).toContain('from=2024-03-01T00:00:00Z')
+            expect(url).toContain('to=2024-03-04T00:00:00Z')
+        })
+
+        test('substitutes {customtime.N} in a query param', () => {
+            const url = decodeURIComponent(
+                compileTileUrl(
+                    'https://titiler/tiles/{z}/{x}/{y}?url=x.tif&at={customtime.0}',
+                    {
+                        ...opts,
+                        customTimes: { times: ['2024-05-05T00:00:00Z'] },
+                    }
+                )
+            )
+            expect(url).toContain('at=2024-05-05T00:00:00Z')
+        })
+
+        test('still substitutes placeholders in the path', () => {
+            const url = compileTileUrl('https://t/{time}/{z}/{x}/{y}.png', opts)
+            expect(url).toContain('/2024-03-04T00:00:00Z/')
+        })
+    })
+
+    describe('compileTileUrl — stac-collection params', () => {
+        const stacOpts = (extra = {}) =>
+            buildTileUrlOptions(
+                {
+                    time: {
+                        enabled: true,
+                        start: '2024-03-01T00:00:00Z',
+                        end: '2024-03-04T00:00:00Z',
+                    },
+                    ...extra,
+                },
+                'stac-collection'
+            )
+
+        test('appends the mosaic scan flags', () => {
+            const url = compileTileUrl('https://s/{z}/{x}/{y}.png', stacOpts())
+            expect(url).toContain('exitwhenfull=false')
+            expect(url).toContain('skipcovered=false')
+        })
+
+        test('does not append the scan flags for COG or titiler-url', () => {
+            for (const type of ['COG', 'titiler-url']) {
+                const opts = buildTileUrlOptions(
+                    { time: { enabled: true, end: '2024-03-04T00:00:00Z' } },
+                    type
+                )
+                expect(
+                    compileTileUrl('https://s/{z}/{x}/{y}.png', opts)
+                ).not.toContain('exitwhenfull')
+            }
+        })
+
+        test('injects the global mosaic limits when configured', () => {
+            const previous = window.mmgisglobal
+            window.mmgisglobal = {
+                options: {
+                    stac: {
+                        mosaicItemLimit: 20,
+                        mosaicScanLimit: 100,
+                        mosaicTimeLimit: 5,
+                    },
+                },
+            }
+            try {
+                const url = compileTileUrl(
+                    'https://s/{z}/{x}/{y}.png',
+                    stacOpts()
+                )
+                expect(url).toContain('items_limit=20')
+                expect(url).toContain('scan_limit=100')
+                expect(url).toContain('time_limit=5')
+            } finally {
+                window.mmgisglobal = previous
+            }
+        })
+
+        test('omits any limit that is not configured', () => {
+            const previous = window.mmgisglobal
+            window.mmgisglobal = {
+                options: { stac: { mosaicItemLimit: 20 } },
+            }
+            try {
+                const url = compileTileUrl(
+                    'https://s/{z}/{x}/{y}.png',
+                    stacOpts()
+                )
+                expect(url).toContain('items_limit=20')
+                expect(url).not.toContain('scan_limit')
+                expect(url).not.toContain('time_limit')
+            } finally {
+                window.mmgisglobal = previous
+            }
+        })
+    })
+
+    describe('compileTileUrl — tms param de-duplication', () => {
+        const tmsOpts = buildTileUrlOptions(
+            {
+                tms: true,
+                time: {
+                    enabled: true,
+                    compositeTile: true,
+                    start: '2024-03-01T00:00:00Z',
+                    end: '2024-03-04T00:00:00Z',
+                },
+            },
+            undefined
+        )
+
+        test('leaves a starttime already in the URL alone', () => {
+            const url = compileTileUrl(
+                'https://t/{z}/{x}/{y}.png?starttime=custom',
+                tmsOpts
+            )
+            expect(url).toContain('starttime=custom')
+            expect(url).not.toContain('starttime=2024-03-01T00:00:00Z')
+            // the params that are absent are still appended
+            expect(url).toContain('time=2024-03-04T00:00:00Z')
+            expect(url).toContain('composite=true')
+        })
+
+        test('leaves a time already in the URL alone', () => {
+            const url = compileTileUrl(
+                'https://t/{z}/{x}/{y}.png?time=custom',
+                tmsOpts
+            )
+            expect(url.match(/[?&]time=/g)).toHaveLength(1)
+            expect(url).toContain('starttime=2024-03-01T00:00:00Z')
+        })
+
+        test('leaves a composite already in the URL alone', () => {
+            const url = compileTileUrl(
+                'https://t/{z}/{x}/{y}.png?composite=false',
+                tmsOpts
+            )
+            expect(url).toContain('composite=false')
+            expect(url).not.toContain('composite=true')
+        })
+    })
+
+    describe('compileTileUrl — titiler-url', () => {
+        test('gets datetime and COG params like COG layers do', () => {
+            const opts = buildTileUrlOptions(
+                {
+                    cogTransform: true,
+                    cogColormap: 'viridis',
+                    cogMin: 0,
+                    cogMax: 100,
+                    time: {
+                        enabled: true,
+                        start: '2024-03-01T00:00:00Z',
+                        end: '2024-03-04T00:00:00Z',
+                    },
+                },
+                'titiler-url'
+            )
+            const url = decodeURIComponent(
+                compileTileUrl('https://titiler/tiles/{z}/{x}/{y}', opts)
+            )
+            expect(url).toContain(
+                'datetime=2024-03-01T00:00:00Z/2024-03-04T00:00:00Z'
+            )
+            expect(url).toContain('colormap_name=viridis')
+            expect(url).toContain('rescale=0,100')
         })
     })
 })

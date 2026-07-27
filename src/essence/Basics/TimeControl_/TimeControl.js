@@ -11,7 +11,8 @@ import {
     formatLayerTime,
     buildTileUrlOptions,
 } from '../Layers_/tileUrlUtils'
-import ServiceUrls from '../ServiceUrls/ServiceUrls'
+import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
+import { MAP_ENGINE } from '../MapEngines/types/engine'
 
 import './TimeControl.css'
 
@@ -22,6 +23,9 @@ let _providerCleanups = []
 const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
 )
+
+// `tile` is the configured type for every raster tile layer, on both map
+const isTileLayerType = (layer) => layer?.type === 'tile'
 
 var TimeControl = {
     enabled: false,
@@ -273,8 +277,7 @@ var TimeControl = {
                 layer.time.end
             )
 
-            const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
-            if (isTileLayer) {
+            if (isTileLayerType(layer)) {
                 TimeControl.setLayerWmsParams(layer)
             }
         }
@@ -320,74 +323,71 @@ var TimeControl = {
 
         if (L_.layers.layer[layer.name] === null) return false
 
-        let layerTimeFormat =
-            layer.time?.format == null || layer.time?.format == ''
-                ? utcFormat('%Y-%m-%dT%H:%M:%SZ')
-                : utcFormat(layer.time.format)
+        const layerTimeFormat = formatLayerTime(layer.time?.format)
         layer.time.current = TimeControl.currentTime // keeps track of when layer was refreshed
 
         let originalUrl = layer.url
 
-        layer.url = await TimeControl.performTimeUrlReplacements(
-            layer.url,
-            layer,
-            forceRequery
-        )
+        // A tile layer resolves its source URL first and runs the replacements
+        // on the resolved URL, the order layer creation uses. Replacing first
+        // would append `nocache=` to the raw config URL, so for a `COG:` layer
+        // it would land inside TiTiler's `url=` param instead of on the tile
+        // request itself. This also leaves `layer.url` unmutated for tile
+        // layers — only the other branches below need the substituted URL.
+        const tileSource = isTileLayerType(layer)
+            ? resolveTileLayerSource(layer)
+            : null
 
-        // Check for both 'tile' and 'TileLayer' (case-insensitive comparison)
-        const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
+        if (tileSource) {
+            tileSource.url = await TimeControl.performTimeUrlReplacements(
+                tileSource.url,
+                layer,
+                forceRequery
+            )
+        } else {
+            layer.url = await TimeControl.performTimeUrlReplacements(
+                layer.url,
+                layer,
+                forceRequery
+            )
+        }
 
-        if (isTileLayer) {
+        if (tileSource) {
             if (layer.time && layer.time.enabled === true) {
                 TimeControl.setLayerWmsParams(layer)
             }
             if (evenIfControlled === true || layer.controlled !== true) {
                 const tileLayer = L_.layers.layer[layer.name]
                 if (L_.layers.on[layer.name] || evenIfOff) {
-                    const sourceUrl = layer.url
-                    let resolvedUrl = L_.getUrl(layer.type, sourceUrl, layer)
+                    // resolveTileLayerSource is what layer creation uses, so
+                    // the refreshed URL keeps the layer's active tile level and
+                    // its service prefix handling instead of falling back to
+                    // the default source.
+                    const { url: resolvedUrl, splitColonType } = tileSource
 
-                    const splitColonLayerUrl = (sourceUrl || '').split(':')
-                    let splitColonType = undefined
-                    if (
-                        splitColonLayerUrl[1] != null &&
-                        ['stac-collection', 'COG', 'titiler-url'].includes(
-                            splitColonLayerUrl[0]
-                        )
-                    ) {
-                        splitColonType = splitColonLayerUrl[0]
-                        if (splitColonType === 'COG') {
-                            // getUrl resolves the COG file URL; TiTiler wraps it.
-                            resolvedUrl = ServiceUrls.buildTiTilerCogTilesUrl(
-                                resolvedUrl,
-                                layer,
-                                {
-                                    tileMatrixSet: layer.tileMatrixSet,
-                                    bands:
-                                        !layer.cogExpression ||
-                                        layer.cogExpression.trim() === ''
-                                            ? layer.cogBands
-                                            : null,
-                                    resampling: layer.cogResampling,
-                                }
-                            )
-                        }
-                        // 'stac-collection' and 'titiler-url' need no extra work:
-                        // L_.getUrl already fully resolved them.
-                    }
-
-                    const tileOptions = buildTileUrlOptions(layer, splitColonType)
+                    const tileOptions = buildTileUrlOptions(
+                        layer,
+                        splitColonType
+                    )
 
                     // TODO: Refactor this to push URL compilation and refreshing
                     // into the map engine adapters so TimeControl doesn't branch
                     // on Map_.engine.engineType
                     // https://github.com/NASA-IMPACT/MMGIS/issues/212 tracks this
                     if (tileLayer && typeof tileLayer.refresh === 'function') {
-                        tileLayer.refresh(resolvedUrl, true, tileOptions)
-                    } else if (Map_.engine?.engineType === 'deckgl') {
+                        // refresh() copies every key onto this.options, which the
+                        // per-tile getTileUrl then reads. Safe to pass whole:
+                        // buildTileUrlOptions returns only tile-URL keys.
+                        // It also re-applies the creation-time URL normalization
+                        // ({t} rewriting, the WMS base/params split).
+                        tileLayer.refresh(
+                            resolvedUrl,
+                            forceRequery === true,
+                            tileOptions
+                        )
+                    } else if (Map_.engine?.engineType === MAP_ENGINE.DECKGL) {
                         const newUrl = compileTileUrl(resolvedUrl, tileOptions)
                         Map_.engine.updateLayer(layer.name, { url: newUrl })
-                        return true
                     }
                 }
             }
@@ -419,11 +419,11 @@ var TimeControl = {
                     layer.url = layer.url
                         .replace(
                             /{starttime}/g,
-                            layerTimeFormat(Date.parse(layer.time.start))
+                            layerTimeFormat(layer.time.start)
                         )
                         .replace(
                             /{endtime}/g,
-                            layerTimeFormat(Date.parse(layer.time.end))
+                            layerTimeFormat(layer.time.end)
                         )
 
                     if (
@@ -505,10 +505,7 @@ var TimeControl = {
         type
     ) {
         return new Promise(async (resolve, reject) => {
-            let layerTimeFormat =
-                layer.time?.format == null || layer.time?.format == ''
-                    ? utcFormat('%Y-%m-%dT%H:%M:%SZ')
-                    : utcFormat(layer.time.format)
+            const layerTimeFormat = formatLayerTime(layer.time?.format)
 
             let nextUrl = url
             if (layer.variables?.urlReplacements) {
@@ -525,13 +522,11 @@ var TimeControl = {
                             body: JSON.stringify(r.body)
                                 .replaceAll(
                                     '{starttime}',
-                                    layerTimeFormat(
-                                        Date.parse(layer.time.start)
-                                    )
+                                    layerTimeFormat(layer.time.start)
                                 )
                                 .replaceAll(
                                     '{endtime}',
-                                    layerTimeFormat(Date.parse(layer.time.end))
+                                    layerTimeFormat(layer.time.end)
                                 ),
                         })
                         const res = await response.json()
@@ -683,8 +678,7 @@ var TimeControl = {
                     layer.time.end
                 )
                 updatedLayers.push(layer.name)
-                const isTileLayer = layer.type && (layer.type.toLowerCase() === 'tile' || layer.type.toLowerCase() === 'tilelayer')
-                if (isTileLayer) {
+                if (isTileLayerType(layer)) {
                     TimeControl.setLayerWmsParams(layer)
                 }
             }
@@ -724,24 +718,15 @@ var TimeControl = {
         // Shared time formatter (see tileUrlUtils.formatLayerTime).
         const layerTimeFormatter = formatLayerTime(layer.time?.format)
         const l = L_.layers.layer[layer.name]
-        const isTileLayer =
-            layer.type &&
-            (layer.type.toLowerCase() === 'tile' ||
-                layer.type.toLowerCase() === 'tilelayer')
 
-        if (l != null && isTileLayer) {
-            const formattedTime = layerTimeFormatter(layer.time.end)
-            const formattedStart = layerTimeFormatter(layer.time.start)
-
-            // Deck layers expose `props`, not `options`
-            // Ensure options object exists (needed for middleware-based layers)
-            if (!l.options) {
-                l.options = {}
-            }
-
-            l.options.time = formattedTime
-            l.options.starttime = formattedStart
-            l.options.endtime = formattedTime
+        // Leaflet-only: `options` is where the per-tile getTileUrl and the WMS
+        // substitution read their times from. Deck layers expose `props`
+        // instead and get their times baked into the URL by reloadLayer, so the
+        // guard skips them rather than growing them an `options` nothing reads.
+        if (l != null && isTileLayerType(layer) && l.options != null) {
+            l.options.time = layerTimeFormatter(layer.time.end)
+            l.options.starttime = layerTimeFormatter(layer.time.start)
+            l.options.endtime = layerTimeFormatter(layer.time.end)
         }
     },
 }
