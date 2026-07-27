@@ -41,9 +41,7 @@ export async function runAgentLoop({ messages, openai, bridge, model, onEvent, m
             let parsed = null
             try {
                 parsed = c.args ? JSON.parse(c.args) : {}
-            } catch {
-                parsed = null
-            }
+            } catch {}
             onEvent({ type: 'tool_call', id: c.id, name: c.name, args: parsed ?? {} })
             const result =
                 parsed === null

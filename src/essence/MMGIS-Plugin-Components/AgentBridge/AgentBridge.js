@@ -26,6 +26,13 @@ function isModernMission() {
 // — only ToolControllerModern_ runs, wired up behind window.mmgisAPI's
 // show/hide/load-plugin API. Keeping the mode switch here (not in commands.js)
 // lets commands.js stay a plain, dependency-injected, unit-testable module.
+// Shared result shape for the modern openTool branches below.
+function toOpenResult(ok, toolId, name) {
+    return ok
+        ? { ok: true, activeTool: toolId }
+        : { ok: false, error: `Unknown or unopenable tool: ${name}` }
+}
+
 function buildToolAdapter() {
     const isModern = isModernMission()
 
@@ -51,24 +58,20 @@ function buildToolAdapter() {
 
                 if (loaded && !hidden) {
                     // Already visible; treat as a success (idempotent open).
-                    return { ok: true, activeTool: toolId }
+                    return toOpenResult(true, toolId, name)
                 }
                 if (loaded && hidden) {
                     // Loaded but hidden (hidePlugin / startHidden) — reveal it.
-                    return api.showPlugin(toolId)
-                        ? { ok: true, activeTool: toolId }
-                        : { ok: false, error: `Unknown or unopenable tool: ${name}` }
+                    return toOpenResult(api.showPlugin(toolId), toolId, name)
                 }
                 if (!loaded && hidden) {
                     // Deferred (startUnloaded / previously unloadPlugin'd) — load it.
-                    return api.loadPlugin(toolId)
-                        ? { ok: true, activeTool: toolId }
-                        : { ok: false, error: `Unknown or unopenable tool: ${name}` }
+                    return toOpenResult(api.loadPlugin(toolId), toolId, name)
                 }
                 // Neither loaded nor deferred: this name was never assigned to a
                 // panel in this mission's config — there is no ground truth that
                 // says opening it did anything.
-                return { ok: false, error: `Unknown or unopenable tool: ${name}` }
+                return toOpenResult(false, toolId, name)
             },
         }
     }

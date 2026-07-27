@@ -81,13 +81,17 @@ if (typeof document !== 'undefined') {
 
     const save = () => localStorage.setItem('mmgisChat', JSON.stringify(messages))
 
+    function appendAndScroll(el) {
+        transcript.appendChild(el)
+        transcript.scrollTop = transcript.scrollHeight
+        return el
+    }
+
     function addBubble(cls, text) {
         const div = document.createElement('div')
         div.className = `msg ${cls}`
         div.textContent = text
-        transcript.appendChild(div)
-        transcript.scrollTop = transcript.scrollHeight
-        return div
+        return appendAndScroll(div)
     }
 
     function addToolCard(name, args) {
@@ -99,9 +103,7 @@ if (typeof document !== 'undefined') {
         const argsPre = document.createElement('pre')
         argsPre.textContent = `args: ${JSON.stringify(args, null, 2)}`
         details.appendChild(argsPre)
-        transcript.appendChild(details)
-        transcript.scrollTop = transcript.scrollHeight
-        return details
+        return appendAndScroll(details)
     }
 
     function finishToolCard(card, result, isError) {
@@ -271,7 +273,7 @@ if (typeof document !== 'undefined') {
                         bubbleText += ev.delta
                         fullText += ev.delta
                         assistantDiv.textContent = bubbleText
-                        transcript.scrollTop = transcript.scrollHeight
+                        appendAndScroll(assistantDiv)
                     } else if (ev.type === 'tool_call') {
                         // a new assistant bubble will follow the tool round
                         assistantDiv = null
