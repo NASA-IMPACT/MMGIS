@@ -24,7 +24,7 @@ const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
 )
 
-// `tile` is the configured type for every raster tile layer, on both map
+// `tile` is the configured type for every raster tile layer on all map engines
 const isTileLayerType = (layer) => layer?.type === 'tile'
 
 var TimeControl = {
