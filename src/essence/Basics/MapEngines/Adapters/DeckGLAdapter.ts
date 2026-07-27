@@ -764,7 +764,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const updated = existing.clone({
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
-            ...( options.url !== undefined ? { data: options.url } : {} ),
+            ...(options.url !== undefined ? { data: options.url } : {}),
         }) as Layer
         this._layers.set(id, updated)
         this._syncLayers()

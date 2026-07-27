@@ -68,7 +68,6 @@ export function buildTileUrlOptions(
     const formattedEnd = formatter(timeConfig.end)
     return {
         splitColonType,
-        timeEnabled: timeConfig.enabled === true,
         time: formattedEnd,
         starttime: formattedStart,
         endtime: formattedEnd,
@@ -92,10 +91,12 @@ export function buildTileUrlOptions(
  * Adds `asset_` prefix to bare band references (b1, B2, etc.) in a TiTiler
  * expression string. No-ops if the expression is empty or already prefixed.
  *
- * @param {string} expression
- * @returns {string}
+ * @param {string} [expression]
+ * @returns {string|null|undefined}
  */
-export function processExpression(expression: string): string {
+export function processExpression(
+    expression: string | null | undefined
+): string | null | undefined {
     if (!expression || expression.trim() === '') return expression
     return expression.replace(/(?<!\w)([bB])(\d+)/g, 'asset_$1$2')
 }
@@ -161,11 +162,32 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 
     let nextUrl = url
 
-    // 1. Process STAC/COG datetime parameters
     const timeStr = options.time
     const startTimeStr = options.starttime
     const endTimeStr = options.endtime
 
+    // 1. Placeholder replacements.
+    //
+    // These run first because the param injection below round-trips the query
+    // through URLSearchParams, which percent-encodes the braces — `{time}`
+    // becomes `%7Btime%7D` and stops looking like a placeholder. Leaflet masks
+    // that ordering for the three standard tokens (L.Util.template substitutes
+    // them from `options` before this function is ever called); DeckGL has no
+    // such step, so a placeholder inside a query string reached the server raw.
+    nextUrl = nextUrl.replace(/{time}/g, timeStr || '')
+    nextUrl = nextUrl.replace(/{starttime}/g, startTimeStr || '')
+    nextUrl = nextUrl.replace(/{endtime}/g, endTimeStr || '')
+
+    if (options.customTimes?.times && options.customTimes.times.length > 0) {
+        for (let i = 0; i < options.customTimes.times.length; i++) {
+            nextUrl = nextUrl.replace(
+                new RegExp(`{customtime.${i}}`, 'g'),
+                options.customTimes.times[i]
+            )
+        }
+    }
+
+    // 2. STAC/COG datetime parameters
     if (
         options.splitColonType === 'stac-collection' ||
         options.splitColonType === 'COG' ||
@@ -188,8 +210,8 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 
         nextUrl = applyCogFieldsToUrl(nextUrl, options)
 
-        // @ts-ignore - mmgisglobal is a global variable injected at runtime
-        const globalStacOptions = window.mmgisglobal?.options?.stac
+        // mmgisglobal is injected at runtime by the server-rendered page.
+        const globalStacOptions = (window as any).mmgisglobal?.options?.stac
 
         if (globalStacOptions?.mosaicItemLimit != null) {
             nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}items_limit=${globalStacOptions.mosaicItemLimit}`
@@ -202,22 +224,7 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
         }
     }
 
-    // 2. Perform placeholder replacements
-    nextUrl = nextUrl.replace(/{time}/g, timeStr || '')
-    nextUrl = nextUrl.replace(/{starttime}/g, startTimeStr || '')
-    nextUrl = nextUrl.replace(/{endtime}/g, endTimeStr || '')
-
-    // 3. Custom time replacements
-    if (options.customTimes?.times && options.customTimes.times.length > 0) {
-        for (let i = 0; i < options.customTimes.times.length; i++) {
-            nextUrl = nextUrl.replace(
-                new RegExp(`{customtime.${i}}`, 'g'),
-                options.customTimes.times[i]
-            )
-        }
-    }
-
-    // 4. TMS specific options
+    // 3. TMS specific options
     if (timeStr && options.tileFormat === 'tms') {
         let paramDelimiter = nextUrl.indexOf('?') === -1 ? '?' : '&'
         const urlParams = nextUrl.indexOf('?') !== -1 ? new URLSearchParams(nextUrl.split('?')[1]) : null
