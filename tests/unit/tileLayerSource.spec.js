@@ -34,8 +34,12 @@ vi.mock('../../src/essence/Basics/Formulae_/Formulae_', () => ({
     },
 }))
 
-const { resolveTileLayerSource, getActiveTileLevel, getTileLevelElevation } =
-    await import('../../src/essence/Basics/Layers_/tileLayerSource.js')
+const {
+    resolveTileLayerSource,
+    syncTileFormatToConfig,
+    getActiveTileLevel,
+    getTileLevelElevation,
+} = await import('../../src/essence/Basics/Layers_/tileLayerSource.js')
 
 describe('resolveTileLayerSource', () => {
     describe('tile levels', () => {
@@ -117,15 +121,49 @@ describe('resolveTileLayerSource', () => {
             expect(splitColonType).toBeUndefined()
         })
 
-        test('stac-collection transforms the URL and forces wmts', () => {
+        test('stac-collection transforms the URL and resolves wmts', () => {
             const layer = {
                 type: 'tile',
                 url: 'stac-collection:mycollection',
             }
-            const { url, splitColonType } = resolveTileLayerSource(layer)
+            const { url, splitColonType, tileFormat } =
+                resolveTileLayerSource(layer)
             expect(splitColonType).toBe('stac-collection')
             expect(url).toBe('stac(stac-collection:mycollection)')
-            expect(layer.tileformat).toBe('wmts')
+            expect(tileFormat).toBe('wmts')
+            // The resolver never writes to the layer config; that is
+            // syncTileFormatToConfig's job, called at creation.
+            expect(layer.tileformat).toBeUndefined()
+        })
+
+        test('a stac-collection tile level transforms the LEVEL url, not the layer url', () => {
+            // transformStacUrl no-ops on a non-STAC URL, so resolving
+            // layerObj.url here would yield a plain URL tagged as STAC.
+            const { url, splitColonType, tileFormat } = resolveTileLayerSource({
+                type: 'tile',
+                url: 'https://plain/{z}/{x}/{y}.png',
+                currentTileLevel: 'stac',
+                variables: {
+                    tileLevels: [
+                        { value: 'stac', url: 'stac-collection:levelcollection' },
+                    ],
+                },
+            })
+            expect(splitColonType).toBe('stac-collection')
+            expect(url).toBe('stac(stac-collection:levelcollection)')
+            expect(tileFormat).toBe('wmts')
+        })
+
+        test('non-stac sources resolve tileFormat from the layer config', () => {
+            const plain = (extra) =>
+                resolveTileLayerSource({
+                    type: 'tile',
+                    url: 'https://t/{z}/{x}/{y}.png',
+                    ...extra,
+                }).tileFormat
+            expect(plain({})).toBe('tms')
+            expect(plain({ tms: false })).toBe('wmts')
+            expect(plain({ tileformat: 'wms' })).toBe('wms')
         })
 
         test('COG wraps the resolved file URL in TiTiler', () => {
@@ -232,6 +270,24 @@ describe('resolveTileLayerSource', () => {
             expect(getTileLevelElevation({})).toBeUndefined()
             expect(getTileLevelElevation({ height: 'tall' })).toBeUndefined()
             expect(getTileLevelElevation(null)).toBeUndefined()
+        })
+    })
+
+    describe('syncTileFormatToConfig', () => {
+        test('writes the resolved format for a stac-collection source', () => {
+            const layer = { type: 'tile', url: 'stac-collection:mycollection' }
+            syncTileFormatToConfig(layer, resolveTileLayerSource(layer))
+            expect(layer.tileformat).toBe('wmts')
+        })
+
+        test('leaves the config untouched for any other source', () => {
+            const layer = { type: 'tile', url: 'https://t/{z}/{x}/{y}.png' }
+            syncTileFormatToConfig(layer, resolveTileLayerSource(layer))
+            expect(layer.tileformat).toBeUndefined()
+
+            const cog = { type: 'tile', url: 'COG:data/x.tif' }
+            syncTileFormatToConfig(cog, resolveTileLayerSource(cog))
+            expect(cog.tileformat).toBeUndefined()
         })
     })
 })

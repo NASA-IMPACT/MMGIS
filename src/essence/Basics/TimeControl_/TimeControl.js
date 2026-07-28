@@ -272,11 +272,16 @@ var TimeControl = {
                     // the refreshed URL keeps the layer's active tile level and
                     // its service prefix handling instead of falling back to
                     // the default source.
-                    const { url: resolvedUrl, splitColonType } = tileSource
+                    const {
+                        url: resolvedUrl,
+                        splitColonType,
+                        tileFormat,
+                    } = tileSource
 
                     const tileOptions = buildTileUrlOptions(
                         layer,
-                        splitColonType
+                        splitColonType,
+                        tileFormat
                     )
 
                     // TODO: Refactor this to push URL compilation and refreshing

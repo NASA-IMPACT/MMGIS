@@ -60,12 +60,26 @@ export function formatLayerTime(format?: string): (time: unknown) => string {
  */
 export function buildTileUrlOptions(
     layerObj: Record<string, any>,
-    splitColonType?: string
+    splitColonType?: string,
+    tileFormat?: string
 ): Record<string, any> {
     const timeConfig = layerObj.time || {}
     const formatter = formatLayerTime(timeConfig.format)
     const formattedStart = formatter(timeConfig.start)
     const formattedEnd = formatter(timeConfig.end)
+
+    // mmgisglobal is injected at page load and static thereafter. Captured
+    // here so compileTileUrl stays a closed function of its arguments.
+    const globalStacOptions = (window as any).mmgisglobal?.options?.stac
+    const stacMosaicLimits =
+        globalStacOptions == null
+            ? null
+            : {
+                  itemLimit: globalStacOptions.mosaicItemLimit ?? null,
+                  scanLimit: globalStacOptions.mosaicScanLimit ?? null,
+                  timeLimit: globalStacOptions.mosaicTimeLimit ?? null,
+              }
+
     return {
         splitColonType,
         time: formattedEnd,
@@ -73,7 +87,10 @@ export function buildTileUrlOptions(
         endtime: formattedEnd,
         compositeTile: timeConfig.compositeTile ?? false,
         customTimes: timeConfig.customTimes ?? null,
-        tileFormat: resolveTileFormat(layerObj),
+        // Prefer the format resolveTileLayerSource resolved (it forces `wmts`
+        // for stac-collection sources); fall back to the layer config.
+        tileFormat: tileFormat ?? resolveTileFormat(layerObj),
+        stacMosaicLimits,
         // COG/TiTiler fields read by applyCogFieldsToUrl
         cogTransform: layerObj.cogTransform,
         cogColormap: layerObj.cogColormap,
@@ -210,17 +227,17 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 
         nextUrl = applyCogFieldsToUrl(nextUrl, options)
 
-        // mmgisglobal is injected at runtime by the server-rendered page.
-        const globalStacOptions = (window as any).mmgisglobal?.options?.stac
+        // STAC mosaic limits arrive via buildTileUrlOptions, not globals.
+        const limits = options.stacMosaicLimits
 
-        if (globalStacOptions?.mosaicItemLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}items_limit=${globalStacOptions.mosaicItemLimit}`
+        if (limits?.itemLimit != null) {
+            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}items_limit=${limits.itemLimit}`
         }
-        if (globalStacOptions?.mosaicScanLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}scan_limit=${globalStacOptions.mosaicScanLimit}`
+        if (limits?.scanLimit != null) {
+            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}scan_limit=${limits.scanLimit}`
         }
-        if (globalStacOptions?.mosaicTimeLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}time_limit=${globalStacOptions.mosaicTimeLimit}`
+        if (limits?.timeLimit != null) {
+            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}time_limit=${limits.timeLimit}`
         }
     }
 

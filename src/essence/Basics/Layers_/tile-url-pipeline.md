@@ -55,15 +55,22 @@ flowchart TD
 (falling back to `layerObj.url`), runs it through `L_.getUrl`, then branches on
 the service prefix:
 
-| Prefix            | What happens                                           |
-| ----------------- | ------------------------------------------------------ |
-| `stac-collection` | `L_.transformStacUrl(...)`, forces `tileformat='wmts'` |
-| `COG`             | `ServiceUrls.buildTiTilerCogTilesUrl(...)`             |
-| `titiler-url`     | strip prefix, absolutize against `L_.missionPath`      |
-| plain template    | falls through untouched                                |
+| Prefix            | What happens                                              |
+| ----------------- | --------------------------------------------------------- |
+| `stac-collection` | `L_.transformStacUrl(...)`, resolves `tileFormat: 'wmts'` |
+| `COG`             | `ServiceUrls.buildTiTilerCogTilesUrl(...)`                |
+| `titiler-url`     | strip prefix, absolutize against `L_.missionPath`         |
+| plain template    | falls through untouched                                   |
 
 Output: a real base `url`, the `splitColonType` (the stripped prefix, which
-`compileTileUrl` later keys off of), and the tile level's `tileElevation`.
+`compileTileUrl` later keys off of), the tile level's `tileElevation`, and the
+resolved `tileFormat` (forced to `wmts` for `stac-collection` sources).
+
+> The resolver is **pure**. The `layerObj.tileformat` write for stac layers is
+> a separate step — `syncTileFormatToConfig`, called at creation — for the
+> readers that consume the config directly (globe setup, IdentifierTool). The
+> pipeline itself threads `tileFormat` through `buildTileUrlOptions` and never
+> reads that write.
 
 > **Both** `Map_.makeTileLayer` and `TimeControl.reloadLayer` call this. They
 > used to each carry their own copy of the logic, and the reload copy silently
@@ -91,8 +98,12 @@ Output: a real base `url`, the `splitColonType` (the stripped prefix, which
 ### Stage 2 — Option building (`buildTileUrlOptions`)
 
 [`tileUrlUtils.ts`](./tileUrlUtils.ts). Formats the time strings **once** via
-`formatLayerTime` (d3 `utcFormat`, empty string on unparseable input), and
-resolves `tms → tileFormat` via `resolveTileFormat`. Both engines call this.
+`formatLayerTime` (d3 `utcFormat`, empty string on unparseable input), takes the
+`tileFormat` resolved in Stage 1 (falling back to `resolveTileFormat` on the
+layer config), and captures the global STAC mosaic limits from
+`mmgisglobal.options.stac` — the one environmental read in the pipeline, kept
+here so `compileTileUrl` stays a closed function of its arguments. Both engines
+call this.
 
 `TimeControl.setLayerWmsParams` writes `options.time` / `.starttime` / `.endtime`
 directly onto an existing Leaflet layer rather than going through
@@ -111,7 +122,8 @@ agree.
 
 1. `{time}` / `{starttime}` / `{endtime}` and `{customtime.N}` replacement
 2. STAC/COG/titiler `datetime=` injection, STAC `exitwhenfull` / `skipcovered`,
-   COG params via `applyCogFieldsToUrl`, global STAC mosaic limits
+   COG params via `applyCogFieldsToUrl`, the STAC mosaic limits captured by
+   `buildTileUrlOptions` (never read from globals here)
 3. TMS `starttime` / `time` / `composite` params
 
 **Step 1 must stay ahead of step 2.** `applyCogFieldsToUrl` round-trips the
@@ -164,7 +176,9 @@ time change, `refresh(newUrl, force, updateOptions)` merges new values into
 - **the WMS base/params split** — a WMS layer keeps only the base address in
   `_url`; the query params live in `wmsParams` and are re-appended per tile.
   `wmsExtension.refresh` re-splits an incoming URL rather than assigning it
-  whole, which would send every param twice.
+  whole, which would send every param twice. The split is **merge-only**:
+  params in the incoming URL are added or overwritten, but a param the URL no
+  longer carries is not removed from `wmsParams` and keeps being sent.
 
 ### Why `buildTileUrlOptions` returns a closed key set
 

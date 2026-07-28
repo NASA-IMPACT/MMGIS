@@ -14,6 +14,7 @@
 import F_ from '../Formulae_/Formulae_'
 import L_ from './Layers_'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
+import { resolveTileFormat } from './tileUrlUtils'
 
 /**
  * Returns the tile level a layer is currently displaying, or null when the
@@ -59,11 +60,11 @@ export function getTileLevelElevation(level) {
  * Resolves a tile layer's source URL, honouring the active tile level and the
  * `stac-collection:` / `COG:` / `titiler-url:` service prefixes.
  *
- * Note: a `stac-collection:` layer has its `tileformat` forced to `wmts` here,
- * matching what layer creation has always done. The write is idempotent.
+ * Pure: never writes to `layerObj` — config writes are
+ * syncTileFormatToConfig's job.
  *
  * @param {object} layerObj - Layer config from the mission JSON.
- * @returns {{url: string, sourceUrl: string, splitColonType: (string|undefined), tileElevation: (number|undefined)}}
+ * @returns {{url: string, sourceUrl: string, splitColonType: (string|undefined), tileElevation: (number|undefined), tileFormat: string}}
  */
 export function resolveTileLayerSource(layerObj) {
     const tileLevel = getActiveTileLevel(layerObj)
@@ -78,8 +79,7 @@ export function resolveTileLayerSource(layerObj) {
         switch (splitColonLayerUrl[0]) {
             case 'stac-collection':
                 splitColonType = splitColonLayerUrl[0]
-                url = L_.transformStacUrl(layerObj.url, layerObj, 'tile')
-                layerObj.tileformat = 'wmts'
+                url = L_.transformStacUrl(sourceUrl, layerObj, 'tile')
                 break
             case 'COG':
                 splitColonType = splitColonLayerUrl[0]
@@ -110,5 +110,23 @@ export function resolveTileLayerSource(layerObj) {
         }
     }
 
-    return { url, sourceUrl, splitColonType, tileElevation }
+    // A STAC mosaic is only served as wmts tiles; everything else keeps the
+    // layer's configured format.
+    const tileFormat =
+        splitColonType === 'stac-collection'
+            ? 'wmts'
+            : resolveTileFormat(layerObj)
+
+    return { url, sourceUrl, splitColonType, tileElevation, tileFormat }
+}
+
+/**
+ * Writes a source-dictated tile format (stac-collection → wmts) onto the layer
+ * config for its direct readers (globe setup, IdentifierTool). The tile-URL
+ * pipeline never reads this write. Called at layer creation.
+ * @param {object} layerObj - Layer config from the mission JSON.
+ * @param {object} tileSource - Result of resolveTileLayerSource.
+ */
+export function syncTileFormatToConfig(layerObj, { splitColonType, tileFormat }) {
+    if (splitColonType === 'stac-collection') layerObj.tileformat = tileFormat
 }
