@@ -12,7 +12,7 @@ import {
     buildTileUrlOptions,
 } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
-import { MAP_ENGINE } from '../MapEngines/types/engine'
+import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
 
 import './TimeControl.css'
 
@@ -23,9 +23,6 @@ let _providerCleanups = []
 const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
 )
-
-// `tile` is the configured type for every raster tile layer on all map engines
-const isTileLayerType = (layer) => layer?.type === 'tile'
 
 var TimeControl = {
     enabled: false,
@@ -295,7 +292,7 @@ var TimeControl = {
                 layer.time.end
             )
 
-            if (isTileLayerType(layer)) {
+            if (isRasterTileLayerType(layer)) {
                 TimeControl.setLayerWmsParams(layer)
             }
         }
@@ -358,13 +355,19 @@ var TimeControl = {
 
         let originalUrl = layer.url
 
-        // A tile layer resolves its source URL first and runs the replacements
-        // on the resolved URL, the order layer creation uses. Replacing first
-        // would append `nocache=` to the raw config URL, so for a `COG:` layer
-        // it would land inside TiTiler's `url=` param instead of on the tile
-        // request itself. This also leaves `layer.url` unmutated for tile
-        // layers — only the other branches below need the substituted URL.
-        const tileSource = isTileLayerType(layer)
+        // A raster tile layer resolves its source URL first and runs the
+        // replacements on the resolved URL, the order layer creation uses.
+        // Replacing first would append `nocache=` to the raw config URL, so for
+        // a `COG:` layer it would land inside TiTiler's `url=` param instead of
+        // on the tile request itself. This also leaves `layer.url` unmutated for
+        // tile layers — only the other branches below need the substituted URL.
+        //
+        // Deliberately raster-only. Map_ also builds Tile3DLayer and
+        // PointCloudLayer through makeTileLayer, so they resolve their URL
+        // differently here than at creation and never get `{time}` substituted.
+        // Widening this needs the raster-specific tile params (TMS, COG/STAC)
+        // made opt-in first — see issue #230.
+        const tileSource = isRasterTileLayerType(layer)
             ? resolveTileLayerSource(layer)
             : null
 
@@ -713,7 +716,7 @@ var TimeControl = {
                     layer.time.end
                 )
                 updatedLayers.push(layer.name)
-                if (isTileLayerType(layer)) {
+                if (isRasterTileLayerType(layer)) {
                     TimeControl.setLayerWmsParams(layer)
                 }
             }
@@ -758,7 +761,7 @@ var TimeControl = {
         // substitution read their times from. Deck layers expose `props`
         // instead and get their times baked into the URL by reloadLayer, so the
         // guard skips them rather than growing them an `options` nothing reads.
-        if (l != null && isTileLayerType(layer) && l.options != null) {
+        if (l != null && isRasterTileLayerType(layer) && l.options != null) {
             l.options.time = layerTimeFormatter(layer.time.end)
             l.options.starttime = layerTimeFormatter(layer.time.start)
             l.options.endtime = layerTimeFormatter(layer.time.end)
