@@ -130,6 +130,16 @@ $(document.body).keydown(function (e) {
     }
 })
 
+// The legacy bottom TimeUI bar belongs to the desktop default layout only —
+// mobile and the modern layout drive time through their own interfaces.
+function usesLegacyTimeUI() {
+    return (
+        !UserInterface_.isMobile &&
+        $('#modern-content').length === 0 &&
+        L_.configData.time?.enabled === true
+    )
+}
+
 var essence = {
     configData: null,
     hasSwapped: false,
@@ -389,8 +399,7 @@ var essence = {
         TimeControl.init()
 
         // Initialize TimeUI for desktop/legacy mode (not mobile, not modern mode)
-        const isModernMode = $('#modern-content').length > 0
-        if (!UserInterface_.isMobile && !isModernMode && L_.configData.time?.enabled === true) {
+        if (usesLegacyTimeUI()) {
             TimeUI.initialize()
             TimeUI.make()
         }
@@ -541,8 +550,7 @@ var essence = {
             //Finalize the TimeControl
             TimeControl.fina()
             //Finalize the TimeUI (if in legacy mode)
-            const isModernMode = $('#modern-content').length > 0
-            if (!UserInterface_.isMobile && !isModernMode && L_.configData.time?.enabled === true) {
+            if (usesLegacyTimeUI()) {
                 TimeUI.fina()
             }
             // Finalize the mmgisAPI

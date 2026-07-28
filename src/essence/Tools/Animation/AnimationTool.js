@@ -8,6 +8,7 @@ import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import TimeControl from '../../Basics/TimeControl_/TimeControl'
+import TimeUI from '../../Basics/TimeControl_/TimeUI'
 import Modal from '../../Ancillary/Modal'
 import HTML2Canvas from 'html2canvas'
 import gifshot from 'gifshot'
@@ -337,13 +338,12 @@ function interfaceWithMMGIS() {
         }
 
         // Set default Step to 3 (Day) and sync with TimeUI
-        if (TimeControl && TimeControl.timeUI) {
-            TimeControl.timeUI.stepIndex = 3
+        // (only when the TimeUI widget is mounted, e.g. the legacy layout)
+        if (TimeUI.startTempus != null) {
+            TimeUI.stepIndex = 3
             // Set Rate Input to 1 (default multiplier)
             updateTimeUIRateInput(1)
-            if (TimeControl.timeUI._refreshIntervals) {
-                TimeControl.timeUI._refreshIntervals()
-            }
+            TimeUI._refreshIntervals()
         }
 
         // Initial sync with TimeUI animation controls
@@ -381,10 +381,9 @@ function interfaceWithMMGIS() {
         let endTime = TimeControl.endTime
 
         // Check if TimeUI is in Range mode or Point mode
-        if (TimeControl.timeUI && TimeControl.timeUI.modes) {
+        if (TimeUI.modes) {
             const isRangeMode =
-                TimeControl.timeUI.modes[TimeControl.timeUI.modeIndex] ===
-                'Range'
+                TimeUI.modes[TimeUI.modeIndex] === 'Range'
 
             if (isRangeMode) {
                 // In Range mode, use start and end times
@@ -416,7 +415,7 @@ function interfaceWithMMGIS() {
 
     // Update TimeUI Rate Input directly from Animation Tool Step input
     function updateTimeUIFromStep(stepValue) {
-        if (!TimeControl || !TimeControl.timeUI) return
+        if (TimeUI.startTempus == null) return
 
         // Update TimeUI Rate Input (the multiplier)
         updateTimeUIRateInput(stepValue)
@@ -469,22 +468,22 @@ function interfaceWithMMGIS() {
 
     // Set up periodic synchronization to catch TimeUI changes
     function setupTimeUISync() {
-        if (!TimeControl || !TimeControl.timeUI) return
+        if (TimeUI.startTempus == null) return
 
         // Store previous values to detect changes
-        let lastStepIndex = TimeControl.timeUI.stepIndex
-        let lastIntervalIndex = TimeControl.timeUI.intervalIndex
+        let lastStepIndex = TimeUI.stepIndex
+        let lastIntervalIndex = TimeUI.intervalIndex
         let lastRateInputValue = getTimeUIRateInputValue()
 
         // Check for changes every 500ms
         const syncInterval = setInterval(() => {
-            if (!TimeControl || !TimeControl.timeUI) {
+            if (TimeUI.startTempus == null) {
                 clearInterval(syncInterval)
                 return
             }
 
-            const currentStepIndex = TimeControl.timeUI.stepIndex
-            const currentIntervalIndex = TimeControl.timeUI.intervalIndex
+            const currentStepIndex = TimeUI.stepIndex
+            const currentIntervalIndex = TimeUI.intervalIndex
             const currentRateInputValue = getTimeUIRateInputValue()
 
             // Check if Step changed
@@ -512,9 +511,9 @@ function interfaceWithMMGIS() {
 
     // Synchronize Animation Tool with TimeUI animation controls
     function syncWithTimeUIAnimation() {
-        if (!TimeControl || !TimeControl.timeUI) return
+        if (TimeUI.startTempus == null) return
 
-        const timeUI = TimeControl.timeUI
+        const timeUI = TimeUI
 
         // Map TimeUI Step to Animation Tool Time Interval
         // TimeUI Step indices correspond to: second, minute, hour, day, week, month, year, decade, century
@@ -571,9 +570,9 @@ function interfaceWithMMGIS() {
 
     // Synchronize TimeUI animation controls with Animation Tool
     function syncTimeUIFromAnimation() {
-        if (!TimeControl || !TimeControl.timeUI) return
+        if (TimeUI.startTempus == null) return
 
-        const timeUI = TimeControl.timeUI
+        const timeUI = TimeUI
 
         // Map Animation Tool Time Interval to TimeUI Step
         const timeIntervalToStep = {
@@ -1870,17 +1869,9 @@ function interfaceWithMMGIS() {
                 )
             }
 
-            // Also update TimeUI directly if available
-            if (
-                TimeControl &&
-                TimeControl.timeUI &&
-                TimeControl.timeUI.updateTimes
-            ) {
-                // Convert timestamp to milliseconds for TimeUI
-                const timestampMs = timestamp.getTime()
-                // Update TimeUI with the timestamp as the end time (active time)
-                TimeControl.timeUI.updateTimes(null, timestampMs, null)
-            }
+            // Also update TimeUI with the timestamp as the end time (active
+            // time). updateTimes no-ops when the widgets aren't mounted.
+            TimeUI.updateTimes(null, timestamp.getTime(), null)
 
             // Wait for layers to update using configured delay
             setTimeout(

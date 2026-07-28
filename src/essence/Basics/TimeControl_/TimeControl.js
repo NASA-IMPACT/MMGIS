@@ -102,7 +102,7 @@ var TimeControl = {
         let initialEnd
         if (dateAddSec.dateString != null && dateAddSec.dateString !== 'now') {
             const dateStaged = new Date(dateAddSec.dateString)
-            if (dateStaged == 'Invalid Date') {
+            if (isNaN(dateStaged.getTime())) {
                 initialEnd = new Date()
                 console.warn(
                     "Invalid 'Initial End Time' provided. Defaulting to 'now'."
@@ -128,7 +128,7 @@ var TimeControl = {
                 dateAddSec.dateString === 'now'
                     ? new Date()
                     : new Date(dateAddSec.dateString)
-            if (dateStaged == 'Invalid Date') {
+            if (isNaN(dateStaged.getTime())) {
                 initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
                 console.warn(
                     "Invalid 'Initial Start Time' provided. Defaulting to 1 month before the end time."
@@ -214,6 +214,12 @@ var TimeControl = {
         }
         if (currentTime != null) {
             const currentTimeD = new Date(currentTime)
+            if (isNaN(currentTimeD.getTime())) {
+                console.warn(
+                    `TimeControl.setTime: Invalid currentTime '${currentTime}'.`
+                )
+                return false
+            }
             TimeControl.currentTime =
                 currentTimeD.toISOString().split('.')[0] + 'Z'
             currentTime = new moment(currentTimeD)
@@ -226,6 +232,12 @@ var TimeControl = {
         if (isRelative == true) {
             const start = parseTimeToSeconds(startTime)
             const end = parseTimeToSeconds(endTime)
+            if (isNaN(start) || isNaN(end)) {
+                console.warn(
+                    `TimeControl.setTime: Invalid relative startTime '${startTime}' or endTime '${endTime}'.`
+                )
+                return false
+            }
             const startTimeM = new moment(currentTime).subtract(
                 start,
                 'seconds'
@@ -237,6 +249,12 @@ var TimeControl = {
         } else {
             const startTimeD = new Date(startTime)
             const endTimeD = new Date(endTime)
+            if (isNaN(startTimeD.getTime()) || isNaN(endTimeD.getTime())) {
+                console.warn(
+                    `TimeControl.setTime: Invalid startTime '${startTime}' or endTime '${endTime}'.`
+                )
+                return false
+            }
             TimeControl.startTime = startTimeD.toISOString().split('.')[0] + 'Z'
             TimeControl.endTime = endTimeD.toISOString().split('.')[0] + 'Z'
         }
@@ -282,6 +300,18 @@ var TimeControl = {
             }
         }
         return true
+    },
+    // Toggles the visibility of the bottom TimeUI bar. The '#toggleTimeUI'
+    // button and its click behavior are owned by Coordinates, so delegate to
+    // the button instead of duplicating the show/hide logic here.
+    // mmgisAPI.toggleTimeUI exposes this publicly.
+    toggleTimeUI: function (force) {
+        const button = $('#toggleTimeUI')
+        if (button.length === 0) return false
+        const isActive = button.hasClass('active')
+        const targetActive = force != null ? force === true : !isActive
+        if (targetActive !== isActive) button.trigger('click')
+        return button.hasClass('active')
     },
     getTime: function () {
         return TimeControl.currentTime

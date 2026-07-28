@@ -109,15 +109,20 @@ const TimeUI = {
         if (window.mmgisAPI) {
             TimeUI._cleanups.push(
                 window.mmgisAPI.on('time:change', (data) => {
-                    // Skip the echo of this widget's own committed request
+                    // Skip the echo of this widget's own committed request.
+                    // Consume it: a stale _lastEmitted would otherwise also
+                    // match a later external commit of the same times and
+                    // wrongly skip that resync.
                     const le = TimeUI._lastEmitted
                     if (
                         le != null &&
                         le.startTime === data.startTime &&
                         le.endTime === data.endTime &&
                         le.currentTime === data.currentTime
-                    )
+                    ) {
+                        TimeUI._lastEmitted = null
                         return
+                    }
                     // Sync widgets without re-emitting: the state is already
                     // committed, so emitting again would reload layers twice.
                     TimeUI._suppressChangeEmit = true
