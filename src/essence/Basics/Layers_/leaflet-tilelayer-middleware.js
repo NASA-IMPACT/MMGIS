@@ -301,6 +301,9 @@ var wmsExtension = {
             // tileSize is fixed at creation; changing it now would not resize
             // the tiles already on the map.
             delete wmsOptions.TILESIZE
+            // Merge-only: params in the incoming URL are added or overwritten,
+            // but a param the URL no longer carries is NOT removed from
+            // wmsParams and keeps being sent on every tile request.
             L.extend(this.wmsParams, wmsOptions)
             newUrl = baseUrl
         }

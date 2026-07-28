@@ -188,6 +188,30 @@ describe('tileUrlUtils', () => {
         test('resolves tileFormat from tms', () => {
             expect(buildTileUrlOptions({ tms: false }, undefined).tileFormat).toBe('wmts')
         })
+        test('an explicitly passed tileFormat wins over the layer config', () => {
+            // resolveTileLayerSource resolves the format (forcing wmts for
+            // stac-collection sources) and callers thread it through here.
+            expect(
+                buildTileUrlOptions({ tms: true }, 'stac-collection', 'wmts')
+                    .tileFormat
+            ).toBe('wmts')
+        })
+        test('captures the global stac mosaic limits at build time', () => {
+            const previous = window.mmgisglobal
+            window.mmgisglobal = {
+                options: { stac: { mosaicItemLimit: 20 } },
+            }
+            try {
+                const o = buildTileUrlOptions({ name: 'x' }, 'stac-collection')
+                expect(o.stacMosaicLimits).toEqual({
+                    itemLimit: 20,
+                    scanLimit: null,
+                    timeLimit: null,
+                })
+            } finally {
+                window.mmgisglobal = previous
+            }
+        })
         test('preserves COG fields for applyCogFieldsToUrl', () => {
             const o = buildTileUrlOptions({ cogTransform: true, cogColormap: 'viridis' }, 'COG')
             expect(o.cogTransform).toBe(true)
@@ -364,6 +388,7 @@ describe('tileUrlUtils', () => {
                 'customTimes',
                 'endtime',
                 'splitColonType',
+                'stacMosaicLimits',
                 'starttime',
                 'tileFormat',
                 'time',
@@ -501,6 +526,24 @@ describe('tileUrlUtils', () => {
                 expect(url).toContain('items_limit=20')
                 expect(url).not.toContain('scan_limit')
                 expect(url).not.toContain('time_limit')
+            } finally {
+                window.mmgisglobal = previous
+            }
+        })
+
+        test('compileTileUrl is pure — a global set after build is not read', () => {
+            const previous = window.mmgisglobal
+            delete window.mmgisglobal
+            const opts = stacOpts() // captured with no global configured
+            window.mmgisglobal = {
+                options: { stac: { mosaicItemLimit: 999 } },
+            }
+            try {
+                const url = compileTileUrl(
+                    'https://s/{z}/{x}/{y}.png',
+                    opts
+                )
+                expect(url).not.toContain('items_limit')
             } finally {
                 window.mmgisglobal = previous
             }

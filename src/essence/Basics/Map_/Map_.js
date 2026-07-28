@@ -16,12 +16,11 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
+import { compileTileUrl, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
 import {
-    compileTileUrl,
-    buildTileUrlOptions,
-    resolveTileFormat,
-} from '../Layers_/tileUrlUtils'
-import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
+    resolveTileLayerSource,
+    syncTileFormatToConfig,
+} from '../Layers_/tileLayerSource'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -1510,14 +1509,13 @@ async function makeTileLayer(layerObj, mapContext = null) {
         default: true,
     }
 
-    // Shared with TimeControl.reloadLayer so a time change cannot resolve the
-    // layer onto a different source than creation did.
-    const {
-        url: resolvedUrl,
-        splitColonType,
-        tileElevation,
-    } = resolveTileLayerSource(layerObj)
-    let layerUrl = resolvedUrl
+    // Shared with TimeControl.reloadLayer so creation and time-driven reloads
+    // resolve the same source and tile format.
+    const tileSource = resolveTileLayerSource(layerObj)
+    const { splitColonType, tileElevation, tileFormat } = tileSource
+    let layerUrl = tileSource.url
+
+    syncTileFormatToConfig(layerObj, tileSource)
 
     let bb = null
     if (layerObj.hasOwnProperty('boundingBox')) {
@@ -1532,15 +1530,12 @@ async function makeTileLayer(layerObj, mapContext = null) {
         null
     )
 
-    // Resolved centrally so the Leaflet and DeckGL paths cannot diverge.
-    const tileFormat = resolveTileFormat(layerObj)
-
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
         // would normally add per-tile in getTileUrl.
         layerUrl = compileTileUrl(
             layerUrl,
-            buildTileUrlOptions(layerObj, splitColonType)
+            buildTileUrlOptions(layerObj, splitColonType, tileFormat)
         )
 
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
@@ -1559,7 +1554,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     // Same builder the DeckGL path uses, so both engines see identical,
     // already-formatted time values from the moment the layer is created.
-    const tileOptions = buildTileUrlOptions(layerObj, splitColonType)
+    const tileOptions = buildTileUrlOptions(layerObj, splitColonType, tileFormat)
 
     ctx.layerRegistry.layer[layerObj.name] = L.tileLayer.colorFilter(layerUrl, {
         // Tile-URL options, spread from the same builder TimeControl passes to
