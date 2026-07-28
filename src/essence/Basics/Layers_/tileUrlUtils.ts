@@ -48,25 +48,59 @@ export function formatLayerTime(format?: string): (time: unknown) => string {
  *
  * Invariant: the time strings on the returned object are ALREADY FORMATTED.
  * compileTileUrl substitutes them verbatim and never re-formats.
+ *
+ * Invariant: the result is a closed set of tile-URL keys — nothing from the
+ * layer config is spread in. It is copied wholesale onto a Leaflet tile layer's
+ * `options`, where it sits alongside Leaflet's own creation options, so a stray
+ * config key would silently overwrite one of those (see docs/tile-url-pipeline.md).
+ *
+ * Add a tile-URL option here and only here: Map_.makeTileLayer spreads the
+ * result into the layer's creation options and TimeControl passes the same
+ * object to refresh(), so both paths pick it up.
  */
 export function buildTileUrlOptions(
     layerObj: Record<string, any>,
-    splitColonType?: string
+    splitColonType?: string,
+    tileFormat?: string
 ): Record<string, any> {
     const timeConfig = layerObj.time || {}
     const formatter = formatLayerTime(timeConfig.format)
     const formattedStart = formatter(timeConfig.start)
     const formattedEnd = formatter(timeConfig.end)
+
+    // mmgisglobal is injected at page load and static thereafter. Captured
+    // here so compileTileUrl stays a closed function of its arguments.
+    const globalStacOptions = (window as any).mmgisglobal?.options?.stac
+    const stacMosaicLimits =
+        globalStacOptions == null
+            ? null
+            : {
+                  itemLimit: globalStacOptions.mosaicItemLimit ?? null,
+                  scanLimit: globalStacOptions.mosaicScanLimit ?? null,
+                  timeLimit: globalStacOptions.mosaicTimeLimit ?? null,
+              }
+
     return {
-        ...layerObj,
         splitColonType,
-        timeEnabled: timeConfig.enabled === true,
         time: formattedEnd,
         starttime: formattedStart,
         endtime: formattedEnd,
         compositeTile: timeConfig.compositeTile ?? false,
         customTimes: timeConfig.customTimes ?? null,
-        tileFormat: resolveTileFormat(layerObj),
+        // Prefer the format resolveTileLayerSource resolved (it forces `wmts`
+        // for stac-collection sources); fall back to the layer config.
+        tileFormat: tileFormat ?? resolveTileFormat(layerObj),
+        stacMosaicLimits,
+        // COG/TiTiler fields read by applyCogFieldsToUrl
+        cogTransform: layerObj.cogTransform,
+        cogColormap: layerObj.cogColormap,
+        cogExpression: layerObj.cogExpression,
+        currentCogExpression: layerObj.currentCogExpression,
+        cogMin: layerObj.cogMin,
+        currentCogMin: layerObj.currentCogMin,
+        cogMax: layerObj.cogMax,
+        currentCogMax: layerObj.currentCogMax,
+        cogResampling: layerObj.cogResampling,
     }
 }
 
@@ -74,10 +108,12 @@ export function buildTileUrlOptions(
  * Adds `asset_` prefix to bare band references (b1, B2, etc.) in a TiTiler
  * expression string. No-ops if the expression is empty or already prefixed.
  *
- * @param {string} expression
- * @returns {string}
+ * @param {string} [expression]
+ * @returns {string|null|undefined}
  */
-export function processExpression(expression) {
+export function processExpression(
+    expression: string | null | undefined
+): string | null | undefined {
     if (!expression || expression.trim() === '') return expression
     return expression.replace(/(?<!\w)([bB])(\d+)/g, 'asset_$1$2')
 }
@@ -143,11 +179,32 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 
     let nextUrl = url
 
-    // 1. Process STAC/COG datetime parameters
     const timeStr = options.time
     const startTimeStr = options.starttime
     const endTimeStr = options.endtime
 
+    // 1. Placeholder replacements.
+    //
+    // These run first because the param injection below round-trips the query
+    // through URLSearchParams, which percent-encodes the braces — `{time}`
+    // becomes `%7Btime%7D` and stops looking like a placeholder. Leaflet masks
+    // that ordering for the three standard tokens (L.Util.template substitutes
+    // them from `options` before this function is ever called); DeckGL has no
+    // such step, so a placeholder inside a query string reached the server raw.
+    nextUrl = nextUrl.replace(/{time}/g, timeStr || '')
+    nextUrl = nextUrl.replace(/{starttime}/g, startTimeStr || '')
+    nextUrl = nextUrl.replace(/{endtime}/g, endTimeStr || '')
+
+    if (options.customTimes?.times && options.customTimes.times.length > 0) {
+        for (let i = 0; i < options.customTimes.times.length; i++) {
+            nextUrl = nextUrl.replace(
+                new RegExp(`{customtime.${i}}`, 'g'),
+                options.customTimes.times[i]
+            )
+        }
+    }
+
+    // 2. STAC/COG datetime parameters
     if (
         options.splitColonType === 'stac-collection' ||
         options.splitColonType === 'COG' ||
@@ -170,36 +227,21 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 
         nextUrl = applyCogFieldsToUrl(nextUrl, options)
 
-        // @ts-ignore - mmgisglobal is a global variable injected at runtime
-        const globalStacOptions = window.mmgisglobal?.options?.stac
+        // STAC mosaic limits arrive via buildTileUrlOptions, not globals.
+        const limits = options.stacMosaicLimits
 
-        if (globalStacOptions?.mosaicItemLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}items_limit=${globalStacOptions.mosaicItemLimit}`
+        if (limits?.itemLimit != null) {
+            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}items_limit=${limits.itemLimit}`
         }
-        if (globalStacOptions?.mosaicScanLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}scan_limit=${globalStacOptions.mosaicScanLimit}`
+        if (limits?.scanLimit != null) {
+            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}scan_limit=${limits.scanLimit}`
         }
-        if (globalStacOptions?.mosaicTimeLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}time_limit=${globalStacOptions.mosaicTimeLimit}`
-        }
-    }
-
-    // 2. Perform placeholder replacements
-    if (timeStr) nextUrl = nextUrl.replace(/{time}/g, timeStr)
-    if (startTimeStr) nextUrl = nextUrl.replace(/{starttime}/g, startTimeStr)
-    if (endTimeStr) nextUrl = nextUrl.replace(/{endtime}/g, endTimeStr)
-
-    // 3. Custom time replacements
-    if (options.customTimes?.times && options.customTimes.times.length > 0) {
-        for (let i = 0; i < options.customTimes.times.length; i++) {
-            nextUrl = nextUrl.replace(
-                new RegExp(`{customtime.${i}}`, 'g'),
-                options.customTimes.times[i]
-            )
+        if (limits?.timeLimit != null) {
+            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}time_limit=${limits.timeLimit}`
         }
     }
 
-    // 4. TMS specific options
+    // 3. TMS specific options
     if (timeStr && options.tileFormat === 'tms') {
         let paramDelimiter = nextUrl.indexOf('?') === -1 ? '?' : '&'
         const urlParams = nextUrl.indexOf('?') !== -1 ? new URLSearchParams(nextUrl.split('?')[1]) : null
