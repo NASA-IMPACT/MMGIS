@@ -206,7 +206,7 @@ This document outlines the retrospective implementation plan for the MMGIS Missi
    - Default value population for missing fields
    - initialOpacity defaults to 1
    - visibility defaults to true
-   - tileformat defaults to "tms"
+   - tileFormat defaults to "tms"
    - className generation from layer name
 
 **Technical Decisions:**

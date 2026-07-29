@@ -120,7 +120,7 @@ def create_configs(output_dirs, json_config, prefix):
     if prefix != '':
         layers['name'] = prefix
         layers['type'] = 'header'
-        layers['tileformat'] = 'tms'
+        layers['tileFormat'] = 'tms'
         layers['initialOpacity'] = 1
     for output_dir in output_dirs:
         sublayer = {}
@@ -141,7 +141,7 @@ def create_configs(output_dirs, json_config, prefix):
         sublayer['type'] = 'tile'
         sublayer['url'] = 'Layers/' + layer + '/{z}/{x}/{y}.png'
         sublayer['legend'] = 'Legends/' + layer + '.csv'
-        sublayer['tileformat'] = 'tms'
+        sublayer['tileFormat'] = 'tms'
         sublayer['visibility'] = False
         sublayer['initialOpacity'] = 1
         sublayer['togglesWithHeader'] = False

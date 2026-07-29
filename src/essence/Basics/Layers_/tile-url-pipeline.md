@@ -66,7 +66,7 @@ Output: a real base `url`, the `splitColonType` (the stripped prefix, which
 `compileTileUrl` later keys off of), the tile level's `tileElevation`, and the
 resolved `tileFormat` (forced to `wmts` for `stac-collection` sources).
 
-> The resolver is **pure**. The `layerObj.tileformat` write for stac layers is
+> The resolver is **pure**. The `layerObj.tileFormat` write for stac layers is
 > a separate step — `syncTileFormatToConfig`, called at creation — for the
 > readers that consume the config directly (globe setup, IdentifierTool). The
 > pipeline itself threads `tileFormat` through `buildTileUrlOptions` and never

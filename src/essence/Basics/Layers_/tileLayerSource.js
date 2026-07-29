@@ -128,5 +128,5 @@ export function resolveTileLayerSource(layerObj) {
  * @param {object} tileSource - Result of resolveTileLayerSource.
  */
 export function syncTileFormatToConfig(layerObj, { tileSourceType, tileFormat }) {
-    if (tileSourceType === 'stac-collection') layerObj.tileformat = tileFormat
+    if (tileSourceType === 'stac-collection') layerObj.tileFormat = tileFormat
 }

@@ -730,11 +730,11 @@ const L_ = {
                         name: layerConfig.name,
                         order: L_._layersOrdered,
                         on: L_.layers.opacity[layerConfig.name],
-                        format: layerConfig.tileformat || 'tms',
+                        format: layerConfig.tileFormat || 'tms',
                         formatOptions: {},
-                        demFormat: layerConfig.tileformat || 'tms',
+                        demFormat: layerConfig.tileFormat || 'tms',
                         demFormatOptions: {
-                            correctSeams: layerConfig.tileformat === 'wms',
+                            correctSeams: layerConfig.tileFormat === 'wms',
                             wmsParams: {},
                         },
                         parser: layerConfig.demparser || null,
@@ -1247,12 +1247,12 @@ const L_ = {
                             name: layerConfig.name,
                             order: L_._layersOrdered,
                             on: L_.layers.opacity[layerConfig.name],
-                            format: layerConfig.tileformat || 'tms',
+                            format: layerConfig.tileFormat || 'tms',
                             formatOptions: {},
-                            demFormat: layerConfig.tileformat || 'tms',
+                            demFormat: layerConfig.tileFormat || 'tms',
                             demFormatOptions: {
                                 correctSeams:
-                                    layerConfig.tileformat === 'wms',
+                                    layerConfig.tileFormat === 'wms',
                                 wmsParams: {},
                             },
                             parser: layerConfig.demparser || null,
@@ -4154,6 +4154,15 @@ async function parseConfig(configData, urlOnLayers) {
 
         //Iterate over each layer
         for (let i = 0; i < layerConfigs.length; i++) {
+            // Legacy key alias, removable once stored configs are migrated
+            if (
+                layerConfigs[i].tileFormat == null &&
+                layerConfigs[i].tileformat != null
+            ) {
+                layerConfigs[i].tileFormat = layerConfigs[i].tileformat
+                delete layerConfigs[i].tileformat
+            }
+
             // If sourceType, prefix onto url
             if (
                 layerConfigs[i].sourceType != null &&
@@ -4320,7 +4329,7 @@ async function parseConfig(configData, urlOnLayers) {
                     isRasterTileLayerType(layerConfigs[i]) &&
                     layerConfigs[i].throughTileServer === true
                 ) {
-                    layerConfigs[i].tileformat = 'wmts'
+                    layerConfigs[i].tileFormat = 'wmts'
                 }
             }
 

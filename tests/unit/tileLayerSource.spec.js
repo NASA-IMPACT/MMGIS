@@ -133,7 +133,7 @@ describe('resolveTileLayerSource', () => {
             expect(tileFormat).toBe('wmts')
             // The resolver never writes to the layer config; that is
             // syncTileFormatToConfig's job, called at creation.
-            expect(layer.tileformat).toBeUndefined()
+            expect(layer.tileFormat).toBeUndefined()
         })
 
         test('a stac-collection tile level transforms the LEVEL url, not the layer url', () => {
@@ -163,7 +163,7 @@ describe('resolveTileLayerSource', () => {
                 }).tileFormat
             expect(plain({})).toBe('tms')
             expect(plain({ tms: false })).toBe('wmts')
-            expect(plain({ tileformat: 'wms' })).toBe('wms')
+            expect(plain({ tileFormat: 'wms' })).toBe('wms')
         })
 
         test('COG wraps the resolved file URL in TiTiler', () => {
@@ -277,17 +277,17 @@ describe('resolveTileLayerSource', () => {
         test('writes the resolved format for a stac-collection source', () => {
             const layer = { type: 'tile', url: 'stac-collection:mycollection' }
             syncTileFormatToConfig(layer, resolveTileLayerSource(layer))
-            expect(layer.tileformat).toBe('wmts')
+            expect(layer.tileFormat).toBe('wmts')
         })
 
         test('leaves the config untouched for any other source', () => {
             const layer = { type: 'tile', url: 'https://t/{z}/{x}/{y}.png' }
             syncTileFormatToConfig(layer, resolveTileLayerSource(layer))
-            expect(layer.tileformat).toBeUndefined()
+            expect(layer.tileFormat).toBeUndefined()
 
             const cog = { type: 'tile', url: 'COG:data/x.tif' }
             syncTileFormatToConfig(cog, resolveTileLayerSource(cog))
-            expect(cog.tileformat).toBeUndefined()
+            expect(cog.tileFormat).toBeUndefined()
         })
     })
 })

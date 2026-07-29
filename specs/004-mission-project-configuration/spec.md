@@ -511,7 +511,7 @@ The validation system auto-fills missing fields with sensible defaults:
 
 - `initialOpacity`: 1
 - `visibility`: true
-- `tileformat`: "tms"
+- `tileFormat`: "tms"
 - `style.className`: Generated from layer name
 - Layer-specific defaults based on type
 

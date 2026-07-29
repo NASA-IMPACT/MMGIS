@@ -67,7 +67,7 @@
         {
           "components": [
             {
-              "field": "tileformat",
+              "field": "tileFormat",
               "name": "Tile Format",
               "description": "",
               "type": "dropdown",

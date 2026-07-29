@@ -209,7 +209,7 @@ var IdentifierTool = {
                         L_.layers.data[layerName].maxNativeZoom
                     )
                     IdentifierTool.tileFormats.push(
-                        L_.layers.data[layerName].tileformat || 'tms'
+                        L_.layers.data[layerName].tileFormat || 'tms'
                     )
                 }
             }

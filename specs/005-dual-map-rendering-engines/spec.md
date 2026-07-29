@@ -1697,7 +1697,7 @@ _refreshTimeEnabledLayer(layerName) {
       "display_name": "Display Name",
       "type": "tile",
       "url": "https://tiles.example.com/{z}/{x}/{y}.png",
-      "tileformat": "tms",
+      "tileFormat": "tms",
       "minZoom": 0,
       "maxZoom": 18,
       "maxNativeZoom": 15,

@@ -186,7 +186,7 @@ Map_._addTileLayer = function (layerConfig) {
         maxZoom: layerConfig.maxZoom || 18,
         maxNativeZoom: layerConfig.maxNativeZoom,
         opacity: layerConfig.initialOpacity || 1.0,
-        tms: layerConfig.tileformat === 'tms'
+        tms: layerConfig.tileFormat === 'tms'
     }
 
     const tileLayer = L.tileLayer(layerConfig.url, options)

@@ -665,7 +665,7 @@ const fillInMissingFieldsWithDefaults = (layer) => {
 
   switch (layer.type) {
     case "tile":
-      layer.tileformat = layer.tileformat == null ? "tms" : layer.tileformat;
+      layer.tileFormat = layer.tileFormat == null ? "tms" : layer.tileFormat;
       break;
     case "vectortile":
     case "data":
@@ -683,7 +683,7 @@ const fillInMissingFieldsWithDefaults = (layer) => {
 **Auto-Corrected Fields:**
 - initialOpacity: 1 (fully opaque)
 - visibility: true (shown by default)
-- tileformat: "tms" (Tile Map Service)
+- tileFormat: "tms" (Tile Map Service)
 - style.className: Generated from layer name
 
 **Key Decisions:**

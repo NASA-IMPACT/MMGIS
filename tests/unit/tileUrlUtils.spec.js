@@ -128,7 +128,7 @@ describe('tileUrlUtils', () => {
     })
 
     describe('resolveTileFormat', () => {
-        test('defaults to tms when neither tileformat nor tms is set', () => {
+        test('defaults to tms when neither tileFormat nor tms is set', () => {
             expect(resolveTileFormat({})).toBe('tms')
         })
         test('honours tms:false as wmts', () => {
@@ -137,8 +137,8 @@ describe('tileUrlUtils', () => {
         test('honours tms:true as tms', () => {
             expect(resolveTileFormat({ tms: true })).toBe('tms')
         })
-        test('explicit tileformat wins over tms', () => {
-            expect(resolveTileFormat({ tileformat: 'wmts', tms: true })).toBe('wmts')
+        test('explicit tileFormat wins over tms', () => {
+            expect(resolveTileFormat({ tileFormat: 'wmts', tms: true })).toBe('wmts')
         })
     })
 

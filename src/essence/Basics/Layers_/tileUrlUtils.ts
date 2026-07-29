@@ -14,11 +14,11 @@ const DEFAULT_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
  * Mirrors the logic in Map_.makeTileLayer so both engines agree.
  */
 export function resolveTileFormat(layerObj: Record<string, any>): string {
-    if (typeof layerObj.tileformat === 'undefined') {
+    if (typeof layerObj.tileFormat === 'undefined') {
         const tms = typeof layerObj.tms === 'undefined' ? true : layerObj.tms
         return tms ? 'tms' : 'wmts'
     }
-    return layerObj.tileformat
+    return layerObj.tileFormat
 }
 
 /**
