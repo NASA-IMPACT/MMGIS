@@ -1007,24 +1007,26 @@ var Formulae_ = {
     },
     traverseLayers: function (layers, onLayer) {
         depthTraversal(layers, 0, [])
-        function depthTraversal(node, depth, path) {
-            for (var i = 0; i < node.length; i++) {
-                const ret = onLayer(node[i], path, i)
+        function depthTraversal(layerConfigs, depth, path) {
+            for (var i = 0; i < layerConfigs.length; i++) {
+                const ret = onLayer(layerConfigs[i], path, i)
 
                 if (ret === 'remove') {
-                    node.splice(i, 1)
+                    layerConfigs.splice(i, 1)
                     i--
                 }
                 //Add other feature information while we're at it
                 else if (
-                    node[i] &&
-                    node[i].sublayers != null &&
-                    node[i].sublayers.length > 0
+                    layerConfigs[i] &&
+                    layerConfigs[i].sublayers != null &&
+                    layerConfigs[i].sublayers.length > 0
                 ) {
                     depthTraversal(
-                        node[i].sublayers,
+                        layerConfigs[i].sublayers,
                         depth + 1,
-                        `${path.length > 0 ? path + '.' : ''}${node[i].name}`
+                        `${path.length > 0 ? path + '.' : ''}${
+                            layerConfigs[i].name
+                        }`
                     )
                 }
             }

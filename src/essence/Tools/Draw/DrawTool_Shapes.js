@@ -303,18 +303,20 @@ var Shapes = {
             // Skip associated points - they are not independent features
             if (shape._isAssociatedPoint === true) return
 
-            var f = shape
+            var drawnLayer = shape
 
             if (
                 !shape.hasOwnProperty('feature') &&
                 shape.hasOwnProperty('_layers')
             )
                 //if it's a non point layer
-                f = shape._layers[Object.keys(shape._layers)[0]]
-            var properties = f.feature.properties
+                drawnLayer = shape._layers[Object.keys(shape._layers)[0]]
+            var properties = drawnLayer.feature.properties
 
-            if (f.hasOwnProperty('_layers')) f = f._layers
-            else f = { layer: f }
+            var featureLayers
+            if (drawnLayer.hasOwnProperty('_layers'))
+                featureLayers = drawnLayer._layers
+            else featureLayers = { layer: drawnLayer }
 
             var shieldState = ''
             if (file.public == 1) shieldState = '-outline'
@@ -404,8 +406,8 @@ var Shapes = {
                 .attr('title', properties.name || 'No Name')
                 .text(properties.name || 'No Name')
 
-            for (var featureLayerId in f) {
-                var featureLayer = f[featureLayerId]
+            for (var featureLayerId in featureLayers) {
+                var featureLayer = featureLayers[featureLayerId]
 
                 // Skip associated points - they are not independently interactive
                 if (featureLayer._isAssociatedPoint === true) continue

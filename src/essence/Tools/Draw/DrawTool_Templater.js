@@ -143,11 +143,13 @@ const DrawTool_Templater = {
         const helperStates = {}
         let startTime, endTime
         // Attach events
-        template.forEach((t, idx) => {
-            if (startTime == null && t.isStart) startTime = t.field
-            if (endTime == null && t.isEnd) endTime = t.field
+        template.forEach((templateField, idx) => {
+            if (startTime == null && templateField.isStart)
+                startTime = templateField.field
+            if (endTime == null && templateField.isEnd)
+                endTime = templateField.field
 
-            switch (t.type) {
+            switch (templateField.type) {
                 case 'range':
                 case 'slider':
                     $(`#drawToolTemplater_${idx} input`).on('input', () => {
@@ -158,13 +160,15 @@ const DrawTool_Templater = {
                     break
                 case 'dropdown':
                     helperStates[idx] = Math.max(
-                        (t.items || []).indexOf(t.default),
+                        (templateField.items || []).indexOf(
+                            templateField.default
+                        ),
                         0
                     )
                     $(`#drawToolFileModalTemplateDropdown_${idx}`).html(
                         Dropy.construct(
-                            t.items || [],
-                            t.field,
+                            templateField.items || [],
+                            templateField.field,
                             helperStates[idx],
                             {
                                 openUp: false,
@@ -222,10 +226,15 @@ const DrawTool_Templater = {
                     dateTempus.dates.formatInput = (date) => {
                         return moment
                             .utc(DrawTool_Templater.removeOffset(date))
-                            .format(t.format || 'YYYY-MM-DDTHH:mm:ss')
+                            .format(
+                                templateField.format || 'YYYY-MM-DDTHH:mm:ss'
+                            )
                     }
-                    if (t.default != null && t.default != '') {
-                        let def = t.default
+                    if (
+                        templateField.default != null &&
+                        templateField.default != ''
+                    ) {
+                        let def = templateField.default
                         let d
                         if (def === 'NOW') d = new Date().getTime()
                         else if (def === 'STARTTIME')
@@ -239,7 +248,7 @@ const DrawTool_Templater = {
                         else {
                             d = new moment(
                                 def,
-                                t.format || 'YYYY-MM-DDTHH:mm:ss'
+                                templateField.format || 'YYYY-MM-DDTHH:mm:ss'
                             )
                                 .utc()
                                 .valueOf()
@@ -250,7 +259,7 @@ const DrawTool_Templater = {
                     break
                 case 'point':
                     // Initialize from existing data
-                    const existingPoints = properties[t.field] || []
+                    const existingPoints = properties[templateField.field] || []
                     helperStates[idx] = existingPoints
 
                     // Render initial point list
@@ -258,7 +267,7 @@ const DrawTool_Templater = {
                         idx,
                         existingPoints,
                         helperStates,
-                        t
+                        templateField
                     )
 
                     // Capture parent feature info for this field
@@ -276,7 +285,7 @@ const DrawTool_Templater = {
                         e.stopPropagation()
 
                         // Check if max points already reached
-                        const maxPoints = t.maxPoints || 0
+                        const maxPoints = templateField.maxPoints || 0
                         const currentCount = helperStates[idx]
                             ? helperStates[idx].length
                             : 0
@@ -294,8 +303,8 @@ const DrawTool_Templater = {
 
                         DrawTool_Templater.startAddingPoint(
                             idx,
-                            t.field,
-                            t,
+                            templateField.field,
+                            templateField,
                             parentUUID,
                             parentName,
                             helperStates

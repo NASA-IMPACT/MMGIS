@@ -218,8 +218,8 @@ var QueryURL = {
             }
             //Turn the selected layer on too
             if (selected !== false) {
-                let s = selected.split(',')
-                onLayers[s[0]] = { opacity: 1 }
+                let selectedParts = selected.split(',')
+                onLayers[selectedParts[0]] = { opacity: 1 }
             }
 
             //This is so that when preselecting data the layer can turn on along with all default layers
@@ -362,12 +362,17 @@ var QueryURL = {
         //panePercents
         // getPanelPercents only exists on the classic/mobile UI controllers; the
         // modern layout has no such method, so fall back to a map-only split.
-        var pP =
+        var panelPercents =
             L_.UserInterface_ &&
             typeof L_.UserInterface_.getPanelPercents === 'function'
                 ? L_.UserInterface_.getPanelPercents()
                 : { viewer: 0, map: 100, globe: 0 }
-        var panePercents = pP.viewer + ',' + pP.map + ',' + pP.globe
+        var panePercents =
+            panelPercents.viewer +
+            ',' +
+            panelPercents.map +
+            ',' +
+            panelPercents.globe
         urlAppendage += '&panePercents=' + panePercents
 
         //on

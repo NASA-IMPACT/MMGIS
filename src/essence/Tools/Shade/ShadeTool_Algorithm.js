@@ -8,10 +8,11 @@ let ShadeTool_Algorithm = {
     // Returns a shade grid where
     // 0: hidden
     // 1: visible
-    // 2: observer
+    // 2: source cell
     // 8: visible but not within elevation bounds
     // 9: no data
     perOctant: false,
+    // Shade is viewshed run from the illumination source: source cell = observer
     shade: function (shadeData) {
         this.curveData(shadeData)
         /*
@@ -96,7 +97,7 @@ let ShadeTool_Algorithm = {
     processFirst: function (shadeData, grids) {
         const targetSourceCell = shadeData.dataSource
 
-        const observerHeight =
+        const sourceHeight =
             grids.refGrid[targetSourceCell.y][targetSourceCell.x] +
             shadeData.source.height
         let cellTargetHeight
@@ -106,7 +107,7 @@ let ShadeTool_Algorithm = {
             grids.refGrid[targetSourceCell.y][i] = this.calcHeightLine(
                 i - targetSourceCell.x,
                 grids.refGrid[targetSourceCell.y][i + 1],
-                observerHeight
+                sourceHeight
             )
 
             // Set visibility if our value is less than the data's
@@ -119,7 +120,7 @@ let ShadeTool_Algorithm = {
                         shadeData,
                         i,
                         targetSourceCell.y,
-                        observerHeight,
+                        sourceHeight,
                         cellTargetHeight
                     )
                 )
@@ -151,7 +152,7 @@ let ShadeTool_Algorithm = {
             grids.refGrid[targetSourceCell.y][i] = this.calcHeightLine(
                 i - targetSourceCell.x,
                 grids.refGrid[targetSourceCell.y][i - 1],
-                observerHeight
+                sourceHeight
             )
 
             // Set visibility if our value is less than the data's
@@ -164,7 +165,7 @@ let ShadeTool_Algorithm = {
                         shadeData,
                         i,
                         targetSourceCell.y,
-                        observerHeight,
+                        sourceHeight,
                         cellTargetHeight
                     )
                 )
@@ -192,7 +193,7 @@ let ShadeTool_Algorithm = {
             grids.refGrid[j][targetSourceCell.x] = this.calcHeightLine(
                 j - targetSourceCell.y,
                 grids.refGrid[j + 1][targetSourceCell.x],
-                observerHeight
+                sourceHeight
             )
 
             // Set visibility if our value is less than the data's
@@ -205,7 +206,7 @@ let ShadeTool_Algorithm = {
                         shadeData,
                         targetSourceCell.x,
                         j,
-                        observerHeight,
+                        sourceHeight,
                         cellTargetHeight
                     )
                 )
@@ -237,7 +238,7 @@ let ShadeTool_Algorithm = {
             grids.refGrid[j][targetSourceCell.x] = this.calcHeightLine(
                 j - targetSourceCell.y,
                 grids.refGrid[j - 1][targetSourceCell.x],
-                observerHeight
+                sourceHeight
             )
 
             // Set visibility if our value is less than the data's
@@ -250,7 +251,7 @@ let ShadeTool_Algorithm = {
                         shadeData,
                         targetSourceCell.x,
                         j,
-                        observerHeight,
+                        sourceHeight,
                         cellTargetHeight
                     )
                 )
@@ -276,7 +277,7 @@ let ShadeTool_Algorithm = {
     processUp: function (shadeData, grids) {
         const targetSourceCell = shadeData.dataSource
 
-        const observerHeight = shadeData.targetSource.altitude
+        const sourceHeight = shadeData.targetSource.altitude
         let cellTargetHeight
 
         // Scan Up
@@ -306,7 +307,7 @@ let ShadeTool_Algorithm = {
                                   grids.refGrid[j + 1][i + 1],
                                   i - targetSourceCell.x + 1,
                                   j - targetSourceCell.y + 1,
-                                  observerHeight
+                                  sourceHeight
                               )
                             : this.calcHeightDiagonal2(
                                   i - targetSourceCell.x,
@@ -317,7 +318,7 @@ let ShadeTool_Algorithm = {
                                   grids.refGrid[j + 1][i + 1],
                                   i - targetSourceCell.x + 1,
                                   j - targetSourceCell.y + 1,
-                                  observerHeight
+                                  sourceHeight
                               )
                 } else {
                     grids.refGrid[j][i] = this.calcHeightDiagonal(
@@ -325,7 +326,7 @@ let ShadeTool_Algorithm = {
                         j - targetSourceCell.y,
                         grids.refGrid[j][i + 1],
                         grids.refGrid[j + 1][i],
-                        observerHeight
+                        sourceHeight
                     )
                 }
 
@@ -338,7 +339,7 @@ let ShadeTool_Algorithm = {
                             shadeData,
                             i,
                             j,
-                            observerHeight,
+                            sourceHeight,
                             cellTargetHeight
                         )
                     )
@@ -375,7 +376,7 @@ let ShadeTool_Algorithm = {
                                   grids.refGrid[j + 1][i - 1],
                                   i - targetSourceCell.x - 1,
                                   j - targetSourceCell.y + 1,
-                                  observerHeight
+                                  sourceHeight
                               )
                             : this.calcHeightDiagonal2(
                                   i - targetSourceCell.x,
@@ -386,7 +387,7 @@ let ShadeTool_Algorithm = {
                                   grids.refGrid[j + 1][i - 1],
                                   i - targetSourceCell.x - 1,
                                   j - targetSourceCell.y + 1,
-                                  observerHeight
+                                  sourceHeight
                               )
                 } else {
                     grids.refGrid[j][i] = this.calcHeightDiagonal(
@@ -394,7 +395,7 @@ let ShadeTool_Algorithm = {
                         j - targetSourceCell.y,
                         grids.refGrid[j][i - 1],
                         grids.refGrid[j + 1][i],
-                        observerHeight
+                        sourceHeight
                     )
                 }
 
@@ -407,7 +408,7 @@ let ShadeTool_Algorithm = {
                             shadeData,
                             i,
                             j,
-                            observerHeight,
+                            sourceHeight,
                             cellTargetHeight
                         )
                     )
@@ -430,7 +431,7 @@ let ShadeTool_Algorithm = {
     processDown: function (shadeData, grids) {
         const targetSourceCell = shadeData.dataSource
 
-        const observerHeight = shadeData.targetSource.altitude
+        const sourceHeight = shadeData.targetSource.altitude
         let cellTargetHeight
 
         // Scan Down
@@ -461,7 +462,7 @@ let ShadeTool_Algorithm = {
                                   grids.refGrid[j - 1][i + 1],
                                   i - targetSourceCell.x + 1,
                                   j - targetSourceCell.y - 1,
-                                  observerHeight
+                                  sourceHeight
                               )
                             : this.calcHeightDiagonal2(
                                   i - targetSourceCell.x,
@@ -472,7 +473,7 @@ let ShadeTool_Algorithm = {
                                   grids.refGrid[j - 1][i + 1],
                                   i - targetSourceCell.x + 1,
                                   j - targetSourceCell.y - 1,
-                                  observerHeight
+                                  sourceHeight
                               )
                 } else {
                     grids.refGrid[j][i] = this.calcHeightDiagonal(
@@ -480,7 +481,7 @@ let ShadeTool_Algorithm = {
                         j - targetSourceCell.y,
                         grids.refGrid[j][i + 1],
                         grids.refGrid[j - 1][i],
-                        observerHeight
+                        sourceHeight
                     )
                 }
 
@@ -493,7 +494,7 @@ let ShadeTool_Algorithm = {
                             shadeData,
                             i,
                             j,
-                            observerHeight,
+                            sourceHeight,
                             cellTargetHeight
                         )
                     )
@@ -530,7 +531,7 @@ let ShadeTool_Algorithm = {
                                   grids.refGrid[j - 1][i - 1],
                                   i - targetSourceCell.x - 1,
                                   j - targetSourceCell.y - 1,
-                                  observerHeight
+                                  sourceHeight
                               )
                             : this.calcHeightDiagonal2(
                                   i - targetSourceCell.x,
@@ -541,7 +542,7 @@ let ShadeTool_Algorithm = {
                                   grids.refGrid[j - 1][i - 1],
                                   i - targetSourceCell.x - 1,
                                   j - targetSourceCell.y - 1,
-                                  observerHeight
+                                  sourceHeight
                               )
                 } else {
                     grids.refGrid[j][i] = this.calcHeightDiagonal(
@@ -549,7 +550,7 @@ let ShadeTool_Algorithm = {
                         j - targetSourceCell.y,
                         grids.refGrid[j][i - 1],
                         grids.refGrid[j - 1][i],
-                        observerHeight
+                        sourceHeight
                     )
                 }
 
@@ -562,7 +563,7 @@ let ShadeTool_Algorithm = {
                             shadeData,
                             i,
                             j,
-                            observerHeight,
+                            sourceHeight,
                             cellTargetHeight
                         )
                     )

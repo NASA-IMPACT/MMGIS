@@ -632,14 +632,14 @@ var TimeControl = {
         }
 
         for (let layerName in L_.layers.data) {
-            const layer = L_.layers.data[layerName]
+            const layerConfig = L_.layers.data[layerName]
             if (
-                layer.time &&
-                layer.time.enabled === true &&
-                layer.variables?.dynamicExtent !== true
+                layerConfig.time &&
+                layerConfig.time.enabled === true &&
+                layerConfig.variables?.dynamicExtent !== true
             ) {
-                TimeControl.reloadLayer(layer)
-                reloadedLayers.push(layer.name)
+                TimeControl.reloadLayer(layerConfig)
+                reloadedLayers.push(layerConfig.name)
             }
         }
 
@@ -705,20 +705,20 @@ var TimeControl = {
     updateLayersTime: function () {
         let updatedLayers = []
         for (let layerName in L_.layers.data) {
-            const layer = L_.layers.data[layerName]
-            if (layer.time && layer.time.enabled === true) {
-                layer.time.start = TimeControl.startTime
-                layer.time.end = TimeControl.currentTime
-                layer.time.customTimes = TimeControl.customTimes
-                $('.starttime.' + F_.getSafeName(layer.name)).text(
-                    layer.time.start
+            const layerConfig = L_.layers.data[layerName]
+            if (layerConfig.time && layerConfig.time.enabled === true) {
+                layerConfig.time.start = TimeControl.startTime
+                layerConfig.time.end = TimeControl.currentTime
+                layerConfig.time.customTimes = TimeControl.customTimes
+                $('.starttime.' + F_.getSafeName(layerConfig.name)).text(
+                    layerConfig.time.start
                 )
-                $('.endtime.' + F_.getSafeName(layer.name)).text(
-                    layer.time.end
+                $('.endtime.' + F_.getSafeName(layerConfig.name)).text(
+                    layerConfig.time.end
                 )
-                updatedLayers.push(layer.name)
-                if (isRasterTileLayerType(layer)) {
-                    TimeControl.setLayerWmsParams(layer)
+                updatedLayers.push(layerConfig.name)
+                if (isRasterTileLayerType(layerConfig)) {
+                    TimeControl.setLayerWmsParams(layerConfig)
                 }
             }
         }
@@ -741,22 +741,23 @@ var TimeControl = {
     setLayersTimeStatus: function (color) {
         var updatedLayers = []
         for (let layerName in L_.layers.data) {
-            const layer = L_.layers.data[layerName]
+            const layerConfig = L_.layers.data[layerName]
             if (
-                layer.time &&
-                layer.time.enabled === true &&
-                (layer.time.type === 'global' || layer.time.type === 'requery')
+                layerConfig.time &&
+                layerConfig.time.enabled === true &&
+                (layerConfig.time.type === 'global' ||
+                    layerConfig.time.type === 'requery')
             ) {
-                TimeControl.setLayerTimeStatus(layer, color)
-                updatedLayers.push(layer.name)
+                TimeControl.setLayerTimeStatus(layerConfig, color)
+                updatedLayers.push(layerConfig.name)
             }
         }
         return updatedLayers
     },
-    setLayerWmsParams: function (layer) {
+    setLayerWmsParams: function (layerConfig) {
         // Shared time formatter (see tileUrlUtils.formatLayerTime).
-        const layerTimeFormatter = formatLayerTime(layer.time?.format)
-        const mapLayer = L_.layers.layer[layer.name]
+        const layerTimeFormatter = formatLayerTime(layerConfig.time?.format)
+        const mapLayer = L_.layers.layer[layerConfig.name]
 
         // Leaflet-only: `options` is where the per-tile getTileUrl and the WMS
         // substitution read their times from. Deck layers expose `props`
@@ -764,52 +765,54 @@ var TimeControl = {
         // guard skips them rather than growing them an `options` nothing reads.
         if (
             mapLayer != null &&
-            isRasterTileLayerType(layer) &&
+            isRasterTileLayerType(layerConfig) &&
             mapLayer.options != null
         ) {
-            mapLayer.options.time = layerTimeFormatter(layer.time.end)
-            mapLayer.options.starttime = layerTimeFormatter(layer.time.start)
-            mapLayer.options.endtime = layerTimeFormatter(layer.time.end)
+            mapLayer.options.time = layerTimeFormatter(layerConfig.time.end)
+            mapLayer.options.starttime = layerTimeFormatter(
+                layerConfig.time.start
+            )
+            mapLayer.options.endtime = layerTimeFormatter(layerConfig.time.end)
         }
     },
 }
 
 function initLayerDataTimes() {
     for (let i in L_.layers.dataFlat) {
-        const layer = L_.layers.dataFlat[i]
-        if (layer.time && layer.time.enabled === true) {
-            layer.time.start = L_.FUTURES.startTime
+        const layerConfig = L_.layers.dataFlat[i]
+        if (layerConfig.time && layerConfig.time.enabled === true) {
+            layerConfig.time.start = L_.FUTURES.startTime
                 ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
                 : TimeControl.startTime
-            layer.time.end = L_.FUTURES.endTime
+            layerConfig.time.end = L_.FUTURES.endTime
                 ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
                 : TimeControl.endTime
-            layer.time.customTimes = TimeControl.customTimes
+            layerConfig.time.customTimes = TimeControl.customTimes
         }
     }
 }
 
 function initLayerTimes() {
     for (let layerName in L_.layers.data) {
-        const layer = L_.layers.data[layerName]
-        if (layer.time && layer.time.enabled === true) {
-            layer.time.start = L_.FUTURES.startTime
+        const layerConfig = L_.layers.data[layerName]
+        if (layerConfig.time && layerConfig.time.enabled === true) {
+            layerConfig.time.start = L_.FUTURES.startTime
                 ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
                 : TimeControl.startTime
-            layer.time.end = L_.FUTURES.endTime
+            layerConfig.time.end = L_.FUTURES.endTime
                 ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
                 : TimeControl.endTime
-            layer.time.customTimes = TimeControl.customTimes
-            $('.starttime.' + F_.getSafeName(layer.name)).text(
-                layer.time.start
+            layerConfig.time.customTimes = TimeControl.customTimes
+            $('.starttime.' + F_.getSafeName(layerConfig.name)).text(
+                layerConfig.time.start
             )
-            $('.endtime.' + F_.getSafeName(layer.name)).text(
-                layer.time.end
+            $('.endtime.' + F_.getSafeName(layerConfig.name)).text(
+                layerConfig.time.end
             )
 
             // Make sure to set the WMS parameters for WMS layers,
             // otherwise the first load will not have the WMS parameters
-            TimeControl.setLayerWmsParams(layer)
+            TimeControl.setLayerWmsParams(layerConfig)
         }
     }
 }

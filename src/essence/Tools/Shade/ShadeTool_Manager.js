@@ -67,7 +67,7 @@ let ShadeTool_Manager = {
             this.updateDesiredTiles(shadeId)
             this.refreshData(shadeId)
             this.locateSource(shadeId)
-            this.queryDesiredTiles(shadeId, progcb, function (dv) {
+            this.queryDesiredTiles(shadeId, progcb, function (shadeData) {
                 ShadeTool_Manager.interpolateSeams(shadeId)
                 ShadeTool_Manager.finishUp(shadeId)
                 ShadeTool_Manager.data[shadeId].result =
@@ -75,7 +75,7 @@ let ShadeTool_Manager = {
                         ShadeTool_Manager.data[shadeId],
                         options
                     )
-                cb(dv)
+                cb(shadeData)
             })
         } else {
             this.data[shadeId].source = source
@@ -222,16 +222,20 @@ let ShadeTool_Manager = {
     },
     locateSource: function (shadeId) {
         // Locate source
-        let dv = this.data[shadeId]
+        let shadeData = this.data[shadeId]
 
-        let topLeftTile = new L.Point(dv.topLeftTile.x, dv.topLeftTile.y)
+        let topLeftTile = new L.Point(
+            shadeData.topLeftTile.x,
+            shadeData.topLeftTile.y
+        )
         let sourcePoint = Map_.map
-            .project(dv.targetSource, dv.zoom)
+            .project(shadeData.targetSource, shadeData.zoom)
             .divideBy(256)
-        const tilePixelsAcross = dv.tileResolution * Math.pow(2, dv.zoom)
+        const tilePixelsAcross =
+            shadeData.tileResolution * Math.pow(2, shadeData.zoom)
         let source = sourcePoint
             .subtract(topLeftTile)
-            .multiplyBy(dv.tileResolution)
+            .multiplyBy(shadeData.tileResolution)
             .floor()
 
         // Wrap to find nearest point
@@ -254,7 +258,7 @@ let ShadeTool_Manager = {
         let tilesQueried = 0
         let tilesPerStep = 8
 
-        function eachTile(d, start, heights) {
+        function eachTile(tileIndex, start, heights) {
             tilesLoaded++
 
             if (typeof progcb === 'function') {
@@ -264,7 +268,8 @@ let ShadeTool_Manager = {
             const tileResolution =
                 ShadeTool_Manager.data[shadeId].tileResolution
 
-            let desired = ShadeTool_Manager.data[shadeId].desiredTiles[d]
+            let desired =
+                ShadeTool_Manager.data[shadeId].desiredTiles[tileIndex]
             let startingX =
                 (desired.x - ShadeTool_Manager.data[shadeId].topLeftTile.x) *
                 tileResolution
@@ -307,7 +312,7 @@ let ShadeTool_Manager = {
 
             if (tilesLoaded >= totalTiles) {
                 cb(ShadeTool_Manager.data[shadeId])
-            } else if (d == start + tilesPerStep - 1) {
+            } else if (tileIndex == start + tilesPerStep - 1) {
                 query()
             }
         }
@@ -315,13 +320,14 @@ let ShadeTool_Manager = {
         const query = () => {
             let start = tilesQueried
             for (
-                let d = start;
-                d < totalTiles && d < start + tilesPerStep;
-                d++
+                let tileIndex = start;
+                tileIndex < totalTiles && tileIndex < start + tilesPerStep;
+                tileIndex++
             ) {
                 tilesQueried++
 
-                let desired = ShadeTool_Manager.data[shadeId].desiredTiles[d]
+                let desired =
+                    ShadeTool_Manager.data[shadeId].desiredTiles[tileIndex]
                 let dlname = ShadeTool_Manager.data[shadeId].dataLayer.name
                 let existingHeights = F_.getIn(
                     ShadeTool_Manager.existingTileData,
@@ -329,9 +335,9 @@ let ShadeTool_Manager = {
                 )
 
                 if (existingHeights) {
-                    eachTile(d, start, existingHeights)
+                    eachTile(tileIndex, start, existingHeights)
                 } else {
-                    const tile = this.data[shadeId].desiredTiles[d]
+                    const tile = this.data[shadeId].desiredTiles[tileIndex]
                     const pxWorldBound = Map_.map.getPixelWorldBounds(tile.z)
                     const yTileWorldBound =
                         Math.ceil(pxWorldBound.max.y / 256) - 1
@@ -344,7 +350,7 @@ let ShadeTool_Manager = {
                     filledUrl = filledUrl.replace('{z}', tile.z)
                     PNG.load(
                         filledUrl,
-                        (function (d) {
+                        (function (tileIndex) {
                             return function (img) {
                                 const tileResolution =
                                     ShadeTool_Manager.data[shadeId]
@@ -362,7 +368,10 @@ let ShadeTool_Manager = {
                                     tilesLoaded++
                                     if (tilesLoaded >= totalTiles) {
                                         cb(ShadeTool_Manager.data[shadeId])
-                                    } else if (d == start + tilesPerStep - 1) {
+                                    } else if (
+                                        tileIndex ==
+                                        start + tilesPerStep - 1
+                                    ) {
                                         query()
                                     }
                                     return
@@ -390,9 +399,9 @@ let ShadeTool_Manager = {
                                         )
                                 }
 
-                                eachTile(d, start, heights)
+                                eachTile(tileIndex, start, heights)
                             }
-                        })(d),
+                        })(tileIndex),
                         true
                     )
                 }
@@ -403,34 +412,34 @@ let ShadeTool_Manager = {
     },
     interpolateSeams(shadeId) {
         const tileRes = this.data[shadeId].tileResolution
-        let d = this.data[shadeId].data
+        let heightGrid = this.data[shadeId].data
 
         // Vertical | |
-        for (let y = 0; y < d.length; y++) {
-            for (let x = 0; x < d[y].length; x += tileRes) {
-                if (x - 2 > 0 && x + 2 < d[y].length) {
-                    const a = d[y][x - 2]
-                    const b = d[y][x + 1]
+        for (let y = 0; y < heightGrid.length; y++) {
+            for (let x = 0; x < heightGrid[y].length; x += tileRes) {
+                if (x - 2 > 0 && x + 2 < heightGrid[y].length) {
+                    const a = heightGrid[y][x - 2]
+                    const b = heightGrid[y][x + 1]
 
                     const inc = (a - b) / 3
 
-                    d[y][x - 1] = a - inc
-                    d[y][x] = b + inc
+                    heightGrid[y][x - 1] = a - inc
+                    heightGrid[y][x] = b + inc
                 }
             }
         }
 
         // Horizontal _ _
-        for (let x = 0; x < d[0].length; x++) {
-            for (let y = 0; y < d.length; y += tileRes) {
-                if (d[y - 2] && d[y + 1]) {
-                    const a = d[y - 2][x]
-                    const b = d[y + 1][x]
+        for (let x = 0; x < heightGrid[0].length; x++) {
+            for (let y = 0; y < heightGrid.length; y += tileRes) {
+                if (heightGrid[y - 2] && heightGrid[y + 1]) {
+                    const a = heightGrid[y - 2][x]
+                    const b = heightGrid[y + 1][x]
 
                     const inc = (a - b) / 3
 
-                    d[y - 1][x] = a - inc
-                    d[y][x] = b + inc
+                    heightGrid[y - 1][x] = a - inc
+                    heightGrid[y][x] = b + inc
                 }
             }
         }

@@ -129,11 +129,11 @@ var Editing = {
         var deselecting = false
         if (ctrl) {
             for (var selectionIndex in DrawTool.contextMenuLayers) {
-                var cml = DrawTool.contextMenuLayers[selectionIndex]
+                var selectionEntry = DrawTool.contextMenuLayers[selectionIndex]
                 if (
-                    cml.l_i_f.layer == layer &&
-                    cml.l_i_f.index == index &&
-                    cml.l_i_f.fileid == fileid
+                    selectionEntry.l_i_f.layer == layer &&
+                    selectionEntry.l_i_f.index == index &&
+                    selectionEntry.l_i_f.fileid == fileid
                 ) {
                     //already selected
                     $(
@@ -143,7 +143,7 @@ var Editing = {
                         .find('.drawToolShapeLiItemCheck')
                         .removeClass('checked')
                     resetShape(selectionIndex)
-                    Map_.rmNotNull(cml.selectionLayer)
+                    Map_.rmNotNull(selectionEntry.selectionLayer)
                     DrawTool.contextMenuLayers.splice(selectionIndex, 1)
                     deselecting = true
                 }

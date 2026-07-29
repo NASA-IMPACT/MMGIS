@@ -1170,11 +1170,11 @@ let ViewshedTool = {
                 ).text('Regenerate')
                 // We'll use a single canvas for all tiles for capturing
                 // their dataURLs
-                let tileCanvas = document.createElement('canvas')
+                let scratchCanvas = document.createElement('canvas')
                 const res = data.tileResolution * Math.pow(2, data.resolution)
-                tileCanvas.width = res
-                tileCanvas.height = res
-                let ctx = tileCanvas.getContext('2d')
+                scratchCanvas.width = res
+                scratchCanvas.height = res
+                let ctx = scratchCanvas.getContext('2d')
                 let cImgData = ctx.createImageData(res, res)
                 let cData = cImgData.data
 
@@ -1272,9 +1272,9 @@ let ViewshedTool = {
                         }
                         ctx.putImageData(cImgData, 0, 0)
                         tileDataUrls[z][Math.floor(x)][Math.floor(y)] =
-                            tileCanvas.toDataURL()
+                            scratchCanvas.toDataURL()
                         tileCanvases[z][Math.floor(x)][Math.floor(y)] =
-                            F_.cloneCanvas(tileCanvas)
+                            F_.cloneCanvas(scratchCanvas)
                     }
                 }
                 ViewshedTool.canvases[activeElmId] = tileCanvases

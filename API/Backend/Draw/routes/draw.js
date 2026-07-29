@@ -465,12 +465,12 @@ const _templateConform = (req, from) => {
       send: (r) => {
         if (r.status === "success") {
           const geojson = r.body.geojson;
-          const template =
+          const templateFields =
             r.body.file?.[0]?.dataValues?.template?.template || [];
           const existingProperties = JSON.parse(req.body.properties || "{}");
           const templaterProperties = {};
 
-          template.forEach((templateField, idx) => {
+          templateFields.forEach((templateField, idx) => {
             switch (templateField.type) {
               case "incrementer":
                 const nextIncrement = _getNextIncrement(

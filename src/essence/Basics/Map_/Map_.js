@@ -502,7 +502,7 @@ let Map_ = {
      */
     orderedBringToFront: function () {
         if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return
-        let vectorImageIndices = []
+        let vectorAndImageIndices = []
         let rasterIndices = []
 
         for (let i = L_._layersOrdered.length - 1; i >= 0; i--) {
@@ -525,7 +525,7 @@ let Map_ = {
                         Map_.map.removeLayer(
                             L_.layers.layer[L_._layersOrdered[i]]
                         )
-                        vectorImageIndices.push(i)
+                        vectorAndImageIndices.push(i)
                     } else if (
                         L_.layers.data[L_._layersOrdered[i]].type === 'tile' ||
                         L_.layers.data[L_._layersOrdered[i]].type === 'data'
@@ -537,33 +537,35 @@ let Map_ = {
                         Map_.map.removeLayer(
                             L_.layers.layer[L_._layersOrdered[i]]
                         )
-                        vectorImageIndices.push(i)
+                        vectorAndImageIndices.push(i)
                     }
                 }
             }
         }
 
         // First only vectors and images
-        for (let i = 0; i < vectorImageIndices.length; i++) {
+        for (let i = 0; i < vectorAndImageIndices.length; i++) {
             if (
-                L_.layers.attachments[L_._layersOrdered[vectorImageIndices[i]]]
+                L_.layers.attachments[
+                    L_._layersOrdered[vectorAndImageIndices[i]]
+                ]
             ) {
                 for (let sublayerName in L_.layers.attachments[
-                    L_._layersOrdered[vectorImageIndices[i]]
+                    L_._layersOrdered[vectorAndImageIndices[i]]
                 ]) {
                     if (
                         L_.layers.attachments[
-                            L_._layersOrdered[vectorImageIndices[i]]
+                            L_._layersOrdered[vectorAndImageIndices[i]]
                         ][sublayerName].on
                     ) {
                         if (
                             L_.layers.attachments[
-                                L_._layersOrdered[vectorImageIndices[i]]
+                                L_._layersOrdered[vectorAndImageIndices[i]]
                             ][sublayerName].type !== 'model'
                         ) {
                             Map_.map.addLayer(
                                 L_.layers.attachments[
-                                    L_._layersOrdered[vectorImageIndices[i]]
+                                    L_._layersOrdered[vectorAndImageIndices[i]]
                                 ][sublayerName].layer
                             )
                         }
@@ -572,28 +574,28 @@ let Map_ = {
             }
 
             Map_.map.addLayer(
-                L_.layers.layer[L_._layersOrdered[vectorImageIndices[i]]]
+                L_.layers.layer[L_._layersOrdered[vectorAndImageIndices[i]]]
             )
 
             // If image layer, reorder the z index and redraw the layer
             if (
-                L_.layers.data[L_._layersOrdered[vectorImageIndices[i]]].type ===
-                'image'
+                L_.layers.data[L_._layersOrdered[vectorAndImageIndices[i]]]
+                    .type === 'image'
             ) {
                 L_.layers.layer[
-                    L_._layersOrdered[vectorImageIndices[i]]
+                    L_._layersOrdered[vectorAndImageIndices[i]]
                 ].setZIndex(
                     L_._layersOrdered.length +
                         1 -
                         L_._layersOrdered.indexOf(
-                            L_._layersOrdered[vectorImageIndices[i]]
+                            L_._layersOrdered[vectorAndImageIndices[i]]
                         )
                 )
                 L_.layers.layer[
-                    L_._layersOrdered[vectorImageIndices[i]]
+                    L_._layersOrdered[vectorAndImageIndices[i]]
                 ].clearCache()
                 L_.layers.layer[
-                    L_._layersOrdered[vectorImageIndices[i]]
+                    L_._layersOrdered[vectorAndImageIndices[i]]
                 ].redraw()
             }
         }
@@ -1372,8 +1374,8 @@ async function makeVelocityLayer(
             )
 
         /**
-         * Constructs and registers the map layer from fetched GeoJSON data.
-         * @param {object|string} data - GeoJSON feature collection, or 'off' to mark layer as disabled.
+         * Constructs and registers the map layer from the fetched layer data.
+         * @param {object|string} data - Velocity wind-grid JSON or GeoJSON feature collection, or 'off' to mark layer as disabled.
          * @param {boolean} allowInvalid - Skip GeoJSON validation and render as-is.
          */
         function onDataFetched(data, allowInvalid) {
@@ -1958,7 +1960,7 @@ function makeImageLayer(layerObj, targetMapContext = null) {
     const cogColormap = F_.getIn(L_.layers.data[layerObj.name], 'cogColormap')
 
     parseGeoraster(layerUrl)
-        .then(async (raster) => {
+        .then(async (parsedGeoraster) => {
             let pixelValuesToColorFn = null
             if (
                 F_.getIn(
@@ -1968,7 +1970,7 @@ function makeImageLayer(layerObj, targetMapContext = null) {
             ) {
                 pixelValuesToColorFn = (values) => {
                     // https://github.com/GeoTIFF/georaster-layer-for-leaflet/issues/16
-                    return values[0] === raster.noDataValue
+                    return values[0] === parsedGeoraster.noDataValue
                         ? null
                         : `rgb(${values[0]},${values[1]},${values[2]})`
                 }
@@ -1986,7 +1988,7 @@ function makeImageLayer(layerObj, targetMapContext = null) {
 
             let bandMin = null
             let bandMax = null
-            if (raster.numberOfRasters === 1) {
+            if (parsedGeoraster.numberOfRasters === 1) {
                 bandMin = layerObj.cogMin
                 bandMax = layerObj.cogMax
 
@@ -2117,8 +2119,8 @@ function makeImageLayer(layerObj, targetMapContext = null) {
                     var pixelValue = values[0] // single band
                     // don't return a color
                     if (
-                        raster.noDataValue != null &&
-                        raster.noDataValue === pixelValue
+                        parsedGeoraster.noDataValue != null &&
+                        parsedGeoraster.noDataValue === pixelValue
                     ) {
                         if (hideNoDataValue) {
                             return null
@@ -2151,7 +2153,7 @@ function makeImageLayer(layerObj, targetMapContext = null) {
             }
 
             L_.layers.layer[layerObj.name] = new GeoRasterLayer({
-                georaster: raster,
+                georaster: parsedGeoraster,
                 resolution: 256,
                 opacity: 1.0,
                 pixelValuesToColorFn: pixelValuesToColorFn,

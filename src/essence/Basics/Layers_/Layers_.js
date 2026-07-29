@@ -324,11 +324,11 @@ const L_ = {
      * for TiTiler PgSTAC endpoints.
      *
      * @param {string} url - The URL to transform (may or may not be a stac-collection: URL)
-     * @param {object} layerData - The layer configuration object
+     * @param {object} layerConfig - The layer configuration object
      * @param {string} type - The type of endpoint to generate ('tile' or 'image')
      * @returns {string} - The transformed URL or the original URL if not a STAC URL
      */
-    transformStacUrl(url, layerData, type = 'tile') {
+    transformStacUrl(url, layerConfig, type = 'tile') {
         if (!url || typeof url !== 'string') return url
 
         // Check if this is a STAC collection URL
@@ -345,10 +345,11 @@ const L_ = {
         // Build bands parameter (only if no expression exists)
         let bandsParam = ''
         if (
-            layerData &&
-            (!layerData.cogExpression || layerData.cogExpression.trim() === '')
+            layerConfig &&
+            (!layerConfig.cogExpression ||
+                layerConfig.cogExpression.trim() === '')
         ) {
-            const bands = layerData.cogBands
+            const bands = layerConfig.cogBands
             if (bands != null) {
                 bands.forEach((band) => {
                     if (band != null) bandsParam += `&bidx=${band}`
@@ -358,25 +359,25 @@ const L_ = {
 
         // Build resampling parameter
         let resamplingParam = ''
-        if (layerData && layerData.cogResampling) {
-            resamplingParam = `&resampling=${layerData.cogResampling}`
+        if (layerConfig && layerConfig.cogResampling) {
+            resamplingParam = `&resampling=${layerConfig.cogResampling}`
         }
 
         // Build the base URL using ServiceUrls (supports external endpoints)
-        const baseUrl = ServiceUrls.getTiTilerPgStacUrl(layerData)
+        const baseUrl = ServiceUrls.getTiTilerPgStacUrl(layerConfig)
 
         // Generate different endpoints based on type
         if (type === 'tile') {
             // Tile endpoint for raster tiles
             return `${baseUrl}/collections/${collectionName}/tiles/${
-                (layerData && layerData.tileMatrixSet) || 'WebMercatorQuad'
+                (layerConfig && layerConfig.tileMatrixSet) || 'WebMercatorQuad'
             }/{z}/{x}/{y}?assets=asset${bandsParam}${resamplingParam}`
         } else {
             // For images, we use preview endpoint
             // Note: STAC collections are typically designed for tile serving
-            if (layerData && layerData.name) {
+            if (layerConfig && layerConfig.name) {
                 console.warn(
-                    `STAC layer "${layerData.name}" is configured as an image layer. ` +
+                    `STAC layer "${layerConfig.name}" is configured as an image layer. ` +
                         `STAC collections work best with tile layer type. ` +
                         `Attempting to use preview endpoint.`
                 )
@@ -384,7 +385,7 @@ const L_ = {
             return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
         }
     },
-    getUrl: function (type, url, layerData) {
+    getUrl: function (type, url, layerConfig) {
         let wasCOG = false
 
         let nextUrl = url
@@ -394,7 +395,7 @@ const L_ = {
             nextUrl != null &&
             nextUrl.toLowerCase().startsWith('stac-collection:')
         ) {
-            nextUrl = L_.transformStacUrl(nextUrl, layerData, type)
+            nextUrl = L_.transformStacUrl(nextUrl, layerConfig, type)
             // After transformation, nextUrl is now an absolute HTTP URL
         }
 
@@ -410,7 +411,7 @@ const L_ = {
         }
         if (
             type === 'tile' &&
-            ((layerData && layerData.throughTileServer === true) ||
+            ((layerConfig && layerConfig.throughTileServer === true) ||
                 wasCOG === true)
         ) {
             if (
@@ -2074,15 +2075,15 @@ const L_ = {
         }
     },
     getLayerOpacity: function (name) {
-        var l = L_.layers.layer[name]
+        var mapLayer = L_.layers.layer[name]
 
-        if (l == null) return 0
+        if (mapLayer == null) return 0
 
         var opacity
         try {
-            opacity = l.options?.style.opacity
+            opacity = mapLayer.options?.style.opacity
         } catch (error) {
-            opacity = l.options?.opacity
+            opacity = mapLayer.options?.opacity
         }
         return opacity
     },
@@ -2337,9 +2338,13 @@ const L_ = {
         }
         if (withVarsFromLayers) {
             vars.__layers = {}
-            L_.layers.dataFlat.forEach((d) => {
-                if (d.name != null && d?.variables?.tools?.[toolName] != null) {
-                    vars.__layers[d.name] = d.variables.tools[toolName]
+            L_.layers.dataFlat.forEach((layerConfig) => {
+                if (
+                    layerConfig.name != null &&
+                    layerConfig?.variables?.tools?.[toolName] != null
+                ) {
+                    vars.__layers[layerConfig.name] =
+                        layerConfig.variables.tools[toolName]
                 }
             })
         }
@@ -2508,19 +2513,19 @@ const L_ = {
         }
     },
     // Returns any array of all the "fromProp"-like configuration fields for a layer
-    getDynamicProps(layerData) {
+    getDynamicProps(layerConfig) {
         let dynamicProps = []
-        if (layerData?.style) {
-            Object.keys(layerData.style).forEach((key) => {
+        if (layerConfig?.style) {
+            Object.keys(layerConfig.style).forEach((key) => {
                 if (key.endsWith('Prop'))
-                    dynamicProps.push(layerData.style[key])
+                    dynamicProps.push(layerConfig.style[key])
             })
         }
-        if (layerData?.variables?.useKeyAsName) {
+        if (layerConfig?.variables?.useKeyAsName) {
             dynamicProps = dynamicProps.concat(
-                typeof layerData.variables.useKeyAsName === 'string'
-                    ? [layerData.variables.useKeyAsName]
-                    : layerData.variables.useKeyAsName
+                typeof layerConfig.variables.useKeyAsName === 'string'
+                    ? [layerConfig.variables.useKeyAsName]
+                    : layerConfig.variables.useKeyAsName
             )
         }
         return dynamicProps
@@ -3317,10 +3322,10 @@ const L_ = {
         layerName = L_.asLayerUUID(layerName)
 
         if (layerName in L_.layers.layer) {
-            const layerObj = L_.layers.data[layerName]
+            const layerConfig = L_.layers.data[layerName]
             if (L_._layersBeingMade[layerName] === true) {
                 console.warn(
-                    `WARNING - updateVectorLayer: Cannot make layer ${layerObj.display_name}/${layerObj.name} as it's already being made!`
+                    `WARNING - updateVectorLayer: Cannot make layer ${layerConfig.display_name}/${layerConfig.name} as it's already being made!`
                 )
                 return false
             }
@@ -3574,18 +3579,22 @@ const L_ = {
                 }
 
                 //Get the current layers sublayers (returns 0 if none)
-                var dNext = getSublayers(layerConfigs[i])
+                var sublayerConfigs = getSublayers(layerConfigs[i])
                 //If they are sublayers, call this function again and move up a level
-                if (dNext != 0) {
-                    expandLayers(dNext, level + 1, layerConfigs[i].name)
+                if (sublayerConfigs != 0) {
+                    expandLayers(
+                        sublayerConfigs,
+                        level + 1,
+                        layerConfigs[i].name
+                    )
                 }
             }
         }
         //Get the current layers sublayers (returns 0 if none)
-        function getSublayers(d) {
-            //If object d has a sublayers property, return it
-            if (d.hasOwnProperty('sublayers')) {
-                return d.sublayers
+        function getSublayers(layerConfig) {
+            //If object layerConfig has a sublayers property, return it
+            if (layerConfig.hasOwnProperty('sublayers')) {
+                return layerConfig.sublayers
             }
             //Otherwise return 0
             return 0
@@ -4045,11 +4054,11 @@ const L_ = {
     getListOfUsedGeoDatasets() {
         const list = []
         Object.keys(L_.layers.data).forEach((key) => {
-            const d = L_.layers.data[key]
-            if (d.url && d.url.startsWith('geodatasets:'))
+            const layerConfig = L_.layers.data[key]
+            if (layerConfig.url && layerConfig.url.startsWith('geodatasets:'))
                 list.push({
-                    display_name: d.display_name,
-                    geodataset: d.url.replace('geodatasets:', ''),
+                    display_name: layerConfig.display_name,
+                    geodataset: layerConfig.url.replace('geodatasets:', ''),
                 })
         })
         return list
@@ -4355,18 +4364,18 @@ async function parseConfig(configData, urlOnLayers) {
                 }
             }
             //Get the current layers sublayers (returns 0 if none)
-            var dNext = getSublayers(layerConfigs[i])
+            var sublayerConfigs = getSublayers(layerConfigs[i])
             //If they are sublayers, call this function again and move up a level
-            if (dNext != 0) {
-                expandLayers(dNext, level + 1, layerConfigs[i].name)
+            if (sublayerConfigs != 0) {
+                expandLayers(sublayerConfigs, level + 1, layerConfigs[i].name)
             }
         }
     }
     //Get the current layers sublayers (returns 0 if none)
-    function getSublayers(d) {
-        //If object d has a sublayers property, return it
-        if (d.hasOwnProperty('sublayers')) {
-            return d.sublayers
+    function getSublayers(layerConfig) {
+        //If object layerConfig has a sublayers property, return it
+        if (layerConfig.hasOwnProperty('sublayers')) {
+            return layerConfig.sublayers
         }
         //Otherwise return 0
         return 0

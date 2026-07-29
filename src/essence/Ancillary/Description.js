@@ -854,7 +854,7 @@ const Description = {
         })
     },
     _featureNavTimeUpdate(layerName, feature, bounds, cb) {
-        const layerData = Description.L_.layers.data[layerName]
+        const layerConfig = Description.L_.layers.data[layerName]
 
         // Make sure feature geometry is within screen bounds,
         // If not, we pan to is regardless of the checkbox
@@ -870,11 +870,11 @@ const Description = {
         // Next adjust time
         let startTime
         let endTime
-        if (layerData.time.startProp) {
-            startTime = F_.getIn(feature.properties, layerData.time.startProp)
+        if (layerConfig.time.startProp) {
+            startTime = F_.getIn(feature.properties, layerConfig.time.startProp)
         }
-        if (layerData.time.endProp) {
-            endTime = F_.getIn(feature.properties, layerData.time.endProp)
+        if (layerConfig.time.endProp) {
+            endTime = F_.getIn(feature.properties, layerConfig.time.endProp)
         }
         const currentStart = new Date(TimeControl.getStartTime()).getTime()
         const currentEnd = new Date(TimeControl.getEndTime()).getTime()
@@ -917,10 +917,10 @@ const Description = {
 
         // Ignore the next dynamicExtent move thresholds
         if (
-            layerData.variables?.dynamicExtent === true &&
-            layerData.variables?.dynamicExtentMoveThreshold != null
+            layerConfig.variables?.dynamicExtent === true &&
+            layerConfig.variables?.dynamicExtentMoveThreshold != null
         )
-            layerData._ignoreDynamicExtentMoveThreshold = true
+            layerConfig._ignoreDynamicExtentMoveThreshold = true
         // Disable active feature so that the layer reload doesn't reselect it
         Description.L_.setActiveFeature(null)
         TimeControl.setTime(nextStart, nextEnd)
@@ -938,22 +938,22 @@ const Description = {
 
         let infos = []
 
-        for (let layer in this.L_.layers.data) {
-            let layerConfig = this.L_.layers.data[layer]
+        for (let layerName in this.L_.layers.data) {
+            let layerConfig = this.L_.layers.data[layerName]
             if (
-                this.L_.layers.on[layer] === true &&
-                this.L_.layers.layer[layer] &&
+                this.L_.layers.on[layerName] === true &&
+                this.L_.layers.layer[layerName] &&
                 layerConfig.hasOwnProperty('variables') &&
                 layerConfig.variables.hasOwnProperty('info') &&
                 layerConfig.variables.info.hasOwnProperty('length')
             ) {
-                let layers = this.L_.layers.layer[layer]._layers
+                let layers = this.L_.layers.layer[layerName]._layers
 
                 if (
                     Object.keys(layers).length === 0 &&
-                    this.L_.layers.data[layer].variables.dynamicExtent
+                    this.L_.layers.data[layerName].variables.dynamicExtent
                 ) {
-                    let geodatasetName = this.L_.layers.data[layer].url
+                    let geodatasetName = this.L_.layers.data[layerName].url
                     if (
                         skipRequery !== true &&
                         geodatasetName.indexOf('geodatasets:') === 0
