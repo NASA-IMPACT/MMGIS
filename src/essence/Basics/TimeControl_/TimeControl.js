@@ -398,13 +398,13 @@ var TimeControl = {
                     // the default source.
                     const {
                         url: resolvedUrl,
-                        splitColonType,
+                        tileSourceType,
                         tileFormat,
                     } = tileSource
 
                     const tileOptions = buildTileUrlOptions(
                         layer,
-                        splitColonType,
+                        tileSourceType,
                         tileFormat
                     )
 

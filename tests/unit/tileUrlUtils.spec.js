@@ -183,7 +183,7 @@ describe('tileUrlUtils', () => {
             const o = buildTileUrlOptions({ name: 'x' }, 'COG')
             expect(o.starttime).toBe('')
             expect(o.endtime).toBe('')
-            expect(o.splitColonType).toBe('COG')
+            expect(o.tileSourceType).toBe('COG')
         })
         test('resolves tileFormat from tms', () => {
             expect(buildTileUrlOptions({ tms: false }, undefined).tileFormat).toBe('wmts')
@@ -365,7 +365,7 @@ describe('tileUrlUtils', () => {
         )
 
         test('carries every key compileTileUrl reads', () => {
-            expect(opts.splitColonType).toBe('COG')
+            expect(opts.tileSourceType).toBe('COG')
             expect(opts.time).toBe('2024-03-04T00:00:00Z')
             expect(opts.tileFormat).toBe('tms')
             expect(opts.cogTransform).toBe(true)
@@ -387,10 +387,10 @@ describe('tileUrlUtils', () => {
                 'currentCogMin',
                 'customTimes',
                 'endtime',
-                'splitColonType',
                 'stacMosaicLimits',
                 'starttime',
                 'tileFormat',
+                'tileSourceType',
                 'time',
             ])
         })

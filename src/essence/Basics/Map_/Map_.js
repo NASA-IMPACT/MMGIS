@@ -1543,7 +1543,7 @@ async function makeTileLayer(layerObj, targetMapContext = null) {
     // Shared with TimeControl.reloadLayer so creation and time-driven reloads
     // resolve the same source and tile format.
     const tileSource = resolveTileLayerSource(layerObj)
-    const { splitColonType, tileElevation, tileFormat } = tileSource
+    const { tileSourceType, tileElevation, tileFormat } = tileSource
     let layerUrl = tileSource.url
 
     syncTileFormatToConfig(layerObj, tileSource)
@@ -1566,7 +1566,7 @@ async function makeTileLayer(layerObj, targetMapContext = null) {
         // would normally add per-tile in getTileUrl.
         layerUrl = compileTileUrl(
             layerUrl,
-            buildTileUrlOptions(layerObj, splitColonType, tileFormat)
+            buildTileUrlOptions(layerObj, tileSourceType, tileFormat)
         )
 
         mapContext.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
@@ -1585,7 +1585,7 @@ async function makeTileLayer(layerObj, targetMapContext = null) {
 
     // Same builder the DeckGL path uses, so both engines see identical,
     // already-formatted time values from the moment the layer is created.
-    const tileOptions = buildTileUrlOptions(layerObj, splitColonType, tileFormat)
+    const tileOptions = buildTileUrlOptions(layerObj, tileSourceType, tileFormat)
 
     mapContext.layerRegistry.layer[layerObj.name] = L.tileLayer.colorFilter(layerUrl, {
         // Tile-URL options, spread from the same builder TimeControl passes to

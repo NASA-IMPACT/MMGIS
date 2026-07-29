@@ -60,7 +60,7 @@ export function formatLayerTime(format?: string): (time: unknown) => string {
  */
 export function buildTileUrlOptions(
     layerObj: Record<string, any>,
-    splitColonType?: string,
+    tileSourceType?: string,
     tileFormat?: string
 ): Record<string, any> {
     const timeConfig = layerObj.time || {}
@@ -81,7 +81,7 @@ export function buildTileUrlOptions(
               }
 
     return {
-        splitColonType,
+        tileSourceType,
         time: formattedEnd,
         starttime: formattedStart,
         endtime: formattedEnd,
@@ -206,9 +206,9 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 
     // 2. STAC/COG datetime parameters
     if (
-        options.splitColonType === 'stac-collection' ||
-        options.splitColonType === 'COG' ||
-        options.splitColonType === 'titiler-url'
+        options.tileSourceType === 'stac-collection' ||
+        options.tileSourceType === 'COG' ||
+        options.tileSourceType === 'titiler-url'
     ) {
         // Times arrive already formatted (see buildTileUrlOptions). Empty string
         // means "no time configured" — `!= null` would treat '' as a real value
@@ -221,7 +221,7 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
             nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}datetime=${datetime}`
         }
 
-        if (options.splitColonType === 'stac-collection') {
+        if (options.tileSourceType === 'stac-collection') {
             nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}exitwhenfull=false&skipcovered=false`
         }
 

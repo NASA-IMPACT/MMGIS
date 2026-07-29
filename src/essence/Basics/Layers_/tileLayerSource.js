@@ -64,7 +64,7 @@ export function getTileLevelElevation(level) {
  * syncTileFormatToConfig's job.
  *
  * @param {object} layerObj - Layer config from the mission JSON.
- * @returns {{url: string, sourceUrl: string, splitColonType: (string|undefined), tileElevation: (number|undefined), tileFormat: string}}
+ * @returns {{url: string, sourceUrl: string, tileSourceType: (string|undefined), tileElevation: (number|undefined), tileFormat: string}}
  */
 export function resolveTileLayerSource(layerObj) {
     const tileLevel = getActiveTileLevel(layerObj)
@@ -72,17 +72,17 @@ export function resolveTileLayerSource(layerObj) {
     const tileElevation = getTileLevelElevation(tileLevel)
 
     let url = L_.getUrl(layerObj.type, sourceUrl, layerObj)
-    let splitColonType
+    let tileSourceType
 
     const splitColonLayerUrl = (sourceUrl || '').split(':')
     if (splitColonLayerUrl[1] != null) {
         switch (splitColonLayerUrl[0]) {
             case 'stac-collection':
-                splitColonType = splitColonLayerUrl[0]
+                tileSourceType = splitColonLayerUrl[0]
                 url = L_.transformStacUrl(sourceUrl, layerObj, 'tile')
                 break
             case 'COG':
-                splitColonType = splitColonLayerUrl[0]
+                tileSourceType = splitColonLayerUrl[0]
                 // L_.getUrl resolved the COG file's URL; TiTiler wraps it.
                 // An expression takes precedence over bands, so bands are only
                 // passed along when no expression is configured.
@@ -101,7 +101,7 @@ export function resolveTileLayerSource(layerObj) {
                 // is. Deliberately not routed through L_.getUrl — that would
                 // wrap cross-origin URLs in the dev corsproxy, which tile
                 // <img> requests neither need nor work through.
-                splitColonType = splitColonLayerUrl[0]
+                tileSourceType = splitColonLayerUrl[0]
                 url = splitColonLayerUrl.slice(1).join(':')
                 if (!F_.isUrlAbsolute(url)) url = L_.missionPath + url
                 break
@@ -113,11 +113,11 @@ export function resolveTileLayerSource(layerObj) {
     // A STAC mosaic is only served as wmts tiles; everything else keeps the
     // layer's configured format.
     const tileFormat =
-        splitColonType === 'stac-collection'
+        tileSourceType === 'stac-collection'
             ? 'wmts'
             : resolveTileFormat(layerObj)
 
-    return { url, sourceUrl, splitColonType, tileElevation, tileFormat }
+    return { url, sourceUrl, tileSourceType, tileElevation, tileFormat }
 }
 
 /**
@@ -127,6 +127,6 @@ export function resolveTileLayerSource(layerObj) {
  * @param {object} layerObj - Layer config from the mission JSON.
  * @param {object} tileSource - Result of resolveTileLayerSource.
  */
-export function syncTileFormatToConfig(layerObj, { splitColonType, tileFormat }) {
-    if (splitColonType === 'stac-collection') layerObj.tileformat = tileFormat
+export function syncTileFormatToConfig(layerObj, { tileSourceType, tileFormat }) {
+    if (tileSourceType === 'stac-collection') layerObj.tileformat = tileFormat
 }

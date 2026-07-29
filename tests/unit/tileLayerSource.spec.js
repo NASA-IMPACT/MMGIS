@@ -112,13 +112,13 @@ describe('resolveTileLayerSource', () => {
     })
 
     describe('service prefixes', () => {
-        test('plain templates pass through with no splitColonType', () => {
-            const { url, splitColonType } = resolveTileLayerSource({
+        test('plain templates pass through with no tileSourceType', () => {
+            const { url, tileSourceType } = resolveTileLayerSource({
                 type: 'tile',
                 url: 'https://t/{z}/{x}/{y}.png',
             })
             expect(url).toBe('resolved(https://t/{z}/{x}/{y}.png)')
-            expect(splitColonType).toBeUndefined()
+            expect(tileSourceType).toBeUndefined()
         })
 
         test('stac-collection transforms the URL and resolves wmts', () => {
@@ -126,9 +126,9 @@ describe('resolveTileLayerSource', () => {
                 type: 'tile',
                 url: 'stac-collection:mycollection',
             }
-            const { url, splitColonType, tileFormat } =
+            const { url, tileSourceType, tileFormat } =
                 resolveTileLayerSource(layer)
-            expect(splitColonType).toBe('stac-collection')
+            expect(tileSourceType).toBe('stac-collection')
             expect(url).toBe('stac(stac-collection:mycollection)')
             expect(tileFormat).toBe('wmts')
             // The resolver never writes to the layer config; that is
@@ -139,7 +139,7 @@ describe('resolveTileLayerSource', () => {
         test('a stac-collection tile level transforms the LEVEL url, not the layer url', () => {
             // transformStacUrl no-ops on a non-STAC URL, so resolving
             // layerObj.url here would yield a plain URL tagged as STAC.
-            const { url, splitColonType, tileFormat } = resolveTileLayerSource({
+            const { url, tileSourceType, tileFormat } = resolveTileLayerSource({
                 type: 'tile',
                 url: 'https://plain/{z}/{x}/{y}.png',
                 currentTileLevel: 'stac',
@@ -149,7 +149,7 @@ describe('resolveTileLayerSource', () => {
                     ],
                 },
             })
-            expect(splitColonType).toBe('stac-collection')
+            expect(tileSourceType).toBe('stac-collection')
             expect(url).toBe('stac(stac-collection:levelcollection)')
             expect(tileFormat).toBe('wmts')
         })
@@ -167,13 +167,13 @@ describe('resolveTileLayerSource', () => {
         })
 
         test('COG wraps the resolved file URL in TiTiler', () => {
-            const { url, splitColonType } = resolveTileLayerSource({
+            const { url, tileSourceType } = resolveTileLayerSource({
                 type: 'tile',
                 url: 'COG:data/x.tif',
                 cogBands: [1, 2, 3],
                 cogResampling: 'bilinear',
             })
-            expect(splitColonType).toBe('COG')
+            expect(tileSourceType).toBe('COG')
             expect(url).toBe(
                 'titiler(resolved(COG:data/x.tif);bands=[1,2,3];resampling=bilinear)'
             )
@@ -200,11 +200,11 @@ describe('resolveTileLayerSource', () => {
         })
 
         test('titiler-url strips the prefix and keeps an absolute URL as is', () => {
-            const { url, splitColonType } = resolveTileLayerSource({
+            const { url, tileSourceType } = resolveTileLayerSource({
                 type: 'tile',
                 url: 'titiler-url:https://titiler/tiles/{z}/{x}/{y}?url=x.tif',
             })
-            expect(splitColonType).toBe('titiler-url')
+            expect(tileSourceType).toBe('titiler-url')
             // Deliberately not routed through L_.getUrl — see the module note.
             expect(url).toBe('https://titiler/tiles/{z}/{x}/{y}?url=x.tif')
         })
@@ -218,16 +218,16 @@ describe('resolveTileLayerSource', () => {
         })
 
         test('an unrecognized prefix falls through untouched', () => {
-            const { url, splitColonType } = resolveTileLayerSource({
+            const { url, tileSourceType } = resolveTileLayerSource({
                 type: 'tile',
                 url: 'https://t/{z}/{x}/{y}.png',
             })
-            expect(splitColonType).toBeUndefined()
+            expect(tileSourceType).toBeUndefined()
             expect(url).toBe('resolved(https://t/{z}/{x}/{y}.png)')
         })
 
         test('the prefix is read from the active tile level, not the layer url', () => {
-            const { url, splitColonType } = resolveTileLayerSource({
+            const { url, tileSourceType } = resolveTileLayerSource({
                 type: 'tile',
                 url: 'https://plain/{z}/{x}/{y}.png',
                 currentTileLevel: 'cog',
@@ -235,7 +235,7 @@ describe('resolveTileLayerSource', () => {
                     tileLevels: [{ value: 'cog', url: 'COG:data/x.tif' }],
                 },
             })
-            expect(splitColonType).toBe('COG')
+            expect(tileSourceType).toBe('COG')
             expect(url).toContain('titiler(')
         })
     })
