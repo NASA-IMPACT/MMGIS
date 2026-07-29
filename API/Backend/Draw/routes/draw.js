@@ -470,12 +470,12 @@ const _templateConform = (req, from) => {
           const existingProperties = JSON.parse(req.body.properties || "{}");
           const templaterProperties = {};
 
-          template.forEach((t, idx) => {
-            switch (t.type) {
+          template.forEach((templateField, idx) => {
+            switch (templateField.type) {
               case "incrementer":
                 const nextIncrement = _getNextIncrement(
-                  existingProperties[t.field],
-                  t,
+                  existingProperties[templateField.field],
+                  templateField,
                   geojson.features,
                   existingProperties,
                   from
@@ -483,7 +483,9 @@ const _templateConform = (req, from) => {
                 if (nextIncrement.error != null) {
                   reject(nextIncrement.error);
                   return;
-                } else templaterProperties[t.field] = nextIncrement.newValue;
+                } else
+                  templaterProperties[templateField.field] =
+                    nextIncrement.newValue;
                 break;
               default:
             }
@@ -499,7 +501,12 @@ const _templateConform = (req, from) => {
       },
     });
 
-    function _getNextIncrement(value, t, layer, existingProperties) {
+    function _getNextIncrement(
+      value,
+      templateField,
+      features,
+      existingProperties
+    ) {
       if (value == null) return 0;
 
       const response = {
@@ -508,15 +515,15 @@ const _templateConform = (req, from) => {
       };
 
       let usedValues = [];
-      const split = (t._default || t.default).split("#");
+      const split = (templateField._default || templateField.default).split("#");
       const start = split[0];
       const end = split[1];
 
-      for (let i = 0; i < layer.length; i++) {
-        if (layer[i] == null) continue;
-        let geojson = layer[i];
-        if (geojson?.properties?.[t.field] != null) {
-          let featuresVal = geojson?.properties?.[t.field];
+      for (let i = 0; i < features.length; i++) {
+        if (features[i] == null) continue;
+        let feature = features[i];
+        if (feature?.properties?.[templateField.field] != null) {
+          let featuresVal = feature?.properties?.[templateField.field];
 
           featuresVal = featuresVal.replace(start, "").replace(end, "");
 
@@ -547,19 +554,19 @@ const _templateConform = (req, from) => {
           // Need to distinguish between editing an existing feature vs adding a new one
           let hasCollision = false;
 
-          if (existingProperties[t.field] === response.newValue) {
+          if (existingProperties[templateField.field] === response.newValue) {
             // Value didn't change from what was sent by frontend
             // Count occurrences excluding this feature's UUID
             let count = 0;
-            for (let i = 0; i < layer.length; i++) {
-              if (layer[i] == null) continue;
-              let geojson = layer[i];
-              if (geojson?.properties?.[t.field] != null) {
-                let featuresVal = geojson?.properties?.[t.field];
+            for (let i = 0; i < features.length; i++) {
+              if (features[i] == null) continue;
+              let feature = features[i];
+              if (feature?.properties?.[templateField.field] != null) {
+                let featuresVal = feature?.properties?.[templateField.field];
                 let extractedVal = parseInt(featuresVal.replace(start, "").replace(end, ""));
                 // Count this occurrence only if it's a DIFFERENT feature (different UUID)
                 if (extractedVal === numVal &&
-                    geojson?.properties?.uuid !== existingProperties.uuid) {
+                    feature?.properties?.uuid !== existingProperties.uuid) {
                   count++;
                 }
               }
@@ -593,7 +600,7 @@ const _templateConform = (req, from) => {
       // Check that the field still matches the surrounding string
       const incRegex = new RegExp(`^${start}\\d+${end}$`);
       if (incRegex.test(response.newValue) == false) {
-        response.error = `Incrementing field: '${t.field}' must follow syntax: '${start}{#}${end}'`;
+        response.error = `Incrementing field: '${templateField.field}' must follow syntax: '${start}{#}${end}'`;
       }
 
       return response;

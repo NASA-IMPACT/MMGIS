@@ -148,7 +148,7 @@ function get(reqtype, req, res, next) {
             cols.push("feature_id");
           cols = cols.join(", ");
 
-          let q = `SELECT${distinct} ${properties}, ST_AsGeoJSON(geom), ${cols} FROM ${Utils.forceAlphaNumUnder(
+          let sql = `SELECT${distinct} ${properties}, ST_AsGeoJSON(geom), ${cols} FROM ${Utils.forceAlphaNumUnder(
             table
           )}`;
 
@@ -159,7 +159,7 @@ function get(reqtype, req, res, next) {
           let maxy = req.query?.maxy;
           if (minx != null && miny != null && maxx != null && maxy != null) {
             // ST_MakeEnvelope is (xmin, ymin, xmax, ymax, srid)
-            q += ` WHERE ST_Intersects(ST_MakeEnvelope(${Utils.forceAlphaNumUnder(
+            sql += ` WHERE ST_Intersects(ST_MakeEnvelope(${Utils.forceAlphaNumUnder(
               parseFloat(minx)
             )}, ${Utils.forceAlphaNumUnder(
               parseFloat(miny)
@@ -174,9 +174,9 @@ function get(reqtype, req, res, next) {
           let end_time = "";
           if (req.query?.endtime != null) {
             const format = req.query?.format || "YYYY-MM-DDTHH:MI:SSZ";
-            let t = ` `;
-            if (!hasBounds) t += `WHERE `;
-            else t += `AND `;
+            let timeClause = ` `;
+            if (!hasBounds) timeClause += `WHERE `;
+            else timeClause += `AND `;
 
             if (
               req.query?.starttime == null ||
@@ -202,7 +202,7 @@ function get(reqtype, req, res, next) {
             );
             endProp = Utils.forceAlphaNumUnder(req.query.endProp || endProp);
             // prettier-ignore
-            t += [
+            timeClause += [
               `((`,
                 `${startProp} IS NOT NULL AND ${endProp} IS NOT NULL AND`, 
                   ` ${startProp} >= ${start_time}`,
@@ -215,16 +215,16 @@ function get(reqtype, req, res, next) {
                   ` AND ${endProp} <= ${end_time}`,
               `))`
           ].join('')
-            q += t;
+            sql += timeClause;
           }
 
           if (get_group_id != null) {
-            q += `${
-              q.indexOf(" WHERE ") === -1 ? " WHERE " : " AND "
+            sql += `${
+              sql.indexOf(" WHERE ") === -1 ? " WHERE " : " AND "
             }group_id = :get_group_id`;
           } else if (get_id != null) {
-            q += `${
-              q.indexOf(" WHERE ") === -1 ? " WHERE " : " AND "
+            sql += `${
+              sql.indexOf(" WHERE ") === -1 ? " WHERE " : " AND "
             }id = :get_id`;
           }
 
@@ -253,11 +253,11 @@ function get(reqtype, req, res, next) {
             let currentGroupOp = null;
             let currentGroup = [];
 
-            filters.forEach((f, i) => {
-              if (f.isGroup === true) {
+            filters.forEach((filter, i) => {
+              if (filter.isGroup === true) {
                 if (
                   currentGroupOp != null &&
-                  currentGroupOp != f.op &&
+                  currentGroupOp != filter.op &&
                   currentGroup.length > 0
                 ) {
                   filterSQL.push(
@@ -277,9 +277,9 @@ function get(reqtype, req, res, next) {
                   );
                   currentGroup = [];
                 }
-                currentGroupOp = f.op;
+                currentGroupOp = filter.op;
               } else {
-                let fkey = f.key;
+                let fkey = filter.key;
                 let derivedKey = false;
                 if (fkey === "Latitude (Centroid)") {
                   fkey = `ST_Y(ST_Centroid(geom))`;
@@ -290,9 +290,9 @@ function get(reqtype, req, res, next) {
                 }
 
                 replacements[`filter_key_${i}`] = fkey;
-                replacements[`filter_value_${i}`] = f.value;
+                replacements[`filter_value_${i}`] = filter.value;
                 let op = "=";
-                switch (f.op) {
+                switch (filter.op) {
                   case ">":
                     op = ">";
                     break;
@@ -322,7 +322,7 @@ function get(reqtype, req, res, next) {
                 }
                 let value = "";
                 if (op === "IN") {
-                  const valueSplit = f.value.split("$");
+                  const valueSplit = filter.value.split("$");
                   const values = [];
                   valueSplit.forEach((v) => {
                     replacements[`filter_value_${i}_${v}`] = v;
@@ -330,19 +330,19 @@ function get(reqtype, req, res, next) {
                   });
                   value = `(${values.join(",")})`;
                 } else if (op === "LIKE") {
-                  if (f.op == "contains")
-                    replacements[`filter_value_${i}`] = `%${f.value}%`;
-                  else if (f.op == "beginswith")
-                    replacements[`filter_value_${i}`] = `${f.value}%`;
-                  else if (f.op == "endswith")
-                    replacements[`filter_value_${i}`] = `%${f.value}`;
+                  if (filter.op == "contains")
+                    replacements[`filter_value_${i}`] = `%${filter.value}%`;
+                  else if (filter.op == "beginswith")
+                    replacements[`filter_value_${i}`] = `${filter.value}%`;
+                  else if (filter.op == "endswith")
+                    replacements[`filter_value_${i}`] = `%${filter.value}`;
 
                   value = `:filter_value_${i}`;
                 } else {
-                  replacements[`filter_value_${i}`] = f.value;
+                  replacements[`filter_value_${i}`] = filter.value;
                   value = `:filter_value_${i}`;
                 }
-                if (f.type === "number" && op !== "LIKE") {
+                if (filter.type === "number" && op !== "LIKE") {
                   const q1 = `${
                     derivedKey === true
                       ? `${fkey}`
@@ -380,8 +380,8 @@ function get(reqtype, req, res, next) {
               );
             }
             if (filterSQL.length > 0)
-              q += `${
-                q.indexOf(" WHERE ") === -1 ? " WHERE " : " AND "
+              sql += `${
+                sql.indexOf(" WHERE ") === -1 ? " WHERE " : " AND "
               }${filterSQL.join(` AND `)}`;
           }
 
@@ -391,8 +391,8 @@ function get(reqtype, req, res, next) {
             spatialFilter?.radius != null
           ) {
             // prettier-ignore
-            q += `${
-              q.indexOf(" WHERE ") === -1 ? " WHERE " : " AND "
+            sql += `${
+              sql.indexOf(" WHERE ") === -1 ? " WHERE " : " AND "
             }ST_Intersects(
               geom,
               ST_Transform(
@@ -407,13 +407,13 @@ function get(reqtype, req, res, next) {
           }
 
           if (req.query?.limited) {
-            q += ` ORDER BY id DESC LIMIT 3;`;
+            sql += ` ORDER BY id DESC LIMIT 3;`;
           } else if (distinctField != null) {
-            q += ` ORDER BY ${distinctField}, id DESC;`;
-          } else q += ` ORDER BY id DESC;`;
+            sql += ` ORDER BY ${distinctField}, id DESC;`;
+          } else sql += ` ORDER BY id DESC;`;
 
           sequelize
-            .query(q, {
+            .query(sql, {
               replacements: replacements,
             })
             .then(([results]) => {
@@ -612,12 +612,12 @@ router.post("/intersect", function (req, res, next) {
           else distinct = ` DISTINCT ON (geom)`;
         }
 
-        let q = `SELECT${distinct} properties, ST_AsGeoJSON(geom) FROM ${Utils.forceAlphaNumUnder(
+        let sql = `SELECT${distinct} properties, ST_AsGeoJSON(geom) FROM ${Utils.forceAlphaNumUnder(
           table
         )}`;
 
         // Intersect
-        q += ` WHERE ST_Intersects(geom, ST_GeomFromGeoJSON(:intersect))`;
+        sql += ` WHERE ST_Intersects(geom, ST_GeomFromGeoJSON(:intersect))`;
 
         let startProp = "start_time";
         let start_time = "";
@@ -625,8 +625,8 @@ router.post("/intersect", function (req, res, next) {
         let end_time = "";
         if (req.body?.endtime != null) {
           const format = req.body?.format || "YYYY-MM-DDTHH:MI:SSZ";
-          let t = ` `;
-          t += `AND `;
+          let timeClause = ` `;
+          timeClause += `AND `;
 
           if (
             req.body?.starttime == null ||
@@ -650,9 +650,9 @@ router.post("/intersect", function (req, res, next) {
           startProp = Utils.forceAlphaNumUnder(req.body.startProp || startProp);
           endProp = Utils.forceAlphaNumUnder(req.body.endProp || endProp);
           // prettier-ignore
-          t += [
+          timeClause += [
               `((`,
-                `${startProp} IS NOT NULL AND ${endProp} IS NOT NULL AND`, 
+                `${startProp} IS NOT NULL AND ${endProp} IS NOT NULL AND`,
                   ` ${startProp} >= ${start_time}`,
                   ` AND ${endProp} <= ${end_time}`,
               `)`,
@@ -663,7 +663,7 @@ router.post("/intersect", function (req, res, next) {
                   ` AND ${endProp} <= ${end_time}`,
               `))`
           ].join('')
-          q += t;
+          sql += timeClause;
         }
 
         const replacements = {
@@ -677,10 +677,10 @@ router.post("/intersect", function (req, res, next) {
           end_time: end_time,
         };
 
-        q += `;`;
+        sql += `;`;
 
         sequelize
-          .query(q, {
+          .query(sql, {
             replacements: replacements,
           })
           .then(([results]) => {
@@ -747,7 +747,7 @@ router.get("/aggregations", function (req, res, next) {
     .then((result) => {
       if (result) {
         let table = result.dataValues.table;
-        let q = `SELECT properties FROM ${Utils.forceAlphaNumUnder(table)}`;
+        let sql = `SELECT properties FROM ${Utils.forceAlphaNumUnder(table)}`;
 
         let hasBounds = false;
         let minx = req.query?.minx;
@@ -756,7 +756,7 @@ router.get("/aggregations", function (req, res, next) {
         let maxy = req.query?.maxy;
         if (minx != null && miny != null && maxx != null && maxy != null) {
           // ST_MakeEnvelope is (xmin, ymin, xmax, ymax, srid)
-          q += ` WHERE ST_Intersects(ST_MakeEnvelope(${Utils.forceAlphaNumUnder(
+          sql += ` WHERE ST_Intersects(ST_MakeEnvelope(${Utils.forceAlphaNumUnder(
             parseFloat(minx)
           )}, ${Utils.forceAlphaNumUnder(
             parseFloat(miny)
@@ -771,9 +771,9 @@ router.get("/aggregations", function (req, res, next) {
         let end_time = "";
         if (req.query?.endtime != null) {
           const format = req.query?.format || "YYYY-MM-DDTHH:MI:SSZ";
-          let t = ` `;
-          if (!hasBounds) t += `WHERE `;
-          else t += `AND `;
+          let timeClause = ` `;
+          if (!hasBounds) timeClause += `WHERE `;
+          else timeClause += `AND `;
 
           if (
             req.query?.starttime == null ||
@@ -799,7 +799,7 @@ router.get("/aggregations", function (req, res, next) {
           );
           endProp = Utils.forceAlphaNumUnder(req.query.endProp || endProp);
           // prettier-ignore
-          t += [
+          timeClause += [
             `(`,
               `${startProp} IS NOT NULL AND ${endProp} IS NOT NULL AND`, 
                 ` ${startProp} >= ${start_time}`,
@@ -812,13 +812,13 @@ router.get("/aggregations", function (req, res, next) {
                 ` AND ${endProp} <= ${end_time}`,
             `)`
         ].join('')
-          q += t;
+          sql += timeClause;
         }
 
-        q += ` ORDER BY RANDOM() DESC LIMIT :limit;`;
+        sql += ` ORDER BY RANDOM() DESC LIMIT :limit;`;
 
         sequelize
-          .query(q, {
+          .query(sql, {
             replacements: {
               limit: req.query.limit != null ? parseInt(req.query.limit) : 500,
               startProp: startProp,
@@ -1055,7 +1055,7 @@ router.post("/search", function (req, res, next) {
             ? " AND geometry_type = :geomtype"
             : "";
 
-        let q =
+        let sql =
           `SELECT properties, ST_AsGeoJSON(geom), id FROM ${Utils.forceAlphaNumUnder(
             table
           )}` +
@@ -1066,7 +1066,7 @@ router.post("/search", function (req, res, next) {
             : ` WHERE properties ->> :key = :value${geomTypeWhere}`);
 
         sequelize
-          .query(q + ";", {
+          .query(sql + ";", {
             replacements: {
               orderBy: orderBy || "id",
               key: req.body.key,
@@ -1078,7 +1078,7 @@ router.post("/search", function (req, res, next) {
             },
           })
           .then(([results]) => {
-            let r = [];
+            let features = [];
             for (let i = 0; i < results.length; i++) {
               let properties = results[i].properties;
               properties._ = properties._ || {};
@@ -1087,12 +1087,12 @@ router.post("/search", function (req, res, next) {
               feature.type = "Feature";
               feature.properties = properties;
               feature.geometry = JSON.parse(results[i].st_asgeojson);
-              r.push(feature);
+              features.push(feature);
             }
 
             if (offset != null) {
               if (orderBy != "id") {
-                r.sort((a, b) => {
+                features.sort((a, b) => {
                   let sign = 1;
                   if (offset > 0) sign = -1;
                   const af = Utils.getIn(a, `properties.${orderBy}`, 0);
@@ -1103,14 +1103,19 @@ router.post("/search", function (req, res, next) {
                 });
               }
 
-              const rLen = r.length;
+              const featuresLen = features.length;
               if (origOffset === "first" || origOffset === "last") {
-                r = [r[rLen - 1]];
+                features = [features[featuresLen - 1]];
               } else {
-                for (let i = 0; i < rLen; i++) {
-                  if (r[i].properties._.idx === featureId) {
-                    r = [
-                      r[Math.min(Math.max(0, i + Math.abs(offset)), rLen - 1)],
+                for (let i = 0; i < featuresLen; i++) {
+                  if (features[i].properties._.idx === featureId) {
+                    features = [
+                      features[
+                        Math.min(
+                          Math.max(0, i + Math.abs(offset)),
+                          featuresLen - 1
+                        )
+                      ],
                     ]; //abs because we already sort differently by it
                     break;
                   }
@@ -1120,7 +1125,7 @@ router.post("/search", function (req, res, next) {
 
             res.send({
               status: "success",
-              body: r,
+              body: features,
             });
 
             return null;

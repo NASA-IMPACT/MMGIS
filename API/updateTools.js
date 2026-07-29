@@ -7,14 +7,14 @@ const { isLean } = require("./Backend/Utils/deploymentMode");
 function updateTools() {
   let tools = {};
 
-  let items = null;
+  let toolItems = null;
 
   // First read all the standard tools
   let toolsPath = "./src/essence/Tools";
   try {
-    items = fs.readdirSync(toolsPath, { withFileTypes: true });
+    toolItems = fs.readdirSync(toolsPath, { withFileTypes: true });
   } catch (err) {
-    items = [];
+    toolItems = [];
     logger(
       "warn",
       "Could not find any default tools: ${toolsPath}. Did you mean to do this?",
@@ -23,11 +23,11 @@ function updateTools() {
       err
     );
   }
-  items = items || [];
-  for (let i = 0; i < items.length; i++) {
+  toolItems = toolItems || [];
+  for (let i = 0; i < toolItems.length; i++) {
     let isDir = false;
     try {
-      isDir = items[i].isDirectory();
+      isDir = toolItems[i].isDirectory();
     } catch (err) {
       logger(
         "error",
@@ -40,19 +40,19 @@ function updateTools() {
     }
 
     // Lean deployments exclude the Draw tool entirely
-    if (isLean() && items[i].name === "Draw") continue;
+    if (isLean() && toolItems[i].name === "Draw") continue;
 
-    if (isDir && items[i].name[0] != "_" && items[i].name[0] != ".") {
+    if (isDir && toolItems[i].name[0] != "_" && toolItems[i].name[0] != ".") {
       try {
         const contents = fs.readFileSync(
-          toolsPath + "/" + items[i].name + "/config.json"
+          toolsPath + "/" + toolItems[i].name + "/config.json"
         );
         const jsonContent = JSON.parse(contents);
-        tools[items[i].name] = jsonContent;
+        tools[toolItems[i].name] = jsonContent;
       } catch (err) {
         logger(
           "error",
-          "The following tool could not be added: " + items[i].name,
+          "The following tool could not be added: " + toolItems[i].name,
           "Tools",
           null,
           err

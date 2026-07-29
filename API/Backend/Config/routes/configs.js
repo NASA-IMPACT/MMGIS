@@ -1292,7 +1292,10 @@ function removeLayer(req, res, next, cb) {
           );
 
           const unableToRemoveUUIDs = layerUUIDs.filter(
-            (i) => !removedUUIDs.map((x) => x.uuid).includes(i)
+            (uuid) =>
+              !removedUUIDs
+                .map((removedLayer) => removedLayer.uuid)
+                .includes(uuid)
           );
           if (didRemove) {
             upsert(
@@ -1327,8 +1330,10 @@ function removeLayer(req, res, next, cb) {
               },
               {
                 type: "removeLayer",
-                layerName: layerUUIDs.filter((i) =>
-                  removedUUIDs.map((x) => x.uuid).includes(i)
+                layerName: layerUUIDs.filter((uuid) =>
+                  removedUUIDs
+                    .map((removedLayer) => removedLayer.uuid)
+                    .includes(uuid)
                 ),
               }
             );
