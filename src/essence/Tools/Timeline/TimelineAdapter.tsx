@@ -236,6 +236,12 @@ export const TimelineAdapter: React.FC = () => {
         [startTime, endTime]
     )
 
+    // Live time while the scrubber is dragged: the header date follows along,
+    // but nothing is emitted until the drag is released.
+    const handleCurrentTimePreview = useCallback((newTime: Date) => {
+        setCurrentTime(newTime)
+    }, [])
+
     // Handle current date change
     const handleCurrentDateChange = useCallback(
         (newCurrent: Date) => {
@@ -395,6 +401,7 @@ export const TimelineAdapter: React.FC = () => {
                         timeMode={timeMode}
                         layers={layers}
                         onCurrentTimeChange={handleCurrentTimeChange}
+                        onCurrentTimePreview={handleCurrentTimePreview}
                         onResetZoomReady={handleResetZoomReady}
                     />
                 )}

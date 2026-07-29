@@ -88,6 +88,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 <button
                     ref={buttonRef}
                     className="date-selector-main-button"
+                    data-time-mode={timeMode}
                     onClick={handleDateClick}
                     type="button"
                 >

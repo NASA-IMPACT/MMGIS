@@ -102,6 +102,7 @@
     background: transparent;
     border: none;
     padding: 0;
+    margin-right: 8px;
     cursor: pointer;
     color: var(--color-disasters-primary-dark, #0d313d);
     transition: color 0.2s ease;
@@ -120,7 +121,26 @@
     font-size: 12px;
     font-weight: 700;
     white-space: nowrap;
+    text-align: left;
     color: var(--color-disasters-primary-dark, #0d313d);
+}
+
+/* Reserve enough room for the widest date each time mode can render, so the
+   divider and "Compare date" stay put as the date changes. */
+.date-selector-main-button[data-time-mode='YEAR'] .date-text {
+    min-width: 30px;
+}
+
+.date-selector-main-button[data-time-mode='MONTH'] .date-text {
+    min-width: 90px;
+}
+
+.date-selector-main-button[data-time-mode='DAY'] .date-text {
+    min-width: 90px;
+}
+
+.date-selector-main-button[data-time-mode='HOUR'] .date-text {
+    min-width: 136px;
 }
 
 .date-selector-divider {

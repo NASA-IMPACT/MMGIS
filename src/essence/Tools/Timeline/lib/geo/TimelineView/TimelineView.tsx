@@ -13,7 +13,10 @@ export interface TimelineViewProps {
     currentTime: Date
     timeMode: TimeMode
     layers: LayerTimeData[]
+    /** Committed time change — fires once the scrubber is released. */
     onCurrentTimeChange: (time: Date) => void
+    /** Live time while the scrubber is being dragged, for display only. */
+    onCurrentTimePreview?: (time: Date) => void
     onResetZoomReady?: (resetZoomFn: () => void) => void
 }
 
@@ -24,6 +27,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     timeMode,
     layers,
     onCurrentTimeChange,
+    onCurrentTimePreview,
     onResetZoomReady,
 }) => {
     const containerRef = useRef<HTMLDivElement>(null)
@@ -32,6 +36,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const topAxisRef = useRef<SVGGElement>(null)
     const scrubberRef = useRef<SVGGElement>(null)
     const [isDragging, setIsDragging] = useState(false)
+    // Where the scrubber sits mid-drag. The committed time only changes on mouse up.
+    const [dragTime, setDragTime] = useState<Date | null>(null)
+    // True once a drag has actually moved, so the trailing click doesn't re-seek.
+    const didDragRef = useRef(false)
     const [dimensions, setDimensions] = useState({ width: 800, height: 200 })
     const [zoomTransform, setZoomTransform] = useState(zoomIdentity)
 
@@ -127,6 +135,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                 [0, 0],
                 [dimensions.width, dimensions.height],
             ])
+            // Grabbing the scrubber drags it instead of panning the view.
+            .filter((event: any) => {
+                if (event.target?.closest?.('.timeline-scrubber-handle')) return false
+                return !event.ctrlKey && !event.button
+            })
             .on('zoom', (event) => {
                 setZoomTransform(event.transform)
             })
@@ -147,13 +160,21 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         }
     }, [dimensions, onResetZoomReady])
 
-    // Update scrubber position
-    const scrubberX = transformedXScale(currentTime)
+    // Update scrubber position — it follows the pointer while dragging
+    const scrubberTime = dragTime ?? currentTime
+    const scrubberX = transformedXScale(scrubberTime)
 
     // Handle scrubber drag
-    const handleScrubberMouseDown = useCallback(() => {
-        setIsDragging(true)
-    }, [])
+    const handleScrubberMouseDown = useCallback(
+        (event: React.MouseEvent) => {
+            event.preventDefault()
+            event.stopPropagation()
+            didDragRef.current = false
+            setDragTime(currentTime)
+            setIsDragging(true)
+        },
+        [currentTime]
+    )
 
     const handleMouseMove = useCallback(
         (event: MouseEvent) => {
@@ -164,14 +185,19 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
             const newTime = transformedXScale.invert(x)
             const clampedTime = clampDate(newTime, startTime, endTime)
 
-            onCurrentTimeChange(clampedTime)
+            didDragRef.current = true
+            setDragTime(clampedTime)
+            onCurrentTimePreview?.(clampedTime)
         },
-        [isDragging, transformedXScale, startTime, endTime, onCurrentTimeChange]
+        [isDragging, transformedXScale, startTime, endTime, onCurrentTimePreview]
     )
 
+    // Commit the date the scrubber landed on, once the drag ends
     const handleMouseUp = useCallback(() => {
+        if (didDragRef.current && dragTime) onCurrentTimeChange(dragTime)
+        setDragTime(null)
         setIsDragging(false)
-    }, [])
+    }, [dragTime, onCurrentTimeChange])
 
     useEffect(() => {
         if (isDragging) {
@@ -189,6 +215,11 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const handleTimelineClick = useCallback(
         (event: React.MouseEvent<SVGSVGElement>) => {
             if (isDragging) return
+            // A drag ends with a click on the svg; that click must not re-seek.
+            if (didDragRef.current) {
+                didDragRef.current = false
+                return
+            }
 
             const svgRect = event.currentTarget.getBoundingClientRect()
             const x = event.clientX - svgRect.left
@@ -278,7 +309,20 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 fill="#0b7a8a"
                                 stroke="#ffffff"
                                 strokeWidth="1.5"
-                                style={{ cursor: 'grab' }}
+                                className="timeline-scrubber-handle"
+                                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+                                onMouseDown={handleScrubberMouseDown}
+                            />
+
+                            {/* Invisible band widening the grab area along the line */}
+                            <rect
+                                x={scrubberX - 5}
+                                y={0}
+                                width={10}
+                                height={Math.max(totalLayersHeight, 16)}
+                                fill="transparent"
+                                className="timeline-scrubber-handle"
+                                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
                                 onMouseDown={handleScrubberMouseDown}
                             />
                         </g>

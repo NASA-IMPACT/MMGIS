@@ -299,11 +299,11 @@ window.mmgisAPI.on('feature:active', ({ layerName, feature }) => {
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `time:change` | `{ startTime, currentTime, endTime }` | Fired when time range changes |
+| `time:changed` | `{ startTime, currentTime, endTime }` | Fired after a time change is committed, carrying the new committed state. Pairs with `time:changeRequested` |
 | `time:toggleUI` | `{ active }` | Fired when time UI is shown/hidden |
 
 ```javascript
-window.mmgisAPI.on('time:change', ({ startTime, currentTime, endTime }) => {
+window.mmgisAPI.on('time:changed', ({ startTime, currentTime, endTime }) => {
     console.log(`Time range: ${startTime} - ${endTime}`)
 })
 ```
@@ -469,7 +469,7 @@ const MyPlugin = {
     init() {
         this._unsubscribers.push(
             window.mmgisAPI.on('layer:visibilityChange', this.handleLayerChange),
-            window.mmgisAPI.on('time:change', this.handleTimeChange)
+            window.mmgisAPI.on('time:changed', this.handleTimeChange)
         )
     },
 
