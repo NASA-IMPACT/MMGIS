@@ -71,7 +71,7 @@ L.IsochroneLayer = L.GridLayer.extend({
 
         const alpha = Math.floor(this.options.opacity * 255)
 
-        let di = 0 //img data index
+        let imgDataIndex = 0
         for (let y = 0; y < size.y; y++) {
             const yIndex = tYOffset * size.y + y
             for (let x = 0; x < size.x; x++) {
@@ -86,17 +86,17 @@ L.IsochroneLayer = L.GridLayer.extend({
                         this.options.color,
                         this.options.steps
                     )
-                    img.data[di] = color[0]
-                    img.data[di + 1] = color[1]
-                    img.data[di + 2] = color[2]
-                    img.data[di + 3] = alpha
+                    img.data[imgDataIndex] = color[0]
+                    img.data[imgDataIndex + 1] = color[1]
+                    img.data[imgDataIndex + 2] = color[2]
+                    img.data[imgDataIndex + 3] = alpha
                 } else {
-                    img.data[di] = 0
-                    img.data[di + 1] = 0
-                    img.data[di + 2] = 0
-                    img.data[di + 3] = 0
+                    img.data[imgDataIndex] = 0
+                    img.data[imgDataIndex + 1] = 0
+                    img.data[imgDataIndex + 2] = 0
+                    img.data[imgDataIndex + 3] = 0
                 }
-                di += 4
+                imgDataIndex += 4
             }
         }
 

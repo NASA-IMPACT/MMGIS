@@ -1040,17 +1040,20 @@ function featureDefaultClick(feature, layer, e) {
             }
         }
 
-        var str = ''
+        var searchFieldParamString = ''
         if (searchfields.hasOwnProperty(layer.options.layerName)) {
-            var sf = searchfields[layer.options.layerName] //sf for search field
-            for (var i = 0; i < sf.length; i++) {
-                str += sf[i][1]
-                str += ' '
+            var searchFieldPairs = searchfields[layer.options.layerName]
+            for (var i = 0; i < searchFieldPairs.length; i++) {
+                searchFieldParamString += searchFieldPairs[i][1]
+                searchFieldParamString += ' '
             }
         }
-        str = str.substring(0, str.length - 1)
+        searchFieldParamString = searchFieldParamString.substring(
+            0,
+            searchFieldParamString.length - 1
+        )
 
-        var searchFieldTokens = str.split(' ')
+        var searchFieldTokens = searchFieldParamString.split(' ')
         var searchStr
 
         if (searchFieldTokens.length == 2) {
@@ -1555,7 +1558,7 @@ async function makeTileLayer(layerObj, targetMapContext = null) {
             L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
         )
     }
-    layerUrl = await TimeControl.performTimeUrlReplacements(
+    layerUrl = await TimeControl.applyUrlReplacementsAndCacheBust(
         layerUrl,
         layerObj,
         null
@@ -1671,12 +1674,12 @@ function makeVectorTileLayer(layerObj, targetMapContext = null) {
     }
     let layerUrl = L_.getUrl(layerObj.type, layerObj.url, layerObj)
 
-    let urlSplit = layerObj.url.split(':')
+    let urlParts = layerObj.url.split(':')
 
-    if (urlSplit[0].toLowerCase() === 'geodatasets' && urlSplit[1] != null) {
+    if (urlParts[0].toLowerCase() === 'geodatasets' && urlParts[1] != null) {
         layerUrl =
             `${window.mmgisglobal.ROOT_PATH || ''}/api/geodatasets/get?layer=${
-                urlSplit[1]
+                urlParts[1]
             }` + '&type=mvt&x={x}&y={y}&z={z}'
     }
 

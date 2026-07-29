@@ -210,10 +210,12 @@ var QueryURL = {
 
             if (layersOn !== false) {
                 L_.initialLayersOn = layersOn
-                var arr = layersOn.split(',')
-                for (var l of arr) {
-                    let s = l.split('$')
-                    onLayers[s[0]] = { opacity: parseFloat(s[1]) }
+                var layerEntries = layersOn.split(',')
+                for (var l of layerEntries) {
+                    let nameAndOpacity = l.split('$')
+                    onLayers[nameAndOpacity[0]] = {
+                        opacity: parseFloat(nameAndOpacity[1]),
+                    }
                 }
             }
             //Turn the selected layer on too

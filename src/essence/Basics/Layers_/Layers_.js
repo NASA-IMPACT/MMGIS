@@ -336,11 +336,11 @@ const L_ = {
         if (!lowerUrl.startsWith('stac-collection:')) return url
 
         // Parse the STAC URL: stac-collection:collection_name?params
-        const splitColonUrl = url.split(':')
-        if (splitColonUrl.length < 2) return url
+        const stacUrlParts = url.split(':')
+        if (stacUrlParts.length < 2) return url
 
-        const splitParams = splitColonUrl[1].split('?')
-        const collectionName = splitParams[0]
+        const collectionNameAndParams = stacUrlParts[1].split('?')
+        const collectionName = collectionNameAndParams[0]
 
         // Build bands parameter (only if no expression exists)
         let bandsParam = ''

@@ -74,15 +74,15 @@ export function resolveTileLayerSource(layerObj) {
     let url = L_.getUrl(layerObj.type, sourceUrl, layerObj)
     let tileSourceType
 
-    const splitColonLayerUrl = (sourceUrl || '').split(':')
-    if (splitColonLayerUrl[1] != null) {
-        switch (splitColonLayerUrl[0]) {
+    const sourceUrlParts = (sourceUrl || '').split(':')
+    if (sourceUrlParts[1] != null) {
+        switch (sourceUrlParts[0]) {
             case 'stac-collection':
-                tileSourceType = splitColonLayerUrl[0]
+                tileSourceType = sourceUrlParts[0]
                 url = L_.transformStacUrl(sourceUrl, layerObj, 'tile')
                 break
             case 'COG':
-                tileSourceType = splitColonLayerUrl[0]
+                tileSourceType = sourceUrlParts[0]
                 // L_.getUrl resolved the COG file's URL; TiTiler wraps it.
                 // An expression takes precedence over bands, so bands are only
                 // passed along when no expression is configured.
@@ -101,8 +101,8 @@ export function resolveTileLayerSource(layerObj) {
                 // is. Deliberately not routed through L_.getUrl — that would
                 // wrap cross-origin URLs in the dev corsproxy, which tile
                 // <img> requests neither need nor work through.
-                tileSourceType = splitColonLayerUrl[0]
-                url = splitColonLayerUrl.slice(1).join(':')
+                tileSourceType = sourceUrlParts[0]
+                url = sourceUrlParts.slice(1).join(':')
                 if (!F_.isUrlAbsolute(url)) url = L_.missionPath + url
                 break
             default:

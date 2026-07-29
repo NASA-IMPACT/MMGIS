@@ -1009,9 +1009,9 @@ var Formulae_ = {
         depthTraversal(layers, 0, [])
         function depthTraversal(layerConfigs, depth, path) {
             for (var i = 0; i < layerConfigs.length; i++) {
-                const ret = onLayer(layerConfigs[i], path, i)
+                const layerAction = onLayer(layerConfigs[i], path, i)
 
-                if (ret === 'remove') {
+                if (layerAction === 'remove') {
                     layerConfigs.splice(i, 1)
                     i--
                 }

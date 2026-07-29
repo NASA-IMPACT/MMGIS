@@ -540,13 +540,13 @@ function upsert(req, res, next, cb, info) {
             }
 
             for (let i in infoLayerNames) {
-              const found = allNewUUIDs.findIndex(
+              const matchIndex = allNewUUIDs.findIndex(
                 (x) => x.name == infoLayerNames[i]
               );
-              if (found > -1) {
-                const result = allNewUUIDs[found];
-                infoLayerNames[i] = result.uuid;
-                allNewUUIDs.splice(found, 1);
+              if (matchIndex > -1) {
+                const matchedUuidEntry = allNewUUIDs[matchIndex];
+                infoLayerNames[i] = matchedUuidEntry.uuid;
+                allNewUUIDs.splice(matchIndex, 1);
               }
             }
 

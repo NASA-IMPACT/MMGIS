@@ -177,9 +177,9 @@ let ShadeTool = {
             $('.vstOptionTime input').val(
                 ShadeTool.parseToUTCTime(TimeControl.getEndTime(), true)
             )
-            const rawTime = ShadeTool.parseToUTCTime(TimeControl.getEndTime())
-            $('.vstOptionTime input').attr('raw', rawTime)
-            $('.vstOptionTime input').attr('title', rawTime)
+            const utcTime = ShadeTool.parseToUTCTime(TimeControl.getEndTime())
+            $('.vstOptionTime input').attr('raw', utcTime)
+            $('.vstOptionTime input').attr('title', utcTime)
             ShadeTool.updateObserverSpecificTime(id)
             // prettier-ignore
             if (
@@ -1809,7 +1809,7 @@ function interfaceWithMMGIS() {
         return
     }
 
-    const rawTime = ShadeTool.parseToUTCTime(TimeControl.getEndTime())
+    const utcTime = ShadeTool.parseToUTCTime(TimeControl.getEndTime())
     // prettier-ignore
     let markup = [
         "<div id='shadeTool'>",
@@ -1823,7 +1823,7 @@ function interfaceWithMMGIS() {
                 "<div class='vstOptionTime'>",
                     "<div class='flexbetween'>",
                         `<div class='vstClockIcon'><i class='mdi mdi-clock-outline mdi-18px'></i></div>`,
-                        `<input type='text' value='${ShadeTool.parseToUTCTime(TimeControl.getEndTime(), true)}' raw='${rawTime}' title='${rawTime}'>`,
+                        `<input type='text' value='${ShadeTool.parseToUTCTime(TimeControl.getEndTime(), true)}' raw='${utcTime}' title='${utcTime}'>`,
                     "</div>",
                 "</div>",
             "</div>",

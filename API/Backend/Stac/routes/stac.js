@@ -59,10 +59,10 @@ router.get("/collections", function (req, res, next) {
                 entry.occurrences[m.mission] =
                   entry.occurrences[m.mission] || [];
                 if (layer?.url != null) {
-                  const split = layer.url.split(":");
+                  const urlParts = layer.url.split(":");
                   if (
-                    split[0] === "stac-collection" &&
-                    split[1].split("?")[0] === entry.id
+                    urlParts[0] === "stac-collection" &&
+                    urlParts[1].split("?")[0] === entry.id
                   )
                     entry.occurrences[m.mission].push({
                       name: layer.name,

@@ -165,16 +165,16 @@ var LayersTool = {
         //Order layers from url
         if (L_.FUTURES.tools) {
             for (let t of L_.FUTURES.tools) {
-                const tUrl = t.split('$')
-                if (tUrl[0] === 'LayersTool') {
+                const toolStateParts = t.split('$')
+                if (toolStateParts[0] === 'LayersTool') {
                     LayersTool.orderingHistory = []
-                    const orderHistory = tUrl[1].split('.')
+                    const orderHistory = toolStateParts[1].split('.')
                     orderHistory.forEach((o) => {
-                        const oSplit = o.split('-')
+                        const orderTriple = o.split('-')
                         LayersTool.orderingHistory.push([
-                            parseInt(oSplit[0]),
-                            parseInt(oSplit[1]),
-                            parseInt(oSplit[2]),
+                            parseInt(orderTriple[0]),
+                            parseInt(orderTriple[1]),
+                            parseInt(orderTriple[2]),
                         ])
                     })
                     break
@@ -2037,15 +2037,15 @@ function interfaceWithMMGIS(fromInit) {
             }
         }
 
-        const urlSplitRaw = (layerData.url || '').split(':')
-        const urlSplit = (layerData.url || '').toLowerCase().split(':')
+        const urlParts = (layerData.url || '').split(':')
+        const urlPartsLower = (layerData.url || '').toLowerCase().split(':')
 
         if (extent === 'raw') {
-            if (urlSplit[0] === 'geodatasets') {
+            if (urlPartsLower[0] === 'geodatasets') {
                 calls.api(
                     'geodatasets_get',
                     {
-                        layer: urlSplitRaw[1],
+                        layer: urlParts[1],
                         type: 'geojson',
                     },
                     (data) => {

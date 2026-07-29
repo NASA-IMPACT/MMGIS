@@ -164,12 +164,12 @@ export function validateModernConfig(config) {
  *
  * @param {PanelConfig} panel - The panel config to validate
  * @param {number} index - Index in the panels array (for error messages)
- * @param {boolean} isFloat - Whether this is a floating panel (relaxes layoutType/priority requirements)
+ * @param {boolean} fromFloatingPanelsArray - Whether this is a floating panel (relaxes layoutType/priority requirements)
  * @returns {string[]} - Array of error messages
  */
-function validatePanelConfig(panel, index, isFloat = false) {
+function validatePanelConfig(panel, index, fromFloatingPanelsArray = false) {
     const errors = []
-    const prefix = isFloat ? `FloatingPanel[${index}]` : `Panel[${index}]`
+    const prefix = fromFloatingPanelsArray ? `FloatingPanel[${index}]` : `Panel[${index}]`
 
     if (!panel || typeof panel !== 'object') {
         errors.push(`${prefix}: Must be an object`)
@@ -196,14 +196,14 @@ function validatePanelConfig(panel, index, isFloat = false) {
         errors.push(
             `${prefix}: Must have a valid "position" (${VALID_POSITIONS.join(', ')})`
         )
-    } else if (isFloat && !FLOAT_POSITIONS.has(panel.position)) {
+    } else if (fromFloatingPanelsArray && !FLOAT_POSITIONS.has(panel.position)) {
         errors.push(
             `${prefix}: Floating panel position must be one of the float positions (float-top-left, float-top-center, etc.)`
         )
     }
 
     // Validate priority - optional for float panels
-    if (!isFloat) {
+    if (!fromFloatingPanelsArray) {
         if (panel.priority === undefined || panel.priority === null) {
             errors.push(`${prefix}: Must have a "priority"`)
         } else {
@@ -222,11 +222,11 @@ function validatePanelConfig(panel, index, isFloat = false) {
     }
 
     // layoutType is required for edge panels, optional for float panels
-    if (!isFloat && (!panel.layoutType || !VALID_LAYOUT_TYPES.includes(panel.layoutType))) {
+    if (!fromFloatingPanelsArray && (!panel.layoutType || !VALID_LAYOUT_TYPES.includes(panel.layoutType))) {
         errors.push(
             `${prefix}: Must have a valid "layoutType" (${VALID_LAYOUT_TYPES.join(', ')})`
         )
-    } else if (isFloat && panel.layoutType && !VALID_LAYOUT_TYPES.includes(panel.layoutType)) {
+    } else if (fromFloatingPanelsArray && panel.layoutType && !VALID_LAYOUT_TYPES.includes(panel.layoutType)) {
         errors.push(
             `${prefix}: "layoutType" must be one of: ${VALID_LAYOUT_TYPES.join(', ')}`
         )

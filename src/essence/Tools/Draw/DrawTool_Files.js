@@ -1948,14 +1948,14 @@ var Files = {
         dontUpdateSourceGeoJSON,
         forceReload
     ) {
-        let parsedId =
+        let targetFileId =
             typeof parseInt(id) === 'number' && !Array.isArray(id)
                 ? parseInt(id)
                 : 'master'
         //Can't refresh what isn't there
         if (
-            parsedId != 'master' &&
-            L_.layers.layer.hasOwnProperty('DrawTool_' + parsedId) == false
+            targetFileId != 'master' &&
+            L_.layers.layer.hasOwnProperty('DrawTool_' + targetFileId) == false
         )
             return
 
@@ -1963,12 +1963,12 @@ var Files = {
         const useDynamicExtent = DrawTool.dynamicExtent.enabled &&
                                   !forceGeoJSON &&
                                   !asPublished &&
-                                  parsedId !== 'master'
+                                  targetFileId !== 'master'
 
         if (useDynamicExtent) {
             // Use extent-based loading
             Files.reloadFileInExtent(
-                parsedId,
+                targetFileId,
                 time,
                 populateShapesAfter,
                 selectedFeatureIds,
@@ -1990,7 +1990,7 @@ var Files = {
                 {
                     geojson: forceGeoJSON,
                 },
-                parsedId,
+                targetFileId,
                 selectedFeatureIds,
                 dontUpdateSourceGeoJSON
             )
@@ -2001,7 +2001,7 @@ var Files = {
                     return function (data) {
                         renderFileFeatures(data, fileId, selectedFeatureIds)
                     }
-                })(parsedId, selectedFeatureIds)
+                })(targetFileId, selectedFeatureIds)
             )
         }
 
@@ -2284,10 +2284,10 @@ var Files = {
         dontUpdateSourceGeoJSON,
         forceReload
     ) {
-        const parsedId = fileId || 'master'
+        const targetFileId = fileId || 'master'
 
         // Check if already loading
-        if (DrawTool.dynamicExtent.isLoading[parsedId]) {
+        if (DrawTool.dynamicExtent.isLoading[targetFileId]) {
             return // Avoid duplicate requests
         }
 
@@ -2300,7 +2300,7 @@ var Files = {
         const mapCRS = Map_.projection?.epsg || 'EPSG:4326'
 
         // Check if we should reload based on move threshold (unless forceReload is true)
-        const lastLoc = DrawTool.dynamicExtent.lastRequestedLocation[parsedId]
+        const lastLoc = DrawTool.dynamicExtent.lastRequestedLocation[targetFileId]
         const moveThreshold = DrawTool.dynamicExtent.moveThreshold
 
         if (lastLoc != null && !forceReload) {
@@ -2321,11 +2321,11 @@ var Files = {
         }
 
         // Mark as loading
-        DrawTool.dynamicExtent.isLoading[parsedId] = true
+        DrawTool.dynamicExtent.isLoading[targetFileId] = true
 
         // Build request body with extent
         const body = {
-            id: JSON.stringify(parsedId),
+            id: JSON.stringify(targetFileId),
             time: time || Math.floor(Date.now()),
             minx: bounds.getWest(),
             miny: bounds.getSouth(),
@@ -2354,7 +2354,7 @@ var Files = {
         }
 
         // Store the requested extent and location
-        DrawTool.dynamicExtent.lastRequestedExtent[parsedId] = {
+        DrawTool.dynamicExtent.lastRequestedExtent[targetFileId] = {
             minx: body.minx,
             miny: body.miny,
             maxx: body.maxx,
@@ -2362,7 +2362,7 @@ var Files = {
             crs: mapCRS,
             timestamp: Date.now(),
         }
-        DrawTool.dynamicExtent.lastRequestedLocation[parsedId] = {
+        DrawTool.dynamicExtent.lastRequestedLocation[targetFileId] = {
             lng: center.lng,
             lat: center.lat,
         }
@@ -2370,7 +2370,7 @@ var Files = {
         // Make API request
         DrawTool.getFile(body, function(data) {
             // Mark as no longer loading
-            DrawTool.dynamicExtent.isLoading[parsedId] = false
+            DrawTool.dynamicExtent.isLoading[targetFileId] = false
 
             if (!data || !data.geojson) {
                 console.error('DrawTool: Failed to load features in extent')
@@ -2389,13 +2389,13 @@ var Files = {
             }
 
             // Check if we should show notification (file just turned on)
-            const previouslyTruncated = DrawTool.dynamicExtent.truncated[parsedId]
-            DrawTool.dynamicExtent.truncated[parsedId] = hitLimit
+            const previouslyTruncated = DrawTool.dynamicExtent.truncated[targetFileId]
+            DrawTool.dynamicExtent.truncated[targetFileId] = hitLimit
 
             // Show CursorInfo notification when file turns on and hits limit
             // Only show if this is a new truncation state (wasn't truncated before, or first time loading)
             if (hitLimit && !previouslyTruncated) {
-                const fileName = DrawTool.getFileObjectWithId(parsedId)?.file_name || 'file'
+                const fileName = DrawTool.getFileObjectWithId(targetFileId)?.file_name || 'file'
                 CursorInfo.update(
                     `Only showing top 1k features for ${fileName}`,
                     5000,
@@ -2411,7 +2411,7 @@ var Files = {
 
             // Render new features using existing renderFileFeatures logic
             if (dontUpdateSourceGeoJSON != true) {
-                DrawTool.fileGeoJSONFeatures[parsedId] = features
+                DrawTool.fileGeoJSONFeatures[targetFileId] = features
             }
 
             // Call the renderFileFeatures function from refreshFile with the loaded data
@@ -2425,7 +2425,7 @@ var Files = {
             const shouldPopulateShapes = populateShapesAfter || isShapesTabInOnscreenMode
 
             DrawTool.refreshFile(
-                parsedId,
+                targetFileId,
                 time,
                 shouldPopulateShapes,
                 selectedFeatureIds,

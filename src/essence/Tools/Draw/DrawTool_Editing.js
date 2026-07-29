@@ -1434,11 +1434,14 @@ var Editing = {
                             DrawTool.contextMenuLayers[selectionIndex].layer
                                 .feature.properties.annotation == true
                         ) {
-                            var p =
+                            var metaProps =
                                 DrawTool.contextMenuLayers[selectionIndex].layer
                                     .feature.properties._
                             $(
-                                '#DrawToolAnnotation_' + p.file_id + '_' + p.id
+                                '#DrawToolAnnotation_' +
+                                    metaProps.file_id +
+                                    '_' +
+                                    metaProps.id
                             ).css(
                                 'text-shadow',
                                 F_.getTextShadowString(
@@ -1534,11 +1537,14 @@ var Editing = {
                             DrawTool.contextMenuLayers[selectionIndex].layer
                                 .feature.properties.annotation == true
                         ) {
-                            var p =
+                            var metaProps =
                                 DrawTool.contextMenuLayers[selectionIndex].layer
                                     .feature.properties._
                             $(
-                                '#DrawToolAnnotation_' + p.file_id + '_' + p.id
+                                '#DrawToolAnnotation_' +
+                                    metaProps.file_id +
+                                    '_' +
+                                    metaProps.id
                             ).css(
                                 'text-shadow',
                                 F_.getTextShadowString(
@@ -1693,11 +1699,14 @@ var Editing = {
                             DrawTool.contextMenuLayers[selectionIndex].layer
                                 .feature.properties.annotation == true
                         ) {
-                            var p =
+                            var metaProps =
                                 DrawTool.contextMenuLayers[selectionIndex].layer
                                     .feature.properties._
                             $(
-                                '#DrawToolAnnotation_' + p.file_id + '_' + p.id
+                                '#DrawToolAnnotation_' +
+                                    metaProps.file_id +
+                                    '_' +
+                                    metaProps.id
                             ).css(
                                 'text-shadow',
                                 F_.getTextShadowString(
@@ -1743,10 +1752,15 @@ var Editing = {
                         DrawTool.contextMenuLayers[selectionIndex].layer.feature
                             .properties.annotation == true
                     ) {
-                        var p =
+                        var metaProps =
                             DrawTool.contextMenuLayers[selectionIndex].layer
                                 .feature.properties._
-                        $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).css(
+                        $(
+                            '#DrawToolAnnotation_' +
+                                metaProps.file_id +
+                                '_' +
+                                metaProps.id
+                        ).css(
                             'text-shadow',
                             F_.getTextShadowString(
                                 resetStyle.color,
@@ -1810,11 +1824,14 @@ var Editing = {
                             DrawTool.contextMenuLayers[selectionIndex].layer
                                 .feature.properties.annotation == true
                         ) {
-                            var p =
+                            var metaProps =
                                 DrawTool.contextMenuLayers[selectionIndex].layer
                                     .feature.properties._
                             $(
-                                '#DrawToolAnnotation_' + p.file_id + '_' + p.id
+                                '#DrawToolAnnotation_' +
+                                    metaProps.file_id +
+                                    '_' +
+                                    metaProps.id
                             ).css('color', newFillColor)
                         } else if (
                             DrawTool.contextMenuLayers[selectionIndex].layer
@@ -1853,10 +1870,15 @@ var Editing = {
                         DrawTool.contextMenuLayers[selectionIndex].layer.feature
                             .properties.annotation == true
                     ) {
-                        var p =
+                        var metaProps =
                             DrawTool.contextMenuLayers[selectionIndex].layer
                                 .feature.properties._
-                        $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).css(
+                        $(
+                            '#DrawToolAnnotation_' +
+                                metaProps.file_id +
+                                '_' +
+                                metaProps.id
+                        ).css(
                             'color',
                             resetStyle.fillColor
                         )
@@ -2375,8 +2397,13 @@ var Editing = {
             for (var selectionIndex in DrawTool.contextMenuLayers) {
                 var shapeLayer =
                     DrawTool.contextMenuLayers[selectionIndex].shape
-                var p = shapeLayer.feature.properties._
-                $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).css(
+                var metaProps = shapeLayer.feature.properties._
+                $(
+                    '#DrawToolAnnotation_' +
+                        metaProps.file_id +
+                        '_' +
+                        metaProps.id
+                ).css(
                     'font-size',
                     newFontSize
                 )
@@ -2417,8 +2444,13 @@ var Editing = {
             for (var selectionIndex in DrawTool.contextMenuLayers) {
                 var shapeLayer =
                     DrawTool.contextMenuLayers[selectionIndex].shape
-                var p = shapeLayer.feature.properties._
-                $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).css(
+                var metaProps = shapeLayer.feature.properties._
+                $(
+                    '#DrawToolAnnotation_' +
+                        metaProps.file_id +
+                        '_' +
+                        metaProps.id
+                ).css(
                     'transform',
                     `rotateZ(${
                         parseInt(!isNaN(newRotation) ? newRotation : 0) * -1
@@ -3158,8 +3190,13 @@ var Editing = {
             DrawTool.contextMenuLayer.feature.hasOwnProperty('properties') &&
             DrawTool.contextMenuLayer.feature.properties.annotation == true
         ) {
-            var p = DrawTool.contextMenuLayer.feature.properties._
-            $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).on(
+            var metaProps = DrawTool.contextMenuLayer.feature.properties._
+            $(
+                '#DrawToolAnnotation_' +
+                    metaProps.file_id +
+                    '_' +
+                    metaProps.id
+            ).on(
                 'mousedown',
                 DrawTool.cmLayerDown
             )
@@ -3191,8 +3228,13 @@ var Editing = {
             DrawTool.contextMenuLayer.feature.hasOwnProperty('properties') &&
             DrawTool.contextMenuLayer.feature.properties.annotation == true
         ) {
-            var p = DrawTool.contextMenuLayer.feature.properties._
-            $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).off(
+            var metaProps = DrawTool.contextMenuLayer.feature.properties._
+            $(
+                '#DrawToolAnnotation_' +
+                    metaProps.file_id +
+                    '_' +
+                    metaProps.id
+            ).off(
                 'mousedown',
                 DrawTool.cmLayerDown
             )

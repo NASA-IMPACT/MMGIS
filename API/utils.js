@@ -96,8 +96,8 @@ const Utils = {
     depthTraversal(layers, 0, []);
     function depthTraversal(layerConfigs, depth, path) {
       for (var i = 0; i < layerConfigs.length; i++) {
-        const ret = onLayer(layerConfigs[i], path, i);
-        if (ret === "remove") {
+        const layerAction = onLayer(layerConfigs[i], path, i);
+        if (layerAction === "remove") {
           const removed = layerConfigs.splice(i, 1);
           if (removed.length > 0) {
             // Find and store the UUIDs of the sublayers of the removed layer

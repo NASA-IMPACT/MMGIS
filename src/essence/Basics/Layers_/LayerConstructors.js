@@ -2081,10 +2081,11 @@ const pathGradient = (geojson, layerConfig, leafletLayerObject) => {
                         feature.geometry.coordinates,
                         (array, _path) => {
                             // Find breaks in the coordinate array to find sepearate features
-                            const splitPath = _path.split('.')
+                            const pathSegments = _path.split('.')
                             let parentIndex = null
-                            if (splitPath.length >= 2) {
-                                parentIndex = splitPath[splitPath.length - 2]
+                            if (pathSegments.length >= 2) {
+                                parentIndex =
+                                    pathSegments[pathSegments.length - 2]
                                 if (
                                     prevParentIndex != null &&
                                     parentIndex != prevParentIndex

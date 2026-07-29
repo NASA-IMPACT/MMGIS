@@ -95,19 +95,22 @@ var TimeControl = {
         // parseTimeWithOffset strips any " + N"/" - N" suffix, so compare the
         // parsed dateString (not the raw value) against 'now' — "now - 86400"
         // is a valid relative time, not an invalid date.
-        let dateAddSec = parseTimeWithOffset(rawEnd)
+        let timeWithOffset = parseTimeWithOffset(rawEnd)
         let initialEnd
-        if (dateAddSec.dateString != null && dateAddSec.dateString !== 'now') {
-            const dateStaged = new Date(dateAddSec.dateString)
-            if (isNaN(dateStaged.getTime())) {
+        if (
+            timeWithOffset.dateString != null &&
+            timeWithOffset.dateString !== 'now'
+        ) {
+            const parsedDate = new Date(timeWithOffset.dateString)
+            if (isNaN(parsedDate.getTime())) {
                 initialEnd = new Date()
                 console.warn(
                     "Invalid 'Initial End Time' provided. Defaulting to 'now'."
                 )
-            } else initialEnd = dateStaged
+            } else initialEnd = parsedDate
         } else initialEnd = new Date()
         initialEnd.setSeconds(
-            initialEnd.getSeconds() + dateAddSec.additionalSeconds
+            initialEnd.getSeconds() + timeWithOffset.additionalSeconds
         )
 
         // Initial start defaults to 1 month before the end time
@@ -119,27 +122,27 @@ var TimeControl = {
         if (rawStart == null)
             initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
         else {
-            dateAddSec = parseTimeWithOffset(rawStart)
+            timeWithOffset = parseTimeWithOffset(rawStart)
             // 'now' (optionally with an offset, e.g. "now - 86400") is valid
-            const dateStaged =
-                dateAddSec.dateString === 'now'
+            const parsedDate =
+                timeWithOffset.dateString === 'now'
                     ? new Date()
-                    : new Date(dateAddSec.dateString)
-            if (isNaN(dateStaged.getTime())) {
+                    : new Date(timeWithOffset.dateString)
+            if (isNaN(parsedDate.getTime())) {
                 initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
                 console.warn(
                     "Invalid 'Initial Start Time' provided. Defaulting to 1 month before the end time."
                 )
             } else {
-                dateStaged.setSeconds(
-                    dateStaged.getSeconds() + dateAddSec.additionalSeconds
+                parsedDate.setSeconds(
+                    parsedDate.getSeconds() + timeWithOffset.additionalSeconds
                 )
-                if (dateStaged.getTime() > initialEnd.getTime()) {
+                if (parsedDate.getTime() > initialEnd.getTime()) {
                     initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
                     console.warn(
                         "'Initial Start Time' cannot be later than the end time. Defaulting to 1 month before the end time."
                     )
-                } else initialStart = dateStaged
+                } else initialStart = parsedDate
             }
         }
 
@@ -372,13 +375,14 @@ var TimeControl = {
             : null
 
         if (tileSource) {
-            tileSource.url = await TimeControl.performTimeUrlReplacements(
-                tileSource.url,
-                layer,
-                forceRequery
-            )
+            tileSource.url =
+                await TimeControl.applyUrlReplacementsAndCacheBust(
+                    tileSource.url,
+                    layer,
+                    forceRequery
+                )
         } else {
-            layer.url = await TimeControl.performTimeUrlReplacements(
+            layer.url = await TimeControl.applyUrlReplacementsAndCacheBust(
                 layer.url,
                 layer,
                 forceRequery
@@ -536,7 +540,7 @@ var TimeControl = {
         if (layer.time && layer.time.enabled === true) layer.url = originalUrl
         return true
     },
-    performTimeUrlReplacements: async function (
+    applyUrlReplacementsAndCacheBust: async function (
         url,
         layer,
         forceRequery,

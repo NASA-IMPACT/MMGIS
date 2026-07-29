@@ -33,7 +33,7 @@ flowchart TD
 
     subgraph S1["Stage 1 — Source resolution (tileLayerSource.js)"]
         A --> B["active tile level → L_.getUrl / transformStacUrl<br/>strip prefix, absolutize"]
-        B --> C["base layerUrl + splitColonType"]
+        B --> C["base layerUrl + tileSourceType"]
     end
 
     subgraph S2["Stage 2 — buildTileUrlOptions (tileUrlUtils.ts)"]
@@ -62,7 +62,7 @@ the service prefix:
 | `titiler-url`     | strip prefix, absolutize against `L_.missionPath`         |
 | plain template    | falls through untouched                                   |
 
-Output: a real base `url`, the `splitColonType` (the stripped prefix, which
+Output: a real base `url`, the `tileSourceType` (the stripped prefix, which
 `compileTileUrl` later keys off of), the tile level's `tileElevation`, and the
 resolved `tileFormat` (forced to `wmts` for `stac-collection` sources).
 
@@ -77,10 +77,10 @@ resolved `tileFormat` (forced to `wmts` for `stac-collection` sources).
 > dropped the tile-level selection — a time change would swap the layer back to
 > its default source. Keep this single implementation.
 
-> **Note:** `makeTileLayer` calls `TimeControl.performTimeUrlReplacements(...)`
-> before the engine branch. Despite the name, it does **not** substitute the
-> `{time}` / `{starttime}` / `{endtime}` family into the tile template — that is
-> Stage 3's job alone. It does two unrelated things:
+> **Note:** `makeTileLayer` calls
+> `TimeControl.applyUrlReplacementsAndCacheBust(...)` before the engine branch.
+> It does two things, neither of which is time-token substitution — the
+> `{time}` / `{starttime}` / `{endtime}` family is Stage 3's job alone:
 >
 > 1. **Custom variable URL replacements** — for layers configured with
 >    `layer.variables.urlReplacements` where `on === 'timeChange'`. It `fetch`es
@@ -92,8 +92,7 @@ resolved `tileFormat` (forced to `wmts` for `stac-collection` sources).
 >
 > At creation it's called with `forceRequery = null`, so for a plain tile layer
 > with no `variables.urlReplacements` it's effectively a pass-through. It is
-> **not** part of the `buildTileUrlOptions` / `compileTileUrl` pair — don't
-> confuse it for Stage 3.
+> **not** part of the `buildTileUrlOptions` / `compileTileUrl` pair.
 
 ### Stage 2 — Option building (`buildTileUrlOptions`)
 

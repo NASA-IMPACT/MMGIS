@@ -177,7 +177,7 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
 export function compileTileUrl(url: string, options: Record<string, any>): string {
     if (!url) return url
 
-    let nextUrl = url
+    let compiledUrl = url
 
     const timeStr = options.time
     const startTimeStr = options.starttime
@@ -191,13 +191,13 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
     // that ordering for the three standard tokens (L.Util.template substitutes
     // them from `options` before this function is ever called); DeckGL has no
     // such step, so a placeholder inside a query string reached the server raw.
-    nextUrl = nextUrl.replace(/{time}/g, timeStr || '')
-    nextUrl = nextUrl.replace(/{starttime}/g, startTimeStr || '')
-    nextUrl = nextUrl.replace(/{endtime}/g, endTimeStr || '')
+    compiledUrl = compiledUrl.replace(/{time}/g, timeStr || '')
+    compiledUrl = compiledUrl.replace(/{starttime}/g, startTimeStr || '')
+    compiledUrl = compiledUrl.replace(/{endtime}/g, endTimeStr || '')
 
     if (options.customTimes?.times && options.customTimes.times.length > 0) {
         for (let i = 0; i < options.customTimes.times.length; i++) {
-            nextUrl = nextUrl.replace(
+            compiledUrl = compiledUrl.replace(
                 new RegExp(`{customtime.${i}}`, 'g'),
                 options.customTimes.times[i]
             )
@@ -218,46 +218,46 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
             datetime = startTimeStr ? `${startTimeStr}/${endTimeStr}` : `../${endTimeStr}`
         }
         if (datetime != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}datetime=${datetime}`
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}datetime=${datetime}`
         }
 
         if (options.tileSourceType === 'stac-collection') {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}exitwhenfull=false&skipcovered=false`
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}exitwhenfull=false&skipcovered=false`
         }
 
-        nextUrl = applyCogFieldsToUrl(nextUrl, options)
+        compiledUrl = applyCogFieldsToUrl(compiledUrl, options)
 
         // STAC mosaic limits arrive via buildTileUrlOptions, not globals.
         const limits = options.stacMosaicLimits
 
         if (limits?.itemLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}items_limit=${limits.itemLimit}`
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}items_limit=${limits.itemLimit}`
         }
         if (limits?.scanLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}scan_limit=${limits.scanLimit}`
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}scan_limit=${limits.scanLimit}`
         }
         if (limits?.timeLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}time_limit=${limits.timeLimit}`
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}time_limit=${limits.timeLimit}`
         }
     }
 
     // 3. TMS specific options
     if (timeStr && options.tileFormat === 'tms') {
-        let paramDelimiter = nextUrl.indexOf('?') === -1 ? '?' : '&'
-        const urlParams = nextUrl.indexOf('?') !== -1 ? new URLSearchParams(nextUrl.split('?')[1]) : null
+        let paramDelimiter = compiledUrl.indexOf('?') === -1 ? '?' : '&'
+        const urlParams = compiledUrl.indexOf('?') !== -1 ? new URLSearchParams(compiledUrl.split('?')[1]) : null
 
         if (!urlParams || !urlParams.has('starttime')) {
-            nextUrl += `${paramDelimiter}starttime=${startTimeStr}`
+            compiledUrl += `${paramDelimiter}starttime=${startTimeStr}`
             paramDelimiter = '&'
         }
         if (!urlParams || !urlParams.has('time')) {
-            nextUrl += `${paramDelimiter}time=${endTimeStr}`
+            compiledUrl += `${paramDelimiter}time=${endTimeStr}`
             paramDelimiter = '&'
         }
         if ((!urlParams || !urlParams.has('composite')) && options.compositeTile === true) {
-            nextUrl += `${paramDelimiter}composite=true`
+            compiledUrl += `${paramDelimiter}composite=true`
         }
     }
 
-    return nextUrl
+    return compiledUrl
 }

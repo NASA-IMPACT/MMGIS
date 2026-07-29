@@ -68,31 +68,31 @@ function get(reqtype, req, res, next) {
     if (req.query.group_id != null) get_group_id = req.query.group_id;
     if (req.query.id != null) get_id = req.query.id;
     if (req.query.filters != null) {
-      const filterSplit = req.query.filters.split(",");
+      const filterEntries = req.query.filters.split(",");
       filters = [];
-      filterSplit.forEach((f) => {
+      filterEntries.forEach((f) => {
         if (f === "OR" || f === "AND" || f === "NOT_AND" || f === "NOT_OR") {
           filters.push({
             isGroup: true,
             op: f,
           });
         } else {
-          const fSplit = f.split("+");
+          const filterParts = f.split("+");
           filters.push({
-            key: fSplit[0],
-            op: fSplit[1],
-            type: fSplit[2],
-            value: fSplit[3],
+            key: filterParts[0],
+            op: filterParts[1],
+            type: filterParts[2],
+            value: filterParts[3],
           });
         }
       });
     }
     if (req.query.spatialFilter != null) {
-      const spatialFilterSplit = req.query.spatialFilter.split(",");
+      const spatialFilterParts = req.query.spatialFilter.split(",");
       spatialFilter = {
-        lat: spatialFilterSplit[0],
-        lng: spatialFilterSplit[1],
-        radius: spatialFilterSplit[2],
+        lat: spatialFilterParts[0],
+        lng: spatialFilterParts[1],
+        radius: spatialFilterParts[2],
       };
     }
 
@@ -118,8 +118,8 @@ function get(reqtype, req, res, next) {
               .map((v, i) => {
                 if (["feature_id", "group_id"].indexOf(v) === -1) {
                   let toReturn = `:prop_${i}, properties`;
-                  const vSplit = v.split(".");
-                  vSplit.forEach((vs, idx) => {
+                  const pathSegments = v.split(".");
+                  pathSegments.forEach((vs, idx) => {
                     toReturn += ` -> :prop_${i}_${idx}`;
                   });
                   return toReturn;
@@ -239,8 +239,8 @@ function get(reqtype, req, res, next) {
 
           if (Array.isArray(_source)) {
             _source.forEach((v, i) => {
-              const vSplit = v.split(".");
-              vSplit.forEach((vs, idx) => {
+              const pathSegments = v.split(".");
+              pathSegments.forEach((vs, idx) => {
                 replacements[`prop_${i}_${idx}`] = vs;
               });
               replacements[`prop_${i}`] = v;

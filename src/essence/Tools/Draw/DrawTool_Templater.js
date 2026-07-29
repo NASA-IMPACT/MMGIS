@@ -1287,11 +1287,9 @@ const DrawTool_Templater = {
         }
 
         let usedValues = []
-        const split = (templateField._default || templateField.default).split(
-            '#'
-        )
-        const start = split[0]
-        const end = split[1]
+        const [prefix, suffix] = (
+            templateField._default || templateField.default
+        ).split('#')
 
         for (var i = 0; i < fileLayers.length; i++) {
             if (fileLayers[i] == null) continue
@@ -1300,32 +1298,40 @@ const DrawTool_Templater = {
                 fileLayers[i]._layers[Object.keys(fileLayers[i]._layers)[0]]
                     .feature
             if (geojson?.properties?.[templateField.field] != null) {
-                let featuresVal = geojson?.properties?.[templateField.field]
+                let existingFieldValue =
+                    geojson?.properties?.[templateField.field]
 
-                featuresVal = featuresVal.replace(start, '').replace(end, '')
+                existingFieldValue = existingFieldValue
+                    .replace(prefix, '')
+                    .replace(suffix, '')
 
-                if (featuresVal !== '#') {
-                    featuresVal = parseInt(featuresVal)
-                    usedValues.push(featuresVal)
+                if (existingFieldValue !== '#') {
+                    existingFieldValue = parseInt(existingFieldValue)
+                    usedValues.push(existingFieldValue)
                 }
             }
         }
 
         if ((response.newValue || '').indexOf('#') !== -1) {
             // Actually increment the incrementer for the first time
-            let bestVal = 0
+            let nextAvailableNumber = 0
             usedValues.sort(function (a, b) {
                 return a - b
             })
             usedValues = [...new Set(usedValues)] // makes it unique
             usedValues.forEach((v) => {
-                if (bestVal === v) bestVal++
+                if (nextAvailableNumber === v) nextAvailableNumber++
             })
-            response.newValue = response.newValue.replace('#', bestVal)
+            response.newValue = response.newValue.replace(
+                '#',
+                nextAvailableNumber
+            )
         } else if (existingProperties) {
-            let numVal = response.newValue.replace(start, '').replace(end, '')
-            if (numVal != '#') {
-                numVal = parseInt(numVal)
+            let requestedNumber = response.newValue
+                .replace(prefix, '')
+                .replace(suffix, '')
+            if (requestedNumber != '#') {
+                requestedNumber = parseInt(requestedNumber)
                 if (
                     existingProperties[templateField.field] ===
                     response.newValue
@@ -1333,22 +1339,22 @@ const DrawTool_Templater = {
                     // In case of a resave, make sure the id exists only once
                     let count = 0
                     usedValues.forEach((v) => {
-                        if (numVal === v) count++
+                        if (requestedNumber === v) count++
                     })
                     if (count > 1)
                         response.error = `Incrementing field: '${templateField.field}' is not unique`
                 } else {
                     // In case a manual change, make sure the id is unique
-                    if (usedValues.indexOf(numVal) !== -1)
+                    if (usedValues.indexOf(requestedNumber) !== -1)
                         response.error = `Incrementing field: '${templateField.field}' is not unique`
                 }
             }
         }
 
         // Check that the field still matches the surrounding string
-        const incRegex = new RegExp(`^${start}\\d+${end}$`)
+        const incRegex = new RegExp(`^${prefix}\\d+${suffix}$`)
         if (incRegex.test(response.newValue) == false) {
-            response.error = `Incrementing field: '${templateField.field}' must follow syntax: '${start}{#}${end}'`
+            response.error = `Incrementing field: '${templateField.field}' must follow syntax: '${prefix}{#}${suffix}'`
         }
 
         return response

@@ -515,40 +515,38 @@ const _templateConform = (req, from) => {
       };
 
       let usedValues = [];
-      const split = (templateField._default || templateField.default).split("#");
-      const start = split[0];
-      const end = split[1];
+      const [prefix, suffix] = (templateField._default || templateField.default).split("#");
 
       for (let i = 0; i < features.length; i++) {
         if (features[i] == null) continue;
         let feature = features[i];
         if (feature?.properties?.[templateField.field] != null) {
-          let featuresVal = feature?.properties?.[templateField.field];
+          let existingFieldValue = feature?.properties?.[templateField.field];
 
-          featuresVal = featuresVal.replace(start, "").replace(end, "");
+          existingFieldValue = existingFieldValue.replace(prefix, "").replace(suffix, "");
 
-          if (featuresVal !== "#") {
-            featuresVal = parseInt(featuresVal);
-            usedValues.push(featuresVal);
+          if (existingFieldValue !== "#") {
+            existingFieldValue = parseInt(existingFieldValue);
+            usedValues.push(existingFieldValue);
           }
         }
       }
 
       if ((response.newValue || "").indexOf("#") !== -1) {
         // Actually increment the incrementer for the first time
-        let bestVal = 0;
+        let nextAvailableNumber = 0;
         usedValues.sort(function (a, b) {
           return a - b;
         });
         usedValues = [...new Set(usedValues)]; // makes it unique
         usedValues.forEach((v) => {
-          if (bestVal === v) bestVal++;
+          if (nextAvailableNumber === v) nextAvailableNumber++;
         });
-        response.newValue = response.newValue.replace("#", bestVal);
+        response.newValue = response.newValue.replace("#", nextAvailableNumber);
       } else if (existingProperties) {
-        let numVal = response.newValue.replace(start, "").replace(end, "");
-        if (numVal != "#") {
-          numVal = parseInt(numVal);
+        let requestedNumber = response.newValue.replace(prefix, "").replace(suffix, "");
+        if (requestedNumber != "#") {
+          requestedNumber = parseInt(requestedNumber);
 
           // Check if this value collides with existing values
           // Need to distinguish between editing an existing feature vs adding a new one
@@ -562,10 +560,10 @@ const _templateConform = (req, from) => {
               if (features[i] == null) continue;
               let feature = features[i];
               if (feature?.properties?.[templateField.field] != null) {
-                let featuresVal = feature?.properties?.[templateField.field];
-                let extractedVal = parseInt(featuresVal.replace(start, "").replace(end, ""));
+                let existingFieldValue = feature?.properties?.[templateField.field];
+                let otherFeatureNumber = parseInt(existingFieldValue.replace(prefix, "").replace(suffix, ""));
                 // Count this occurrence only if it's a DIFFERENT feature (different UUID)
-                if (extractedVal === numVal &&
+                if (otherFeatureNumber === requestedNumber &&
                     feature?.properties?.uuid !== existingProperties.uuid) {
                   count++;
                 }
@@ -577,30 +575,30 @@ const _templateConform = (req, from) => {
             }
           } else {
             // Manual change to a different value - check if it already exists
-            if (usedValues.indexOf(numVal) !== -1) {
+            if (usedValues.indexOf(requestedNumber) !== -1) {
               hasCollision = true;
             }
           }
 
           if (hasCollision) {
             // Auto-assign next available value instead of error
-            let bestVal = 0;
+            let nextAvailableNumber = 0;
             usedValues.sort(function (a, b) {
               return a - b;
             });
             usedValues = [...new Set(usedValues)]; // makes it unique
             usedValues.forEach((v) => {
-              if (bestVal === v) bestVal++;
+              if (nextAvailableNumber === v) nextAvailableNumber++;
             });
-            response.newValue = start + bestVal + end;
+            response.newValue = prefix + nextAvailableNumber + suffix;
           }
         }
       }
 
       // Check that the field still matches the surrounding string
-      const incRegex = new RegExp(`^${start}\\d+${end}$`);
+      const incRegex = new RegExp(`^${prefix}\\d+${suffix}$`);
       if (incRegex.test(response.newValue) == false) {
-        response.error = `Incrementing field: '${templateField.field}' must follow syntax: '${start}{#}${end}'`;
+        response.error = `Incrementing field: '${templateField.field}' must follow syntax: '${prefix}{#}${suffix}'`;
       }
 
       return response;

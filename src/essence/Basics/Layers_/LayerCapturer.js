@@ -73,11 +73,11 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
     if (!F_.isUrlAbsolute(layerUrl)) layerUrl = L_.missionPath + layerUrl
 
     let done = true
-    let urlSplitRaw = layerObj.url.split(':')
-    let urlSplit = layerObj.url.toLowerCase().split(':')
+    let urlParts = layerObj.url.split(':')
+    let urlPartsLower = layerObj.url.toLowerCase().split(':')
 
     if (layerData?.variables?.dynamicExtent === true) {
-        switch (urlSplit[0]) {
+        switch (urlPartsLower[0]) {
             case 'geodatasets':
                 // Return .on('moveend zoomend') event
                 dynamicCb((e) => {
@@ -93,7 +93,7 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
                         // Then query, delete existing and remake
                         const bounds = L_.Map_.map.getBounds()
                         const body = {
-                            layer: urlSplitRaw[1],
+                            layer: urlParts[1],
                             type: 'geojson',
                             maxy: bounds._northEast.lat,
                             maxx: bounds._northEast.lng,
@@ -400,10 +400,10 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
                 cb({ type: 'FeatureCollection', features: [] }, true)
         }
     } else {
-        switch (urlSplit[0]) {
+        switch (urlPartsLower[0]) {
             case 'geodatasets':
                 const body = {
-                    layer: urlSplitRaw[1],
+                    layer: urlParts[1],
                     type: 'geojson',
                 }
                 if (
@@ -448,7 +448,7 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
                 )
                 break
             case 'api':
-                switch (urlSplit[1]) {
+                switch (urlPartsLower[1]) {
                     case 'publishedall':
                         calls.api(
                             'files_getfile',
@@ -499,7 +499,7 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
                         calls.api(
                             'files_getfile',
                             {
-                                intent: urlSplit[2],
+                                intent: urlPartsLower[2],
                                 quick_published: true,
                             },
                             function (data) {
@@ -544,7 +544,7 @@ export const captureVector = (layerObj, options, cb, dynamicCb) => {
                         calls.api(
                             'files_getfile',
                             {
-                                id: urlSplit[2],
+                                id: urlPartsLower[2],
                             },
                             function (data) {
                                 cb(data.body.geojson)

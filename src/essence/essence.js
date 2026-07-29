@@ -339,14 +339,14 @@ var essence = {
         essence.configData = config
 
         //Make sure url matches mission
-        var urlSplit = window.location.href.split('?')
-        var url = urlSplit[0]
+        var hrefParts = window.location.href.split('?')
+        var url = hrefParts[0]
 
         if (
-            urlSplit.length == 1 ||
+            hrefParts.length == 1 ||
             swapping ||
-            (urlSplit[1] && urlSplit[1].split('=')[0] === 'forcelanding') ||
-            (urlSplit[1] && urlSplit[1].split('=')[0] === '_preview')
+            (hrefParts[1] && hrefParts[1].split('=')[0] === 'forcelanding') ||
+            (hrefParts[1] && hrefParts[1].split('=')[0] === '_preview')
         ) {
             //then no parameters or old ones
             // Use DB mission name for deeplinks (config._dbMissionName if available)

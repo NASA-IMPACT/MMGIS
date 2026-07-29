@@ -26,10 +26,10 @@ test.describe('STAC URL Transformation Logic', () => {
             nextUrl.toLowerCase().startsWith('stac-collection:')
         ) {
             // Parse the STAC URL: stac-collection:collection_name?params
-            const splitColonUrl = nextUrl.split(':');
-            if (splitColonUrl.length >= 2) {
-                const splitParams = splitColonUrl[1].split('?');
-                const collectionName = splitParams[0];
+            const stacUrlParts = nextUrl.split(':');
+            if (stacUrlParts.length >= 2) {
+                const collectionNameAndParams = stacUrlParts[1].split('?');
+                const collectionName = collectionNameAndParams[0];
 
                 // Build bands parameter (only if no expression exists)
                 let bandsParam = '';
