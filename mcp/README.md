@@ -9,20 +9,20 @@ catalogs for data layers, and control a live browser session.
 1. `cd mcp && npm install && npm run build`
 2. In the MMGIS `.env`, set `ENABLE_MMGIS_WEBSOCKETS=true` (needed for
    browser control) and start MMGIS (`npm start`).
-3. Mint a long-term API token (must be done with an admin **session** — tokens
-   cannot mint tokens). Log into MMGIS as an admin in a browser, then run in
-   the devtools console:
+3. Generate an MMGIS API token. In MMGIS, log in as an admin, open the
+   **Configure** page, and use the **API Tokens** tab — name the token (e.g.
+   `mcp`), generate, and copy it.
 
-   ```js
-   fetch('/api/longtermtoken/generate', {
-       method: 'POST',
-       headers: { 'Content-Type': 'application/json' },
-       body: JSON.stringify({ name: 'mcp', period: 'never' }),
-   }).then((r) => r.json()).then(console.log)
-   ```
+   This is not a shared secret: each person mints their own, and the token
+   inherits that account's mission permissions (creating missions requires a
+   SuperAdmin token). See
+   https://nasa-ammos.github.io/MMGIS/apis/configure#api-tokens.
 
-   Copy `body.token`. The token inherits your permission (create missions
-   requires a SuperAdmin's token).
+   The equivalent API call, if you prefer the console, is
+   `POST /api/longtermtoken/generate` with `{"name": "mcp", "period": "never"}`
+   — it must be made from a logged-in admin **session**, since tokens cannot
+   mint tokens.
+
 4. `export MMGIS_TOKEN=<token>` — the repo `.mcp.json` picks it up, or
    register manually: `claude mcp add mmgis -- node mcp/dist/index.js`.
 
@@ -30,8 +30,8 @@ catalogs for data layers, and control a live browser session.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MMGIS_URL` | `http://localhost:8888` | MMGIS base URL (include ROOT_PATH if set) |
-| `MMGIS_TOKEN` | (required) | Long-term token, sent as `Authorization: Bearer ...` |
+| `MMGIS_URL` | `http://localhost:8888` | Base URL of your running MMGIS (match its `PORT`; include `ROOT_PATH` if set) |
+| `MMGIS_TOKEN` | (required) | MMGIS API token from Configure → API Tokens, sent as `Authorization: Bearer ...` |
 | `MMGIS_WS_URL` | derived from `MMGIS_URL` | Websocket endpoint (`ws://host:port/`) |
 | `MMGIS_REPO_ROOT` | auto (this checkout) | MMGIS repo containing `scripts/generate-mission-config.js` |
 | `MAPBOX_TOKEN` | empty | Substituted into generated configs' basemap |

@@ -8,8 +8,12 @@ all from a browser chat.
 
 1. Build the MCP server once: `cd ../mcp && npm install && npm run build`
 2. `cd chat && npm install`
-3. `cp .env.example .env` and set `OPENAI_API_KEY`, `MMGIS_URL`, `MMGIS_TOKEN`
-   (mint a token per `../mcp/README.md`).
+3. `cp .env.example .env` and set:
+   - `OPENAI_API_KEY` — your own OpenAI key (stays server-side, never sent to the browser)
+   - `MMGIS_URL` — your running MMGIS instance, e.g. `http://localhost:8888`
+   - `MMGIS_TOKEN` — an MMGIS API token you generate in MMGIS's **Configure →
+     API Tokens** tab (each person mints their own; it inherits that account's
+     permissions, and creating missions needs a SuperAdmin token)
 4. `npm start` → open http://localhost:8895
 
 ## What you can do
@@ -39,7 +43,9 @@ MMGIS REST + websocket. Conversation state lives in your browser
 | `OPENAI_MODEL` | `gpt-4o` | Chat model |
 | `CHAT_PORT` | `8895` | UI port |
 | `MCP_COMMAND` / `MCP_ARGS` | `node` / `../mcp/dist/index.js` | MCP server launch (paths relative to `chat/`) |
-| `MMGIS_URL`, `MMGIS_TOKEN`, `MAPBOX_TOKEN`, ... | — | Passed through to the MCP server |
+| `MMGIS_URL` | `http://localhost:8888` | Your running MMGIS instance |
+| `MMGIS_TOKEN` | — | MMGIS API token (Configure → API Tokens) |
+| `MAPBOX_TOKEN`, `STAC_CATALOGS`, ... | — | Passed through to the MCP server |
 
 ## Known limitations
 
