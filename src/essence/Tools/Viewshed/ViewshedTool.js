@@ -98,26 +98,26 @@ let ViewshedTool = {
                 if (tUrl[0] == 'ViewshedTool') {
                     tUrl[1].split(';').forEach((elm, i) => {
                         if (elm.length > 0) {
-                            let p = elm.split('+')
+                            let urlParts = elm.split('+')
                             let initObj = {
-                                name: p[0],
-                                on: p[1],
-                                dataIndex: parseInt(p[2]),
+                                name: urlParts[0],
+                                on: urlParts[1],
+                                dataIndex: parseInt(urlParts[2]),
                                 color: {
-                                    r: parseInt(p[3].substr(0, 3)),
-                                    g: parseInt(p[3].substr(3, 3)),
-                                    b: parseInt(p[3].substr(6, 3)),
+                                    r: parseInt(urlParts[3].substr(0, 3)),
+                                    g: parseInt(urlParts[3].substr(3, 3)),
+                                    b: parseInt(urlParts[3].substr(6, 3)),
                                 },
-                                opacity: p[4],
-                                resolution: p[5],
-                                invert: p[6],
-                                height: parseFloat(p[7]),
-                                centerAzimuth: parseFloat(p[8]),
-                                FOVAzimuth: parseFloat(p[9]),
-                                centerElevation: parseFloat(p[10]),
-                                FOVElevation: parseFloat(p[11]),
-                                latitude: parseFloat(p[12]),
-                                longitude: parseFloat(p[13]),
+                                opacity: urlParts[4],
+                                resolution: urlParts[5],
+                                invert: urlParts[6],
+                                height: parseFloat(urlParts[7]),
+                                centerAzimuth: parseFloat(urlParts[8]),
+                                FOVAzimuth: parseFloat(urlParts[9]),
+                                centerElevation: parseFloat(urlParts[10]),
+                                FOVElevation: parseFloat(urlParts[11]),
+                                latitude: parseFloat(urlParts[12]),
+                                longitude: parseFloat(urlParts[13]),
                             }
                             this.viewshed(null, i, null, initObj)
                         }
@@ -137,26 +137,26 @@ let ViewshedTool = {
                     if (tUrl[0] == 'ViewshedTool') {
                         tUrl[1].split(';').forEach((elm, i) => {
                             if (elm.length > 0) {
-                                let p = elm.split('+')
+                                let urlParts = elm.split('+')
                                 let initObj = {
-                                    name: p[0],
-                                    on: p[1],
-                                    dataIndex: p[2],
+                                    name: urlParts[0],
+                                    on: urlParts[1],
+                                    dataIndex: urlParts[2],
                                     color: {
-                                        r: parseInt(p[3].substr(0, 3)),
-                                        g: parseInt(p[3].substr(3, 3)),
-                                        b: parseInt(p[3].substr(6, 3)),
+                                        r: parseInt(urlParts[3].substr(0, 3)),
+                                        g: parseInt(urlParts[3].substr(3, 3)),
+                                        b: parseInt(urlParts[3].substr(6, 3)),
                                     },
-                                    opacity: p[4],
-                                    resolution: p[5],
-                                    invert: p[6],
-                                    height: p[7],
-                                    centerAzimuth: p[8],
-                                    FOVAzimuth: p[9],
-                                    centerElevation: p[10],
-                                    FOVElevation: p[11],
-                                    latitude: p[12],
-                                    longitude: p[13],
+                                    opacity: urlParts[4],
+                                    resolution: urlParts[5],
+                                    invert: urlParts[6],
+                                    height: urlParts[7],
+                                    centerAzimuth: urlParts[8],
+                                    FOVAzimuth: urlParts[9],
+                                    centerElevation: urlParts[10],
+                                    FOVElevation: urlParts[11],
+                                    latitude: urlParts[12],
+                                    longitude: urlParts[13],
                                 }
                                 //this.delete(i)
                                 this.makeNewElm(initObj)
@@ -1170,16 +1170,16 @@ let ViewshedTool = {
                 ).text('Regenerate')
                 // We'll use a single canvas for all tiles for capturing
                 // their dataURLs
-                let c = document.createElement('canvas')
+                let tileCanvas = document.createElement('canvas')
                 const res = data.tileResolution * Math.pow(2, data.resolution)
-                c.width = res
-                c.height = res
-                let ctx = c.getContext('2d')
+                tileCanvas.width = res
+                tileCanvas.height = res
+                let ctx = tileCanvas.getContext('2d')
                 let cImgData = ctx.createImageData(res, res)
                 let cData = cImgData.data
 
-                let dl = {}
-                let dlc = {}
+                let tileDataUrls = {}
+                let tileCanvases = {}
 
                 for (let j = 0; j <= data.outputTopLeftTile.h; j++) {
                     for (let i = 0; i <= data.outputTopLeftTile.w; i++) {
@@ -1190,11 +1190,13 @@ let ViewshedTool = {
                         const xO = data.outputTopLeftTile.x % 1 == 0
                         const yO = data.outputTopLeftTile.y % 1 == 0
 
-                        dl[z] = dl[z] || {}
-                        dl[z][Math.floor(x)] = dl[z][Math.floor(x)] || {}
+                        tileDataUrls[z] = tileDataUrls[z] || {}
+                        tileDataUrls[z][Math.floor(x)] =
+                            tileDataUrls[z][Math.floor(x)] || {}
 
-                        dlc[z] = dlc[z] || {}
-                        dlc[z][Math.floor(x)] = dlc[z][Math.floor(x)] || {}
+                        tileCanvases[z] = tileCanvases[z] || {}
+                        tileCanvases[z][Math.floor(x)] =
+                            tileCanvases[z][Math.floor(x)] || {}
 
                         const tileRow =
                             (y -
@@ -1210,55 +1212,56 @@ let ViewshedTool = {
 
                         // Draw canvas
                         let px = 0
-                        let val = null
                         for (let p = 0; p < cData.length; p += 4) {
                             const isEdge =
                                 p / 4 < res ||
                                 p / 4 > cData.length - res - 1 ||
                                 (p / 4) % res == 0 ||
                                 (p / 4 + 1) % res == 0
-                            val = data.result[tileRow + Math.floor(px / res)]
-                            if (val != null) {
-                                val = val[tileCol + (px % res)]
-                                let c
-                                switch (val) {
+                            const resultRow =
+                                data.result[tileRow + Math.floor(px / res)]
+                            if (resultRow != null) {
+                                const visibilityCode =
+                                    resultRow[tileCol + (px % res)]
+                                let pixelColor
+                                switch (visibilityCode) {
                                     case 0:
-                                        c =
+                                        pixelColor =
                                             options.invert == 0
                                                 ? { r: 0, g: 0, b: 0, a: 0 }
                                                 : options.color
                                         break
                                     case 1:
-                                        c =
+                                        pixelColor =
                                             options.invert == 0
                                                 ? options.color
                                                 : { r: 0, g: 0, b: 0, a: 0 }
                                         break
                                     case 2:
-                                        c =
+                                        pixelColor =
                                             options.invert == 0
                                                 ? options.color
                                                 : { r: 0, g: 0, b: 0, a: 0 }
                                         break
                                     case 3:
-                                        c = { r: 0, g: 255, b: 0, a: 0 }
+                                        pixelColor = { r: 0, g: 255, b: 0, a: 0 }
                                         break
                                     case 8:
-                                        c = { r: 0, g: 0, b: 0, a: 0 }
+                                        pixelColor = { r: 0, g: 0, b: 0, a: 0 }
                                         break
                                     case 9:
-                                        c = { r: 255, g: 0, b: 0, a: 35 }
+                                        pixelColor = { r: 255, g: 0, b: 0, a: 35 }
                                         break
                                     default:
-                                        c = { r: 0, g: 0, b: 0, a: 0 }
+                                        pixelColor = { r: 0, g: 0, b: 0, a: 0 }
                                 }
                                 if (ViewshedTool.showTileEdges && isEdge)
-                                    c = { r: 255, g: 255, b: 255, a: 200 }
+                                    pixelColor = { r: 255, g: 255, b: 255, a: 200 }
 
-                                cData[p] = c.r
-                                cData[p + 1] = c.g
-                                cData[p + 2] = c.b
-                                cData[p + 3] = c.a
+                                cData[p] = pixelColor.r
+                                cData[p + 1] = pixelColor.g
+                                cData[p + 2] = pixelColor.b
+                                cData[p + 3] = pixelColor.a
                             } else {
                                 cData[p] = 0
                                 cData[p + 1] = 0
@@ -1268,12 +1271,14 @@ let ViewshedTool = {
                             px++
                         }
                         ctx.putImageData(cImgData, 0, 0)
-                        dl[z][Math.floor(x)][Math.floor(y)] = c.toDataURL()
-                        dlc[z][Math.floor(x)][Math.floor(y)] = F_.cloneCanvas(c)
+                        tileDataUrls[z][Math.floor(x)][Math.floor(y)] =
+                            tileCanvas.toDataURL()
+                        tileCanvases[z][Math.floor(x)][Math.floor(y)] =
+                            F_.cloneCanvas(tileCanvas)
                     }
                 }
-                ViewshedTool.canvases[activeElmId] = dlc
-                makeDataLayer(dl, activeElmId, dlc)
+                ViewshedTool.canvases[activeElmId] = tileCanvases
+                makeDataLayer(tileDataUrls, activeElmId, tileCanvases)
 
                 $(
                     '#vstViewsheds #vstId_' + activeElmId + ' .vstRegen'
@@ -1281,7 +1286,7 @@ let ViewshedTool = {
             }
         )
 
-        function makeDataLayer(layerUrl, activeElmId, dlc) {
+        function makeDataLayer(tileDataUrls, activeElmId, tileCanvases) {
             let layerName = 'viewshed' + activeElmId
 
             Map_.rmNotNull(L_.layers.layer[layerName])
@@ -1296,7 +1301,7 @@ let ViewshedTool = {
                     maxZoom: 30,
                 },
                 fragmentShader: DataShaders['image'].frag,
-                tileUrls: [layerUrl],
+                tileUrls: [tileDataUrls],
                 uniforms: uniforms,
                 tileUrlsAsDataUrls: true,
             })
@@ -1408,14 +1413,14 @@ let ViewshedTool = {
     },
     save: function (activeElmId) {
         const tag = ViewshedTool.tags[activeElmId]
-        const d = ViewshedTool_Manager.getData(tag)
+        const viewshedData = ViewshedTool_Manager.getData(tag)
 
-        if (d == null) return
+        if (viewshedData == null) return
 
         // Turn result into one long space delimited string
         let strResult = []
-        for (let y = 0; y < d.result.length; y++)
-            strResult.push(d.result[y].join(' '))
+        for (let y = 0; y < viewshedData.result.length; y++)
+            strResult.push(viewshedData.result[y].join(' '))
         strResult = strResult.join(' ')
 
         let geojson = F_.getBaseGeoJSON()
@@ -1423,18 +1428,18 @@ let ViewshedTool = {
             type: 'Feature',
             properties: {
                 type: 'mmgis_viewshed',
-                ncols: d.result[0].length,
-                nrows: d.result.length,
-                xllcorner: d.bottomLeftLatLng.lng,
-                yllcorner: d.bottomLeftLatLng.lat,
-                cellsize: d.cellSize,
+                ncols: viewshedData.result[0].length,
+                nrows: viewshedData.result.length,
+                xllcorner: viewshedData.bottomLeftLatLng.lng,
+                yllcorner: viewshedData.bottomLeftLatLng.lat,
+                cellsize: viewshedData.cellSize,
                 NODATA_value: 0,
-                source_lng_deg: d.source.lng,
-                source_lat_deg: d.source.lat,
-                source_height_m: d.source.height,
-                source_surface_height: d.source.surfaceHeight,
-                data_layer_name: d.dataLayer.name,
-                data_layer_url: d.dataLayer.demtileurl,
+                source_lng_deg: viewshedData.source.lng,
+                source_lat_deg: viewshedData.source.lat,
+                source_height_m: viewshedData.source.height,
+                source_surface_height: viewshedData.source.surfaceHeight,
+                data_layer_name: viewshedData.dataLayer.name,
+                data_layer_url: viewshedData.dataLayer.demtileurl,
                 key: {
                     0: 'hidden',
                     1: 'visible',
@@ -1444,7 +1449,7 @@ let ViewshedTool = {
             },
             geometry: {
                 type: 'Point',
-                coordinates: [d.source.lng, d.source.lat],
+                coordinates: [viewshedData.source.lng, viewshedData.source.lat],
             },
         })
 
@@ -1452,11 +1457,11 @@ let ViewshedTool = {
 
         // prettier-ignore
         let ascContent =
-                'ncols ' + d.result[0].length + '\n' +
-                'nrows ' + d.result.length  + '\n' +
-                'xllcorner ' + d.bottomLeftLatLng.lng + '\n' +
-                'yllcorner ' + d.bottomLeftLatLng.lat + '\n' +
-                'cellsize ' + d.cellSize + '\n' +
+                'ncols ' + viewshedData.result[0].length + '\n' +
+                'nrows ' + viewshedData.result.length  + '\n' +
+                'xllcorner ' + viewshedData.bottomLeftLatLng.lng + '\n' +
+                'yllcorner ' + viewshedData.bottomLeftLatLng.lat + '\n' +
+                'cellsize ' + viewshedData.cellSize + '\n' +
                 'NODATA_value 0\n' +
                 strResult + '\n' +
                 JSON.stringify(geojson) + '\n' +

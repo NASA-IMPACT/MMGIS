@@ -1069,7 +1069,7 @@ let ShadeTool = {
                             customEl,
                             customRange,
                         },
-                        function (s) {
+                        function (aerResponse) {
                             /*
                             Map_.rmNotNull(ShadeTool.tempIndicatorPoint)
                             ShadeTool.tempIndicatorPoint =
@@ -1084,7 +1084,10 @@ let ShadeTool = {
                             ShadeTool.indicatorDragOn()
                             */
 
-                            ShadeTool.updateRAEIndicators(s, activeElmId)
+                            ShadeTool.updateRAEIndicators(
+                                aerResponse,
+                                activeElmId
+                            )
                             // CLear result outputs
                             $('#shadeTool_results_outputs_az').text('--')
                             $('#shadeTool_results_outputs_el').text('--')
@@ -1092,12 +1095,16 @@ let ShadeTool = {
                             //$('#shadeTool_results_outputs_lng').text('--')
                             //$('#shadeTool_results_outputs_lat').text('--')
 
-                            if (s.message && s.message.indexOf('INSUFFDATA'))
-                                s.message =
+                            if (
+                                aerResponse.message &&
+                                aerResponse.message.indexOf('INSUFFDATA')
+                            )
+                                aerResponse.message =
                                     'Insufficient SPICE kernels for this source entity and time period.'
-                            if (s.error) {
+                            if (aerResponse.error) {
                                 CursorInfo.update(
-                                    s.message || 'LatLng to AzEl Error',
+                                    aerResponse.message ||
+                                        'LatLng to AzEl Error',
                                     6000,
                                     true,
                                     { x: 296, y: -5 },
@@ -1107,13 +1114,13 @@ let ShadeTool = {
                             } else {
                                 // Update result outputs
                                 $('#shadeTool_results_outputs_az').text(
-                                    s.azimuth.toFixed(3) + '°'
+                                    aerResponse.azimuth.toFixed(3) + '°'
                                 )
                                 $('#shadeTool_results_outputs_el').text(
-                                    s.elevation.toFixed(3) + '°'
+                                    aerResponse.elevation.toFixed(3) + '°'
                                 )
                                 $('#shadeTool_results_outputs_range').text(
-                                    s.range.toFixed(3) + 'km'
+                                    aerResponse.range.toFixed(3) + 'km'
                                 )
                                 /*
                                     $('#shadeTool_results_outputs_lng').text(
@@ -1125,12 +1132,12 @@ let ShadeTool = {
                                     */
 
                                 keepGoing({
-                                    lat: s.latitude,
-                                    lng: s.longitude,
-                                    altitude: s.horizontal_altitude,
-                                    az: s.azimuth,
-                                    el: s.elevation,
-                                    range: s.range,
+                                    lat: aerResponse.latitude,
+                                    lng: aerResponse.longitude,
+                                    altitude: aerResponse.horizontal_altitude,
+                                    az: aerResponse.azimuth,
+                                    el: aerResponse.elevation,
+                                    range: aerResponse.range,
                                 })
                             }
                         },

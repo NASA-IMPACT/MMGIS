@@ -12,8 +12,8 @@ let ShadeTool_Algorithm = {
     // 8: visible but not within elevation bounds
     // 9: no data
     perOctant: false,
-    shade: function (d) {
-        this.curveData(d)
+    shade: function (shadeData) {
+        this.curveData(shadeData)
         /*
             console.log(d)
             // TESTING =====
@@ -38,400 +38,563 @@ let ShadeTool_Algorithm = {
             // END
             */
 
-        let grids = this.initializeGrids(d)
+        let grids = this.initializeGrids(shadeData)
 
         //this.processFirst(d, grids)
-        if (d.targetSource.altitude > 0) {
-            this.processUp(d, grids)
-            this.processDown(d, grids)
+        if (shadeData.targetSource.altitude > 0) {
+            this.processUp(shadeData, grids)
+            this.processDown(shadeData, grids)
 
-            this.mask(d, grids)
+            this.mask(shadeData, grids)
         }
 
         //console.log(grids)
 
         return grids.resultGrid
     },
-    initializeGrids: function (d) {
+    initializeGrids: function (shadeData) {
         // Initialize grids with the same dimensions as the data grid and with 0s
         let refGrid = []
         let resultGrid = []
-        for (let i = 0; i < d.data.length; i++) {
-            refGrid.push(new Array(d.data[0].length).fill(0))
-            resultGrid.push(new Array(d.data[0].length).fill(0))
+        for (let i = 0; i < shadeData.data.length; i++) {
+            refGrid.push(new Array(shadeData.data[0].length).fill(0))
+            resultGrid.push(new Array(shadeData.data[0].length).fill(0))
         }
 
         // We're going to say that all edges (2px thick) of the screen/data are visible
 
         // Top and Bottom
-        for (let x = 0; x < d.data[0].length; x++) {
-            refGrid[0][x] = d.data[0][x]
-            refGrid[1][x] = d.data[1][x]
+        for (let x = 0; x < shadeData.data[0].length; x++) {
+            refGrid[0][x] = shadeData.data[0][x]
+            refGrid[1][x] = shadeData.data[1][x]
             resultGrid[0][x] = 1
             resultGrid[1][x] = 1
-            refGrid[d.data.length - 1][x] = d.data[d.data.length - 1][x]
-            refGrid[d.data.length - 2][x] = d.data[d.data.length - 2][x]
-            resultGrid[d.data.length - 1][x] = 1
-            resultGrid[d.data.length - 2][x] = 1
+            refGrid[shadeData.data.length - 1][x] =
+                shadeData.data[shadeData.data.length - 1][x]
+            refGrid[shadeData.data.length - 2][x] =
+                shadeData.data[shadeData.data.length - 2][x]
+            resultGrid[shadeData.data.length - 1][x] = 1
+            resultGrid[shadeData.data.length - 2][x] = 1
         }
         // Right and Left
-        for (let y = 0; y < d.data.length; y++) {
-            refGrid[y][0] = d.data[y][0]
-            refGrid[y][1] = d.data[y][1]
+        for (let y = 0; y < shadeData.data.length; y++) {
+            refGrid[y][0] = shadeData.data[y][0]
+            refGrid[y][1] = shadeData.data[y][1]
             resultGrid[y][0] = 1
             resultGrid[y][1] = 1
-            refGrid[y][d.data[0].length - 1] = d.data[y][d.data[0].length - 1]
-            refGrid[y][d.data[0].length - 2] = d.data[y][d.data[0].length - 2]
-            resultGrid[y][d.data[0].length - 1] = 1
-            resultGrid[y][d.data[0].length - 2] = 1
+            refGrid[y][shadeData.data[0].length - 1] =
+                shadeData.data[y][shadeData.data[0].length - 1]
+            refGrid[y][shadeData.data[0].length - 2] =
+                shadeData.data[y][shadeData.data[0].length - 2]
+            resultGrid[y][shadeData.data[0].length - 1] = 1
+            resultGrid[y][shadeData.data[0].length - 2] = 1
         }
 
         return { refGrid, resultGrid }
     },
     // Shades the "horizontal x" axis
-    processFirst: function (d, g) {
-        const o = d.dataSource //observer
+    processFirst: function (shadeData, grids) {
+        const targetSourceCell = shadeData.dataSource
 
-        const observerHeight = g.refGrid[o.y][o.x] + d.source.height
-        let dataH
+        const observerHeight =
+            grids.refGrid[targetSourceCell.y][targetSourceCell.x] +
+            shadeData.source.height
+        let cellTargetHeight
 
         // Process Left
-        for (let i = o.x - 2; i >= 0; i--) {
-            g.refGrid[o.y][i] = this.calcHeightLine(
-                i - o.x,
-                g.refGrid[o.y][i + 1],
+        for (let i = targetSourceCell.x - 2; i >= 0; i--) {
+            grids.refGrid[targetSourceCell.y][i] = this.calcHeightLine(
+                i - targetSourceCell.x,
+                grids.refGrid[targetSourceCell.y][i + 1],
                 observerHeight
             )
 
             // Set visibility if our value is less than the data's
-            dataH = d.data[o.y][i] + d.options.targetHeight
-            if (g.refGrid[o.y][i] <= dataH) {
-                if (this.isInElevationFOV(d, i, o.y, observerHeight, dataH))
-                    g.resultGrid[o.y][i] = 1
-                else g.resultGrid[o.y][i] = 0 //8
+            cellTargetHeight =
+                shadeData.data[targetSourceCell.y][i] +
+                shadeData.options.targetHeight
+            if (grids.refGrid[targetSourceCell.y][i] <= cellTargetHeight) {
+                if (
+                    this.isInElevationFOV(
+                        shadeData,
+                        i,
+                        targetSourceCell.y,
+                        observerHeight,
+                        cellTargetHeight
+                    )
+                )
+                    grids.resultGrid[targetSourceCell.y][i] = 1
+                else grids.resultGrid[targetSourceCell.y][i] = 0 //8
             }
 
             // Check if NoData
-            if (ShadeTool_Algorithm.isNoData(d.data[o.y][i]))
-                g.resultGrid[o.y][i] = 9
+            if (
+                ShadeTool_Algorithm.isNoData(
+                    shadeData.data[targetSourceCell.y][i]
+                )
+            )
+                grids.resultGrid[targetSourceCell.y][i] = 9
 
             // Set ref position to the greater: plane height or actual elevation
-            g.refGrid[o.y][i] = Math.max(g.refGrid[o.y][i], d.data[o.y][i])
+            grids.refGrid[targetSourceCell.y][i] = Math.max(
+                grids.refGrid[targetSourceCell.y][i],
+                shadeData.data[targetSourceCell.y][i]
+            )
         }
 
         // Process Right
-        for (let i = o.x + 2; i < d.data[0].length; i++) {
-            g.refGrid[o.y][i] = this.calcHeightLine(
-                i - o.x,
-                g.refGrid[o.y][i - 1],
+        for (
+            let i = targetSourceCell.x + 2;
+            i < shadeData.data[0].length;
+            i++
+        ) {
+            grids.refGrid[targetSourceCell.y][i] = this.calcHeightLine(
+                i - targetSourceCell.x,
+                grids.refGrid[targetSourceCell.y][i - 1],
                 observerHeight
             )
 
             // Set visibility if our value is less than the data's
-            dataH = d.data[o.y][i] + d.options.targetHeight
-            if (g.refGrid[o.y][i] <= dataH) {
-                if (this.isInElevationFOV(d, i, o.y, observerHeight, dataH))
-                    g.resultGrid[o.y][i] = 1
-                else g.resultGrid[o.y][i] = 0 //8
+            cellTargetHeight =
+                shadeData.data[targetSourceCell.y][i] +
+                shadeData.options.targetHeight
+            if (grids.refGrid[targetSourceCell.y][i] <= cellTargetHeight) {
+                if (
+                    this.isInElevationFOV(
+                        shadeData,
+                        i,
+                        targetSourceCell.y,
+                        observerHeight,
+                        cellTargetHeight
+                    )
+                )
+                    grids.resultGrid[targetSourceCell.y][i] = 1
+                else grids.resultGrid[targetSourceCell.y][i] = 0 //8
             }
 
             // Check if NoData
-            if (ShadeTool_Algorithm.isNoData(d.data[o.y][i]))
-                g.resultGrid[o.y][i] = 9
+            if (
+                ShadeTool_Algorithm.isNoData(
+                    shadeData.data[targetSourceCell.y][i]
+                )
+            )
+                grids.resultGrid[targetSourceCell.y][i] = 9
 
             // Set ref position to the greater: plane height or actual elevation
-            g.refGrid[o.y][i] = Math.max(g.refGrid[o.y][i], d.data[o.y][i])
+            grids.refGrid[targetSourceCell.y][i] = Math.max(
+                grids.refGrid[targetSourceCell.y][i],
+                shadeData.data[targetSourceCell.y][i]
+            )
         }
 
         // Process Up
-        for (let j = o.y - 2; j >= 0; j--) {
-            g.refGrid[j][o.x] = this.calcHeightLine(
-                j - o.y,
-                g.refGrid[j + 1][o.x],
+        for (let j = targetSourceCell.y - 2; j >= 0; j--) {
+            grids.refGrid[j][targetSourceCell.x] = this.calcHeightLine(
+                j - targetSourceCell.y,
+                grids.refGrid[j + 1][targetSourceCell.x],
                 observerHeight
             )
 
             // Set visibility if our value is less than the data's
-            dataH = d.data[j][o.x] + d.options.targetHeight
-            if (g.refGrid[j][o.x] <= dataH) {
-                if (this.isInElevationFOV(d, o.x, j, observerHeight, dataH))
-                    g.resultGrid[j][o.x] = 1
-                else g.resultGrid[j][o.x] = 0 //8
+            cellTargetHeight =
+                shadeData.data[j][targetSourceCell.x] +
+                shadeData.options.targetHeight
+            if (grids.refGrid[j][targetSourceCell.x] <= cellTargetHeight) {
+                if (
+                    this.isInElevationFOV(
+                        shadeData,
+                        targetSourceCell.x,
+                        j,
+                        observerHeight,
+                        cellTargetHeight
+                    )
+                )
+                    grids.resultGrid[j][targetSourceCell.x] = 1
+                else grids.resultGrid[j][targetSourceCell.x] = 0 //8
             }
 
             // Check if NoData
-            if (ShadeTool_Algorithm.isNoData(d.data[j][o.x]))
-                g.resultGrid[j][o.x] = 9
+            if (
+                ShadeTool_Algorithm.isNoData(
+                    shadeData.data[j][targetSourceCell.x]
+                )
+            )
+                grids.resultGrid[j][targetSourceCell.x] = 9
 
             // Set ref position to the greater: plane height or actual elevation
-            g.refGrid[j][o.x] = Math.max(g.refGrid[j][o.x], d.data[j][o.x])
+            grids.refGrid[j][targetSourceCell.x] = Math.max(
+                grids.refGrid[j][targetSourceCell.x],
+                shadeData.data[j][targetSourceCell.x]
+            )
         }
 
         // Process Down
-        for (let j = o.y + 2; j < d.data.length; j++) {
-            g.refGrid[j][o.x] = this.calcHeightLine(
-                j - o.y,
-                g.refGrid[j - 1][o.x],
+        for (
+            let j = targetSourceCell.y + 2;
+            j < shadeData.data.length;
+            j++
+        ) {
+            grids.refGrid[j][targetSourceCell.x] = this.calcHeightLine(
+                j - targetSourceCell.y,
+                grids.refGrid[j - 1][targetSourceCell.x],
                 observerHeight
             )
 
             // Set visibility if our value is less than the data's
-            dataH = d.data[j][o.x] + d.options.targetHeight
-            if (g.refGrid[j][o.x] <= dataH) {
-                if (this.isInElevationFOV(d, o.x, j, observerHeight, dataH))
-                    g.resultGrid[j][o.x] = 1
-                else g.resultGrid[j][o.x] = 0 //8
+            cellTargetHeight =
+                shadeData.data[j][targetSourceCell.x] +
+                shadeData.options.targetHeight
+            if (grids.refGrid[j][targetSourceCell.x] <= cellTargetHeight) {
+                if (
+                    this.isInElevationFOV(
+                        shadeData,
+                        targetSourceCell.x,
+                        j,
+                        observerHeight,
+                        cellTargetHeight
+                    )
+                )
+                    grids.resultGrid[j][targetSourceCell.x] = 1
+                else grids.resultGrid[j][targetSourceCell.x] = 0 //8
             }
 
             // Check if NoData
-            if (ShadeTool_Algorithm.isNoData(d.data[j][o.x]))
-                g.resultGrid[j][o.x] = 9
+            if (
+                ShadeTool_Algorithm.isNoData(
+                    shadeData.data[j][targetSourceCell.x]
+                )
+            )
+                grids.resultGrid[j][targetSourceCell.x] = 9
 
             // Set ref position to the greater: plane height or actual elevation
-            g.refGrid[j][o.x] = Math.max(g.refGrid[j][o.x], d.data[j][o.x])
+            grids.refGrid[j][targetSourceCell.x] = Math.max(
+                grids.refGrid[j][targetSourceCell.x],
+                shadeData.data[j][targetSourceCell.x]
+            )
         }
     },
-    processUp: function (d, g) {
-        const o = d.dataSource //observer
+    processUp: function (shadeData, grids) {
+        const targetSourceCell = shadeData.dataSource
 
-        const observerHeight = d.targetSource.altitude
-        let dataH
+        const observerHeight = shadeData.targetSource.altitude
+        let cellTargetHeight
 
         // Scan Up
-        for (let j = Math.min(d.data.length - 2, o.y - 1); j >= 0; j--) {
+        for (
+            let j = Math.min(shadeData.data.length - 2, targetSourceCell.y - 1);
+            j >= 0;
+            j--
+        ) {
             // Process Left
-            for (let i = Math.min(d.data[0].length - 2, o.x - 1); i >= 0; i--) {
+            for (
+                let i = Math.min(
+                    shadeData.data[0].length - 2,
+                    targetSourceCell.x - 1
+                );
+                i >= 0;
+                i--
+            ) {
                 if (ShadeTool_Algorithm.perOctant) {
-                    g.refGrid[j][i] =
-                        i - o.x < j - o.y
+                    grids.refGrid[j][i] =
+                        i - targetSourceCell.x < j - targetSourceCell.y
                             ? this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y,
-                                  g.refGrid[j + 1][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y + 1,
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j][i + 1],
+                                  i - targetSourceCell.x + 1,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j + 1][i + 1],
+                                  i - targetSourceCell.x + 1,
+                                  j - targetSourceCell.y + 1,
                                   observerHeight
                               )
                             : this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j + 1][i],
-                                  i - o.x,
-                                  j - o.y + 1,
-                                  g.refGrid[j + 1][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y + 1,
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j + 1][i],
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y + 1,
+                                  grids.refGrid[j + 1][i + 1],
+                                  i - targetSourceCell.x + 1,
+                                  j - targetSourceCell.y + 1,
                                   observerHeight
                               )
                 } else {
-                    g.refGrid[j][i] = this.calcHeightDiagonal(
-                        i - o.x,
-                        j - o.y,
-                        g.refGrid[j][i + 1],
-                        g.refGrid[j + 1][i],
+                    grids.refGrid[j][i] = this.calcHeightDiagonal(
+                        i - targetSourceCell.x,
+                        j - targetSourceCell.y,
+                        grids.refGrid[j][i + 1],
+                        grids.refGrid[j + 1][i],
                         observerHeight
                     )
                 }
 
                 // Set visibility if our value is less than the data's
-                dataH = d.data[j][i] + d.options.targetHeight
-                if (g.refGrid[j][i] <= dataH) {
-                    if (this.isInElevationFOV(d, i, j, observerHeight, dataH))
-                        g.resultGrid[j][i] = 1
-                    else g.resultGrid[j][i] = 0 //8
+                cellTargetHeight =
+                    shadeData.data[j][i] + shadeData.options.targetHeight
+                if (grids.refGrid[j][i] <= cellTargetHeight) {
+                    if (
+                        this.isInElevationFOV(
+                            shadeData,
+                            i,
+                            j,
+                            observerHeight,
+                            cellTargetHeight
+                        )
+                    )
+                        grids.resultGrid[j][i] = 1
+                    else grids.resultGrid[j][i] = 0 //8
                 }
 
                 // Check if NoData
-                if (ShadeTool_Algorithm.isNoData(d.data[j][i]))
-                    g.resultGrid[j][i] = 9
+                if (ShadeTool_Algorithm.isNoData(shadeData.data[j][i]))
+                    grids.resultGrid[j][i] = 9
 
                 // Set ref position to the greater: plane height or actual elevation
-                g.refGrid[j][i] = Math.max(g.refGrid[j][i], d.data[j][i])
+                grids.refGrid[j][i] = Math.max(
+                    grids.refGrid[j][i],
+                    shadeData.data[j][i]
+                )
             }
 
             // Process Right
-            for (let i = Math.max(1, o.x + 1); i < d.data[0].length; i++) {
+            for (
+                let i = Math.max(1, targetSourceCell.x + 1);
+                i < shadeData.data[0].length;
+                i++
+            ) {
                 if (ShadeTool_Algorithm.perOctant) {
-                    g.refGrid[j][i] =
-                        i - o.x > Math.abs(j - o.y)
+                    grids.refGrid[j][i] =
+                        i - targetSourceCell.x > Math.abs(j - targetSourceCell.y)
                             ? this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y,
-                                  g.refGrid[j + 1][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y + 1,
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j][i - 1],
+                                  i - targetSourceCell.x - 1,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j + 1][i - 1],
+                                  i - targetSourceCell.x - 1,
+                                  j - targetSourceCell.y + 1,
                                   observerHeight
                               )
                             : this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j + 1][i],
-                                  i - o.x,
-                                  j - o.y + 1,
-                                  g.refGrid[j + 1][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y + 1,
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j + 1][i],
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y + 1,
+                                  grids.refGrid[j + 1][i - 1],
+                                  i - targetSourceCell.x - 1,
+                                  j - targetSourceCell.y + 1,
                                   observerHeight
                               )
                 } else {
-                    g.refGrid[j][i] = this.calcHeightDiagonal(
-                        i - o.x,
-                        j - o.y,
-                        g.refGrid[j][i - 1],
-                        g.refGrid[j + 1][i],
+                    grids.refGrid[j][i] = this.calcHeightDiagonal(
+                        i - targetSourceCell.x,
+                        j - targetSourceCell.y,
+                        grids.refGrid[j][i - 1],
+                        grids.refGrid[j + 1][i],
                         observerHeight
                     )
                 }
 
                 // Set visibility if our value is less than the data's
-                dataH = d.data[j][i] + d.options.targetHeight
-                if (g.refGrid[j][i] <= dataH) {
-                    if (this.isInElevationFOV(d, i, j, observerHeight, dataH))
-                        g.resultGrid[j][i] = 1
-                    else g.resultGrid[j][i] = 0 //8
+                cellTargetHeight =
+                    shadeData.data[j][i] + shadeData.options.targetHeight
+                if (grids.refGrid[j][i] <= cellTargetHeight) {
+                    if (
+                        this.isInElevationFOV(
+                            shadeData,
+                            i,
+                            j,
+                            observerHeight,
+                            cellTargetHeight
+                        )
+                    )
+                        grids.resultGrid[j][i] = 1
+                    else grids.resultGrid[j][i] = 0 //8
                 }
 
                 // Check if NoData
-                if (ShadeTool_Algorithm.isNoData(d.data[j][i]))
-                    g.resultGrid[j][i] = 9
+                if (ShadeTool_Algorithm.isNoData(shadeData.data[j][i]))
+                    grids.resultGrid[j][i] = 9
 
                 // Set ref position to the greater: plane height or actual elevation
-                g.refGrid[j][i] = Math.max(g.refGrid[j][i], d.data[j][i])
+                grids.refGrid[j][i] = Math.max(
+                    grids.refGrid[j][i],
+                    shadeData.data[j][i]
+                )
             }
         }
     },
-    processDown: function (d, g) {
-        const o = d.dataSource //observer
+    processDown: function (shadeData, grids) {
+        const targetSourceCell = shadeData.dataSource
 
-        const observerHeight = d.targetSource.altitude
-        let dataH
+        const observerHeight = shadeData.targetSource.altitude
+        let cellTargetHeight
 
         // Scan Down
-        for (let j = Math.max(1, o.y + 1); j < d.data.length; j++) {
+        for (
+            let j = Math.max(1, targetSourceCell.y + 1);
+            j < shadeData.data.length;
+            j++
+        ) {
             // Process Left
-            for (let i = Math.min(d.data[0].length - 2, o.x - 1); i >= 0; i--) {
+            for (
+                let i = Math.min(
+                    shadeData.data[0].length - 2,
+                    targetSourceCell.x - 1
+                );
+                i >= 0;
+                i--
+            ) {
                 if (ShadeTool_Algorithm.perOctant) {
-                    g.refGrid[j][i] =
-                        Math.abs(i - o.x) > j - o.y
+                    grids.refGrid[j][i] =
+                        Math.abs(i - targetSourceCell.x) >
+                        j - targetSourceCell.y
                             ? this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y,
-                                  g.refGrid[j - 1][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y - 1,
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j][i + 1],
+                                  i - targetSourceCell.x + 1,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j - 1][i + 1],
+                                  i - targetSourceCell.x + 1,
+                                  j - targetSourceCell.y - 1,
                                   observerHeight
                               )
                             : this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j - 1][i],
-                                  i - o.x,
-                                  j - o.y - 1,
-                                  g.refGrid[j - 1][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y - 1,
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j - 1][i],
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y - 1,
+                                  grids.refGrid[j - 1][i + 1],
+                                  i - targetSourceCell.x + 1,
+                                  j - targetSourceCell.y - 1,
                                   observerHeight
                               )
                 } else {
-                    g.refGrid[j][i] = this.calcHeightDiagonal(
-                        i - o.x,
-                        j - o.y,
-                        g.refGrid[j][i + 1],
-                        g.refGrid[j - 1][i],
+                    grids.refGrid[j][i] = this.calcHeightDiagonal(
+                        i - targetSourceCell.x,
+                        j - targetSourceCell.y,
+                        grids.refGrid[j][i + 1],
+                        grids.refGrid[j - 1][i],
                         observerHeight
                     )
                 }
 
                 // Set visibility if our value is less than the data's
-                dataH = d.data[j][i] + d.options.targetHeight
-                if (g.refGrid[j][i] <= dataH) {
-                    if (this.isInElevationFOV(d, i, j, observerHeight, dataH))
-                        g.resultGrid[j][i] = 1
-                    else g.resultGrid[j][i] = 0 //8
+                cellTargetHeight =
+                    shadeData.data[j][i] + shadeData.options.targetHeight
+                if (grids.refGrid[j][i] <= cellTargetHeight) {
+                    if (
+                        this.isInElevationFOV(
+                            shadeData,
+                            i,
+                            j,
+                            observerHeight,
+                            cellTargetHeight
+                        )
+                    )
+                        grids.resultGrid[j][i] = 1
+                    else grids.resultGrid[j][i] = 0 //8
                 }
 
                 // Check if NoData
-                if (ShadeTool_Algorithm.isNoData(d.data[j][i]))
-                    g.resultGrid[j][i] = 9
+                if (ShadeTool_Algorithm.isNoData(shadeData.data[j][i]))
+                    grids.resultGrid[j][i] = 9
 
                 // Set ref position to the greater: plane height or actual elevation
-                g.refGrid[j][i] = Math.max(g.refGrid[j][i], d.data[j][i])
+                grids.refGrid[j][i] = Math.max(
+                    grids.refGrid[j][i],
+                    shadeData.data[j][i]
+                )
             }
 
             // Process Right
-            for (let i = Math.max(1, o.x + 1); i < d.data[0].length; i++) {
+            for (
+                let i = Math.max(1, targetSourceCell.x + 1);
+                i < shadeData.data[0].length;
+                i++
+            ) {
                 if (ShadeTool_Algorithm.perOctant) {
-                    g.refGrid[j][i] =
-                        i - o.x > j - o.y
+                    grids.refGrid[j][i] =
+                        i - targetSourceCell.x > j - targetSourceCell.y
                             ? this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y,
-                                  g.refGrid[j - 1][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y - 1,
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j][i - 1],
+                                  i - targetSourceCell.x - 1,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j - 1][i - 1],
+                                  i - targetSourceCell.x - 1,
+                                  j - targetSourceCell.y - 1,
                                   observerHeight
                               )
                             : this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j - 1][i],
-                                  i - o.x,
-                                  j - o.y - 1,
-                                  g.refGrid[j - 1][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y - 1,
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y,
+                                  grids.refGrid[j - 1][i],
+                                  i - targetSourceCell.x,
+                                  j - targetSourceCell.y - 1,
+                                  grids.refGrid[j - 1][i - 1],
+                                  i - targetSourceCell.x - 1,
+                                  j - targetSourceCell.y - 1,
                                   observerHeight
                               )
                 } else {
-                    g.refGrid[j][i] = this.calcHeightDiagonal(
-                        i - o.x,
-                        j - o.y,
-                        g.refGrid[j][i - 1],
-                        g.refGrid[j - 1][i],
+                    grids.refGrid[j][i] = this.calcHeightDiagonal(
+                        i - targetSourceCell.x,
+                        j - targetSourceCell.y,
+                        grids.refGrid[j][i - 1],
+                        grids.refGrid[j - 1][i],
                         observerHeight
                     )
                 }
 
                 // Set visibility if our value is less than the data's
-                dataH = d.data[j][i] + d.options.targetHeight
-                if (g.refGrid[j][i] <= dataH) {
-                    if (this.isInElevationFOV(d, i, j, observerHeight, dataH))
-                        g.resultGrid[j][i] = 1
-                    else g.resultGrid[j][i] = 0 //8
+                cellTargetHeight =
+                    shadeData.data[j][i] + shadeData.options.targetHeight
+                if (grids.refGrid[j][i] <= cellTargetHeight) {
+                    if (
+                        this.isInElevationFOV(
+                            shadeData,
+                            i,
+                            j,
+                            observerHeight,
+                            cellTargetHeight
+                        )
+                    )
+                        grids.resultGrid[j][i] = 1
+                    else grids.resultGrid[j][i] = 0 //8
                 }
 
                 // Check if NoData
-                if (ShadeTool_Algorithm.isNoData(d.data[j][i]))
-                    g.resultGrid[j][i] = 9
+                if (ShadeTool_Algorithm.isNoData(shadeData.data[j][i]))
+                    grids.resultGrid[j][i] = 9
 
                 // Set ref position to the greater: plane height or actual elevation
-                g.refGrid[j][i] = Math.max(g.refGrid[j][i], d.data[j][i])
+                grids.refGrid[j][i] = Math.max(
+                    grids.refGrid[j][i],
+                    shadeData.data[j][i]
+                )
             }
         }
     },
-    isInElevationFOV(d, i, j, sourceHeight, height) {
-        if (d.options.FOVElevation < 180) {
+    isInElevationFOV(shadeData, i, j, sourceHeight, height) {
+        if (shadeData.options.FOVElevation < 180) {
             const srcLatLng = G_.litho.projection.tileXYZ2LatLng(
-                d.topLeftTile.x + d.dataSource.x / d.tileResolution,
-                d.topLeftTile.y + d.dataSource.y / d.tileResolution,
-                d.topLeftTile.z
+                shadeData.topLeftTile.x +
+                    shadeData.dataSource.x / shadeData.tileResolution,
+                shadeData.topLeftTile.y +
+                    shadeData.dataSource.y / shadeData.tileResolution,
+                shadeData.topLeftTile.z
             )
             const latLng = G_.litho.projection.tileXYZ2LatLng(
-                d.topLeftTile.x + i / d.tileResolution,
-                d.topLeftTile.y + j / d.tileResolution,
-                d.topLeftTile.z
+                shadeData.topLeftTile.x + i / shadeData.tileResolution,
+                shadeData.topLeftTile.y + j / shadeData.tileResolution,
+                shadeData.topLeftTile.z
             )
             const dist = F_.lngLatDistBetween(
                 srcLatLng.lng,
@@ -442,23 +605,31 @@ let ShadeTool_Algorithm = {
             const ang =
                 Math.atan2(height - sourceHeight, dist) * (180 / Math.PI)
             if (
-                ang > d.options.centerElevation - d.options.FOVElevation / 2 &&
-                ang < d.options.centerElevation + d.options.FOVElevation / 2
+                ang >
+                    shadeData.options.centerElevation -
+                        shadeData.options.FOVElevation / 2 &&
+                ang <
+                    shadeData.options.centerElevation +
+                        shadeData.options.FOVElevation / 2
             )
                 return true
             return false
         }
         return true
     },
-    mask: function (d, grids) {
+    mask: function (shadeData, grids) {
         // Azimuth
         // based on options.centerAzimuth and FOVAzimuth
-        if (d.options.FOVAzimuth < 360) {
+        if (shadeData.options.FOVAzimuth < 360) {
             let minAz =
-                (d.options.centerAzimuth - d.options.FOVAzimuth / 2 + 90) *
+                (shadeData.options.centerAzimuth -
+                    shadeData.options.FOVAzimuth / 2 +
+                    90) *
                 (Math.PI / 180)
             let maxAz =
-                (d.options.centerAzimuth + d.options.FOVAzimuth / 2 + 90) *
+                (shadeData.options.centerAzimuth +
+                    shadeData.options.FOVAzimuth / 2 +
+                    90) *
                 (Math.PI / 180)
             if (minAz < 0) {
                 minAz += Math.PI * 2
@@ -466,7 +637,10 @@ let ShadeTool_Algorithm = {
             }
             for (let y = 0; y < grids.resultGrid.length; y++) {
                 for (let x = 0; x < grids.resultGrid[y].length; x++) {
-                    let ang = Math.atan2(d.dataSource.y - y, d.dataSource.x - x)
+                    let ang = Math.atan2(
+                        shadeData.dataSource.y - y,
+                        shadeData.dataSource.x - x
+                    )
                     if (ang < 0) ang += Math.PI * 2
                     if (
                         !(
@@ -506,24 +680,29 @@ let ShadeTool_Algorithm = {
         if (i == j) return this.calcHeightLine(i, Za, Zo)
         else return ((Za - Zo) * i + (Zb - Zo) * (j - i)) / (j - 1) + Zo
     },
-    curveData: function (d) {
-        if (d.hasDataCurved) return
-        d.hasDataCurved = true
-        for (let j = 0; j < d.data.length; j++) {
-            for (let i = 0; i < d.data[j].length; i++) {
-                d.data[j][i] = this.curve(i, j, d.data[j][i], d)
+    curveData: function (shadeData) {
+        if (shadeData.hasDataCurved) return
+        shadeData.hasDataCurved = true
+        for (let j = 0; j < shadeData.data.length; j++) {
+            for (let i = 0; i < shadeData.data[j].length; i++) {
+                shadeData.data[j][i] = this.curve(
+                    i,
+                    j,
+                    shadeData.data[j][i],
+                    shadeData
+                )
             }
         }
     },
-    curve: function (i, j, height, d) {
+    curve: function (i, j, height, shadeData) {
         const ll = G_.litho.projection.tileXYZ2LatLng(
-            d.topLeftTile.x + i / d.tileResolution,
-            d.topLeftTile.y + j / d.tileResolution,
-            d.topLeftTile.z
+            shadeData.topLeftTile.x + i / shadeData.tileResolution,
+            shadeData.topLeftTile.y + j / shadeData.tileResolution,
+            shadeData.topLeftTile.z
         )
         const dist = F_.lngLatDistBetween(
-            d.source.lng,
-            d.source.lat,
+            shadeData.source.lng,
+            shadeData.source.lat,
             ll.lng,
             ll.lat
         )
@@ -536,6 +715,7 @@ let ShadeTool_Algorithm = {
         const q = { x: Ia, y: Ja, z: Za }
         const r = { x: Ib, y: Jb, z: Zb }
 
+        // Plane through p, q, r via cross product: a*x + b*y + c*z + d = 0
         const a1 = q.x - p.x
         const b1 = q.y - p.y
         const c1 = q.z - p.z
