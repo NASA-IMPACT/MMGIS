@@ -52,7 +52,7 @@ const LOS = {
 let profileData = []
 let elevPoints = []
 let profileDivId = 'measureToolProfile'
-let rAm = 100 //roundAmount
+let roundAmount = 100
 let globeMouseDownXY = {}
 let _refreshCounter = 0
 let _observerXY = { x: 0, y: 0, index: 0 }
@@ -1306,15 +1306,18 @@ function makeMeasureToolLayer() {
 
     var pointsAndPathArr = []
     var polylinePoints = []
-    var temp
+    var pointMarker
     var clickedLatLngsPoly = []
     for (var i = 0; i < clickedLatLngs.length; i++) {
-        temp = new L.circleMarker([clickedLatLngs[i].x, clickedLatLngs[i].y], {
-            fillColor: i == 0 ? 'var(--color-green2)' : 'black',
-            fillOpacity: 1,
-            color: i == 0 ? 'black' : 'white',
-            weight: 2,
-        }).setRadius(i == 0 ? 6 : 4)
+        pointMarker = new L.circleMarker(
+            [clickedLatLngs[i].x, clickedLatLngs[i].y],
+            {
+                fillColor: i == 0 ? 'var(--color-green2)' : 'black',
+                fillOpacity: 1,
+                color: i == 0 ? 'black' : 'white',
+                weight: 2,
+            }
+        ).setRadius(i == 0 ? 6 : 4)
         if (i > 0) {
             var roundedDist =
                 Math.round(
@@ -1323,10 +1326,10 @@ function makeMeasureToolLayer() {
                         clickedLatLngs[i].x,
                         clickedLatLngs[i - 1].y,
                         clickedLatLngs[i - 1].x
-                    ) * rAm
-                ) / rAm
+                    ) * roundAmount
+                ) / roundAmount
             var roundedTotalDist =
-                Math.round(totalDistToIndex(i + 1) * rAm) / rAm
+                Math.round(totalDistToIndex(i + 1) * roundAmount) / roundAmount
             var distAzimuth =
                 Math.round(
                     F_.bearingBetweenTwoLatLngs(
@@ -1334,8 +1337,8 @@ function makeMeasureToolLayer() {
                         clickedLatLngs[0].y,
                         clickedLatLngs[i].x,
                         clickedLatLngs[i].y
-                    ) * rAm
-                ) / rAm
+                    ) * roundAmount
+                ) / roundAmount
             if (distAzimuth < 0) distAzimuth = 360 + distAzimuth //Map to 0 to 360 degrees
             if (i == clickedLatLngs.length - 1) {
                 let dist = roundedTotalDist
@@ -1351,7 +1354,7 @@ function makeMeasureToolLayer() {
                     dist = (roundedTotalDist / 1000).toFixed(2)
                     distUnit = 'km'
                 }
-                temp.bindTooltip(
+                pointMarker.bindTooltip(
                     `${dist}${distUnit} | ${distAzimuth}&deg;${timeToArrival}`,
                     {
                         permanent: true,
@@ -1362,7 +1365,7 @@ function makeMeasureToolLayer() {
                 )
             }
         }
-        pointsAndPathArr.push(temp)
+        pointsAndPathArr.push(pointMarker)
         polylinePoints.push(
             new L.LatLng(clickedLatLngs[i].x, clickedLatLngs[i].y)
         )
@@ -1686,8 +1689,8 @@ function makeGhostLine(lng, lat) {
                     clickedLatLngs[0].y,
                     lat,
                     lng
-                ) * rAm
-            ) / rAm
+                ) * roundAmount
+            ) / roundAmount
         if (distAzimuth < 0) distAzimuth = 360 + distAzimuth //Map to 0 to 360 degrees
         var roundedDist =
             Math.round(
@@ -1696,14 +1699,15 @@ function makeGhostLine(lng, lat) {
                     clickedLatLngs[i1].x,
                     lng,
                     lat
-                ) * rAm
-            ) / rAm
+                ) * roundAmount
+            ) / roundAmount
         //using actual latlng as meters:
         //var roundedDist = Math.round(Math.sqrt(Math.pow(clickedLatLngs[i1].x - e.latlng.lat, 2) + Math.pow(clickedLatLngs[i1].y - e.latlng.lng, 2)) * 10)/10;
         var roundedTotalDist =
             Math.round(
-                (totalDistToIndex(clickedLatLngs.length) + roundedDist) * rAm
-            ) / rAm
+                (totalDistToIndex(clickedLatLngs.length) + roundedDist) *
+                    roundAmount
+            ) / roundAmount
         distLineToMouse = new L.Polyline(
             [new L.LatLng(endDC['x'], endDC['y']), { lat: lat, lng: lng }],
             {

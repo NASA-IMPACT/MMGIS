@@ -538,12 +538,14 @@ let CurtainTool = {
         //Built initially only for MultiLineString
         if (CurtainTool.currentMapLayer) {
             //Get feature coordinates
-            let g = CurtainTool.currentMapLayer.feature.geometry.coordinates[0]
+            let lineCoords =
+                CurtainTool.currentMapLayer.feature.geometry.coordinates[0]
             if (
                 CurtainTool.currentMapLayer.feature.geometry.type ==
                 'LineString'
             )
-                g = CurtainTool.currentMapLayer.feature.geometry.coordinates
+                lineCoords =
+                    CurtainTool.currentMapLayer.feature.geometry.coordinates
             //Get length data
             const lengthArray = [0]
             let totalLength = 0
@@ -553,12 +555,12 @@ let CurtainTool = {
                 i0 = 0
                 i1 = 1
             }
-            for (let i = 1; i < g.length; i++) {
+            for (let i = 1; i < lineCoords.length; i++) {
                 let l = F_.lngLatDistBetween(
-                    g[i - 1][i0],
-                    g[i - 1][i1],
-                    g[i][i0],
-                    g[i][i1]
+                    lineCoords[i - 1][i0],
+                    lineCoords[i - 1][i1],
+                    lineCoords[i][i0],
+                    lineCoords[i][i1]
                 )
                 totalLength += l
                 lengthArray.push(totalLength)
@@ -572,8 +574,16 @@ let CurtainTool = {
                         (place - lengthArray[i - 1]) /
                         (lengthArray[i] - lengthArray[i - 1])
                     return F_.interpolatePointsPerun(
-                        { x: g[i - 1][0], y: g[i - 1][1], z: g[i - 1][2] },
-                        { x: g[i][0], y: g[i][1], z: g[i][2] },
+                        {
+                            x: lineCoords[i - 1][0],
+                            y: lineCoords[i - 1][1],
+                            z: lineCoords[i - 1][2],
+                        },
+                        {
+                            x: lineCoords[i][0],
+                            y: lineCoords[i][1],
+                            z: lineCoords[i][2],
+                        },
                         p
                     )
                 }
@@ -666,13 +676,13 @@ let CurtainTool = {
         state.setMouseCoordsVis(true)
 
         // Update markers on map and globe
-        const ll = CurtainTool.pxToLngLat([pointer.x, pointer.y])
+        const lngLatPoint = CurtainTool.pxToLngLat([pointer.x, pointer.y])
 
-        if (ll) {
+        if (lngLatPoint) {
             //Map
-            const llM = [ll.y, ll.x]
+            const markerLatLng = [lngLatPoint.y, lngLatPoint.x]
             Map_.rmNotNull(CurtainTool.focus.mapLayer)
-            CurtainTool.focus.mapLayer = new L.circleMarker(llM, {
+            CurtainTool.focus.mapLayer = new L.circleMarker(markerLatLng, {
                 fillColor: 'yellow',
                 fillOpacity: 1,
                 color: 'black',
@@ -684,8 +694,8 @@ let CurtainTool = {
             // If mousing over in openseadragon
             if (o.e)
                 CurtainTool.attachFocusToGlobe(
-                    ll.y,
-                    ll.x,
+                    lngLatPoint.y,
+                    lngLatPoint.x,
                     CurtainTool.activeImage.topElev,
                     depth
                 )

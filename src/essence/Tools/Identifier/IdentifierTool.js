@@ -174,7 +174,7 @@ var IdentifierTool = {
     },
     //lnglatzoom is [lng,lat,zoom]
     //if trueValue is true, query the data layer for the value, else us the legend if possible
-    idPixel: function (e, lnglatzoom, trueValue, selfish) {
+    idPixel: function (e, lnglatzoom, trueValue, isRequery) {
         trueValue = trueValue || false
         clearTimeout(IdentifierTool.mousemoveTimeout)
 
@@ -185,29 +185,31 @@ var IdentifierTool = {
         IdentifierTool.tileFormats = []
         //IdentifierTool.imageData = []
 
-        for (let n in L_.layers.on) {
-            if (L_.layers.on[n] == true) {
+        for (let layerName in L_.layers.on) {
+            if (L_.layers.on[layerName] == true) {
                 //We only want the tile and image layers
                 if (
-                    L_.layers.data[n].type == 'tile' ||
-                    L_.layers.data[n].type == 'image'
+                    L_.layers.data[layerName].type == 'tile' ||
+                    L_.layers.data[layerName].type == 'image'
                 ) {
                     let url =
-                        L_.layers.data[n].url.indexOf('stac-collection:') ===
-                            0 || L_.layers.data[n].url.indexOf('COG:') === 0
-                            ? L_.layers.data[n].url
+                        L_.layers.data[layerName].url.indexOf(
+                            'stac-collection:'
+                        ) === 0 ||
+                        L_.layers.data[layerName].url.indexOf('COG:') === 0
+                            ? L_.layers.data[layerName].url
                             : L_.getUrl(
-                                  L_.layers.data[n].type,
-                                  L_.layers.data[n].url,
-                                  L_.layers.data[n]
+                                  L_.layers.data[layerName].type,
+                                  L_.layers.data[layerName].url,
+                                  L_.layers.data[layerName]
                               )
                     IdentifierTool.activeLayerURLs.push(url)
-                    IdentifierTool.activeLayerNames.push(n)
+                    IdentifierTool.activeLayerNames.push(layerName)
                     IdentifierTool.zoomLevels.push(
-                        L_.layers.data[n].maxNativeZoom
+                        L_.layers.data[layerName].maxNativeZoom
                     )
                     IdentifierTool.tileFormats.push(
-                        L_.layers.data[n].tileformat || 'tms'
+                        L_.layers.data[layerName].tileformat || 'tms'
                     )
                 }
             }
@@ -353,18 +355,18 @@ var IdentifierTool = {
                 const data =
                     IdentifierTool.vars.data[IdentifierTool.activeLayerNames[i]]
                 for (let j = 0; j < data.data.length; j++) {
-                    const d = data.data[j]
+                    const dataSource = data.data[j]
                     if (pxRGBA) {
                         if (trueValue) {
                             queryDataValue(
-                                d.url,
+                                dataSource.url,
                                 lnglatzoom[0],
                                 lnglatzoom[1],
-                                d.bands,
+                                dataSource.bands,
                                 IdentifierTool.activeLayerNames[i],
                                 (function (pxRGBA, i, j) {
                                     return function (value) {
-                                        const d2 =
+                                        const refreshedDataSource =
                                             IdentifierTool.vars.data[
                                                 IdentifierTool.activeLayerNames[
                                                     i
@@ -385,20 +387,24 @@ var IdentifierTool = {
                                         )
                                         let cnt = 0
                                         for (let v in value) {
-                                            let unit = d2.units || ''
+                                            let unit =
+                                                refreshedDataSource.units || ''
                                             if (
-                                                d2.units &&
-                                                d2.units.constructor ===
-                                                    Array &&
-                                                d2.units[cnt]
+                                                refreshedDataSource.units &&
+                                                refreshedDataSource.units
+                                                    .constructor === Array &&
+                                                refreshedDataSource.units[cnt]
                                             ) {
-                                                unit = d2.units[cnt]
+                                                unit =
+                                                    refreshedDataSource.units[
+                                                        cnt
+                                                    ]
                                             }
                                             let valueParsed =
                                                 parseValue(
                                                     value[v][1],
-                                                    d2.sigfigs,
-                                                    d2.scalefactor
+                                                    refreshedDataSource.sigfigs,
+                                                    refreshedDataSource.scalefactor
                                                 ) +
                                                 '' +
                                                 unit
@@ -423,7 +429,7 @@ var IdentifierTool = {
                                         }
                                         copyableValues[
                                             `${
-                                                d.name ||
+                                                dataSource.name ||
                                                 L_.layers.data[
                                                     IdentifierTool
                                                         .activeLayerNames[i]
@@ -481,7 +487,7 @@ var IdentifierTool = {
                         `<div style="display: flex;">`,
                             `<div style='width: 14px; height: 14px; margin-right: 8px; margin-top: 2px; background: ${colorString};'></div>`,
                             `<div style="letter-spacing: 0.5px; white-space: nowrap;">`,
-                                d.name ||
+                                dataSource.name ||
                                     L_.layers.data[
                                         IdentifierTool.activeLayerNames[i]
                                     ].display_name,
@@ -525,7 +531,7 @@ var IdentifierTool = {
         // so the legend-RGB readout is preserved
         if (
             !trueValue &&
-            !selfish &&
+            !isRequery &&
             !isStaticBuild()
         ) {
             IdentifierTool.mousemoveTimeout = setTimeout(function () {
@@ -533,32 +539,34 @@ var IdentifierTool = {
             }, 150)
         }
 
-        function parseValue(v, sigfigs, scalefactor) {
+        function parseValue(rawValue, sigfigs, scalefactor) {
             var ed = 10
-            if (typeof v === 'string') {
-                return v
+            if (typeof rawValue === 'string') {
+                return rawValue
             }
-            if (v == null) {
-                return v
-            } else if (v.toString().indexOf('e') != -1) {
+            if (rawValue == null) {
+                return rawValue
+            } else if (rawValue.toString().indexOf('e') != -1) {
                 if (sigfigs != undefined) ed = sigfigs
-                if (scalefactor != undefined) v = v * parseFloat(scalefactor)
-                v = parseFloat(v)
-                return v.toExponential(ed)
+                if (scalefactor != undefined)
+                    rawValue = rawValue * parseFloat(scalefactor)
+                rawValue = parseFloat(rawValue)
+                return rawValue.toExponential(ed)
             } else {
-                var decSplit = v.toString().split('.')
+                var decSplit = rawValue.toString().split('.')
                 var decPlacesBefore = decSplit[0] ? decSplit[0].length : 0
                 var decPlacesAfter = decSplit[1] ? decSplit[1].length : 0
                 if (decPlacesBefore <= 5) {
                     if (scalefactor != undefined)
-                        v = v * parseFloat(scalefactor)
-                    if (sigfigs != undefined) v = v.toFixed(sigfigs)
+                        rawValue = rawValue * parseFloat(scalefactor)
+                    if (sigfigs != undefined)
+                        rawValue = rawValue.toFixed(sigfigs)
                 }
-                v = parseFloat(v)
+                rawValue = parseFloat(rawValue)
                 if (decPlacesAfter >= ed) {
-                    v = v.toExponential(ed)
+                    rawValue = rawValue.toExponential(ed)
                 }
-                return parseFloat(v)
+                return parseFloat(rawValue)
             }
         }
     },

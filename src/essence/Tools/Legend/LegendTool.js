@@ -98,21 +98,23 @@ function interfaceWithMMWebGIS() {
 function refreshLegends() {
     $('#LegendTool').empty()
 
-    function _refreshLegends(node, parent, depth) {
+    function _refreshLegends(layerConfigs, parent, depth) {
         let shift = LegendTool.showHeadersInLegend === true ? depth : 0
-        for (let i in node) {
-            let l = node[i].name
-            if (L_.layers.on[l] == true) {
-                if (L_.layers.data[l].type != 'header') {
-                    if (L_.layers.data[l]?._legend === undefined
-                            && ((['image', 'tile'].includes(L_.layers.data[l].type) && L_.layers.data[l].cogTransform)
-                            || L_.layers.data[l].type === 'velocity')) {
+        for (let i in layerConfigs) {
+            let layerName = layerConfigs[i].name
+            if (L_.layers.on[layerName] == true) {
+                if (L_.layers.data[layerName].type != 'header') {
+                    if (L_.layers.data[layerName]?._legend === undefined
+                            && ((['image', 'tile'].includes(L_.layers.data[layerName].type) && L_.layers.data[layerName].cogTransform)
+                            || L_.layers.data[layerName].type === 'velocity')) {
                         const layersTool = ToolController_.getTool('LayersTool')
-                        layersTool.populateCogScale(L_.layers.data[l].name)
+                        layersTool.populateCogScale(
+                            L_.layers.data[layerName].name
+                        )
                     }
 
                     // Check if there's a legend URL that points to an image
-                    const legendURL = L_.layers.data[l]?.legend
+                    const legendURL = L_.layers.data[layerName]?.legend
                     if (legendURL && typeof legendURL === 'string') {
                         let isImageUrl = false
 
@@ -153,27 +155,27 @@ function refreshLegends() {
                             drawLegends(
                                 LegendTool.tools,
                                 legendURL, // Pass the URL string directly
-                                l,
-                                L_.layers.data[l].display_name,
-                                L_.layers.opacity[l],
+                                layerName,
+                                L_.layers.data[layerName].display_name,
+                                L_.layers.opacity[layerName],
                                 shift
                             )
                             continue; // Skip the CSV processing below
                         }
                     }
 
-                    if (L_.layers.data[l]?._legend != undefined) {
+                    if (L_.layers.data[layerName]?._legend != undefined) {
                         drawLegends(
                             LegendTool.tools,
-                            L_.layers.data[l]?._legend,
-                            l,
-                            L_.layers.data[l].display_name,
-                            L_.layers.opacity[l],
+                            L_.layers.data[layerName]?._legend,
+                            layerName,
+                            L_.layers.data[layerName].display_name,
+                            L_.layers.opacity[layerName],
                             shift
                         )
                     }
                 } else if (LegendTool.showHeadersInLegend === true) {
-                        const haveLegends = L_.layers.data[l].sublayers
+                        const haveLegends = L_.layers.data[layerName].sublayers
                             .map(i => i.name)
                             .filter(i => {
                                 return ((L_.layers.data[i]._legend?.length > 0
@@ -185,18 +187,22 @@ function refreshLegends() {
                         if (haveLegends.length > 0) {
                             drawLegends(
                                 LegendTool.tools,
-                                L_.layers.data[l]?._legend,
-                                l,
-                                L_.layers.data[l].display_name,
-                                L_.layers.opacity[l],
+                                L_.layers.data[layerName]?._legend,
+                                layerName,
+                                L_.layers.data[layerName].display_name,
+                                L_.layers.opacity[layerName],
                                 shift
                             )
                         }
                     }
             }
 
-            if (node[i].sublayers)
-                _refreshLegends(node[i].sublayers, node[i], depth + 1)
+            if (layerConfigs[i].sublayers)
+                _refreshLegends(
+                    layerConfigs[i].sublayers,
+                    layerConfigs[i],
+                    depth + 1
+                )
         }
     }
 

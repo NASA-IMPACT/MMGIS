@@ -646,11 +646,11 @@ var InfoTool = {
             InfoTool.filterList()
         }
     },
-    findFeature: function (l, featureArray) {
-        if (l.feature && featureArray) {
-            let f = JSON.stringify(l.feature)
+    findFeature: function (featureLayer, featureArray) {
+        if (featureLayer.feature && featureArray) {
+            let featureJson = JSON.stringify(featureLayer.feature)
             for (let i = 0; i < featureArray.length; i++) {
-                if (JSON.stringify(featureArray[i]) == f) {
+                if (JSON.stringify(featureArray[i]) == featureJson) {
                     return i
                 }
             }
