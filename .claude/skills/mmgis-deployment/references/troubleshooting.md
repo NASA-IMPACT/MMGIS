@@ -8,7 +8,7 @@
 |---------|-------|-----|
 | `start.sh` times out; log shows DB connection error | Shared DB container not running | `npm run db:start` in the main checkout |
 | Log: `role "mmgis\r" does not exist` or auth fails on a clean DB | CRLF in `.env` (trailing `\r` in values) | The scripts strip CR when reading `.env`; if you hand-edit, save with LF endings |
-| Log: `database "<name>" does not exist` and it isn't created | `DB_NAME` mismatch, or DB never cloned | `doctor.sh`; if DB missing, `create.sh` (clones golden) or clone manually |
+| Log: `database "<name>" does not exist` and it isn't created | `DB_NAME` mismatch, or DB never cloned | `doctor.sh`; if DB missing, `create.sh` (clones the template DB) or clone manually |
 | `start.sh` says "already up on port N" | A server (maybe a stale one) is on that port | `stop.sh <dir>`, or find the listener with `lsof -nP -iTCP:N -sTCP:LISTEN` |
 | API healthy but dashboard (PORT+1) returns 000/connection refused | webpack-dev-server still compiling | Wait ~30–90s for the first compile; re-curl |
 
@@ -20,14 +20,14 @@
 | `start.sh` fails immediately, port in use | Another deployment or stray process holds the port | `lsof -nP -iTCP:<port> -sTCP:LISTEN`; stop the owner |
 | Plain `npm start` failed with port 5432 in use | `npm start`'s `prestart` tried to start a second DB container | Use `start:no-docker` (what `start.sh` does); remove the stray container `docker rm mmgis-<name>-db-1` |
 
-## Database / golden
+## Database / template DB
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `create.sh`: "mmgis_golden does not exist" | Baseline never created on this machine | `seed-golden.sh` (builds from the committed seed — works on a fresh machine) or `refresh-golden.sh` (snapshots a live `mmgis`) |
-| Basemap blank in a fresh deployment | Golden was seeded without `MAPBOX_TOKEN` | Set `MAPBOX_TOKEN` and `seed-golden.sh --force`, or paste a token into the mission's basemap settings in Configure |
-| Clone fails: "source database is being accessed by other users" | Tried to use a live DB as a TEMPLATE | Clone only from frozen `mmgis_golden`, never from `mmgis`; if refreshing golden, the dump/restore path avoids this |
-| New deployment opens to an empty landing page | DB cloned from a golden that had no mission, or `first_signup` not done | Refresh golden from a DB that has the mission, or sign up the first admin and build a mission |
+| `create.sh`: "mmgis_template_db does not exist" | Baseline never created on this machine | `seed-template-db.sh` (builds from the committed seed — works on a fresh machine) or `refresh-template-db.sh` (snapshots a live `mmgis`) |
+| Basemap blank in a fresh deployment | The template DB was seeded without `MAPBOX_TOKEN` | Set `MAPBOX_TOKEN` and `seed-template-db.sh --force`, or paste a token into the mission's basemap settings in Configure |
+| Clone fails: "source database is being accessed by other users" | Tried to use a live DB as a TEMPLATE | Clone only from frozen `mmgis_template_db`, never from `mmgis`; if refreshing the template DB, the dump/restore path avoids this |
+| New deployment opens to an empty landing page | DB cloned from a template DB that had no mission, or `first_signup` not done | Refresh the template DB from a DB that has the mission, or sign up the first admin and build a mission |
 | `DROP DATABASE` fails: in use | Server still connected | `stop.sh <dir>` first; `teardown.sh` stops the server before dropping |
 
 ## Teardown

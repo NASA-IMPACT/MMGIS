@@ -1,6 +1,6 @@
 {
   "name": "mmgis",
-  "version": "4.2.15-20260722",
+  "version": "4.2.20-20260722",
   "description": "A web-based mapping and localization solution for science operation on planetary missions.",
   "homepage": "build",
   "repository": {
@@ -136,6 +136,7 @@
     "http-proxy-middleware": "^3.0.2",
     "isomorphic-ws": "5.0.0",
     "jquery": "^3.5.1",
+    "jspdf": "^4.2.1",
     "lithosphere": "^1.5.5",
     "mapbox-gl": "^3.20.0",
     "maplibre-gl": "^5.21.0",

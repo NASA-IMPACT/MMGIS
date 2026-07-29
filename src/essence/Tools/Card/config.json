@@ -1,4 +1,7 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "defaultIcon": "card-text-outline",
     "description": "Displays a configurable list of cards (image, title, subtitle, link) in a sidebar.",
     "descriptionFull": {

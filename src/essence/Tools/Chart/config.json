@@ -1,4 +1,7 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "defaultIcon": "chart-bar",
     "description": "Render per-layer analysis results published by the FetchStats plugin.",
     "descriptionFull": {
