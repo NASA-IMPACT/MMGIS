@@ -163,7 +163,7 @@ var TimeControl = {
         // Runs after Map_.init() has loaded the time-enabled layers (the
         // seed in init() skips reloading because they aren't on the map yet).
         // This is the single initial reload, in every layout; widgets mirror
-        // the committed state via the time:change broadcast.
+        // the committed state via the time:changed broadcast.
         if (TimeControl.enabled) {
             timeInputChange(
                 TimeControl.startTime,
@@ -266,7 +266,7 @@ var TimeControl = {
         }
 
         // Commit directly — a programmatic time change must never depend on
-        // a UI being present. timeInputChange broadcasts 'time:change' for
+        // a UI being present. timeInputChange broadcasts 'time:changed' for
         // widgets/plugins (e.g. TimeUI) to sync themselves against.
         timeInputChange(
             TimeControl.startTime,
@@ -816,7 +816,7 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
 
     // Emit event for external listeners via Event Bus
     if (window.mmgisAPI) {
-        window.mmgisAPI.emit('time:change', {
+        window.mmgisAPI.emit('time:changed', {
             startTime: TimeControl.startTime,
             endTime: TimeControl.endTime,
             currentTime: TimeControl.currentTime,
