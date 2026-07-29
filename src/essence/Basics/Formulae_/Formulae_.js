@@ -333,7 +333,7 @@ var Formulae_ = {
 
         return newPt
     },
-    //Rotates X then Z then Y ?
+    // Rotates about fixed axes Z, then Y, then X (matrix = Rx(angle.x)·Ry(angle.y)·Rz(angle.z))
     //all are of form {x: , y: , z: }
     //angle is in radians
     //if center undefined, then 0 0 0
@@ -1246,29 +1246,29 @@ var Formulae_ = {
     },
     //Current only supports a single feature: {type:"feature", ...}
     getFeatureLength(feature, displayFriendly) {
-        let g = feature.geometry.coordinates
+        let coords = feature.geometry.coordinates
         let length2D = 0
 
         switch (feature.geometry.type.toLowerCase()) {
             case 'linestring':
-                for (let i = 1; i < g.length; i++) {
+                for (let i = 1; i < coords.length; i++) {
                     length2D += this.lngLatDistBetween(
-                        g[i - 1][0],
-                        g[i - 1][1],
-                        g[i][0],
-                        g[i][1]
+                        coords[i - 1][0],
+                        coords[i - 1][1],
+                        coords[i][0],
+                        coords[i][1]
                     )
                 }
                 break
             case 'polygon':
             case 'multilinestring':
-                g = g[0]
-                for (let i = 1; i < g.length; i++) {
+                coords = coords[0]
+                for (let i = 1; i < coords.length; i++) {
                     length2D += this.lngLatDistBetween(
-                        g[i - 1][0],
-                        g[i - 1][1],
-                        g[i][0],
-                        g[i][1]
+                        coords[i - 1][0],
+                        coords[i - 1][1],
+                        coords[i][0],
+                        coords[i][1]
                     )
                 }
                 break
@@ -1492,55 +1492,57 @@ var Formulae_ = {
             : {}
 
         const g = JSON.parse(JSON.stringify(geojson))
-        g.features.forEach((f) => {
-            let pstyle = f.properties.style || {}
+        g.features.forEach((feature) => {
+            let pstyle = feature.properties.style || {}
 
-            if (useKeyAsName && f.properties[useKeyAsName] != null) {
-                if (typeof f.properties[useKeyAsName] === 'number')
-                    f.properties[useKeyAsName] = `${f.properties[useKeyAsName]}`
+            if (useKeyAsName && feature.properties[useKeyAsName] != null) {
+                if (typeof feature.properties[useKeyAsName] === 'number')
+                    feature.properties[useKeyAsName] =
+                        `${feature.properties[useKeyAsName]}`
             }
 
-            if (f.geometry.type.toLowerCase() === 'point') {
+            if (feature.geometry.type.toLowerCase() === 'point') {
                 if (pstyle.fillColor != null)
-                    f.properties['marker-color'] = pstyle.fillColor
+                    feature.properties['marker-color'] = pstyle.fillColor
                 else if (defStyle.fillColor != null)
-                    f.properties['marker-color'] = defStyle.fillColor
+                    feature.properties['marker-color'] = defStyle.fillColor
             }
             // style.color -> stroke
-            if (pstyle.color != null) f.properties['stroke'] = pstyle.color
+            if (pstyle.color != null)
+                feature.properties['stroke'] = pstyle.color
             else if (defStyle.color != null)
-                f.properties['stroke'] = defStyle.color
+                feature.properties['stroke'] = defStyle.color
             // style.opacity -> stroke-opacity
             if (pstyle.opacity != null)
-                f.properties['stroke-opacity'] = pstyle.opacity
+                feature.properties['stroke-opacity'] = pstyle.opacity
             if (defStyle.opacity != null)
-                f.properties['stroke-opacity'] = defStyle.opacity
+                feature.properties['stroke-opacity'] = defStyle.opacity
             // style.weight -> stroke-width
             if (pstyle.weight != null)
-                f.properties['stroke-width'] = pstyle.weight
+                feature.properties['stroke-width'] = pstyle.weight
             if (defStyle.weight != null)
-                f.properties['stroke-width'] = defStyle.weight
+                feature.properties['stroke-width'] = defStyle.weight
             // style.fillColor -> fill
             if (pstyle.fillColor != null)
-                f.properties['fill'] = pstyle.fillColor
+                feature.properties['fill'] = pstyle.fillColor
             if (defStyle.fillColor != null)
-                f.properties['fill'] = defStyle.fillColor
+                feature.properties['fill'] = defStyle.fillColor
             // style.fillOpacity -> fill-opacity
             if (pstyle.fillOpacity != null)
-                f.properties['fill-opacity'] = pstyle.fillOpacity
+                feature.properties['fill-opacity'] = pstyle.fillOpacity
             if (defStyle.fillOpacity != null)
-                f.properties['fill-opacity'] = defStyle.fillOpacity
+                feature.properties['fill-opacity'] = defStyle.fillOpacity
 
             if (stringifyPropertyObjects)
-                Object.keys(f.properties).forEach((p) => {
-                    const val = f.properties[p]
+                Object.keys(feature.properties).forEach((p) => {
+                    const val = feature.properties[p]
                     if (
                         typeof val === 'object' &&
                         !Array.isArray(val) &&
                         val !== null
                     ) {
                         let str = JSON.stringify(val).replaceAll(`"`, '')
-                        f.properties[p] = str.substring(1, str.length - 1)
+                        feature.properties[p] = str.substring(1, str.length - 1)
                     }
                 })
         })
@@ -1865,44 +1867,45 @@ var Formulae_ = {
                 )
             })
         } else {
-            let l
+            let featureLayers
             if (layers.feature && layers.feature.geometry?.type === 'Point') {
-                l = [layers]
-            } else l = layers._layers
+                featureLayers = [layers]
+            } else featureLayers = layers._layers
 
-            if (l == null) return points
-            for (let i in l) {
-                if (l[i].feature == null) continue
+            if (featureLayers == null) return points
+            for (let i in featureLayers) {
+                if (featureLayers[i].feature == null) continue
                 if (searchRadiusInDegrees != null) {
                     if (
-                        l[i].feature.geometry.coordinates[0] >
+                        featureLayers[i].feature.geometry.coordinates[0] >
                             Math.min(
                                 searchRadiusInDegrees[0],
                                 searchRadiusInDegrees[1]
                             ) &&
-                        l[i].feature.geometry.coordinates[0] <
+                        featureLayers[i].feature.geometry.coordinates[0] <
                             Math.max(
                                 searchRadiusInDegrees[0],
                                 searchRadiusInDegrees[1]
                             ) &&
-                        l[i].feature.geometry.coordinates[1] >
+                        featureLayers[i].feature.geometry.coordinates[1] >
                             Math.min(
                                 searchRadiusInDegrees[2],
                                 searchRadiusInDegrees[3]
                             ) &&
-                        l[i].feature.geometry.coordinates[1] <
+                        featureLayers[i].feature.geometry.coordinates[1] <
                             Math.max(
                                 searchRadiusInDegrees[2],
                                 searchRadiusInDegrees[3]
                             )
                     ) {
-                        points.push(l[i])
+                        points.push(featureLayers[i])
                     }
                 } else if (
-                    l[i].feature.geometry.coordinates[0] == point[0] &&
-                    l[i].feature.geometry.coordinates[1] == point[1]
+                    featureLayers[i].feature.geometry.coordinates[0] ==
+                        point[0] &&
+                    featureLayers[i].feature.geometry.coordinates[1] == point[1]
                 )
-                    points.push(l[i])
+                    points.push(featureLayers[i])
             }
         }
 
@@ -2190,16 +2193,16 @@ var Formulae_ = {
         return latlngs
     },
     getFeatureLatLngs(feature) {
-        let c = feature.geometry.coordinates
+        let coords = feature.geometry.coordinates
         let latlngs = []
-        for (let i = 0; i < c.length; i++) {
+        for (let i = 0; i < coords.length; i++) {
             latlngs.push([])
-            for (let j = 0; j < c[i][0].length; j++) {
+            for (let j = 0; j < coords[i][0].length; j++) {
                 let ll = {
-                    lat: c[i][0][j][1],
-                    lng: c[i][0][j][0],
+                    lat: coords[i][0][j][1],
+                    lng: coords[i][0][j][0],
                 }
-                if (c[i][0][j][2] != null) ll.alt = c[i][0][j][2]
+                if (coords[i][0][j][2] != null) ll.alt = coords[i][0][j][2]
                 latlngs[i].push(ll)
             }
         }

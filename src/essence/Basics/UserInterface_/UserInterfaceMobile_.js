@@ -389,14 +389,14 @@ var UserInterface = {
             .attr('tabindex', 500)
             .attr('class', 'mdi mdi-chevron-double-left mdi-24px')
             .on('click touchstart', function () {
-                var pp = UserInterface.getPanelPercents()
-                if (pp.map == 0) {
+                var panelPercents = UserInterface.getPanelPercents()
+                if (panelPercents.map == 0) {
                     UserInterface.setPanelPercents(0, 0, 100)
                 } else {
                     UserInterface.setPanelPercents(
                         0,
-                        pp.map + pp.viewer,
-                        pp.globe
+                        panelPercents.map + panelPercents.viewer,
+                        panelPercents.globe
                     )
                 }
             })
@@ -424,18 +424,18 @@ var UserInterface = {
             .attr('tabindex', 501)
             .attr('class', 'mdi mdi-chevron-double-right mdi-24px')
             .on('click touchstart', function () {
-                var pp = UserInterface.getPanelPercents()
-                if (pp.map == 0) {
+                var panelPercents = UserInterface.getPanelPercents()
+                if (panelPercents.map == 0) {
                     UserInterface.setPanelPercents(
-                        pp.viewer + pp.globe / 2,
+                        panelPercents.viewer + panelPercents.globe / 2,
                         0,
-                        pp.globe - pp.globe / 2
+                        panelPercents.globe - panelPercents.globe / 2
                     )
                 } else {
                     UserInterface.setPanelPercents(
-                        pp.viewer + pp.map / 2,
-                        pp.map - pp.map / 2,
-                        pp.globe
+                        panelPercents.viewer + panelPercents.map / 2,
+                        panelPercents.map - panelPercents.map / 2,
+                        panelPercents.globe
                     )
                 }
             })
@@ -523,18 +523,18 @@ var UserInterface = {
             .style('position', 'absolute')
             .style('left', '-27px')
             .on('click touchstart', function () {
-                var pp = UserInterface.getPanelPercents()
-                if (pp.map == 0) {
+                var panelPercents = UserInterface.getPanelPercents()
+                if (panelPercents.map == 0) {
                     UserInterface.setPanelPercents(
-                        pp.viewer - pp.viewer / 2,
+                        panelPercents.viewer - panelPercents.viewer / 2,
                         0,
-                        pp.globe + pp.viewer / 2
+                        panelPercents.globe + panelPercents.viewer / 2
                     )
                 } else {
                     UserInterface.setPanelPercents(
-                        pp.viewer,
-                        pp.map - pp.map / 2,
-                        pp.globe + pp.map / 2
+                        panelPercents.viewer,
+                        panelPercents.map - panelPercents.map / 2,
+                        panelPercents.globe + panelPercents.map / 2
                     )
                 }
             })
@@ -558,13 +558,13 @@ var UserInterface = {
             .style('position', 'absolute')
             .style('right', '-28px')
             .on('click touchstart', function () {
-                var pp = UserInterface.getPanelPercents()
-                if (pp.map == 0) {
+                var panelPercents = UserInterface.getPanelPercents()
+                if (panelPercents.map == 0) {
                     UserInterface.setPanelPercents(100, 0, 0)
                 } else {
                     UserInterface.setPanelPercents(
-                        pp.viewer,
-                        pp.map + pp.globe,
+                        panelPercents.viewer,
+                        panelPercents.map + panelPercents.globe,
                         0
                     )
                 }
@@ -766,8 +766,12 @@ var UserInterface = {
         $('#main-container').css('width', `calc(100% - ${width}px)`)
 
         UserInterface.mainWidth = $('#splitscreens').width()
-        const pp = UserInterface.getPanelPercents()
-        UserInterface.setPanelPercents(pp.viewer, pp.map, pp.globe)
+        const panelPercents = UserInterface.getPanelPercents()
+        UserInterface.setPanelPercents(
+            panelPercents.viewer,
+            panelPercents.map,
+            panelPercents.globe
+        )
         $('#uiRightPanel').css({ display: 'inherit', width: width })
 
         UserInterface.rightPanelOpen = true
@@ -779,8 +783,12 @@ var UserInterface = {
         $('#main-container').css('width', `100%`)
 
         UserInterface.mainWidth = $('#splitscreens').width()
-        const pp = UserInterface.getPanelPercents()
-        UserInterface.setPanelPercents(pp.viewer, pp.map, pp.globe)
+        const panelPercents = UserInterface.getPanelPercents()
+        UserInterface.setPanelPercents(
+            panelPercents.viewer,
+            panelPercents.map,
+            panelPercents.globe
+        )
         $('#uiRightPanel').css({ display: 'none', width: 0 })
 
         UserInterface.rightPanelOpen = null
@@ -804,8 +812,12 @@ var UserInterface = {
         UserInterface.splitscreens.css('left', width + 40 + 'px')
         UserInterface.mainWidth = $('#splitscreens').width()
         UserInterface.mainHeight = $('#splitscreens').height()
-        const pp = UserInterface.getPanelPercents()
-        UserInterface.setPanelPercents(pp.viewer, pp.map, pp.globe)
+        const panelPercents = UserInterface.getPanelPercents()
+        UserInterface.setPanelPercents(
+            panelPercents.viewer,
+            panelPercents.map,
+            panelPercents.globe
+        )
     },
     resizeToolPanel: function (width) {
         width = Math.max(
@@ -829,8 +841,12 @@ var UserInterface = {
         UserInterface.splitscreens.css('left', width + 40 + 'px')
         UserInterface.mainWidth = $('#splitscreens').width()
         UserInterface.mainHeight = $('#splitscreens').height()
-        const pp = UserInterface.getPanelPercents()
-        UserInterface.setPanelPercents(pp.viewer, pp.map, pp.globe)
+        const panelPercents = UserInterface.getPanelPercents()
+        UserInterface.setPanelPercents(
+            panelPercents.viewer,
+            panelPercents.map,
+            panelPercents.globe
+        )
     },
     closeToolPanel: function () {
         UserInterface.toolPanel.empty()
@@ -846,8 +862,12 @@ var UserInterface = {
         //UserInterface.splitscreens.css('left', 40 + 'px')
         UserInterface.mainWidth = $('#splitscreens').width()
         UserInterface.mainHeight = $('#splitscreens').height()
-        var pp = UserInterface.getPanelPercents()
-        UserInterface.setPanelPercents(pp.viewer, pp.map, pp.globe)
+        var panelPercents = UserInterface.getPanelPercents()
+        UserInterface.setPanelPercents(
+            panelPercents.viewer,
+            panelPercents.map,
+            panelPercents.globe
+        )
     },
     // can also be 'full'
     setToolHeight: function (pxHeight, shouldntAnimate) {

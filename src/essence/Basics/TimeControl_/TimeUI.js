@@ -2834,15 +2834,15 @@ const TimeUI = {
         // Find all on, time-enabled, tile layers
         const sparklineLayers = []
         Object.keys(L_.layers.data).forEach((name) => {
-            const l = L_.layers.data[name]
+            const layerConfig = L_.layers.data[name]
             if (
-                l &&
-                l.type === 'tile' &&
-                l.time &&
-                l.time.enabled === true &&
+                layerConfig &&
+                layerConfig.type === 'tile' &&
+                layerConfig.time &&
+                layerConfig.time.enabled === true &&
                 L_.layers.on[name] === true
             ) {
-                let layerUrl = l.url
+                let layerUrl = layerConfig.url
                 if (layerUrl.indexOf('stac-collection:') === 0) {
                     sparklineLayers.push({
                         name: name,
@@ -2875,23 +2875,23 @@ const TimeUI = {
         let bins = new Array(NUM_BINS).fill(0)
         let numBins = 0
 
-        sparklineLayers.forEach((l) => {
+        sparklineLayers.forEach((sparklineLayer) => {
             calls.api(
                 'query_tileset_times',
-                l.stacCollection != null
+                sparklineLayer.stacCollection != null
                     ? {
-                          stacCollection: l.stacCollection,
+                          stacCollection: sparklineLayer.stacCollection,
                           starttime: starttimeISO,
                           endtime: endtimeISO,
                       }
                     : {
-                          path: l.path,
+                          path: sparklineLayer.path,
                           starttime: starttimeISO,
                           endtime: endtimeISO,
                       },
                 function (data) {
                     if (data.body && data.body.times) {
-                        if (l.stacCollection != null) {
+                        if (sparklineLayer.stacCollection != null) {
                             for (let i = 0; i < NUM_BINS; i++) {
                                 bins[i] = Math.floor(
                                     F_.linearScale(
@@ -3334,18 +3334,18 @@ const TimeUI = {
         const timelineElm = $('#mmgisTimeUITimelineInner')
         timelineElm.empty()
 
-        let s = forceStart || TimeUI._timelineStartTimestamp
-        let e = forceEnd || TimeUI._timelineEndTimestamp
+        let startTimestamp = forceStart || TimeUI._timelineStartTimestamp
+        let endTimestamp = forceEnd || TimeUI._timelineEndTimestamp
 
-        if (e == null || s == null) return
+        if (endTimestamp == null || startTimestamp == null) return
 
-        s = Math.max(s - 0, 0) // Year 1970
-        e = Math.min(e - 0, 3155788800000) // Year 2070
+        startTimestamp = Math.max(startTimestamp - 0, 0) // Year 1970
+        endTimestamp = Math.min(endTimestamp - 0, 3155788800000) // Year 2070
 
-        TimeUI._timelineStartTimestamp = parseInt(s)
-        TimeUI._timelineEndTimestamp = parseInt(e)
+        TimeUI._timelineStartTimestamp = parseInt(startTimestamp)
+        TimeUI._timelineEndTimestamp = parseInt(endTimestamp)
 
-        const dif = e - s
+        const dif = endTimestamp - startTimestamp
 
         let unit = null
 
@@ -3367,10 +3367,18 @@ const TimeUI = {
         TimeUI._currentTimelineUnit = unit
 
         let first = true
-        const bigTicks = F_.getTimeStartsBetweenTimestamps(s, e, unit)
+        const bigTicks = F_.getTimeStartsBetweenTimestamps(
+            startTimestamp,
+            endTimestamp,
+            unit
+        )
 
         for (let i = 0; i < bigTicks.length; i++) {
-            const left = F_.linearScale([s, e], [0, 100], bigTicks[i].ts)
+            const left = F_.linearScale(
+                [startTimestamp, endTimestamp],
+                [0, 100],
+                bigTicks[i].ts
+            )
             if (left >= 0 && left <= 100) {
                 timelineElm.append(
                     [

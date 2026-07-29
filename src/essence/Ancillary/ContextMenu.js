@@ -124,7 +124,7 @@ function showContextMenuMap(e) {
     contextMenuActionsFull.forEach((c) => {
         $(`#contextMenuAction_${c.idx}_${c.idx2}`).on('click', function () {
             const a = c.contextMenuAction
-            const l = featuresAtClick[c.idx2]
+            const clickedFeatureLayer = featuresAtClick[c.idx2]
             if (a.link) {
                 let link = a.link
 
@@ -155,12 +155,18 @@ function showContextMenuMap(e) {
 
                 let wkt
                 if (link.indexOf(`{wkt}`) !== -1) {
-                    const geom = F_.simplifyGeometry(l.feature.geometry, 0.0003)
+                    const geom = F_.simplifyGeometry(
+                        clickedFeatureLayer.feature.geometry,
+                        0.0003
+                    )
                     wkt = geojsonToWKT(geom)
                     link = link.replace(new RegExp(`{wkt}`, 'gi'), wkt)
                 }
                 if (link.indexOf(`{wkt_}`) !== -1) {
-                    const geom = F_.simplifyGeometry(l.feature.geometry, 0.0003)
+                    const geom = F_.simplifyGeometry(
+                        clickedFeatureLayer.feature.geometry,
+                        0.0003
+                    )
                     wkt = geojsonToWKT(geom)
                     link = link.replace(
                         new RegExp(`{wkt_}`, 'gi'),
@@ -170,10 +176,11 @@ function showContextMenuMap(e) {
                 window.open(link, '_blank').focus()
             }
             if (a.goto === true) {
-                if (l) {
-                    if (typeof l.getBounds === 'function')
-                        Map_.map.fitBounds(l.getBounds())
-                    else if (l._latlng) Map_.map.panTo(l._latlng)
+                if (clickedFeatureLayer) {
+                    if (typeof clickedFeatureLayer.getBounds === 'function')
+                        Map_.map.fitBounds(clickedFeatureLayer.getBounds())
+                    else if (clickedFeatureLayer._latlng)
+                        Map_.map.panTo(clickedFeatureLayer._latlng)
                 }
             }
         })

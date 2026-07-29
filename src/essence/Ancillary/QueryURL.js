@@ -110,24 +110,26 @@ var QueryURL = {
         }
 
         if (selected !== false) {
-            var s = selected.split(',')
+            var selectedParts = selected.split(',')
             //1 and 2 could be either lat, lng or key, value
-            let isKeyValue = isNaN(parseFloat(s[1])) || isNaN(parseFloat(s[2]))
+            let isKeyValue =
+                isNaN(parseFloat(selectedParts[1])) ||
+                isNaN(parseFloat(selectedParts[2]))
             if (isKeyValue) {
                 L_.FUTURES.activePoint = {
-                    layerName: s[0],
-                    key: s[1],
-                    value: s[2],
-                    view: s[3],
-                    zoom: s[4],
+                    layerName: selectedParts[0],
+                    key: selectedParts[1],
+                    value: selectedParts[2],
+                    view: selectedParts[3],
+                    zoom: selectedParts[4],
                 }
             } else {
                 L_.FUTURES.activePoint = {
-                    layerName: s[0],
-                    lat: parseFloat(s[1]),
-                    lon: parseFloat(s[2]),
-                    view: s[3],
-                    zoom: s[4],
+                    layerName: selectedParts[0],
+                    lat: parseFloat(selectedParts[1]),
+                    lon: parseFloat(selectedParts[2]),
+                    view: selectedParts[3],
+                    zoom: selectedParts[4],
                 }
             }
         }

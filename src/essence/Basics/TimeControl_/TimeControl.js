@@ -549,15 +549,16 @@ var TimeControl = {
             if (layer.variables?.urlReplacements) {
                 const keys = Object.keys(layer.variables.urlReplacements)
                 for (let i = 0; i < keys.length; i++) {
-                    const r = layer.variables.urlReplacements[keys[i]]
-                    if (r.on === 'timeChange') {
-                        const response = await fetch(r.url, {
-                            method: r.type,
+                    const urlReplacement =
+                        layer.variables.urlReplacements[keys[i]]
+                    if (urlReplacement.on === 'timeChange') {
+                        const response = await fetch(urlReplacement.url, {
+                            method: urlReplacement.type,
                             headers: {
                                 accept: 'application/json',
                                 'content-type': 'application/json',
                             },
-                            body: JSON.stringify(r.body)
+                            body: JSON.stringify(urlReplacement.body)
                                 .replaceAll(
                                     '{starttime}',
                                     layerTimeFormat(layer.time.start)
@@ -568,7 +569,7 @@ var TimeControl = {
                                 ),
                         })
                         const res = await response.json()
-                        const replacement = F_.getIn(res, r.return)
+                        const replacement = F_.getIn(res, urlReplacement.return)
                         if (replacement)
                             nextUrl = nextUrl.replace(
                                 `{${keys[i]}}`,
@@ -755,16 +756,20 @@ var TimeControl = {
     setLayerWmsParams: function (layer) {
         // Shared time formatter (see tileUrlUtils.formatLayerTime).
         const layerTimeFormatter = formatLayerTime(layer.time?.format)
-        const l = L_.layers.layer[layer.name]
+        const mapLayer = L_.layers.layer[layer.name]
 
         // Leaflet-only: `options` is where the per-tile getTileUrl and the WMS
         // substitution read their times from. Deck layers expose `props`
         // instead and get their times baked into the URL by reloadLayer, so the
         // guard skips them rather than growing them an `options` nothing reads.
-        if (l != null && isRasterTileLayerType(layer) && l.options != null) {
-            l.options.time = layerTimeFormatter(layer.time.end)
-            l.options.starttime = layerTimeFormatter(layer.time.start)
-            l.options.endtime = layerTimeFormatter(layer.time.end)
+        if (
+            mapLayer != null &&
+            isRasterTileLayerType(layer) &&
+            mapLayer.options != null
+        ) {
+            mapLayer.options.time = layerTimeFormatter(layer.time.end)
+            mapLayer.options.starttime = layerTimeFormatter(layer.time.start)
+            mapLayer.options.endtime = layerTimeFormatter(layer.time.end)
         }
     },
 }
