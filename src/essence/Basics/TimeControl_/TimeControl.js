@@ -5,14 +5,14 @@ import $ from 'jquery'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
-import TimeUI from './TimeUI'
+import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
 import {
     compileTileUrl,
     formatLayerTime,
     buildTileUrlOptions,
 } from '../Layers_/tileUrlUtils'
 import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
-import { MAP_ENGINE } from '../MapEngines/types/engine'
+import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
 
 import './TimeControl.css'
 
@@ -23,9 +23,6 @@ let _providerCleanups = []
 const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
 )
-
-// `tile` is the configured type for every raster tile layer on all map engines
-const isTileLayerType = (layer) => layer?.type === 'tile'
 
 var TimeControl = {
     enabled: false,
@@ -38,38 +35,26 @@ var TimeControl = {
     relativeEndTime: '00:00:00',
     globalTimeFormat: null,
     _updateLockedForAcceptingInput: false,
-    timeUI: null,
     customTimes: {
         times: [],
     },
     init: function () {
-        if (L_.configData.time && L_.configData.time.enabled === true) {
-            TimeControl.enabled = true
-            TimeControl.globalTimeFormat = utcFormat(
-                L_.configData.time.format
-            )
-        } else {
-            $('#toggleTimeUI').css({ display: 'none' })
-            $('#CoordinatesDiv').css({ marginRight: '0px' })
-            return
-        }
+        // Clear any cleanups left over from a prior lifecycle so re-init
+        // (e.g. mission swap) can't accumulate stale providers/listeners.
+        _providerCleanups.forEach((cleanup) => cleanup())
+        _providerCleanups = []
 
-        TimeControl.timeUI = TimeUI.init(timeInputChange, TimeControl.enabled)
-
-        //updateTime()
-
-        initLayerTimes()
-        initLayerDataTimes()
-    },
-    fina: function () {
-        if ((TimeControl.enabled = true && TimeControl.timeUI != null))
-            TimeControl.timeUI.fina()
-
-        // Register time providers for mmgisAPI Event Bus
+        // Register bus handlers before any UI or plugin can emit, so a
+        // time:changeRequested is never lost to registration order.
         if (window.mmgisAPI) {
-            // Clean up previous providers if re-initializing
-            _providerCleanups.forEach((cleanup) => cleanup())
             _providerCleanups = [
+                window.mmgisAPI.on(
+                    'time:changeRequested',
+                    ({ startTime, endTime, currentTime }) => {
+                        if (TimeControl.enabled)
+                            timeInputChange(startTime, endTime, currentTime)
+                    }
+                ),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
@@ -87,6 +72,104 @@ var TimeControl = {
                     return false
                 }),
             ]
+        }
+
+        if (L_.configData.time && L_.configData.time.enabled === true) {
+            TimeControl.enabled = true
+            TimeControl.globalTimeFormat = utcFormat(
+                L_.configData.time.format
+            )
+        } else {
+            TimeControl.enabled = false
+            return
+        }
+
+        // Derive the initial start/end times. TimeControl owns this state
+        // and widgets (e.g. TimeUI) read the committed values from it.
+        // Deeplinked times (L_.FUTURES) override the configured ones and
+        // both support the "<date> + <seconds>"/"<date> - <seconds>" format.
+        const rawEnd =
+            L_.FUTURES.endTime != null
+                ? L_.FUTURES.endTime
+                : L_.configData.time.initialend
+        // parseTimeWithOffset strips any " + N"/" - N" suffix, so compare the
+        // parsed dateString (not the raw value) against 'now' — "now - 86400"
+        // is a valid relative time, not an invalid date.
+        let dateAddSec = parseTimeWithOffset(rawEnd)
+        let initialEnd
+        if (dateAddSec.dateString != null && dateAddSec.dateString !== 'now') {
+            const dateStaged = new Date(dateAddSec.dateString)
+            if (isNaN(dateStaged.getTime())) {
+                initialEnd = new Date()
+                console.warn(
+                    "Invalid 'Initial End Time' provided. Defaulting to 'now'."
+                )
+            } else initialEnd = dateStaged
+        } else initialEnd = new Date()
+        initialEnd.setSeconds(
+            initialEnd.getSeconds() + dateAddSec.additionalSeconds
+        )
+
+        // Initial start defaults to 1 month before the end time
+        let initialStart = new Date(initialEnd)
+        const rawStart =
+            L_.FUTURES.startTime != null
+                ? L_.FUTURES.startTime
+                : L_.configData.time.initialstart
+        if (rawStart == null)
+            initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
+        else {
+            dateAddSec = parseTimeWithOffset(rawStart)
+            // 'now' (optionally with an offset, e.g. "now - 86400") is valid
+            const dateStaged =
+                dateAddSec.dateString === 'now'
+                    ? new Date()
+                    : new Date(dateAddSec.dateString)
+            if (isNaN(dateStaged.getTime())) {
+                initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
+                console.warn(
+                    "Invalid 'Initial Start Time' provided. Defaulting to 1 month before the end time."
+                )
+            } else {
+                dateStaged.setSeconds(
+                    dateStaged.getSeconds() + dateAddSec.additionalSeconds
+                )
+                if (dateStaged.getTime() > initialEnd.getTime()) {
+                    initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
+                    console.warn(
+                        "'Initial Start Time' cannot be later than the end time. Defaulting to 1 month before the end time."
+                    )
+                } else initialStart = dateStaged
+            }
+        }
+
+        // Seed TimeControl state (start/end/current) and notify subscribers.
+        // Do NOT reload here: Map_.init() runs after TimeControl.init(), so
+        // time-enabled layers aren't on the map yet — reloading now is a no-op.
+        timeInputChange(
+            initialStart.toISOString(),
+            initialEnd.toISOString(),
+            initialEnd.toISOString(),
+            true
+        )
+
+        // Layer times read the seeded TimeControl state, so this must run
+        // after timeInputChange — otherwise the first Map_ load would build
+        // tile/WMS requests with null times.
+        initLayerTimes()
+        initLayerDataTimes()
+    },
+    fina: function () {
+        // Runs after Map_.init() has loaded the time-enabled layers (the
+        // seed in init() skips reloading because they aren't on the map yet).
+        // This is the single initial reload, in every layout; widgets mirror
+        // the committed state via the time:changed broadcast.
+        if (TimeControl.enabled) {
+            timeInputChange(
+                TimeControl.startTime,
+                TimeControl.endTime,
+                TimeControl.currentTime
+            )
         }
     },
     subscribe: function () {},
@@ -121,13 +204,19 @@ var TimeControl = {
         const now = new Date()
         let offset = 0
         if (relativeTimeFormat.test(timeOffset)) {
-            offset = parseTime(timeOffset)
+            offset = parseTimeToSeconds(timeOffset)
         } else {
             // assume seconds otherwise
             offset = parseInt(timeOffset)
         }
         if (currentTime != null) {
             const currentTimeD = new Date(currentTime)
+            if (isNaN(currentTimeD.getTime())) {
+                console.warn(
+                    `TimeControl.setTime: Invalid currentTime '${currentTime}'.`
+                )
+                return false
+            }
             TimeControl.currentTime =
                 currentTimeD.toISOString().split('.')[0] + 'Z'
             currentTime = new moment(currentTimeD)
@@ -138,8 +227,14 @@ var TimeControl = {
         }
 
         if (isRelative == true) {
-            const start = parseTime(startTime)
-            const end = parseTime(endTime)
+            const start = parseTimeToSeconds(startTime)
+            const end = parseTimeToSeconds(endTime)
+            if (isNaN(start) || isNaN(end)) {
+                console.warn(
+                    `TimeControl.setTime: Invalid relative startTime '${startTime}' or endTime '${endTime}'.`
+                )
+                return false
+            }
             const startTimeM = new moment(currentTime).subtract(
                 start,
                 'seconds'
@@ -151,6 +246,12 @@ var TimeControl = {
         } else {
             const startTimeD = new Date(startTime)
             const endTimeD = new Date(endTime)
+            if (isNaN(startTimeD.getTime()) || isNaN(endTimeD.getTime())) {
+                console.warn(
+                    `TimeControl.setTime: Invalid startTime '${startTime}' or endTime '${endTime}'.`
+                )
+                return false
+            }
             TimeControl.startTime = startTimeD.toISOString().split('.')[0] + 'Z'
             TimeControl.endTime = endTimeD.toISOString().split('.')[0] + 'Z'
         }
@@ -164,11 +265,16 @@ var TimeControl = {
                     .split('.')[0] + 'Z'
         }
 
-        return TimeControl.timeUI.updateTimes(
+        // Commit directly — a programmatic time change must never depend on
+        // a UI being present. timeInputChange broadcasts 'time:changed' for
+        // widgets/plugins (e.g. TimeUI) to sync themselves against.
+        timeInputChange(
             TimeControl.startTime,
             TimeControl.endTime,
             TimeControl.currentTime
         )
+
+        return true
     },
     setLayerTime: function (layer, startTime, endTime) {
         if (typeof layer == 'string') {
@@ -186,11 +292,23 @@ var TimeControl = {
                 layer.time.end
             )
 
-            if (isTileLayerType(layer)) {
+            if (isRasterTileLayerType(layer)) {
                 TimeControl.setLayerWmsParams(layer)
             }
         }
         return true
+    },
+    // Toggles the visibility of the bottom TimeUI bar. The '#toggleTimeUI'
+    // button and its click behavior are owned by Coordinates, so delegate to
+    // the button instead of duplicating the show/hide logic here.
+    // mmgisAPI.toggleTimeUI exposes this publicly.
+    toggleTimeUI: function (force) {
+        const button = $('#toggleTimeUI')
+        if (button.length === 0) return false
+        const isActive = button.hasClass('active')
+        const targetActive = force != null ? force === true : !isActive
+        if (targetActive !== isActive) button.trigger('click')
+        return button.hasClass('active')
     },
     getTime: function () {
         return TimeControl.currentTime
@@ -237,13 +355,19 @@ var TimeControl = {
 
         let originalUrl = layer.url
 
-        // A tile layer resolves its source URL first and runs the replacements
-        // on the resolved URL, the order layer creation uses. Replacing first
-        // would append `nocache=` to the raw config URL, so for a `COG:` layer
-        // it would land inside TiTiler's `url=` param instead of on the tile
-        // request itself. This also leaves `layer.url` unmutated for tile
-        // layers — only the other branches below need the substituted URL.
-        const tileSource = isTileLayerType(layer)
+        // A raster tile layer resolves its source URL first and runs the
+        // replacements on the resolved URL, the order layer creation uses.
+        // Replacing first would append `nocache=` to the raw config URL, so for
+        // a `COG:` layer it would land inside TiTiler's `url=` param instead of
+        // on the tile request itself. This also leaves `layer.url` unmutated for
+        // tile layers — only the other branches below need the substituted URL.
+        //
+        // Deliberately raster-only. Map_ also builds Tile3DLayer and
+        // PointCloudLayer through makeTileLayer, so they resolve their URL
+        // differently here than at creation and never get `{time}` substituted.
+        // Widening this needs the raster-specific tile params (TMS, COG/STAC)
+        // made opt-in first — see issue #230.
+        const tileSource = isRasterTileLayerType(layer)
             ? resolveTileLayerSource(layer)
             : null
 
@@ -511,7 +635,7 @@ var TimeControl = {
             if (
                 layer.time &&
                 layer.time.enabled === true &&
-                layer.variables?.dynamicExtent != true
+                layer.variables?.dynamicExtent !== true
             ) {
                 TimeControl.reloadLayer(layer)
                 reloadedLayers.push(layer.name)
@@ -568,12 +692,11 @@ var TimeControl = {
             }, 500)
         }
 
-        // Pan to followed feature after layers reload
-        if (TimeUI.followEnabled && TimeUI.followedFeature) {
-            // Add a small delay to ensure layers have finished loading
-            setTimeout(() => {
-                TimeUI.panToFollowedFeature()
-            }, 500)
+        // Emit event for TimeUI to handle follow feature
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('time:layersReloaded', {
+                reloadedLayers: reloadedLayers,
+            })
         }
 
         return reloadedLayers
@@ -593,7 +716,7 @@ var TimeControl = {
                     layer.time.end
                 )
                 updatedLayers.push(layer.name)
-                if (isTileLayerType(layer)) {
+                if (isRasterTileLayerType(layer)) {
                     TimeControl.setLayerWmsParams(layer)
                 }
             }
@@ -638,7 +761,7 @@ var TimeControl = {
         // substitution read their times from. Deck layers expose `props`
         // instead and get their times baked into the URL by reloadLayer, so the
         // guard skips them rather than growing them an `options` nothing reads.
-        if (l != null && isTileLayerType(layer) && l.options != null) {
+        if (l != null && isRasterTileLayerType(layer) && l.options != null) {
             l.options.time = layerTimeFormatter(layer.time.end)
             l.options.starttime = layerTimeFormatter(layer.time.start)
             l.options.endtime = layerTimeFormatter(layer.time.end)
@@ -691,6 +814,16 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
     TimeControl.currentTime = currentTime == null ? endTime : currentTime
     TimeControl.endTime = endTime
 
+    // Emit event for external listeners via Event Bus
+    if (window.mmgisAPI) {
+        window.mmgisAPI.emit('time:changed', {
+            startTime: TimeControl.startTime,
+            endTime: TimeControl.endTime,
+            currentTime: TimeControl.currentTime,
+        })
+    }
+
+    // Keep existing subscriptions for backward compatibility
     if (L_?._timeChangeSubscriptions)
         Object.keys(L_._timeChangeSubscriptions).forEach((k) => {
             L_._timeChangeSubscriptions[k]({ startTime, currentTime, endTime })
@@ -709,18 +842,6 @@ function timeInputChange(startTime, endTime, currentTime, skipUpdate) {
         TimeControl.updateLayersTime()
         TimeControl.reloadTimeLayers()
     }
-}
-
-function parseTime(t) {
-    if (t.toString().indexOf(':') == -1) {
-        return parseInt(t)
-    }
-    var s = t.split(':')
-    var seconds = +s[0].replace('-', '') * 60 * 60 + +s[1] * 60 + +s[2]
-    if (t.charAt(0) === '-') {
-        seconds = seconds * -1
-    }
-    return seconds
 }
 
 export default TimeControl
