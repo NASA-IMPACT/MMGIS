@@ -441,20 +441,20 @@ const L_ = {
     //Toggles a layer on and off and accounts for sublayers
     //Takes in a config layer object
     toggleLayer: async function (
-        s,
+        layerConfig,
         skipOrderedBringToFront,
         ignoreToggleStateChange
     ) {
-        if (s == null) return
+        if (layerConfig == null) return
 
-        const wasNeverOn = L_.layers.layer[s.name] === false
+        const wasNeverOn = L_.layers.layer[layerConfig.name] === false
 
         let on //if on -> turn off //if off -> turn on
-        if (L_.layers.on[s.name] === true) on = true
+        if (L_.layers.on[layerConfig.name] === true) on = true
         else on = false
 
         await L_.toggleLayerHelper(
-            s,
+            layerConfig,
             on,
             ignoreToggleStateChange,
             null,
@@ -462,12 +462,13 @@ const L_ = {
         )
 
         Object.keys(L_._onLayerToggleSubscriptions).forEach((k) => {
-            L_._onLayerToggleSubscriptions[k](s.name, !on)
+            L_._onLayerToggleSubscriptions[k](layerConfig.name, !on)
         })
 
         Object.keys(L_._onSpecificLayerToggleSubscriptions).forEach((k) => {
             const subs = L_._onSpecificLayerToggleSubscriptions[k]
-            if (subs.layer === s.name) subs.func(s.name, !on)
+            if (subs.layer === layerConfig.name)
+                subs.func(layerConfig.name, !on)
         })
 
         // Always reupdate layer infos at the end to keep them in sync
@@ -479,36 +480,40 @@ const L_ = {
         }
 
         // Deselect active feature if its layer is being turned off
-        if (L_.activeFeature && L_.activeFeature.layerName === s.name && on) {
+        if (
+            L_.activeFeature &&
+            L_.activeFeature.layerName === layerConfig.name &&
+            on
+        ) {
             L_.setActiveFeature(null)
         }
 
         // Make new vector layer match time constraints
         if (
             wasNeverOn &&
-            s.type === 'vector' &&
-            s.time.type === 'local' &&
-            s.time.endProp != null &&
-            s.controlled !== true
+            layerConfig.type === 'vector' &&
+            layerConfig.time.type === 'local' &&
+            layerConfig.time.endProp != null &&
+            layerConfig.controlled !== true
         ) {
             L_.timeFilterVectorLayer(
-                s.name,
-                new Date(s.time.start).getTime(),
-                new Date(s.time.end).getTime()
+                layerConfig.name,
+                new Date(layerConfig.time.start).getTime(),
+                new Date(layerConfig.time.end).getTime()
             )
         }
     },
     toggleLayerHelper: async function (
-        s,
+        layerConfig,
         on,
         ignoreToggleStateChange,
         globeOnly,
         skipOrderedBringToFront
     ) {
-        if (s.type !== 'header') {
+        if (layerConfig.type !== 'header') {
             if (on) {
                 if (
-                    L_.Map_.map.hasLayer(L_.layers.layer[s.name]) &&
+                    L_.Map_.map.hasLayer(L_.layers.layer[layerConfig.name]) &&
                     globeOnly != true
                 ) {
                     // Only close DrawTool Edit Panel if this is a user-initiated toggle, not a refresh
@@ -522,135 +527,162 @@ const L_ = {
                         L_.Map_.engine.engineType !== 'leaflet'
                     ) {
                         L_.Map_.engine.updateLayer(
-                            L_.Map_.nativeLayer(L_.layers.layer[s.name]),
+                            L_.Map_.nativeLayer(
+                                L_.layers.layer[layerConfig.name]
+                            ),
                             { visible: false }
                         )
                     } else {
-                        L_.Map_.rmNotNull(L_.layers.layer[s.name])
+                        L_.Map_.rmNotNull(L_.layers.layer[layerConfig.name])
                     }
-                    if (L_.layers.attachments[s.name]) {
-                        for (let sub in L_.layers.attachments[s.name]) {
-                            switch (L_.layers.attachments[s.name][sub].type) {
+                    if (L_.layers.attachments[layerConfig.name]) {
+                        for (let sublayerName in L_.layers.attachments[
+                            layerConfig.name
+                        ]) {
+                            switch (
+                                L_.layers.attachments[layerConfig.name][
+                                    sublayerName
+                                ].type
+                            ) {
                                 case 'model':
                                     L_.Globe_.litho.removeLayer(
-                                        L_.layers.attachments[s.name][sub]
-                                            .layerId
+                                        L_.layers.attachments[layerConfig.name][
+                                            sublayerName
+                                        ].layerId
                                     )
                                     break
                                 case 'uncertainty_ellipses':
                                     L_.Globe_.litho.removeLayer(
-                                        L_.layers.attachments[s.name][sub]
-                                            .curtainLayerId
+                                        L_.layers.attachments[layerConfig.name][
+                                            sublayerName
+                                        ].curtainLayerId
                                     )
                                     L_.Globe_.litho.removeLayer(
-                                        L_.layers.attachments[s.name][sub]
-                                            .clampedLayerId
+                                        L_.layers.attachments[layerConfig.name][
+                                            sublayerName
+                                        ].clampedLayerId
                                     )
                                     L_.Map_.rmNotNull(
-                                        L_.layers.attachments[s.name][sub].layer
+                                        L_.layers.attachments[layerConfig.name][
+                                            sublayerName
+                                        ].layer
                                     )
                                     break
                                 case 'labels':
                                 case 'pairings':
-                                    L_.layers.attachments[s.name][
-                                        sub
+                                    L_.layers.attachments[layerConfig.name][
+                                        sublayerName
                                     ].layer.off()
                                     break
                                 default:
                                     L_.Map_.rmNotNull(
-                                        L_.layers.attachments[s.name][sub].layer
+                                        L_.layers.attachments[layerConfig.name][
+                                            sublayerName
+                                        ].layer
                                     )
                                     break
                             }
                         }
                     }
                 }
-                if (s.type === 'model') {
-                    L_.Globe_.litho.toggleLayer(s.name, false)
-                } else L_.Globe_.litho.removeLayer(s.name)
+                if (layerConfig.type === 'model') {
+                    L_.Globe_.litho.toggleLayer(layerConfig.name, false)
+                } else L_.Globe_.litho.removeLayer(layerConfig.name)
             } else {
                 if (
-                    L_.layers.layer[s.name] &&
+                    L_.layers.layer[layerConfig.name] &&
                     globeOnly != true &&
-                    s.type !== 'velocity'
+                    layerConfig.type !== 'velocity'
                 ) {
-                    if (L_.layers.attachments[s.name]) {
-                        for (let sub in L_.layers.attachments[s.name]) {
-                            if (L_.layers.attachments[s.name][sub].on) {
+                    if (L_.layers.attachments[layerConfig.name]) {
+                        for (let sublayerName in L_.layers.attachments[
+                            layerConfig.name
+                        ]) {
+                            if (
+                                L_.layers.attachments[layerConfig.name][
+                                    sublayerName
+                                ].on
+                            ) {
                                 switch (
-                                    L_.layers.attachments[s.name][sub].type
+                                    L_.layers.attachments[layerConfig.name][
+                                        sublayerName
+                                    ].type
                                 ) {
                                     case 'model':
                                         L_.Globe_.litho.addLayer(
                                             'model',
-                                            L_.layers.attachments[s.name][sub]
-                                                .modelOptions
+                                            L_.layers.attachments[
+                                                layerConfig.name
+                                            ][sublayerName].modelOptions
                                         )
                                         break
                                     case 'uncertainty_ellipses':
                                         L_.Globe_.litho.addLayer(
                                             'curtain',
-                                            L_.layers.attachments[s.name][sub]
-                                                .curtainOptions
+                                            L_.layers.attachments[
+                                                layerConfig.name
+                                            ][sublayerName].curtainOptions
                                         )
                                         L_.Globe_.litho.addLayer(
                                             'clamped',
-                                            L_.layers.attachments[s.name][sub]
-                                                .clampedOptions
+                                            L_.layers.attachments[
+                                                layerConfig.name
+                                            ][sublayerName].clampedOptions
                                         )
                                         L_.Map_.engine.addLayer(
                                             L_.Map_.nativeLayer(
-                                                L_.layers.attachments[s.name][
-                                                    sub
-                                                ].layer
+                                                L_.layers.attachments[
+                                                    layerConfig.name
+                                                ][sublayerName].layer
                                             )
                                         )
                                         L_.Map_.engine.setLayerZIndex(
                                             L_.Map_.nativeLayer(
-                                                L_.layers.attachments[s.name][
-                                                    sub
-                                                ].layer
+                                                L_.layers.attachments[
+                                                    layerConfig.name
+                                                ][sublayerName].layer
                                             ),
                                             L_._layersOrdered.length +
                                                 1 -
                                                 L_._layersOrdered.indexOf(
-                                                    s.name
+                                                    layerConfig.name
                                                 )
                                         )
                                         break
                                     case 'labels':
                                     case 'pairings':
                                         if (
-                                            L_.layers.attachments[s.name][sub]
-                                                .layer
+                                            L_.layers.attachments[
+                                                layerConfig.name
+                                            ][sublayerName].layer
                                         )
-                                            L_.layers.attachments[s.name][
-                                                sub
-                                            ].layer.on(
+                                            L_.layers.attachments[
+                                                layerConfig.name
+                                            ][sublayerName].layer.on(
                                                 false,
-                                                L_.layers.attachments[s.name][
-                                                    sub
-                                                ].layer
+                                                L_.layers.attachments[
+                                                    layerConfig.name
+                                                ][sublayerName].layer
                                             )
                                         break
                                     default:
                                         L_.Map_.engine.addLayer(
                                             L_.Map_.nativeLayer(
-                                                L_.layers.attachments[s.name][
-                                                    sub
-                                                ].layer
+                                                L_.layers.attachments[
+                                                    layerConfig.name
+                                                ][sublayerName].layer
                                             )
                                         )
                                         L_.Map_.engine.setLayerZIndex(
                                             L_.Map_.nativeLayer(
-                                                L_.layers.attachments[s.name][
-                                                    sub
-                                                ].layer
+                                                L_.layers.attachments[
+                                                    layerConfig.name
+                                                ][sublayerName].layer
                                             ),
                                             L_._layersOrdered.length +
                                                 1 -
                                                 L_._layersOrdered.indexOf(
-                                                    s.name
+                                                    layerConfig.name
                                                 )
                                         )
                                         break
@@ -659,7 +691,9 @@ const L_ = {
                         }
                     }
 
-                    const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
+                    const nativeLayer = L_.Map_.nativeLayer(
+                        L_.layers.layer[layerConfig.name]
+                    )
                     if (L_.Map_.engine.engineType !== 'leaflet') {
                         if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
                             L_.Map_.engine.addLayer(nativeLayer)
@@ -668,114 +702,140 @@ const L_ = {
                         L_.Map_.engine.addLayer(nativeLayer)
                     }
                     L_.Map_.engine.setLayerZIndex(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name]),
+                        L_.Map_.nativeLayer(L_.layers.layer[layerConfig.name]),
                         L_._layersOrdered.length +
                             1 -
-                            L_._layersOrdered.indexOf(s.name)
+                            L_._layersOrdered.indexOf(layerConfig.name)
                     )
                 }
 
-                if (s.type === 'tile') {
-                    let layerUrl = L_.getUrl(s.type, s.url, s)
-                    let demUrl = L_.getUrl(s.type, s.demtileurl, s)
-                    if (s.demtileurl == undefined || s.demtileurl.length == 0)
+                if (layerConfig.type === 'tile') {
+                    let layerUrl = L_.getUrl(
+                        layerConfig.type,
+                        layerConfig.url,
+                        layerConfig
+                    )
+                    let demUrl = L_.getUrl(
+                        layerConfig.type,
+                        layerConfig.demtileurl,
+                        layerConfig
+                    )
+                    if (
+                        layerConfig.demtileurl == undefined ||
+                        layerConfig.demtileurl.length == 0
+                    )
                         demUrl = undefined
                     L_.Globe_.litho.addLayer('tile', {
-                        name: s.name,
+                        name: layerConfig.name,
                         order: L_._layersOrdered,
-                        on: L_.layers.opacity[s.name],
-                        format: s.tileformat || 'tms',
+                        on: L_.layers.opacity[layerConfig.name],
+                        format: layerConfig.tileformat || 'tms',
                         formatOptions: {},
-                        demFormat: s.tileformat || 'tms',
+                        demFormat: layerConfig.tileformat || 'tms',
                         demFormatOptions: {
-                            correctSeams: s.tileformat === 'wms',
+                            correctSeams: layerConfig.tileformat === 'wms',
                             wmsParams: {},
                         },
-                        parser: s.demparser || null,
+                        parser: layerConfig.demparser || null,
                         path: layerUrl,
                         demPath: demUrl,
-                        opacity: L_.layers.opacity[s.name],
-                        minZoom: s.minZoom,
-                        maxZoom: s.maxNativeZoom,
-                        //boundingBox: s.boundingBox,
-                        time: s.time,
+                        opacity: L_.layers.opacity[layerConfig.name],
+                        minZoom: layerConfig.minZoom,
+                        maxZoom: layerConfig.maxNativeZoom,
+                        //boundingBox: layerConfig.boundingBox,
+                        time: layerConfig.time,
                     })
-                } else if (s.type === 'data') {
-                } else if (s.type === 'model') {
-                    if (L_.Globe_.litho.hasLayer(s.name)) {
-                        L_.Globe_.litho.toggleLayer(s.name, true)
+                } else if (layerConfig.type === 'data') {
+                } else if (layerConfig.type === 'model') {
+                    if (L_.Globe_.litho.hasLayer(layerConfig.name)) {
+                        L_.Globe_.litho.toggleLayer(layerConfig.name, true)
                     } else {
-                        let modelUrl = s.url
+                        let modelUrl = layerConfig.url
                         if (!F_.isUrlAbsolute(modelUrl))
                             modelUrl = L_.missionPath + modelUrl
                         L_.Globe_.litho.addLayer('model', {
-                            name: s.name,
+                            name: layerConfig.name,
                             order: 1,
                             on: true,
                             path: modelUrl,
-                            opacity: s.initialOpacity,
+                            opacity: layerConfig.initialOpacity,
                             position: {
-                                longitude: s.position?.longitude || 0,
-                                latitude: s.position?.latitude || 0,
-                                elevation: s.position?.elevation || 0,
+                                longitude: layerConfig.position?.longitude || 0,
+                                latitude: layerConfig.position?.latitude || 0,
+                                elevation: layerConfig.position?.elevation || 0,
                             },
-                            scale: s.scale || 1,
+                            scale: layerConfig.scale || 1,
                             rotation: {
                                 // y-up is away from planet center. x is pitch, y is yaw, z is roll
-                                x: s.rotation?.x || 0,
-                                y: s.rotation?.y || 0,
-                                z: s.rotation?.z || 0,
+                                x: layerConfig.rotation?.x || 0,
+                                y: layerConfig.rotation?.y || 0,
+                                z: layerConfig.rotation?.z || 0,
                             },
                         })
                     }
-                } else if (s.type === 'velocity') {
-                    if (['streamlines', 'particles'].includes(s.kind)) {
-                        L_.Map_.rmNotNull(L_.layers.layer[s.name])
+                } else if (layerConfig.type === 'velocity') {
+                    if (
+                        ['streamlines', 'particles'].includes(layerConfig.kind)
+                    ) {
+                        L_.Map_.rmNotNull(L_.layers.layer[layerConfig.name])
                     }
-                    await L_.Map_.makeLayer(s, true, null, null, true)
+                    await L_.Map_.makeLayer(layerConfig, true, null, null, true)
                     Description.updateInfo()
                     L_.Map_.engine.addLayer(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name])
+                        L_.Map_.nativeLayer(L_.layers.layer[layerConfig.name])
                     )
                     L_.Map_.engine.setLayerZIndex(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name]),
+                        L_.Map_.nativeLayer(L_.layers.layer[layerConfig.name]),
                         L_._layersOrdered.length +
                             1 -
-                            L_._layersOrdered.indexOf(s.name)
+                            L_._layersOrdered.indexOf(layerConfig.name)
                     )
                 } else {
                     let hadToMake = false
                     if (
-                        L_.layers.layer[s.name] === false &&
+                        L_.layers.layer[layerConfig.name] === false &&
                         globeOnly != true
                     ) {
-                        await L_.Map_.makeLayer(s, true, null, null, true)
+                        await L_.Map_.makeLayer(
+                            layerConfig,
+                            true,
+                            null,
+                            null,
+                            true
+                        )
                         Description.updateInfo()
                         hadToMake = true
                     }
-                    if (L_.layers.layer[s.name]) {
+                    if (L_.layers.layer[layerConfig.name]) {
                         if (globeOnly != true) {
                             if (!hadToMake) {
                                 // Refresh annotation popups
-                                if (L_.layers.layer[s.name]._layers)
+                                if (L_.layers.layer[layerConfig.name]._layers)
                                     Object.keys(
-                                        L_.layers.layer[s.name]._layers
+                                        L_.layers.layer[layerConfig.name]
+                                            ._layers
                                     ).forEach((key) => {
                                         const l =
-                                            L_.layers.layer[s.name]._layers[key]
+                                            L_.layers.layer[layerConfig.name]
+                                                ._layers[key]
                                         if (l._isAnnotation) {
-                                            L_.layers.layer[s.name]._layers[
-                                                key
-                                            ] = L_.createAnnotation(
-                                                l._annotationParams.feature,
-                                                l._annotationParams.className,
-                                                l._annotationParams.layerId,
-                                                l._annotationParams.id1
-                                            )
+                                            L_.layers.layer[
+                                                layerConfig.name
+                                            ]._layers[key] =
+                                                L_.createAnnotation(
+                                                    l._annotationParams
+                                                        .feature,
+                                                    l._annotationParams
+                                                        .className,
+                                                    l._annotationParams.layerId,
+                                                    l._annotationParams.id1
+                                                )
                                         }
                                     })
                             }
-                            const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
+                            const nativeLayer = L_.Map_.nativeLayer(
+                                L_.layers.layer[layerConfig.name]
+                            )
                             if (L_.Map_.engine.engineType !== 'leaflet') {
                                 if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
                                     L_.Map_.engine.addLayer(nativeLayer)
@@ -784,78 +844,84 @@ const L_ = {
                                 L_.Map_.engine.addLayer(nativeLayer)
                             }
                             L_.Map_.engine.setLayerZIndex(
-                                L_.Map_.nativeLayer(L_.layers.layer[s.name]),
+                                L_.Map_.nativeLayer(
+                                    L_.layers.layer[layerConfig.name]
+                                ),
                                 L_._layersOrdered.length +
                                     1 -
-                                    L_._layersOrdered.indexOf(s.name)
+                                    L_._layersOrdered.indexOf(layerConfig.name)
                             )
                         }
 
-                        if (s.type === 'image') {
+                        if (layerConfig.type === 'image') {
                             if (
-                                L_.layers.layer[s.name].options
+                                L_.layers.layer[layerConfig.name].options
                                     .pixelValuesToColorFn &&
-                                L_.layers.layer[s.name].options
+                                L_.layers.layer[layerConfig.name].options
                                     .pixelValuesToColorFn !== null
                             ) {
-                                L_.layers.layer[s.name].clearCache()
-                                L_.layers.layer[s.name].updateColors(
-                                    L_.layers.layer[s.name].options
+                                L_.layers.layer[layerConfig.name].clearCache()
+                                L_.layers.layer[layerConfig.name].updateColors(
+                                    L_.layers.layer[layerConfig.name].options
                                         .pixelValuesToColorFn
                                 )
                                 // Redraw the layer or the image will not refresh again unless zooming in/out
-                                L_.layers.layer[s.name].redraw()
+                                L_.layers.layer[layerConfig.name].redraw()
                             }
                         }
 
-                        if (s.type === 'vector') {
+                        if (layerConfig.type === 'vector') {
                             L_.Globe_.litho.addLayer(
-                                s.layer3dType || 'clamped',
+                                layerConfig.layer3dType || 'clamped',
                                 {
-                                    name: s.name,
+                                    name: layerConfig.name,
                                     order: L_._layersOrdered, // Since higher order in litho is on top
-                                    on: L_.layers.opacity[s.name]
+                                    on: L_.layers.opacity[layerConfig.name]
                                         ? true
                                         : false,
-                                    geojson: L_.layers.layer[s.name].toGeoJSON(
-                                        L_.GEOJSON_PRECISION
-                                    ),
+                                    geojson: L_.layers.layer[
+                                        layerConfig.name
+                                    ].toGeoJSON(L_.GEOJSON_PRECISION),
                                     onClick: (feature, lnglat, layer) => {
                                         this.selectFeature(layer.name, feature)
                                     },
-                                    useKeyAsHoverName: s.useKeyAsName,
+                                    useKeyAsHoverName: layerConfig.useKeyAsName,
                                     style: {
                                         // Prefer feature[f].properties.style values
                                         letPropertiesStyleOverride: true, // default false
                                         default: {
-                                            fillColor: s.style.fillColor, //Use only rgb and hex. No css color names
+                                            fillColor:
+                                                layerConfig.style.fillColor, //Use only rgb and hex. No css color names
                                             fillOpacity: parseFloat(
-                                                s.style.fillOpacity
+                                                layerConfig.style.fillOpacity
                                             ),
-                                            color: s.style.color,
-                                            weight: s.style.weight,
-                                            radius: s.radius,
+                                            color: layerConfig.style.color,
+                                            weight: layerConfig.style.weight,
+                                            radius: layerConfig.radius,
                                         },
                                         bearing:
-                                            (s.variables?.markerAttachments
-                                                ?.bearing &&
-                                                s.variables?.markerAttachments
+                                            (layerConfig.variables
+                                                ?.markerAttachments?.bearing &&
+                                                layerConfig.variables
+                                                    ?.markerAttachments
                                                     ?.bearing.enabled ==
                                                     null) ||
-                                            s.variables?.markerAttachments
-                                                ?.bearing?.enabled === true
-                                                ? s.variables.markerAttachments
-                                                      .bearing
+                                            layerConfig.variables
+                                                ?.markerAttachments?.bearing
+                                                ?.enabled === true
+                                                ? layerConfig.variables
+                                                      .markerAttachments.bearing
                                                 : null,
                                     },
-                                    opacity: L_.layers.opacity[s.name],
+                                    opacity:
+                                        L_.layers.opacity[layerConfig.name],
                                     minZoom:
-                                        s.visibilitycutoff > 0
-                                            ? s.visibilitycutoff
+                                        layerConfig.visibilitycutoff > 0
+                                            ? layerConfig.visibilitycutoff
                                             : 0,
                                     maxZoom:
-                                        s.visibilitycutoff < 0
-                                            ? s.visibilitycutoff
+                                        layerConfig.visibilitycutoff < 0
+                                            ? layerConfig.visibilitycutoff
                                             : 100,
                                 }
                             )
@@ -867,15 +933,16 @@ const L_ = {
 
         if (globeOnly != true) {
             if (!ignoreToggleStateChange) {
-                if (on) L_.layers.on[s.name] = false
-                if (!on) L_.layers.on[s.name] = true
+                if (on) L_.layers.on[layerConfig.name] = false
+                if (!on) L_.layers.on[layerConfig.name] = true
             }
 
-            if (s.type === 'vector') L_._updatePairings(s.name, !on)
+            if (layerConfig.type === 'vector')
+                L_._updatePairings(layerConfig.name, !on)
 
             if (
                 !on &&
-                s.type === 'vector' &&
+                layerConfig.type === 'vector' &&
                 skipOrderedBringToFront !== true
             ) {
                 L_.Map_.orderedBringToFront()
@@ -890,8 +957,11 @@ const L_ = {
             }
         }
         // Refresh opacity
-        if (s.type === 'vector') {
-            L_.setLayerOpacity(s.name, L_.layers.opacity[s.name])
+        if (layerConfig.type === 'vector') {
+            L_.setLayerOpacity(
+                layerConfig.name,
+                L_.layers.opacity[layerConfig.name]
+            )
         }
     },
     _refreshAnnotationEvents() {
@@ -1000,27 +1070,29 @@ const L_ = {
     },
     disableAllBut: function (siteName, skipDisabling) {
         if (L_.layers.data.hasOwnProperty(siteName)) {
-            let l
+            let layerConfig
             if (skipDisabling !== true) {
                 for (let i = 0; i < L_.layers.dataFlat.length; i++) {
-                    l = L_.layers.dataFlat[i]
-                    if (L_.layers.on[l.name] == true) {
-                        if (l.name != 'Mars Overview') L_.toggleLayer(l)
+                    layerConfig = L_.layers.dataFlat[i]
+                    if (L_.layers.on[layerConfig.name] == true) {
+                        if (layerConfig.name != 'Mars Overview')
+                            L_.toggleLayer(layerConfig)
                     }
                     if (L_.layers.on['Mars Overview'] === false) {
-                        if (l.name === 'Mars Overview') L_.toggleLayer(l)
+                        if (layerConfig.name === 'Mars Overview')
+                            L_.toggleLayer(layerConfig)
                     }
                 }
             }
 
             for (let n in L_._layersParent) {
                 if (L_._layersParent[n] === siteName && L_.layers.data[n]) {
-                    l = L_.layers.data[n]
+                    layerConfig = L_.layers.data[n]
                     if (
-                        l.visibility === true && // initial visibility
-                        L_.layers.on[l.name] === false
+                        layerConfig.visibility === true && // initial visibility
+                        L_.layers.on[layerConfig.name] === false
                     ) {
-                        L_.toggleLayer(l)
+                        L_.toggleLayer(layerConfig)
                     }
                 }
             }
@@ -1060,13 +1132,13 @@ const L_ = {
                 if (L_.layers.layer[L_.layers.dataFlat[i].name]) {
                     try {
                         if (L_.layers.attachments[L_.layers.dataFlat[i].name]) {
-                            for (let s in L_.layers.attachments[
+                            for (let sublayerName in L_.layers.attachments[
                                 L_.layers.dataFlat[i].name
                             ]) {
                                 const sublayer =
                                     L_.layers.attachments[
                                         L_.layers.dataFlat[i].name
-                                    ][s]
+                                    ][sublayerName]
                                 if (sublayer.on) {
                                     switch (sublayer.type) {
                                         case 'model':
@@ -1147,116 +1219,125 @@ const L_ = {
                 }
 
                 // Add Globe layers
-                const s = L_.layers.dataFlat[i]
-                let layerUrl = s.url
+                const layerConfig = L_.layers.dataFlat[i]
+                let layerUrl = layerConfig.url
                 if (!F_.isUrlAbsolute(layerUrl))
                     layerUrl = L_.missionPath + layerUrl
                 if (
-                    s.type === 'tile' ||
-                    s.type === 'data' ||
-                    s.type === 'vectortile'
+                    layerConfig.type === 'tile' ||
+                    layerConfig.type === 'data' ||
+                    layerConfig.type === 'vectortile'
                 ) {
                     // Make sure all tile layers follow z-index order at start instead of element order
                     engine.setLayerZIndex(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name]),
+                        L_.Map_.nativeLayer(L_.layers.layer[layerConfig.name]),
                         L_._layersOrdered.length +
                             1 -
-                            L_._layersOrdered.indexOf(s.name)
+                            L_._layersOrdered.indexOf(layerConfig.name)
                     )
 
-                    let demUrl = s.demtileurl
+                    let demUrl = layerConfig.demtileurl
                     if (!F_.isUrlAbsolute(demUrl))
                         demUrl = L_.missionPath + demUrl
-                    if (s.demtileurl == undefined) demUrl = undefined
-                    if (s.type === 'tile')
+                    if (layerConfig.demtileurl == undefined)
+                        demUrl = undefined
+                    if (layerConfig.type === 'tile')
                         L_.Globe_.litho.addLayer('tile', {
-                            name: s.name,
+                            name: layerConfig.name,
                             order: L_._layersOrdered,
-                            on: L_.layers.opacity[s.name],
-                            format: s.tileformat || 'tms',
+                            on: L_.layers.opacity[layerConfig.name],
+                            format: layerConfig.tileformat || 'tms',
                             formatOptions: {},
-                            demFormat: s.tileformat || 'tms',
+                            demFormat: layerConfig.tileformat || 'tms',
                             demFormatOptions: {
-                                correctSeams: s.tileformat === 'wms',
+                                correctSeams:
+                                    layerConfig.tileformat === 'wms',
                                 wmsParams: {},
                             },
-                            parser: s.demparser || null,
+                            parser: layerConfig.demparser || null,
                             path: layerUrl,
                             demPath: demUrl,
-                            opacity: L_.layers.opacity[s.name],
-                            minZoom: s.minZoom,
-                            maxZoom: s.maxNativeZoom,
-                            //boundingBox: s.boundingBox,
-                            time: s.time,
+                            opacity: L_.layers.opacity[layerConfig.name],
+                            minZoom: layerConfig.minZoom,
+                            maxZoom: layerConfig.maxNativeZoom,
+                            //boundingBox: layerConfig.boundingBox,
+                            time: layerConfig.time,
                         })
-                } else if (s.type === 'model') {
+                } else if (layerConfig.type === 'model') {
                     L_.Globe_.litho.addLayer('model', {
-                        name: s.name,
+                        name: layerConfig.name,
                         order: L_._layersOrdered,
                         on: true,
                         path: layerUrl,
-                        opacity: L_.layers.opacity[s.name],
+                        opacity: L_.layers.opacity[layerConfig.name],
                         position: {
-                            longitude: s.position?.longitude || 0,
-                            latitude: s.position?.latitude || 0,
-                            elevation: s.position?.elevation || 0,
+                            longitude: layerConfig.position?.longitude || 0,
+                            latitude: layerConfig.position?.latitude || 0,
+                            elevation: layerConfig.position?.elevation || 0,
                         },
-                        scale: s.scale || 1,
+                        scale: layerConfig.scale || 1,
                         rotation: {
                             // y-up is away from planet center. x is pitch, y is yaw, z is roll
-                            x: s.rotation?.x || 0,
-                            y: s.rotation?.y || 0,
-                            z: s.rotation?.z || 0,
+                            x: layerConfig.rotation?.x || 0,
+                            y: layerConfig.rotation?.y || 0,
+                            z: layerConfig.rotation?.z || 0,
                         },
                     })
-                } else if (s.type != 'header') {
-                    if (typeof L_.layers.layer[s.name].toGeoJSON === 'function')
+                } else if (layerConfig.type != 'header') {
+                    if (
+                        typeof L_.layers.layer[layerConfig.name].toGeoJSON ===
+                        'function'
+                    )
                         L_.Globe_.litho.addLayer(
-                            s.type == 'vector'
-                                ? s.layer3dType || 'clamped'
-                                : s.type,
+                            layerConfig.type == 'vector'
+                                ? layerConfig.layer3dType || 'clamped'
+                                : layerConfig.type,
                             {
-                                name: s.name,
+                                name: layerConfig.name,
                                 order: L_._layersOrdered, // Since higher order in litho is on top
-                                on: L_.layers.opacity[s.name] ? true : false,
-                                geojson: L_.layers.layer[s.name].toGeoJSON(
-                                    L_.GEOJSON_PRECISION
-                                ),
+                                on: L_.layers.opacity[layerConfig.name]
+                                    ? true
+                                    : false,
+                                geojson: L_.layers.layer[
+                                    layerConfig.name
+                                ].toGeoJSON(L_.GEOJSON_PRECISION),
                                 onClick: (feature, lnglat, layer) => {
                                     this.selectFeature(layer.name, feature)
                                 },
-                                useKeyAsHoverName: s.useKeyAsName,
+                                useKeyAsHoverName: layerConfig.useKeyAsName,
                                 style: {
                                     // Prefer feature[f].properties.style values
                                     letPropertiesStyleOverride: true, // default false
                                     default: {
-                                        fillColor: s.style?.fillColor, //Use only rgb and hex. No css color names
+                                        fillColor: layerConfig.style?.fillColor, //Use only rgb and hex. No css color names
                                         fillOpacity: parseFloat(
-                                            s.style?.fillOpacity
+                                            layerConfig.style?.fillOpacity
                                         ),
-                                        color: s.style?.color,
-                                        weight: s.style?.weight,
-                                        radius: s.radius,
+                                        color: layerConfig.style?.color,
+                                        weight: layerConfig.style?.weight,
+                                        radius: layerConfig.radius,
                                     },
                                     bearing:
-                                        (s.variables?.markerAttachments
-                                            ?.bearing &&
-                                            s.variables?.markerAttachments
-                                                ?.bearing.enabled == null) ||
-                                        s.variables?.markerAttachments?.bearing
+                                        (layerConfig.variables
+                                            ?.markerAttachments?.bearing &&
+                                            layerConfig.variables
+                                                ?.markerAttachments?.bearing
+                                                .enabled == null) ||
+                                        layerConfig.variables
+                                            ?.markerAttachments?.bearing
                                             ?.enabled === true
-                                            ? s.variables.markerAttachments
-                                                  .bearing
+                                            ? layerConfig.variables
+                                                  .markerAttachments.bearing
                                             : null,
                                 },
-                                opacity: L_.layers.opacity[s.name],
+                                opacity: L_.layers.opacity[layerConfig.name],
                                 minZoom:
-                                    s.visibilitycutoff > 0
-                                        ? s.visibilitycutoff
+                                    layerConfig.visibilitycutoff > 0
+                                        ? layerConfig.visibilitycutoff
                                         : null,
                                 maxZoom:
-                                    s.visibilitycutoff < 0
-                                        ? s.visibilitycutoff
+                                    layerConfig.visibilitycutoff < 0
+                                        ? layerConfig.visibilitycutoff
                                         : null,
                             }
                         )
@@ -1499,11 +1580,11 @@ const L_ = {
         layerNames.forEach((layerName) => {
             const layerDisplayName = layerName
             layerName = L_.asLayerUUID(layerName)
-            let layerObj = L_.layers.data[layerName]
+            let layerConfig = L_.layers.data[layerName]
             let layer = L_.layers.layer[layerName]
 
-            if (layerObj == null && layerDisplayName.includes('DrawTool'))
-                layerObj = {
+            if (layerConfig == null && layerDisplayName.includes('DrawTool'))
+                layerConfig = {
                     type: 'vector',
                 }
 
@@ -1511,8 +1592,8 @@ const L_ = {
 
             // vector, loaded and on
             if (
-                layerObj != null &&
-                layerObj.type === 'vector' &&
+                layerConfig != null &&
+                layerConfig.type === 'vector' &&
                 layer &&
                 (L_.layers.data[layerName]
                     ? L_.Map_.map.hasLayer(L_.layers.layer[layerName])
@@ -1521,20 +1602,22 @@ const L_ = {
                 let minZoom = null
                 let maxZoom = null
                 if (
-                    layerObj.hasOwnProperty('minZoom') ||
-                    layerObj.hasOwnProperty('maxZoom')
+                    layerConfig.hasOwnProperty('minZoom') ||
+                    layerConfig.hasOwnProperty('maxZoom')
                 ) {
-                    minZoom = layerObj.minZoom != null ? layerObj.minZoom : null
-                    maxZoom = layerObj.maxZoom != null ? layerObj.maxZoom : null
-                } else if (layerObj.hasOwnProperty('visibilitycutoff')) {
+                    minZoom =
+                        layerConfig.minZoom != null ? layerConfig.minZoom : null
+                    maxZoom =
+                        layerConfig.maxZoom != null ? layerConfig.maxZoom : null
+                } else if (layerConfig.hasOwnProperty('visibilitycutoff')) {
                     // Backwards compatibility
                     minZoom =
-                        layerObj.visibilitycutoff > 0
-                            ? layerObj.visibilitycutoff
+                        layerConfig.visibilitycutoff > 0
+                            ? layerConfig.visibilitycutoff
                             : null
                     maxZoom =
-                        layerObj.visibilitycutoff < 0
-                            ? layerObj.visibilitycutoff
+                        layerConfig.visibilitycutoff < 0
+                            ? layerConfig.visibilitycutoff
                             : null
                 }
 
@@ -1563,15 +1646,15 @@ const L_ = {
             }
         })
     },
-    _setVisibilityCutoffInternal: function (l, minZoom, maxZoom) {
-        if (l._hidden === true) return
+    _setVisibilityCutoffInternal: function (featureLayer, minZoom, maxZoom) {
+        if (featureLayer._hidden === true) return
 
         let featureMinZoom = null
         let featureMaxZoom = null
-        if (l.feature?.properties?.style?.minZoom != null)
-            featureMinZoom = l.feature.properties.style.minZoom
-        if (l.feature?.properties?.style?.maxZoom != null)
-            featureMaxZoom = l.feature.properties.style.maxZoom
+        if (featureLayer.feature?.properties?.style?.minZoom != null)
+            featureMinZoom = featureLayer.feature.properties.style.minZoom
+        if (featureLayer.feature?.properties?.style?.maxZoom != null)
+            featureMaxZoom = featureLayer.feature.properties.style.maxZoom
 
         if (
             F_.isInZoomRange(
@@ -1580,13 +1663,17 @@ const L_ = {
                 L_.Map_.map.getZoom()
             )
         ) {
-            if (l._path) l._path.style.display = 'inherit'
-            if (l._container) l._container.style.display = 'inherit'
-            if (l._icon) l._icon.style.display = 'inherit'
+            if (featureLayer._path)
+                featureLayer._path.style.display = 'inherit'
+            if (featureLayer._container)
+                featureLayer._container.style.display = 'inherit'
+            if (featureLayer._icon)
+                featureLayer._icon.style.display = 'inherit'
         } else {
-            if (l._path) l._path.style.display = 'none'
-            if (l._container) l._container.style.display = 'none'
-            if (l._icon) l._icon.style.display = 'none'
+            if (featureLayer._path) featureLayer._path.style.display = 'none'
+            if (featureLayer._container)
+                featureLayer._container.style.display = 'none'
+            if (featureLayer._icon) featureLayer._icon.style.display = 'none'
         }
     },
     addArrowToMap: function (
@@ -1786,18 +1873,29 @@ const L_ = {
             .parent()
             .remove()
 
-        const s = feature.properties.style
+        const featureStyle = feature.properties.style
         const styleString =
-            (s.color != null
+            (featureStyle.color != null
                 ? 'text-shadow: ' +
-                  F_.getTextShadowString(s.color, s.strokeOpacity, s.weight) +
+                  F_.getTextShadowString(
+                      featureStyle.color,
+                      featureStyle.strokeOpacity,
+                      featureStyle.weight
+                  ) +
                   '; '
                 : '') +
-            (s.fillColor != null ? 'color: ' + s.fillColor + '; ' : '') +
-            (s.fontSize != null ? 'font-size: ' + s.fontSize + '; ' : '') +
-            (s.rotation != null
+            (featureStyle.fillColor != null
+                ? 'color: ' + featureStyle.fillColor + '; '
+                : '') +
+            (featureStyle.fontSize != null
+                ? 'font-size: ' + featureStyle.fontSize + '; '
+                : '') +
+            (featureStyle.rotation != null
                 ? 'transform: rotateZ(' +
-                  parseInt(!isNaN(s.rotation) ? s.rotation : 0) * -1 +
+                  parseInt(
+                      !isNaN(featureStyle.rotation) ? featureStyle.rotation : 0
+                  ) *
+                      -1 +
                   'deg); '
                 : '')
 
@@ -1898,20 +1996,21 @@ const L_ = {
     setLayerOpacity: function (name, newOpacity) {
         newOpacity = parseFloat(newOpacity)
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
-        let l = L_.layers.layer[name]
+        let mapLayer = L_.layers.layer[name]
 
-        if (l) {
-            if (l.options.initialFillOpacity == null)
-                l.options.initialFillOpacity =
+        if (mapLayer) {
+            if (mapLayer.options.initialFillOpacity == null)
+                mapLayer.options.initialFillOpacity =
                     L_.layers.data[name]?.style?.fillOpacity != null
                         ? parseFloat(L_.layers.data[name].style.fillOpacity)
                         : 1
             try {
-                l.setOpacity(newOpacity)
+                mapLayer.setOpacity(newOpacity)
             } catch (error) {
-                l.setStyle({
+                mapLayer.setStyle({
                     opacity: newOpacity,
-                    fillOpacity: newOpacity * l.options.initialFillOpacity,
+                    fillOpacity:
+                        newOpacity * mapLayer.options.initialFillOpacity,
                 })
             }
             $(`.leafletMarkerShape_${F_.getSafeName(name)}`).css({
@@ -1920,31 +2019,32 @@ const L_ = {
 
             const sublayers = L_.layers.attachments[name]
             if (sublayers) {
-                for (let sub in sublayers) {
+                for (let sublayerName in sublayers) {
                     if (
-                        sublayers[sub] !== false &&
-                        sublayers[sub].layer != null &&
-                        !['models'].includes(sub)
+                        sublayers[sublayerName] !== false &&
+                        sublayers[sublayerName].layer != null &&
+                        !['models'].includes(sublayerName)
                     ) {
                         try {
-                            sublayers[sub].layer.setOpacity(newOpacity)
+                            sublayers[sublayerName].layer.setOpacity(newOpacity)
                         } catch (error) {
                             try {
                                 let opacity = newOpacity
                                 let fillOpacity =
-                                    newOpacity * l.options.initialFillOpacity
-                                if (sub === 'uncertainty_ellipses') {
+                                    newOpacity *
+                                    mapLayer.options.initialFillOpacity
+                                if (sublayerName === 'uncertainty_ellipses') {
                                     opacity = opacity * 0.8
                                     fillOpacity = fillOpacity * 0.25
                                 }
-                                sublayers[sub].layer.setStyle({
+                                sublayers[sublayerName].layer.setStyle({
                                     opacity,
                                     fillOpacity,
                                 })
                             } catch (error2) {
                                 /*
-                                if (sublayers[sub].layer._layers)
-                                    for (let sl in sublayers[sub].layer
+                                if (sublayers[sublayerName].layer._layers)
+                                    for (let sl in sublayers[sublayerName].layer
                                         ._layers) {
                                     }
                                     */
@@ -1955,16 +2055,16 @@ const L_ = {
             }
 
             try {
-                l.options.fillOpacity =
-                    newOpacity * l.options.initialFillOpacity
-                l.options.opacity = newOpacity
-                l.options.style.fillOpacity =
-                    newOpacity * l.options.initialFillOpacity
-                l.options.style.opacity = newOpacity
+                mapLayer.options.fillOpacity =
+                    newOpacity * mapLayer.options.initialFillOpacity
+                mapLayer.options.opacity = newOpacity
+                mapLayer.options.style.fillOpacity =
+                    newOpacity * mapLayer.options.initialFillOpacity
+                mapLayer.options.style.opacity = newOpacity
             } catch (error) {
-                l.options.fillOpacity =
-                    newOpacity * l.options.initialFillOpacity
-                l.options.opacity = newOpacity
+                mapLayer.options.fillOpacity =
+                    newOpacity * mapLayer.options.initialFillOpacity
+                mapLayer.options.opacity = newOpacity
             }
         }
         L_.layers.opacity[name] = newOpacity
@@ -2043,8 +2143,11 @@ const L_ = {
     resetLayerFills: function (onlyThisLayerName) {
         // Regular Layers
         for (let key in L_.layers.layer) {
-            const s = key.split('_')
-            const onId = s[1] != 'master' ? parseInt(s[1]) : s[1]
+            const layerNameParts = key.split('_')
+            const onId =
+                layerNameParts[1] != 'master'
+                    ? parseInt(layerNameParts[1])
+                    : layerNameParts[1]
 
             if (onlyThisLayerName != null && onlyThisLayerName !== key) continue
 
@@ -2055,7 +2158,7 @@ const L_ = {
                         (key.toLowerCase().indexOf('draw') === -1 &&
                             (L_.layers.data[key].type === 'vector' ||
                                 L_.layers.data[key].type === 'query')))) ||
-                (s[0] === 'DrawTool' && !Number.isNaN(onId))
+                (layerNameParts[0] === 'DrawTool' && !Number.isNaN(onId))
             ) {
                 if (
                     L_.layers.layer.hasOwnProperty(key) &&
@@ -2110,7 +2213,7 @@ const L_ = {
                         layer.options = savedOptions
                         layer.useKeyAsName = savedUseKeyAsName
                     })
-                } else if (s[0] === 'DrawTool') {
+                } else if (layerNameParts[0] === 'DrawTool') {
                     for (let k in L_.layers.layer[key]) {
                         if (!L_.layers.layer[key][k]) continue
                         if ('getLayers' in L_.layers.layer[key][k]) {
@@ -2497,16 +2600,25 @@ const L_ = {
             activePoint.lon != null
         ) {
             if (L_.layers.layer.hasOwnProperty(activePoint.layerUUID)) {
-                let g = L_.layers.layer[activePoint.layerUUID]._layers
-                for (let l in g) {
+                let featureLayers =
+                    L_.layers.layer[activePoint.layerUUID]._layers
+                for (let featureLayerId in featureLayers) {
                     if (
-                        g[l]?.feature?.geometry?.type &&
-                        g[l].feature.geometry.type.toLowerCase() === 'point' &&
-                        g[l]._latlng.lat == activePoint.lat &&
-                        g[l]._latlng.lng == activePoint.lon
+                        featureLayers[featureLayerId]?.feature?.geometry
+                            ?.type &&
+                        featureLayers[
+                            featureLayerId
+                        ].feature.geometry.type.toLowerCase() === 'point' &&
+                        featureLayers[featureLayerId]._latlng.lat ==
+                            activePoint.lat &&
+                        featureLayers[featureLayerId]._latlng.lng ==
+                            activePoint.lon
                     ) {
-                        g[l].fireEvent('click')
-                        L_._selectPointViewHelper(activePoint, g[l])
+                        featureLayers[featureLayerId].fireEvent('click')
+                        L_._selectPointViewHelper(
+                            activePoint,
+                            featureLayers[featureLayerId]
+                        )
                         return true
                     }
                 }
@@ -2517,17 +2629,26 @@ const L_ = {
             activePoint.value != null
         ) {
             if (L_.layers.layer.hasOwnProperty(activePoint.layerUUID)) {
-                let g = L_.layers.layer[activePoint.layerUUID]._layers
-                for (let l in g) {
-                    if (g[l] && g[l].feature && g[l].feature.properties) {
+                let featureLayers =
+                    L_.layers.layer[activePoint.layerUUID]._layers
+                for (let featureLayerId in featureLayers) {
+                    if (
+                        featureLayers[featureLayerId] &&
+                        featureLayers[featureLayerId].feature &&
+                        featureLayers[featureLayerId].feature.properties
+                    ) {
                         if (
                             F_.getIn(
-                                g[l].feature.properties,
+                                featureLayers[featureLayerId].feature
+                                    .properties,
                                 activePoint.key.split('.')
                             ) == activePoint.value
                         ) {
-                            g[l].fireEvent('click')
-                            L_._selectPointViewHelper(activePoint, g[l])
+                            featureLayers[featureLayerId].fireEvent('click')
+                            L_._selectPointViewHelper(
+                                activePoint,
+                                featureLayers[featureLayerId]
+                            )
                             return true
                         }
                     }
@@ -2538,11 +2659,15 @@ const L_ = {
             activePoint.layerId != null
         ) {
             if (L_.layers.layer.hasOwnProperty(activePoint.layerUUID)) {
-                let g = L_.layers.layer[activePoint.layerUUID]._layers
-                const l = activePoint.layerId
-                if (g[l] != null) {
-                    g[l].fireEvent('click')
-                    L_._selectPointViewHelper(activePoint, g[l])
+                let featureLayers =
+                    L_.layers.layer[activePoint.layerUUID]._layers
+                const featureLayerId = activePoint.layerId
+                if (featureLayers[featureLayerId] != null) {
+                    featureLayers[featureLayerId].fireEvent('click')
+                    L_._selectPointViewHelper(
+                        activePoint,
+                        featureLayers[featureLayerId]
+                    )
                     return true
                 }
             }
@@ -3245,42 +3370,45 @@ const L_ = {
             const subUpdateLayers = L_.layers.attachments[layerName]
 
             if (subUpdateLayers) {
-                for (let sub in subUpdateLayers) {
+                for (let sublayerName in subUpdateLayers) {
                     if (
-                        subUpdateLayers[sub] !== false &&
-                        subUpdateLayers[sub].layer != null
+                        subUpdateLayers[sublayerName] !== false &&
+                        subUpdateLayers[sublayerName].layer != null
                     ) {
-                        subUpdateLayers[sub].layer.clearLayers()
+                        subUpdateLayers[sublayerName].layer.clearLayers()
                         if (
-                            typeof subUpdateLayers[sub].layer
+                            typeof subUpdateLayers[sublayerName].layer
                                 .customClearLayers === 'function'
                         ) {
-                            subUpdateLayers[sub].layer.customClearLayers(
-                                layerName,
-                                sub
-                            )
+                            subUpdateLayers[
+                                sublayerName
+                            ].layer.customClearLayers(layerName, sublayerName)
                         }
 
                         if (!onlyClear) {
                             if (
-                                typeof subUpdateLayers[sub].layer
+                                typeof subUpdateLayers[sublayerName].layer
                                     .addDataEnhanced === 'function'
                             ) {
-                                subUpdateLayers[sub].layer.addDataEnhanced(
+                                subUpdateLayers[
+                                    sublayerName
+                                ].layer.addDataEnhanced(
                                     geojson,
                                     layerName,
-                                    sub,
+                                    sublayerName,
                                     L_.Map_
                                 )
                             } else if (
-                                typeof subUpdateLayers[sub].layer.addData ===
-                                'function'
+                                typeof subUpdateLayers[sublayerName].layer
+                                    .addData === 'function'
                             ) {
-                                subUpdateLayers[sub].layer.addData(geojson)
+                                subUpdateLayers[sublayerName].layer.addData(
+                                    geojson
+                                )
                             }
 
-                            if (sub === 'image_overlays') {
-                                subUpdateLayers[sub].layer.setZIndex(
+                            if (sublayerName === 'image_overlays') {
+                                subUpdateLayers[sublayerName].layer.setZIndex(
                                     L_._layersOrdered.length +
                                         1 -
                                         L_._layersOrdered.indexOf(layerName)
@@ -3311,16 +3439,17 @@ const L_ = {
     },
     //Takes in a config layer object
     // Not just for globe
-    globeLithoLayerHelper: async function (s, onlyClear) {
+    globeLithoLayerHelper: async function (layerConfig, onlyClear) {
         if (L_.Globe_) {
             // Only toggle the layer to reset if the layer is toggled on,
             // because if the layer is toggled off, it is not on the globe
-            if (L_.layers.on[s.name]) {
+            if (L_.layers.on[layerConfig.name]) {
                 // turn off
-                await L_.toggleLayerHelper(s, true, true, true)
+                await L_.toggleLayerHelper(layerConfig, true, true, true)
                 // Toggle the layer so its drawn in the globe
                 // turn on
-                if (!onlyClear) await L_.toggleLayerHelper(s, false, true, true)
+                if (!onlyClear)
+                    await L_.toggleLayerHelper(layerConfig, false, true, true)
             }
         }
     },
@@ -3435,20 +3564,20 @@ const L_ = {
         const layersOrdered = []
         expandLayers(layer, 0, null)
 
-        function expandLayers(d, level, prevName) {
+        function expandLayers(layerConfigs, level, prevName) {
             //Iterate over each layer
-            for (let i = 0; i < d.length; i++) {
+            for (let i = 0; i < layerConfigs.length; i++) {
                 //Check if it's not a header and thus an actual layer with data
-                if (d[i].type != 'header') {
+                if (layerConfigs[i].type != 'header') {
                     //Create parsed layers ordered
-                    layersOrdered.push(d[i].name)
+                    layersOrdered.push(layerConfigs[i].name)
                 }
 
                 //Get the current layers sublayers (returns 0 if none)
-                var dNext = getSublayers(d[i])
+                var dNext = getSublayers(layerConfigs[i])
                 //If they are sublayers, call this function again and move up a level
                 if (dNext != 0) {
-                    expandLayers(dNext, level + 1, d[i].name)
+                    expandLayers(dNext, level + 1, layerConfigs[i].name)
                 }
             }
         }
@@ -3832,59 +3961,60 @@ const L_ = {
         }
         //Now search all string valued props for image urls
 
-        for (let p in props) {
+        for (let propName in props) {
             if (
-                typeof props[p] === 'string' &&
-                props[p].toLowerCase().match(/\.(jpeg|jpg|gif|png|xml)$/) !=
-                    null
+                typeof props[propName] === 'string' &&
+                props[propName]
+                    .toLowerCase()
+                    .match(/\.(jpeg|jpg|gif|png|xml)$/) != null
             ) {
-                let url = props[p]
+                let url = props[propName]
                 const isGif = url.toLowerCase().match(/\.gif$/) != null
                 if (!F_.isUrlAbsolute(url)) url = L_.missionPath + url
                 images.push({
                     url: url,
-                    name: p + (isGif ? ' [GIF]' : ''),
+                    name: propName + (isGif ? ' [GIF]' : ''),
                     isPanoramic: false,
                     isModel: false,
                     isGif: isGif,
                 })
             } else if (
-                typeof props[p] === 'string' &&
-                props[p].toLowerCase().match(/\.(pdf)$/) != null
+                typeof props[propName] === 'string' &&
+                props[propName].toLowerCase().match(/\.(pdf)$/) != null
             ) {
-                let url = props[p]
+                let url = props[propName]
                 if (!F_.isUrlAbsolute(url)) url = L_.missionPath + url
                 images.push({
                     url: url,
-                    name: p,
+                    name: propName,
                     type: 'document',
                     isPanoramic: false,
                     isModel: false,
                 })
             } else if (
-                typeof props[p] === 'string' &&
-                props[p].toLowerCase().match(/\.(webm|mp4)$/) != null
+                typeof props[propName] === 'string' &&
+                props[propName].toLowerCase().match(/\.(webm|mp4)$/) != null
             ) {
-                let url = props[p]
+                let url = props[propName]
                 if (!F_.isUrlAbsolute(url)) url = L_.missionPath + url
                 images.push({
                     url: url,
-                    name: p + ' [Video]',
+                    name: propName + ' [Video]',
                     type: 'video',
                     isPanoramic: false,
                     isModel: false,
                     isVideo: true,
                 })
             } else if (
-                typeof props[p] === 'string' &&
-                (props[p].toLowerCase().match(/\.(obj)$/) != null ||
-                    props[p].toLowerCase().match(/\.(dae)$/) != null)
+                typeof props[propName] === 'string' &&
+                (props[propName].toLowerCase().match(/\.(obj)$/) != null ||
+                    props[propName].toLowerCase().match(/\.(dae)$/) != null)
             ) {
-                let url = props[p]
+                let url = props[propName]
                 if (!F_.isUrlAbsolute(url)) url = L_.missionPath + url
                 images.push({
                     url: url,
-                    name: p,
+                    name: propName,
                     isPanoramic: false,
                     isModel: true,
                 })
@@ -4010,64 +4140,84 @@ async function parseConfig(configData, urlOnLayers) {
     //Begin recursively going through those layers
     await expandLayers(layers, 0, null)
 
-    async function expandLayers(d, level, prevName) {
+    async function expandLayers(layerConfigs, level, prevName) {
         const stacRegex = /^stac(-((item)|(catalog)|(collection)))?:/i
 
         //Iterate over each layer
-        for (let i = 0; i < d.length; i++) {
+        for (let i = 0; i < layerConfigs.length; i++) {
             // If sourceType, prefix onto url
             if (
-                d[i].sourceType != null &&
-                d[i].sourceType !== 'url' &&
-                d[i].url.indexOf(`${d[i].sourceType}:`) !== 0
+                layerConfigs[i].sourceType != null &&
+                layerConfigs[i].sourceType !== 'url' &&
+                layerConfigs[i].url.indexOf(
+                    `${layerConfigs[i].sourceType}:`
+                ) !== 0
             ) {
-                d[i].url = `${d[i].sourceType}:${d[i].url}`
+                layerConfigs[
+                    i
+                ].url = `${layerConfigs[i].sourceType}:${layerConfigs[i].url}`
             }
 
             // check if this is a vector STAC catalog or collection
             // if so, prefetch the data and replace this entry
-            if (d[i].type === 'vector' && stacRegex.test(d[i].url)) {
-                d[i] = await getSTACLayers(d[i])
+            if (
+                layerConfigs[i].type === 'vector' &&
+                stacRegex.test(layerConfigs[i].url)
+            ) {
+                layerConfigs[i] = await getSTACLayers(layerConfigs[i])
             }
 
             // Quick hack to use uuid instead of name as main id
-            d[i].uuid = d[i].uuid || d[i].name
-            if (L_.layers.nameToUUID[d[i].name] == null)
-                L_.layers.nameToUUID[d[i].name] = []
+            layerConfigs[i].uuid = layerConfigs[i].uuid || layerConfigs[i].name
+            if (L_.layers.nameToUUID[layerConfigs[i].name] == null)
+                L_.layers.nameToUUID[layerConfigs[i].name] = []
 
-            if (!L_.layers.nameToUUID[d[i].name].includes(d[i].uuid)) {
-                L_.layers.nameToUUID[d[i].name].push(d[i].uuid)
+            if (
+                !L_.layers.nameToUUID[layerConfigs[i].name].includes(
+                    layerConfigs[i].uuid
+                )
+            ) {
+                L_.layers.nameToUUID[layerConfigs[i].name].push(
+                    layerConfigs[i].uuid
+                )
             }
-            d[i] = { display_name: d[i].name, ...d[i] }
-            d[i].name = d[i].uuid || d[i].name
+            layerConfigs[i] = {
+                display_name: layerConfigs[i].name,
+                ...layerConfigs[i],
+            }
+            layerConfigs[i].name =
+                layerConfigs[i].uuid || layerConfigs[i].name
 
             // Create parsed layers named
-            L_.layers.data[d[i].name] = d[i]
+            L_.layers.data[layerConfigs[i].name] = layerConfigs[i]
 
-            if (d[i].display_name === 'TimeCogs') {
-                d[i].time.current = '2025-02-12T01:20:55Z'
-                d[i].time.start = ''
-                d[i].time.end = ''
-                d[i].time.startProp = ''
-                d[i].time.endProp = ''
-                d[i].time.refresh = '1 hours'
-                d[i].time.increment = '5 minutes'
+            if (layerConfigs[i].display_name === 'TimeCogs') {
+                layerConfigs[i].time.current = '2025-02-12T01:20:55Z'
+                layerConfigs[i].time.start = ''
+                layerConfigs[i].time.end = ''
+                layerConfigs[i].time.startProp = ''
+                layerConfigs[i].time.endProp = ''
+                layerConfigs[i].time.refresh = '1 hours'
+                layerConfigs[i].time.increment = '5 minutes'
             }
 
             if (
-                d[i].time &&
-                d[i].time.enabled === true &&
-                d[i].time.refreshIntervalEnabled === true
+                layerConfigs[i].time &&
+                layerConfigs[i].time.enabled === true &&
+                layerConfigs[i].time.refreshIntervalEnabled === true
             ) {
-                if (L_.layers.refreshIntervals[d[i].name])
-                    clearInterval(L_.layers.refreshIntervals[d[i].name])
-                L_.layers.refreshIntervals[d[i].name] = setInterval(
+                if (L_.layers.refreshIntervals[layerConfigs[i].name])
+                    clearInterval(
+                        L_.layers.refreshIntervals[layerConfigs[i].name]
+                    )
+                L_.layers.refreshIntervals[layerConfigs[i].name] = setInterval(
                     async () => {
-                        if (L_.layers.on[d[i].name] === true) {
+                        if (L_.layers.on[layerConfigs[i].name] === true) {
                             let savedActiveFeature
                             if (
                                 L_.activeFeature &&
-                                L_.activeFeature.layerName === d[i].name
+                                L_.activeFeature.layerName ===
+                                    layerConfigs[i].name
                             ) {
                                 savedActiveFeature = {
                                     layerName: L_.activeFeature.layerName,
@@ -4077,7 +4227,7 @@ async function parseConfig(configData, urlOnLayers) {
                                 }
                             }
                             await L_.TimeControl_.reloadLayer(
-                                d[i].name,
+                                layerConfigs[i].name,
                                 false,
                                 false,
                                 true,
@@ -4086,7 +4236,8 @@ async function parseConfig(configData, urlOnLayers) {
                             // Reselect activeFeature
                             if (
                                 savedActiveFeature &&
-                                savedActiveFeature.layerName === d[i].name
+                                savedActiveFeature.layerName ===
+                                    layerConfigs[i].name
                             ) {
                                 L_.selectFeature(
                                     savedActiveFeature.layerName,
@@ -4095,38 +4246,46 @@ async function parseConfig(configData, urlOnLayers) {
                             }
                         }
                     },
-                    (d[i].time.refreshIntervalAmount || 60) * 1000
+                    (layerConfigs[i].time.refreshIntervalAmount || 60) * 1000
                 )
             }
             //Save the prevName for easy tracing back
-            L_._layersParent[d[i].name] = prevName
+            L_._layersParent[layerConfigs[i].name] = prevName
 
             // Set default kind to 'none'
             if (
-                d[i].type === 'vector' ||
-                d[i].type === 'vectortile' ||
-                d[i].type === 'query'
+                layerConfigs[i].type === 'vector' ||
+                layerConfigs[i].type === 'vectortile' ||
+                layerConfigs[i].type === 'query'
             ) {
-                L_.layers.data[d[i].name].kind = d[i].kind || 'none'
+                L_.layers.data[layerConfigs[i].name].kind =
+                    layerConfigs[i].kind || 'none'
             }
-            if (d[i].type === 'vector') {
-                d[i].radius = d[i].style?.radius || d[i].radius || 8
+            if (layerConfigs[i].type === 'vector') {
+                layerConfigs[i].radius =
+                    layerConfigs[i].style?.radius ||
+                    layerConfigs[i].radius ||
+                    8
             }
 
             //Check if it's not a header and thus an actual layer with data
-            if (d[i].type != 'header') {
+            if (layerConfigs[i].type != 'header') {
                 //Create parsed layers ordered
-                L_._layersOrdered.push(d[i].name)
+                L_._layersOrdered.push(layerConfigs[i].name)
                 //Create parsed layers loaded
-                if (d[i].type != 'data' && d[i].type != 'model')
+                if (
+                    layerConfigs[i].type != 'data' &&
+                    layerConfigs[i].type != 'model'
+                )
                     //No load checking for model since it's globe only
                     L_._layersLoaded.push(false)
                 else L_._layersLoaded.push(true)
 
                 //relative or full path?
-                let legendPath = d[i].legend
-                if (d[i]?.variables?.legend) {
-                    L_.layers.data[d[i].name]._legend = d[i].variables.legend
+                let legendPath = layerConfigs[i].legend
+                if (layerConfigs[i]?.variables?.legend) {
+                    L_.layers.data[layerConfigs[i].name]._legend =
+                        layerConfigs[i].variables.legend
                 } else if (legendPath != undefined) {
                     if (!F_.isUrlAbsolute(legendPath))
                         legendPath = L_.missionPath + legendPath
@@ -4137,62 +4296,69 @@ async function parseConfig(configData, urlOnLayers) {
                                 data = F_.csvToJSON(data)
                                 L_.layers.data[name]._legend = data
                             }
-                        })(d[i].name)
+                        })(layerConfigs[i].name)
                     )
                 }
 
                 // Set disabled time object if missing
-                if (d[i].time == null) {
-                    d[i].time = { enabled: false }
+                if (layerConfigs[i].time == null) {
+                    layerConfigs[i].time = { enabled: false }
                 }
 
                 // Every engine's spelling of a raster tile layer, since the
                 // tile server serves wmts regardless of which engine renders it.
                 if (
-                    isRasterTileLayerType(d[i]) &&
-                    d[i].throughTileServer === true
+                    isRasterTileLayerType(layerConfigs[i]) &&
+                    layerConfigs[i].throughTileServer === true
                 ) {
-                    d[i].tileformat = 'wmts'
+                    layerConfigs[i].tileformat = 'wmts'
                 }
             }
 
             //Create parsed layers data
-            L_.layers.dataFlat.push(d[i])
+            L_.layers.dataFlat.push(layerConfigs[i])
 
             //Create parsed toggled array based on config layer visibility
-            L_.layers.on[d[i].name] =
-                d[i].visibility == undefined ? true : d[i].visibility
+            L_.layers.on[layerConfigs[i].name] =
+                layerConfigs[i].visibility == undefined
+                    ? true
+                    : layerConfigs[i].visibility
 
             // Headers always start as true
             // Toggling header visibility toggles between all-off and previous-on states
-            if (d[i].type === 'header') L_.layers.on[d[i].name] = true
+            if (layerConfigs[i].type === 'header')
+                L_.layers.on[layerConfigs[i].name] = true
 
             //Create parsed opacity array
-            let io = d[i].initialOpacity
-            L_.layers.opacity[d[i].name] =
+            let io = layerConfigs[i].initialOpacity
+            L_.layers.opacity[layerConfigs[i].name] =
                 io == null || io < 0 || io > 1 ? 1 : io
 
             //Set visibility if we have all the on layers listed in the url
             if (urlOnLayers) {
                 //this is null if we've no url layers
                 let standardId = null
-                if (urlOnLayers.onLayers.hasOwnProperty(d[i].name))
-                    standardId = d[i].name
-                else if (urlOnLayers.onLayers.hasOwnProperty(d[i].display_name))
-                    standardId = d[i].display_name
+                if (urlOnLayers.onLayers.hasOwnProperty(layerConfigs[i].name))
+                    standardId = layerConfigs[i].name
+                else if (
+                    urlOnLayers.onLayers.hasOwnProperty(
+                        layerConfigs[i].display_name
+                    )
+                )
+                    standardId = layerConfigs[i].display_name
                 if (standardId != null) {
-                    L_.layers.on[d[i].name] = true
-                    L_.layers.opacity[d[i].name] =
+                    L_.layers.on[layerConfigs[i].name] = true
+                    L_.layers.opacity[layerConfigs[i].name] =
                         urlOnLayers.onLayers[standardId].opacity || 1
                 } else if (urlOnLayers.method == 'replace') {
-                    L_.layers.on[d[i].name] = false
+                    L_.layers.on[layerConfigs[i].name] = false
                 }
             }
             //Get the current layers sublayers (returns 0 if none)
-            var dNext = getSublayers(d[i])
+            var dNext = getSublayers(layerConfigs[i])
             //If they are sublayers, call this function again and move up a level
             if (dNext != 0) {
-                expandLayers(dNext, level + 1, d[i].name)
+                expandLayers(dNext, level + 1, layerConfigs[i].name)
             }
         }
     }
@@ -4207,25 +4373,28 @@ async function parseConfig(configData, urlOnLayers) {
     }
 
     // recurse through a STAC layer building sublayers
-    function getSTACLayers(d) {
+    function getSTACLayers(layerConfig) {
         return new Promise(async (resolve, reject) => {
             let stac_data
             const stacRegex =
                 /^(?<prefix>stac(-((item)|(catalog)|(collection)))?:)?(?<url>.*)/i
-            const urlMatch = d.url.match(stacRegex)
+            const urlMatch = layerConfig.url.match(stacRegex)
             if (!urlMatch) {
                 console.warn('Could not process STAC URL')
-                resolve(d)
+                resolve(layerConfig)
             }
             const { prefix, url } = urlMatch.groups
-            d.url = url // replace the current URL so we no longer need to worry about the special prefix
+            layerConfig.url = url // replace the current URL so we no longer need to worry about the special prefix
             if (prefix !== 'stac-item:') {
                 $.ajax({
-                    url: L_.getUrl('stac', d.url, d),
+                    url: L_.getUrl('stac', layerConfig.url, layerConfig),
                     success: async (resp) => {
                         stac_data = resp
-                        const path = d.url.split('/').slice(0, -1).join('/')
-                        const basename = F_.fileNameFromPath(d.url)
+                        const path = layerConfig.url
+                            .split('/')
+                            .slice(0, -1)
+                            .join('/')
+                        const basename = F_.fileNameFromPath(layerConfig.url)
                         const stac_type = stac_data.type.toLowerCase()
                         if (stac_type === 'catalog') {
                             let sublayers = []
@@ -4234,10 +4403,10 @@ async function parseConfig(configData, urlOnLayers) {
                             )
                             const promArr = []
                             for (let i = 0; i < children.length; i++) {
-                                const uuid = `${d.uuid}-${i}`
+                                const uuid = `${layerConfig.uuid}-${i}`
                                 promArr.push(
                                     getSTACLayers(
-                                        Object.assign({}, d, {
+                                        Object.assign({}, layerConfig, {
                                             url: children[i].href.replace(
                                                 './',
                                                 `${path}/`
@@ -4259,7 +4428,7 @@ async function parseConfig(configData, urlOnLayers) {
                                 sublayers = sublayers.concat(subls)
                             } catch (err) {
                                 console.warn(err)
-                                resolve(d)
+                                resolve(layerConfig)
                             }
 
                             resolve(
@@ -4273,11 +4442,12 @@ async function parseConfig(configData, urlOnLayers) {
                                         uuid: '',
                                     },
                                     {
-                                        description: d.description,
+                                        description: layerConfig.description,
                                         display_name:
-                                            d.display_name || basename,
-                                        name: d.name,
-                                        uuid: d.uuid,
+                                            layerConfig.display_name ||
+                                            basename,
+                                        name: layerConfig.name,
+                                        uuid: layerConfig.uuid,
                                     }
                                 )
                             )
@@ -4287,10 +4457,10 @@ async function parseConfig(configData, urlOnLayers) {
                                 /^item/i.test(l.rel)
                             )
                             for (let i = 0; i < items.length; i++) {
-                                const uuid = `${d.uuid}-${i}`
+                                const uuid = `${layerConfig.uuid}-${i}`
                                 sublayers.push(
                                     // we shouldn't need to pre-fetch item data
-                                    Object.assign({}, d, {
+                                    Object.assign({}, layerConfig, {
                                         url: items[i].href.replace(
                                             './',
                                             `${path}/`
@@ -4314,32 +4484,34 @@ async function parseConfig(configData, urlOnLayers) {
                                         uuid: '',
                                     },
                                     {
-                                        description: d.description,
+                                        description: layerConfig.description,
                                         display_name:
-                                            d.display_name || basename,
-                                        name: d.name,
-                                        uuid: d.uuid,
+                                            layerConfig.display_name ||
+                                            basename,
+                                        name: layerConfig.name,
+                                        uuid: layerConfig.uuid,
                                     }
                                 )
                             )
                         } else if (/^feature(collection)?$/i.test(stac_type)) {
                             resolve(
-                                Object.assign({}, d, {
-                                    display_name: d.display_name || basename,
+                                Object.assign({}, layerConfig, {
+                                    display_name:
+                                        layerConfig.display_name || basename,
                                 })
                             )
                         } else {
                             console.warn('Could not process STAC layer')
-                            resolve(d)
+                            resolve(layerConfig)
                         }
                     },
                     error: (resp) => {
                         console.warn(resp)
-                        resolve(d)
+                        resolve(layerConfig)
                     },
                 })
             } else {
-                resolve(d)
+                resolve(layerConfig)
             }
         })
     }

@@ -169,61 +169,64 @@ export const constructVectorLayer = (
     onEachFeatureDefault,
     Map_
 ) => {
-    let col = layerObj.style.color
+    let colorOrProp = layerObj.style.color
     if (layerObj.style.colorProp != null && layerObj.style.colorProp !== '')
-        col = `prop:${layerObj.style.colorProp}`
+        colorOrProp = `prop:${layerObj.style.colorProp}`
 
-    let opa = String(layerObj.style.opacity)
+    let opacityOrProp = String(layerObj.style.opacity)
     if (layerObj.style.opacityProp != null && layerObj.style.opacityProp !== '')
-        opa = `prop:${layerObj.style.opacityProp}`
+        opacityOrProp = `prop:${layerObj.style.opacityProp}`
 
-    let wei = String(layerObj.style.weight)
+    let weightOrProp = String(layerObj.style.weight)
     if (layerObj.style.weightProp != null && layerObj.style.weightProp !== '')
-        wei = `prop:${layerObj.style.weightProp}`
+        weightOrProp = `prop:${layerObj.style.weightProp}`
 
-    let fiC = layerObj.style.fillColor
+    let fillColorOrProp = layerObj.style.fillColor
     if (
         layerObj.style.fillColorProp != null &&
         layerObj.style.fillColorProp !== ''
     )
-        fiC = `prop:${layerObj.style.fillColorProp}`
+        fillColorOrProp = `prop:${layerObj.style.fillColorProp}`
 
-    let fiO = String(layerObj.style.fillOpacity)
+    let fillOpacityOrProp = String(layerObj.style.fillOpacity)
     if (
         layerObj.style.fillOpacityProp != null &&
         layerObj.style.fillOpacityProp !== ''
     )
-        fiO = `prop:${layerObj.style.fillOpacityProp}`
+        fillOpacityOrProp = `prop:${layerObj.style.fillOpacityProp}`
 
-    let rad = String(layerObj.style.radius || layerObj.radius)
-    if (rad === 'undefined') rad = '8'
+    let radiusOrProp = String(layerObj.style.radius || layerObj.radius)
+    if (radiusOrProp === 'undefined') radiusOrProp = '8'
     if (layerObj.style.radiusProp != null && layerObj.style.radiusProp !== '')
-        rad = `prop:${layerObj.style.radiusProp}`
+        radiusOrProp = `prop:${layerObj.style.radiusProp}`
 
     let leafletLayerObject = {
         style: function (feature, preferredStyle) {
             if (preferredStyle) {
-                col = preferredStyle.color != null ? preferredStyle.color : col
-                opa =
+                colorOrProp =
+                    preferredStyle.color != null
+                        ? preferredStyle.color
+                        : colorOrProp
+                opacityOrProp =
                     preferredStyle.opacity != null
                         ? String(preferredStyle.opacity)
-                        : opa
-                wei =
+                        : opacityOrProp
+                weightOrProp =
                     preferredStyle.weight != null
                         ? String(preferredStyle.weight)
-                        : wei
-                fiC =
+                        : weightOrProp
+                fillColorOrProp =
                     preferredStyle.fillColor != null
                         ? preferredStyle.fillColor
-                        : fiC
-                fiO =
+                        : fillColorOrProp
+                fillOpacityOrProp =
                     preferredStyle.fillOpacity != null
                         ? String(preferredStyle.fillOpacity)
-                        : fiO
-                rad =
+                        : fillOpacityOrProp
+                radiusOrProp =
                     preferredStyle.radius != null
                         ? String(preferredStyle.radius)
-                        : rad
+                        : radiusOrProp
             }
 
             // Check for legend-based property styling (takes priority over configured styles but not over feature.properties.style)
@@ -315,7 +318,7 @@ export const constructVectorLayer = (
                                       )
 
                             if (interpolatedFillColor) {
-                                fiC = interpolatedFillColor
+                                fillColorOrProp = interpolatedFillColor
                             }
                         }
 
@@ -331,7 +334,7 @@ export const constructVectorLayer = (
                                       )
 
                             if (interpolatedStrokeColor) {
-                                col = interpolatedStrokeColor
+                                colorOrProp = interpolatedStrokeColor
                             }
                         }
 
@@ -377,13 +380,13 @@ export const constructVectorLayer = (
 
                         if (exactMatch) {
                             if (exactMatch.color) {
-                                fiC = exactMatch.color
+                                fillColorOrProp = exactMatch.color
                             }
                             if (exactMatch.strokecolor) {
-                                col = exactMatch.strokecolor
+                                colorOrProp = exactMatch.strokecolor
                             }
                             if (exactMatch.color && !exactMatch.strokecolor) {
-                                col = exactMatch.color
+                                colorOrProp = exactMatch.color
                             }
                             break // Found styling, stop processing other properties
                         }
@@ -404,50 +407,60 @@ export const constructVectorLayer = (
                 if (layerName) layerObj.style.layerName = layerName
             } else {
                 // Priority to prop, prop.color, then style color.
-                var finalCol =
-                    col != null && col.toLowerCase().substring(0, 4) === 'prop'
-                        ? F_.parseColor(feature.properties[col.substring(5)]) ||
-                          '#FFF'
+                var finalColor =
+                    colorOrProp != null &&
+                    colorOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? F_.parseColor(
+                              feature.properties[colorOrProp.substring(5)]
+                          ) || '#FFF'
                         : feature.style && feature.style.stroke != null
                         ? feature.style.stroke
-                        : col
-                var finalOpa =
-                    opa != null && opa.toLowerCase().substring(0, 4) === 'prop'
-                        ? feature.properties[opa.substring(5)] || '1'
+                        : colorOrProp
+                var finalOpacity =
+                    opacityOrProp != null &&
+                    opacityOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? feature.properties[opacityOrProp.substring(5)] || '1'
                         : feature.style && feature.style.opacity != null
                         ? feature.style.opacity
-                        : opa
-                var finalWei =
-                    wei != null && wei.toLowerCase().substring(0, 4) === 'prop'
-                        ? feature.properties[wei.substring(5)] || '1'
+                        : opacityOrProp
+                var finalWeight =
+                    weightOrProp != null &&
+                    weightOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? feature.properties[weightOrProp.substring(5)] || '1'
                         : feature.style && feature.style.weight != null
                         ? feature.style.weight
-                        : wei
-                if (!isNaN(parseInt(finalWei))) finalWei = parseInt(finalWei)
-                var finalFiC =
-                    fiC != null && fiC.toLowerCase().substring(0, 4) === 'prop'
-                        ? F_.parseColor(feature.properties[fiC.substring(5)]) ||
-                          '#000'
+                        : weightOrProp
+                if (!isNaN(parseInt(finalWeight)))
+                    finalWeight = parseInt(finalWeight)
+                var finalFillColor =
+                    fillColorOrProp != null &&
+                    fillColorOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? F_.parseColor(
+                              feature.properties[fillColorOrProp.substring(5)]
+                          ) || '#000'
                         : feature.style && feature.style.fill != null
                         ? feature.style.fill
-                        : fiC
-                var finalFiO =
-                    fiO != null && fiO.toLowerCase().substring(0, 4) === 'prop'
-                        ? feature.properties[fiO.substring(5)] || '1'
+                        : fillColorOrProp
+                var finalFillOpacity =
+                    fillOpacityOrProp != null &&
+                    fillOpacityOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? feature.properties[fillOpacityOrProp.substring(5)] ||
+                          '1'
                         : feature.style && feature.style.fillopacity != null
                         ? feature.style.fillopacity
-                        : fiO
+                        : fillOpacityOrProp
 
                 var finalRad =
-                    rad != null && rad.toLowerCase().substring(0, 4) === 'prop'
-                        ? feature.properties[rad.substring(5)] ||
+                    radiusOrProp != null &&
+                    radiusOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? feature.properties[radiusOrProp.substring(5)] ||
                           layerObj.radius ||
                           '8'
                         : feature.style &&
                           feature.style.radius != null &&
                           feature.style.radius != 'undefined'
                         ? feature.style.radius
-                        : rad
+                        : radiusOrProp
                 if (!isNaN(parseInt(finalRad))) finalRad = parseInt(finalRad)
 
                 // Check for radius property if radius=1 (default/prop:radius)
@@ -457,13 +470,14 @@ export const constructVectorLayer = (
                         ? ' noPointerEvents'
                         : ''
 
-                layerObj.style.color = finalCol || '#FFF'
-                layerObj.style.opacity = finalOpa === 'undefined' ? 1 : finalOpa
+                layerObj.style.color = finalColor || '#FFF'
+                layerObj.style.opacity =
+                    finalOpacity === 'undefined' ? 1 : finalOpacity
                 layerObj.style.weight =
-                    finalWei === 'undefined' ? '2' : finalWei
-                layerObj.style.fillColor = finalFiC || '#FFF'
+                    finalWeight === 'undefined' ? '2' : finalWeight
+                layerObj.style.fillColor = finalFillColor || '#FFF'
                 layerObj.style.fillOpacity =
-                    finalFiO === 'undefined' ? '1' : finalFiO
+                    finalFillOpacity === 'undefined' ? '1' : finalFillOpacity
 
                 layerObj.style.radius = finalRad || 8
             }
@@ -800,16 +814,16 @@ export const constructVectorLayer = (
     layer._layerName = layerObj.name
 
     Object.keys(layer._layers).forEach((idx) => {
-        let l = layer._layers[idx]
-        const savedUseKeyAsName = l.useKeyAsName
-        const savedOptions = l.options
+        let featureLayer = layer._layers[idx]
+        const savedUseKeyAsName = featureLayer.useKeyAsName
+        const savedOptions = featureLayer.options
 
-        if (l.feature?.properties?.style?.geologic != null) {
-            const geom = l.feature.geometry
-            const style = l.feature?.properties?.style
+        if (featureLayer.feature?.properties?.style?.geologic != null) {
+            const geom = featureLayer.feature.geometry
+            const style = featureLayer.feature?.properties?.style
 
             let made = false
-            switch (l.feature?.properties?.style?.geologic.type) {
+            switch (featureLayer.feature?.properties?.style?.geologic.type) {
                 case 'pattern':
                     // We can augment existing polygons for this so patterns are
                     // implemented above in the style object
@@ -818,7 +832,7 @@ export const constructVectorLayer = (
                 case 'linework':
                     if (geom.type.toLowerCase() === 'linestring') {
                         layer._layers[idx] = LayerGeologic.createLinework(
-                            l.feature,
+                            featureLayer.feature,
                             style
                         )
                         made = true
@@ -840,28 +854,30 @@ export const constructVectorLayer = (
             }
             if (made) {
                 layer._layers[idx].options.layerName = savedOptions.layerName
-                layer._layers[idx].feature = l.feature
+                layer._layers[idx].feature = featureLayer.feature
                 layer._layers[idx].useKeyAsName = savedUseKeyAsName
-                l.feature.style = l.feature.style || {}
-                onEachFeatureDefault(l.feature, layer._layers[idx])
+                featureLayer.feature.style = featureLayer.feature.style || {}
+                onEachFeatureDefault(featureLayer.feature, layer._layers[idx])
                 if (layer._layers[idx]._layers) {
                     Object.keys(layer._layers[idx]._layers).forEach((idx2) => {
                         layer._layers[idx]._layers[idx2].options.layerName =
                             savedOptions.layerName
-                        layer._layers[idx]._layers[idx2].feature = l.feature
+                        layer._layers[idx]._layers[idx2].feature =
+                            featureLayer.feature
                         layer._layers[idx]._layers[idx2].useKeyAsName =
                             savedUseKeyAsName
 
-                        l.feature.style = l.feature.style || {}
+                        featureLayer.feature.style =
+                            featureLayer.feature.style || {}
                         onEachFeatureDefault(
-                            l.feature,
+                            featureLayer.feature,
                             layer._layers[idx]._layers[idx2]
                         )
                     })
                 }
             }
-        } else if (l.feature?.properties?.arrow === true) {
-            const c = l.feature.geometry.coordinates
+        } else if (featureLayer.feature?.properties?.arrow === true) {
+            const c = featureLayer.feature.geometry.coordinates
             const start = new L.LatLng(c[0][1], c[0][0])
             const end = new L.LatLng(c[1][1], c[1][0])
 
@@ -869,8 +885,8 @@ export const constructVectorLayer = (
                 null,
                 start,
                 end,
-                l.feature?.properties?.style,
-                l.feature,
+                featureLayer.feature?.properties?.style,
+                featureLayer.feature,
                 idx,
                 null,
                 true
@@ -886,18 +902,18 @@ export const constructVectorLayer = (
                 layer._layers[idx]._layers[idx2]._isArrow = true
                 layer._layers[idx]._layers[idx2].options.layerName =
                     savedOptions.layerName
-                layer._layers[idx]._layers[idx2].feature = l.feature
+                layer._layers[idx]._layers[idx2].feature = featureLayer.feature
                 layer._layers[idx]._layers[idx2].useKeyAsName =
                     savedUseKeyAsName
-                l.feature.style = l.feature.style || {}
+                featureLayer.feature.style = featureLayer.feature.style || {}
                 onEachFeatureDefault(
-                    l.feature,
+                    featureLayer.feature,
                     layer._layers[idx]._layers[idx2]
                 )
             })
-        } else if (l.feature?.properties?.annotation === true) {
+        } else if (featureLayer.feature?.properties?.annotation === true) {
             layer._layers[idx] = L_.createAnnotation(
-                l.feature,
+                featureLayer.feature,
                 'LayerAnnotation',
                 layer._layers[idx].options.layerName,
                 idx

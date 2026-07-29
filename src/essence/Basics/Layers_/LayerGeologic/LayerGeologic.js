@@ -86,21 +86,31 @@ const LayerGeologic = {
     },
     getLineworkPatterns: function (style) {
         const patterns = []
-        const s = style.geologic
+        const geologicStyle = style.geologic
         let def = null
-        if (s != null) def = LayerGeologic.getDefinition(s.type, s.tag)
+        if (geologicStyle != null)
+            def = LayerGeologic.getDefinition(
+                geologicStyle.type,
+                geologicStyle.tag
+            )
 
-        if (s != null && def != null && def.style?.symbols?.[0] != null) {
+        if (
+            geologicStyle != null &&
+            def != null &&
+            def.style?.symbols?.[0] != null
+        ) {
             const defS = def.style?.symbols?.[0]
             const weight = style.weight || 0
             const weightFactor = 3
-            const rep = s.rep || defS.rep || 200
-            const size = defS.size * (s.size || 1)
-            const color = F_.colorCodeToColor(s.color || defS.color)
+            const rep = geologicStyle.rep || defS.rep || 200
+            const size = defS.size * (geologicStyle.size || 1)
+            const color = F_.colorCodeToColor(
+                geologicStyle.color || defS.color
+            )
             const opacity = style.opacity != null ? style.opacity : 1
             let rot = defS.rot || 0
             let pos = defS.pos || 'center'
-            const pos2 = s.pos || pos
+            const pos2 = geologicStyle.pos || pos
             let shouldOffset = false
             if (
                 (pos2 === 'left' && pos === 'right') ||
@@ -249,17 +259,20 @@ const LayerGeologic = {
     createSymbolMarker: function (lat, lng, style) {
         style = style || {}
 
-        const g = style.geologic
-        if (g != null) {
-            const def = LayerGeologic.getDefinition(g.type, g.tag)
+        const geologicStyle = style.geologic
+        if (geologicStyle != null) {
+            const def = LayerGeologic.getDefinition(
+                geologicStyle.type,
+                geologicStyle.tag
+            )
             if (def != null) {
                 return L.marker(new L.LatLng(lat, lng), {
                     icon: LayerGeologic.getSymbolIcon(
                         def.style.symbol.set,
                         def.style.symbol.key,
-                        g.color,
-                        g.size,
-                        g.rot
+                        geologicStyle.color,
+                        geologicStyle.size,
+                        geologicStyle.rot
                     ),
                 })
             }
