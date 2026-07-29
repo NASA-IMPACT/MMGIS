@@ -19,8 +19,12 @@ name: Deploy lean (AWS ECS Express Mode)
 #   secrets: AWS_DEPLOY_ROLE_ARN (OIDC-assumable deploy role; no
 #            long-lived keys)
 #
-# The full/upstream deployment does not use this workflow
-# (docker-build.yml continues to publish the GHCR image).
+# The full/upstream deployment does not use this workflow (upstream
+# NASA-AMMOS publishes its own GHCR image). This is also the container-
+# build gate for this fork: it builds the real Dockerfile on every push
+# to development, so a broken container build fails here within minutes
+# of merging (see #228 — the fork's GHCR publish workflow was removed
+# because nothing consumed its images).
 
 # limit concurrency
 concurrency: deploy_lean_mmgis
