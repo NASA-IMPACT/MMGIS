@@ -91,7 +91,7 @@ const TimeUI = {
     _initialStart: null,
     _initialEnd: null,
     // Payload of the last emitted time:changeRequested — used to recognize
-    // the committed echo on time:change and skip a redundant resync
+    // the committed echo on time:changed and skip a redundant resync
     _lastEmitted: null,
     // When true, change() updates the UI but does not emit — used while
     // mirroring already-committed TimeControl state
@@ -108,7 +108,7 @@ const TimeUI = {
         // requests changes with time:changeRequested.
         if (window.mmgisAPI) {
             TimeUI._cleanups.push(
-                window.mmgisAPI.on('time:change', (data) => {
+                window.mmgisAPI.on('time:changed', (data) => {
                     // Skip the echo of this widget's own committed request.
                     // Consume it: a stale _lastEmitted would otherwise also
                     // match a later external commit of the same times and
@@ -3181,9 +3181,9 @@ const TimeUI = {
             const currentTime = new Date(TimeUI.getCurrentTimestamp(true)).toISOString()
 
             // The Event Bus is the single path for user time changes:
-            // TimeControl commits them and broadcasts 'time:change' back.
-            // _lastEmitted lets the 'time:change' listener recognize the
-            // echo of this request and skip a redundant widget resync.
+            // TimeControl commits them and broadcasts 'time:changed' back.
+            // _lastEmitted lets that listener recognize the echo of this
+            // request and skip a redundant widget resync.
             TimeUI._lastEmitted = { startTime, endTime, currentTime }
             if (window.mmgisAPI) {
                 window.mmgisAPI.emit('time:changeRequested', {

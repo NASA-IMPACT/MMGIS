@@ -1,0 +1,103 @@
+{
+  "name": "minimal",
+  "description": "Starting point for brand-new missions: Title + LayerManager, no layers. Generated -> API/templates/config_template.json (wired in by #109).",
+  "output": "API/templates/config_template.json",
+  "tools": ["Title", "LayerManager"],
+  "on": ["Title", "LayerManager"],
+  "overrides": {},
+  "scaffold": {
+    "msv": {
+      "mission": "",
+      "missionFolderName": "",
+      "site": "",
+      "masterdb": false,
+      "view": ["0", "0", "0"],
+      "radius": {
+        "major": 6371008,
+        "minor": 6371008
+      },
+      "mapscale": "",
+      "mapEngine": "deckgl",
+      "mode": "modern",
+      "basemap": {
+        "provider": "mapbox",
+        "style": "mapbox://styles/mapbox/streets-v12",
+        "accessToken": "{{MAPBOX_TOKEN}}"
+      }
+    },
+    "projection": {
+      "custom": false,
+      "epsg": "",
+      "proj": "",
+      "globeproj": "webmercator",
+      "xmlpath": "",
+      "bounds": ["", "", "", ""],
+      "origin": ["", ""],
+      "reszoomlevel": "",
+      "resunitsperpixel": ""
+    },
+    "look": {
+      "pagename": "MMGIS",
+      "minimalist": false,
+      "topbar": true,
+      "toolbar": true,
+      "scalebar": true,
+      "coordinates": true,
+      "zoomcontrol": false,
+      "graticule": false,
+      "miscellaneous": true,
+      "bodycolor": "",
+      "topbarcolor": "",
+      "toolbarcolor": "",
+      "mapcolor": "",
+      "swap": true,
+      "copylink": true,
+      "screenshot": true,
+      "fullscreen": true,
+      "help": true,
+      "logourl": "",
+      "helpurl": ""
+    },
+    "panelSettings": {
+      "panels": [
+        {
+          "position": "top",
+          "priority": 0,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": ["expanded"],
+            "defaultState": "expanded"
+          },
+          "capabilities": { "resizable": false },
+          "panelTools": ["Title"],
+          "id": "top"
+        },
+        {
+          "position": "left",
+          "priority": 1,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": ["expanded", "collapsed"],
+            "defaultState": "expanded"
+          },
+          "capabilities": { "resizable": false },
+          "panelTools": ["LayerManager"],
+          "id": "left"
+        }
+      ],
+      "floatingPanels": [],
+      "layoutStyle": "compact"
+    },
+    "panels": {
+      "viewer": true,
+      "map": true,
+      "globe": true
+    },
+    "time": {
+      "enabled": false
+    },
+    "layers": []
+  }
+}

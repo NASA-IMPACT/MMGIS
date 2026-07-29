@@ -6,6 +6,7 @@ import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
+import { isRasterTileLayerType } from '../MapEngines/types/engine'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
@@ -4145,7 +4146,12 @@ async function parseConfig(configData, urlOnLayers) {
                     d[i].time = { enabled: false }
                 }
 
-                if (d[i].type === 'tile' && d[i].throughTileServer === true) {
+                // Every engine's spelling of a raster tile layer, since the
+                // tile server serves wmts regardless of which engine renders it.
+                if (
+                    isRasterTileLayerType(d[i]) &&
+                    d[i].throughTileServer === true
+                ) {
                     d[i].tileformat = 'wmts'
                 }
             }

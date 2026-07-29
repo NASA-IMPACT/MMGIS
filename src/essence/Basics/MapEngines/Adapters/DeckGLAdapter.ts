@@ -29,7 +29,7 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { Map as MaplibreGLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import type { IMapEngine } from '../IMapEngine'
+import type { IMapEngine, MapScreenshotResult } from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
 import type { MapEngineType } from '../types/engine'
 import type { LatLng, LatLngLike, BoundsLike, PointLike } from '../types/geometry'
@@ -121,10 +121,45 @@ interface BasemapInstance {
     setMaxBounds(bounds: [[number, number], [number, number]] | null): unknown
     /** Register a map event listener (e.g. `'load'`, `'move'`, `'moveend'`). */
     on(type: string, handler: (...args: unknown[]) => void): unknown
+    /** Register a one-shot map event listener that auto-removes after firing once. */
+    once(type: string, handler: (...args: unknown[]) => void): unknown
     /** Remove a previously registered map event listener. */
     off(type: string, handler: (...args: unknown[]) => void): unknown
     /** Recalculate the map size from its container element. */
     resize(): void
+    /** Return the WebGL canvas element the base map renders into. */
+    getCanvas(): HTMLCanvasElement
+    /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
+    triggerRepaint(): void
+}
+
+/**
+ * How long {@link DeckGLAdapter.captureScreenshot} waits for the basemap's
+ * `render` event before rejecting. Generous enough for a slow first frame,
+ * short enough that a dead map fails fast.
+ */
+const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
+
+function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
+    return new Promise((resolve, reject) => {
+        if (typeof canvas.toBlob !== 'function') {
+            reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob is unavailable'))
+            return
+        }
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob returned null'))
+                return
+            }
+            resolve({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: canvas.width,
+                height: canvas.height,
+            })
+        }, 'image/png')
+    })
 }
 
 /**
@@ -377,6 +412,70 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     getContainer(): HTMLElement {
         return this._container
+    }
+
+    /**
+     * Capture the current map view as a PNG Blob screenshot result.
+     *
+     * WebGL clears its drawing buffer once the browser presents a frame, so
+     * `canvas.toDataURL()` only returns pixels if the read happens before
+     * that clear. Rather than paying the per-frame cost of creating the GL
+     * context with `preserveDrawingBuffer: true`, we capture on demand:
+     * overlay mode reads the shared (interleaved) canvas inside a
+     * `once('render')` handler after `triggerRepaint()` — the render event
+     * fires before the browser presents/clears the buffer; standalone mode
+     * reads right after `deck.redraw(reason)`, which draws synchronously in
+     * deck.gl v9, so the buffer is still valid within the same task.
+     *
+     * Captures only the GL canvas: HTML overlays/markers added via
+     * {@link addOverlay} are separate DOM nodes and are not included.
+     */
+    captureScreenshot(): Promise<MapScreenshotResult> {
+        return new Promise<MapScreenshotResult>((resolve, reject) => {
+            try {
+                if (this._isOverlayMode && this._basemap) {
+                    const basemap = this._basemap
+                    const onRender = () => {
+                        clearTimeout(timeout)
+                        canvasToPngScreenshot(basemap.getCanvas()).then(
+                            resolve,
+                            reject
+                        )
+                    }
+                    const timeout = setTimeout(() => {
+                        // Unhook, or the listener stays armed to fire a wasted
+                        // capture on some later render (e.g. backgrounded tab).
+                        basemap.off('render', onRender)
+                        reject(
+                            new Error(
+                                '[DeckGLAdapter] captureScreenshot: timed out waiting for the basemap render event'
+                            )
+                        )
+                    }, SCREENSHOT_RENDER_TIMEOUT_MS)
+                    basemap.once('render', onRender)
+                    basemap.triggerRepaint()
+                    return
+                }
+
+                const deck = this._deck
+                if (!deck) {
+                    reject(new Error('[DeckGLAdapter] captureScreenshot: no active map to capture'))
+                    return
+                }
+                deck.redraw('screenshot')
+                const canvas = (deck as unknown as { getCanvas?: () => HTMLCanvasElement })
+                    .getCanvas?.()
+                if (!canvas) {
+                    reject(
+                        new Error('[DeckGLAdapter] captureScreenshot: deck canvas unavailable')
+                    )
+                    return
+                }
+                canvasToPngScreenshot(canvas).then(resolve, reject)
+            } catch (err) {
+                reject(err as Error)
+            }
+        })
     }
 
     /**
@@ -1055,6 +1154,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _initStandaloneMode(): void {
         this._deck = new Deck({
             parent: this._container,
+            // No preserveDrawingBuffer needed: captureScreenshot() reads the
+            // canvas synchronously after deck.redraw(), before the browser
+            // presents (and clears) the drawing buffer.
             width: '100%',
             height: '100%',
             controller: true,
@@ -1123,6 +1225,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             minZoom: this._minZoom,
             maxZoom: this._maxZoom,
             projection: 'mercator',
+            // No preserveDrawingBuffer needed: captureScreenshot() reads the
+            // canvas inside a once('render') handler, in the same frame the
+            // map draws — before the drawing buffer is presented and cleared.
         }
 
         if (basemap.provider === 'mapbox' && basemap.accessToken) {
