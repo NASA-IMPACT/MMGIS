@@ -24,20 +24,23 @@ var Drawing = {
 
         L.Draw.Polyline.prototype._onTouch = L.Util.falseFn
     },
-    drawOver: function (d, clip, callback) {
+    drawOver: function (drawState, clip, callback) {
         var file_id =
-            d.file_id == undefined ? DrawTool.currentFileId : d.file_id
+            drawState.file_id == undefined
+                ? DrawTool.currentFileId
+                : drawState.file_id
         var lk = 'DrawTool_' + file_id
 
         let tag = null
-        if (d.shape && d.shape.properties) tag = d.shape.properties.uuid
+        if (drawState.shape && drawState.shape.properties)
+            tag = drawState.shape.properties.uuid
 
         // Add a temporary copy of the feature to the map immediately
         // This keeps it visible while we wait for the database save and reload
         const tempFeature = {
             type: 'Feature',
-            geometry: typeof d.shape.geometry === 'string' ? JSON.parse(d.shape.geometry) : d.shape.geometry,
-            properties: typeof d.shape.properties === 'string' ? JSON.parse(d.shape.properties) : d.shape.properties
+            geometry: typeof drawState.shape.geometry === 'string' ? JSON.parse(drawState.shape.geometry) : drawState.shape.geometry,
+            properties: typeof drawState.shape.properties === 'string' ? JSON.parse(drawState.shape.properties) : drawState.shape.properties
         }
 
         let tempLayer
@@ -52,9 +55,9 @@ var Drawing = {
         DrawTool.addDrawing(
             {
                 file_id: file_id,
-                intent: d.intent,
-                properties: JSON.stringify(d.shape.properties),
-                geometry: JSON.stringify(d.shape.geometry),
+                intent: drawState.intent,
+                properties: JSON.stringify(drawState.shape.properties),
+                geometry: JSON.stringify(drawState.shape.geometry),
                 tag: tag,
                 clip: clip,
             },
@@ -71,46 +74,46 @@ var Drawing = {
                         }
 
                         // Clean up and restart drawing mode after refresh completes
-                        if (d.end && d.begin) {
-                            d.end()
-                            d.begin()
+                        if (drawState.end && drawState.begin) {
+                            drawState.end()
+                            drawState.begin()
                         }
                         if (typeof callback === 'function') callback(data)
                     }, null, null, true)
                 }
-            })(JSON.parse(JSON.stringify(d.shape)), tempLayer),
+            })(JSON.parse(JSON.stringify(drawState.shape)), tempLayer),
             function () {
-                if (d.end && d.begin) {
-                    d.end()
-                    d.begin()
+                if (drawState.end && drawState.begin) {
+                    drawState.end()
+                    drawState.begin()
                 }
             }
         )
     },
-    drawThrough: function (d) {
+    drawThrough: function (drawState) {
         //Drawn the regular shape
-        //DrawTool.drawOver(d)
+        //DrawTool.drawOver(drawState)
 
         //Then modify the ones it overlapped
-        var bb = turf.bbox(d.shape)
+        var bb = turf.bbox(drawState.shape)
 
-        var lg = L_.layers.layer['DrawTool_' + DrawTool.currentFileId]
+        var fileLayers = L_.layers.layer['DrawTool_' + DrawTool.currentFileId]
 
         throughLoop(0)
         function throughLoop(i) {
-            if (i >= lg.length) {
+            if (i >= fileLayers.length) {
                 //Draw the regular shape
                 setTimeout(
-                    (function (d) {
+                    (function (drawState) {
                         return function () {
-                            DrawTool.drawOver(d)
+                            DrawTool.drawOver(drawState)
                         }
-                    })(d),
+                    })(drawState),
                     2
                 )
             } else {
-                let features = lg[i]
-                    ? lg[i].toGeoJSON(L_.GEOJSON_PRECISION).features
+                let features = fileLayers[i]
+                    ? fileLayers[i].toGeoJSON(L_.GEOJSON_PRECISION).features
                     : null
                 if (features != null) {
                     let geojson = features[0]
@@ -120,7 +123,7 @@ var Drawing = {
                         try {
                             newGeometry = turf.difference(
                                 geojson,
-                                d.shape
+                                drawState.shape
                             ).geometry
                             if (
                                 JSON.stringify(newGeometry) ==
@@ -132,17 +135,18 @@ var Drawing = {
                                 x: 305,
                                 y: 6,
                             })
-                            if (d.end && d.begin) {
-                                d.end()
-                                d.begin()
+                            if (drawState.end && drawState.begin) {
+                                drawState.end()
+                                drawState.begin()
                             }
                             return
                         }
 
                         if (!noChange) {
                             var feature =
-                                lg[i]._layers[Object.keys(lg[i]._layers)[0]]
-                                    .feature
+                                fileLayers[i]._layers[
+                                    Object.keys(fileLayers[i]._layers)[0]
+                                ].feature
                             feature.geometry = newGeometry
 
                             if (DrawTool.vars.demtilesets) {
@@ -173,8 +177,8 @@ var Drawing = {
                                 (function (feature, i) {
                                     return function (result) {
                                         feature.properties._.id = result.body.id
-                                        Map_.rmNotNull(lg[i])
-                                        lg[i] = L.geoJson(
+                                        Map_.rmNotNull(fileLayers[i])
+                                        fileLayers[i] = L.geoJson(
                                             {
                                                 type: 'FeatureCollection',
                                                 features: [feature],
@@ -189,12 +193,12 @@ var Drawing = {
 
                                         //Reorder the layers
                                         for (let j = i; j >= 0; j--) {
-                                            if (lg[j] != null)
-                                                lg[j].bringToBack()
+                                            if (fileLayers[j] != null)
+                                                fileLayers[j].bringToBack()
                                         }
 
                                         //Make sure the last drawn stays on top
-                                        lg[i].bringToFront()
+                                        fileLayers[i].bringToFront()
                                         setTimeout(
                                             (function (i) {
                                                 return function () {
@@ -225,33 +229,39 @@ var Drawing = {
             }
         }
     },
-    drawUnder: function (d) {
+    drawUnder: function (drawState) {
         //Modify shape based on intersecting features
-        var bb = turf.bbox(d.shape)
-        var lg = L_.layers.layer['DrawTool_' + DrawTool.currentFileId]
+        var bb = turf.bbox(drawState.shape)
+        var fileLayers = L_.layers.layer['DrawTool_' + DrawTool.currentFileId]
 
-        for (var i = 0; i < lg.length; i++) {
-            if (lg[i] == null) continue
+        for (var i = 0; i < fileLayers.length; i++) {
+            if (fileLayers[i] == null) continue
             let geojson =
-                lg[i].feature ||
-                lg[i]._layers[Object.keys(lg[i]._layers)[0]].feature
+                fileLayers[i].feature ||
+                fileLayers[i]._layers[
+                    Object.keys(fileLayers[i]._layers)[0]
+                ].feature
             if (F_.doBoundingBoxesIntersect(bb, turf.bbox(geojson))) {
                 let newGeometry
                 try {
-                    newGeometry = turf.difference(d.shape, geojson).geometry
+                    newGeometry = turf.difference(
+                        drawState.shape,
+                        geojson
+                    ).geometry
                     if (
-                        JSON.stringify(newGeometry) != JSON.stringify(d.shape)
+                        JSON.stringify(newGeometry) !=
+                        JSON.stringify(drawState.shape)
                     ) {
-                        d.shape.geometry = newGeometry
+                        drawState.shape.geometry = newGeometry
                     }
                 } catch (error) {
                     CursorInfo.update('ERROR: Topology.', 2500, true, {
                         x: 305,
                         y: 6,
                     })
-                    if (d.end && d.begin) {
-                        d.end()
-                        d.begin()
+                    if (drawState.end && drawState.begin) {
+                        drawState.end()
+                        drawState.begin()
                     }
                     return
                 }
@@ -259,11 +269,11 @@ var Drawing = {
         }
 
         // Draw the shape
-        DrawTool.drawOver(d)
+        DrawTool.drawOver(drawState)
     },
-    drawOverThroughUnder: function (d) {
+    drawOverThroughUnder: function (drawState) {
         var tier = $('#drawToolDrawSettingsTier > div.active').attr('value')
-        DrawTool.drawOver(d, tier)
+        DrawTool.drawOver(drawState, tier)
     },
     endDrawing: function () {
         DrawTool.drawing.polygon.end()
@@ -390,13 +400,13 @@ var Drawing = {
 var drawing = {
     polygon: {
         begin: function (intent) {
-            var d = drawing.polygon
+            var drawState = drawing.polygon
 
             //Overwrite Leaflet.Draw esc key to restart drawing
             L.Draw.Feature.prototype._cancelDrawing = function (e) {
                 if (e.keyCode === 27) {
-                    d.end()
-                    d.begin()
+                    drawState.end()
+                    drawState.begin()
                 }
             }
 
@@ -408,17 +418,17 @@ var drawing = {
             drawing.annotation.end()
             drawing.arrow.end()
 
-            d.end()
-            d.movemode = false
-            d.shiftDisabled = false
-            d.lastVertex = null
+            drawState.end()
+            drawState.movemode = false
+            drawState.shiftDisabled = false
+            drawState.lastVertex = null
 
             if (intent != undefined) {
-                d.intent = intent
-                d.style = DrawTool.categoryStyles[intent]
+                drawState.intent = intent
+                drawState.style = DrawTool.categoryStyles[intent]
             }
 
-            d.drawing = new L.Draw.Polygon(Map_.map, {
+            drawState.drawing = new L.Draw.Polygon(Map_.map, {
                 showArea: true,
                 allowIntersection: false,
                 guidelineDistance: 15,
@@ -426,38 +436,38 @@ var drawing = {
                     iconSize: new L.Point(10, 10),
                     className: 'leaflet-div-icon leaflet-editing-icon',
                 }),
-                shapeOptions: d.style,
+                shapeOptions: drawState.style,
             })
-            d.drawing.enable()
+            drawState.drawing.enable()
 
-            d.shape = d.drawing
+            drawState.shape = drawState.drawing
 
-            Map_.map.on('click', d.start)
-            Map_.map.on('draw:drawstop', d.stop)
-            $('body').on('keydown', d.keydown)
-            $('body').on('keyup', d.keyup)
+            Map_.map.on('click', drawState.start)
+            Map_.map.on('draw:drawstop', drawState.stop)
+            $('body').on('keydown', drawState.keydown)
+            $('body').on('keyup', drawState.keyup)
         },
         end: function () {
-            var d = drawing.polygon
+            var drawState = drawing.polygon
 
-            d.stopclick = false
+            drawState.stopclick = false
 
-            Map_.map.off('click', d.start)
-            Map_.map.off('mousemove', d.move)
-            Map_.map.off('draw:drawstop', d.stop)
-            $('body').off('keydown', d.keydown)
-            $('body').off('keyup', d.keyup)
+            Map_.map.off('click', drawState.start)
+            Map_.map.off('mousemove', drawState.move)
+            Map_.map.off('draw:drawstop', drawState.stop)
+            $('body').off('keydown', drawState.keydown)
+            $('body').off('keyup', drawState.keyup)
 
-            if (typeof d.drawing.disable === 'function') {
-                d.drawing.disable()
+            if (typeof drawState.drawing.disable === 'function') {
+                drawState.drawing.disable()
             }
         },
         start: function (e) {
-            var d = drawing.polygon
+            var drawState = drawing.polygon
 
-            if (!d.stopclick) {
-                d.stopclick = true
-                Map_.map.on('mousemove', d.move)
+            if (!drawState.stopclick) {
+                drawState.stopclick = true
+                Map_.map.on('mousemove', drawState.move)
             }
 
             //Store this at start to avoid mixed modes
@@ -465,95 +475,103 @@ var drawing = {
                 $('#drawToolDrawSettingsMode > div.active').attr('value') ==
                 'on'
             ) {
-                d.movemode = true
-                Map_.map.on('click', d.complete)
+                drawState.movemode = true
+                Map_.map.on('click', drawState.complete)
             }
 
-            d.lastVertex = e.latlng
-            d.shape = d.drawing._poly
+            drawState.lastVertex = e.latlng
+            drawState.shape = drawState.drawing._poly
         },
         complete: function () {
-            var d = drawing.polygon
+            var drawState = drawing.polygon
 
-            d.drawing.completeShape()
-            Map_.map.off('click', d.complete)
+            drawState.drawing.completeShape()
+            Map_.map.off('click', drawState.complete)
         },
         keydown: function (e) {
-            var d = drawing.polygon
+            var drawState = drawing.polygon
             //Ctrl-Z
             if (mmgisglobal.ctrlDown && e.which == '90')
-                d.drawing.deleteLastVertex()
+                drawState.drawing.deleteLastVertex()
             //Ctrl and no drawing
             else if (
                 mmgisglobal.ctrlDown &&
-                (!d.drawing._markers || d.drawing._markers.length === 0)
+                (!drawState.drawing._markers ||
+                    drawState.drawing._markers.length === 0)
             ) {
-                d.shiftDisabled = true
-                if (typeof d.drawing.disable === 'function') d.drawing.disable()
+                drawState.shiftDisabled = true
+                if (typeof drawState.drawing.disable === 'function')
+                    drawState.drawing.disable()
             }
         },
         keyup: function (e) {
-            var d = drawing.polygon
+            var drawState = drawing.polygon
             if (
-                !d.drawing._enabled &&
+                !drawState.drawing._enabled &&
                 (e.which == '17' ||
                     e.which == '91' ||
                     e.which == '93' ||
                     e.which == '224')
             ) {
-                d.shiftDisabled = false
-                d.drawing.enable()
+                drawState.shiftDisabled = false
+                drawState.drawing.enable()
             }
         },
         move: function (e) {
-            var d = drawing.polygon
+            var drawState = drawing.polygon
 
-            if (e && d.movemode) {
+            if (e && drawState.movemode) {
                 let res = parseInt(
                     $('#drawToolDrawSettingsModeVertexRes').val(),
-                    d.lastVertex
+                    drawState.lastVertex
                 )
-                d.currentrate++
+                drawState.currentrate++
                 let dist = F_.lngLatDistBetween(
-                    d.lastVertex.lng,
-                    d.lastVertex.lat,
+                    drawState.lastVertex.lng,
+                    drawState.lastVertex.lat,
                     e.latlng.lng,
                     e.latlng.lat
                 )
 
                 if (dist > res) {
                     let pt = F_.getPtSomeDistBetween2OtherPts(
-                        d.lastVertex.lng,
-                        d.lastVertex.lat,
+                        drawState.lastVertex.lng,
+                        drawState.lastVertex.lat,
                         e.latlng.lng,
                         e.latlng.lat,
                         res / dist
                     )
                     pt = { lng: pt.x, lat: pt.y }
                     try {
-                        d.drawing.addVertex(pt)
-                        d.lastVertex = pt
+                        drawState.drawing.addVertex(pt)
+                        drawState.lastVertex = pt
                     } catch (e) {}
-                    d.currentrate = 0
+                    drawState.currentrate = 0
                 }
             }
 
-            d.shape = d.drawing._poly || d.shape
+            drawState.shape = drawState.drawing._poly || drawState.shape
         },
         stop: function () {
-            var d = drawing.polygon
-            if (d.shiftDisabled) return
+            var drawState = drawing.polygon
+            if (drawState.shiftDisabled) return
 
-            d.shape = d.shape.toGeoJSON(L_.GEOJSON_PRECISION)
+            drawState.shape = drawState.shape.toGeoJSON(L_.GEOJSON_PRECISION)
 
-            d.shape.geometry.type = 'Polygon'
-            d.shape.geometry.coordinates.push(d.shape.geometry.coordinates[0])
-            d.shape.geometry.coordinates = [d.shape.geometry.coordinates]
-            d.shape.properties.style = d.style
-            var n = $('#drawToolDrawFeaturesNewName')
-            d.shape.properties.name =
-                n.val() || n.attr('placeholder') || 'Polygon'
-            DrawTool.drawOverThroughUnder(d)
+            drawState.shape.geometry.type = 'Polygon'
+            drawState.shape.geometry.coordinates.push(
+                drawState.shape.geometry.coordinates[0]
+            )
+            drawState.shape.geometry.coordinates = [
+                drawState.shape.geometry.coordinates,
+            ]
+            drawState.shape.properties.style = drawState.style
+            var newNameInput = $('#drawToolDrawFeaturesNewName')
+            drawState.shape.properties.name =
+                newNameInput.val() ||
+                newNameInput.attr('placeholder') ||
+                'Polygon'
+            DrawTool.drawOverThroughUnder(drawState)
         },
         stopclick: false,
         intent: null,
@@ -568,12 +586,12 @@ var drawing = {
     },
     circle: {
         begin: function (intent, overrideStyle) {
-            var d = drawing.circle
+            var drawState = drawing.circle
             //Overwrite Leaflet.Draw esc key to restart drawing
             L.Draw.Feature.prototype._cancelDrawing = function (e) {
                 if (e.keyCode === 27) {
-                    d.end()
-                    d.begin()
+                    drawState.end()
+                    drawState.begin()
                 }
             }
 
@@ -585,31 +603,31 @@ var drawing = {
             drawing.annotation.end()
             drawing.arrow.end()
 
-            d.end()
+            drawState.end()
 
-            d.movemode = false
-            d.shiftDisabled = false
-            d.lastVertex = null
+            drawState.movemode = false
+            drawState.shiftDisabled = false
+            drawState.lastVertex = null
 
             if (intent != undefined) {
-                d.intent =
+                drawState.intent =
                     DrawTool.intentType === 'all'
                         ? 'polygon'
                         : DrawTool.intentType
-                d.style = DrawTool.categoryStyles[d.intent]
+                drawState.style = DrawTool.categoryStyles[drawState.intent]
             }
             if (overrideStyle) {
-                d.style = overrideStyle
+                drawState.style = overrideStyle
             }
 
-            Map_.map.on('click', d.start)
-            Map_.map.on('draw:drawstop', d.stop)
-            $('body').on('keydown', d.keydown)
-            $('body').on('keyup', d.keyup)
+            Map_.map.on('click', drawState.start)
+            Map_.map.on('draw:drawstop', drawState.stop)
+            $('body').on('keydown', drawState.keydown)
+            $('body').on('keyup', drawState.keyup)
         },
         start: function (e) {
-            let d = drawing.circle
-            d.shape = e.latlng
+            let drawState = drawing.circle
+            drawState.shape = e.latlng
 
             //Store this at start to avoid mixed modes
             if (
@@ -619,58 +637,64 @@ var drawing = {
                 const forcedRadius = parseFloat(
                     $('#drawToolDrawSettingsCircleR').val()
                 )
-                d.shapeEnd = F_.destinationFromBearing(
-                    d.shape.lat,
-                    d.shape.lng,
+                drawState.shapeEnd = F_.destinationFromBearing(
+                    drawState.shape.lat,
+                    drawState.shape.lng,
                     0,
                     forcedRadius * 0.001 // km
                 )
-                d.shapeEnd = { lat: d.shapeEnd[0], lng: d.shapeEnd[1] }
+                drawState.shapeEnd = {
+                    lat: drawState.shapeEnd[0],
+                    lng: drawState.shapeEnd[1],
+                }
 
-                d.circleFeature = F_.circleFeatureFromTwoLngLats(
-                    d.shape,
-                    d.shapeEnd,
+                drawState.circleFeature = F_.circleFeatureFromTwoLngLats(
+                    drawState.shape,
+                    drawState.shapeEnd,
                     64,
                     window.mmgisglobal.customCRS
                 )
-                d.circleFeature.properties.style = d.style
-                d.circleFeature.properties._radius = forcedRadius
-                d.stop()
+                drawState.circleFeature.properties.style = drawState.style
+                drawState.circleFeature.properties._radius = forcedRadius
+                drawState.stop()
             } else {
-                Map_.map.on('mousemove', d.move)
-                Map_.map.on('click', d.stop)
-                Map_.map.off('click', d.start)
+                Map_.map.on('mousemove', drawState.move)
+                Map_.map.on('click', drawState.stop)
+                Map_.map.off('click', drawState.start)
             }
         },
         move: function (e) {
-            let d = drawing.circle
-            d.shapeEnd = e.latlng
+            let drawState = drawing.circle
+            drawState.shapeEnd = e.latlng
 
-            d.mRadius = F_.lngLatDistBetween(
-                d.shape.lng,
-                d.shape.lat,
-                d.shapeEnd.lng,
-                d.shapeEnd.lat
+            drawState.mRadius = F_.lngLatDistBetween(
+                drawState.shape.lng,
+                drawState.shape.lat,
+                drawState.shapeEnd.lng,
+                drawState.shapeEnd.lat
             )
 
-            d.circleFeature = F_.circleFeatureFromTwoLngLats(
-                d.shape,
-                d.shapeEnd,
+            drawState.circleFeature = F_.circleFeatureFromTwoLngLats(
+                drawState.shape,
+                drawState.shapeEnd,
                 64,
                 window.mmgisglobal.customCRS
             )
-            d.circleFeature.properties.style = d.style
-            d.circleFeature.properties._radius = d.mRadius
-            Map_.rmNotNull(d.tempCircle)
-            d.tempCircle = L.geoJSON(F_.getBaseGeoJSON([d.circleFeature]), {
-                style: d.style,
-            }).addTo(Map_.map)
+            drawState.circleFeature.properties.style = drawState.style
+            drawState.circleFeature.properties._radius = drawState.mRadius
+            Map_.rmNotNull(drawState.tempCircle)
+            drawState.tempCircle = L.geoJSON(
+                F_.getBaseGeoJSON([drawState.circleFeature]),
+                {
+                    style: drawState.style,
+                }
+            ).addTo(Map_.map)
 
-            Map_.rmNotNull(d.tempLine)
-            d.tempLine = L.polyline(
+            Map_.rmNotNull(drawState.tempLine)
+            drawState.tempLine = L.polyline(
                 [
-                    [d.shape.lat, d.shape.lng],
-                    [d.shapeEnd.lat, d.shapeEnd.lng],
+                    [drawState.shape.lat, drawState.shape.lng],
+                    [drawState.shapeEnd.lat, drawState.shapeEnd.lng],
                 ],
                 {
                     color: 'black',
@@ -680,56 +704,66 @@ var drawing = {
                 }
             ).addTo(Map_.map)
 
-            CursorInfo.update(`Radius: ${d.mRadius.toFixed(3)}m`, null, false, {
-                x: e.originalEvent.clientX + 30,
-                y: e.originalEvent.clientY - 15,
-            })
+            CursorInfo.update(
+                `Radius: ${drawState.mRadius.toFixed(3)}m`,
+                null,
+                false,
+                {
+                    x: e.originalEvent.clientX + 30,
+                    y: e.originalEvent.clientY - 15,
+                }
+            )
         },
         end: function () {
-            let d = drawing.circle
+            let drawState = drawing.circle
 
-            d.stopclick = false
+            drawState.stopclick = false
 
             CursorInfo.hide()
-            Map_.rmNotNull(d.tempLine)
-            Map_.rmNotNull(d.tempCircle)
+            Map_.rmNotNull(drawState.tempLine)
+            Map_.rmNotNull(drawState.tempCircle)
 
-            Map_.map.off('click', d.start)
-            Map_.map.off('click', d.stop)
-            Map_.map.off('mousemove', d.move)
-            Map_.map.off('draw:drawstop', d.stop)
-            $('body').off('keydown', d.keydown)
-            $('body').off('keyup', d.keyup)
-            if (typeof d.drawing.disable === 'function') d.drawing.disable()
+            Map_.map.off('click', drawState.start)
+            Map_.map.off('click', drawState.stop)
+            Map_.map.off('mousemove', drawState.move)
+            Map_.map.off('draw:drawstop', drawState.stop)
+            $('body').off('keydown', drawState.keydown)
+            $('body').off('keyup', drawState.keyup)
+            if (typeof drawState.drawing.disable === 'function')
+                drawState.drawing.disable()
         },
         stop: function () {
-            let d = drawing.circle
+            let drawState = drawing.circle
 
-            if (d.shiftDisabled) return
+            if (drawState.shiftDisabled) return
 
-            var n = $('#drawToolDrawFeaturesNewName')
-            d.circleFeature.properties.name =
-                n.val() || n.attr('placeholder') || 'Circle'
+            var newNameInput = $('#drawToolDrawFeaturesNewName')
+            drawState.circleFeature.properties.name =
+                newNameInput.val() ||
+                newNameInput.attr('placeholder') ||
+                'Circle'
 
             CursorInfo.hide()
 
             DrawTool.addDrawing(
                 {
                     file_id: DrawTool.currentFileId,
-                    intent: d.intent,
-                    properties: JSON.stringify(d.circleFeature.properties),
-                    geometry: JSON.stringify(d.circleFeature.geometry),
+                    intent: drawState.intent,
+                    properties: JSON.stringify(
+                        drawState.circleFeature.properties
+                    ),
+                    geometry: JSON.stringify(drawState.circleFeature.geometry),
                 },
                 function (data) {
                     DrawTool.refreshFile(DrawTool.currentFileId, null, true, null, false, function() {
-                        d.end()
-                        d.begin()
+                        drawState.end()
+                        drawState.begin()
                     }, null, null, true)
                 },
                 function () {
-                    if (d.end && d.begin) {
-                        d.end()
-                        d.begin()
+                    if (drawState.end && drawState.begin) {
+                        drawState.end()
+                        drawState.begin()
                     }
                 }
             )
@@ -748,12 +782,12 @@ var drawing = {
     },
     rectangle: {
         begin: function (intent, overrideStyle) {
-            var d = drawing.rectangle
+            var drawState = drawing.rectangle
             //Overwrite Leaflet.Draw esc key to restart drawing
             L.Draw.Feature.prototype._cancelDrawing = function (e) {
                 if (e.keyCode === 27) {
-                    d.end()
-                    d.begin()
+                    drawState.end()
+                    drawState.begin()
                 }
             }
 
@@ -765,74 +799,77 @@ var drawing = {
             drawing.annotation.end()
             drawing.arrow.end()
 
-            d.end()
+            drawState.end()
 
-            d.movemode = false
-            d.shiftDisabled = false
-            d.lastVertex = null
+            drawState.movemode = false
+            drawState.shiftDisabled = false
+            drawState.lastVertex = null
 
             if (intent != undefined) {
-                d.intent =
+                drawState.intent =
                     DrawTool.intentType === 'all'
                         ? 'polygon'
                         : DrawTool.intentType
-                d.style = DrawTool.categoryStyles[d.intent]
+                drawState.style = DrawTool.categoryStyles[drawState.intent]
             }
             if (overrideStyle) {
-                d.style = overrideStyle
+                drawState.style = overrideStyle
             }
 
-            d.drawing = new L.Draw.Rectangle(Map_.map, {
-                shapeOptions: d.style,
+            drawState.drawing = new L.Draw.Rectangle(Map_.map, {
+                shapeOptions: drawState.style,
             })
-            d.drawing.enable()
+            drawState.drawing.enable()
 
-            d.shape = d.drawing
+            drawState.shape = drawState.drawing
 
-            Map_.map.on('draw:created', d.stop)
+            Map_.map.on('draw:created', drawState.stop)
         },
         end: function () {
-            var d = drawing.rectangle
+            var drawState = drawing.rectangle
 
-            d.stopclick = false
+            drawState.stopclick = false
 
-            Map_.map.off('draw:created', d.stop)
-            if (typeof d.drawing.disable === 'function') d.drawing.disable()
+            Map_.map.off('draw:created', drawState.stop)
+            if (typeof drawState.drawing.disable === 'function')
+                drawState.drawing.disable()
         },
-        stop: function (ctx) {
-            var d = drawing.rectangle
+        stop: function (drawEvent) {
+            var drawState = drawing.rectangle
 
-            if (d.shiftDisabled) return
+            if (drawState.shiftDisabled) return
 
-            const bounds = ctx.layer._bounds
-            d.shape = F_.boundingBoxToFeature(
+            const bounds = drawEvent.layer._bounds
+            drawState.shape = F_.boundingBoxToFeature(
                 bounds._northEast,
                 bounds._southWest
             )
 
-            d.shape.properties.style = d.style
-            var n = $('#drawToolDrawFeaturesNewName')
-            d.shape.properties.name =
-                n.val() || n.attr('placeholder') || 'Rectangle'
+            drawState.shape.properties.style = drawState.style
+            var newNameInput = $('#drawToolDrawFeaturesNewName')
+            drawState.shape.properties.name =
+                newNameInput.val() ||
+                newNameInput.attr('placeholder') ||
+                'Rectangle'
 
             DrawTool.addDrawing(
                 {
                     file_id: DrawTool.currentFileId,
-                    intent: d.intent,
-                    properties: JSON.stringify(d.shape.properties),
-                    geometry: JSON.stringify(d.shape.geometry),
+                    intent: drawState.intent,
+                    properties: JSON.stringify(drawState.shape.properties),
+                    geometry: JSON.stringify(drawState.shape.geometry),
                 },
                 (function (shape) {
                     return function (data) {
                         DrawTool.refreshFile(DrawTool.currentFileId, null, true, null, false, function() {
-                            d.begin()
+                            drawState.begin()
                         }, null, null, true)
                     }
-                })(JSON.parse(JSON.stringify(d.shape))),
+                })(JSON.parse(JSON.stringify(drawState.shape))),
                 function () {
-                    if (d.end && d.begin) {
-                        d.end()
-                        d.begin()
+                    if (drawState.end && drawState.begin) {
+                        drawState.end()
+                        drawState.begin()
                     }
                 }
             )
@@ -846,13 +883,13 @@ var drawing = {
     },
     line: {
         begin: function (intent, overrideStyle, overrideFinishCallback) {
-            var d = drawing.line
+            var drawState = drawing.line
 
             //Overwrite Leaflet.Draw esc key to restart drawing
             L.Draw.Feature.prototype._cancelDrawing = function (e) {
                 if (e.keyCode === 27) {
-                    d.end()
-                    d.begin()
+                    drawState.end()
+                    drawState.begin()
                 }
             }
 
@@ -864,68 +901,70 @@ var drawing = {
             drawing.annotation.end()
             drawing.arrow.end()
 
-            d.end()
+            drawState.end()
 
-            d.movemode = false
-            d.shiftDisabled = false
-            d.lastVertex = null
+            drawState.movemode = false
+            drawState.shiftDisabled = false
+            drawState.lastVertex = null
 
             if (intent != undefined) {
-                d.intent = intent
-                d.style = DrawTool.categoryStyles[intent]
+                drawState.intent = intent
+                drawState.style = DrawTool.categoryStyles[intent]
             }
             if (overrideStyle) {
-                d.style = overrideStyle
+                drawState.style = overrideStyle
             }
 
-            d.drawing = new L.Draw.Polyline(Map_.map, {
+            drawState.drawing = new L.Draw.Polyline(Map_.map, {
                 icon: new L.DivIcon({
                     iconSize: new L.Point(10, 10),
                     className: 'leaflet-div-icon leaflet-editing-icon',
                 }),
-                shapeOptions: d.style,
+                shapeOptions: drawState.style,
             })
-            d.drawing.enable()
+            drawState.drawing.enable()
 
-            d.shape = d.drawing
+            drawState.shape = drawState.drawing
 
-            Map_.map.on('click', d.start)
+            Map_.map.on('click', drawState.start)
             if (typeof overrideFinishCallback === 'function') {
-                d.overstop = function () {
-                    if (typeof d.shape.toGeoJSON === 'function') {
-                        let s = d.shape.toGeoJSON(L_.GEOJSON_PRECISION)
+                drawState.overstop = function () {
+                    if (typeof drawState.shape.toGeoJSON === 'function') {
+                        let s = drawState.shape.toGeoJSON(L_.GEOJSON_PRECISION)
                         s.geometry.type = 'LineString'
-                        s.properties.style = d.style
+                        s.properties.style = drawState.style
                         overrideFinishCallback(s)
                     }
                 }
-                Map_.map.on('draw:drawstop', d.overstop)
+                Map_.map.on('draw:drawstop', drawState.overstop)
             } else {
-                d.overstop = null
-                Map_.map.on('draw:drawstop', d.stop)
+                drawState.overstop = null
+                Map_.map.on('draw:drawstop', drawState.stop)
             }
-            $('body').on('keydown', d.keydown)
-            $('body').on('keyup', d.keyup)
+            $('body').on('keydown', drawState.keydown)
+            $('body').on('keyup', drawState.keyup)
         },
         end: function () {
-            var d = drawing.line
+            var drawState = drawing.line
 
-            d.stopclick = false
+            drawState.stopclick = false
 
-            Map_.map.off('click', d.start)
-            Map_.map.off('mousemove', d.move)
-            Map_.map.off('draw:drawstop', d.stop)
-            if (d.overstop) Map_.map.off('draw:drawstop', d.overstop)
-            $('body').off('keydown', d.keydown)
-            $('body').off('keyup', d.keyup)
-            if (typeof d.drawing.disable === 'function') d.drawing.disable()
+            Map_.map.off('click', drawState.start)
+            Map_.map.off('mousemove', drawState.move)
+            Map_.map.off('draw:drawstop', drawState.stop)
+            if (drawState.overstop)
+                Map_.map.off('draw:drawstop', drawState.overstop)
+            $('body').off('keydown', drawState.keydown)
+            $('body').off('keyup', drawState.keyup)
+            if (typeof drawState.drawing.disable === 'function')
+                drawState.drawing.disable()
         },
         start: function (e) {
-            var d = drawing.line
+            var drawState = drawing.line
 
-            if (!d.stopclick) {
-                d.stopclick = true
-                Map_.map.on('mousemove', d.move)
+            if (!drawState.stopclick) {
+                drawState.stopclick = true
+                Map_.map.on('mousemove', drawState.move)
             }
 
             //Store this at start to avoid mixed modes
@@ -933,107 +972,110 @@ var drawing = {
                 $('#drawToolDrawSettingsMode > div.active').attr('value') ==
                 'on'
             ) {
-                d.movemode = true
-                //Map_.map.on('click', d.complete)
+                drawState.movemode = true
+                //Map_.map.on('click', drawState.complete)
             }
 
-            d.lastVertex = e.latlng
-            d.shape = d.drawing._poly
+            drawState.lastVertex = e.latlng
+            drawState.shape = drawState.drawing._poly
         },
         complete: function () {
-            var d = drawing.line
-            d.drawing.completeShape()
-            Map_.map.off('click', d.complete)
+            var drawState = drawing.line
+            drawState.drawing.completeShape()
+            Map_.map.off('click', drawState.complete)
         },
         keydown: function (e) {
-            var d = drawing.line
+            var drawState = drawing.line
             //Ctrl-Z
             if (mmgisglobal.ctrlDown && e.which == '90')
-                d.drawing.deleteLastVertex()
+                drawState.drawing.deleteLastVertex()
             //Ctrl and no drawing
             else if (
                 mmgisglobal.ctrlDown &&
-                (!d.drawing._markers || d.drawing._markers.length === 0)
+                (!drawState.drawing._markers ||
+                    drawState.drawing._markers.length === 0)
             ) {
-                d.shiftDisabled = true
-                if (typeof d.drawing.disable === 'function') d.drawing.disable()
+                drawState.shiftDisabled = true
+                if (typeof drawState.drawing.disable === 'function')
+                    drawState.drawing.disable()
             }
         },
         keyup: function (e) {
-            var d = drawing.line
+            var drawState = drawing.line
             if (
-                !d.drawing._enabled &&
+                !drawState.drawing._enabled &&
                 (e.which == '17' ||
                     e.which == '91' ||
                     e.which == '93' ||
                     e.which == '224')
             ) {
-                d.shiftDisabled = false
-                d.drawing.enable()
+                drawState.shiftDisabled = false
+                drawState.drawing.enable()
             }
         },
         move: function (e) {
-            var d = drawing.line
+            var drawState = drawing.line
 
-            if (e && d.movemode) {
+            if (e && drawState.movemode) {
                 let res = parseInt(
                     $('#drawToolDrawSettingsModeVertexRes').val(),
-                    d.lastVertex
+                    drawState.lastVertex
                 )
-                d.currentrate++
+                drawState.currentrate++
                 let dist = F_.lngLatDistBetween(
-                    d.lastVertex.lng,
-                    d.lastVertex.lat,
+                    drawState.lastVertex.lng,
+                    drawState.lastVertex.lat,
                     e.latlng.lng,
                     e.latlng.lat
                 )
 
                 if (dist > res) {
                     let pt = F_.getPtSomeDistBetween2OtherPts(
-                        d.lastVertex.lng,
-                        d.lastVertex.lat,
+                        drawState.lastVertex.lng,
+                        drawState.lastVertex.lat,
                         e.latlng.lng,
                         e.latlng.lat,
                         res / dist
                     )
                     pt = { lng: pt.x, lat: pt.y }
                     try {
-                        d.drawing.addVertex(pt)
-                        d.lastVertex = pt
+                        drawState.drawing.addVertex(pt)
+                        drawState.lastVertex = pt
                     } catch (e) {}
-                    d.currentrate = 0
+                    drawState.currentrate = 0
                 }
             }
-            d.shape = d.drawing._poly || d.shape
+            drawState.shape = drawState.drawing._poly || drawState.shape
         },
         stop: function () {
-            var d = drawing.line
+            var drawState = drawing.line
 
-            if (d.shiftDisabled) return
-            d.shape = d.shape.toGeoJSON(L_.GEOJSON_PRECISION)
-            d.shape.geometry.type = 'LineString'
-            d.shape.properties.style = d.style
-            var n = $('#drawToolDrawFeaturesNewName')
-            d.shape.properties.name = n.val() || n.attr('placeholder') || 'Line'
+            if (drawState.shiftDisabled) return
+            drawState.shape = drawState.shape.toGeoJSON(L_.GEOJSON_PRECISION)
+            drawState.shape.geometry.type = 'LineString'
+            drawState.shape.properties.style = drawState.style
+            var newNameInput = $('#drawToolDrawFeaturesNewName')
+            drawState.shape.properties.name =
+                newNameInput.val() || newNameInput.attr('placeholder') || 'Line'
 
             DrawTool.addDrawing(
                 {
                     file_id: DrawTool.currentFileId,
-                    intent: d.intent,
-                    properties: JSON.stringify(d.shape.properties),
-                    geometry: JSON.stringify(d.shape.geometry),
+                    intent: drawState.intent,
+                    properties: JSON.stringify(drawState.shape.properties),
+                    geometry: JSON.stringify(drawState.shape.geometry),
                 },
                 (function (shape) {
                     return function (data) {
                         DrawTool.refreshFile(DrawTool.currentFileId, null, true, null, false, function() {
-                            d.begin()
+                            drawState.begin()
                         }, null, null, true)
                     }
-                })(JSON.parse(JSON.stringify(d.shape))),
+                })(JSON.parse(JSON.stringify(drawState.shape))),
                 function () {
-                    if (d.end && d.begin) {
-                        d.end()
-                        d.begin()
+                    if (drawState.end && drawState.begin) {
+                        drawState.end()
+                        drawState.begin()
                     }
                 }
             )
@@ -1052,13 +1094,13 @@ var drawing = {
     },
     point: {
         begin: function (intent) {
-            var d = drawing.point
+            var drawState = drawing.point
 
             //Overwrite Leaflet.Draw esc key to restart drawing
             L.Draw.Feature.prototype._cancelDrawing = function (e) {
                 if (e.keyCode === 27) {
-                    d.end()
-                    d.begin()
+                    drawState.end()
+                    drawState.begin()
                 }
             }
 
@@ -1069,41 +1111,42 @@ var drawing = {
             drawing.line.end()
             drawing.annotation.end()
             drawing.arrow.end()
-            d.shiftDisabled = false
+            drawState.shiftDisabled = false
 
-            d.end()
+            drawState.end()
 
             if (intent != undefined) {
-                d.intent = intent
-                d.style = DrawTool.categoryStyles[intent]
+                drawState.intent = intent
+                drawState.style = DrawTool.categoryStyles[intent]
             }
 
-            d.drawing = new L.Draw.CircleMarker(Map_.map, {
-                shapeOptions: d.style,
+            drawState.drawing = new L.Draw.CircleMarker(Map_.map, {
+                shapeOptions: drawState.style,
             })
-            d.drawing.enable()
+            drawState.drawing.enable()
 
-            d.shape = d.drawing
+            drawState.shape = drawState.drawing
 
-            Map_.map.on('mousemove', d.move)
-            Map_.map.on('draw:drawstop', d.stop)
-            $('body').on('keydown', d.keydown)
-            $('body').on('keyup', d.keyup)
+            Map_.map.on('mousemove', drawState.move)
+            Map_.map.on('draw:drawstop', drawState.stop)
+            $('body').on('keydown', drawState.keydown)
+            $('body').on('keyup', drawState.keyup)
         },
         end: function () {
-            var d = drawing.point
+            var drawState = drawing.point
 
-            d.stopclick = false
+            drawState.stopclick = false
 
-            Map_.map.off('mousemove', d.move)
-            Map_.map.off('draw:drawstop', d.stop)
-            $('body').off('keydown', d.keydown)
-            $('body').off('keyup', d.keyup)
-            if (typeof d.drawing.disable === 'function') d.drawing.disable()
+            Map_.map.off('mousemove', drawState.move)
+            Map_.map.off('draw:drawstop', drawState.stop)
+            $('body').off('keydown', drawState.keydown)
+            $('body').off('keyup', drawState.keyup)
+            if (typeof drawState.drawing.disable === 'function')
+                drawState.drawing.disable()
         },
         start: function () {},
         keydown: function (e) {
-            var d = drawing.point
+            var drawState = drawing.point
 
             if (
                 e.which == '17' ||
@@ -1111,12 +1154,13 @@ var drawing = {
                 e.which == '93' ||
                 e.which == '224'
             ) {
-                d.shiftDisabled = true
-                if (typeof d.drawing.disable === 'function') d.drawing.disable()
+                drawState.shiftDisabled = true
+                if (typeof drawState.drawing.disable === 'function')
+                    drawState.drawing.disable()
             }
         },
         keyup: function (e) {
-            var d = drawing.point
+            var drawState = drawing.point
 
             if (
                 e.which == '17' ||
@@ -1124,50 +1168,52 @@ var drawing = {
                 e.which == '93' ||
                 e.which == '224'
             ) {
-                d.shiftDisabled = false
-                d.drawing.enable()
+                drawState.shiftDisabled = false
+                drawState.drawing.enable()
             }
         },
         move: function (e) {
-            var d = drawing.point
-            d.shape = e.latlng
+            var drawState = drawing.point
+            drawState.shape = e.latlng
         },
         stop: function () {
-            var d = drawing.point
-            if (d.shiftDisabled) return
+            var drawState = drawing.point
+            if (drawState.shiftDisabled) return
 
-            var coords = [d.shape.lng, d.shape.lat]
+            var coords = [drawState.shape.lng, drawState.shape.lat]
 
-            d.shape = {
+            drawState.shape = {
                 type: 'Feature',
                 properties: {},
                 geometry: {},
             }
-            d.shape.geometry.type = 'Point'
-            d.shape.geometry.coordinates = coords
-            d.shape.properties.style = d.style
-            var n = $('#drawToolDrawFeaturesNewName')
-            d.shape.properties.name =
-                n.val() || n.attr('placeholder') || 'Point'
+            drawState.shape.geometry.type = 'Point'
+            drawState.shape.geometry.coordinates = coords
+            drawState.shape.properties.style = drawState.style
+            var newNameInput = $('#drawToolDrawFeaturesNewName')
+            drawState.shape.properties.name =
+                newNameInput.val() ||
+                newNameInput.attr('placeholder') ||
+                'Point'
 
             DrawTool.addDrawing(
                 {
                     file_id: DrawTool.currentFileId,
-                    intent: d.intent,
-                    properties: JSON.stringify(d.shape.properties),
-                    geometry: JSON.stringify(d.shape.geometry),
+                    intent: drawState.intent,
+                    properties: JSON.stringify(drawState.shape.properties),
+                    geometry: JSON.stringify(drawState.shape.geometry),
                 },
                 (function (shape) {
                     return function (data) {
                         DrawTool.refreshFile(DrawTool.currentFileId, null, true, null, false, function() {
-                            d.begin()
+                            drawState.begin()
                         }, null, null, true)
                     }
-                })(JSON.parse(JSON.stringify(d.shape))),
+                })(JSON.parse(JSON.stringify(drawState.shape))),
                 function () {
-                    if (d.end && d.begin) {
-                        d.end()
-                        d.begin()
+                    if (drawState.end && drawState.begin) {
+                        drawState.end()
+                        drawState.begin()
                     }
                 }
             )
@@ -1181,13 +1227,13 @@ var drawing = {
     },
     annotation: {
         begin: function (intent) {
-            var d = drawing.annotation
+            var drawState = drawing.annotation
 
             //Overwrite Leaflet.Draw esc key to restart drawing
             L.Draw.Feature.prototype._cancelDrawing = function (e) {
                 if (e.keyCode === 27) {
-                    d.end()
-                    d.begin()
+                    drawState.end()
+                    drawState.begin()
                 }
             }
 
@@ -1198,56 +1244,58 @@ var drawing = {
             drawing.line.end()
             drawing.point.end()
             drawing.arrow.end()
-            d.shiftDisabled = false
+            drawState.shiftDisabled = false
 
-            d.end()
+            drawState.end()
 
             if (intent != undefined) {
-                d.intent = intent
-                d.style = DrawTool.categoryStyles[intent]
+                drawState.intent = intent
+                drawState.style = DrawTool.categoryStyles[intent]
             }
 
-            d.drawing = new L.Draw.Marker(Map_.map, {
+            drawState.drawing = new L.Draw.Marker(Map_.map, {
                 icon: DrawTool.noteIcon,
             })
 
-            d.drawing.enable()
+            drawState.drawing.enable()
 
-            d.shape = d.drawing
+            drawState.shape = drawState.drawing
 
-            Map_.map.on('mousemove', d.move)
-            Map_.map.on('draw:drawstop', d.stop)
-            $('body').on('keydown', d.keydown)
-            $('body').on('keyup', d.keyup)
+            Map_.map.on('mousemove', drawState.move)
+            Map_.map.on('draw:drawstop', drawState.stop)
+            $('body').on('keydown', drawState.keydown)
+            $('body').on('keyup', drawState.keyup)
         },
         end: function () {
-            var d = drawing.annotation
+            var drawState = drawing.annotation
 
-            d.stopclick = false
+            drawState.stopclick = false
 
-            Map_.map.off('mousemove', d.move)
-            Map_.map.off('draw:drawstop', d.stop)
-            if (typeof d.drawing.disable === 'function') d.drawing.disable()
+            Map_.map.off('mousemove', drawState.move)
+            Map_.map.off('draw:drawstop', drawState.stop)
+            if (typeof drawState.drawing.disable === 'function')
+                drawState.drawing.disable()
         },
         start: function () {},
         keydown: function (e) {
-            var d = drawing.annotation
+            var drawState = drawing.annotation
             if (
                 e.which == '17' ||
                 e.which == '91' ||
                 e.which == '93' ||
                 e.which == '224'
             ) {
-                d.shiftDisabled = true
-                if (typeof d.drawing.disable === 'function') d.drawing.disable()
+                drawState.shiftDisabled = true
+                if (typeof drawState.drawing.disable === 'function')
+                    drawState.drawing.disable()
             } else if (e.which == '27') {
                 //ESC
                 Map_.rmNotNull(DrawTool.activeAnnotation)
-                d.begin()
+                drawState.begin()
             }
         },
         keyup: function (e) {
-            var d = drawing.annotation
+            var drawState = drawing.annotation
 
             if (
                 e.which == '17' ||
@@ -1255,19 +1303,19 @@ var drawing = {
                 e.which == '93' ||
                 e.which == '224'
             ) {
-                d.shiftDisabled = false
-                d.drawing.enable()
+                drawState.shiftDisabled = false
+                drawState.drawing.enable()
             }
         },
         move: function (e) {
-            var d = drawing.annotation
-            d.shape = e.latlng
+            var drawState = drawing.annotation
+            drawState.shape = e.latlng
         },
         stop: function () {
-            var d = drawing.annotation
-            if (d.shiftDisabled) return
+            var drawState = drawing.annotation
+            if (drawState.shiftDisabled) return
 
-            var coords = [d.shape.lat, d.shape.lng]
+            var coords = [drawState.shape.lat, drawState.shape.lng]
 
             var inputId = 'DrawTool_ActiveAnnotation'
             Map_.rmNotNull(DrawTool.activeAnnotation)
@@ -1301,12 +1349,12 @@ var drawing = {
                     document.getElementById(inputId).focus()
             }, 50)
 
-            d.end()
+            drawState.end()
             $('#' + inputId + '_Close').on('click', function () {
                 Map_.rmNotNull(DrawTool.activeAnnotation)
-                d.begin()
+                drawState.begin()
             })
-            $('#' + inputId + '_Save').on('click', d.save)
+            $('#' + inputId + '_Save').on('click', drawState.save)
 
             //Save on enter
             $('#' + inputId).keypress(function (e) {
@@ -1322,45 +1370,45 @@ var drawing = {
             })
         },
         save: function () {
-            var d = drawing.annotation
-            if (d.shiftDisabled) return
+            var drawState = drawing.annotation
+            if (drawState.shiftDisabled) return
 
-            $('body').off('keydown', d.keydown)
-            $('body').off('keyup', d.keyup)
+            $('body').off('keydown', drawState.keydown)
+            $('body').off('keyup', drawState.keyup)
 
-            var coords = [d.shape.lng, d.shape.lat]
-            d.shape = {
+            var coords = [drawState.shape.lng, drawState.shape.lat]
+            drawState.shape = {
                 type: 'Feature',
                 properties: {},
                 geometry: {},
             }
-            d.shape.geometry.type = 'Point'
-            d.shape.geometry.coordinates = coords
-            d.shape.properties.style = d.style
-            d.shape.properties.annotation = true
+            drawState.shape.geometry.type = 'Point'
+            drawState.shape.geometry.coordinates = coords
+            drawState.shape.properties.style = drawState.style
+            drawState.shape.properties.annotation = true
             var n = $('#drawToolDrawFeaturesNewName')
             var inputId = 'DrawTool_ActiveAnnotation'
-            d.shape.properties.name = $('#' + inputId).val() || ''
+            drawState.shape.properties.name = $('#' + inputId).val() || ''
 
             DrawTool.addDrawing(
                 {
                     file_id: DrawTool.currentFileId,
-                    intent: d.intent,
-                    properties: JSON.stringify(d.shape.properties),
-                    geometry: JSON.stringify(d.shape.geometry),
+                    intent: drawState.intent,
+                    properties: JSON.stringify(drawState.shape.properties),
+                    geometry: JSON.stringify(drawState.shape.geometry),
                 },
                 (function (shape) {
                     return function (data) {
                         DrawTool.refreshFile(DrawTool.currentFileId, null, true, null, false, function() {
                             Map_.rmNotNull(DrawTool.activeAnnotation)
-                            d.begin()
+                            drawState.begin()
                         }, null, null, true)
                     }
-                })(JSON.parse(JSON.stringify(d.shape))),
+                })(JSON.parse(JSON.stringify(drawState.shape))),
                 function () {
                     Map_.rmNotNull(DrawTool.activeAnnotation)
-                    if (d.begin) {
-                        d.begin()
+                    if (drawState.begin) {
+                        drawState.begin()
                     }
                 }
             )
@@ -1374,13 +1422,13 @@ var drawing = {
     },
     arrow: {
         begin: function (intent) {
-            var d = drawing.arrow
+            var drawState = drawing.arrow
 
             //Overwrite Leaflet.Draw esc key to restart drawing
             L.Draw.Feature.prototype._cancelDrawing = function (e) {
                 if (e.keyCode === 27) {
-                    d.end()
-                    d.begin()
+                    drawState.end()
+                    drawState.begin()
                 }
             }
 
@@ -1391,51 +1439,54 @@ var drawing = {
             drawing.line.end()
             drawing.point.end()
             drawing.annotation.end()
-            d.shiftDisabled = false
+            drawState.shiftDisabled = false
 
-            d.end()
+            drawState.end()
 
             if (intent != undefined) {
-                d.intent = intent
-                d.style = DrawTool.categoryStyles[intent]
+                drawState.intent = intent
+                drawState.style = DrawTool.categoryStyles[intent]
             }
 
-            Map_.map.on('click', d.start)
-            $('body').on('keydown', d.keydown)
-            $('body').on('keyup', d.keyup)
+            Map_.map.on('click', drawState.start)
+            $('body').on('keydown', drawState.keydown)
+            $('body').on('keyup', drawState.keyup)
         },
         end: function () {
-            var d = drawing.arrow
+            var drawState = drawing.arrow
 
-            d.stopclick = false
+            drawState.stopclick = false
 
-            Map_.map.off('click', d.start)
-            Map_.map.off('mousemove', d.move)
-            Map_.map.off('click', d.stop)
-            $('body').off('keydown', d.keydown)
-            $('body').off('keyup', d.keyup)
+            Map_.map.off('click', drawState.start)
+            Map_.map.off('mousemove', drawState.move)
+            Map_.map.off('click', drawState.stop)
+            $('body').off('keydown', drawState.keydown)
+            $('body').off('keyup', drawState.keyup)
         },
         start: function (e) {
-            var d = drawing.arrow
+            var drawState = drawing.arrow
 
-            d.startPt = e.latlng
+            drawState.startPt = e.latlng
 
-            for (var i = 0; i < d.arrowHeads.length; i++)
-                Map_.rmNotNull(d.arrowHeads[i])
-            d.arrowHeads = []
+            for (var i = 0; i < drawState.arrowHeads.length; i++)
+                Map_.rmNotNull(drawState.arrowHeads[i])
+            drawState.arrowHeads = []
 
-            d.drawing = new L.Polyline([d.startPt, d.startPt], {
-                color: 'red',
-            })
+            drawState.drawing = new L.Polyline(
+                [drawState.startPt, drawState.startPt],
+                {
+                    color: 'red',
+                }
+            )
 
-            d.shape = d.drawing
+            drawState.shape = drawState.drawing
 
-            Map_.map.off('click', d.start)
-            Map_.map.on('mousemove', d.move)
-            Map_.map.on('click', d.stop)
+            Map_.map.off('click', drawState.start)
+            Map_.map.on('mousemove', drawState.move)
+            Map_.map.on('click', drawState.stop)
         },
         keydown: function (e) {
-            var d = drawing.arrow
+            var drawState = drawing.arrow
 
             if (
                 e.which == '17' ||
@@ -1443,12 +1494,13 @@ var drawing = {
                 e.which == '93' ||
                 e.which == '224'
             ) {
-                d.shiftDisabled = true
-                if (typeof d.drawing.disable === 'function') d.drawing.disable()
+                drawState.shiftDisabled = true
+                if (typeof drawState.drawing.disable === 'function')
+                    drawState.drawing.disable()
             }
         },
         keyup: function (e) {
-            var d = drawing.arrow
+            var drawState = drawing.arrow
 
             if (
                 e.which == '17' ||
@@ -1456,24 +1508,24 @@ var drawing = {
                 e.which == '93' ||
                 e.which == '224'
             ) {
-                d.shiftDisabled = false
-                d.drawing.enable()
+                drawState.shiftDisabled = false
+                drawState.drawing.enable()
             }
         },
         move: function (e) {
-            var d = drawing.arrow
+            var drawState = drawing.arrow
 
-            Map_.rmNotNull(d.drawing)
+            Map_.rmNotNull(drawState.drawing)
 
-            var line = new L.Polyline([d.startPt, e.latlng])
-            d.arrowHeads.push(
+            var line = new L.Polyline([drawState.startPt, e.latlng])
+            drawState.arrowHeads.push(
                 L.polylineDecorator(line, {
                     patterns: [
                         {
                             offset: '100%',
                             repeat: 0,
                             symbol: L.Symbol.arrowHead({
-                                pixelSize: d.style.radius,
+                                pixelSize: drawState.style.radius,
                                 polygon: false,
                                 pathOptions: { stroke: false },
                             }),
@@ -1482,89 +1534,100 @@ var drawing = {
                 }).addTo(Map_.map)
             )
             var arrowPts = DrawTool.getInnerLayers(
-                d.arrowHeads[d.arrowHeads.length - 1],
+                drawState.arrowHeads[drawState.arrowHeads.length - 1],
                 3
             )
             if (arrowPts) {
                 arrowPts = arrowPts._latlngs
 
-                d.drawing = new L.Polyline(
-                    [d.startPt, e.latlng, arrowPts[0], e.latlng, arrowPts[2]],
+                drawState.drawing = new L.Polyline(
+                    [
+                        drawState.startPt,
+                        e.latlng,
+                        arrowPts[0],
+                        e.latlng,
+                        arrowPts[2],
+                    ],
                     {
-                        color: d.style.fillColor,
-                        weight: d.style.width,
+                        color: drawState.style.fillColor,
+                        weight: drawState.style.width,
                         className: 'noPointerEventsImportant',
                     }
                 ).addTo(Map_.map)
             }
-            clearTimeout(d.arrowTimeout)
-            d.arrowTimeout = setTimeout(function () {
-                for (var i = 0; i < d.arrowHeads.length; i++)
-                    Map_.rmNotNull(d.arrowHeads[i])
+            clearTimeout(drawState.arrowTimeout)
+            drawState.arrowTimeout = setTimeout(function () {
+                for (var i = 0; i < drawState.arrowHeads.length; i++)
+                    Map_.rmNotNull(drawState.arrowHeads[i])
             }, 100)
         },
         stop: function (e) {
-            var d = drawing.arrow
-            if (d.shiftDisabled) return
+            var drawState = drawing.arrow
+            if (drawState.shiftDisabled) return
 
-            d.shape = new L.Polyline([d.startPt, e.latlng]).toGeoJSON(
-                L_.GEOJSON_PRECISION
-            )
+            drawState.shape = new L.Polyline([
+                drawState.startPt,
+                e.latlng,
+            ]).toGeoJSON(L_.GEOJSON_PRECISION)
 
-            d.shape.properties.style = d.style
-            d.shape.properties.name = 'Arrow'
-            d.shape.properties.arrow = true
+            drawState.shape.properties.style = drawState.style
+            drawState.shape.properties.name = 'Arrow'
+            drawState.shape.properties.arrow = true
 
-            Map_.rmNotNull(d.drawing)
+            Map_.rmNotNull(drawState.drawing)
 
             DrawTool.addDrawing(
                 {
                     file_id: DrawTool.currentFileId,
-                    intent: d.intent,
-                    properties: JSON.stringify(d.shape.properties),
-                    geometry: JSON.stringify(d.shape.geometry),
+                    intent: drawState.intent,
+                    properties: JSON.stringify(drawState.shape.properties),
+                    geometry: JSON.stringify(drawState.shape.geometry),
                 },
                 (function (shape, start, end) {
                     return function (data) {
                         DrawTool.refreshFile(DrawTool.currentFileId, null, true, null, false, null, null, null, true)
 
-                        d.begin()
+                        drawState.begin()
                     }
-                })(JSON.parse(JSON.stringify(d.shape)), d.startPt, e.latlng),
+                })(
+                    JSON.parse(JSON.stringify(drawState.shape)),
+                    drawState.startPt,
+                    e.latlng
+                ),
                 function () {
-                    if (d.end && d.begin) {
-                        d.end()
-                        d.begin()
+                    if (drawState.end && drawState.begin) {
+                        drawState.end()
+                        drawState.begin()
                     }
                 }
             )
 
-            d.end()
+            drawState.end()
         },
         save: function () {
-            var d = drawing.arrow
-            if (d.shiftDisabled) return
+            var drawState = drawing.arrow
+            if (drawState.shiftDisabled) return
 
-            var coords = [d.shape.lat, d.shape.lng]
-            d.shape = {
+            var coords = [drawState.shape.lat, drawState.shape.lng]
+            drawState.shape = {
                 type: 'Feature',
                 properties: {},
                 geometry: {},
             }
-            d.shape.geometry.type = 'Point'
-            d.shape.geometry.coordinates = coords
-            d.shape.properties.style = d.style
-            d.shape.properties.annotation = true
+            drawState.shape.geometry.type = 'Point'
+            drawState.shape.geometry.coordinates = coords
+            drawState.shape.properties.style = drawState.style
+            drawState.shape.properties.annotation = true
             var n = $('#drawToolDrawFeaturesNewName')
             var inputId = 'DrawTool_ActiveAnnotation'
-            d.shape.properties.name = $('#' + inputId).val() || ''
+            drawState.shape.properties.name = $('#' + inputId).val() || ''
 
             DrawTool.addDrawing(
                 {
                     file_id: DrawTool.currentFileId,
-                    intent: d.intent,
-                    properties: JSON.stringify(d.shape.properties),
-                    geometry: JSON.stringify(d.shape.geometry),
+                    intent: drawState.intent,
+                    properties: JSON.stringify(drawState.shape.properties),
+                    geometry: JSON.stringify(drawState.shape.geometry),
                 },
                 (function (shape) {
                     return function (data) {
@@ -1664,15 +1727,15 @@ var drawing = {
                         l.properties._.id = data.id
                         l.properties._.intent = data.intent
 
-                        d.begin()
+                        drawState.begin()
 
                         DrawTool.populateShapes()
                     }
-                })(JSON.parse(JSON.stringify(d.shape))),
+                })(JSON.parse(JSON.stringify(drawState.shape))),
                 function () {
                     Map_.rmNotNull(DrawTool.activeAnnotation)
-                    if (d.begin) {
-                        d.begin()
+                    if (drawState.begin) {
+                        drawState.begin()
                     }
                 }
             )
