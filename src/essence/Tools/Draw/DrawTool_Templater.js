@@ -26,97 +26,97 @@ const DrawTool_Templater = {
         // prettier-ignore
         const markup = [
             "<ul id='drawToolTemplater'>",
-            template.map((t, idx) => {
+            template.map((templateField, idx) => {
 
-                if( properties[t.field] != null)  {
-                    t._default = t.default
-                    t.default = properties[t.field]
+                if( properties[templateField.field] != null)  {
+                    templateField._default = templateField.default
+                    templateField.default = properties[templateField.field]
                 }
-                if( hasStartTime == null && t.isStart)
-                    hasStartTime = t
-                if( hasEndTime == null && t.isEnd )
-                    hasEndTime = t
+                if( hasStartTime == null && templateField.isStart)
+                    hasStartTime = templateField
+                if( hasEndTime == null && templateField.isEnd )
+                    hasEndTime = templateField
                 // prettier-ignore
-                switch(t.type) {
+                switch(templateField.type) {
                     case 'checkbox':
                         return [
-                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${t.type}'>`,
-                                `<div title='${t.field}'>${t.field}:</div>`,
-                                `<div class="mmgis-checkbox small"><input type="checkbox" ${t.default === true ? 'checked ' : ''}id="templater-checkbox-${idx}"/><label for="templater-checkbox-${idx}"></label></div>`,
+                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${templateField.type}'>`,
+                                `<div title='${templateField.field}'>${templateField.field}:</div>`,
+                                `<div class="mmgis-checkbox small"><input type="checkbox" ${templateField.default === true ? 'checked ' : ''}id="templater-checkbox-${idx}"/><label for="templater-checkbox-${idx}"></label></div>`,
                             `</li>`
                         ].join('\n')
                     case 'number':
                         return [
-                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${t.type}'>`,
-                                `<div title='${t.field}'>${t.field}:</div>`,
+                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${templateField.type}'>`,
+                                `<div title='${templateField.field}'>${templateField.field}:</div>`,
                                 `<input type='number' placeholder="Enter Number" autocomplete="off"
-                                    ${t.default != null && typeof t.default === 'number' ? ` value='${t.default}'` : ''}
-                                    ${t.min != null && typeof t.min === 'number' ? ` min='${t.min}'` : ''}
-                                    ${t.max != null && typeof t.max === 'number' ? ` max='${t.max}'` : ''}
-                                    ${t.step != null && typeof t.step === 'number' ? ` step='${t.step}'` : ''}
+                                    ${templateField.default != null && typeof templateField.default === 'number' ? ` value='${templateField.default}'` : ''}
+                                    ${templateField.min != null && typeof templateField.min === 'number' ? ` min='${templateField.min}'` : ''}
+                                    ${templateField.max != null && typeof templateField.max === 'number' ? ` max='${templateField.max}'` : ''}
+                                    ${templateField.step != null && typeof templateField.step === 'number' ? ` step='${templateField.step}'` : ''}
                                     />`,
                             `</li>`
                         ].join('\n')
                     case 'text':
                         return [
-                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${t.type}'>`,
-                                `<div title='${t.field}'>${t.field}:</div>`,
+                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${templateField.type}'>`,
+                                `<div title='${templateField.field}'>${templateField.field}:</div>`,
                                 `<input type='text' placeholder="Enter Text" autocomplete="off"
-                                    ${t.default != null ? ` value='${t.default}'` : ''}
-                                    ${t.minLength != null && typeof t.min === 'number' ? ` minLength='${t.minLength}'` : ''}
-                                    ${t.maxLength != null && typeof t.max === 'number' ? ` maxLength='${t.maxLength}'` : ''}
+                                    ${templateField.default != null ? ` value='${templateField.default}'` : ''}
+                                    ${templateField.minLength != null && typeof templateField.min === 'number' ? ` minLength='${templateField.minLength}'` : ''}
+                                    ${templateField.maxLength != null && typeof templateField.max === 'number' ? ` maxLength='${templateField.maxLength}'` : ''}
                                     />`,
                             `</li>`
                         ].join('\n')
                     case 'textarea':
                         return [
-                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${t.type}'>`,
-                                `<div title='${t.field}'>${t.field}:</div>`,
-                                `<textarea>${t.default != null ? t.default : ''}</textarea>`,
+                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${templateField.type}'>`,
+                                `<div title='${templateField.field}'>${templateField.field}:</div>`,
+                                `<textarea>${templateField.default != null ? templateField.default : ''}</textarea>`,
                             `</li>`
                         ].join('\n')
                     case 'range':
                     case 'slider':
                         return [
                             `<li id='drawToolTemplater_${idx}' class='drawToolTemplaterrange'>`,
-                                `<div title='${t.field}'>${t.field}:</div>`,
-                                `<span>${t.default != null && typeof t.default === 'number' ? t.default : 'N/A'}</span>`,
+                                `<div title='${templateField.field}'>${templateField.field}:</div>`,
+                                `<span>${templateField.default != null && typeof templateField.default === 'number' ? templateField.default : 'N/A'}</span>`,
                                 `<input type='range' class='slider2'
-                                    ${t.default != null && typeof t.default === 'number' ? ` value='${t.default}'` : ''}
-                                    ${t.min != null && typeof t.min === 'number' ? ` min='${t.min}'` : ''}
-                                    ${t.max != null && typeof t.max === 'number' ? ` max='${t.max}'` : ''}
-                                    ${t.step != null && typeof t.step === 'number' ? ` step='${t.step}'` : ''}
+                                    ${templateField.default != null && typeof templateField.default === 'number' ? ` value='${templateField.default}'` : ''}
+                                    ${templateField.min != null && typeof templateField.min === 'number' ? ` min='${templateField.min}'` : ''}
+                                    ${templateField.max != null && typeof templateField.max === 'number' ? ` max='${templateField.max}'` : ''}
+                                    ${templateField.step != null && typeof templateField.step === 'number' ? ` step='${templateField.step}'` : ''}
                                     />`,
                             `</li>`
                         ].join('\n')
                     case 'dropdown':
                         return [
-                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${t.type}'>`,
-                                `<div title='${t.field}'>${t.field}:</div>`,
+                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${templateField.type}'>`,
+                                `<div title='${templateField.field}'>${templateField.field}:</div>`,
                                 `<div id='drawToolFileModalTemplateDropdown_${idx}' class='ui dropdown short'></div>`,
                             `</li>`
                         ].join('\n')
                     case 'date':
                         return [
-                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${t.type}'>`,
-                                `<div title='${t.field}'>${t.field}:</div>`,
-                                `<input id='drawToolFileModalTemplateDate_${idx}' placeholder='${t.format || 'YYYY-MM-DDTHH:mm:ss'}' autocomplete='off'></input>`,
+                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${templateField.type}'>`,
+                                `<div title='${templateField.field}'>${templateField.field}:</div>`,
+                                `<input id='drawToolFileModalTemplateDate_${idx}' placeholder='${templateField.format || 'YYYY-MM-DDTHH:mm:ss'}' autocomplete='off'></input>`,
                             `</li>`
                         ].join('\n')
                     case 'incrementer':
                         return [
-                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${t.type}'>`,
-                                `<div title='${t.field}'>${t.field}:</div>`,
-                                `<input type='text' placeholder="${t.default != null ? ` value='${t.default}'` : ''}" autocomplete="off"
-                                    ${t.default != null ? ` value='${t.default}'` : ''}
+                            `<li id='drawToolTemplater_${idx}' class='drawToolTemplater${templateField.type}'>`,
+                                `<div title='${templateField.field}'>${templateField.field}:</div>`,
+                                `<input type='text' placeholder="${templateField.default != null ? ` value='${templateField.default}'` : ''}" autocomplete="off"
+                                    ${templateField.default != null ? ` value='${templateField.default}'` : ''}
                                     />`,
                             `</li>`
                         ].join('\n')
                     case 'point':
                         return [
                             `<li id='drawToolTemplater_${idx}' class='drawToolTemplaterpoint'>`,
-                                `<div class='drawToolTemplaterpointHeaderWrapper'>`,    
-                                    `<div title='${t.field}'>${t.field}:</div>`,
+                                `<div class='drawToolTemplaterpointHeaderWrapper'>`,
+                                    `<div title='${templateField.field}'>${templateField.field}:</div>`,
                                     `<button class='drawToolTemplaterPointAddBtn' data-field-idx='${idx}'>`,
                                         `<i class='mdi mdi-map-marker-plus mdi-14px'></i> Add Point`,
                                     `</button>`,
@@ -414,86 +414,93 @@ const DrawTool_Templater = {
                 const values = {}
                 const invalids = {}
 
-                template.forEach((t, idx) => {
-                    switch (t.type) {
+                template.forEach((templateField, idx) => {
+                    switch (templateField.type) {
                         case 'checkbox':
-                            values[t.field] = $(
+                            values[templateField.field] = $(
                                 `#${containerId} #drawToolTemplater_${idx} input`
                             ).prop('checked')
 
                             break
                         case 'number':
-                            values[t.field] = parseFloat(
+                            values[templateField.field] = parseFloat(
                                 $(
                                     `#${containerId} #drawToolTemplater_${idx} input`
                                 ).val()
                             )
-                            if (isNaN(values[t.field])) values[t.field] = null
+                            if (isNaN(values[templateField.field]))
+                                values[templateField.field] = null
 
                             if (
-                                t.min != null &&
-                                t.min != '' &&
-                                values[t.field] < t.min
+                                templateField.min != null &&
+                                templateField.min != '' &&
+                                values[templateField.field] < templateField.min
                             )
                                 invalids[
-                                    t.field
-                                ] = `'${t.field}' must be >= ${t.min}`
+                                    templateField.field
+                                ] = `'${templateField.field}' must be >= ${templateField.min}`
                             if (
-                                t.max != null &&
-                                t.max != '' &&
-                                values[t.field] > t.max
+                                templateField.max != null &&
+                                templateField.max != '' &&
+                                values[templateField.field] > templateField.max
                             )
                                 invalids[
-                                    t.field
-                                ] = `'${t.field}' must be <= ${t.max}`
+                                    templateField.field
+                                ] = `'${templateField.field}' must be <= ${templateField.max}`
                             if (
-                                t.step != null &&
-                                t.step != '' &&
-                                values[t.field] / t.step !=
-                                    parseInt(values[t.field] / t.step)
+                                templateField.step != null &&
+                                templateField.step != '' &&
+                                values[templateField.field] /
+                                    templateField.step !=
+                                    parseInt(
+                                        values[templateField.field] /
+                                            templateField.step
+                                    )
                             )
                                 invalids[
-                                    t.field
-                                ] = `'${t.field}' must be a multiple of ${t.step}`
+                                    templateField.field
+                                ] = `'${templateField.field}' must be a multiple of ${templateField.step}`
 
                             break
                         case 'text':
-                            values[t.field] = $(
+                            values[templateField.field] = $(
                                 `#${containerId} #drawToolTemplater_${idx} input`
                             ).val()
                             if (
-                                t.minLength != null &&
-                                t.minLength != '' &&
-                                values[t.field].length < t.minLength
+                                templateField.minLength != null &&
+                                templateField.minLength != '' &&
+                                values[templateField.field].length <
+                                    templateField.minLength
                             )
                                 invalids[
-                                    t.field
-                                ] = `'${t.field}' must be >= ${t.minLength} characters`
+                                    templateField.field
+                                ] = `'${templateField.field}' must be >= ${templateField.minLength} characters`
 
                             if (
-                                t.maxLength != null &&
-                                t.maxLength != '' &&
-                                values[t.field] != null &&
-                                values[t.field].length > t.maxLength
+                                templateField.maxLength != null &&
+                                templateField.maxLength != '' &&
+                                values[templateField.field] != null &&
+                                values[templateField.field].length >
+                                    templateField.maxLength
                             )
                                 invalids[
-                                    t.field
-                                ] = `'${t.field}' must be <= ${t.maxLength} characters`
+                                    templateField.field
+                                ] = `'${templateField.field}' must be <= ${templateField.maxLength} characters`
 
                             if (
-                                t.regex != null &&
-                                t.regex != '' &&
-                                values[t.field] != null
+                                templateField.regex != null &&
+                                templateField.regex != '' &&
+                                values[templateField.field] != null
                             ) {
                                 try {
                                     if (
-                                        values[t.field].match(
-                                            new RegExp(t.regex)
+                                        values[templateField.field].match(
+                                            new RegExp(templateField.regex)
                                         ) == null
                                     )
                                         invalids[
-                                            t.field
-                                        ] = `'${t.field}' does not match regex: ${t.regex}`
+                                            templateField.field
+                                        ] = `'${templateField.field}' does not match regex: ${templateField.regex}`
                                 } catch (error) {
                                     // regex no good
                                 }
@@ -501,87 +508,97 @@ const DrawTool_Templater = {
 
                             break
                         case 'textarea':
-                            values[t.field] = $(
+                            values[templateField.field] = $(
                                 `#${containerId} #drawToolTemplater_${idx} textarea`
                             ).val()
                             if (
-                                t.required === true &&
-                                (values[t.field] == null ||
-                                    values[t.field] == '')
+                                templateField.required === true &&
+                                (values[templateField.field] == null ||
+                                    values[templateField.field] == '')
                             )
                                 invalids[
-                                    t.field
-                                ] = `'${t.field}' cannot be empty`
+                                    templateField.field
+                                ] = `'${templateField.field}' cannot be empty`
                             if (
-                                t.maxLength != null &&
-                                t.maxLength != '' &&
-                                values[t.field] != null &&
-                                values[t.field].length > t.maxLength
+                                templateField.maxLength != null &&
+                                templateField.maxLength != '' &&
+                                values[templateField.field] != null &&
+                                values[templateField.field].length >
+                                    templateField.maxLength
                             )
                                 invalids[
-                                    t.field
-                                ] = `'${t.field}' must be <= ${t.maxLength} characters`
+                                    templateField.field
+                                ] = `'${templateField.field}' must be <= ${templateField.maxLength} characters`
                             break
                         case 'range':
                         case 'slider':
-                            values[t.field] = parseFloat(
+                            values[templateField.field] = parseFloat(
                                 $(
                                     `#${containerId} #drawToolTemplater_${idx} input`
                                 ).val()
                             )
-                            if (isNaN(values[t.field])) values[t.field] = null
+                            if (isNaN(values[templateField.field]))
+                                values[templateField.field] = null
                             break
                         case 'dropdown':
-                            values[t.field] = t.items[helperStates[idx]]
+                            values[templateField.field] =
+                                templateField.items[helperStates[idx]]
                             break
                         case 'date':
-                            values[t.field] = $(
+                            values[templateField.field] = $(
                                 `#${containerId} #drawToolFileModalTemplateDate_${idx}`
                             ).val()
-                            if (values[t.field] === 'Invalid Date')
-                                values[t.field] = null
+                            if (values[templateField.field] === 'Invalid Date')
+                                values[templateField.field] = null
                             break
                         case 'incrementer':
-                            values[t.field] = $(
+                            values[templateField.field] = $(
                                 `#${containerId} #drawToolTemplater_${idx} input`
                             ).val()
 
                             const nextIncrement =
                                 DrawTool_Templater._validateIncrement(
-                                    values[t.field],
-                                    t,
+                                    values[templateField.field],
+                                    templateField,
                                     layer,
                                     existingProperties
                                 )
 
                             if (nextIncrement.error != null)
-                                invalids[t.field] = nextIncrement.error
-                            else values[t.field] = nextIncrement.newValue
+                                invalids[templateField.field] =
+                                    nextIncrement.error
+                            else
+                                values[templateField.field] =
+                                    nextIncrement.newValue
 
                             break
                         case 'point':
-                            values[t.field] = helperStates[idx] || []
+                            values[templateField.field] =
+                                helperStates[idx] || []
                             break
                         default:
                             break
                     }
 
                     if (
-                        t.required === true &&
-                        (values[t.field] == null ||
-                            values[t.field] == '' ||
-                            (t.type === 'number' && isNaN(values[t.field])))
+                        templateField.required === true &&
+                        (values[templateField.field] == null ||
+                            values[templateField.field] == '' ||
+                            (templateField.type === 'number' &&
+                                isNaN(values[templateField.field])))
                     ) {
-                        invalids[t.field] = `'${t.field}' is a required field`
+                        invalids[
+                            templateField.field
+                        ] = `'${templateField.field}' is a required field`
                     }
                 })
                 let hadInvalid = false
                 let bestMessage
-                template.forEach((t, idx) => {
-                    if (invalids[t.field] != null) {
+                template.forEach((templateField, idx) => {
+                    if (invalids[templateField.field] != null) {
                         hadInvalid = true
-                        bestMessage = invalids[t.field]
-                        switch (t.type) {
+                        bestMessage = invalids[templateField.field]
+                        switch (templateField.type) {
                             case 'textarea':
                                 $(
                                     `#${containerId} #drawToolTemplater_${idx} textarea`
@@ -593,7 +610,7 @@ const DrawTool_Templater = {
                                 ).css('border-bottom', '2px solid red')
                         }
                     } else {
-                        switch (t.type) {
+                        switch (templateField.type) {
                             case 'textarea':
                                 $(
                                     `#${containerId} #drawToolTemplater_${idx} textarea`
@@ -1250,28 +1267,31 @@ const DrawTool_Templater = {
     /**
      *
      * @param {*} value
-     * @param {*} t
-     * @param {*} layer
+     * @param {*} templateField
+     * @param {*} fileLayers
      * @returns {newValue: Number, error: String}
      */
-    _validateIncrement(value, t, layer, existingProperties) {
+    _validateIncrement(value, templateField, fileLayers, existingProperties) {
         const response = {
             newValue: value,
             error: null,
         }
 
         let usedValues = []
-        const split = (t._default || t.default).split('#')
+        const split = (templateField._default || templateField.default).split(
+            '#'
+        )
         const start = split[0]
         const end = split[1]
 
-        for (var i = 0; i < layer.length; i++) {
-            if (layer[i] == null) continue
+        for (var i = 0; i < fileLayers.length; i++) {
+            if (fileLayers[i] == null) continue
             let geojson =
-                layer[i].feature ||
-                layer[i]._layers[Object.keys(layer[i]._layers)[0]].feature
-            if (geojson?.properties?.[t.field] != null) {
-                let featuresVal = geojson?.properties?.[t.field]
+                fileLayers[i].feature ||
+                fileLayers[i]._layers[Object.keys(fileLayers[i]._layers)[0]]
+                    .feature
+            if (geojson?.properties?.[templateField.field] != null) {
+                let featuresVal = geojson?.properties?.[templateField.field]
 
                 featuresVal = featuresVal.replace(start, '').replace(end, '')
 
@@ -1297,18 +1317,21 @@ const DrawTool_Templater = {
             let numVal = response.newValue.replace(start, '').replace(end, '')
             if (numVal != '#') {
                 numVal = parseInt(numVal)
-                if (existingProperties[t.field] === response.newValue) {
+                if (
+                    existingProperties[templateField.field] ===
+                    response.newValue
+                ) {
                     // In case of a resave, make sure the id exists only once
                     let count = 0
                     usedValues.forEach((v) => {
                         if (numVal === v) count++
                     })
                     if (count > 1)
-                        response.error = `Incrementing field: '${t.field}' is not unique`
+                        response.error = `Incrementing field: '${templateField.field}' is not unique`
                 } else {
                     // In case a manual change, make sure the id is unique
                     if (usedValues.indexOf(numVal) !== -1)
-                        response.error = `Incrementing field: '${t.field}' is not unique`
+                        response.error = `Incrementing field: '${templateField.field}' is not unique`
                 }
             }
         }
@@ -1316,7 +1339,7 @@ const DrawTool_Templater = {
         // Check that the field still matches the surrounding string
         const incRegex = new RegExp(`^${start}\\d+${end}$`)
         if (incRegex.test(response.newValue) == false) {
-            response.error = `Incrementing field: '${t.field}' must follow syntax: '${start}{#}${end}'`
+            response.error = `Incrementing field: '${templateField.field}' must follow syntax: '${start}{#}${end}'`
         }
 
         return response
@@ -2379,8 +2402,8 @@ const DrawTool_Templater = {
         return true
     },
     getTemplateDefaults: async function (
-        template,
-        layer,
+        templateFields,
+        fileLayers,
         toAdd,
         recomputeOnly = false
     ) {
@@ -2388,18 +2411,18 @@ const DrawTool_Templater = {
             let defaultHasBeenSet = false
             const intersectedGeodatasets = {}
             const defaultProps = {}
-            for (let i = 0; i < template.length; i++) {
-                let t = template[i]
+            for (let i = 0; i < templateFields.length; i++) {
+                let templateField = templateFields[i]
                 defaultHasBeenSet = false
                 if (
-                    t.field != null &&
-                    t.intersectedGeodataset != null &&
-                    t.intersectedGeodataset != '' &&
-                    t.intersectedProp != null &&
-                    t.intersectedProp != ''
+                    templateField.field != null &&
+                    templateField.intersectedGeodataset != null &&
+                    templateField.intersectedGeodataset != '' &&
+                    templateField.intersectedProp != null &&
+                    templateField.intersectedProp != ''
                 ) {
                     let body = {
-                        layer: t.intersectedGeodataset,
+                        layer: templateField.intersectedGeodataset,
                         intersect: toAdd.geometry,
                         limit: 10,
                     }
@@ -2411,8 +2434,12 @@ const DrawTool_Templater = {
                     }
 
                     let intersectResult =
-                        intersectedGeodatasets[t.intersectedGeodataset] != null
-                            ? intersectedGeodatasets[t.intersectedGeodataset]
+                        intersectedGeodatasets[
+                            templateField.intersectedGeodataset
+                        ] != null
+                            ? intersectedGeodatasets[
+                                  templateField.intersectedGeodataset
+                              ]
                             : await new Promise(async (resolve, reject) => {
                                   calls.api(
                                       'geodatasets_intersect',
@@ -2426,12 +2453,13 @@ const DrawTool_Templater = {
                                       }
                                   )
                               })
-                    intersectedGeodatasets[t.intersectedGeodataset] =
-                        intersectResult
+                    intersectedGeodatasets[
+                        templateField.intersectedGeodataset
+                    ] = intersectResult
 
-                    let f = t.field
+                    let f = templateField.field
                     if (f != null && intersectResult) {
-                        switch (t.intersectedConflict) {
+                        switch (templateField.intersectedConflict) {
                             case 'null':
                                 if (
                                     intersectResult?.body?.features?.length ===
@@ -2456,7 +2484,9 @@ const DrawTool_Templater = {
                                     defaultProps[f] = F_.getIn(
                                         intersectResult?.body?.features[0]
                                             .properties,
-                                        t.intersectedProp.split('.'),
+                                        templateField.intersectedProp.split(
+                                            '.'
+                                        ),
                                         null
                                     )
                                     defaultHasBeenSet = true
@@ -2474,7 +2504,9 @@ const DrawTool_Templater = {
                                             intersectResult?.body?.features
                                                 ?.length - 1
                                         ].properties,
-                                        t.intersectedProp.split('.'),
+                                        templateField.intersectedProp.split(
+                                            '.'
+                                        ),
                                         null
                                     )
                                     defaultHasBeenSet = true
@@ -2496,7 +2528,7 @@ const DrawTool_Templater = {
                                             arrayVal.push(
                                                 F_.getIn(
                                                     feature.properties,
-                                                    t.intersectedProp.split(
+                                                    templateField.intersectedProp.split(
                                                         '.'
                                                     ),
                                                     null
@@ -2517,7 +2549,7 @@ const DrawTool_Templater = {
                             if (intersectResult?.body?.features?.[0] != null) {
                                 defaultProps[f] = F_.getIn(
                                     intersectResult.body.features[0].properties,
-                                    t.intersectedProp.split('.'),
+                                    templateField.intersectedProp.split('.'),
                                     null
                                 )
                                 defaultHasBeenSet = true
@@ -2525,13 +2557,13 @@ const DrawTool_Templater = {
                         }
                     }
                     if (
-                        t.intersectedConflict != 'null' &&
+                        templateField.intersectedConflict != 'null' &&
                         defaultProps[f] == null
                     )
                         defaultHasBeenSet = false
 
                     if (
-                        t.intersectedConflict != null &&
+                        templateField.intersectedConflict != null &&
                         intersectResult?.body?.features?.length != 1
                     ) {
                         if (intersectResult?.body?.features?.length === 0)
@@ -2564,22 +2596,22 @@ const DrawTool_Templater = {
                 }
 
                 if (
-                    t.field != null &&
-                    t.default != null &&
-                    t.default != '' &&
+                    templateField.field != null &&
+                    templateField.default != null &&
+                    templateField.default != '' &&
                     defaultHasBeenSet === false
                 ) {
-                    let f = t.field
-                    let v = t.default
+                    let f = templateField.field
+                    let v = templateField.default
                     let overrideRecomputeOnlyHere = false
-                    switch (t.type) {
+                    switch (templateField.type) {
                         case 'incrementer':
                             if (recomputeOnly != true) {
                                 const nextIncrement =
                                     DrawTool_Templater._validateIncrement(
-                                        t.default,
-                                        t,
-                                        layer
+                                        templateField.default,
+                                        templateField,
+                                        fileLayers
                                     )
                                 v = nextIncrement.newValue
                             }
@@ -2588,22 +2620,31 @@ const DrawTool_Templater = {
                             if (v === 'NOW') {
                                 v = moment
                                     .utc(new Date().getTime())
-                                    .format(t.format || 'YYYY-MM-DDTHH:mm:ss')
+                                    .format(
+                                        templateField.format ||
+                                            'YYYY-MM-DDTHH:mm:ss'
+                                    )
                                 overrideRecomputeOnlyHere = true
                             } else if (v === 'STARTTIME') {
                                 v = moment
                                     .utc(TimeControl.getStartTime())
-                                    .format(t.format || 'YYYY-MM-DDTHH:mm:ss')
+                                    .format(
+                                        templateField.format ||
+                                            'YYYY-MM-DDTHH:mm:ss'
+                                    )
                                 overrideRecomputeOnlyHere = true
                             } else if (v === 'ENDTIME') {
                                 v = moment
                                     .utc(TimeControl.getEndTime())
-                                    .format(t.format || 'YYYY-MM-DDTHH:mm:ss')
+                                    .format(
+                                        templateField.format ||
+                                            'YYYY-MM-DDTHH:mm:ss'
+                                    )
                                 overrideRecomputeOnlyHere = true
                             }
                             break
                         case 'point':
-                            defaultProps[f] = t.default || []
+                            defaultProps[f] = templateField.default || []
                             break
                         default:
                     }
@@ -2618,36 +2659,48 @@ const DrawTool_Templater = {
                 // Last check to cast all non-bool checkbox values to bools
                 if (recomputeOnly != true) {
                     if (
-                        t.field != null &&
-                        t.type === 'checkbox' &&
-                        typeof defaultProps[t.field] !== 'boolean'
+                        templateField.field != null &&
+                        templateField.type === 'checkbox' &&
+                        typeof defaultProps[templateField.field] !== 'boolean'
                     )
-                        defaultProps[t.field] = Boolean(defaultProps[t.field])
-                    else if (
-                        t.field != null &&
-                        t.type === 'number' &&
-                        t.min != null &&
-                        t.max != null &&
-                        !isNaN(parseFloat(defaultProps[t.field])) &&
-                        (parseFloat(defaultProps[t.field]) > t.max ||
-                            parseFloat(defaultProps[t.field]) < t.min)
-                    )
-                        defaultProps[t.field] = Math.min(
-                            Math.max(parseFloat(defaultProps[t.field]), t.min),
-                            t.max
+                        defaultProps[templateField.field] = Boolean(
+                            defaultProps[templateField.field]
                         )
                     else if (
-                        t.field != null &&
-                        t.type === 'slider' &&
-                        t.min != null &&
-                        t.max != null &&
-                        !isNaN(parseFloat(defaultProps[t.field])) &&
-                        (parseFloat(defaultProps[t.field]) > t.max ||
-                            parseFloat(defaultProps[t.field]) < t.min)
+                        templateField.field != null &&
+                        templateField.type === 'number' &&
+                        templateField.min != null &&
+                        templateField.max != null &&
+                        !isNaN(parseFloat(defaultProps[templateField.field])) &&
+                        (parseFloat(defaultProps[templateField.field]) >
+                            templateField.max ||
+                            parseFloat(defaultProps[templateField.field]) <
+                                templateField.min)
                     )
-                        defaultProps[t.field] = Math.min(
-                            Math.max(parseFloat(defaultProps[t.field]), t.min),
-                            t.max
+                        defaultProps[templateField.field] = Math.min(
+                            Math.max(
+                                parseFloat(defaultProps[templateField.field]),
+                                templateField.min
+                            ),
+                            templateField.max
+                        )
+                    else if (
+                        templateField.field != null &&
+                        templateField.type === 'slider' &&
+                        templateField.min != null &&
+                        templateField.max != null &&
+                        !isNaN(parseFloat(defaultProps[templateField.field])) &&
+                        (parseFloat(defaultProps[templateField.field]) >
+                            templateField.max ||
+                            parseFloat(defaultProps[templateField.field]) <
+                                templateField.min)
+                    )
+                        defaultProps[templateField.field] = Math.min(
+                            Math.max(
+                                parseFloat(defaultProps[templateField.field]),
+                                templateField.min
+                            ),
+                            templateField.max
                         )
                 }
             }

@@ -85,13 +85,19 @@ var Shapes = {
         if (!skipDOMRebuild) {
             $('#drawToolShapesFeaturesList *').remove()
         }
-        for (var l in L_.layers.layer) {
-            var s = l.split('_')
-            var onId = s[1] != 'master' ? parseInt(s[1]) : s[1]
-            if (s[0] == 'DrawTool' && DrawTool.filesOn.indexOf(onId) != -1) {
-                var file = DrawTool.getFileObjectWithId(s[1])
+        for (var layerName in L_.layers.layer) {
+            var layerNameParts = layerName.split('_')
+            var onId =
+                layerNameParts[1] != 'master'
+                    ? parseInt(layerNameParts[1])
+                    : layerNameParts[1]
+            if (
+                layerNameParts[0] == 'DrawTool' &&
+                DrawTool.filesOn.indexOf(onId) != -1
+            ) {
+                var file = DrawTool.getFileObjectWithId(layerNameParts[1])
                 fileIds.push(onId)
-                if (L_.layers.layer[l].length > 0) {
+                if (L_.layers.layer[layerName].length > 0) {
                     const headerLi = $('<li>')
                         .attr('class', 'drawToolShapesFeaturesListFileHeader')
                         .css({
@@ -110,13 +116,13 @@ var Shapes = {
                         $('#drawToolShapesFeaturesList').append(headerLi)
                     }
                 }
-                for (var i = 0; i < L_.layers.layer[l].length; i++) {
+                for (var i = 0; i < L_.layers.layer[layerName].length; i++) {
                     addShapeToList(
-                        L_.layers.layer[l][i],
+                        L_.layers.layer[layerName][i],
                         file,
-                        l,
+                        layerName,
                         i,
-                        s[1],
+                        layerNameParts[1],
                         skipDOMRebuild
                     )
                 }
@@ -287,7 +293,7 @@ var Shapes = {
         function addShapeToList(
             shape,
             file,
-            layer,
+            layerName,
             index,
             layerId,
             skipDOMRebuild
@@ -349,7 +355,7 @@ var Shapes = {
             // prettier-ignore
             var markup = [
                 "<div class='drawToolShapeLiItem flexbetween' file_id='" +
-                    file.id + "' layer='" + layer + "' index='" + index + "'>",
+                    file.id + "' layer='" + layerName + "' index='" + index + "'>",
                     "<div class='flexbetween'>",
                     "<div style='height: 100%; width: 7px; background: " + DrawTool.categoryStyles[file.intent].color + "'></div>",
                     "<div class='flexbetween' style='padding-left: 8px;'>",
@@ -364,7 +370,7 @@ var Shapes = {
                 "</div>"
                 ].join('\n');
 
-            let shapeLiId = 'drawToolShapeLiItem_' + layer + '_' + index
+            let shapeLiId = 'drawToolShapeLiItem_' + layerName + '_' + index
             let activeClass = ''
             if (stillActive.indexOf(shapeLiId) != -1) activeClass = ' active'
 
@@ -378,9 +384,9 @@ var Shapes = {
             }
 
             const shapeLi = $('<li>')
-                .attr('id', 'drawToolShapeLiItem_' + layer + '_' + index)
+                .attr('id', 'drawToolShapeLiItem_' + layerName + '_' + index)
                 .attr('class', 'drawToolShapeLi' + activeClass)
-                .attr('layer', layer)
+                .attr('layer', layerName)
                 .attr('layer_id', layerId)
                 .attr('index', index)
                 .attr('file_id', file.id)
@@ -393,27 +399,27 @@ var Shapes = {
                 $('#drawToolShapesFeaturesList').append(shapeLi)
             }
 
-            $('#drawToolShapeLiItem_' + layer + '_' + index)
+            $('#drawToolShapeLiItem_' + layerName + '_' + index)
                 .find('.drawToolShapeLiItemB')
                 .attr('title', properties.name || 'No Name')
                 .text(properties.name || 'No Name')
 
-            for (var elayer in f) {
-                var e = f[elayer]
+            for (var featureLayerId in f) {
+                var featureLayer = f[featureLayerId]
 
                 // Skip associated points - they are not independently interactive
-                if (e._isAssociatedPoint === true) continue
+                if (featureLayer._isAssociatedPoint === true) continue
 
-                var pUpfeature = e.feature
-                if (e.feature == null && shape.feature != null)
+                var pUpfeature = featureLayer.feature
+                if (featureLayer.feature == null && shape.feature != null)
                     pUpfeature = shape.feature
 
                 // Save the file name as layerName property to use for the InfoTool display
                 pUpfeature.properties.layerName = file.file_name
-                e.options.layerName = file.file_name
+                featureLayer.options.layerName = file.file_name
 
                 // Always use the name as the key for DrawTools layers
-                e.useKeyAsName = 'name'
+                featureLayer.useKeyAsName = 'name'
 
                 // create popup contents
                 var customPopup =
@@ -431,20 +437,20 @@ var Shapes = {
                     className: 'drawToolLabel',
                 }
 
-                let p = DrawTool.removePopupsFromLayer(e)
-                if (!p) e.bindPopup(customPopup, customOptions)
+                let p = DrawTool.removePopupsFromLayer(featureLayer)
+                if (!p) featureLayer.bindPopup(customPopup, customOptions)
 
-                e.off('mousemove')
-                e.on(
+                featureLayer.off('mousemove')
+                featureLayer.on(
                     'mousemove',
-                    (function (layer, index) {
+                    (function (layerName, index) {
                         return function (event) {
                             if (
                                 DrawTool.contextMenuLayer &&
                                 DrawTool.contextMenuLayer.dragging
                             )
                                 return
-                            var l = L_.layers.layer[layer][index]
+                            var l = L_.layers.layer[layerName][index]
                             if (
                                 !l.hasOwnProperty('feature') &&
                                 l.hasOwnProperty('_layers')
@@ -481,12 +487,12 @@ var Shapes = {
                                         .getBoundingClientRect().left,
                             })
                         }
-                    })(layer, index)
+                    })(layerName, index)
                 )
-                e.off('mouseover')
-                e.on(
+                featureLayer.off('mouseover')
+                featureLayer.on(
                     'mouseover',
-                    (function (layer, index) {
+                    (function (layerName, index) {
                         return function () {
                             if (
                                 DrawTool.contextMenuLayer &&
@@ -498,20 +504,23 @@ var Shapes = {
                                 '.drawToolShapeLi .drawToolShapeLiItem'
                             ).mouseleave()
                             $(
-                                '#drawToolShapeLiItem_' + layer + '_' + index
+                                '#drawToolShapeLiItem_' +
+                                    layerName +
+                                    '_' +
+                                    index
                             ).addClass('hovered')
                             $(
                                 '#drawToolShapeLiItem_' +
-                                    layer +
+                                    layerName +
                                     '_' +
                                     index +
                                     ' .drawToolShapeLiItem'
                             ).mouseenter()
                         }
-                    })(layer, index)
+                    })(layerName, index)
                 )
-                e.off('mouseout')
-                e.on('mouseout', function () {
+                featureLayer.off('mouseout')
+                featureLayer.on('mouseout', function () {
                     // ALWAYS hide tooltip, even during drag (Fix #2)
                     $('#drawToolMouseoverText').removeClass('active')
 
@@ -525,10 +534,10 @@ var Shapes = {
                     $('.drawToolShapeLi').removeClass('hovered')
                     $('.drawToolShapeLi .drawToolShapeLiItem').mouseleave()
                 })
-                e.off('click')
-                e.on(
+                featureLayer.off('click')
+                featureLayer.on(
                     'click',
-                    (function (layer, index, fileid, featureId) {
+                    (function (layerName, index, fileid, featureId) {
                         return function (event) {
                             if (DrawTool.activeContent != 'shapes')
                                 DrawTool.showContent('shapes')
@@ -536,7 +545,10 @@ var Shapes = {
                             var ctrl = mmgisglobal.ctrlDown
                             // Try to find list item by layer/index (onscreen mode)
                             var elm = $(
-                                '#drawToolShapeLiItem_' + layer + '_' + index
+                                '#drawToolShapeLiItem_' +
+                                    layerName +
+                                    '_' +
+                                    index
                             )
 
                             // If not found, try by file_id/feature_id (filtered mode)
@@ -572,7 +584,7 @@ var Shapes = {
                                 DrawTool.contextMenuLayer &&
                                 !(
                                     DrawTool.lastContextLayerIndexFileId
-                                        .layer == layer &&
+                                        .layer == layerName &&
                                     DrawTool.lastContextLayerIndexFileId
                                         .index == index &&
                                     DrawTool.lastContextLayerIndexFileId
@@ -655,13 +667,13 @@ var Shapes = {
                             DrawTool.showContextMenu(
                                 0,
                                 0,
-                                layer,
+                                layerName,
                                 index,
                                 fileid,
                                 ctrl
                             )
                         }
-                    })(layer, index, file.id, properties._.id)
+                    })(layerName, index, file.id, properties._.id)
                 )
                 $('body').off('keydown', Shapes.prevNext)
                 $('body').on('keydown', Shapes.prevNext)
@@ -775,7 +787,7 @@ var Shapes = {
                         '_' +
                         $(this).attr('shape_id')
                 ).removeClass('highlight')
-            if (Map_.activeLayer === l[i]) {
+            if (Map_.activeLayer === layerName[i]) {
                 $(
                     '#DrawToolAnnotation_' +
                         $(this).attr('layer_id') +
@@ -1357,10 +1369,13 @@ var Shapes = {
     handleFeatureClick: function (featureId, fileId) {
         // Check if feature is loaded on map
         let foundOnMap = false
-        for (var l in L_.layers.layer) {
-            var s = l.split('_')
-            if (s[0] == 'DrawTool' && s[1] == fileId) {
-                const layers = L_.layers.layer[l]
+        for (var layerName in L_.layers.layer) {
+            var layerNameParts = layerName.split('_')
+            if (
+                layerNameParts[0] == 'DrawTool' &&
+                layerNameParts[1] == fileId
+            ) {
+                const layers = L_.layers.layer[layerName]
                 for (let i = 0; i < layers.length; i++) {
                     const layer = layers[i]
 
@@ -1450,10 +1465,13 @@ var Shapes = {
      */
     selectFeatureOnMap: function (fileId, featureId) {
         // Find the feature layer and fire click event to select it
-        for (var l in L_.layers.layer) {
-            var s = l.split('_')
-            if (s[0] == 'DrawTool' && s[1] == fileId) {
-                const layers = L_.layers.layer[l]
+        for (var layerName in L_.layers.layer) {
+            var layerNameParts = layerName.split('_')
+            if (
+                layerNameParts[0] == 'DrawTool' &&
+                layerNameParts[1] == fileId
+            ) {
+                const layers = L_.layers.layer[layerName]
 
                 for (let i = 0; i < layers.length; i++) {
                     const layer = layers[i]
