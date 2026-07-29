@@ -410,7 +410,7 @@ const L_ = {
         if (
             type === 'tile' &&
             ((layerData && layerData.throughTileServer === true) ||
-                wasCOG == true)
+                wasCOG === true)
         ) {
             if (
                 !F_.isUrlAbsolute(nextUrl) &&
