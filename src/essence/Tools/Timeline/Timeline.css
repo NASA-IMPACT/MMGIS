@@ -4,9 +4,32 @@
     height: 100%;
     width: 100%;
     background: var(--theme-color-white, #ffffff);
-    color: var(--color-disasters-primary-dark, #0d313d);
+    color: var(--theme-color-primary-dark, #0d313d);
     font-family: var(--theme-font-ui, 'Public Sans', system-ui, -apple-system, sans-serif);
     overflow: hidden;
+}
+
+/* Collapsed: only the header remains, and the tool shrinks to fit it so the
+   host panel isn't left holding a blank timeline body. */
+.timeline--collapsed {
+    height: auto;
+}
+
+.timeline--collapsed .timeline-content {
+    display: none;
+}
+
+.timeline--collapsed .timeline-header {
+    border-bottom: none;
+}
+
+.timeline-collapse-btn svg {
+    display: block;
+    transition: transform 0.2s ease;
+}
+
+.timeline--collapsed .timeline-collapse-btn svg {
+    transform: rotate(180deg);
 }
 
 
@@ -73,7 +96,7 @@
 .timeline-empty-message {
     font-size: 13px;
     font-weight: 700;
-    color: var(--theme-color-base-darker, #565c65);
+    color: var(--theme-color-base-darker, #3d4551);
 }
 
 .timeline-empty-hint {
@@ -104,16 +127,16 @@
     padding: 0;
     margin-right: 8px;
     cursor: pointer;
-    color: var(--color-disasters-primary-dark, #0d313d);
+    color: var(--theme-color-primary-dark, #0d313d);
     transition: color 0.2s ease;
 }
 
 .date-selector-main-button:hover {
-    color: var(--timeline-brand, #0e7482);
+    color: var(--theme-color-primary, #0e7482);
 }
 
 .date-selector-main-button .calendar-icon {
-    color: var(--timeline-brand, #0e7482);
+    color: var(--theme-color-primary, #0e7482);
     width: 16px;
     height: 16px;
     flex-shrink: 0;
@@ -125,7 +148,7 @@
     font-weight: 700;
     white-space: nowrap;
     text-align: left;
-    color: var(--color-disasters-primary-dark, #0d313d);
+    color: var(--theme-color-primary-dark, #0d313d);
 }
 
 /* Reserve enough room for the widest date each time mode can render, so the
@@ -155,7 +178,7 @@
 .compare-date-button {
     background: transparent;
     border: none;
-    color: var(--timeline-brand, #0e7482);
+    color: var(--theme-color-primary, #0e7482);
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
@@ -175,7 +198,7 @@
     background: var(--theme-color-white, #ffffff);
     border: none;
     border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 4px 16px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
     padding: 16px;
     z-index: 1000;
     min-width: 250px;
@@ -191,73 +214,190 @@
 
 .date-input-form label {
     font-size: 12px;
-    color: var(--theme-color-base-darker, #565c65);
+    color: var(--theme-color-base-darker, #3d4551);
 }
 
 .date-input-form input[type='date'],
 .date-input-form input[type='month'],
 .date-input-form input[type='datetime-local'],
-.date-input-form .time-input-field,
-.date-input-form .date-select {
+.date-input-form input[type='time'],
+.date-input-form .time-input-field {
     padding: 8px;
-    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    /* Frameless like the year field and month grid; the browser puts its own
+       border on native date inputs, so it has to be turned off explicitly. */
+    border: none;
     border-radius: 4px;
+    background: transparent;
     font-family: inherit;
+    font-weight: 700;
     font-size: 13px;
-    transition: opacity 0.2s ease;
+    color: var(--theme-color-base-dark, #0d313d);
+    transition: background 0.2s ease;
 }
 
-.date-input-form .date-select {
-    background-color: transparent;
-    flex: 1;
+.date-input-form input[type='time'] {
+    text-align: center;
+    font-weight: 700;
 }
 
 .date-input-form input[type='date']:hover,
 .date-input-form input[type='month']:hover,
 .date-input-form input[type='datetime-local']:hover,
-.date-input-form .time-input-field:hover,
-.date-input-form .date-select:hover {
-    opacity: 0.8;
+.date-input-form input[type='time']:hover,
+.date-input-form .time-input-field:hover {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
 .date-input-form input[type='date']:focus,
 .date-input-form input[type='month']:focus,
 .date-input-form input[type='datetime-local']:focus,
-.date-input-form .time-input-field:focus,
-.date-input-form .date-select:focus {
+.date-input-form input[type='time']:focus,
+.date-input-form .time-input-field:focus {
     outline: none;
 }
 
-.date-input-form .date-submit-button {
-    padding: 8px 16px;
-    background: var(--timeline-brand, #0e7482);
-    color: var(--theme-color-white, #ffffff);
+/* Stepper field: a typed value flanked by arrows — the year in YEAR and MONTH
+   modes, the month and year above the day calendar. Frameless; hover and focus
+   are carried by the tinted surface rather than a border. */
+.date-field {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    border-radius: 4px;
+    padding: 2px;
+    transition: background 0.2s ease;
+}
+
+.date-field:focus-within {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
+.date-field-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 0;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-align: center;
+    color: var(--theme-color-base-dark, #0d313d);
+}
+
+.date-field-input:focus {
+    outline: none;
+}
+
+.date-step-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    padding: 0;
     border: none;
     border-radius: 4px;
-    font-weight: 600;
-    font-size: 13px;
+    background: transparent;
+    color: var(--theme-color-primary, #0e7482);
     cursor: pointer;
-    transition: background 0.2s ease;
-    margin-top: 4px;
+    transition: background 0.2s ease, color 0.2s ease;
 }
 
-.date-input-form .date-submit-button:hover {
-    background: #0b6370;
+.date-step-button:hover:not(:disabled) {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
-.date-range-info {
-    margin-top: 8px;
-    padding-top: 8px;
+.date-step-button:disabled {
+    color: var(--theme-color-base-light, #a9aeb1);
+    cursor: default;
 }
 
-.date-range-info small {
+/* Month calendar: a 4x3 grid of months, themed to match the rest of the tool
+   rather than falling back to the browser's native month picker. */
+.month-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+
+.month-grid-cell,
+.day-calendar-cell {
+    padding: 8px 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    font-family: inherit;
     font-size: 12px;
+    font-weight: 600;
+    color: var(--theme-color-base-darker, #3d4551);
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.month-grid-cell:hover:not(:disabled),
+.month-grid-cell:focus-visible,
+.day-calendar-cell:hover:not(:disabled),
+.day-calendar-cell:focus-visible {
+    outline: none;
+    background: var(--theme-color-primary-lightest, #e6f4f6);
+    color: var(--theme-color-primary, #0e7482);
+}
+
+.month-grid-cell--selected,
+.month-grid-cell--selected:hover:not(:disabled),
+.day-calendar-cell--selected,
+.day-calendar-cell--selected:hover:not(:disabled) {
+    background: var(--theme-color-primary, #0e7482);
+    color: var(--theme-color-white, #ffffff);
+}
+
+/* Months and days with no part inside the timeline range can't be picked. */
+.month-grid-cell:disabled,
+.day-calendar-cell:disabled {
+    color: var(--theme-color-base-light, #a9aeb1);
+    cursor: default;
+}
+
+/* Day calendar: month nav, weekday labels, and a 7-column grid where each date
+   sits in the column of its own weekday. */
+.day-calendar {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Month and year share one row, each stepping and editable on its own. */
+.day-calendar-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.day-calendar-nav .date-field {
+    flex: 1;
+    min-width: 0;
+}
+
+.day-calendar-weekdays,
+.day-calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+
+.day-calendar-weekday {
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
     color: var(--theme-color-base, #71767a);
 }
 
-.date-range-dates {
-    font-size: 13px;
-    margin-top: 2px;
+.date-input-error {
+    font-size: 12px;
+    color: var(--theme-color-secondary-dark, #971453);
 }
 
 /* Playback Controls */
@@ -265,7 +405,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    color: var(--timeline-brand, #0e7482);
+    color: var(--theme-color-primary, #0e7482);
 }
 
 .playback-btn {
@@ -278,15 +418,16 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: opacity 0.2s ease;
+    transition: background 0.2s ease;
 }
 
+/* Hover shows the light-grey rectangle only — the icon keeps its colour. */
 .playback-btn:hover {
-    color: var(--theme-color-primary-dark, #0d313d);
+    background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
 .play-btn {
-    color: var(--timeline-brand, #0e7482);
+    color: var(--theme-color-primary, #0e7482);
 }
 
 .play-btn svg {
@@ -302,18 +443,18 @@
     height: 24px;
     min-width: 32px;
     cursor: pointer;
-    color: var(--color-disasters-primary-dark, #0d313d);
+    color: var(--theme-color-primary, #0e7482);
     font-family: inherit;
     font-size: 12px;
     font-weight: 700;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.2s ease;
+    transition: background 0.2s ease;
 }
 
 .playback-speed-control:hover {
-    color: var(--timeline-brand, #0e7482);
+    background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
 /* Time Mode Control */
@@ -328,18 +469,18 @@
     border: none;
     font-size: 10px;
     font-weight: 800;
-    color: #9bb0b8;
+    color: var(--theme-color-base-light, #a9aeb1);
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .time-mode-button:hover {
-    color: var(--theme-color-base-darker, #0d313d);
-    background-color: var(--theme-color-base-lightest, #f0f4f5);
+    color: var(--theme-color-base-darker, #3d4551);
+    background-color: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
 .time-mode-button.active {
-    background: var(--timeline-brand, #0e7482);
+    background: var(--theme-color-primary, #0e7482);
     color: var(--theme-color-white, #ffffff);
 }
 
@@ -361,7 +502,7 @@
 
 .timeline-sidebar-header {
     height: 24px; /* matches timeline-top-bar */
-    border-bottom: 1px solid var(--theme-color-base-lighter, #f0f3f5);
+    border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     box-sizing: border-box;
     /* Pinned so the layer list scrolls beneath it when the panel is short. */
     position: sticky;
@@ -395,7 +536,7 @@
 .layer-name {
     font-size: 11px;
     font-weight: 600;
-    color: var(--theme-color-base-darker, #565c65);
+    color: var(--theme-color-base-darker, #3d4551);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -413,7 +554,7 @@
 
 .timeline-top-bar {
     height: 24px;
-    background-color: var(--theme-color-base-lightest, #f9f9f9);
+    background-color: var(--theme-color-base-lightest, #f1f3f6);
     border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     overflow: hidden;
     /* Pinned alongside the sidebar header so the date axis stays constant. */
@@ -444,7 +585,7 @@
 }
 
 .timeline-axis .tick text {
-    fill: var(--theme-color-base-darker, #565c65);
+    fill: var(--theme-color-base-darker, #3d4551);
     font-size: 11px;
     font-family: var(--theme-font-ui, 'Public Sans', system-ui, -apple-system, sans-serif);
 }
@@ -465,6 +606,19 @@
 
 .timeline-scrubber {
     pointer-events: all;
+}
+
+.timeline-scrubber-line {
+    stroke: var(--theme-color-primary, #0e7482);
+}
+
+.timeline-scrubber-marker {
+    fill: var(--theme-color-primary, #0e7482);
+}
+
+/* The inner outline that separates the marker from the bars behind it */
+.timeline-scrubber-marker-inline {
+    stroke: var(--theme-color-white, #ffffff);
 }
 
 .timeline-instructions {
@@ -489,7 +643,7 @@
     border: none;
     padding: 4px;
     cursor: pointer;
-    color: var(--timeline-brand, #0e7482);
+    color: var(--theme-color-primary, #0e7482);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -499,7 +653,7 @@
 }
 
 .timeline-tool-btn:hover:not(:disabled) {
-    background: var(--theme-color-base-lightest, #f9f9f9);
+    background: var(--theme-color-primary-lightest, #e6f4f6);
     opacity: 0.8;
 }
 
@@ -510,10 +664,10 @@
 
 /* Info Tooltip Portal */
 .timeline-info-tooltip-portal {
-    background: var(--color-disasters-primary-dark, #0d313d);
+    background: var(--theme-color-primary-dark, #0d313d);
     border: none;
     border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 4px 16px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
     padding: 12px 16px;
     width: 280px;
     z-index: 999999;
@@ -544,7 +698,7 @@
     height: 0;
     border-left: 8px solid transparent;
     border-right: 8px solid transparent;
-    border-top: 8px solid var(--color-disasters-primary-dark, #0d313d);
+    border-top: 8px solid var(--theme-color-primary-dark, #0d313d);
 }
 
 .timeline-info-tooltip-arrow::before {
@@ -552,14 +706,14 @@
 }
 
 .timeline-info-tooltip-content {
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--theme-color-base-lighter, #dfe1e2);
 }
 
 .timeline-info-tooltip-content strong {
     display: block;
     font-size: 13px;
     font-weight: 700;
-    color: #ffffff;
+    color: var(--theme-color-white, #ffffff);
     margin-bottom: 8px;
 }
 
@@ -567,7 +721,7 @@
     margin: 0;
     font-size: 12px;
     line-height: 1.5;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--theme-color-base-light, #a9aeb1);
 }
 
 /* Responsive adjustments */
