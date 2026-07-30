@@ -44,6 +44,8 @@ export const TimelineAdapter: React.FC = () => {
     const [allowPlayback, setAllowPlayback] = useState(true)
     const [layerVisibilityVersion, setLayerVisibilityVersion] = useState(0)
     const [showInfoPopup, setShowInfoPopup] = useState(false)
+    // Collapsed hides the layer list / scrubber area, leaving just the header
+    const [isCollapsed, setIsCollapsed] = useState(false)
     const [resetZoomFn, setResetZoomFn] = useState<(() => void) | null>(null)
     const infoButtonRef = useRef<HTMLButtonElement>(null)
 
@@ -323,7 +325,7 @@ export const TimelineAdapter: React.FC = () => {
     }
 
     return (
-        <div className="timeline">
+        <div className={`timeline${isCollapsed ? ' timeline--collapsed' : ''}`}>
             <div className="timeline-header">
                 <div className="timeline-header-left">
                     <DateSelector
@@ -377,6 +379,16 @@ export const TimelineAdapter: React.FC = () => {
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                                 <path d="M0 0h24v24H0V0z" fill="none"/>
                                 <path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+                            </svg>
+                        </button>
+                        <button
+                            className="timeline-tool-btn timeline-collapse-btn"
+                            onClick={() => setIsCollapsed((collapsed) => !collapsed)}
+                            title={isCollapsed ? 'Expand timeline' : 'Collapse timeline'}
+                            aria-expanded={!isCollapsed}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 15.5L5.5 9L6.9 7.6L12 12.7L17.1 7.6L18.5 9L12 15.5Z"/>
                             </svg>
                         </button>
                     </div>
