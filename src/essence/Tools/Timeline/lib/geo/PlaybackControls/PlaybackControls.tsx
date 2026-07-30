@@ -23,53 +23,43 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
     return (
         <div className="playback-controls">
             <button className="playback-btn" onClick={onGoToStart} title="Go to start">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
-                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" 
-                stroke-linejoin="round" className="lucide lucide-skip-back w-3.5 h-3.5" aria-hidden="true">
-                    <path d="M17.971 4.285A2 2 0 0 1 21 6v12a2 2 0 0 1-3.029 1.715l-9.997-5.998a2 2 0 0 1-.003-3.432z" />
-                    <path d="M3 20V4"/>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                fill="currentColor" aria-hidden="true">
+                    <path d="M7 6L7 18L5 18L5 6L7 6ZM18 6L18 18L9 12L18 6ZM16 9.75L12.6 12L16 14.25L16 9.75Z" />
                 </svg>
             </button>
             <button className="playback-btn" onClick={onStepBackward} title="Step backward">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
-                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
-                className="lucide lucide-step-back w-3.5 h-3.5" aria-hidden="true">
-                    <path d="M13.971 4.285A2 2 0 0 1 17 6v12a2 2 0 0 1-3.029 1.715l-9.997-5.998a2 2 0 0 1-.003-3.432z"/>
-                    <path d="M21 20V4"/>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                fill="currentColor" aria-hidden="true">
+                    <path d="M17 6L17 18L8 12L17 6ZM15 9.75L11.6 12L15 14.25L15 9.75Z" />
                 </svg>
             </button>
             {showPlayButton && (
                 <button className="playback-btn play-btn" onClick={onPlayToggle} title={isPlaying ? "Pause" : "Play"}>
                     {isPlaying ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        className="lucide lucide-pause w-4 h-4 fill-current" aria-hidden="true">
-                            <rect x="14" y="3" width="5" height="18" rx="1"></rect>
-                            <rect x="5" y="3" width="5" height="18" rx="1"></rect>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 20 20"
+                        fill="currentColor" aria-hidden="true">
+                            <path fillRule="evenodd" clipRule="evenodd" d="M4 3H8V17H4V3Z" />
+                            <path fillRule="evenodd" clipRule="evenodd" d="M12 3H16V17H12V3Z" />
                         </svg>
                     ) : (
-                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
-                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        className="lucide lucide-play w-4 h-4 fill-current ml-px" aria-hidden="true">
-                            <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 20 20"
+                        fill="currentColor" aria-hidden="true">
+                            <path d="M5 17V3L17 10L5 17Z" />
                         </svg>
                     )}
                 </button>
             )}
             <button className="playback-btn" onClick={onStepForward} title="Step forward">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
-                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
-                className="lucide lucide-step-forward w-3.5 h-3.5" aria-hidden="true">
-                    <path d="M10.029 4.285A2 2 0 0 0 7 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z"/>
-                    <path d="M3 4v16"/>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                fill="currentColor" aria-hidden="true">
+                    <path d="M7 18L7 6L16 12L7 18ZM9 14.25L12.4 12L9 9.75L9 14.25Z" />
                 </svg>
             </button>
             <button className="playback-btn" onClick={onGoToEnd} title="Go to end">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" 
-                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" 
-                className="lucide lucide-skip-forward w-3.5 h-3.5" aria-hidden="true">
-                    <path d="M21 4v16"/>
-                    <path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z"/>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                fill="currentColor" aria-hidden="true">
+                    <path d="M17 18L17 6L19 6L19 18L17 18ZM6 18L6 6L15 12L6 18ZM8 14.25L11.4 12L8 9.75L8 14.25Z" />
                 </svg>
             </button>
         </div>

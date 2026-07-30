@@ -46,6 +46,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const axisHeight = 24 // Space for the bottom axis
     const layerBarHeight = 15
     const topBarHeight = 24 // Space for top axis
+    const markerSize = 16 // Rendered size of the scrubber marker
 
     // Calculate total height needed for layers
     const totalLayersHeight = layers.length * layerBarHeight
@@ -261,6 +262,25 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                         onClick={handleTimelineClick}
                         style={{ cursor: isDragging ? 'grabbing' : 'crosshair', display: 'block', flexShrink: 0, minHeight: dimensions.height }}
                     >
+                        <defs>
+                            {/* Region widened past the default 120% so the blur
+                                isn't clipped at the marker's edges. */}
+                            <filter
+                                id="timeline-scrubber-shadow"
+                                x="-100%"
+                                y="-100%"
+                                width="300%"
+                                height="300%"
+                            >
+                                <feDropShadow
+                                    dx="0"
+                                    dy="0"
+                                    stdDeviation="5"
+                                    floodOpacity="0.2"
+                                />
+                            </filter>
+                        </defs>
+
                         {/* Layer timelines (rendered first so grid/scrubber goes on top) */}
                         <g className="layer-timelines">
                             {layers.map((layer, index) => (
@@ -303,16 +323,27 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 style={{ pointerEvents: 'none' }}
                             />
 
-                            {/* Scrubber diamond head at the top of the layers */}
-                            <polygon
-                                points={`${scrubberX},0 ${scrubberX + 8},8 ${scrubberX},16 ${scrubberX - 8},8`}
-                                fill="#0b7a8a"
-                                stroke="#ffffff"
-                                strokeWidth="1.5"
+                            {/* Scrubber diamond head at the top of the layers.
+                                Drawn in the marker artwork's own 43x42 space, then
+                                scaled to markerSize and centred on the scrubber. */}
+                            <g
+                                transform={`translate(${scrubberX}, ${markerSize / 2}) scale(${markerSize / 22}) translate(-21.3609, -21)`}
+                                filter="url(#timeline-scrubber-shadow)"
                                 className="timeline-scrubber-handle"
                                 style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
                                 onMouseDown={handleScrubberMouseDown}
-                            />
+                            >
+                                <path
+                                    d="M21.3609 10L32.7219 21L21.3609 32L10 21L21.3609 10Z"
+                                    fill="#0b7a8a"
+                                />
+                                <path
+                                    d="M31.2832 21L21.3604 30.6074L11.4375 21L21.3604 11.3916L31.2832 21Z"
+                                    stroke="#ffffff"
+                                    strokeWidth="2"
+                                    fill="none"
+                                />
+                            </g>
 
                             {/* Invisible band widening the grab area along the line */}
                             <rect

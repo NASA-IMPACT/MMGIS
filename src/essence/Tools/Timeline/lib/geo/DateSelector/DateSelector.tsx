@@ -92,7 +92,17 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                     onClick={handleDateClick}
                     type="button"
                 >
-                    <i className="mdi mdi-calendar calendar-icon"></i>
+                    <svg
+                        className="calendar-icon"
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        aria-hidden="true"
+                    >
+                        <path d="M6 2H14V0H16V2H19V20H1V2H4V0H6V2ZM3 18H17V8H3V18ZM3 6H17V4H3V6Z" />
+                    </svg>
                     <span className="date-text">{formattedDate}</span>
                 </button>
                 
