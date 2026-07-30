@@ -46,7 +46,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const axisHeight = 24 // Space for the bottom axis
     const layerBarHeight = 15
     const topBarHeight = 24 // Space for top axis
-    const markerSize = 16 // Rendered size of the scrubber marker
+    const markerSize = 18 // Rendered size of the scrubber marker
 
     // Calculate total height needed for layers
     const totalLayersHeight = layers.length * layerBarHeight
@@ -95,11 +95,9 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         // Grid lines shooting up through the layers
         axisGroup.selectAll('.tick line').attr('y2', -totalLayersHeight)
 
-        // Ensure text is visible
+        // Sizing only — fill and family come from .timeline-axis .tick text
         axisGroup.selectAll('.tick text')
-            .attr('fill', '#565c65')
             .style('font-size', '11px')
-            .style('font-family', "'Inter', system-ui, -apple-system, sans-serif")
     }, [transformedXScale, timeMode, totalLayersHeight, startTime, endTime])
 
     // Render top axis for month/year (like JAN 2025)
@@ -118,12 +116,10 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         topAxisGroup.selectAll('*').remove() // Clear existing axis
         topAxisGroup.call(topAxis as any)
 
-        // Ensure text is visible
+        // Sizing only — fill and family come from .timeline-top-axis .tick text
         topAxisGroup.selectAll('.tick text')
-            .attr('fill', '#71767a')
             .style('font-size', '11px')
             .style('font-weight', '600')
-            .style('font-family', "'Inter', system-ui, -apple-system, sans-serif")
     }, [transformedXScale, startTime, endTime])
 
     // Setup zoom behavior
@@ -318,8 +314,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 y1={0}
                                 x2={scrubberX}
                                 y2={totalLayersHeight}
-                                stroke="#0b7a8a"
                                 strokeWidth="2"
+                                className="timeline-scrubber-line"
                                 style={{ pointerEvents: 'none' }}
                             />
 
@@ -335,13 +331,13 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                             >
                                 <path
                                     d="M21.3609 10L32.7219 21L21.3609 32L10 21L21.3609 10Z"
-                                    fill="#0b7a8a"
+                                    className="timeline-scrubber-marker"
                                 />
                                 <path
                                     d="M31.2832 21L21.3604 30.6074L11.4375 21L21.3604 11.3916L31.2832 21Z"
-                                    stroke="#ffffff"
                                     strokeWidth="2"
                                     fill="none"
+                                    className="timeline-scrubber-marker-inline"
                                 />
                             </g>
 

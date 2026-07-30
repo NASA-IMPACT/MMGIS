@@ -142,7 +142,7 @@ export const TimelineAdapter: React.FC = () => {
 
                 let start = startTime
                 let end = endTime
-                let color = '#808080' // default grey
+                let color = 'var(--theme-color-base, #71767a)' // default grey
 
                 if (layer.time && layer.time.enabled) {
                     let rawLayer = null
@@ -164,7 +164,8 @@ export const TimelineAdapter: React.FC = () => {
                         }
                     }
 
-                    color = '#FF4D85' // pink for time enabled layers
+                    // Time-enabled layers stand out in the theme's secondary colour
+                    color = 'var(--theme-color-secondary, #c91b6e)'
                 }
 
                 newLayers.push({

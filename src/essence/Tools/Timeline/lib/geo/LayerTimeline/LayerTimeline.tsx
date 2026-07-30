@@ -30,7 +30,8 @@ export const LayerTimeline: React.FC<LayerTimelineProps> = ({
                         y={y + 4}
                         width={width}
                         height={height - 6}
-                        fill={layer.color}
+                        /* Set as a style, not a fill attribute, so a var() colour resolves */
+                        style={{ fill: layer.color }}
                         opacity={0.85}
                         rx={4}
                         className="layer-time-range"
