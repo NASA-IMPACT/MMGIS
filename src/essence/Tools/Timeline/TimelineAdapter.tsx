@@ -399,11 +399,10 @@ export const TimelineAdapter: React.FC = () => {
                 {layers.length === 0 ? (
                     <div className="timeline-empty">
                         <div className="timeline-empty-message">
-                            No layers on the timeline yet
+                            No visible layers on the map
                         </div>
                         <div className="timeline-empty-hint">
-                            Add or enable time-enabled layers on the map to see
-                            them here.
+                            Enable the visibility of one or more map layers to display them here.
                         </div>
                     </div>
                 ) : (
