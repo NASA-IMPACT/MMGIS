@@ -14,13 +14,14 @@ export const TimeModeControl: React.FC<TimeModeControlProps> = ({
     modes = TIME_MODE_ORDER,
 }) => {
     return (
-        <div className="time-mode-control">
+        <div className="time-mode-control" role="group" aria-label="Time granularity">
             {modes.map((mode) => (
                 <button
                     key={mode}
                     className={`time-mode-button ${currentMode === mode ? 'active' : ''}`}
                     onClick={() => onModeChange(mode)}
                     type="button"
+                    aria-pressed={currentMode === mode}
                 >
                     {mode}
                 </button>

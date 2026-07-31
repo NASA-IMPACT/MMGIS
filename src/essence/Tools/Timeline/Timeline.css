@@ -501,13 +501,14 @@
     border: none;
     font-size: 10px;
     font-weight: 800;
-    color: var(--theme-color-base-light, #a9aeb1);
+    /* 10px text needs the 4.5:1 grade against the white control background. */
+    color: var(--theme-color-base-darker, #3d4551);
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .time-mode-button:hover {
-    color: var(--theme-color-base-darker, #3d4551);
+    color: var(--theme-color-primary, #0e7482);
     background-color: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
