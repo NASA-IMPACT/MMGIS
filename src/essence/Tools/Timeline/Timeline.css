@@ -252,6 +252,11 @@
     pointer-events: none;
 }
 
+/* Re-enabled so each range's <title> tooltip can surface. */
+.layer-time-range {
+    pointer-events: auto;
+}
+
 .layer-row-bg {
     stroke: var(--theme-color-base-lighter, #dfe1e2);
     stroke-width: 1px;
@@ -264,6 +269,11 @@
 
 .timeline-scrubber {
     pointer-events: all;
+}
+
+/* Claims the touch gesture so dragging the scrubber doesn't scroll the panel. */
+.timeline-scrubber-handle {
+    touch-action: none;
 }
 
 .timeline-scrubber-line {

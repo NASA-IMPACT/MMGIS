@@ -4,7 +4,8 @@ import { axisBottom } from 'd3-axis'
 import { select } from 'd3-selection'
 import { zoom, zoomIdentity, ZoomBehavior } from 'd3-zoom'
 import type { TimeMode, LayerTimeData } from '../../types'
-import { generateTimeTicks, formatDateByMode, clampDate } from '../../utils/timeUtils'
+import { generateTimeTicks, formatDateByMode, clampDate, getTimeStep } from '../../utils/timeUtils'
+import moment from 'moment'
 import { LayerTimeline } from '../LayerTimeline/LayerTimeline'
 
 export interface TimelineViewProps {
@@ -161,11 +162,13 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const scrubberTime = dragTime ?? currentTime
     const scrubberX = transformedXScale(scrubberTime)
 
-    // Handle scrubber drag
-    const handleScrubberMouseDown = useCallback(
-        (event: React.MouseEvent) => {
+    // Scrubber drag. Pointer capture covers mouse, touch and pen in one path
+    // and keeps move/up on the handle even when the pointer leaves the SVG.
+    const handleScrubberPointerDown = useCallback(
+        (event: React.PointerEvent) => {
             event.preventDefault()
             event.stopPropagation()
+            event.currentTarget.setPointerCapture?.(event.pointerId)
             didDragRef.current = false
             setDragTime(currentTime)
             setIsDragging(true)
@@ -173,8 +176,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         [currentTime]
     )
 
-    const handleMouseMove = useCallback(
-        (event: MouseEvent) => {
+    const handleScrubberPointerMove = useCallback(
+        (event: React.PointerEvent) => {
             if (!isDragging || !svgRef.current) return
 
             const svgRect = svgRef.current.getBoundingClientRect()
@@ -190,29 +193,66 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     )
 
     // Commit the date the scrubber landed on, once the drag ends
-    const handleMouseUp = useCallback(() => {
-        if (didDragRef.current && dragTime) onCurrentTimeChange(dragTime)
-        setDragTime(null)
-        setIsDragging(false)
-    }, [dragTime, onCurrentTimeChange])
+    const handleScrubberPointerUp = useCallback(
+        (event: React.PointerEvent) => {
+            event.currentTarget.releasePointerCapture?.(event.pointerId)
+            if (didDragRef.current && dragTime) onCurrentTimeChange(dragTime)
+            didDragRef.current = false
+            setDragTime(null)
+            setIsDragging(false)
+        },
+        [dragTime, onCurrentTimeChange]
+    )
 
-    useEffect(() => {
-        if (isDragging) {
-            window.addEventListener('mousemove', handleMouseMove)
-            window.addEventListener('mouseup', handleMouseUp)
+    const scrubberPointerHandlers = {
+        onPointerDown: handleScrubberPointerDown,
+        onPointerMove: handleScrubberPointerMove,
+        onPointerUp: handleScrubberPointerUp,
+        onPointerCancel: handleScrubberPointerUp,
+    }
 
-            return () => {
-                window.removeEventListener('mousemove', handleMouseMove)
-                window.removeEventListener('mouseup', handleMouseUp)
+    /** Arrow keys step by the current granularity; Home/End jump to the ends. */
+    const handleScrubberKeyDown = useCallback(
+        (event: React.KeyboardEvent) => {
+            const { unit, value } = getTimeStep(timeMode)
+            let next: Date | null = null
+
+            switch (event.key) {
+                case 'ArrowLeft':
+                case 'ArrowDown':
+                    next = moment(currentTime).subtract(value, unit).toDate()
+                    break
+                case 'ArrowRight':
+                case 'ArrowUp':
+                    next = moment(currentTime).add(value, unit).toDate()
+                    break
+                case 'Home':
+                    next = startTime
+                    break
+                case 'End':
+                    next = endTime
+                    break
+                default:
+                    return
             }
-        }
-    }, [isDragging, handleMouseMove, handleMouseUp])
+
+            event.preventDefault()
+            event.stopPropagation()
+            onCurrentTimeChange(clampDate(next, startTime, endTime))
+        },
+        [currentTime, timeMode, startTime, endTime, onCurrentTimeChange]
+    )
 
     // Handle click on timeline to jump to that time
     const handleTimelineClick = useCallback(
         (event: React.MouseEvent<SVGSVGElement>) => {
             if (isDragging) return
-            // A drag ends with a click on the svg; that click must not re-seek.
+            // Clicks on the handle grab the scrubber; they never re-seek, and a
+            // drag's trailing click retargets here through pointer capture.
+            if ((event.target as Element)?.closest?.('.timeline-scrubber-handle')) {
+                didDragRef.current = false
+                return
+            }
             if (didDragRef.current) {
                 didDragRef.current = false
                 return
@@ -327,7 +367,15 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 filter="url(#timeline-scrubber-shadow)"
                                 className="timeline-scrubber-handle"
                                 style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-                                onMouseDown={handleScrubberMouseDown}
+                                tabIndex={0}
+                                role="slider"
+                                aria-label="Current time"
+                                aria-valuemin={startTime.getTime()}
+                                aria-valuemax={endTime.getTime()}
+                                aria-valuenow={scrubberTime.getTime()}
+                                aria-valuetext={moment.utc(scrubberTime).format('MMM D, YYYY HH:mm [UTC]')}
+                                onKeyDown={handleScrubberKeyDown}
+                                {...scrubberPointerHandlers}
                             >
                                 <path
                                     d="M21.3609 10L32.7219 21L21.3609 32L10 21L21.3609 10Z"
@@ -350,7 +398,8 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                                 fill="transparent"
                                 className="timeline-scrubber-handle"
                                 style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-                                onMouseDown={handleScrubberMouseDown}
+                                aria-hidden="true"
+                                {...scrubberPointerHandlers}
                             />
                         </g>
                     </svg>
