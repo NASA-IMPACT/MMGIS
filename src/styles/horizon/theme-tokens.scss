@@ -1,0 +1,149 @@
+// Horizon USWDS theme configuration
+// Values come from the "VEDA - USWDS" mode of the Figma Theme tokens collection,
+// which aliases the stock USWDS system palette (blue-warm primary, gray-cool base)
+// rather than a mission-specific ramp.
+@use "uswds-core" with (
+  // GENERAL SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#general-settings-2
+  $theme-show-notifications: false,
+  $theme-show-compile-warnings: false,
+  $theme-image-path: "./img",
+
+  // COLOR SETTINGS
+  // https: //designsystem.digital.gov/documentation/settings/#color-settings-2
+  // Token color/base: lightest gray-cool-4, lighter gray-cool-10, dark gray-cool-60
+  $theme-color-base-family: "gray-cool",
+  $theme-color-base-lightest: "gray-cool-4",
+  $theme-color-base-lighter: "gray-cool-10",
+  $theme-color-base-light: "gray-cool-30",
+  $theme-color-base: "gray-cool-50",
+  $theme-color-base-dark: "gray-cool-60",
+  $theme-color-base-darker: "gray-cool-70",
+  $theme-color-base-darkest: "gray-cool-80",
+  $theme-color-base-ink: "gray-cool-90",
+
+  // Token color/primary: vivid blue-warm-60v (#0050d8), dark blue-warm-70v (#1a4480).
+  // The token set's vivid grade is the brand primary, so it fills both slots. The
+  // lighter grades round out the blue-warm ramp; lightest has no USWDS default, so
+  // blue-warm-5 supplies the tinted hover surface components expect.
+  $theme-color-primary-family: "blue-warm",
+  $theme-color-primary-lightest: "blue-warm-5",
+  $theme-color-primary-lighter: "blue-warm-10",
+  $theme-color-primary-light: "blue-warm-30",
+  $theme-color-primary: "blue-warm-60v",
+  $theme-color-primary-vivid: "blue-warm-60v",
+  $theme-color-primary-dark: "blue-warm-70v",
+  $theme-color-primary-darker: "blue-warm-80v",
+
+  // Secondary and accent are not in the token set; these are the USWDS defaults.
+  $theme-color-secondary-family: "red",
+  $theme-color-secondary-lighter: "red-cool-10",
+  $theme-color-secondary-light: "red-30",
+  $theme-color-secondary: "red-50",
+  $theme-color-secondary-vivid: "red-cool-50v",
+  $theme-color-secondary-dark: "red-60v",
+  $theme-color-secondary-darker: "red-70v",
+
+  $theme-color-accent-cool-family: "blue-cool",
+  $theme-color-accent-cool-lighter: "blue-cool-5v",
+  $theme-color-accent-cool-light: "blue-cool-20v",
+  $theme-color-accent-cool: "cyan-30v",
+  $theme-color-accent-cool-dark: "blue-cool-40v",
+  $theme-color-accent-cool-darker: "blue-cool-60v",
+
+  $theme-link-color: "primary",
+  $theme-link-visited-color: "primary-darker",
+  $theme-link-hover-color: "primary-dark",
+  $theme-link-active-color: "primary-darker",
+  $theme-link-reverse-color: "base-light",
+  $theme-link-reverse-hover-color: "base-lighter",
+  // Token color/link/reverse-active: white
+  $theme-link-reverse-active-color: "white",
+
+  // COMPONENT SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#component-settings-2
+  // Token spacing/border-radius: sm 2px, md 4px
+  $theme-button-border-radius: "md",
+  $theme-card-border-radius: "md",
+
+  $theme-banner-max-width: "widescreen",
+  $theme-footer-max-width: "widescreen",
+  $theme-header-max-width: "widescreen",
+
+  $theme-card-font-family: "heading",
+  $theme-header-font-family: "heading",
+  $theme-navigation-font-family: "heading",
+
+  // SPACING SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#spacing-settings-2
+  // Token spacing/7: 56px site margins
+  $theme-grid-container-max-width: "widescreen",
+  $theme-site-margins-breakpoint: "widescreen",
+  $theme-site-margins-width: 7,
+  $theme-site-margins-mobile-width: 2,
+
+  // TYPE SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#typography-settings-2
+  // https://designsystem.digital.gov/design-tokens/typesetting/font-family/
+  // Token typesetting/font-role: ui "Public Sans", display "Roboto Mono".
+  // Both ship with USWDS, so this theme needs no custom typeface tokens or webfonts.
+  $theme-font-path: "./fonts",
+  $theme-font-type-mono: "roboto-mono",
+  $theme-font-type-sans: "public-sans",
+  $theme-font-type-serif: "merriweather",
+
+  $theme-font-role-ui: "sans",
+  $theme-font-role-heading: "sans",
+  $theme-font-role-body: "sans",
+  $theme-font-role-code: "mono",
+  $theme-font-role-alt: "mono",
+
+  // Token typesetting/type-scale: 3xs 12, 2xs 14, sm 16, md 18, lg 22, xl 32, 2xl 40
+  $theme-type-scale-3xs: 1,
+  $theme-type-scale-2xs: 3,
+  $theme-type-scale-xs: 4,
+  $theme-type-scale-sm: 5,
+  $theme-type-scale-md: 7,
+  $theme-type-scale-lg: 9,
+  $theme-type-scale-xl: 12,
+  $theme-type-scale-2xl: 14,
+  $theme-type-scale-3xl: 15,
+
+  // Token typesetting/font-weight: regular 400, semibold 600, bold 700
+  $theme-font-weight-thin: false,
+  $theme-font-weight-light: 300,
+  $theme-font-weight-normal: 400,
+  $theme-font-weight-medium: false,
+  $theme-font-weight-semibold: 600,
+  $theme-font-weight-bold: 700,
+  $theme-font-weight-heavy: 900,
+
+  // UTILITY SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#utilities-settings-2
+  $utilities-use-important: false,
+  $theme-utility-breakpoints: (
+    "card": false,
+    "card-lg": false,
+    "mobile": true,
+    "mobile-lg": false,
+    "tablet": true,
+    "tablet-lg": false,
+    "desktop": true,
+    "desktop-lg": true,
+    "widescreen": true
+  ),
+
+  $overflow-settings: (responsive: true),
+  $position-settings: (responsive: true),
+  $top-settings: (responsive: true),
+  $right-settings: (responsive: true),
+  $left-settings: (responsive: true),
+  $bottom-settings: (responsive: true),
+  $z-index-settings: (responsive: true),
+  $background-color-settings: (responsive: true),
+  $font-style-settings: (responsive: true),
+  $color-settings: (responsive: true, hover: true),
+  $flex-direction-settings: (responsive: true),
+  $flex-settings: (responsive: true),
+  $order-settings: (responsive: true)
+);
