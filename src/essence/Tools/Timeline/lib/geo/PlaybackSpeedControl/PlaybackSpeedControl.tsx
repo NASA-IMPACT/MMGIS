@@ -17,10 +17,17 @@ export interface PlaybackSpeedControlProps {
     onCycleSpeed?: () => void
 }
 
-/**
- * Placeholder for the speed multiplier button. Renders nothing; the button
- * arrives with the playback controls PR of this stack.
- */
-export const PlaybackSpeedControl: React.FC<PlaybackSpeedControlProps> = () => {
-    return null
+export const PlaybackSpeedControl: React.FC<PlaybackSpeedControlProps> = ({
+    speed,
+    onCycleSpeed,
+}) => {
+    return (
+        <button
+            className="playback-speed-control"
+            onClick={onCycleSpeed}
+            title="Playback speed"
+        >
+            {speed}x
+        </button>
+    )
 }
