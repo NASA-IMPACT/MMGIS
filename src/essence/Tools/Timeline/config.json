@@ -1,0 +1,50 @@
+{
+  "name": "Timeline",
+  "description": "Interactive timeline visualization for navigating temporal data with zoom and layer visibility controls",
+  "defaultIcon": "timeline",
+  "hasVars": true,
+  "paths": {
+    "TimelineTool": "essence/Tools/Timeline/TimelineTool"
+  },
+  "metadata": {
+    "icon": "timeline",
+    "requiredOrientation": "horizontal",
+    "compatiblePositions": ["bottom"],
+    "preferredPosition": "bottom",
+    "modernLayoutSupport": true,
+    "minHeight": 150,
+    "recommendedHeight": 200
+  },
+  "config": {
+    "rows": [
+      {
+        "components": [
+          {
+            "field": "variables.allowPlayback",
+            "name": "Allow Playback",
+            "description": "When enabled, the timeline shows the play/pause button and the playback speed selector. When disabled, those two controls are removed; the step and skip-to-start/end buttons remain.",
+            "type": "checkbox",
+            "width": 6,
+            "defaultChecked": true
+          },
+          {
+            "field": "variables.shownTimeModes",
+            "name": "Shown Time Modes",
+            "description": "Which time-granularity buttons appear on the timeline: YEAR, MONTH, DAY, HOUR. Leave empty to show all of them.",
+            "type": "multiselect",
+            "width": 6,
+            "options": ["YEAR", "MONTH", "DAY", "HOUR"]
+          },
+          {
+            "field": "variables.defaultTimeMode",
+            "name": "Default Time Mode",
+            "description": "The time granularity the timeline uses when it first loads. Must be one of the shown time modes; users can still switch between them at runtime.",
+            "type": "dropdown",
+            "width": 6,
+            "options": ["DAY", "MONTH", "HOUR", "YEAR"]
+          }
+        ]
+      }
+    ]
+  }
+}

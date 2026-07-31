@@ -1,4 +1,7 @@
-// Disasters USWDS theme configuration
+// Horizon USWDS theme configuration
+// Values come from the "VEDA - USWDS" mode of the Figma Theme tokens collection,
+// which aliases the stock USWDS system palette (blue-warm primary, gray-cool base)
+// rather than a mission-specific ramp.
 @use "uswds-core" with (
   // GENERAL SETTINGS
   // https://designsystem.digital.gov/documentation/settings/#general-settings-2
@@ -8,6 +11,7 @@
 
   // COLOR SETTINGS
   // https: //designsystem.digital.gov/documentation/settings/#color-settings-2
+  // Token color/base: lightest gray-cool-4, lighter gray-cool-10, dark gray-cool-60
   $theme-color-base-family: "gray-cool",
   $theme-color-base-lightest: "gray-cool-4",
   $theme-color-base-lighter: "gray-cool-10",
@@ -18,47 +22,49 @@
   $theme-color-base-darkest: "gray-cool-80",
   $theme-color-base-ink: "gray-cool-90",
 
-  $theme-color-primary-family: "blue-cool",
-  $theme-color-primary-lightest: #e6f4f6,
-  $theme-color-primary-lighter: #c3dce0,
-  $theme-color-primary-light: #87bac1,
-  $theme-color-primary: #0e7482,
-  $theme-color-primary-vivid: #00687d,
-  $theme-color-primary-dark: #0d313d,
-  $theme-color-primary-darker: #0a252e,
-  $theme-color-primary-darkest: #07191f,
+  // Token color/primary: vivid blue-warm-60v (#0050d8), dark blue-warm-70v (#1a4480).
+  // The token set's vivid grade is the brand primary, so it fills both slots. The
+  // lighter grades round out the blue-warm ramp; lightest has no USWDS default, so
+  // blue-warm-5 supplies the tinted hover surface components expect.
+  $theme-color-primary-family: "blue-warm",
+  $theme-color-primary-lightest: "blue-warm-5",
+  $theme-color-primary-lighter: "blue-warm-10",
+  $theme-color-primary-light: "blue-warm-30",
+  $theme-color-primary: "blue-warm-60v",
+  $theme-color-primary-vivid: "blue-warm-60v",
+  $theme-color-primary-dark: "blue-warm-70v",
+  $theme-color-primary-darker: "blue-warm-80v",
 
-  $theme-color-secondary-family: "magenta-vivid",
-  $theme-color-secondary-lightest: #fae8f1,
-  $theme-color-secondary-lighter: #f2c6db,
-  $theme-color-secondary-light: #e48db7,
-  $theme-color-secondary: #c91b6e,
-  $theme-color-secondary-vivid: #c91b6e,
-  $theme-color-secondary-dark: #971453,
-  $theme-color-secondary-darker: #650e37,
-  $theme-color-secondary-darkest: #32071c,
+  // Secondary and accent are not in the token set; these are the USWDS defaults.
+  $theme-color-secondary-family: "red",
+  $theme-color-secondary-lighter: "red-cool-10",
+  $theme-color-secondary-light: "red-30",
+  $theme-color-secondary: "red-50",
+  $theme-color-secondary-vivid: "red-cool-50v",
+  $theme-color-secondary-dark: "red-60v",
+  $theme-color-secondary-darker: "red-70v",
 
-  $theme-color-accent-cool-family: "indigo-cool",
-  $theme-color-accent-cool-lightest: #edf1f7,
-  $theme-color-accent-cool-lighter: #d3dbeb,
-  $theme-color-accent-cool-light: #a7b7d7,
-  $theme-color-accent-cool: #4f6fae,
-  $theme-color-accent-cool-dark: #3b5383,
-  $theme-color-accent-cool-darker: #283857,
-  $theme-color-accent-cool-darkest: #141c2c,
+  $theme-color-accent-cool-family: "blue-cool",
+  $theme-color-accent-cool-lighter: "blue-cool-5v",
+  $theme-color-accent-cool-light: "blue-cool-20v",
+  $theme-color-accent-cool: "cyan-30v",
+  $theme-color-accent-cool-dark: "blue-cool-40v",
+  $theme-color-accent-cool-darker: "blue-cool-60v",
 
   $theme-link-color: "primary",
   $theme-link-visited-color: "primary-darker",
-  $theme-link-hover-color: "cyan-60v",
+  $theme-link-hover-color: "primary-dark",
   $theme-link-active-color: "primary-darker",
   $theme-link-reverse-color: "base-light",
   $theme-link-reverse-hover-color: "base-lighter",
+  // Token color/link/reverse-active: white
   $theme-link-reverse-active-color: "white",
 
   // COMPONENT SETTINGS
   // https://designsystem.digital.gov/documentation/settings/#component-settings-2
-  $theme-button-border-radius: 0,
-  $theme-card-border-radius: 0,
+  // Token spacing/border-radius: sm 2px, md 4px
+  $theme-button-border-radius: "md",
+  $theme-card-border-radius: "md",
 
   $theme-banner-max-width: "widescreen",
   $theme-footer-max-width: "widescreen",
@@ -70,6 +76,7 @@
 
   // SPACING SETTINGS
   // https://designsystem.digital.gov/documentation/settings/#spacing-settings-2
+  // Token spacing/7: 56px site margins
   $theme-grid-container-max-width: "widescreen",
   $theme-site-margins-breakpoint: "widescreen",
   $theme-site-margins-width: 7,
@@ -78,29 +85,20 @@
   // TYPE SETTINGS
   // https://designsystem.digital.gov/documentation/settings/#typography-settings-2
   // https://designsystem.digital.gov/design-tokens/typesetting/font-family/
-  $theme-typeface-tokens: (
-      "inter": (
-        "display-name": "Inter Variable",
-        "cap-height": 364px,
-        "stack": "system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-      ),
-      "dm-mono": (
-        "display-name": "DM Mono",
-        "cap-height": 364px,
-        "stack": "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-      )
-    ),
+  // Token typesetting/font-role: ui "Public Sans", display "Roboto Mono".
+  // Both ship with USWDS, so this theme needs no custom typeface tokens or webfonts.
   $theme-font-path: "./fonts",
-  $theme-font-type-mono: "dm-mono",
+  $theme-font-type-mono: "roboto-mono",
   $theme-font-type-sans: "public-sans",
-  $theme-font-type-serif: "inter",
+  $theme-font-type-serif: "merriweather",
 
   $theme-font-role-ui: "sans",
-  $theme-font-role-heading: "serif",
+  $theme-font-role-heading: "sans",
   $theme-font-role-body: "sans",
   $theme-font-role-code: "mono",
-  $theme-font-role-alt: "serif",
+  $theme-font-role-alt: "mono",
 
+  // Token typesetting/type-scale: 3xs 12, 2xs 14, sm 16, md 18, lg 22, xl 32, 2xl 40
   $theme-type-scale-3xs: 1,
   $theme-type-scale-2xs: 3,
   $theme-type-scale-xs: 4,
@@ -111,6 +109,7 @@
   $theme-type-scale-2xl: 14,
   $theme-type-scale-3xl: 15,
 
+  // Token typesetting/font-weight: regular 400, semibold 600, bold 700
   $theme-font-weight-thin: false,
   $theme-font-weight-light: 300,
   $theme-font-weight-normal: 400,
