@@ -448,8 +448,14 @@
 }
 
 /* Hover shows the light-grey rectangle only — the icon keeps its colour. */
-.playback-btn:hover {
+.playback-btn:hover:not(:disabled) {
     background: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
+/* At either end of the range the step and skip buttons are inert. */
+.playback-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
 }
 
 .play-btn {
