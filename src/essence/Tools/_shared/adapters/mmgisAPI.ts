@@ -1,6 +1,6 @@
 type EventCleanup = () => void
 
-type MMGISAPI = {
+export type MMGISAPI = {
     request: (name: string, params?: unknown) => Promise<unknown>
     on: (event: string, handler: (payload?: unknown) => void) => EventCleanup
     emit: (event: string, payload?: unknown) => void

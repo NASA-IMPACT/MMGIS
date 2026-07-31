@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import moment from 'moment'
 import { FloatingPopover } from './lib/FloatingPopover'
-import { mmgisRequest, mmgisOn, mmgisEmit, mmgisGetLayerConfigs, mmgisGetRawConfigData, mmgisGetVisibleLayers } from './adapters/mmgisAPI'
+import { mmgisRequest, mmgisOn, mmgisEmit, mmgisGetLayerConfigs, mmgisGetVisibleLayers } from './adapters/mmgisAPI'
 import {
     TimelineView,
     TimeModeControl,
@@ -116,21 +116,8 @@ export const TimelineAdapter: React.FC = () => {
     useEffect(() => {
         const fetchLayers = () => {
             const configs = mmgisGetLayerConfigs()
-            const rawConfig = mmgisGetRawConfigData()
             const visibleLayers = mmgisGetVisibleLayers()
-            const rawLayers = rawConfig?.layers || []
             const newLayers: LayerTimeData[] = []
-
-            const findRawLayer = (layersArr: any[], name: string): any => {
-                for (let l of layersArr) {
-                    if (l.name === name) return l
-                    if (l.sublayers) {
-                        const sub = findRawLayer(l.sublayers, name)
-                        if (sub) return sub
-                    }
-                }
-                return null
-            }
 
             Object.keys(configs).forEach(layerName => {
                 const layer = configs[layerName]
@@ -145,10 +132,6 @@ export const TimelineAdapter: React.FC = () => {
                 let color = 'var(--theme-color-base, #71767a)' // default grey
 
                 if (layer.time && layer.time.enabled) {
-                    let rawLayer = null
-                    if (rawLayers.length > 0) {
-                        rawLayer = findRawLayer(rawLayers, layerName)
-                    }
                     const timeConfig = layer.time
 
                     if (timeConfig.dataStartTime) {
