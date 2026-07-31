@@ -32,23 +32,22 @@ export function generateTimeTicks(
     const ticks: Date[] = []
     const { unit, value } = getTimeStep(mode)
 
-    let current = moment(startTime).startOf(unit as moment.unitOfTime.StartOf)
+    const start = moment(startTime)
     const end = moment(endTime)
+    if (!end.isAfter(start)) return [startTime]
+
+    // Snapping to the unit boundary can land before the domain; step forward
+    // until the first tick is inside it so the axis never renders a label for
+    // an instant left of startTime.
+    let current = start.clone().startOf(unit as moment.unitOfTime.StartOf)
 
     const totalSteps = end.diff(current, unit as moment.unitOfTime.Diff) / value
     let stepMultiplier = 1
     if (totalSteps > maxTicks) {
         stepMultiplier = Math.ceil(totalSteps / maxTicks)
-        
-        // Make the multiplier "nice" (e.g. multiples of 2, 5, 10)
-        if (unit === 'minutes' || unit === 'seconds') {
-            if (stepMultiplier <= 2) stepMultiplier = 2
-            else if (stepMultiplier <= 5) stepMultiplier = 5
-            else if (stepMultiplier <= 10) stepMultiplier = 10
-            else if (stepMultiplier <= 15) stepMultiplier = 15
-            else if (stepMultiplier <= 30) stepMultiplier = 30
-            else stepMultiplier = Math.ceil(stepMultiplier / 60) * 60
-        } else if (unit === 'hours') {
+
+        // Round the multiplier to a readable interval
+        if (unit === 'hours') {
             if (stepMultiplier <= 2) stepMultiplier = 2
             else if (stepMultiplier <= 3) stepMultiplier = 3
             else if (stepMultiplier <= 6) stepMultiplier = 6
@@ -62,15 +61,21 @@ export function generateTimeTicks(
         }
     }
 
+    const step = value * stepMultiplier
+    while (current.isBefore(start)) {
+        current = current.add(step, unit)
+    }
+
     let count = 0
     while (current.isBefore(end) && count < maxTicks) {
         ticks.push(current.toDate())
-        current = current.add(value * stepMultiplier, unit as moment.unitOfTime.DurationConstructor)
+        current = current.clone().add(step, unit)
         count++
     }
 
-    // Always add the end tick
-    if (ticks.length === 0 || ticks[ticks.length - 1].getTime() !== endTime.getTime()) {
+    // Close the axis on the domain's end, unless a tick already sits there.
+    const last = ticks[ticks.length - 1]
+    if (!last || last.getTime() !== endTime.getTime()) {
         ticks.push(endTime)
     }
 

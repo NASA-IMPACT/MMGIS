@@ -9,8 +9,20 @@
     overflow: hidden;
 }
 
-/* Collapsed: only the header remains, and the tool shrinks to fit it so the
-   host panel isn't left holding a blank timeline body. */
+/* Core's global `*:focus { outline: none }` strips the native ring, so every
+   focusable control in the plugin restores one here. */
+.timeline button:focus-visible,
+.timeline input:focus-visible,
+.timeline [tabindex]:focus-visible,
+.floating-popover-portal button:focus-visible,
+.floating-popover-portal input:focus-visible,
+.floating-popover-portal [tabindex]:focus-visible {
+    outline: 2px solid var(--theme-color-primary, #0e7482);
+    outline-offset: 2px;
+}
+
+/* Collapsed: only the header remains. The host panel keeps its configured
+   height, so the timeline stays top-aligned within it. */
 .timeline--collapsed {
     height: auto;
 }
@@ -44,6 +56,32 @@
 .timeline-loading .loading-message {
     color: var(--theme-color-base, #71767a);
     font-size: 14px;
+}
+
+/* Shown when the mission has no time enabled and there is nothing to scrub. */
+.timeline-unavailable {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 100%;
+    width: 100%;
+    padding: 16px;
+    text-align: center;
+    background: var(--theme-color-white, #ffffff);
+    font-family: var(--theme-font-ui, 'Public Sans', system-ui, -apple-system, sans-serif);
+}
+
+.timeline-unavailable-message {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--theme-color-base-darker, #3d4551);
+}
+
+.timeline-unavailable-hint {
+    font-size: 12px;
+    color: var(--theme-color-base, #71767a);
 }
 
 .timeline-header {
@@ -136,7 +174,8 @@
     cursor: not-allowed;
 }
 
-/* Info Tooltip Portal */
+/* Info Tooltip Portal. Portalled to document.body, so it carries the plugin's
+   font rather than inheriting core's. */
 .timeline-info-tooltip-portal {
     background: var(--theme-color-primary-dark, #0d313d);
     border: none;
@@ -147,6 +186,7 @@
     z-index: 999999;
     animation: tooltipFadeIn 0.15s ease;
     pointer-events: none;
+    font-family: var(--theme-font-ui, 'Public Sans', system-ui, -apple-system, sans-serif);
 }
 
 @keyframes tooltipFadeIn {
@@ -158,25 +198,10 @@
     }
 }
 
-/* Tooltip arrow */
-.timeline-info-tooltip-arrow {
-    position: absolute;
-    top: 100%;
-    right: 12px;
-}
-
-.timeline-info-tooltip-arrow::after {
-    content: '';
-    position: absolute;
-    width: 0;
-    height: 0;
-    border-left: 8px solid transparent;
-    border-right: 8px solid transparent;
-    border-top: 8px solid var(--theme-color-primary-dark, #0d313d);
-}
-
-.timeline-info-tooltip-arrow::before {
-    display: none;
+@media (prefers-reduced-motion: reduce) {
+    .timeline-info-tooltip-portal {
+        animation: none;
+    }
 }
 
 .timeline-info-tooltip-content {

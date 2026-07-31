@@ -9,6 +9,10 @@ export interface PlaybackControlsProps {
     isPlaying?: boolean
     /** When false, the play/pause button is hidden (step and skip buttons remain). */
     showPlayButton?: boolean
+    /** False once the current time sits at the end of the range. */
+    canStepForward?: boolean
+    /** False once the current time sits at the start of the range. */
+    canStepBackward?: boolean
 }
 
 /**

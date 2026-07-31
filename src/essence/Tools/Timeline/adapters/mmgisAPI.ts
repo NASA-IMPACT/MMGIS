@@ -1,4 +1,6 @@
-import type { MMGISAPI } from '../../_shared/adapters/mmgisAPI'
+// Core is reached only through the shared client's request/provide bus, so
+// every call survives a sandbox boundary. Layer and tool-var handlers are
+// registered in Layers_.fina(), so callers gate on readiness.
 
 export {
     mmgisRequest,
@@ -6,24 +8,9 @@ export {
     mmgisEmit,
     mmgisProvide,
     mmgisHasHandler,
+    mmgisGetLayerConfigs,
+    mmgisGetVisibleLayers,
+    mmgisIsTimeEnabled,
 } from '../../_shared/adapters/mmgisAPI'
 
-// window.mmgisAPI is typed once, by the shared client. Config reads below go
-// through direct methods core exposes outside the request/provide bus, so they
-// are described by a Timeline-local widening of that type rather than a second
-// global declaration (two global declarations of the same property collide).
-type MMGISAPIWithConfigMethods = MMGISAPI & {
-    getLayerConfigs?: () => any
-    getVisibleLayers?: () => Record<string, boolean>
-}
-
-const configAPI = (): MMGISAPIWithConfigMethods | undefined =>
-    window.mmgisAPI as MMGISAPIWithConfigMethods | undefined
-
-export const mmgisGetLayerConfigs = (): any => {
-    return configAPI()?.getLayerConfigs?.() || {}
-}
-
-export const mmgisGetVisibleLayers = (): Record<string, boolean> => {
-    return configAPI()?.getVisibleLayers?.() || {}
-}
+export type { LayerConfig } from '../../_shared/adapters/mmgisAPI'

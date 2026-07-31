@@ -8,6 +8,15 @@ export interface FloatingPopoverProps {
     placement?: 'top' | 'bottom' | 'left' | 'right'
     offset?: number
     className?: string
+    /** Ties the anchor's aria-controls to this popover. */
+    id?: string
+    /** Accessible name for the dialog. */
+    label?: string
+    /**
+     * Moves focus into the popover on open. Leave false for informational
+     * content, where taking focus off the trigger is disruptive.
+     */
+    autoFocus?: boolean
     children: React.ReactNode
 }
 
@@ -18,10 +27,57 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
     placement = 'bottom',
     offset = 8,
     className = '',
+    id,
+    label,
+    autoFocus = false,
     children
 }) => {
     const popupRef = useRef<HTMLDivElement>(null)
     const [pos, setPos] = useState({ top: 0, left: 0 })
+
+    // Escape closes from anywhere, including while focus sits on the trigger.
+    useEffect(() => {
+        if (!isOpen || !onClose) return
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation()
+                onClose()
+            }
+        }
+
+        document.addEventListener('keydown', handleKeyDown)
+        return () => document.removeEventListener('keydown', handleKeyDown)
+    }, [isOpen, onClose])
+
+    // The portal renders at the end of document.body, so focus is placed and
+    // restored explicitly rather than following DOM order.
+    useEffect(() => {
+        if (!isOpen) return
+        const previouslyFocused = document.activeElement as HTMLElement | null
+
+        if (autoFocus) {
+            const focusTarget =
+                popupRef.current?.querySelector<HTMLElement>(
+                    'input, button, [href], select, textarea, [tabindex]:not([tabindex="-1"])',
+                ) || popupRef.current
+            focusTarget?.focus()
+        }
+
+        return () => {
+            const anchor = anchorRef.current
+            const restoreTo =
+                anchor && document.contains(anchor) ? anchor : previouslyFocused
+            // Only reclaim focus if it is still inside the closing popover.
+            if (
+                popupRef.current &&
+                document.activeElement &&
+                popupRef.current.contains(document.activeElement)
+            ) {
+                restoreTo?.focus()
+            }
+        }
+    }, [isOpen, autoFocus, anchorRef])
 
     // Close on outside click
     useEffect(() => {
@@ -123,6 +179,10 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
     return createPortal(
         <div
             ref={popupRef}
+            id={id}
+            role="dialog"
+            aria-label={label}
+            tabIndex={-1}
             className={`floating-popover-portal ${className}`}
             style={{
                 position: 'fixed',

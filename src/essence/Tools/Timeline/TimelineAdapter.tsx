@@ -1,7 +1,16 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import moment from 'moment'
 import { FloatingPopover } from './lib/FloatingPopover'
-import { mmgisRequest, mmgisOn, mmgisEmit, mmgisGetLayerConfigs, mmgisGetVisibleLayers } from './adapters/mmgisAPI'
+import {
+    mmgisRequest,
+    mmgisOn,
+    mmgisEmit,
+    mmgisGetLayerConfigs,
+    mmgisGetVisibleLayers,
+    mmgisIsTimeEnabled,
+    type LayerConfig,
+} from './adapters/mmgisAPI'
+import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
     TimelineView,
     TimeModeControl,
@@ -13,14 +22,28 @@ import {
     type TimeMode,
     type LayerTimeData
 } from './lib'
-import { getTimeStep } from './lib/utils/timeUtils'
+import { getTimeStep, clampDate } from './lib/utils/timeUtils'
 import './Timeline.css'
 
-interface TimeData {
+/** The wire shape of both 'time:changeRequested' and 'time:changed'. */
+interface TimePayload {
     startTime: string
     endTime: string
     currentTime: string
 }
+
+/**
+ * 'loading' until core answers; 'unavailable' when the mission has no time
+ * enabled, which leaves nothing meaningful to scrub.
+ */
+type Readiness = 'loading' | 'ready' | 'unavailable'
+
+const sameInstant = (a: Date, b: Date): boolean => a.getTime() === b.getTime()
+
+/** Keeps the previous Date when the instant is unchanged, so effects keyed on
+ *  it don't re-run on every echo from core. */
+const preserveIdentity = (prev: Date, next: Date): Date =>
+    sameInstant(prev, next) ? prev : next
 
 export const TimelineAdapter: React.FC = () => {
     const [startTime, setStartTime] = useState<Date>(() => {
@@ -37,68 +60,96 @@ export const TimelineAdapter: React.FC = () => {
     const [timeMode, setTimeMode] = useState<TimeMode>('DAY')
     const [shownTimeModes, setShownTimeModes] = useState<TimeMode[]>(TIME_MODE_ORDER)
     const [layers, setLayers] = useState<LayerTimeData[]>([])
-    const [isReady, setIsReady] = useState(false)
+    const [readiness, setReadiness] = useState<Readiness>('loading')
 
     const [isPlaying, setIsPlaying] = useState(false)
     const [playbackSpeed, setPlaybackSpeed] = useState<number>(1)
     const [allowPlayback, setAllowPlayback] = useState(true)
     const [layerVisibilityVersion, setLayerVisibilityVersion] = useState(0)
+    const [layersApiReady, setLayersApiReady] = useState(false)
     const [showInfoPopup, setShowInfoPopup] = useState(false)
     // Collapsed hides the layer list / scrubber area, leaving just the header
     const [isCollapsed, setIsCollapsed] = useState(false)
     const [resetZoomFn, setResetZoomFn] = useState<(() => void) | null>(null)
     const infoButtonRef = useRef<HTMLButtonElement>(null)
 
+    // Mirror the committed window so emit/step callbacks keep a stable identity
+    // and don't re-arm the playback interval on every tick.
+    const startTimeRef = useRef(startTime)
+    const endTimeRef = useRef(endTime)
+    const currentTimeRef = useRef(currentTime)
+    useEffect(() => {
+        startTimeRef.current = startTime
+    }, [startTime])
+    useEffect(() => {
+        endTimeRef.current = endTime
+    }, [endTime])
+    useEffect(() => {
+        currentTimeRef.current = currentTime
+    }, [currentTime])
+
+    // The last payload this plugin asked core to commit. Core broadcasts every
+    // commit back on 'time:changed', including this one; matching it here keeps
+    // the echo from fighting an in-flight drag or playback tick.
+    const lastRequestedRef = useRef<TimePayload | null>(null)
+
     const handleResetZoomReady = useCallback((fn: () => void) => {
         setResetZoomFn(() => fn)
     }, [])
 
-    // Fetch tool variables (e.g. allowPlayback) from the mission config
-    useEffect(() => {
-        let cancelled = false
-        const fetchVars = async () => {
-            try {
-                const vars = await mmgisRequest<{
-                    allowPlayback?: boolean
-                    defaultTimeMode?: string
-                    shownTimeModes?: string[]
-                }>('tool:getVars', 'timeline')
-                if (cancelled || !vars) return
-
-                if (typeof vars.allowPlayback === 'boolean') {
-                    setAllowPlayback(vars.allowPlayback)
-                }
-
-                // Determine which mode buttons to show (canonical order, empty = all)
-                let effectiveModes = TIME_MODE_ORDER
-                if (Array.isArray(vars.shownTimeModes)) {
-                    const requested = vars.shownTimeModes.map((m) => String(m).toUpperCase())
-                    const normalized = TIME_MODE_ORDER.filter((m) => requested.includes(m))
-                    if (normalized.length > 0) effectiveModes = normalized
-                }
-                setShownTimeModes(effectiveModes)
-
-                // Determine the initial mode: configured default (if valid),
-                // otherwise the prior 'DAY' fallback; then clamp to a shown mode.
-                const requestedDefault = vars.defaultTimeMode?.toUpperCase()
-                let mode: TimeMode =
-                    requestedDefault === 'YEAR' ||
-                    requestedDefault === 'MONTH' ||
-                    requestedDefault === 'DAY' ||
-                    requestedDefault === 'HOUR'
-                        ? (requestedDefault as TimeMode)
-                        : 'DAY'
-                if (!effectiveModes.includes(mode)) mode = effectiveModes[0]
-                setTimeMode(mode)
-            } catch (err) {
-                console.warn('[Timeline] Failed to fetch tool vars:', err)
-            }
+    /** Moves the scrubber and asks core to commit the same instant. */
+    const commitTime = useCallback((next: Date) => {
+        setCurrentTime((prev) => preserveIdentity(prev, next))
+        const payload: TimePayload = {
+            startTime: startTimeRef.current.toISOString(),
+            endTime: endTimeRef.current.toISOString(),
+            currentTime: next.toISOString(),
         }
-        fetchVars()
-        return () => {
-            cancelled = true
+        lastRequestedRef.current = payload
+        mmgisEmit('time:changeRequested', payload)
+    }, [])
+
+    // Tool variables from the mission config. 'tool:getVars' is registered by
+    // Layers_.fina() during mission load, after this tool mounts.
+    const fetchVars = useCallback(async () => {
+        try {
+            const vars = await mmgisRequest<{
+                allowPlayback?: boolean
+                defaultTimeMode?: string
+                shownTimeModes?: string[]
+            }>('tool:getVars', 'timeline')
+            if (!vars) return
+
+            if (typeof vars.allowPlayback === 'boolean') {
+                setAllowPlayback(vars.allowPlayback)
+            }
+
+            // Which mode buttons to show (canonical order, empty = all)
+            let effectiveModes = TIME_MODE_ORDER
+            if (Array.isArray(vars.shownTimeModes)) {
+                const requested = vars.shownTimeModes.map((m) => String(m).toUpperCase())
+                const normalized = TIME_MODE_ORDER.filter((m) => requested.includes(m))
+                if (normalized.length > 0) effectiveModes = normalized
+            }
+            setShownTimeModes(effectiveModes)
+
+            // Initial mode: the configured default when valid, else 'DAY',
+            // then clamped to a shown mode.
+            const requestedDefault = vars.defaultTimeMode?.toUpperCase()
+            let mode: TimeMode =
+                requestedDefault === 'YEAR' ||
+                requestedDefault === 'MONTH' ||
+                requestedDefault === 'DAY' ||
+                requestedDefault === 'HOUR'
+                    ? (requestedDefault as TimeMode)
+                    : 'DAY'
+            if (!effectiveModes.includes(mode)) mode = effectiveModes[0]
+            setTimeMode(mode)
+        } catch (err) {
+            console.warn('[Timeline] Failed to fetch tool vars:', err)
         }
     }, [])
+    useMMGISHandlerReady('tool:getVars', fetchVars)
 
     // Stop playback if it becomes disabled via config
     useEffect(() => {
@@ -107,25 +158,31 @@ export const TimelineAdapter: React.FC = () => {
 
     // Subscribe to layer visibility changes
     useEffect(() => {
-        const cleanup = mmgisOn('layer:visibilityChange', () => {
-            console.log('[Timeline] Layer visibility changed, refetching layers')
-            setLayerVisibilityVersion(v => v + 1)
+        return mmgisOn('layer:visibilityChange', () => {
+            setLayerVisibilityVersion((v) => v + 1)
         })
-        return cleanup
     }, [])
+
+    const markLayersApiReady = useCallback(() => setLayersApiReady(true), [])
+    useMMGISHandlerReady('layers:getAllConfigs', markLayersApiReady)
+
     useEffect(() => {
-        const fetchLayers = () => {
-            const configs = mmgisGetLayerConfigs()
-            const visibleLayers = mmgisGetVisibleLayers()
+        if (!layersApiReady) return
+        let cancelled = false
+
+        const fetchLayers = async () => {
+            const [configs, visibleLayers] = await Promise.all([
+                mmgisGetLayerConfigs(),
+                mmgisGetVisibleLayers(),
+            ])
+            if (cancelled || !configs) return
+
             const newLayers: LayerTimeData[] = []
 
-            Object.keys(configs).forEach(layerName => {
-                const layer = configs[layerName]
+            Object.keys(configs).forEach((layerName) => {
+                const layer: LayerConfig = configs[layerName]
 
-                // Filter to only visible layers
-                if (!visibleLayers?.[layerName]) {
-                    return
-                }
+                if (!visibleLayers?.[layerName]) return
 
                 let start = startTime
                 let end = endTime
@@ -165,145 +222,154 @@ export const TimelineAdapter: React.FC = () => {
         }
 
         fetchLayers()
-    }, [startTime, endTime, layerVisibilityVersion])
-
-    // Fetch initial time data from TimeControl
-    useEffect(() => {
-        const fetchInitialTimeData = async () => {
-            try {
-                console.log('[Timeline] Fetching initial time data from TimeControl...')
-                const start = await mmgisRequest<string>('time:getStart')
-                const end = await mmgisRequest<string>('time:getEnd')
-                const current = await mmgisRequest<string>('time:getCurrent')
-
-                console.log('[Timeline] Received initial time data:', { start, end, current })
-
-                if (start && end && current) {
-                    setStartTime(new Date(start))
-                    setEndTime(new Date(end))
-                    setCurrentTime(new Date(current))
-                }
-            } catch (err) {
-                console.error('[Timeline] Failed to fetch initial time data:', err)
-            } finally {
-                setIsReady(true)
-            }
+        return () => {
+            cancelled = true
         }
+    }, [layersApiReady, startTime, endTime, layerVisibilityVersion])
 
-        fetchInitialTimeData()
+    // Seed from TimeControl, then follow every committed change.
+    const fetchInitialTimeData = useCallback(async () => {
+        try {
+            // Null means core predates the handler, not that time is off.
+            if ((await mmgisIsTimeEnabled()) === false) {
+                setReadiness('unavailable')
+                return
+            }
 
-        // Subscribe to time changes
-        const cleanup = mmgisOn('time:change', (payload: any) => {
-            console.log('[Timeline] Received time:change event:', payload)
-            if (payload?.startTime) setStartTime(new Date(payload.startTime))
-            if (payload?.endTime) setEndTime(new Date(payload.endTime))
-            if (payload?.currentTime) setCurrentTime(new Date(payload.currentTime))
+            const [start, end, current] = await Promise.all([
+                mmgisRequest<string>('time:getStart'),
+                mmgisRequest<string>('time:getEnd'),
+                mmgisRequest<string>('time:getCurrent'),
+            ])
+
+            if (!start || !end || !current) {
+                setReadiness('unavailable')
+                return
+            }
+
+            setStartTime((prev) => preserveIdentity(prev, new Date(start)))
+            setEndTime((prev) => preserveIdentity(prev, new Date(end)))
+            setCurrentTime((prev) => preserveIdentity(prev, new Date(current)))
+            setReadiness('ready')
+        } catch (err) {
+            console.error('[Timeline] Failed to fetch initial time data:', err)
+            setReadiness('unavailable')
+        }
+    }, [])
+    useMMGISHandlerReady('time:getStart', fetchInitialTimeData)
+
+    useEffect(() => {
+        return mmgisOn('time:changed', (payload?: unknown) => {
+            const data = payload as Partial<TimePayload> | undefined
+            if (!data) return
+
+            const requested = lastRequestedRef.current
+            if (
+                requested &&
+                requested.startTime === data.startTime &&
+                requested.endTime === data.endTime &&
+                requested.currentTime === data.currentTime
+            ) {
+                // This plugin's own commit; local state already matches.
+                return
+            }
+
+            if (data.startTime) setStartTime((prev) => preserveIdentity(prev, new Date(data.startTime as string)))
+            if (data.endTime) setEndTime((prev) => preserveIdentity(prev, new Date(data.endTime as string)))
+            if (data.currentTime) setCurrentTime((prev) => preserveIdentity(prev, new Date(data.currentTime as string)))
         })
-
-        return cleanup
     }, [])
 
-
-    // Handle current time change from scrubber
+    // Committed time change from the scrubber
     const handleCurrentTimeChange = useCallback(
         (newTime: Date) => {
-            console.log('[Timeline] User changed current time:', newTime.toISOString())
-            setCurrentTime(newTime)
-
-            // Emit time:changeRequested event for TimeControl to respond
-            const payload = {
-                startTime: startTime.toISOString(),
-                endTime: endTime.toISOString(),
-                currentTime: newTime.toISOString(),
-            }
-            console.log('[Timeline] Emitting time:changeRequested:', payload)
-            mmgisEmit('time:changeRequested', payload)
+            commitTime(clampDate(newTime, startTimeRef.current, endTimeRef.current))
         },
-        [startTime, endTime]
+        [commitTime]
     )
 
     // Live time while the scrubber is dragged: the header date follows along,
     // but nothing is emitted until the drag is released.
     const handleCurrentTimePreview = useCallback((newTime: Date) => {
-        setCurrentTime(newTime)
+        setCurrentTime((prev) => preserveIdentity(prev, newTime))
     }, [])
 
-    // Handle current date change
-    const handleCurrentDateChange = useCallback(
-        (newCurrent: Date) => {
-            setCurrentTime(newCurrent)
+    const handleCurrentDateChange = handleCurrentTimeChange
 
-            // Emit time:changeRequested event for TimeControl to respond
-            mmgisEmit('time:changeRequested', {
-                startTime: startTime.toISOString(),
-                endTime: endTime.toISOString(),
-                currentTime: newCurrent.toISOString(),
-            })
-        },
-        [startTime, endTime]
-    )
+    const canStepBackward = currentTime > startTime
+    const canStepForward = currentTime < endTime
 
-    // Playback logic
     const handleStepForward = useCallback(() => {
         const { unit, value } = getTimeStep(timeMode)
-        const nextTime = moment(currentTime).add(value, unit as moment.unitOfTime.DurationConstructor).toDate()
-        if (nextTime <= endTime) {
-            handleCurrentTimeChange(nextTime)
-        }
-    }, [currentTime, endTime, timeMode, handleCurrentTimeChange])
+        const nextTime = moment(currentTimeRef.current).add(value, unit).toDate()
+        handleCurrentTimeChange(nextTime)
+    }, [timeMode, handleCurrentTimeChange])
 
     const handleStepBackward = useCallback(() => {
         const { unit, value } = getTimeStep(timeMode)
-        const prevTime = moment(currentTime).subtract(value, unit as moment.unitOfTime.DurationConstructor).toDate()
-        if (prevTime >= startTime) {
-            handleCurrentTimeChange(prevTime)
-        }
-    }, [currentTime, startTime, timeMode, handleCurrentTimeChange])
+        const prevTime = moment(currentTimeRef.current).subtract(value, unit).toDate()
+        handleCurrentTimeChange(prevTime)
+    }, [timeMode, handleCurrentTimeChange])
 
     const handleGoToStart = useCallback(() => {
-        handleCurrentTimeChange(startTime)
-    }, [startTime, handleCurrentTimeChange])
+        commitTime(startTimeRef.current)
+    }, [commitTime])
 
     const handleGoToEnd = useCallback(() => {
-        handleCurrentTimeChange(endTime)
-    }, [endTime, handleCurrentTimeChange])
+        commitTime(endTimeRef.current)
+    }, [commitTime])
+
+    /** Playing from the end restarts at the beginning rather than stalling. */
+    const handlePlayToggle = useCallback(() => {
+        if (isPlaying) {
+            setIsPlaying(false)
+            return
+        }
+        if (currentTimeRef.current >= endTimeRef.current) {
+            commitTime(startTimeRef.current)
+        }
+        setIsPlaying(true)
+    }, [isPlaying, commitTime])
 
     useEffect(() => {
         if (!isPlaying) return
 
         const { unit, value } = getTimeStep(timeMode)
-        // Base cadence is one step per second, divided by the playback speed
-        // multiplier (2x -> 500ms, 4x -> 250ms, 0.5x -> 2000ms).
+        // One step per second, divided by the speed multiplier
+        // (2x -> 500ms, 4x -> 250ms, 0.5x -> 2000ms).
         const speed = 1000 / playbackSpeed
 
         const interval = setInterval(() => {
-            setCurrentTime(prev => {
-                const nextTime = moment(prev).add(value, unit as moment.unitOfTime.DurationConstructor).toDate()
-                if (nextTime <= endTime) {
-                    // Emit time:changeRequested event to notify TimeControl
-                    const payload = {
-                        startTime: startTime.toISOString(),
-                        endTime: endTime.toISOString(),
-                        currentTime: nextTime.toISOString(),
-                    }
-                    console.log('[Timeline] Playback emitting time:changeRequested:', payload)
-                    mmgisEmit('time:changeRequested', payload)
-                    return nextTime
-                } else {
-                    console.log('[Timeline] Playback reached end, stopping')
-                    setIsPlaying(false)
-                    return prev
-                }
-            })
+            const nextTime = moment(currentTimeRef.current).add(value, unit).toDate()
+            if (nextTime > endTimeRef.current) {
+                setIsPlaying(false)
+                return
+            }
+            commitTime(nextTime)
         }, speed)
 
         return () => clearInterval(interval)
-    }, [isPlaying, timeMode, endTime, startTime, playbackSpeed])
+    }, [isPlaying, timeMode, playbackSpeed, commitTime])
 
-    if (!isReady) {
+    const infoPopupId = 'timeline-info-popup'
+
+    if (readiness === 'loading') {
         return (
             <div className="timeline-loading">
                 <div className="loading-message">Loading timeline...</div>
+            </div>
+        )
+    }
+
+    if (readiness === 'unavailable') {
+        return (
+            <div className="timeline-unavailable">
+                <div className="timeline-unavailable-message">
+                    Time is not enabled for this mission
+                </div>
+                <div className="timeline-unavailable-hint">
+                    Enable time in the mission configuration to use the timeline.
+                </div>
             </div>
         )
     }
@@ -324,7 +390,9 @@ export const TimelineAdapter: React.FC = () => {
                     <PlaybackControls
                         isPlaying={isPlaying}
                         showPlayButton={allowPlayback}
-                        onPlayToggle={() => setIsPlaying(!isPlaying)}
+                        canStepForward={canStepForward}
+                        canStepBackward={canStepBackward}
+                        onPlayToggle={handlePlayToggle}
                         onStepForward={handleStepForward}
                         onStepBackward={handleStepBackward}
                         onGoToStart={handleGoToStart}
@@ -345,33 +413,42 @@ export const TimelineAdapter: React.FC = () => {
                     />
                     <div className="timeline-toolbar">
                         <button
+                            type="button"
                             className="timeline-tool-btn"
                             onClick={() => resetZoomFn?.()}
                             title="Reset Zoom"
+                            aria-label="Reset zoom"
                             disabled={!resetZoomFn}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
                                 <path d="M12 6v3l4-4-4-4v3c-4.42 0-8 3.58-8 8 0 1.57.46 3.03 1.24 4.26L6.7 14.8A5.87 5.87 0 0 1 6 12c0-3.31 2.69-6 6-6zm6.76 1.74L17.3 9.2c.44.84.7 1.79.7 2.8 0 3.31-2.69 6-6 6v-3l-4 4 4 4v-3c4.42 0 8-3.58 8-8 0-1.57-.46-3.03-1.24-4.26z"/>
                             </svg>
                         </button>
                         <button
+                            type="button"
                             ref={infoButtonRef}
                             className="timeline-tool-btn"
                             onClick={() => setShowInfoPopup(!showInfoPopup)}
                             title="Info"
+                            aria-label="Timeline controls help"
+                            aria-haspopup="dialog"
+                            aria-expanded={showInfoPopup}
+                            aria-controls={showInfoPopup ? infoPopupId : undefined}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
                                 <path d="M0 0h24v24H0V0z" fill="none"/>
                                 <path d="M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
                             </svg>
                         </button>
                         <button
+                            type="button"
                             className="timeline-tool-btn timeline-collapse-btn"
                             onClick={() => setIsCollapsed((collapsed) => !collapsed)}
                             title={isCollapsed ? 'Expand timeline' : 'Collapse timeline'}
+                            aria-label={isCollapsed ? 'Expand timeline' : 'Collapse timeline'}
                             aria-expanded={!isCollapsed}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
                                 <path d="M12 15.5L5.5 9L6.9 7.6L12 12.7L17.1 7.6L18.5 9L12 15.5Z"/>
                             </svg>
                         </button>
@@ -402,12 +479,14 @@ export const TimelineAdapter: React.FC = () => {
                 )}
             </div>
             <FloatingPopover
+                id={infoPopupId}
                 anchorRef={infoButtonRef}
                 isOpen={showInfoPopup}
                 onClose={() => setShowInfoPopup(false)}
                 placement="top"
                 offset={8}
                 className="timeline-info-tooltip-portal"
+                label="Timeline controls"
             >
                 <div className="timeline-info-tooltip-content">
                     <strong>Timeline Controls</strong>
@@ -417,5 +496,3 @@ export const TimelineAdapter: React.FC = () => {
         </div>
     )
 }
-
-

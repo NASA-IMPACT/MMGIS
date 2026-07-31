@@ -1,6 +1,6 @@
 type EventCleanup = () => void
 
-export type MMGISAPI = {
+type MMGISAPI = {
     request: (name: string, params?: unknown) => Promise<unknown>
     on: (event: string, handler: (payload?: unknown) => void) => EventCleanup
     emit: (event: string, payload?: unknown) => void
@@ -14,6 +14,19 @@ export type MapScreenshotResult = {
     extension: 'png'
     width: number
     height: number
+}
+
+/** The subset of a mission layer config that plugins read off the bus. */
+export type LayerConfig = {
+    name?: string
+    display_name?: string
+    time?: {
+        enabled?: boolean
+        dataStartTime?: string
+        dataEndTime?: string
+        [key: string]: unknown
+    }
+    [key: string]: unknown
 }
 
 export type ViewState = {
@@ -85,6 +98,29 @@ export const mmgisGetMapScreenshot = (): Promise<
 /** View metadata (mission, time, center, zoom); fields null until loaded. */
 export const mmgisGetViewState = (): Promise<ViewState | null> => {
     return mmgisRequestIfProvided<ViewState>('map:getViewState')
+}
+
+/** Every layer's config, keyed by layer UUID. */
+export const mmgisGetLayerConfigs = (): Promise<Record<
+    string,
+    LayerConfig
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, LayerConfig>>(
+        'layers:getAllConfigs',
+    )
+}
+
+/** Per-layer visibility, keyed by layer UUID. */
+export const mmgisGetVisibleLayers = (): Promise<Record<
+    string,
+    boolean
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, boolean>>('layers:getVisible')
+}
+
+/** Whether the mission has time enabled at all. */
+export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
+    return mmgisRequestIfProvided<boolean>('time:isEnabled')
 }
 
 /**

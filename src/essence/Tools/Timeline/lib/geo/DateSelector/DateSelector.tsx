@@ -19,7 +19,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({ selectedDate }) => {
     return (
         <div className="date-selector">
             <span className="date-text">
-                {moment(selectedDate).format('MMM D, YYYY')}
+                {moment.utc(selectedDate).format('MMM D, YYYY')}
             </span>
         </div>
     )
