@@ -87,9 +87,11 @@ resource "aws_iam_policy" "ci_role_boundary" {
         # every environment's boundary. RDS tags the managed secret with
         # aws:rds:primaryDBInstanceArn, the only env-distinguishing handle
         # available, so the condition scopes on the tag instead of the name.
-        # Verified at apply time by the scratch run (README.md §7d); if the tag
-        # turns out to be absent, the fallback is the bare rds!* pattern plus a
-        # documented residual — decided then, not silently.
+        # Verified at apply time by the scratch run (README.md §7d); if the
+        # condition fails there, try StringLike first (some services evaluate
+        # ARN-valued tag conditions only as strings) before falling back to the
+        # bare rds!* pattern plus a documented residual — decided then, not
+        # silently.
         Sid      = "ReadRdsManagedMasterSecret"
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
@@ -250,22 +252,32 @@ resource "aws_iam_policy" "ci_role_boundary" {
           "ec2:StartInstances",
           "ec2:StopInstances",
           "ec2:TerminateInstances",
+          "ec2:CreateFleet",
+          "ec2:RequestSpotInstances",
+          "ec2:RequestSpotFleet",
           "ec2:CreateVolume",
+          "ec2:DeleteVolume",
           "ec2:CreateSnapshot",
           "ec2:CreateSnapshots",
           "ec2:CopySnapshot",
+          "ec2:DeleteSnapshot",
           "ec2:CreateImage",
           "ec2:CopyImage",
           "ec2:RegisterImage",
+          "ec2:DeregisterImage",
           "ec2:CreateVpc",
           "ec2:DeleteVpc",
           "ec2:ModifyVpcAttribute",
           "ec2:CreateSubnet",
           "ec2:DeleteSubnet",
+          "ec2:ModifySubnetAttribute",
           "ec2:CreateRouteTable",
           "ec2:DeleteRouteTable",
+          "ec2:AssociateRouteTable",
+          "ec2:DisassociateRouteTable",
           "ec2:CreateRoute",
           "ec2:DeleteRoute",
+          "ec2:ReplaceRoute",
           "ec2:CreateInternetGateway",
           "ec2:DeleteInternetGateway",
           "ec2:AttachInternetGateway",
