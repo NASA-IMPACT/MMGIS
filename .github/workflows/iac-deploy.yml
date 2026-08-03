@@ -708,7 +708,7 @@ jobs:
           # nothing downstream would ever notice — hence UNIQUE words, not raw
           # lines. `|| true` keeps a missing file on the friendly error path
           # below instead of dying inside the command substitution.
-          WORD_COUNT=$(grep -v '^#' "$WORDLIST" 2>/dev/null | sort -u | wc -l || true)
+          WORD_COUNT=$(grep -v '^#' "$WORDLIST" 2>/dev/null | grep . | sort -u | wc -l || true)
           if [ "${WORD_COUNT:-0}" -ne 7776 ]; then
             echo "Wordlist '$WORDLIST' has ${WORD_COUNT:-0} unique words, expected 7776." >&2
             echo "It is missing, truncated, or corrupted; generating from it would weaken every passphrase." >&2
