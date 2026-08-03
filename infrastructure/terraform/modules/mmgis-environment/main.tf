@@ -15,6 +15,12 @@ locals {
   admin_family   = "${local.name_prefix}-admin"
   publish_family = "${local.name_prefix}-publish"
 
+  # Dashboard stacks are created by the APP (scripts/lib/cfn-template.js) from
+  # MMGIS_ENVIRONMENT, not by Terraform. This local must stay character-identical
+  # to that composition ("mmgis-<env>-dashboard-"): the iam.tf grants pin to it,
+  # and the ecs.tf task environments inject the matching MMGIS_ENVIRONMENT.
+  dashboard_prefix = "${local.name_prefix}-dashboard-"
+
   cluster_name = local.name_prefix
   service_name = "${local.name_prefix}-admin"
 

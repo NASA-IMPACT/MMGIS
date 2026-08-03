@@ -59,6 +59,9 @@ locals {
     { name = "MMGIS_PUBLISH_SECURITY_GROUPS", value = aws_security_group.service.id },
     { name = "MMGIS_PUBLISH_CONTAINER_NAME", value = "mmgis" },
     { name = "MMGIS_SHARED_ASSET_BUCKET", value = local.asset_bucket_name },
+    # Namespaces dashboard stacks per environment (mmgis-<env>-dashboard-*);
+    # must match the iam.tf dashboard grants (local.dashboard_prefix).
+    { name = "MMGIS_ENVIRONMENT", value = var.environment },
   ], var.overwrite_demo_mission ? [{ name = "OVERWRITE_DEMO_MISSION", value = "true" }] : [])
 
   publish_environment = concat(local.db_environment, [
@@ -68,6 +71,8 @@ locals {
     { name = "DB_SSL_CERT_BASE64", value = var.rds_ca_bundle_base64 },
     { name = "AWS_REGION", value = local.region },
     { name = "MMGIS_SHARED_ASSET_BUCKET", value = local.asset_bucket_name },
+    # Namespaces the dashboard stacks this task creates (local.dashboard_prefix).
+    { name = "MMGIS_ENVIRONMENT", value = var.environment },
   ])
 }
 

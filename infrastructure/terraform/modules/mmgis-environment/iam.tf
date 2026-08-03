@@ -115,25 +115,25 @@ resource "aws_iam_role_policy" "admin_task" {
         Sid      = "DashboardStackReadDelete"
         Effect   = "Allow"
         Action   = ["cloudformation:DescribeStacks", "cloudformation:DeleteStack"]
-        Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/mmgis-dashboard-*/*"
+        Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/${local.dashboard_prefix}*/*"
       },
       {
         Sid      = "EmptyDashboardBuckets"
         Effect   = "Allow"
         Action   = ["s3:DeleteObject"]
-        Resource = "arn:aws:s3:::mmgis-dashboard-*/*"
+        Resource = "arn:aws:s3:::${local.dashboard_prefix}*/*"
       },
       {
         Sid      = "ListDashboardBuckets"
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
-        Resource = "arn:aws:s3:::mmgis-dashboard-*"
+        Resource = "arn:aws:s3:::${local.dashboard_prefix}*"
       },
       {
         Sid      = "TeardownDashboardBuckets"
         Effect   = "Allow"
         Action   = ["s3:DeleteBucket", "s3:DeleteBucketPolicy"]
-        Resource = "arn:aws:s3:::mmgis-dashboard-*"
+        Resource = "arn:aws:s3:::${local.dashboard_prefix}*"
       },
       {
         Sid    = "TeardownDashboardDistributions"
@@ -150,7 +150,7 @@ resource "aws_iam_role_policy" "admin_task" {
         Sid      = "TeardownDashboardAuthFunctions"
         Effect   = "Allow"
         Action   = ["cloudfront:DescribeFunction", "cloudfront:GetFunction", "cloudfront:DeleteFunction"]
-        Resource = "arn:aws:cloudfront::${local.account_id}:function/mmgis-dashboard-*"
+        Resource = "arn:aws:cloudfront::${local.account_id}:function/${local.dashboard_prefix}*"
       },
       {
         Sid      = "TeardownDashboardOriginAccessControls"
@@ -213,7 +213,7 @@ resource "aws_iam_role_policy" "publish_exec" {
 # ── Publish task role (runtime container code) ──
 resource "aws_iam_role" "publish_task" {
   name                 = "${local.name_prefix}-publish-task"
-  description          = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/delete the mmgis-dashboard-* stacks and their S3/CloudFront resources, read the shared asset bucket. No secretsmanager (password rides the exec role's secrets[]). No rds-db:connect (password auth). Lean deployment only."
+  description          = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/delete the ${local.dashboard_prefix}* stacks and their S3/CloudFront resources, read the shared asset bucket. No secretsmanager (password rides the exec role's secrets[]). No rds-db:connect (password auth). Lean deployment only."
   assume_role_policy   = local.ecs_tasks_assume_role
   permissions_boundary = var.permissions_boundary
 }
@@ -233,7 +233,7 @@ resource "aws_iam_role_policy" "publish_task" {
           "cloudformation:DescribeStackEvents",
           "cloudformation:DeleteStack",
         ]
-        Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/mmgis-dashboard-*/*"
+        Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/${local.dashboard_prefix}*/*"
       },
       {
         Sid    = "DashboardBucketLifecycle"
@@ -248,13 +248,13 @@ resource "aws_iam_role_policy" "publish_task" {
           "s3:PutEncryptionConfiguration",
           "s3:PutBucketTagging",
         ]
-        Resource = "arn:aws:s3:::mmgis-dashboard-*"
+        Resource = "arn:aws:s3:::${local.dashboard_prefix}*"
       },
       {
         Sid      = "DashboardBucketWriteObjects"
         Effect   = "Allow"
         Action   = ["s3:PutObject"]
-        Resource = "arn:aws:s3:::mmgis-dashboard-*/*"
+        Resource = "arn:aws:s3:::${local.dashboard_prefix}*/*"
       },
       {
         Sid    = "DashboardDistributionLifecycle"
@@ -284,7 +284,7 @@ resource "aws_iam_role_policy" "publish_task" {
           "cloudfront:UntagResource",
           "cloudfront:ListTagsForResource",
         ]
-        Resource = "arn:aws:cloudfront::${local.account_id}:function/mmgis-dashboard-*"
+        Resource = "arn:aws:cloudfront::${local.account_id}:function/${local.dashboard_prefix}*"
       },
       {
         Sid    = "DashboardOriginAccessControlLifecycle"
