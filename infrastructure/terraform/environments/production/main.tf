@@ -11,9 +11,9 @@ module "mmgis" {
   # RDS — runtime spec is IDENTICAL to development (the admin is internal
   # tooling; the shipped product is the published dashboards, which serve
   # independently of this stack). The environments differ only in DELETION
-  # POLICY: production always leaves a final snapshot on destroy and keeps
-  # the default 30-day secret recovery window, while development skips both
-  # so destroy/rebuild cycles leave no residue.
+  # POLICY: production always leaves a final snapshot on destroy, while
+  # development skips it so destroy/rebuild cycles leave no residue. Secret
+  # recovery windows are 0 in BOTH (below).
   db_instance_class      = "db.t3.micro"
   db_allocated_storage   = 20
   db_engine_version      = "17"
@@ -25,6 +25,15 @@ module "mmgis" {
   # to GitHub-Environment-scoped trust when it wires `environment:` into the job.
   github_repo        = "NASA-IMPACT/MMGIS"
   deploy_role_branch = "production"
+
+  # No recovery window, production included: deleted secret names free
+  # immediately, so a destroy/re-apply never collides with a name still held
+  # in recovery. One nuance this accepts: the superadmin seed password only
+  # seeds the account at FIRST boot — after that the real credential is a
+  # password hash in the database, so destroying and regenerating the secret
+  # desyncs the stored value from the actual login password. Deliberate, rare,
+  # and documented — not a blocker.
+  secret_recovery_window_days = 0
 
   # CloudFront two-phase inputs (empty on the first apply).
   express_internal_alb_arn      = var.express_internal_alb_arn

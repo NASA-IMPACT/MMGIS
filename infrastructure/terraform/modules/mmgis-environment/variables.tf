@@ -157,7 +157,7 @@ variable "express_alb_security_group_id" {
 }
 
 variable "secret_recovery_window_days" {
-  description = "Secrets Manager recovery window on delete. Default 30 (production-safe). Development sets 0 so a destroy/re-apply cycle doesn't collide with names held in the recovery window."
+  description = "Secrets Manager recovery window on delete. 0 frees the secret names immediately, so a destroy/re-apply cycle never collides with a ghost name still held in a recovery window. Both environments deliberately run 0."
   type        = number
-  default     = 30
+  default     = 0
 }

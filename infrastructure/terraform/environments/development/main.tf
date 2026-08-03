@@ -20,8 +20,8 @@ module "mmgis" {
   github_repo        = "NASA-IMPACT/MMGIS"
   deploy_role_branch = "development"
 
-  # Development is disposable: no recovery window, so destroy/re-apply
-  # doesn't collide with secret names held for 30 days.
+  # No recovery window: deleted secret names free immediately, so a
+  # destroy/re-apply never collides with a name still held in recovery.
   secret_recovery_window_days = 0
 
   # CloudFront two-phase inputs (empty on the first apply).
