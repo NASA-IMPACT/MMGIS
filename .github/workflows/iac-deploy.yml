@@ -651,7 +651,7 @@ jobs:
             exit "$rc"
           fi
 
-      # ── Application-secret bootstrap (#248) ────────────────────────────────
+      # ── Application-secret bootstrap ───────────────────────────────────────
       # Phase 1 above created the Secrets Manager secrets as empty shells: name
       # and policy only, never a value, because a value in the configuration is
       # a value in the state file. Four of those shells hold credentials only
@@ -667,7 +667,7 @@ jobs:
       #
       # The apply role this job runs under carries secretsmanager:DescribeSecret
       # and secretsmanager:PutSecretValue on `mmgis/<env>*`, and deliberately no
-      # GetSecretValue anywhere (bootstrap root, #245) — CI can never read a
+      # GetSecretValue anywhere (bootstrap root) — CI can never read a
       # secret value back. "Is this shell empty?" is therefore answered from
       # describe-secret METADATA alone, never by reading the value.
       #
