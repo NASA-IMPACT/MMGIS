@@ -1,6 +1,15 @@
-# The permissions boundary attached to EVERY IAM role the CI apply roles create.
-# iam_apply.tf makes that a hard condition: an iam:CreateRole that does not
-# supply this exact boundary is denied outright.
+# The permissions boundary attached to EVERY IAM role the CI apply roles create,
+# one per environment. iam_apply.tf makes that a hard condition: an
+# iam:CreateRole that does not supply this exact boundary is denied outright.
+#
+# WHY PER ENVIRONMENT. A single boundary shared across environments would cap
+# every CI-created role at the union of both environments' needs, so the
+# development apply role could mint a boundary-capped role whose own inline
+# policy reads mmgis/production/* secrets, passes production runtime roles, runs
+# production task definitions and pulls production images — and the cap would
+# permit all of it. Splitting the boundary per environment makes the development
+# blast radius development-only: a role created by the dev apply role cannot
+# reach a production resource no matter what its inline policy says.
 #
 # This is a CAP, not a grant. A capped role's effective permissions are the
 # intersection of its own policy with this one, so nothing here hands anybody
@@ -21,8 +30,10 @@
 # A boundary does NOT constrain trust-policy edits. That fence is the explicit
 # Deny in iam_apply.tf, not here.
 resource "aws_iam_policy" "ci_role_boundary" {
-  name        = "mmgis-ci-role-boundary"
-  description = "Permissions boundary required on every IAM role created by the MMGIS Terraform apply roles. Caps CI-created roles at the runtime surface; grants nothing on its own."
+  for_each = local.environments
+
+  name        = "mmgis-ci-role-boundary-${each.key}"
+  description = "Permissions boundary required on every IAM role created by the MMGIS ${each.key} Terraform apply role. Caps CI-created roles at the ${each.key} runtime surface; grants nothing on its own."
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -36,13 +47,14 @@ resource "aws_iam_policy" "ci_role_boundary" {
         Resource = "*"
       },
       {
-        # Image pull for the task-execution roles. Repositories are named
-        # mmgis-<env>, so the mmgis-* prefix caps every environment's repo — the
-        # real ones and the documented development-scratch one — and nothing else.
+        # Image pull for the task-execution roles. The repository is named
+        # mmgis-<env>, and the trailing * with no separator also covers the
+        # documented development-scratch repo — this environment's images and
+        # nothing else's.
         Sid      = "EcrPull"
         Effect   = "Allow"
         Action   = ["ecr:BatchCheckLayerAvailability", "ecr:GetDownloadUrlForLayer", "ecr:BatchGetImage"]
-        Resource = "arn:aws:ecr:${local.region}:${local.account_id}:repository/mmgis-*"
+        Resource = "arn:aws:ecr:${local.region}:${local.account_id}:repository/mmgis-${each.key}*"
       },
       {
         # Container log delivery into /ecs/mmgis-<env>-admin and
@@ -51,40 +63,59 @@ resource "aws_iam_policy" "ci_role_boundary" {
         Sid      = "LogsWrite"
         Effect   = "Allow"
         Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "arn:aws:logs:${local.region}:${local.account_id}:log-group:/ecs/mmgis-*"
+        Resource = "arn:aws:logs:${local.region}:${local.account_id}:log-group:/ecs/mmgis-${each.key}*"
       },
       {
-        # Secret injection for the execution roles' secrets[]. Two shapes:
-        #   - mmgis/* is the PATH-style secret convention (mmgis/<env>/db, …), a
-        #     different pattern from the mmgis-<env>-* resource prefix that the
-        #     cap must carry explicitly or every injection fails;
-        #   - rds!* is the RDS-managed master secret, which RDS itself names
-        #     rds!db-<id>. The environment injects DB_PASS straight from it, so
-        #     the cap has to include a name nobody here chose.
-        Sid    = "ReadRuntimeSecrets"
-        Effect = "Allow"
-        Action = ["secretsmanager:GetSecretValue"]
-        Resource = [
-          "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:mmgis/*",
-          "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:rds!*",
-        ]
+        # Secret injection for the execution roles' secrets[]. Secrets are
+        # PATH-style — mmgis/<env>/db, mmgis/<env>/session-secret, … — a
+        # different convention from the mmgis-<env>-* resource prefix that the
+        # cap must carry explicitly or every injection fails. No separator
+        # before the trailing * so the documented scratch environment
+        # (mmgis/development-scratch/…) is covered by the development boundary,
+        # and so the random -XXXXXX suffix Secrets Manager appends to every
+        # secret ARN is absorbed.
+        Sid      = "ReadRuntimeSecrets"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:mmgis/${each.key}*"
+      },
+      {
+        # The RDS-managed master secret, which RDS itself names rds!db-<id>.
+        # The environment injects DB_PASS straight from it, so the cap has to
+        # include a name nobody here chose — and that name carries nothing to
+        # scope on, which would put both environments' master passwords inside
+        # every environment's boundary. RDS tags the managed secret with
+        # aws:rds:primaryDBInstanceArn, the only env-distinguishing handle
+        # available, so the condition scopes on the tag instead of the name.
+        # Verified at apply time by the scratch run (README.md §7d); if the tag
+        # turns out to be absent, the fallback is the bare rds!* pattern plus a
+        # documented residual — decided then, not silently.
+        Sid      = "ReadRdsManagedMasterSecret"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:rds!*"
+        Condition = {
+          ArnLike = {
+            "secretsmanager:ResourceTag/aws:rds:primaryDBInstanceArn" = "arn:aws:rds:${local.region}:${local.account_id}:db:mmgis-${each.key}*"
+          }
+        }
       },
       {
         # The admin task launches the publish task by family name.
         Sid      = "RunPublishTask"
         Effect   = "Allow"
         Action   = ["ecs:RunTask"]
-        Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task-definition/mmgis-*"
+        Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task-definition/mmgis-${each.key}*"
       },
       {
-        # The ONLY iam action in the boundary, and it is scoped twice over: by
-        # role name and by the service the role may be handed to. Without it the
-        # admin task's RunTask fails with an opaque AccessDenied that never
-        # mentions PassRole.
+        # The ONLY iam action in the boundary, and it is scoped three times
+        # over: by environment, by role name and by the service the role may be
+        # handed to. Without it the admin task's RunTask fails with an opaque
+        # AccessDenied that never mentions PassRole.
         Sid      = "PassRuntimeRolesToEcs"
         Effect   = "Allow"
         Action   = ["iam:PassRole"]
-        Resource = "arn:aws:iam::${local.account_id}:role/mmgis-*"
+        Resource = "arn:aws:iam::${local.account_id}:role/mmgis-${each.key}-*"
         Condition = {
           StringEquals = {
             "iam:PassedToService" = ["ecs-tasks.amazonaws.com", "ecs.amazonaws.com"]
@@ -95,6 +126,10 @@ resource "aws_iam_policy" "ci_role_boundary" {
         # Dashboards are published by the application at RUNTIME, not by
         # Terraform: the publish task stands up one CloudFormation stack per
         # dashboard and the admin task tears them down.
+        #
+        # Published dashboards are not yet namespaced per environment, so this
+        # pattern stays unscoped. Issue #250 renames them mmgis-<env>-dashboard-*;
+        # this pattern tightens to the environment's own prefix when it lands.
         Sid    = "DashboardStacks"
         Effect = "Allow"
         Action = [
@@ -106,15 +141,20 @@ resource "aws_iam_policy" "ci_role_boundary" {
         Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/mmgis-dashboard-*/*"
       },
       {
-        # The dashboard buckets the publish task creates, plus the environment's
-        # shared asset bucket.
+        # The dashboard buckets the publish task creates, plus this
+        # environment's shared asset bucket. Two asset patterns because the
+        # scratch environment's bucket (mmgis-development-scratch-assets-<acct>)
+        # cannot share a single pattern with the real one.
         #
-        # Neither pattern can match a Terraform state bucket: the state name
+        # The mmgis-dashboard-* patterns stay UNSCOPED for the same reason as
+        # DashboardStacks above: published dashboards are not yet namespaced per
+        # environment. Issue #250 renames them mmgis-<env>-dashboard-*, and these
+        # patterns tighten to the environment's own prefix when it lands.
+        #
+        # No pattern here can match a Terraform state bucket: the state name
         # shape is mmgis-<env>-tfstate-<account_id>, and "-tfstate-" contains
         # neither "dashboard" nor "-assets-". Even a mis-granted runtime role is
-        # therefore structurally fenced off state. (mmgis-*-assets-* does in
-        # principle match other odd names; a cap only ever meets a grant the
-        # apply role can create, and those are prefix-scoped.)
+        # therefore structurally fenced off state.
         Sid    = "DashboardAndAssetBuckets"
         Effect = "Allow"
         Action = [
@@ -134,8 +174,10 @@ resource "aws_iam_policy" "ci_role_boundary" {
         Resource = [
           "arn:aws:s3:::mmgis-dashboard-*",
           "arn:aws:s3:::mmgis-dashboard-*/*",
-          "arn:aws:s3:::mmgis-*-assets-*",
-          "arn:aws:s3:::mmgis-*-assets-*/*",
+          "arn:aws:s3:::mmgis-${each.key}-assets-*",
+          "arn:aws:s3:::mmgis-${each.key}-assets-*/*",
+          "arn:aws:s3:::mmgis-${each.key}-*-assets-*",
+          "arn:aws:s3:::mmgis-${each.key}-*-assets-*/*",
         ]
       },
       {
@@ -143,6 +185,10 @@ resource "aws_iam_policy" "ci_role_boundary" {
         # generated by CloudFront, so only the function name can be
         # prefix-scoped — the per-service honesty table in README.md records
         # which patterns AWS actually supports.
+        #
+        # The function name pattern stays unscoped by environment because
+        # published dashboards are not yet namespaced per environment; #250
+        # renames them mmgis-<env>-dashboard-*, and this tightens when it lands.
         Sid    = "DashboardCloudFront"
         Effect = "Allow"
         Action = [

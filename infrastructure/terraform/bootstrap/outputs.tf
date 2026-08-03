@@ -23,7 +23,7 @@ output "deploy_role_arns" {
   value       = { for env, role in aws_iam_role.deploy : env => role.arn }
 }
 
-output "permissions_boundary_arn" {
-  description = "The boundary every CI-created IAM role must carry. Threaded into the environment module's `permissions_boundary` input by #199; the apply roles refuse an iam:CreateRole without it."
-  value       = aws_iam_policy.ci_role_boundary.arn
+output "permissions_boundary_arns" {
+  description = "env => the boundary every IAM role created in that environment must carry. Threaded per environment into the environment module's `permissions_boundary` input by #199; each apply role refuses an iam:CreateRole that does not supply its own environment's boundary."
+  value       = { for env, policy in aws_iam_policy.ci_role_boundary : env => policy.arn }
 }

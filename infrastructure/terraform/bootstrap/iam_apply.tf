@@ -335,18 +335,18 @@ resource "aws_iam_role_policy" "terraform_apply" {
       },
       {
         # THE boundary-condition enforcement. A CreateRole that supplies no
-        # permissions boundary — or a different one — is denied outright, so
-        # every role CI creates is capped by boundary.tf whether the module
-        # remembers to ask for it or not. The environment module must therefore
-        # attach this exact boundary to every role it creates; its amendments
-        # issue (#199) owns that half of the contract.
+        # permissions boundary — or any boundary other than THIS environment's —
+        # is denied outright, so every role CI creates is capped by boundary.tf
+        # whether the module remembers to ask for it or not. The environment
+        # module must therefore attach this exact boundary to every role it
+        # creates; its amendments issue (#199) owns that half of the contract.
         Sid      = "CreateRoleOnlyWithBoundary"
         Effect   = "Allow"
         Action   = ["iam:CreateRole"]
         Resource = local.env_role_arn_pattern[each.key]
         Condition = {
           StringEquals = {
-            "iam:PermissionsBoundary" = aws_iam_policy.ci_role_boundary.arn
+            "iam:PermissionsBoundary" = aws_iam_policy.ci_role_boundary[each.key].arn
           }
         }
       },
@@ -391,15 +391,15 @@ resource "aws_iam_role_policy" "terraform_apply" {
       },
       {
         # Terraform may re-set or repair a role's boundary, but the same
-        # condition means it can only ever set THIS boundary — never swap in a
-        # weaker one.
+        # condition means it can only ever set THIS environment's boundary —
+        # never a weaker one, and never the other environment's.
         Sid      = "ReaffirmBoundaryOnly"
         Effect   = "Allow"
         Action   = ["iam:PutRolePermissionsBoundary"]
         Resource = local.env_role_arn_pattern[each.key]
         Condition = {
           StringEquals = {
-            "iam:PermissionsBoundary" = aws_iam_policy.ci_role_boundary.arn
+            "iam:PermissionsBoundary" = aws_iam_policy.ci_role_boundary[each.key].arn
           }
         }
       },
@@ -445,8 +445,12 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = local.github_trusted_role_arns
       },
       {
-        # Editing the boundary's default version would gut the cap without
-        # touching a single role, so the boundary policy itself is off limits.
+        # Editing a boundary's default version would gut the cap without
+        # touching a single role, so the boundary policies themselves are off
+        # limits — BOTH of them, to either apply role. Denying only this
+        # environment's would let the development apply role rewrite
+        # production's cap, which is exactly the cross-environment reach the
+        # per-environment split exists to remove.
         Sid    = "FenceOffBoundaryPolicy"
         Effect = "Deny"
         Action = [
@@ -455,7 +459,7 @@ resource "aws_iam_role_policy" "terraform_apply" {
           "iam:DeletePolicyVersion",
           "iam:SetDefaultPolicyVersion",
         ]
-        Resource = aws_iam_policy.ci_role_boundary.arn
+        Resource = [for env in local.environments : aws_iam_policy.ci_role_boundary[env].arn]
       },
       {
         # Stripping the boundary off a CI-created role is the other way around

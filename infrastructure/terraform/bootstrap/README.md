@@ -9,14 +9,15 @@ CI cannot be allowed to create its own credentials or its own state home. The Te
 - **Nothing GitHub can assume lives where an automated apply can edit it.** The apply role's IAM grants are scoped to `mmgis-<env>-*`, and every OIDC-trusted identity in the account is deliberately named outside that namespace (`mmgis-terraform-apply-<env>`, `mmgis-terraform-plan`) or, where the name has to stay inside it for contract reasons (`mmgis-<env>-github-deploy`), is fenced off explicitly.
 - **The fence is an explicit `Deny`, not a permissions boundary.** A permissions boundary caps what a role *can do*; it does **not** constrain edits to a role's *trust policy*. Since the whole risk here is "CI rewrites who may assume the deploy role", a boundary cannot express the rule. So `iam_apply.tf` carries a `Deny` + `NotAction` statement naming all five OIDC-trusted roles, which overrides every `Allow` above it.
 
-The permissions boundary still matters — it caps what a *CI-created runtime role* can do, and `iam:CreateRole` is conditioned on it so a boundary-less role cannot be created at all. Boundary and fence solve different halves of the same problem.
+The permissions boundary still matters — it caps what a *CI-created runtime role* can do, and `iam:CreateRole` is conditioned on it so a boundary-less role cannot be created at all. There is **one boundary per environment**, and each apply role may only ever supply its own (see §5). Boundary and fence solve different halves of the same problem.
 
 | Resource | Name | Trusted by |
 | --- | --- | --- |
 | State bucket (dev) | `mmgis-development-tfstate-<ACCOUNT_ID>` | — |
 | State bucket (prod) | `mmgis-production-tfstate-<ACCOUNT_ID>` | — |
 | State bucket (this root) | `mmgis-bootstrap-tfstate-<ACCOUNT_ID>` | — (no CI role has any access) |
-| Permissions boundary | `mmgis-ci-role-boundary` | — (attached to CI-created roles) |
+| Permissions boundary (dev) | `mmgis-ci-role-boundary-development` | — (attached to CI-created development roles) |
+| Permissions boundary (prod) | `mmgis-ci-role-boundary-production` | — (attached to CI-created production roles) |
 | Apply role (dev) | `mmgis-terraform-apply-development` | `repo:NASA-IMPACT/MMGIS:environment:development` + account root |
 | Apply role (prod) | `mmgis-terraform-apply-production` | `repo:NASA-IMPACT/MMGIS:environment:production` + account root |
 | Plan role | `mmgis-terraform-plan` | `repo:NASA-IMPACT/MMGIS:pull_request` |
@@ -81,6 +82,8 @@ Least privilege is only honest if you say where it stops. Three patterns are in 
 
 Two deliberate asymmetries in the secret grants: `secretsmanager:PutSecretValue` is present on the apply roles for the CI secret bootstrap (#248), which generates a value into a freshly created empty shell; `secretsmanager:GetSecretValue` is **absent from every CI role**, because neither plan nor apply ever needs to read a secret value and neither should be able to exfiltrate one.
 
+**One boundary per environment.** A single shared boundary would cap every CI-created role at the *union* of both environments' needs, which would let the development apply role mint a boundary-capped role whose own inline policy reads `mmgis/production/*` secrets, passes production runtime roles, runs production task definitions and pulls production images — the cap would permit all of it. Per-environment boundaries make the development blast radius development-only. The one grant that resists name scoping is the RDS-managed master secret: RDS names it `rds!db-<resource-id>`, which carries nothing environment-distinguishing, so the boundary scopes it by the `aws:rds:primaryDBInstanceArn` tag RDS puts on the managed secret instead. That condition is verified at apply time by the scratch run in §7d; if the tag turns out to be absent, the fallback is the bare `rds!*` pattern plus a documented residual — decided then, not silently.
+
 **Scratch allowance.** The development patterns deliberately also match `mmgis-development-scratch-*` and `mmgis/development-scratch/*`, so the scratch verification in §7 runs under the *real* dev apply role rather than a specially-privileged one. That is why the wildcards have no separator before them (`mmgis-development*`, not `mmgis-development-*`), and why the assets-bucket grant needs two patterns: no single pattern matches both `mmgis-development-assets-<ACCOUNT_ID>` and `mmgis-development-scratch-assets-<ACCOUNT_ID>`. Neither pattern matches a `-tfstate-` bucket — state access is *only* the dedicated state statement (object operations under the allowed key prefix, plus `ListBucket`), never bucket-configuration writes.
 
 ## 6. Trust subjects
@@ -120,10 +123,11 @@ aws iam create-role --role-name mmgis-development-deny-test \
   --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
 # → AccessDenied (no permissions boundary supplied)
 
-# rerun with the boundary → succeeds
+# rerun with this environment's boundary → succeeds
+# (the production boundary is denied here too: the condition is an exact match)
 aws iam create-role --role-name mmgis-development-deny-test \
   --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ecs-tasks.amazonaws.com"},"Action":"sts:AssumeRole"}]}' \
-  --permissions-boundary arn:aws:iam::<ACCOUNT_ID>:policy/mmgis-ci-role-boundary
+  --permissions-boundary arn:aws:iam::<ACCOUNT_ID>:policy/mmgis-ci-role-boundary-development
 
 aws iam delete-role --role-name mmgis-development-deny-test
 ```
@@ -141,7 +145,7 @@ aws iam update-assume-role-policy --role-name mmgis-development-github-deploy --
 This is the one that actually proves the apply-role policy against the module's real resource set, rather than against a reading of it.
 
 - Prerequisite: the environment-module amendments (#199) must be present on their branch (the `permissions_boundary` variable threaded through), otherwise the run correctly fails at the first `iam:CreateRole`.
-- Copy `infrastructure/terraform/environments/development/` to an **uncommitted** scratch directory and edit the module call: `environment = "development-scratch"`, `db_skip_final_snapshot = true`, `secret_recovery_window_days = 0`, and set `permissions_boundary` to this root's `permissions_boundary_arn` output.
+- Copy `infrastructure/terraform/environments/development/` to an **uncommitted** scratch directory and edit the module call: `environment = "development-scratch"`, `db_skip_final_snapshot = true`, `secret_recovery_window_days = 0`, and set `permissions_boundary` to this root's `permissions_boundary_arns["development"]` output.
 - Initialize against the dev state bucket under the scratch key: `terraform init -backend-config="bucket=mmgis-development-tfstate-<ACCOUNT_ID>" -backend-config="region=us-west-2" -backend-config="key=mmgis/development-scratch/terraform.tfstate"`.
 - Apply phase 1, then phase 2, per the module's README; then `terraform destroy`.
 - All of it under the assumed dev apply role's credentials. A clean end-to-end run is the proof; any `AccessDenied` found here is a missing grant in this root.
@@ -154,7 +158,7 @@ Nothing meaningful to pre-verify locally beyond `aws iam simulate-principal-poli
 
 | Issue | What it consumes |
 | --- | --- |
-| #199 (environment-module amendments) | Threads `permissions_boundary_arn` into the module and deletes the module's in-tree deploy role, leaving this root's as the only `mmgis-<env>-github-deploy` |
+| #199 (environment-module amendments) | Threads the matching entry of the `permissions_boundary_arns` map (one ARN per environment) into the module and deletes the module's in-tree deploy role, leaving this root's as the only `mmgis-<env>-github-deploy` |
 | #246 (PR plan previews) | Assumes `plan_role_arn`; reads state from `state_bucket_names` |
 | #247 (apply + deploy engine) | Assumes `apply_role_arns` and `deploy_role_arns`; initializes against `state_bucket_names` |
 | #248 (CI secret bootstrap) | Rides the apply role's `secretsmanager:PutSecretValue` grant on the `mmgis/<env>*` path |

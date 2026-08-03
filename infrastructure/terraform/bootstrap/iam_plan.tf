@@ -153,7 +153,7 @@ resource "aws_iam_role_policy" "terraform_plan" {
         Sid      = "ReadBoundaryPolicy"
         Effect   = "Allow"
         Action   = ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions"]
-        Resource = aws_iam_policy.ci_role_boundary.arn
+        Resource = [for env in local.environments : aws_iam_policy.ci_role_boundary[env].arn]
       },
     ]
   })
