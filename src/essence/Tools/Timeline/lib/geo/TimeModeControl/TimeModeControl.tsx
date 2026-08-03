@@ -18,7 +18,7 @@ export const TimeModeControl: React.FC<TimeModeControlProps> = ({
             {modes.map((mode) => (
                 <button
                     key={mode}
-                    className={`time-mode-button ${currentMode === mode ? 'active' : ''}`}
+                    className={`time-mode-button${currentMode === mode ? ' active' : ''}`}
                     onClick={() => onModeChange(mode)}
                     type="button"
                     aria-pressed={currentMode === mode}
