@@ -17,7 +17,7 @@ locals {
 }
 
 # Per-environment Terraform apply role: assumed by the infrastructure apply
-# workflow (#247) and, for scratch verification and break-glass, by an
+# workflow (iac-deploy.yml) and, for scratch verification and break-glass, by an
 # operator. Named OUTSIDE the mmgis-<env>-* namespace this role gets IAM write
 # powers over; the Deny fence at the bottom is the hard guarantee that an
 # automated apply can never edit the identities GitHub assumes.
@@ -104,8 +104,8 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "*"
       },
       {
-        # The environment module still declares this data source (#199 deletes
-        # it); applies of the branch as it stands must not fail on the lookup.
+        # Read-only lookup of the GitHub OIDC provider, so an apply of any
+        # root that declares the data source never fails on the read.
         Sid      = "ReadGithubOidcProvider"
         Effect   = "Allow"
         Action   = ["iam:GetOpenIDConnectProvider"]
@@ -298,7 +298,8 @@ resource "aws_iam_role_policy" "terraform_apply" {
         # Secrets are PATH-style (mmgis/<env>/db, …), a different convention
         # from the mmgis-<env>-* prefix; no separator before the * so the
         # scratch environment and the random -XXXXXX ARN suffix match.
-        # PutSecretValue serves the CI secret bootstrap (#248). GetSecretValue
+        # PutSecretValue serves the CI secret bootstrap step in the deploy
+        # workflow, which fills empty secret shells. GetSecretValue
         # is deliberately absent: CI never reads a secret value, and the
         # plan/apply path must not be able to exfiltrate one.
         Sid    = "SecretShells"
@@ -318,7 +319,7 @@ resource "aws_iam_role_policy" "terraform_apply" {
       {
         # A CreateRole without exactly this environment's boundary is denied,
         # so every CI-created role is capped by boundary.tf whether the module
-        # remembers to ask or not (#199 owns the module half of the contract).
+        # remembers to ask or not.
         Sid      = "CreateRoleOnlyWithBoundary"
         Effect   = "Allow"
         Action   = ["iam:CreateRole"]

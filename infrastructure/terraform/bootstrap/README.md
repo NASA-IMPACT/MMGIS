@@ -50,7 +50,7 @@ Run these right after the first apply, and before the real environment build is 
 
 ### a. The plan role is read-only (mutation denied)
 
-The plan role trusts only its OIDC subject, so the denial check runs from a workflow rather than a shell. Simplest documented form: run #246's plan workflow on a PR, and in the same job, after the plan step, attempt a write:
+The plan role trusts only its OIDC subject, so the denial check runs from a workflow rather than a shell. Simplest documented form: run the PR plan-preview workflow (`iac-plan.yml`) on a PR, and in the same job, after the plan step, attempt a write:
 
 ```bash
 aws s3api put-object --bucket mmgis-development-tfstate-<ACCOUNT_ID> --key deny-test --body /dev/null
@@ -90,7 +90,7 @@ aws iam update-assume-role-policy --role-name mmgis-development-github-deploy --
 
 This is the one that actually proves the apply-role policy against the module's real resource set, rather than against a reading of it.
 
-- Prerequisite: the environment-module amendments (#199) must be present on their branch (the `permissions_boundary` variable threaded through), otherwise the run correctly fails at the first `iam:CreateRole`.
+- Prerequisite: the environment module must thread the `permissions_boundary` variable through to every role it creates, otherwise the run correctly fails at the first `iam:CreateRole`.
 - Copy `infrastructure/terraform/environments/development/` to an **uncommitted** scratch directory and edit the module call: `environment = "development-scratch"`, `db_skip_final_snapshot = true`, `secret_recovery_window_days = 0`, and set `permissions_boundary` to this root's `permissions_boundary_arns["development"]` output.
 - Initialize against the dev state bucket under the scratch key: `terraform init -backend-config="bucket=mmgis-development-tfstate-<ACCOUNT_ID>" -backend-config="region=us-west-2" -backend-config="key=mmgis/development-scratch/terraform.tfstate"`.
 - Apply phase 1, then phase 2, per the module's README; then `terraform destroy`.
@@ -100,14 +100,14 @@ This run is also what proves the two grants that cannot be reasoned out offline:
 
 ### e. The deploy roles work from an environment-bound job
 
-Nothing meaningful to pre-verify locally beyond `aws iam simulate-principal-policy`. The first run of the app deploy engine (#247) against development is the proof.
+Nothing meaningful to pre-verify locally beyond `aws iam simulate-principal-policy`. The first run of the app deploy engine (`app-deploy.yml`) against development is the proof.
 
 ## 4. Consumers
 
-| Issue | What it consumes |
+| Consumer | What it consumes |
 | --- | --- |
-| #199 (environment-module amendments) | Threads the matching entry of the `permissions_boundary_arns` map (one ARN per environment) into the module, deletes the module's in-tree deploy role — leaving this root's as the only `mmgis-<env>-github-deploy` — and deletes the module's OIDC-provider data source (this root grants the read either way, so plans and applies work on both sides of that change) |
-| #246 (PR plan previews) | Assumes `plan_role_arn`; reads state from `state_bucket_names` |
-| #247 (apply + deploy engine) | Assumes `apply_role_arns` and `deploy_role_arns`; initializes against `state_bucket_names` |
-| #248 (CI secret bootstrap) | Rides the apply role's `secretsmanager:PutSecretValue` grant on the `mmgis/<env>*` path |
-| #252 (GitHub Environments setup) | Copies every output above into the matching GitHub Environment's variables |
+| The environment module (`infrastructure/terraform/modules/mmgis-environment`) | Takes the matching entry of the `permissions_boundary_arns` map (one ARN per environment) as its `permissions_boundary` input. The module declares no deploy role and no OIDC-provider data source of its own — this root's `mmgis-<env>-github-deploy` roles and provider read are the only ones |
+| The PR plan-preview workflow (`iac-plan.yml`) | Assumes `plan_role_arn`; reads state from `state_bucket_names` |
+| The deploy engines (`iac-deploy.yml`, `app-deploy.yml`) | Assume `apply_role_arns` and `deploy_role_arns`; initialize against `state_bucket_names` |
+| The CI secret bootstrap (a step in `iac-deploy.yml`) | Rides the apply role's `secretsmanager:PutSecretValue` grant on the `mmgis/<env>*` path |
+| GitHub Environments | Every output above is copied into the matching GitHub Environment's variables |

@@ -1,11 +1,11 @@
-# Per-environment image-roll deploy role, relocated verbatim from the
-# environment module (#199 deletes the in-module twin; the role NAME,
-# mmgis-<env>-github-deploy, is the contract between the halves). Two changes
-# in the move: trust is re-scoped from the old branch-ref subject to the
-# GitHub Environment subject (#247 binds `environment:` at job level), and
-# ARNs are constructed from the naming convention because bootstrap applies
-# before the environment exists. No operator-assume statement: nothing
-# requires a human to hold this role.
+# Per-environment image-roll deploy role. This root is its only owner — the
+# environment module declares no deploy role of its own — and the role NAME,
+# mmgis-<env>-github-deploy, is the contract the app deploy workflow assumes
+# by convention. Trust is scoped to the GitHub Environment subject (the
+# deploy job binds `environment:` at job level), and ARNs are constructed
+# from the naming convention because bootstrap applies before the environment
+# exists. No operator-assume statement: nothing requires a human to hold this
+# role.
 
 locals {
   deploy_service_arns = { for env in local.environments : env => "arn:aws:ecs:${local.region}:${local.account_id}:service/mmgis-${env}/mmgis-${env}-admin" }

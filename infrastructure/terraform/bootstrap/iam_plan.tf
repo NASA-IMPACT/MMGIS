@@ -1,4 +1,4 @@
-# Read-only role for PR plan previews (#246). The plan job runs UNBOUND (no
+# Read-only role for PR plan previews (iac-plan.yml). The plan job runs UNBOUND (no
 # `environment:`) so its OIDC subject is repo:<owner/name>:pull_request —
 # binding an environment would park a mere PR check behind production's
 # required-reviewer gate. One role covers both environments' roots. Fork PRs
@@ -69,8 +69,8 @@ resource "aws_iam_role_policy" "terraform_plan" {
         Resource = "*"
       },
       {
-        # The environment module still declares this data source (#199 deletes
-        # it); plans of the branch as it stands must not fail on the lookup.
+        # Read-only lookup of the GitHub OIDC provider, so a plan of any
+        # root that declares the data source never fails on the read.
         Sid      = "ReadGithubOidcProvider"
         Effect   = "Allow"
         Action   = ["iam:GetOpenIDConnectProvider"]
