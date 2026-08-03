@@ -404,17 +404,21 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = local.env_role_arn_pattern[each.key]
       },
       {
-        # The module attaches exactly one AWS managed policy — the Express
-        # infrastructure role's. Customer-managed policy attachment is not
-        # needed, so it is not granted, and any role decorated this way is still
-        # capped by the boundary.
-        Sid      = "AttachAwsManagedPoliciesOnly"
+        # The module attaches exactly ONE managed policy — the Express
+        # infrastructure role's — so the condition pins that exact ARN rather
+        # than the whole AWS managed namespace: a role capable of attaching any
+        # AWS managed policy can attach AdministratorAccess, and only the
+        # boundary would stand between that and the account. Customer-managed
+        # attachment is not needed either, so it is not granted.
+        # (The lowercase "for" in the policy name is correct; the camel-cased
+        # spelling does not exist.)
+        Sid      = "AttachExpressInfraManagedPolicyOnly"
         Effect   = "Allow"
         Action   = ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
         Resource = local.env_role_arn_pattern[each.key]
         Condition = {
-          ArnLike = {
-            "iam:PolicyARN" = "arn:aws:iam::aws:policy/*"
+          StringEquals = {
+            "iam:PolicyARN" = "arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRoleforExpressGatewayServices"
           }
         }
       },
