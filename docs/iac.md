@@ -1,66 +1,73 @@
-# Infrastructure as Code — how the stack is wired
+# Infrastructure & CI/CD — the map
 
-The conceptual layer for `infrastructure/terraform/`. How to actually apply and verify the bootstrap root lives in [its README](../infrastructure/terraform/bootstrap/README.md); this page owns the *why*.
+*This page and its siblings describe the merged end-state; the pieces land across the current PR stack (#245 bootstrap, #199 environments, #246 plan previews, #247 engines, #248 secret bootstrap, #249 demo converge, #250 dashboard namespace, #251 production gate, with #252 configuring the GitHub side).*
 
-## The two-root model
+MMGIS's **lean** deployment (`MMGIS_DEPLOYMENT_MODE=lean`) runs on AWS: the admin app as an ECS Express Mode service behind CloudFront, a short-lived publish task that turns a mission into a standalone static dashboard, and RDS PostgreSQL underneath. Everything is Terraform, applied by CI on merge; one reusable module describes a complete environment and thin per-environment roots instantiate it. The **full** deployment (upstream docker-compose default) uses none of this.
 
-Everything in `infrastructure/terraform/` is applied by CI, except one root: **bootstrap**, applied by a human, rarely. The split exists because CI cannot be allowed to own the things that would let it grant itself more — its own credentials (the CI roles) or its own state home (the buckets that record what those roles are). The apply role CI assumes creates IAM roles as part of building an environment, and a role that can create roles can, unchecked, create a better one. Bootstrap holds the identities and the fences; the environment roots hold everything else.
+This page is the hub. It holds the whole-system picture and the where-values-live inventory; the three siblings hold the detail. Operational how-tos (apply steps, verification commands) live with the code they operate — the [bootstrap README](../infrastructure/terraform/bootstrap/README.md) and the [infrastructure README](../infrastructure/README.md) — never here.
 
-### State
+## The whole system
 
-One state bucket per environment and nothing shared: no CI role's policy names any bucket but its own, so applying one environment can never touch another's state. The bootstrap root's own state sits in a third bucket that no CI role can touch at all, because that state describes the CI roles themselves.
+```mermaid
+flowchart LR
+    subgraph repo["GitHub repo"]
+        PRQ["infra pull request"]
+        DEV["push to development"]
+        PROD["push to production"]
+    end
+    subgraph wf["Workflows"]
+        PLAN["iac-plan.yml<br/>read-only plan preview"]
+        TDEV["deploy-development.yml<br/>trigger"]
+        TPROD["deploy-production.yml<br/>trigger, reviewer-gated"]
+        IAC["iac-deploy.yml<br/>infrastructure engine"]
+        APP["app-deploy.yml<br/>app engine"]
+    end
+    subgraph aws["AWS account"]
+        BOOT["bootstrap root — human-applied:<br/>CI roles, permissions boundaries,<br/>state buckets"]
+        ENVD["development environment<br/>mmgis-development-*"]
+        ENVP["production environment<br/>mmgis-production-*"]
+    end
+    PRQ --> PLAN
+    DEV --> TDEV
+    PROD --> TPROD
+    TDEV --> IAC
+    TPROD --> IAC
+    IAC --> APP
+    PLAN -.->|"plan role, read-only,<br/>both environments"| ENVD
+    PLAN -.-> ENVP
+    IAC -->|"apply role, own env only"| ENVD
+    IAC --> ENVP
+    APP -->|"deploy role, image roll only"| ENVD
+    APP --> ENVP
+    OP["Operator (human)"] -->|"terraform apply, rarely"| BOOT
+```
 
-Day one has a chicken-and-egg: the bootstrap root's state belongs in a bucket that root creates. The first apply therefore runs on local state and is immediately migrated into the new bucket with `terraform init -migrate-state` — the migration is mandatory, because a laptop-resident state file is exactly the locked-up knowledge this repo bans. Procedure in the [bootstrap README](../infrastructure/terraform/bootstrap/README.md).
+The bootstrap root owns the identities every workflow assumes and the buckets all Terraform state lives in; the workflows never touch it.
 
-**Disaster-recovery posture.** State holds no secret values — the environment module creates secret *shells* whose values are set out-of-band, and the RDS master password is created and rotated by RDS itself, never seen by Terraform. A leaked state file is an inventory, not a credential. Total state loss is survivable but tedious (re-import the long-lived resources); bucket versioning makes it unlikely, since every state revision stays recoverable and a clobbered write is a rollback rather than an outage. All state buckets carry versioning, SSE, a full public-access block, and `prevent_destroy`.
+Two planes, deliberately split:
 
-## The identity model
+- **The bootstrap root** — applied by a human, rarely. It owns the things CI must never own: the CI roles themselves, the permissions boundaries that cap CI-created roles, and the state buckets. See [identity & containment](iac-identity.md).
+- **Everything else** — applied by CI. Each environment branch (`development`, `production`) has a thin trigger workflow that calls two shared engines in order: converge the infrastructure, then ship the app. A new environment adds a trigger, not a pipeline. See [pipelines](iac-pipelines.md).
 
-Five OIDC-trusted identities, all owned by the bootstrap root:
+## The documents
 
-| Role | Purpose | Trusted by |
-| --- | --- | --- |
-| `mmgis-terraform-apply-development` | Infrastructure apply, dev | `repo:NASA-IMPACT/MMGIS:environment:development` + account root |
-| `mmgis-terraform-apply-production` | Infrastructure apply, prod | `repo:NASA-IMPACT/MMGIS:environment:production` + account root |
-| `mmgis-terraform-plan` | Read-only PR plan previews (both envs) | `repo:NASA-IMPACT/MMGIS:pull_request` |
-| `mmgis-development-github-deploy` | Image roll only, dev | `repo:NASA-IMPACT/MMGIS:environment:development` |
-| `mmgis-production-github-deploy` | Image roll only, prod | `repo:NASA-IMPACT/MMGIS:environment:production` |
+| Document | Question it answers |
+|---|---|
+| [iac-environments.md](iac-environments.md) | What exists in AWS per environment, how the module builds it, and where the app's secrets and images come from |
+| [iac-pipelines.md](iac-pipelines.md) | What happens on a PR, on a merge to `development`, and on a merge to `production` — engines, modes, gates, rollback |
+| [iac-identity.md](iac-identity.md) | Why any of those API calls are permitted — the two-root model, OIDC trust, the containment story, and the scoping honesty table |
 
-Bootstrap also owns the three state buckets and the two permissions boundaries (`mmgis-ci-role-boundary-<env>`, attached to every CI-created role).
+Reading order for a newcomer: environments (the map), pipelines (the motion), identity (the trust).
 
-### OIDC subjects: environment vs pull_request
+## Where values live
 
-A GitHub Actions job's OIDC subject depends on whether the job binds a GitHub Environment:
+Nothing account-identifying is committed. Every value has exactly one home:
 
-- **Environment-bound** jobs present `repo:<owner/name>:environment:<env>`. The apply and deploy workflows bind `environment:` at job level — that binding is what gates production behind required reviewers — so their roles trust the environment-form subject. Renaming a GitHub Environment breaks every assume.
-- **Unbound** jobs present `repo:<owner/name>:pull_request`. The plan job deliberately stays unbound: binding an environment would flip its subject to the environment form and park a mere PR check behind production's reviewer gate. Fork PRs on a public repo receive no OIDC token at all, so outside contributors get no plan preview — accepted, and the workflow says so with a neutral notice.
-
-The apply roles additionally trust the **account root** (`sts:AssumeRole`) so an operator can run scratch verification and break-glass applies. Account-root trust only delegates to per-principal IAM — the operator still needs their own `sts:AssumeRole` allow — so it adds no external surface. The plan and deploy roles do not carry it; nothing requires a human to hold them.
-
-## The containment story
-
-Two mechanisms, solving different halves of "CI creates roles safely":
-
-**The permissions boundary caps what CI-created roles can do.** The apply role's `iam:CreateRole` is conditioned on supplying exactly its environment's boundary, so a boundary-less (or wrong-boundary) role cannot be created at all. A boundary is a cap, not a grant: a capped role's effective permissions are the intersection of its own policy with the boundary, mined from what the five runtime roles legitimately do. There is one boundary **per environment** because a shared one would cap every role at the *union* of both environments' needs — the dev apply role could then mint a role whose inline policy reads production secrets, passes production runtime roles, and pulls production images, and the cap would permit all of it. Per-environment boundaries make the development blast radius development-only.
-
-**The escalation fence stops CI from editing the identities GitHub assumes.** A boundary cannot express this rule, because boundaries constrain what a role *does*, not edits to a role's *trust policy* — and the risk is precisely "CI rewrites who may assume the deploy role". So the fence is an explicit `Deny` in the apply role's policy, which overrides every `Allow`: all IAM writes are denied against the five OIDC-trusted roles (only reads survive, for incident response), the boundary policies themselves cannot be edited or re-versioned by either apply role, and stripping a boundary off any role in the account is denied.
-
-Defense in depth backs the fence: every OIDC-trusted identity is named *outside* the `mmgis-<env>-*` namespace the apply roles hold IAM writes over (or, for the deploy roles whose name must stay inside it for contract reasons, is covered by the fence explicitly).
-
-## Per-service scoping: which is which
-
-Least privilege is only honest if you say where it stops. Three patterns are in play, forced by what AWS actually supports:
-
-| Pattern | Where and why |
-| --- | --- |
-| Name prefix `mmgis-<env>*` | ECR repositories, ECS clusters/services, log groups, IAM role names, RDS instances and subnet groups, asset buckets, state-object keys — everything AWS lets you name |
-| `Resource: "*"` + exact action allowlist | CloudFront distributions / VPC origins / origin access controls (AWS-generated ids), security groups (AWS-generated ids; the VPC id is an uncommitted input), `ecs:RegisterTaskDefinition` / `ecs:DescribeTaskDefinition` / `ecs:DeregisterTaskDefinition` (no resource-level authorization), `ecr:GetAuthorizationToken`, and the `Describe*` read surface. The boundary backstops CI-created roles |
-| Path style `mmgis/<env>*` | Secrets Manager only — a **different** convention from the `mmgis-<env>-*` resource prefix, which every policy must carry explicitly or all secret operations fail |
-
-Notable deliberate edges:
-
-- **Secret value asymmetry.** `secretsmanager:PutSecretValue` exists on the apply roles for the CI secret bootstrap (#248), which writes a generated value into a freshly created shell. `GetSecretValue` is absent from *every* CI role: neither plan nor apply ever needs to read a secret value, and neither should be able to exfiltrate one.
-- **RDS-managed master secret.** RDS names it `rds!db-<id>` — nothing environment-distinguishing — so the runtime boundary scopes it by the `aws:rds:primaryDBInstanceArn` tag RDS sets, the only per-environment handle. If that condition fails at scratch verification, try `StringLike` before falling back to the bare `rds!*` pattern plus a documented residual — decided then, not silently.
-- **No object-level delete on asset buckets.** The apply roles manage asset-bucket *configuration* only, so destroying an environment that has served uploads requires emptying its bucket out-of-band first. That friction is the point: deleting user data stays a deliberate human act.
-- **Scratch allowance.** Development patterns deliberately also match `mmgis-development-scratch-*` / `mmgis/development-scratch/*`, so the scratch verification runs under the *real* dev apply role. That is why wildcards have no separator before them, and why asset-bucket grants need two patterns. No pattern anywhere matches a `-tfstate-` bucket name, so state stays structurally out of reach.
-- **Dashboard resources are env-unscoped for now.** Dashboards are published by the application at runtime (a CloudFormation stack per dashboard) and are not yet namespaced per environment; #250 renames them `mmgis-<env>-dashboard-*` and the patterns tighten then.
+| Home | Values | Notes |
+|---|---|---|
+| Committed in the repo | The module and roots, the backend `key`/`encrypt`/`use_lockfile`, all five workflows, the `mmgis-<env>-*` naming patterns, the wordlist hash pin | Everything reviewable in a PR; plans are the review artifact |
+| GitHub Environment (one copy per environment; #252) | Secrets `IAC_APPLY_ROLE_ARN`, `IAC_DEPLOY_ROLE_ARN`; variables `IAC_AWS_REGION`, `IAC_TFSTATE_BUCKET`, `IAC_TFVARS` (JSON: `vpc_id`, `private_subnet_ids`, `rds_ca_bundle_base64`, `permissions_boundary`) | Binding the Environment is what resolves these *and* mints the OIDC subject the roles trust — one mechanism, both jobs |
+| GitHub repo-level (plan preview only) | Secret `IAC_PLAN_ROLE_ARN`; variables `IAC_AWS_REGION`, `IAC_TFSTATE_BUCKET_<ENV>`, `IAC_TFVARS_<ENV>` | The plan job is deliberately Environment-unbound, so it cannot read Environment-scoped values |
+| AWS Secrets Manager (`mmgis/<env>/...`) | `session-secret`, `superadmin-username`, `superadmin-password`, `dashboards-password` (CI-generated once, never overwritten), `mapbox-token` (hand-set external credential), plus the RDS-managed master secret | Terraform creates empty shells only; no secret value ever passes through Terraform state |
+| Terraform outputs, read at run time | The six runtime names (`workflow_variables`: region, ECR repo, cluster, service, both task families), `admin_url`, the Express phase-2 handoff values | Never written back into GitHub — state is the only copy, so there is no second copy to drift |
+| Legacy repo variables (staging) | `AWS_REGION`, `ECR_REPOSITORY`, `ECS_CLUSTER`, `ECS_SERVICE`, the task-family pair, secret `AWS_DEPLOY_ROLE_ARN` | Read only by the pre-composition `deploy-lean.yml`; disjoint from `IAC_*` by design so neither pipeline can drive the other's environment |
