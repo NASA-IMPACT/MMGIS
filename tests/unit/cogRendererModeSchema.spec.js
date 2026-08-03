@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, describe } from 'vitest'
 const config = require('../../configure/src/metaconfigs/layer-tile-config.json')
 
 function findField(cfg, fieldName) {

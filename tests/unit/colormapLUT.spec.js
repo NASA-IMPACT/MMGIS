@@ -1,8 +1,8 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, describe } from 'vitest'
 import { evaluate_cmap } from '../../src/external/js-colormaps/js-colormaps.js'
 import { normalizeColormapName, buildColormapLUT } from '../../src/essence/Basics/MapEngines/Adapters/colormapLUT.ts'
 
-test.describe('normalizeColormapName', () => {
+describe('normalizeColormapName', () => {
     test('strips _r and flags reverse', () => {
         expect(normalizeColormapName('viridis_r')).toEqual({ name: 'viridis', reverse: true })
     })
@@ -14,7 +14,7 @@ test.describe('normalizeColormapName', () => {
     })
 })
 
-test.describe('buildColormapLUT', () => {
+describe('buildColormapLUT', () => {
     test('produces 256 RGBA samples matching evaluate_cmap', () => {
         const lut = buildColormapLUT('viridis')
         expect(lut.length).toBe(256 * 4)

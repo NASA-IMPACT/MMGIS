@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, describe } from 'vitest'
 import { composeColormapPipeline } from '../../src/essence/Basics/MapEngines/Adapters/DeckCOGLayer.ts'
 
 const fakeTexture = { id: 'cmap' }
