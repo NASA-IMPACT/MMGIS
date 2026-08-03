@@ -340,6 +340,7 @@ jobs:
           ENDPOINT=""
           ALB_SG=""
           HAVE_SERVICE="false"
+          CF_IN_STATE=""
 
           probe() {
             IMAGE=""
@@ -347,12 +348,34 @@ jobs:
             ENDPOINT=""
             ALB_SG=""
             HAVE_SERVICE="false"
+            CF_IN_STATE=""
 
-            # No workflow_variables output means empty state: nothing has ever
-            # been applied here. Greenfield, not an error.
-            local names_json=""
-            names_json=$(terraform -chdir="$TF_ROOT" output -json workflow_variables 2>/dev/null) || names_json=""
-            if [ -z "$names_json" ] || [ "$names_json" = "null" ]; then
+            # Read the WHOLE output set in one call, and fail on a nonzero exit
+            # rather than swallowing it. `terraform output -json` returns `{}`
+            # with exit 0 for empty state, so a nonzero exit is a backend
+            # problem (S3 hiccup, expired credentials, a wrong bucket) — never
+            # greenfield. The distinction is the point: "greenfield" here means
+            # "apply the placeholder image and empty CloudFront inputs", and
+            # doing that against a live environment because of a transient S3
+            # error would break publishes and destroy the front door.
+            local outputs_json="" names_json="" rc=0
+            outputs_json=$(terraform -chdir="$TF_ROOT" output -json 2>/tmp/tf-output.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              cat /tmp/tf-output.err >&2
+              echo "terraform output failed (exit $rc); refusing to read a failed state read as greenfield." >&2
+              exit 1
+            fi
+
+            # The root also exports admin_distribution_id, null until the
+            # CloudFront phase has applied. A non-empty value is state's own
+            # word that this environment already has a front door — the
+            # CloudFront guard below relies on it.
+            CF_IN_STATE=$(printf '%s' "$outputs_json" | jq -r '.admin_distribution_id.value // ""')
+
+            # An absent (or null) workflow_variables output means nothing has
+            # ever been applied here. Greenfield, not an error.
+            names_json=$(printf '%s' "$outputs_json" | jq -c '.workflow_variables.value // empty')
+            if [ -z "$names_json" ]; then
               echo "No workflow_variables in state — greenfield environment."
               return 0
             fi
@@ -481,6 +504,30 @@ jobs:
             exit 1
           fi
 
+          # The same trap on the CloudFront side. Empty phase-2 values are
+          # greenfield's normal shape, but a distribution id in state says this
+          # environment's front door already exists — and applying with the trio
+          # incomplete flips `enable_cloudfront` off, DESTROYING the
+          # distribution and its VPC origin. That is not recoverable by
+          # re-running: a recreated distribution comes back on a NEW
+          # cloudfront.net domain, so every bookmark and every published
+          # dashboard URL changes. A missing security group alone is only
+          # slightly kinder — it drops the :443 ingress rule and the front door
+          # starts answering 504. Refuse instead of guessing.
+          if [ -n "$CF_IN_STATE" ] && { [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; }; then
+            {
+              echo "State says this environment's CloudFront distribution exists"
+              echo "($CF_IN_STATE), but discovery could not resolve the full Express"
+              echo "trio: alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG'."
+              echo "Refusing to apply: it would destroy the distribution and its VPC"
+              echo "origin (a recreate later returns on a NEW CloudFront domain), or"
+              echo "drop the ALB ingress rule the front door depends on."
+              echo "Investigate the service's newest active configuration and its"
+              echo "service revision, then re-run."
+            } >&2
+            exit 1
+          fi
+
           {
             echo "image=$IMAGE"
             echo "alb_arn=$ALB_ARN"
@@ -489,7 +536,7 @@ jobs:
             echo "have_service=$HAVE_SERVICE"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG'"
+          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE'"
 
       # Plan mode changes nothing. It is how an environment gets reviewed before
       # its first real apply, and how a human previews a converge from the
@@ -621,6 +668,7 @@ jobs:
           ENDPOINT=""
           ALB_SG=""
           HAVE_SERVICE="false"
+          CF_IN_STATE=""
 
           probe() {
             IMAGE=""
@@ -628,10 +676,20 @@ jobs:
             ENDPOINT=""
             ALB_SG=""
             HAVE_SERVICE="false"
+            CF_IN_STATE=""
 
-            local names_json=""
-            names_json=$(terraform -chdir="$TF_ROOT" output -json workflow_variables 2>/dev/null) || names_json=""
-            if [ -z "$names_json" ] || [ "$names_json" = "null" ]; then
+            local outputs_json="" names_json="" rc=0
+            outputs_json=$(terraform -chdir="$TF_ROOT" output -json 2>/tmp/tf-output.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              cat /tmp/tf-output.err >&2
+              echo "terraform output failed (exit $rc); refusing to read a failed state read as greenfield." >&2
+              exit 1
+            fi
+
+            CF_IN_STATE=$(printf '%s' "$outputs_json" | jq -r '.admin_distribution_id.value // ""')
+
+            names_json=$(printf '%s' "$outputs_json" | jq -c '.workflow_variables.value // empty')
+            if [ -z "$names_json" ]; then
               echo "No workflow_variables in state — greenfield environment."
               return 0
             fi
@@ -713,8 +771,10 @@ jobs:
           # Up to 10 attempts, 30 s apart — five minutes of patience for the
           # ALB to appear on a freshly created service. Giving up is NOT a
           # failure: the CloudFront half simply stays unbuilt and a later infra
-          # run (any subsequent merge, or a manual dispatch) completes it. The
-          # environment is still reachable on its on.aws endpoint meanwhile.
+          # run (any later infrastructure-touching merge, or a manual dispatch)
+          # completes it — an app-only merge runs in read mode and applies
+          # nothing. The environment is still reachable on its on.aws endpoint
+          # meanwhile.
           for attempt in $(seq 1 10); do
             probe
             if [ "$HAVE_SERVICE" != "true" ]; then
@@ -736,23 +796,29 @@ jobs:
             echo "alb_arn=$ALB_ARN"
             echo "endpoint=$ENDPOINT"
             echo "alb_sg=$ALB_SG"
-            echo "have_service=$HAVE_SERVICE"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Re-discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG'"
+          echo "Re-discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE'"
 
       # Phase 2 runs only when re-discovery actually learned something phase 1
-      # did not have. In steady state that condition is false and this step is
-      # visibly skipped, which is the honest reading: nothing changed. When the
-      # values are still unavailable (service provisioning, greenfield ALB not
-      # yet surfaced) it is skipped too — see the re-discovery step's comment
-      # for why that is not a failure.
+      # did not have, and only when it learned the COMPLETE trio — endpoint,
+      # ALB ARN, and the ALB's security group. A phase-2 apply with an empty
+      # security-group id is never worth doing: on greenfield it would build
+      # CloudFront without the :443 ingress rule, so the front door would only
+      # 504 (better to leave it unbuilt and let a later run finish the job), and
+      # against a live environment it would destroy the rule that already
+      # exists. In steady state the condition is false and this step is visibly
+      # skipped, which is the honest reading: nothing changed. When the values
+      # are still unavailable (service provisioning, greenfield ALB not yet
+      # surfaced) it is skipped too — see the re-discovery step's comment for
+      # why that is not a failure.
       - name: Terraform apply (phase 2 — CloudFront over the discovered ALB)
         id: apply2
         if: >-
           ${{ inputs.mode == 'apply'
           && steps.rediscover.outputs.endpoint != ''
           && steps.rediscover.outputs.alb_arn != ''
+          && steps.rediscover.outputs.alb_sg != ''
           && (steps.rediscover.outputs.endpoint != steps.discover.outputs.endpoint
           || steps.rediscover.outputs.alb_arn != steps.discover.outputs.alb_arn
           || steps.rediscover.outputs.alb_sg != steps.discover.outputs.alb_sg) }}

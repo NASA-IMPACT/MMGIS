@@ -407,7 +407,12 @@ Both engines bind `environment:` on their job, which is load-bearing twice
 over: it is what makes GitHub mint the environment-form OIDC subject the two
 roles' trust policies accept, and it is what makes the Environment-scoped
 values above resolve. A caller cannot supply it, so triggers pass
-`secrets: inherit` and name no value themselves.
+`secrets: inherit` and name no value themselves. That also makes the
+Environment's **deployment-branch policy** load-bearing security rather than
+hygiene: any workflow on any branch in the repository could otherwise call
+these engines with `environment: development` and mint the trusted OIDC
+subject, so restricting which branches may deploy to the Environment is #252's
+half of this contract.
 
 Missing configuration fails the run **red**, listing every missing name at
 once. A deploy that cannot configure itself is broken, not pending.
@@ -434,7 +439,11 @@ image the service is already serving and applies with it, then the app engine
 builds the new image and rolls the service exactly once. Infra never moves the
 image forward; it only avoids moving it backwards. If a live service exists but
 no image can be resolved for it, the engine **refuses to apply** rather than
-silently pin the families to the nonexistent placeholder.
+silently pin the families to the nonexistent placeholder. It refuses on the
+same grounds when state says CloudFront already exists but the Express trio
+(ALB ARN, on.aws endpoint, ALB security group) could not be discovered:
+applying then would tear the distribution and its VPC origin down, and a
+recreate comes back on a new `cloudfront.net` domain.
 
 On greenfield there is nothing to discover: the first apply registers the
 families against the module's `:latest` placeholder, which does not exist in
@@ -466,8 +475,12 @@ check is part of proving a new environment.
 **App rollback — re-run the last green composed run** from the Actions UI. Its
 image is already built and tagged with that commit's short SHA in ECR, so the
 re-run re-registers both task-definition families against exactly that image
-and re-rolls the service onto it. No hand-built image, no tag juggling, and the
-infrastructure converges to the same commit's configuration on the way through.
+and re-rolls the service onto it. No hand-built image, no tag juggling. Those
+two app halves *are* the rollback: a re-run replays the original push event and
+the mode that run decided, so a run that decided `read` re-runs the
+infrastructure engine in `read` mode and applies nothing. Rolling the
+infrastructure back to that commit's configuration is a separate act — a manual
+dispatch on the reverted code, or the revert merge below.
 
 **Infrastructure rollback** is a revert commit merged to `development`: the
 next composed run applies it. Terraform state is versioned in the state bucket,
