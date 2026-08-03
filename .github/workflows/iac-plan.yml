@@ -34,7 +34,9 @@ name: Terraform plan preview
 #   secrets: IAC_PLAN_ROLE_ARN
 #              ARN of the read-only plan role (bootstrap root, #245).
 #   vars:    IAC_AWS_REGION
-#              Region for both the S3 backend and the AWS provider.
+#              Region for the S3 backend and the credential default, and
+#              injected as the root's `region` variable unless the tfvars JSON
+#              overrides it.
 #            IAC_TFSTATE_BUCKET_DEVELOPMENT / IAC_TFSTATE_BUCKET_PRODUCTION
 #              Per-environment state bucket names. Each root commits its
 #              backend `key`/`encrypt`/`use_lockfile` and takes `bucket` and
@@ -170,10 +172,13 @@ jobs:
 
           if [ -z "$TFVARS_JSON" ]; then
             note_missing "IAC_TFVARS_$SUFFIX"
-          elif ! printf '%s' "$TFVARS_JSON" | jq -e . >/dev/null 2>&1; then
+          elif ! printf '%s' "$TFVARS_JSON" | jq -e 'type == "object"' >/dev/null 2>&1; then
             # Set but unusable is a different problem from unset, and silently
-            # treating it as "not configured yet" would hide a typo forever.
-            note_missing "IAC_TFVARS_$SUFFIX (set but not valid JSON)"
+            # treating it as "not configured yet" would hide a typo forever. The
+            # value has to be a JSON *object* — terraform reads
+            # `*.auto.tfvars.json` as a map of variable names to values, so a
+            # bare scalar or array parses fine here and explodes at plan time.
+            note_missing "IAC_TFVARS_$SUFFIX (set but not a JSON object)"
           fi
 
           if [ -n "$MISSING" ]; then
@@ -186,7 +191,11 @@ jobs:
           echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
 
       # Providers are large and identical across both roots; the committed
-      # .terraform.lock.hcl files make the cache key exact.
+      # .terraform.lock.hcl files make the cache key exact. The cache only
+      # actually saves a download if those lock files carry `linux_amd64` `h1:`
+      # hashes (`terraform providers lock -platform=linux_amd64
+      # -platform=darwin_arm64`); without them terraform re-downloads on every
+      # run and the cache is inert but harmless.
       - name: Cache Terraform providers
         if: steps.config.outputs.ready == 'true'
         uses: actions/cache@v4
@@ -228,6 +237,15 @@ jobs:
         run: |
           set -o pipefail
 
+          # A terraform-tree PR need not contain this root: e.g. the bootstrap
+          # root (#245) lands before the environment roots (#211) exist on
+          # development. Not this PR's fault, so it reads as a green notice,
+          # not a red failure.
+          if [ ! -d "$TF_ROOT" ]; then
+            echo "status=root-missing" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Terraform will not create the plugin cache directory itself.
           mkdir -p "$TF_PLUGIN_CACHE_DIR"
 
@@ -235,7 +253,15 @@ jobs:
           # the required no-default variables (vpc_id, private_subnet_ids,
           # rds_ca_bundle_base64) arrive without a -var-file flag. jq normalises
           # whatever formatting the repository variable happens to carry.
-          printf '%s' "$TFVARS_JSON" | jq . > "$TF_ROOT/ci.auto.tfvars.json"
+          #
+          # The region is merged in because the roots' `var.region` defaults to
+          # us-west-2 and the provider reads that variable, not the AWS_REGION
+          # the credentials action exports — injecting it keeps the provider
+          # planning in the same region the state bucket lives in. An explicit
+          # `region` key in IAC_TFVARS_* still wins.
+          printf '%s' "$TFVARS_JSON" \
+            | jq --arg region "$REGION" '{region: $region} + .' \
+            > "$TF_ROOT/ci.auto.tfvars.json"
 
           # The backend commits key/encrypt/use_lockfile; bucket and region are
           # account-specific and supplied here.
@@ -251,7 +277,7 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             echo "status=init-failed" >> "$GITHUB_OUTPUT"
             echo "summary=Terraform init failed (exit $rc)." >> "$GITHUB_OUTPUT"
-            tail -n 100 tf-init.log > tf-output-tail.txt
+            tail -n 100 tf-init.log | head -c 60000 > tf-output-tail.txt
             # Exit 0 so the comment steps still run; the final step fails the job.
             exit 0
           fi
@@ -276,7 +302,7 @@ jobs:
             *)
               echo "status=plan-failed" >> "$GITHUB_OUTPUT"
               echo "summary=Terraform plan failed (exit $rc)." >> "$GITHUB_OUTPUT"
-              tail -n 100 tf-plan.log > tf-output-tail.txt
+              tail -n 100 tf-plan.log | head -c 60000 > tf-output-tail.txt
               exit 0
               ;;
           esac
@@ -366,6 +392,17 @@ jobs:
                     done
               } >> comment.md
               ;;
+            root-missing)
+              HEADLINE="No plan — this pull request's tree does not contain \`$TF_ROOT\`."
+              {
+                echo "**$HEADLINE**"
+                echo ""
+                echo "This happens when a pull request touches another part of the"
+                echo "terraform tree (the bootstrap root, say) without the environment"
+                echo "roots existing in its merge ref. It is expected, so the check stays"
+                echo "green."
+              } >> comment.md
+              ;;
             init-failed|plan-failed)
               if [ "$STATUS" = "init-failed" ]; then
                 PHASE="init"
@@ -399,8 +436,11 @@ jobs:
                 echo "<details>"
                 echo "<summary>Show plan</summary>"
                 echo ""
-                # Terraform plan output never contains a triple backtick, so a
-                # plain fence is safe here.
+                # Terraform indents every line of plan text, so even a backtick
+                # fence written into a .tf string value cannot terminate this
+                # fence at column 0 — a plain fence is safe. Worst case is
+                # mangled markdown from someone who could already comment on
+                # the PR directly.
                 echo '```text'
                 cat plan-trimmed.txt
                 echo ""
@@ -456,7 +496,10 @@ jobs:
             );
 
             const existing = comments.find(
-              (comment) => comment.body && comment.body.includes(marker)
+              // startsWith, not includes: the composed body puts the marker on
+              // line 1, so anchoring it keeps a human comment that quotes the
+              // marker from being mistaken for this workflow's own comment.
+              (comment) => comment.body && comment.body.startsWith(marker)
             );
 
             if (existing) {
