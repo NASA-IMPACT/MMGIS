@@ -490,8 +490,14 @@ what exists.
 **Break-glass** is for when CI itself is the thing that is broken. An operator
 assumes `mmgis-terraform-apply-<env>` with short-lived credentials (the role
 carries an operator-assume statement for exactly this) and runs the hand-apply
-flow above. It is an escape hatch and never the mechanism: anything applied by
-hand is drift until the same change is committed and a CI run converges on it.
+flow above. On a live, CI-built environment there is no local `terraform.tfvars`
+to start from — set `deployed_image` **and the three `express_*` phase-2
+values** in tfvars before applying (discover them the same way the engine
+does), or the plan will propose destroying CloudFront and re-registering the
+task families against the placeholder; the interactive plan approval is the
+only backstop. It is an escape hatch and never the mechanism: anything applied
+by hand is drift until the same change is committed and a CI run converges on
+it.
 
 ## Legacy deploy pipeline (staging)
 
