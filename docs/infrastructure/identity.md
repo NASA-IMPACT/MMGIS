@@ -1,6 +1,6 @@
 # Identity & containment — why the calls are permitted
 
-Part of the [infrastructure reference](iac.md). How to actually apply and verify the bootstrap root lives in [its README](../infrastructure/terraform/bootstrap/README.md); this page owns the *why*.
+Part of the [infrastructure reference](README.md). How to actually apply and verify the bootstrap root lives in [its README](../../infrastructure/terraform/bootstrap/README.md); this page owns the *why*.
 
 ## The two-root model
 
@@ -10,7 +10,7 @@ Everything in `infrastructure/terraform/` is applied by CI, except one root: **b
 
 One state bucket per environment and nothing shared: no CI role's policy names any bucket but its own, so applying one environment can never touch another's state. The bootstrap root's own state sits in a third bucket that no CI role can touch at all, because that state describes the CI roles themselves.
 
-Day one has a chicken-and-egg: the bootstrap root's state belongs in a bucket that root creates. The first apply therefore runs on local state and is immediately migrated into the new bucket with `terraform init -migrate-state` — the migration is mandatory, because a laptop-resident state file is exactly the locked-up knowledge this repo bans. Procedure in the [bootstrap README](../infrastructure/terraform/bootstrap/README.md).
+Day one has a chicken-and-egg: the bootstrap root's state belongs in a bucket that root creates. The first apply therefore runs on local state and is immediately migrated into the new bucket with `terraform init -migrate-state` — the migration is mandatory, because a laptop-resident state file is exactly the locked-up knowledge this repo bans. Procedure in the [bootstrap README](../../infrastructure/terraform/bootstrap/README.md).
 
 **Disaster-recovery posture.** State holds no secret values — the environment module creates secret *shells* whose values are set out-of-band, and the RDS master password is created and rotated by RDS itself, never seen by Terraform. A leaked state file is an inventory, not a credential. Total state loss is survivable but tedious (re-import the long-lived resources); bucket versioning makes it unlikely, since every state revision stays recoverable and a clobbered write is a rollback rather than an outage. All state buckets carry versioning, SSE, a full public-access block, and `prevent_destroy`.
 
@@ -66,14 +66,14 @@ Least privilege is only honest if you say where it stops. Three patterns are in 
 
 | Pattern | Where and why |
 | --- | --- |
-| Name prefix `mmgis-<env>*` | ECR repositories, ECS clusters/services, log groups, IAM role names, RDS instances and subnet groups, asset buckets, state-object keys — everything AWS lets you name |
+| Name prefix `mmgis-<env>*` | ECR repositories, ECS clusters/services, log groups, IAM role names, RDS instances and subnet groups, asset buckets — everything AWS lets you name |
 | `Resource: "*"` + exact action allowlist | CloudFront distributions / VPC origins / origin access controls (AWS-generated ids), security groups (AWS-generated ids; the VPC id is an uncommitted input), `ecs:RegisterTaskDefinition` / `ecs:DescribeTaskDefinition` / `ecs:DeregisterTaskDefinition` (no resource-level authorization), `ecr:GetAuthorizationToken`, and the `Describe*` read surface. The boundary backstops CI-created roles |
-| Path style `mmgis/<env>*` | Secrets Manager only — a **different** convention from the `mmgis-<env>-*` resource prefix, which every policy must carry explicitly or all secret operations fail |
+| Path style `mmgis/<env>*` | Secrets Manager names and the state-object keys inside each environment's state bucket — a **different** convention from the `mmgis-<env>-*` resource prefix, which every policy must carry explicitly or the operations fail |
 
 Notable deliberate edges:
 
-- **Secret value asymmetry.** `secretsmanager:PutSecretValue` exists on the apply roles for the CI secret bootstrap (#248), which writes a generated value into a freshly created shell. `GetSecretValue` is absent from *every* CI role: neither plan nor apply ever needs to read a secret value, and neither should be able to exfiltrate one.
-- **RDS-managed master secret.** RDS names it `rds!db-<id>` — nothing environment-distinguishing — so the runtime boundary scopes it by the `aws:rds:primaryDBInstanceArn` tag RDS sets, the only per-environment handle. If that condition fails at scratch verification, try `StringLike` before falling back to the bare `rds!*` pattern plus a documented residual — decided then, not silently.
+- **Secret value asymmetry.** `secretsmanager:PutSecretValue` exists on the apply roles for the CI secret bootstrap, which writes a generated value into a freshly created shell. `GetSecretValue` is absent from *every* CI role: neither plan nor apply ever needs to read a secret value, and neither should be able to exfiltrate one.
+- **RDS-managed master secret.** RDS names it `rds!db-<id>` — nothing environment-distinguishing — so the runtime boundary scopes it by the `aws:rds:primaryDBInstanceArn` tag RDS sets, the only per-environment handle.
 - **No object-level delete on asset buckets.** The apply roles manage asset-bucket *configuration* only, so destroying an environment that has served uploads requires emptying its bucket out-of-band first. That friction is the point: deleting user data stays a deliberate human act.
-- **Scratch allowance.** Development patterns deliberately also match `mmgis-development-scratch-*` / `mmgis/development-scratch/*`, so the scratch verification runs under the *real* dev apply role. That is why wildcards have no separator before them, and why asset-bucket grants need two patterns. No pattern anywhere matches a `-tfstate-` bucket name, so state stays structurally out of reach.
+- **Scratch allowance.** Development patterns deliberately also match `mmgis-development-scratch-*` / `mmgis/development-scratch/*`, so the scratch verification runs under the *real* dev apply role. That is why wildcards have no separator before them, and why asset-bucket grants need two patterns. No asset or scratch pattern matches a `-tfstate-` bucket name — each apply role's only state access is its own environment's bucket and key prefix, so a scratch run can never reach state.
 - **Dashboard resources are environment-namespaced in lockstep with the app.** Dashboards are published by the application at runtime (a CloudFormation stack per dashboard) under the `mmgis-<env>-dashboard-` prefix; the IAM patterns pin to that exact string, and the [environments page](environments.md#dashboard-stacks-app-created-environment-namespaced) covers the lockstep and the 11-character environment-name cap it forces.

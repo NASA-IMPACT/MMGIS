@@ -31,7 +31,7 @@ sequenceDiagram
     alt mode = apply
         I->>AWS: discover the serving image, phase-1 apply with it
         I->>AWS: bootstrap any empty application secrets
-        I->>AWS: discover ALB + on.aws endpoint, phase-2 apply (CloudFront)
+        I->>AWS: re-discover ALB + on.aws endpoint, phase-2 apply (CloudFront) only if they changed
     else mode = read
         I->>AWS: terraform init, read outputs only
     end
@@ -44,7 +44,7 @@ sequenceDiagram
     A->>AWS: poll until only the new image is active
 ```
 
-**The image sandwich.** Terraform decides which image the task-definition *families* are registered with, and publish jobs `RunTask` the bare family name — so an infra apply must never feed the families a tag that is not in ECR. In steady state the infra engine discovers the image the service is already serving and applies with it (never moving the image forward, only refusing to move it backwards), then the app engine builds the new image and rolls the service exactly once. The engine **refuses to apply** if a live service exists but its image cannot be resolved, and likewise if state says CloudFront exists but the Express trio (ALB ARN, endpoint, security group) cannot be discovered — applying then would tear down the distribution and come back on a new domain. On greenfield the first apply registers a nonexistent placeholder, the service crash-loops for a few minutes, and the same run's app phase heals it; CloudFront may complete on a later run if the ALB is slow to surface.
+**The image sandwich.** An infra apply must never feed the task-definition families a tag that is not in ECR (publishes resolve the bare family name to its latest revision — see [environments](environments.md#images-ci-decides-terraform-records)). In steady state the infra engine discovers the image the service is already serving and applies with it, then the app engine builds the new image and rolls the service exactly once. The engine **refuses to apply** if a live service exists but its image cannot be resolved (production's manual dispatch takes a `deployed_image` override for exactly that case), and likewise if state says CloudFront exists but the Express trio (ALB ARN, endpoint, security group) cannot be discovered — applying then would tear down the distribution and come back on a new domain. On greenfield the first apply registers a nonexistent placeholder, the service crash-loops for a few minutes, and the same run's app phase heals it; CloudFront may complete on a later run if the ALB is slow to surface.
 
 **Nothing is written back into GitHub.** The six runtime names are read out of Terraform state at run time (`terraform output -json workflow_variables`) and handed to the app engine as workflow outputs. Writing them into Actions variables would need a hand-rotated PAT and would leave a second copy of the truth free to drift.
 
@@ -61,7 +61,7 @@ Phase 1 creates the Secrets Manager secrets as empty shells. Four hold credentia
 
 ## Plan previews on pull requests
 
-`iac-plan.yml` runs on every PR touching `infrastructure/terraform/**` and posts one sticky comment per environment root, updated in place per push — the plan *is* the review artifact. Read-only by construction: it OIDC-assumes the dedicated plan role, plans with `-lock=false` so a preview can never contend with a real apply, and deliberately binds **no** GitHub Environment — an unbound job presents the `pull_request`-form OIDC subject the plan role's trust policy is written for, and binding one would both flip the subject and park a PR check behind production's reviewer gate (see [identity](identity.md#oidc-subjects-environment-vs-pull_request)). It triggers on `pull_request`, never `pull_request_target`, because it effectively executes PR-authored Terraform. Two degrade paths stay green rather than red: missing configuration (pre-bootstrap) skips AWS and posts a comment naming exactly which values are absent, and fork PRs — which receive no OIDC token and no comment-writable token on a public repo — get a step-summary notice from a clearly named skipped job.
+`iac-plan.yml` runs on every PR touching `infrastructure/terraform/**` and posts one sticky comment per environment root, updated in place per push — the plan *is* the review artifact. Read-only by construction: it OIDC-assumes the dedicated plan role, plans with `-lock=false` so a preview can never contend with a real apply, and deliberately binds **no** GitHub Environment — an unbound job presents the `pull_request`-form OIDC subject the plan role's trust policy is written for, and binding one would both flip the subject and park a PR check behind production's reviewer gate (see [identity](identity.md#oidc-subjects-environment-vs-pull_request)). It triggers on `pull_request`, never `pull_request_target`, because it effectively executes PR-authored Terraform. Two degrade paths stay green rather than red: missing configuration (pre-bootstrap) skips AWS and posts a comment naming exactly which values are absent, and fork PRs — which receive no OIDC token and no comment-writable token on a public repo — get a step-summary notice from a clearly labelled green job.
 
 ## Production: the gated trigger
 
@@ -84,12 +84,12 @@ The gate lives in the **engines**, not the trigger: both engine jobs bind `envir
 - **Approve the newest run only.** Runs parked at a gate sit outside the concurrency group ("waiting", not "in progress"), so stale parked runs accumulate; approving an older one deploys an older commit over a newer one.
 - **No cross-environment image promotion.** Production builds its own image from the production-branch commit into production's own ECR repository. Development images are never promoted — not by workflow, not by hand.
 
-The Environment's deployment-branch policy (#252) is load-bearing security, not hygiene: without it, any workflow on any branch could call the engines with `environment:` set and mint the trusted OIDC subject.
+The Environment's deployment-branch policy is load-bearing security, not hygiene: without it, any workflow on any branch could call the engines with `environment:` set and mint the trusted OIDC subject.
 
 ## Rollback and break-glass
 
-App rollback is **re-running the last green composed run**: its image already sits in ECR under that commit's SHA, so the re-run re-registers the families and re-rolls the service onto exactly it (a run that decided `read` re-runs in `read` mode and applies nothing). Infrastructure rollback is a revert commit merged to the environment's branch — hand-editing state is not a rollback, it is losing track of what exists. On production, every path parks at the same gate. Break-glass — CI itself broken — is an operator assuming the apply role and running the hand-apply flow in the [infrastructure README](../infrastructure/README.md#rollback-and-break-glass); anything applied by hand is drift until a CI run converges on the same committed change.
+App rollback is **re-running the last green composed run**: the app engine rebuilds that commit from source (`--no-cache`), re-pushes it under the same short-SHA tag, re-registers the families, and re-rolls the service — the same source, though not bit-identical, since a rebuild re-resolves dependencies within their declared ranges (a run that decided `read` re-runs in `read` mode and applies nothing). Infrastructure rollback is a revert commit merged to the environment's branch — hand-editing state is not a rollback, it is losing track of what exists. On production, every path parks at the same gate. Break-glass — CI itself broken — is an operator assuming the apply role and running the hand-apply flow in the [infrastructure README](../../infrastructure/README.md#rollback-and-break-glass); anything applied by hand is drift until a CI run converges on the same committed change.
 
 ## Legacy: `deploy-lean.yml`
 
-The pre-composition pipeline still deploys the existing staging environment from hand-set repository variables (disjoint from the `IAC_*` Environment values, so neither pipeline can drive the other's environment). It is deliberately untouched; retiring it is an explicit later step, never a side effect.
+The pre-composition pipeline still deploys the existing staging environment from hand-set repository variables (disjoint from the `IAC_*` Environment values, so neither pipeline can drive the other's environment).
