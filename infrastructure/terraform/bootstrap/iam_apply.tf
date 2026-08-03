@@ -138,15 +138,34 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "arn:aws:ecr:${local.region}:${local.account_id}:repository/mmgis-${each.key}*"
       },
       {
+        # UpdateCluster / UpdateClusterSettings are here so drift in a cluster's
+        # settings stays fixable by CI; without them the only remedy is a
+        # human with break-glass credentials.
         Sid    = "EcsClusterLifecycle"
         Effect = "Allow"
         Action = [
           "ecs:CreateCluster",
           "ecs:DeleteCluster",
-          "ecs:TagResource",
-          "ecs:UntagResource",
+          "ecs:UpdateCluster",
+          "ecs:UpdateClusterSettings",
         ]
         Resource = "arn:aws:ecs:${local.region}:${local.account_id}:cluster/mmgis-${each.key}*"
+      },
+      {
+        # Provider default_tags ride every create call, and ECS authorizes
+        # TagResource against the resource being created — miss one shape and
+        # the first apply dies at task-definition registration with an
+        # AccessDenied that never mentions tags.
+        Sid    = "EcsTagging"
+        Effect = "Allow"
+        Action = ["ecs:TagResource", "ecs:UntagResource"]
+        Resource = [
+          "arn:aws:ecs:${local.region}:${local.account_id}:cluster/mmgis-${each.key}*",
+          "arn:aws:ecs:${local.region}:${local.account_id}:task-definition/mmgis-${each.key}*",
+          "arn:aws:ecs:${local.region}:${local.account_id}:task-definition/mmgis-${each.key}*:*",
+          "arn:aws:ecs:${local.region}:${local.account_id}:service/mmgis-${each.key}*/*",
+          "arn:aws:ecs:${local.region}:${local.account_id}:express-gateway-service/*",
+        ]
       },
       {
         # RegisterTaskDefinition / DeregisterTaskDefinition support no
