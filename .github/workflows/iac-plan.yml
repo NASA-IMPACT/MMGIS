@@ -1,0 +1,490 @@
+name: Terraform plan preview
+
+# Plan preview for infrastructure pull requests.
+#
+# `terraform plan` IS the review artifact for an infra PR: the HCL diff says
+# what the author wrote, the plan says what AWS will actually do. This workflow
+# runs a plan for both environment roots on every PR that touches
+# `infrastructure/terraform/**` and posts the result as a single sticky comment
+# per root, updated in place on each push rather than appended.
+#
+# Read-only by construction:
+#   - Credentials come from OIDC-assuming the dedicated read-only plan role
+#     (`IAC_PLAN_ROLE_ARN`, created by the bootstrap root in #245). No
+#     long-lived keys, and the role cannot mutate anything.
+#   - `terraform plan -lock=false` — a PR preview never takes or contends for
+#     the S3 state lock, so a preview can never block or corrupt a real apply.
+#   - The `plan` job deliberately does NOT bind a GitHub Environment (no
+#     `environment:` key). An unbound pull_request job presents the
+#     `pull_request`-form OIDC subject (`repo:NASA-IMPACT/MMGIS:pull_request`),
+#     which is exactly what the bootstrap root's plan-role trust policy is
+#     written for. Adding an `environment:` key would change the subject to the
+#     environment form and every AssumeRole would start failing.
+#
+# `pull_request`, never `pull_request_target`: this workflow checks out and
+# effectively executes untrusted PR-authored content (terraform configuration,
+# and whatever providers/modules it references). `pull_request_target` would run
+# that content with the base repo's write-scoped GITHUB_TOKEN and full secret
+# access. `pull_request` keeps the blast radius at "read-only plan role".
+#
+# Repository configuration (all repo-level, NOT environment-scoped — an unbound
+# job cannot read Environment-scoped values, and this job must stay unbound to
+# keep the OIDC subject above; the same decision is recorded in the value
+# inventory in #252):
+#   secrets: IAC_PLAN_ROLE_ARN
+#              ARN of the read-only plan role (bootstrap root, #245).
+#   vars:    IAC_AWS_REGION
+#              Region for both the S3 backend and the AWS provider.
+#            IAC_TFSTATE_BUCKET_DEVELOPMENT / IAC_TFSTATE_BUCKET_PRODUCTION
+#              Per-environment state bucket names. Each root commits its
+#              backend `key`/`encrypt`/`use_lockfile` and takes `bucket` and
+#              `region` at init time via -backend-config.
+#            IAC_TFVARS_DEVELOPMENT / IAC_TFVARS_PRODUCTION
+#              A JSON object of the root's required input variables, e.g.
+#              {"vpc_id":"vpc-...","private_subnet_ids":["subnet-a","subnet-b"],
+#               "rds_ca_bundle_base64":"..."}
+#              CI writes it verbatim to `ci.auto.tfvars.json` inside the root
+#              before planning (terraform auto-loads `*.auto.tfvars.json`).
+#              These are account-identifying values that must never be
+#              committed. Repo Actions variables are visible only to repo
+#              collaborators, but the plan text they produce is public on a
+#              public repo (run logs and PR comments) — the team accepted that:
+#              these are network identifiers, not secrets.
+#
+# Degrade path: the bootstrap root (#245) is not merged or applied yet, so at
+# first NONE of the values above are set. The workflow must not turn infra PRs
+# red for that. When configuration is incomplete it skips the AWS steps, posts a
+# comment naming exactly which values are missing, and exits GREEN. Once
+# bootstrap is applied and the values are set, real plans start appearing with
+# no change to this file.
+#
+# Fork PRs get a step-summary notice instead of a plan — see the `fork-notice`
+# job for why a comment is impossible there.
+#
+# Expect long output the first time: against empty or partial state the plan is
+# an all-creates listing of the whole environment. That is correct, not a bug;
+# the comment truncates and points at the run log.
+
+on:
+  pull_request:
+    # Nothing outside the terraform tree can change a plan, so PRs that touch
+    # only application code never trigger this workflow at all.
+    paths:
+      - "infrastructure/terraform/**"
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+# A push that supersedes an in-flight preview should cancel it: the stale plan
+# would only overwrite the sticky comment with out-of-date output.
+concurrency:
+  group: iac-plan-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # Fork PRs cannot get a preview, and that must read as "skipped", not
+  # "broken". On a public repo GitHub issues no OIDC token to a fork PR (so the
+  # plan role cannot be assumed) and scopes its GITHUB_TOKEN to read-only (so
+  # this workflow cannot even post the explanation as a comment). The notice
+  # therefore goes to the job's step summary, from a clearly-named green job.
+  fork-notice:
+    name: Plan preview skipped (fork PR)
+    if: github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain why no plan preview was produced
+        env:
+          # Via env, not interpolated into the script: the value comes from the
+          # fork side of the PR.
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          {
+            echo "## Terraform plan preview skipped"
+            echo ""
+            echo "This pull request comes from a fork (\`$HEAD_REPO\`), so no plan"
+            echo "preview was produced."
+            echo ""
+            echo "GitHub does not issue an OIDC token to workflow runs from fork pull"
+            echo "requests, so the read-only Terraform plan role cannot be assumed. The"
+            echo "run's \`GITHUB_TOKEN\` is also read-only, which is why this notice is in"
+            echo "the job summary rather than a pull request comment."
+            echo ""
+            echo "To get a preview, a maintainer can push the same commits to a branch in"
+            echo "this repository and open a pull request from there."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  plan:
+    name: Plan (${{ matrix.root }})
+    # In-repo branches only. Forks are handled by `fork-notice` above.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # NOTE: no `environment:` key here, on purpose — see the header comment.
+    strategy:
+      # One root failing must not hide the other root's plan.
+      fail-fast: false
+      matrix:
+        include:
+          - root: development
+            suffix: DEVELOPMENT
+          - root: production
+            suffix: PRODUCTION
+    env:
+      TF_ROOT: infrastructure/terraform/environments/${{ matrix.root }}
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
+    steps:
+      # `pull_request` checks out the PR's merge ref, not the base branch. That
+      # is why this workflow can land on development before the terraform tree
+      # does: PR #211's own runs check out a tree that contains it.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Pure bash, no AWS calls: decide whether a plan is even possible before
+      # reaching for credentials, so an unconfigured repository produces a clear
+      # comment instead of a confusing AssumeRole failure. This step never
+      # fails.
+      - name: Resolve configuration
+        id: config
+        env:
+          ROLE_ARN: ${{ secrets.IAC_PLAN_ROLE_ARN }}
+          REGION: ${{ vars.IAC_AWS_REGION }}
+          BUCKET: ${{ vars[format('IAC_TFSTATE_BUCKET_{0}', matrix.suffix)] }}
+          TFVARS_JSON: ${{ vars[format('IAC_TFVARS_{0}', matrix.suffix)] }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          set -o pipefail
+
+          # Report the real, suffix-resolved configuration names so the list is
+          # copy-pasteable straight into the repository settings. Comma-separated,
+          # so no entry below may itself contain a comma — the comment step splits
+          # this list on commas to render one bullet per name.
+          MISSING=""
+          note_missing() {
+            MISSING="${MISSING:+$MISSING, }$1"
+          }
+
+          [ -n "$ROLE_ARN" ] || note_missing "IAC_PLAN_ROLE_ARN"
+          [ -n "$REGION" ] || note_missing "IAC_AWS_REGION"
+          [ -n "$BUCKET" ] || note_missing "IAC_TFSTATE_BUCKET_$SUFFIX"
+
+          if [ -z "$TFVARS_JSON" ]; then
+            note_missing "IAC_TFVARS_$SUFFIX"
+          elif ! printf '%s' "$TFVARS_JSON" | jq -e . >/dev/null 2>&1; then
+            # Set but unusable is a different problem from unset, and silently
+            # treating it as "not configured yet" would hide a typo forever.
+            note_missing "IAC_TFVARS_$SUFFIX (set but not valid JSON)"
+          fi
+
+          if [ -n "$MISSING" ]; then
+            echo "Plan preview unavailable; missing configuration: $MISSING"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "All required configuration is present."
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
+
+      # Providers are large and identical across both roots; the committed
+      # .terraform.lock.hcl files make the cache key exact.
+      - name: Cache Terraform providers
+        if: steps.config.outputs.ready == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: tf-providers-${{ runner.os }}-${{ hashFiles('infrastructure/terraform/**/.terraform.lock.hcl') }}
+          restore-keys: |
+            tf-providers-${{ runner.os }}-
+
+      - name: Setup Terraform
+        if: steps.config.outputs.ready == 'true'
+        uses: hashicorp/setup-terraform@v3
+        with:
+          # Pinned for reproducibility: the version a plan was produced with is
+          # part of what a reviewer is trusting. Satisfies the roots'
+          # `required_version = ">= 1.11.0"`. Bumping this is routine.
+          terraform_version: "1.12.2"
+          # The wrapper rewrites terraform's stdout, which mangles the plan text
+          # this workflow captures and posts.
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC)
+        if: steps.config.outputs.ready == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.IAC_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.IAC_AWS_REGION }}
+
+      # Records an outcome rather than failing: the sticky comment must be
+      # posted even when terraform fails, so the job is failed later (last step)
+      # once the reviewer can actually see why.
+      - name: Terraform init and plan
+        id: plan
+        if: steps.config.outputs.ready == 'true'
+        env:
+          REGION: ${{ vars.IAC_AWS_REGION }}
+          BUCKET: ${{ vars[format('IAC_TFSTATE_BUCKET_{0}', matrix.suffix)] }}
+          TFVARS_JSON: ${{ vars[format('IAC_TFVARS_{0}', matrix.suffix)] }}
+        run: |
+          set -o pipefail
+
+          # Terraform will not create the plugin cache directory itself.
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+          # terraform auto-loads *.auto.tfvars.json from the root directory, so
+          # the required no-default variables (vpc_id, private_subnet_ids,
+          # rds_ca_bundle_base64) arrive without a -var-file flag. jq normalises
+          # whatever formatting the repository variable happens to carry.
+          printf '%s' "$TFVARS_JSON" | jq . > "$TF_ROOT/ci.auto.tfvars.json"
+
+          # The backend commits key/encrypt/use_lockfile; bucket and region are
+          # account-specific and supplied here.
+          echo "::group::terraform init"
+          rc=0
+          terraform -chdir="$TF_ROOT" init \
+            -input=false \
+            -no-color \
+            -backend-config="bucket=$BUCKET" \
+            -backend-config="region=$REGION" 2>&1 | tee tf-init.log || rc=$?
+          echo "::endgroup::"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "status=init-failed" >> "$GITHUB_OUTPUT"
+            echo "summary=Terraform init failed (exit $rc)." >> "$GITHUB_OUTPUT"
+            tail -n 100 tf-init.log > tf-output-tail.txt
+            # Exit 0 so the comment steps still run; the final step fails the job.
+            exit 0
+          fi
+
+          # -lock=false: a preview must never take or wait on the state lock.
+          # -detailed-exitcode: 0 = no changes, 2 = changes, anything else = error.
+          # This tee is what makes "full plan in the run log" literally true —
+          # the comment may be truncated, the log never is.
+          echo "::group::terraform plan"
+          rc=0
+          terraform -chdir="$TF_ROOT" plan \
+            -input=false \
+            -no-color \
+            -lock=false \
+            -detailed-exitcode \
+            -out=ci.plan 2>&1 | tee tf-plan.log || rc=$?
+          echo "::endgroup::"
+
+          case "$rc" in
+            0) STATUS="no-changes" ;;
+            2) STATUS="changes" ;;
+            *)
+              echo "status=plan-failed" >> "$GITHUB_OUTPUT"
+              echo "summary=Terraform plan failed (exit $rc)." >> "$GITHUB_OUTPUT"
+              tail -n 100 tf-plan.log > tf-output-tail.txt
+              exit 0
+              ;;
+          esac
+
+          # Render the saved plan from the workspace root so plan.txt lands
+          # somewhere the later steps can find without knowing $TF_ROOT.
+          terraform -chdir="$TF_ROOT" show -no-color ci.plan > plan.txt
+
+          # `terraform show` of a no-changes plan does not reliably print a
+          # "No changes." headline, so synthesise the headline from the exit
+          # code and only fall back to grep for the real "Plan: ..." line.
+          if [ "$STATUS" = "no-changes" ]; then
+            SUMMARY="No changes. Infrastructure matches the configuration."
+          else
+            SUMMARY=$(grep -E '^(Plan:|No changes\.)' plan.txt | tail -1 || true)
+            [ -n "$SUMMARY" ] || SUMMARY="Changes detected — see the plan below."
+          fi
+
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
+
+      # Runs for every terminal path — missing-config, init-failed, plan-failed,
+      # no-changes, changes — because a PR with no comment is indistinguishable
+      # from a PR the workflow never noticed.
+      - name: Compose comment body
+        id: body
+        if: ${{ !cancelled() && steps.config.outcome == 'success' }}
+        env:
+          ROOT: ${{ matrix.root }}
+          READY: ${{ steps.config.outputs.ready }}
+          MISSING: ${{ steps.config.outputs.missing }}
+          PLAN_STATUS: ${{ steps.plan.outputs.status }}
+          PLAN_SUMMARY: ${{ steps.plan.outputs.summary }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -o pipefail
+
+          if [ "$READY" != "true" ]; then
+            STATUS="missing-config"
+          else
+            # Empty when the plan step never ran — e.g. AssumeRole failed, so the
+            # step was skipped. Falls through to the catch-all below.
+            STATUS="${PLAN_STATUS:-incomplete}"
+          fi
+
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          SHORT_SHA="$(printf '%s' "$HEAD_SHA" | cut -c1-7)"
+
+          # A GitHub comment body caps at 65,536 characters. 60,000 leaves room
+          # for the heading, status line, details wrapper and truncation notice
+          # around the plan text.
+          MAX_PLAN_BYTES=60000
+
+          # First line is the sticky key: the comment steps find their previous
+          # comment by this marker. No PR number in it — the comment already
+          # lives on the PR, and one marker per root keeps the two matrix legs
+          # from fighting over a single comment.
+          {
+            echo "<!-- iac-plan: $ROOT -->"
+            echo "### Terraform plan preview — \`$ROOT\`"
+            echo ""
+            echo "Commit \`$SHORT_SHA\` · [run log]($RUN_URL)"
+            echo ""
+          } > comment.md
+
+          case "$STATUS" in
+            missing-config)
+              HEADLINE="Preview unavailable — repository configuration is incomplete."
+              {
+                echo "**$HEADLINE**"
+                echo ""
+                echo "The read-only plan role and the state buckets are created by the"
+                echo "bootstrap Terraform root (#245), which has not been applied yet."
+                echo "Until it is applied and the values below are set on this repository,"
+                echo "no plan can be produced. This is the expected degrade path, so the"
+                echo "check stays green."
+                echo ""
+                echo "Missing or invalid:"
+                echo ""
+                printf '%s\n' "$MISSING" \
+                  | tr ',' '\n' \
+                  | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+                  | while read -r name; do
+                      if [ -n "$name" ]; then
+                        echo "- \`$name\`"
+                      fi
+                    done
+              } >> comment.md
+              ;;
+            init-failed|plan-failed)
+              if [ "$STATUS" = "init-failed" ]; then
+                PHASE="init"
+              else
+                PHASE="plan"
+              fi
+              HEADLINE="Terraform \`$PHASE\` failed."
+              {
+                echo "**$HEADLINE** The full output is in the [run log]($RUN_URL)."
+                echo ""
+                echo "<details>"
+                echo "<summary>Last 100 lines of output</summary>"
+                echo ""
+                echo '```text'
+                cat tf-output-tail.txt
+                echo ""
+                echo '```'
+                echo ""
+                echo "</details>"
+              } >> comment.md
+              ;;
+            no-changes|changes)
+              HEADLINE="$PLAN_SUMMARY"
+              # head -c can cut mid-line; that is fine inside a fenced block and
+              # the notice below sends the reader to the untruncated run log.
+              head -c "$MAX_PLAN_BYTES" plan.txt > plan-trimmed.txt
+              PLAN_BYTES=$(wc -c < plan.txt)
+              {
+                echo "**$HEADLINE**"
+                echo ""
+                echo "<details>"
+                echo "<summary>Show plan</summary>"
+                echo ""
+                # Terraform plan output never contains a triple backtick, so a
+                # plain fence is safe here.
+                echo '```text'
+                cat plan-trimmed.txt
+                echo ""
+                echo '```'
+                echo ""
+                if [ "$PLAN_BYTES" -gt "$MAX_PLAN_BYTES" ]; then
+                  echo "… (truncated — full plan in the [run log]($RUN_URL))"
+                  echo ""
+                fi
+                echo "</details>"
+              } >> comment.md
+              ;;
+            *)
+              HEADLINE="Plan preview did not complete; see the [run log]($RUN_URL)."
+              {
+                echo "**$HEADLINE**"
+              } >> comment.md
+              ;;
+          esac
+
+          {
+            echo "## Terraform plan preview — \`$ROOT\`"
+            echo ""
+            echo "- **Status:** \`$STATUS\`"
+            echo "- **Result:** $HEADLINE"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Sticky comment: find the previous comment for this root by its marker
+      # and update it, so a PR with ten pushes still has one plan comment per
+      # root instead of twenty.
+      - name: Post sticky plan comment
+        if: ${{ !cancelled() && steps.config.outcome == 'success' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            // matrix.root is workflow-controlled, so this interpolation is safe.
+            // It happens exactly once, into a plain string constant — no
+            // expression is spliced into the middle of any other logic.
+            const root = '${{ matrix.root }}';
+            const marker = `<!-- iac-plan: ${root} -->`;
+            const body = fs.readFileSync('comment.md', 'utf8');
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100,
+              }
+            );
+
+            const existing = comments.find(
+              (comment) => comment.body && comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+              core.info(`Updated plan comment ${existing.id} for ${root}.`);
+            } else {
+              const created = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+              core.info(`Created plan comment ${created.data.id} for ${root}.`);
+            }
+
+      # Terraform actually failing is a red check — but only after the comment
+      # explaining it has been posted. Missing configuration stays green: that
+      # is the documented degrade path, not a broken PR.
+      - name: Fail if terraform failed
+        if: steps.plan.outputs.status == 'init-failed' || steps.plan.outputs.status == 'plan-failed'
+        env:
+          PLAN_STATUS: ${{ steps.plan.outputs.status }}
+          ROOT: ${{ matrix.root }}
+        run: |
+          echo "Terraform $PLAN_STATUS for $ROOT; see the plan comment." >&2
+          exit 1
