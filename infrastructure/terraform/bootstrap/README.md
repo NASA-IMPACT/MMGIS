@@ -84,6 +84,8 @@ Two deliberate asymmetries in the secret grants: `secretsmanager:PutSecretValue`
 
 **One boundary per environment.** A single shared boundary would cap every CI-created role at the *union* of both environments' needs, which would let the development apply role mint a boundary-capped role whose own inline policy reads `mmgis/production/*` secrets, passes production runtime roles, runs production task definitions and pulls production images — the cap would permit all of it. Per-environment boundaries make the development blast radius development-only. The one grant that resists name scoping is the RDS-managed master secret: RDS names it `rds!db-<resource-id>`, which carries nothing environment-distinguishing, so the boundary scopes it by the `aws:rds:primaryDBInstanceArn` tag RDS puts on the managed secret instead. That condition is verified at apply time by the scratch run in §7d; if the tag turns out to be absent, the fallback is the bare `rds!*` pattern plus a documented residual — decided then, not silently.
 
+**Assets buckets have no object-level delete.** The apply roles hold the assets buckets' *configuration* actions and deliberately **no** object-level delete, so destroying an environment that has already served uploads requires emptying its assets bucket out-of-band first. That friction is the point: deleting user data stays a deliberate human act rather than a side effect of `terraform destroy`.
+
 **Scratch allowance.** The development patterns deliberately also match `mmgis-development-scratch-*` and `mmgis/development-scratch/*`, so the scratch verification in §7 runs under the *real* dev apply role rather than a specially-privileged one. That is why the wildcards have no separator before them (`mmgis-development*`, not `mmgis-development-*`), and why the assets-bucket grant needs two patterns: no single pattern matches both `mmgis-development-assets-<ACCOUNT_ID>` and `mmgis-development-scratch-assets-<ACCOUNT_ID>`. Neither pattern matches a `-tfstate-` bucket — state access is *only* the dedicated state statement (object operations under the allowed key prefix, plus `ListBucket`), never bucket-configuration writes.
 
 ## 6. Trust subjects
@@ -150,6 +152,8 @@ This is the one that actually proves the apply-role policy against the module's 
 - Apply phase 1, then phase 2, per the module's README; then `terraform destroy`.
 - All of it under the assumed dev apply role's credentials. A clean end-to-end run is the proof; any `AccessDenied` found here is a missing grant in this root.
 
+This run is also what proves the two grants that cannot be reasoned out offline: the ECS tagging surface (provider `default_tags` ride every create call, and ECS authorizes `ecs:TagResource` against the resource being created), and the `aws:rds:primaryDBInstanceArn` tag condition the boundary uses to scope the RDS-managed master secret. If the run reaches a healthy service and destroys cleanly, both hold.
+
 ### e. The deploy roles work from an environment-bound job
 
 Nothing meaningful to pre-verify locally beyond `aws iam simulate-principal-policy`. The first run of the app deploy engine (#247) against development is the proof.
@@ -158,7 +162,7 @@ Nothing meaningful to pre-verify locally beyond `aws iam simulate-principal-poli
 
 | Issue | What it consumes |
 | --- | --- |
-| #199 (environment-module amendments) | Threads the matching entry of the `permissions_boundary_arns` map (one ARN per environment) into the module and deletes the module's in-tree deploy role, leaving this root's as the only `mmgis-<env>-github-deploy` |
+| #199 (environment-module amendments) | Threads the matching entry of the `permissions_boundary_arns` map (one ARN per environment) into the module, deletes the module's in-tree deploy role — leaving this root's as the only `mmgis-<env>-github-deploy` — and deletes the module's OIDC-provider data source (this root grants the read either way, so plans and applies work on both sides of that change) |
 | #246 (PR plan previews) | Assumes `plan_role_arn`; reads state from `state_bucket_names` |
 | #247 (apply + deploy engine) | Assumes `apply_role_arns` and `deploy_role_arns`; initializes against `state_bucket_names` |
 | #248 (CI secret bootstrap) | Rides the apply role's `secretsmanager:PutSecretValue` grant on the `mmgis/<env>*` path |
