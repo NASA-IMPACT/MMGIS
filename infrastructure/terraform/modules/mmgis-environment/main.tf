@@ -19,6 +19,9 @@ locals {
   # MMGIS_ENVIRONMENT, not by Terraform. This local must stay character-identical
   # to that composition ("mmgis-<env>-dashboard-"): the iam.tf grants pin to it,
   # and the ecs.tf task environments inject the matching MMGIS_ENVIRONMENT.
+  # Tightening or changing this prefix orphans any stack published under a
+  # previous one (the admin role loses describe/delete on it), so apply this
+  # module only where every dashboard was born under the current prefix.
   dashboard_prefix = "${local.name_prefix}-dashboard-"
 
   cluster_name = local.name_prefix

@@ -15,6 +15,10 @@ const DEFAULT_STACK_NAME_PREFIX = "mmgis-dashboard-";
 // Basic-auth username paired with the shared password.
 const BASIC_AUTH_USER = "mmgis";
 
+// Mirrors the environment validation in
+// infrastructure/terraform/modules/mmgis-environment/variables.tf.
+const ENVIRONMENT_PATTERN = /^[a-z][a-z0-9-]*$/;
+
 /**
  * The stack-name prefix for this runtime. When MMGIS_ENVIRONMENT is set
  * (the Terraform module sets it to the environment name, e.g. "development"),
@@ -22,11 +26,18 @@ const BASIC_AUTH_USER = "mmgis";
  * Unset/empty => the legacy shared prefix "mmgis-dashboard-" (the hand-built
  * environment never sets the variable and must keep today's names).
  * LOCKSTEP: the composed shape must match the IAM patterns in
- * infrastructure/terraform/modules/mmgis-environment/iam.tf.
+ * infrastructure/terraform/modules/mmgis-environment/iam.tf. A value the
+ * module's own validation would reject is rejected here too, so a malformed
+ * name fails loudly instead of as an AccessDenied at publish time.
  */
 function stackNamePrefix() {
   const env = process.env.MMGIS_ENVIRONMENT;
   if (env == null || env === "") return DEFAULT_STACK_NAME_PREFIX;
+  if (!ENVIRONMENT_PATTERN.test(env))
+    throw new Error(
+      `MMGIS_ENVIRONMENT '${env}' must be lowercase alphanumeric/hyphen ` +
+        "(matching the Terraform module's environment validation)"
+    );
   return `mmgis-${env}-dashboard-`;
 }
 

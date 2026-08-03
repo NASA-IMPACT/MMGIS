@@ -1,4 +1,4 @@
-import { test, expect, afterEach, vi } from 'vitest'
+import { test, expect, beforeEach, afterEach, vi } from 'vitest'
 
 // Tests for the per-dashboard CloudFormation template renderer
 // (scripts/lib/cfn-template.js) used by the lean publish flow.
@@ -15,6 +15,16 @@ const {
 const PASSWORD = 'a-Distinctive-Passw0rd!'
 
 test.describe('stackNameForDeployment', () => {
+    // The default shape only holds when MMGIS_ENVIRONMENT is unset; stub it
+    // away so a machine or CI job that exports it can't fail these spuriously.
+    beforeEach(() => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', '')
+    })
+
+    afterEach(() => {
+        vi.unstubAllEnvs()
+    })
+
     test('encodes the deployment id with the mmgis-dashboard- prefix', () => {
         expect(stackNameForDeployment(12)).toBe('mmgis-dashboard-12')
         expect(stackNameForDeployment('40')).toBe('mmgis-dashboard-40')
@@ -49,6 +59,17 @@ test.describe('MMGIS_ENVIRONMENT namespacing', () => {
         vi.stubEnv('MMGIS_ENVIRONMENT', 'development')
         expect(() => stackNameForDeployment(null)).toThrow()
         expect(() => stackNameForDeployment('')).toThrow()
+    })
+
+    test('rejects a value the Terraform module would reject', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'Dev_1')
+        expect(() => stackNamePrefix()).toThrow(/MMGIS_ENVIRONMENT/)
+        expect(() => stackNameForDeployment(1)).toThrow(/MMGIS_ENVIRONMENT/)
+    })
+
+    test('rejects a value that does not start with a letter', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', '-development')
+        expect(() => stackNameForDeployment(1)).toThrow(/MMGIS_ENVIRONMENT/)
     })
 })
 
