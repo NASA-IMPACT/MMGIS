@@ -3,7 +3,9 @@ import { describe, test, expect } from 'vitest'
 // Tests for the boot-time demo-mission convergence helper.
 
 const {
+    DEMO_MISSION_LOCK_KEY,
     deepEqual,
+    resolveBlueprint,
     convergeDemoMission,
 } = require('../../scripts/demo-mission-converge.js')
 
@@ -40,8 +42,11 @@ function resolvedBlueprintReordered() {
 function makeHarness(options = {}) {
     const logs = []
     const created = []
+    const createOptions = []
     const findOneCalls = []
+    const queryCalls = []
     const calls = { loadModel: 0 }
+    const tx = { fake: 'transaction' }
 
     const Config = {
         sync: async () => {},
@@ -49,18 +54,22 @@ function makeHarness(options = {}) {
             findOneCalls.push(query)
             return options.row === undefined ? null : options.row
         },
-        create: async (values) => {
+        create: async (values, createOpts) => {
             created.push(values)
+            createOptions.push(createOpts)
             if (options.createRejects) throw new Error('insert failed')
             return values
         },
     }
 
     const sequelize = {
-        transaction: async (fn) => fn({ fake: 'transaction' }),
-        query: async () => ({
-            locked: options.locked === undefined ? true : options.locked,
-        }),
+        transaction: async (fn) => fn(tx),
+        query: async (sql, queryOpts) => {
+            queryCalls.push({ sql, queryOpts })
+            return {
+                locked: options.locked === undefined ? true : options.locked,
+            }
+        },
     }
 
     const deps = {
@@ -78,7 +87,7 @@ function makeHarness(options = {}) {
         },
     }
 
-    return { deps, logs, created, findOneCalls, calls }
+    return { deps, logs, created, createOptions, findOneCalls, queryCalls, calls, tx }
 }
 
 describe('convergeDemoMission', () => {
@@ -107,6 +116,22 @@ describe('convergeDemoMission', () => {
         )
         // Only the blueprint's own mission is ever queried.
         expect(h.findOneCalls[0].where).toEqual({ mission: 'Demo Dashboard' })
+    })
+
+    test('pins the lock, the read and the write to one transaction', async () => {
+        const h = makeHarness({ row: null })
+        await convergeDemoMission(h.deps)
+
+        // Advisory locks are connection-scoped: the lock query and every
+        // subsequent statement must share the transaction (= connection), and
+        // the lock must be the transaction-scoped variant with the fixed key.
+        expect(h.queryCalls).toHaveLength(1)
+        expect(h.queryCalls[0].sql).toContain(
+            `pg_try_advisory_xact_lock(${DEMO_MISSION_LOCK_KEY})`
+        )
+        expect(h.queryCalls[0].queryOpts.transaction).toBe(h.tx)
+        expect(h.findOneCalls[0].transaction).toBe(h.tx)
+        expect(h.createOptions[0].transaction).toBe(h.tx)
     })
 
     test('writes nothing when the latest version already matches', async () => {
@@ -179,6 +204,48 @@ describe('convergeDemoMission', () => {
         expect(h.calls.loadModel).toBe(0)
         expect(h.logs).toHaveLength(1)
         expect(h.logs[0].caller).toBe('demo_convergence_error')
+    })
+})
+
+describe('resolveBlueprint', () => {
+    test('substitutes every placeholder occurrence', () => {
+        const parsed = resolveBlueprint({
+            env: { MAPBOX_TOKEN: TOKEN },
+            readFile: () =>
+                '{"a":"{{MAPBOX_TOKEN}}","b":"x{{MAPBOX_TOKEN}}y"}',
+            blueprintPath: '/fake/full-demo-mission.json',
+        })
+        expect(parsed).toEqual({ a: TOKEN, b: `x${TOKEN}y` })
+    })
+
+    test('is immune to replacement-pattern characters in the token', () => {
+        // String.replace would expand "$&" to the matched placeholder text;
+        // resolveBlueprint must write the token through verbatim.
+        const parsed = resolveBlueprint({
+            env: { MAPBOX_TOKEN: 'pk.$&$`$\'weird' },
+            readFile: () => '{"a":"{{MAPBOX_TOKEN}}"}',
+            blueprintPath: '/fake/full-demo-mission.json',
+        })
+        expect(parsed.a).toBe('pk.$&$`$\'weird')
+    })
+
+    test('throws when the placeholder is present but the token is not', () => {
+        expect(() =>
+            resolveBlueprint({
+                env: {},
+                readFile: () => '{"a":"{{MAPBOX_TOKEN}}"}',
+                blueprintPath: '/fake/full-demo-mission.json',
+            })
+        ).toThrow('MAPBOX_TOKEN')
+    })
+
+    test('tolerates a blueprint with no placeholder and no token', () => {
+        const parsed = resolveBlueprint({
+            env: {},
+            readFile: () => '{"a":1}',
+            blueprintPath: '/fake/full-demo-mission.json',
+        })
+        expect(parsed).toEqual({ a: 1 })
     })
 })
 

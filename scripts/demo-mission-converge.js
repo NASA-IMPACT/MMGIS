@@ -33,6 +33,9 @@ const DEFAULT_BLUEPRINT_PATH = path.join(
 // Recursive structural equality. Object key order does not matter, array
 // order does. JSON.stringify comparison is not usable here: the saved config
 // round-trips through Postgres JSON, which does not preserve key order.
+// (API/utils.js's isEqual is also unusable: its deep mode throws on nested
+// null values, and its isSimple mode is the key-order-sensitive
+// JSON.stringify comparison.)
 function deepEqual(a, b) {
   if (a === b) return true;
   if (typeof a !== typeof b) return false;
