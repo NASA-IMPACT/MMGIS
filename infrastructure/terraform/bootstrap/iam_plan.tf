@@ -3,7 +3,7 @@
 # binding an environment would park a mere PR check behind production's
 # required-reviewer gate. One role covers both environments' roots. Fork PRs
 # get no OIDC token, so no preview (accepted). Named outside mmgis-<env>-* so
-# the apply roles' IAM grants cannot reach it. Identity model: docs/iac.md.
+# the apply roles' IAM grants cannot reach it. Identity model: docs/infrastructure/README.md.
 
 locals {
   plan_state_object_arns = [for env in local.environments : "arn:aws:s3:::${local.state_bucket_names[env]}/mmgis/*"]
@@ -52,7 +52,7 @@ resource "aws_iam_role_policy" "terraform_plan" {
       },
       {
         # Same as the apply role's discovery statement: unscopeable APIs or
-        # AWS-generated ids (honesty table: docs/iac.md).
+        # AWS-generated ids (honesty table: docs/infrastructure/README.md).
         Sid    = "ReadOnlyDiscovery"
         Effect = "Allow"
         Action = [

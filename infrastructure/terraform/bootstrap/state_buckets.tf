@@ -1,6 +1,6 @@
 # Terraform state homes: one bucket per environment plus a separate bootstrap
 # bucket that no CI role can touch. State/bootstrap model and DR posture:
-# docs/iac.md.
+# docs/infrastructure/README.md.
 
 locals {
   # "bootstrap" rides along so every bucket gets identical hardening from the

@@ -1,6 +1,6 @@
 # Environments — what exists in AWS
 
-Part of the [infrastructure reference](iac.md). One reusable Terraform module (`infrastructure/terraform/modules/mmgis-environment/`) describes a complete environment; thin roots under `environments/development/` and `environments/production/` instantiate it. Every resource carries the `mmgis-<env>-*` name prefix (secrets use the path form `mmgis/<env>/...`), which is what the [identity model](iac-identity.md) scopes against.
+Part of the [infrastructure reference](iac.md). One reusable Terraform module (`infrastructure/terraform/modules/mmgis-environment/`) describes a complete environment; thin roots under `environments/development/` and `environments/production/` instantiate it. Every resource carries the `mmgis-<env>-*` name prefix (secrets use the path form `mmgis/<env>/...`), which is what the [identity model](identity.md) scopes against.
 
 ## Topology (one environment)
 

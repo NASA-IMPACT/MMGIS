@@ -2,7 +2,7 @@
 
 Applied **by a human**, rarely, under operator credentials. Everything else in `infrastructure/terraform/` is applied by CI — this root exists so that CI never owns the things that would let it grant itself more: the CI roles themselves, the permissions boundaries that cap CI-created roles, and the state buckets.
 
-This README is operational: how to apply this root and verify it. The conceptual layer — the two-root model, the identity and trust-subject design, the boundary + escalation-fence containment story, and the per-service scoping honesty table — lives in [docs/iac-identity.md](../../../docs/iac-identity.md), part of the [infrastructure reference hub](../../../docs/iac.md).
+This README is operational: how to apply this root and verify it. The conceptual layer — the two-root model, the identity and trust-subject design, the boundary + escalation-fence containment story, and the per-service scoping honesty table — lives in [docs/infrastructure/identity.md](../../../docs/infrastructure/identity.md), part of the [infrastructure reference hub](../../../docs/infrastructure/README.md).
 
 ## 1. Prerequisites
 
@@ -42,11 +42,11 @@ rm terraform.tfstate terraform.tfstate.backup
 
 Every later edit to this root: same `terraform init -backend-config=...` (both values derive from `aws sts get-caller-identity` and the committed naming pattern, so there is no uncommitted config file to lose), then `terraform plan` / `terraform apply`.
 
-State loss and recovery posture are covered in [docs/iac-identity.md](../../../docs/iac-identity.md); the short version is that state holds no secret values, versioning makes any single bad write a rollback, and worst case is re-importing the long-lived resources with `terraform import`. The state buckets carry `prevent_destroy` — removing that guard is a deliberate two-step (edit the `lifecycle` block, then destroy).
+State loss and recovery posture are covered in [docs/infrastructure/identity.md](../../../docs/infrastructure/identity.md); the short version is that state holds no secret values, versioning makes any single bad write a rollback, and worst case is re-importing the long-lived resources with `terraform import`. The state buckets carry `prevent_destroy` — removing that guard is a deliberate two-step (edit the `lifecycle` block, then destroy).
 
 ## 3. Verified at apply time
 
-Run these right after the first apply, and before the real environment build is scheduled. Each one proves a specific design claim from [docs/iac-identity.md](../../../docs/iac-identity.md); a failure here is fixed in **this** root, not worked around downstream.
+Run these right after the first apply, and before the real environment build is scheduled. Each one proves a specific design claim from [docs/infrastructure/identity.md](../../../docs/infrastructure/identity.md); a failure here is fixed in **this** root, not worked around downstream.
 
 ### a. The plan role is read-only (mutation denied)
 

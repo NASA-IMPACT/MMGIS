@@ -85,7 +85,7 @@ resource "aws_iam_role_policy" "terraform_apply" {
       },
       {
         # Refresh/plan reads: these APIs are unscopeable or address
-        # AWS-generated ids (honesty table: docs/iac.md).
+        # AWS-generated ids (honesty table: docs/infrastructure/README.md).
         # elasticloadbalancing:Describe* also serves the phase-2 Express-ALB
         # discovery the deploy engine performs under this role.
         Sid    = "ReadOnlyDiscovery"
@@ -232,7 +232,7 @@ resource "aws_iam_role_policy" "terraform_apply" {
       {
         # Security group ids are EC2-generated and the VPC id is an uncommitted
         # per-account input, so no honest resource pattern exists — * plus this
-        # exact allowlist is the documented trade (docs/iac.md). Includes the
+        # exact allowlist is the documented trade (docs/infrastructure/README.md). Includes the
         # phase-2 ingress rule on the ECS-managed ALB security group.
         Sid    = "SecurityGroups"
         Effect = "Allow"

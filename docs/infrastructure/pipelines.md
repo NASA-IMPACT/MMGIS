@@ -1,6 +1,6 @@
 # Pipelines — PR to converged
 
-Part of the [infrastructure reference](iac.md). Three entry points: a read-only plan preview on infrastructure PRs, and one composed deploy run per environment branch. There is one implementation of "converge the infrastructure" (`iac-deploy.yml`) and one of "ship the app" (`app-deploy.yml`); both are reusable engines with no triggers of their own, called in order by a thin per-environment trigger. A new environment adds a trigger, not a pipeline.
+Part of the [infrastructure reference](README.md). Three entry points: a read-only plan preview on infrastructure PRs, and one composed deploy run per environment branch. There is one implementation of "converge the infrastructure" (`iac-deploy.yml`) and one of "ship the app" (`app-deploy.yml`); both are reusable engines with no triggers of their own, called in order by a thin per-environment trigger. A new environment adds a trigger, not a pipeline.
 
 ## The composed run
 
@@ -61,7 +61,7 @@ Phase 1 creates the Secrets Manager secrets as empty shells. Four hold credentia
 
 ## Plan previews on pull requests
 
-`iac-plan.yml` runs on every PR touching `infrastructure/terraform/**` and posts one sticky comment per environment root, updated in place per push — the plan *is* the review artifact. Read-only by construction: it OIDC-assumes the dedicated plan role, plans with `-lock=false` so a preview can never contend with a real apply, and deliberately binds **no** GitHub Environment — an unbound job presents the `pull_request`-form OIDC subject the plan role's trust policy is written for, and binding one would both flip the subject and park a PR check behind production's reviewer gate (see [identity](iac-identity.md#oidc-subjects-environment-vs-pull_request)). It triggers on `pull_request`, never `pull_request_target`, because it effectively executes PR-authored Terraform. Two degrade paths stay green rather than red: missing configuration (pre-bootstrap) skips AWS and posts a comment naming exactly which values are absent, and fork PRs — which receive no OIDC token and no comment-writable token on a public repo — get a step-summary notice from a clearly named skipped job.
+`iac-plan.yml` runs on every PR touching `infrastructure/terraform/**` and posts one sticky comment per environment root, updated in place per push — the plan *is* the review artifact. Read-only by construction: it OIDC-assumes the dedicated plan role, plans with `-lock=false` so a preview can never contend with a real apply, and deliberately binds **no** GitHub Environment — an unbound job presents the `pull_request`-form OIDC subject the plan role's trust policy is written for, and binding one would both flip the subject and park a PR check behind production's reviewer gate (see [identity](identity.md#oidc-subjects-environment-vs-pull_request)). It triggers on `pull_request`, never `pull_request_target`, because it effectively executes PR-authored Terraform. Two degrade paths stay green rather than red: missing configuration (pre-bootstrap) skips AWS and posts a comment naming exactly which values are absent, and fork PRs — which receive no OIDC token and no comment-writable token on a public repo — get a step-summary notice from a clearly named skipped job.
 
 ## Production: the gated trigger
 

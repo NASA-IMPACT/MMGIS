@@ -46,16 +46,16 @@ The bootstrap root owns the identities every workflow assumes and the buckets al
 
 Two planes, deliberately split:
 
-- **The bootstrap root** — applied by a human, rarely. It owns the things CI must never own: the CI roles themselves, the permissions boundaries that cap CI-created roles, and the state buckets. See [identity & containment](iac-identity.md).
-- **Everything else** — applied by CI. Each environment branch (`development`, `production`) has a thin trigger workflow that calls two shared engines in order: converge the infrastructure, then ship the app. A new environment adds a trigger, not a pipeline. See [pipelines](iac-pipelines.md).
+- **The bootstrap root** — applied by a human, rarely. It owns the things CI must never own: the CI roles themselves, the permissions boundaries that cap CI-created roles, and the state buckets. See [identity & containment](identity.md).
+- **Everything else** — applied by CI. Each environment branch (`development`, `production`) has a thin trigger workflow that calls two shared engines in order: converge the infrastructure, then ship the app. A new environment adds a trigger, not a pipeline. See [pipelines](pipelines.md).
 
 ## The documents
 
 | Document | Question it answers |
 |---|---|
-| [iac-environments.md](iac-environments.md) | What exists in AWS per environment, how the module builds it, and where the app's secrets and images come from |
-| [iac-pipelines.md](iac-pipelines.md) | What happens on a PR, on a merge to `development`, and on a merge to `production` — engines, modes, gates, rollback |
-| [iac-identity.md](iac-identity.md) | Why any of those API calls are permitted — the two-root model, OIDC trust, the containment story, and the scoping honesty table |
+| [environments.md](environments.md) | What exists in AWS per environment, how the module builds it, and where the app's secrets and images come from |
+| [pipelines.md](pipelines.md) | What happens on a PR, on a merge to `development`, and on a merge to `production` — engines, modes, gates, rollback |
+| [identity.md](identity.md) | Why any of those API calls are permitted — the two-root model, OIDC trust, the containment story, and the scoping honesty table |
 
 Reading order for a newcomer: environments (the map), pipelines (the motion), identity (the trust).
 

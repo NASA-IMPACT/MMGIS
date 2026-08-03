@@ -4,7 +4,7 @@
 # intersection with the role's own policy. Per environment so a dev-created
 # role can never reach production resources. Boundaries do NOT constrain
 # trust-policy edits — that fence is the explicit Deny in iam_apply.tf.
-# Containment model: docs/iac.md.
+# Containment model: docs/infrastructure/README.md.
 resource "aws_iam_policy" "ci_role_boundary" {
   for_each = local.environments
 
@@ -130,7 +130,7 @@ resource "aws_iam_policy" "ci_role_boundary" {
       {
         # Distribution and origin-access-control ids are CloudFront-generated,
         # so only the function name can be prefix-scoped (honesty table:
-        # docs/iac.md). Function names stay env-unscoped until #250.
+        # docs/infrastructure/README.md). Function names stay env-unscoped until #250.
         Sid    = "DashboardCloudFront"
         Effect = "Allow"
         Action = [
