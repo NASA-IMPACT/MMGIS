@@ -1,0 +1,14 @@
+# Local Terraform state, plugins, and crash logs
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Day-one-only local-backend override (see README.md); never committed
+backend_override.tf
+
+# Uncommitted, account-specific inputs (only *.example files are committed)
+terraform.tfvars
+*.auto.tfvars
+backend.hcl
