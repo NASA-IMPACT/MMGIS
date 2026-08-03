@@ -11,6 +11,9 @@ module "mmgis" {
   # Every role the module creates carries the account's boundary policy.
   permissions_boundary = var.permissions_boundary
 
+  # The running image is CI's decision, handed in on every apply.
+  deployed_image = var.deployed_image
+
   # RDS — runtime spec is IDENTICAL to development (the admin is internal
   # tooling; the shipped product is the published dashboards, which serve
   # independently of this stack). The environments differ only in DELETION

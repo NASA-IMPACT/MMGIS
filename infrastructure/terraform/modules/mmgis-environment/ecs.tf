@@ -1,12 +1,9 @@
 locals {
-  # ⚠️ TRAP — this tag never exists in ECR (CI pushes commit-SHA tags only).
-  # The Express service ignores image drift (lifecycle ignore_changes below),
-  # but the task DEFINITIONS don't: any Terraform change that touches a task
-  # def registers a new revision pointing at this nonexistent tag, and Publish
-  # RunTasks the family's LATEST revision — silently broken until the next CI
-  # deploy re-registers both families with a real image. After ANY task-def
-  # change here, run deploy-lean.yml. (See README "Operational notes".)
-  placeholder_image = "${aws_ecr_repository.this.repository_url}:latest"
+  # Image fallback for the FIRST apply of a brand-new environment only: no image
+  # exists yet, this :latest tag never will (CI pushes commit-SHA tags), so tasks
+  # crash-loop until the app deploy later in the same run supplies a real image.
+  # Every subsequent apply receives the deployed image via var.deployed_image.
+  effective_image = var.deployed_image != "" ? var.deployed_image : "${aws_ecr_repository.this.repository_url}:latest"
 
   # DB_PASS comes straight from the RDS-managed master secret ({username,password}
   # JSON) — the ONLY place the password exists. The other connection values are
@@ -90,7 +87,7 @@ resource "aws_ecs_task_definition" "admin" {
 
   container_definitions = jsonencode([{
     name         = "mmgis"
-    image        = local.placeholder_image
+    image        = local.effective_image
     essential    = true
     portMappings = [{ containerPort = 8888, protocol = "tcp" }]
     environment  = local.admin_environment
@@ -127,7 +124,7 @@ resource "aws_ecs_task_definition" "publish" {
 
   container_definitions = jsonencode([{
     name        = "mmgis"
-    image       = local.placeholder_image
+    image       = local.effective_image
     essential   = true
     command     = ["node", "scripts/publish-static.js"]
     environment = local.publish_environment
@@ -161,7 +158,7 @@ resource "aws_ecs_express_gateway_service" "admin" {
   health_check_path       = "/api/utils/healthcheck"
 
   primary_container {
-    image          = local.placeholder_image
+    image          = local.effective_image
     container_port = 8888
 
     aws_logs_configuration {
@@ -193,7 +190,8 @@ resource "aws_ecs_express_gateway_service" "admin" {
 
   lifecycle {
     # The deploy workflow rolls the service by updating the primary container's
-    # image out-of-band; do not let Terraform revert it to the placeholder.
+    # image out-of-band; do not let Terraform revert it to the image this apply
+    # was handed.
     ignore_changes = [primary_container[0].image]
   }
 

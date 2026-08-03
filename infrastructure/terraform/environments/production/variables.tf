@@ -22,6 +22,12 @@ variable "rds_ca_bundle_base64" {
   type        = string
 }
 
+variable "deployed_image" {
+  description = "Supplied by the CI pipeline (TF_VAR_deployed_image). Leave unset for hand runs / first-ever apply."
+  type        = string
+  default     = ""
+}
+
 variable "permissions_boundary" {
   description = "ARN of the account's IAM permissions-boundary policy (created by the bootstrap root). Carries the account id, so it is supplied via uncommitted tfvars."
   type        = string

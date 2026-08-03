@@ -107,7 +107,13 @@ variable "log_retention_days" {
   default     = 30
 }
 
-# ── ECR ──
+# ── ECR / deployed image ──
+
+variable "deployed_image" {
+  description = "Full image reference (repo URL:tag) currently deployed, supplied by the CI pipeline on every apply. Terraform never decides which image runs — CI does. Empty ONLY for the first apply of a brand-new environment, where a nonexistent-placeholder fallback makes tasks crash-loop until the app deploy later in the same run pushes a real image (documented, expected)."
+  type        = string
+  default     = ""
+}
 
 variable "ecr_force_delete" {
   description = "Whether the ECR repository can be deleted while it still holds images."

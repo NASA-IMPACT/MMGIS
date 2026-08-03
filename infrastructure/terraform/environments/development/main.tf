@@ -11,6 +11,9 @@ module "mmgis" {
   # Every role the module creates carries the account's boundary policy.
   permissions_boundary = var.permissions_boundary
 
+  # The running image is CI's decision, handed in on every apply.
+  deployed_image = var.deployed_image
+
   # RDS — development is disposable, so allow a clean teardown.
   db_instance_class      = "db.t3.micro"
   db_allocated_storage   = 20

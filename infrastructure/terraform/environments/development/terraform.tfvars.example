@@ -8,6 +8,10 @@
 vpc_id             = "vpc-xxxxxxxxxxxxxxxxx"
 private_subnet_ids = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
 
+# The image the tasks run. CI supplies it on every apply (TF_VAR_deployed_image);
+# leave it unset for hand runs and for the first-ever apply.
+# deployed_image = "ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/mmgis-development:COMMIT_SHA"
+
 # IAM permissions-boundary policy every module-created role carries (created by
 # the bootstrap root).
 permissions_boundary = "arn:aws:iam::ACCOUNT:policy/POLICY_NAME"
