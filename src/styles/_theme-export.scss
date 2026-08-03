@@ -16,6 +16,15 @@
     --theme-color-primary-darker: #{color("primary-darker")};
     --theme-color-primary-light: #{color("primary-light")};
 
+    /* USWDS leaves the outer primary grades off unless a theme opts in, and
+       color() errors on a grade set to false — so only emit what exists. */
+    @if $theme-color-primary-lighter {
+      --theme-color-primary-lighter: #{color("primary-lighter")};
+    }
+    @if $theme-color-primary-lightest {
+      --theme-color-primary-lightest: #{color("primary-lightest")};
+    }
+
     /* Secondary colors */
     --theme-color-secondary: #{color("secondary")};
     --theme-color-secondary-dark: #{color("secondary-dark")};
