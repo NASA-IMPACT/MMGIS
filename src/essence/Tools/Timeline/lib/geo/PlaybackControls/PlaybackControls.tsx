@@ -63,16 +63,19 @@ export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
                     aria-label={isPlaying ? 'Pause' : 'Play'}
                     aria-pressed={isPlaying}
                 >
+                    {/* Drawn in the same 24-unit space as the transport icons
+                        beside them. Play and pause stay a little larger than
+                        those: this is the group's primary control. */}
                     {isPlaying ? (
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 20 20"
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
                         fill="currentColor" aria-hidden="true" focusable="false">
-                            <path fillRule="evenodd" clipRule="evenodd" d="M4 3H8V17H4V3Z" />
-                            <path fillRule="evenodd" clipRule="evenodd" d="M12 3H16V17H12V3Z" />
+                            <path fillRule="evenodd" clipRule="evenodd" d="M5 4H10V20H5V4Z" />
+                            <path fillRule="evenodd" clipRule="evenodd" d="M14 4H19V20H14V4Z" />
                         </svg>
                     ) : (
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 20 20"
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
                         fill="currentColor" aria-hidden="true" focusable="false">
-                            <path d="M5 17V3L17 10L5 17Z" />
+                            <path d="M6 20V4L20 12L6 20Z" />
                         </svg>
                     )}
                 </button>
