@@ -1,15 +1,12 @@
 locals {
-  # Every ARN in this file is CONSTRUCTED from the naming convention rather than
-  # referenced off the environment module: bootstrap applies long before any
-  # environment exists, and IAM happily accepts ARNs for resources that do not
-  # exist yet. The convention IS the contract — see README.md.
+  # ARNs in this file are constructed from the naming convention, not module
+  # references: bootstrap applies before any environment exists, and IAM
+  # accepts ARNs for resources that do not exist yet.
   apply_state_bucket_arns = { for env in local.environments : env => "arn:aws:s3:::${local.state_bucket_names[env]}" }
   env_role_arn_pattern    = { for env in local.environments : env => "arn:aws:iam::${local.account_id}:role/mmgis-${env}-*" }
 
-  # Every OIDC-trusted role this root owns, both environments, by constructed
-  # name. The escalation fence Denies against this exact list; constructing the
-  # ARNs instead of referencing the resources keeps the fence out of a
-  # dependency cycle with the roles it protects.
+  # Every OIDC-trusted role this root owns. Constructed names keep the Deny
+  # fence below out of a dependency cycle with the roles it protects.
   github_trusted_role_arns = [
     "arn:aws:iam::${local.account_id}:role/mmgis-terraform-apply-development",
     "arn:aws:iam::${local.account_id}:role/mmgis-terraform-apply-production",
@@ -20,14 +17,10 @@ locals {
 }
 
 # Per-environment Terraform apply role: assumed by the infrastructure apply
-# workflow (#247) and, for the scratch verification and break-glass paths in
-# README.md, by a human operator.
-#
-# The role name deliberately sits OUTSIDE the mmgis-<env>-* namespace this role
-# gets IAM write powers over. That is defense in depth #1 — the Allow statements
-# below cannot even name a GitHub-trusted role. Defense #2 is the explicit Deny
-# fence at the bottom of the inline policy, which is what actually guarantees
-# that an automated apply can never edit the identities GitHub assumes.
+# workflow (#247) and, for scratch verification and break-glass, by an
+# operator. Named OUTSIDE the mmgis-<env>-* namespace this role gets IAM write
+# powers over; the Deny fence at the bottom is the hard guarantee that an
+# automated apply can never edit the identities GitHub assumes.
 resource "aws_iam_role" "terraform_apply" {
   for_each = local.environments
 
@@ -37,10 +30,9 @@ resource "aws_iam_role" "terraform_apply" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Environment-form subject: the apply job binds `environment: <env>` at
-        # job level, so its OIDC token presents
-        # repo:<owner/name>:environment:<env>. A branch-ref subject would fail on
-        # first use, and renaming the GitHub Environment breaks assume outright.
+        # The apply job binds `environment: <env>`, so its OIDC token presents
+        # repo:<owner/name>:environment:<env> — a branch-ref subject would
+        # fail, and renaming the GitHub Environment breaks assume outright.
         Sid       = "GitHubOidcEnvironmentScoped"
         Effect    = "Allow"
         Principal = { Federated = data.aws_iam_openid_connect_provider.github.arn }
@@ -53,14 +45,11 @@ resource "aws_iam_role" "terraform_apply" {
         }
       },
       {
-        # Account-root trust only DELEGATES to per-principal IAM: it grants
-        # nothing by itself, because an operator still needs their own
-        # sts:AssumeRole allow on this role ARN. It exists because the OIDC
-        # condition above otherwise makes the role unassumable by any human, and
-        # the documented scratch verification and break-glass apply both require
-        # a human to hold it. No external surface is added. The plan and deploy
-        # roles deliberately do NOT carry this statement — nothing requires a
-        # human to hold those.
+        # Grants nothing alone — an operator still needs their own
+        # sts:AssumeRole allow on this ARN. Present because the OIDC condition
+        # otherwise makes the role human-unassumable, and scratch verification
+        # and break-glass (README.md) require a human. The plan and deploy
+        # roles deliberately do not carry this.
         Sid       = "OperatorAssumeForScratchAndBreakGlass"
         Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${local.account_id}:root" }
@@ -79,31 +68,24 @@ resource "aws_iam_role_policy" "terraform_apply" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Object operations only, and only under this environment's own key
-        # prefix: mmgis/<env>/terraform.tfstate, its .tflock lock object, and
-        # the documented scratch prefix mmgis/<env>-scratch/. There is no
-        # separator before the trailing * precisely so the scratch keys match.
-        # Bucket CONFIGURATION is bootstrap-owned and unreachable from here.
+        # Objects under this environment's own key prefix only; no separator
+        # before the * so the scratch keys (mmgis/<env>-scratch/) match.
+        # Bucket configuration is bootstrap-owned and unreachable from here.
         Sid      = "TfStateObjects"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
         Resource = "${local.apply_state_bucket_arns[each.key]}/mmgis/${each.key}*"
       },
       {
-        # Terraform lists the bucket on init/refresh. Note what is NOT here: no
-        # PutBucket*, no DeleteBucket, no versioning or encryption writes — the
-        # state bucket's configuration belongs to this root alone.
+        # List only — no bucket-configuration writes.
         Sid      = "TfStateList"
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
         Resource = local.apply_state_bucket_arns[each.key]
       },
       {
-        # Terraform refresh/plan reads. These are list/describe APIs that are
-        # either unscopeable or whose ids are generated by AWS (security groups,
-        # CloudFront distributions, VPC origins, origin access controls), so no
-        # honest resource pattern exists — the per-service honesty table in
-        # README.md records exactly which is which.
+        # Refresh/plan reads: these APIs are unscopeable or address
+        # AWS-generated ids (honesty table: docs/iac.md).
         # elasticloadbalancing:Describe* also serves the phase-2 Express-ALB
         # discovery the deploy engine performs under this role.
         Sid    = "ReadOnlyDiscovery"
@@ -122,18 +104,15 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "*"
       },
       {
-        # The environment module currently declares a data source for the
-        # GitHub OIDC provider; #199 deletes it, but applies of the branch as it
-        # stands must not fail on the lookup. Read-only, pinned to the one
-        # provider.
+        # The environment module still declares this data source (#199 deletes
+        # it); applies of the branch as it stands must not fail on the lookup.
         Sid      = "ReadGithubOidcProvider"
         Effect   = "Allow"
         Action   = ["iam:GetOpenIDConnectProvider"]
         Resource = data.aws_iam_openid_connect_provider.github.arn
       },
       {
-        # Repository name is mmgis-<env>; the trailing * with no separator also
-        # covers the scratch environment's repo (mmgis-development-scratch).
+        # No separator before the * so the scratch repo matches.
         Sid    = "EcrRepoLifecycle"
         Effect = "Allow"
         Action = [
@@ -148,9 +127,8 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "arn:aws:ecr:${local.region}:${local.account_id}:repository/mmgis-${each.key}*"
       },
       {
-        # UpdateCluster / UpdateClusterSettings are here so drift in a cluster's
-        # settings stays fixable by CI; without them the only remedy is a
-        # human with break-glass credentials.
+        # UpdateCluster/UpdateClusterSettings keep cluster drift fixable by CI
+        # rather than by break-glass credentials.
         Sid    = "EcsClusterLifecycle"
         Effect = "Allow"
         Action = [
@@ -162,10 +140,9 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "arn:aws:ecs:${local.region}:${local.account_id}:cluster/mmgis-${each.key}*"
       },
       {
-        # Provider default_tags ride every create call, and ECS authorizes
-        # TagResource against the resource being created — miss one shape and
-        # the first apply dies at task-definition registration with an
-        # AccessDenied that never mentions tags.
+        # ECS authorizes TagResource against the resource being created, and
+        # provider default_tags ride every create call — miss one ARN shape and
+        # apply dies with an AccessDenied that never mentions tags.
         Sid    = "EcsTagging"
         Effect = "Allow"
         Action = ["ecs:TagResource", "ecs:UntagResource"]
@@ -178,23 +155,18 @@ resource "aws_iam_role_policy" "terraform_apply" {
         ]
       },
       {
-        # RegisterTaskDefinition / DeregisterTaskDefinition support no
-        # resource-level scoping (empirically confirmed while building the
-        # environment module), so they authorize against *. Family names still
-        # carry the mmgis-<env>- prefix by module convention, which is what stops
-        # a production revision from being picked up by development's
-        # publish-by-family flow.
+        # Register/DeregisterTaskDefinition support no resource-level scoping
+        # (empirically confirmed); the mmgis-<env>- family-name convention is
+        # what keeps environments' revisions apart.
         Sid      = "TaskDefinitionsUnscopeable"
         Effect   = "Allow"
         Action   = ["ecs:RegisterTaskDefinition", "ecs:DeregisterTaskDefinition"]
         Resource = "*"
       },
       {
-        # The Express gateway service API authorizes Update/Describe against the
-        # SERVICE ARN (learned empirically in the module) and against the
-        # express-gateway-service/* shape elsewhere, so both are listed. Express
-        # gateway service ids are generated by ECS — allowlist honesty in
-        # README.md.
+        # The API authorizes Update/Describe against the SERVICE ARN (learned
+        # empirically) and the express-gateway-service/* shape elsewhere, so
+        # both are listed. Express gateway service ids are ECS-generated.
         Sid    = "ExpressGatewayServiceLifecycle"
         Effect = "Allow"
         Action = [
@@ -209,9 +181,8 @@ resource "aws_iam_role_policy" "terraform_apply" {
         ]
       },
       {
-        # Log groups are /ecs/mmgis-<env>-admin and /ecs/mmgis-<env>-publish. The
-        # second ARN form (with :*) is the one several logs APIs authorize
-        # against.
+        # The second ARN form (with :*) is the shape several logs APIs
+        # authorize against.
         Sid    = "LogGroupLifecycle"
         Effect = "Allow"
         Action = [
@@ -229,13 +200,10 @@ resource "aws_iam_role_policy" "terraform_apply" {
         ]
       },
       {
-        # CreateDBInstance authorizes against BOTH the db and the subnet-group
-        # ARN, so both patterns are listed here.
-        #
-        # On manage_master_user_password: RDS creates and rotates the managed
-        # master secret ITSELF, under the rds service principal — no caller-side
-        # secretsmanager grant is expected or given. Confirmed by the scratch
-        # apply in README.md.
+        # CreateDBInstance authorizes against BOTH the db and subnet-group
+        # ARNs. No secretsmanager grant is needed for
+        # manage_master_user_password: RDS creates and rotates the managed
+        # master secret itself, under its own service principal.
         Sid    = "RdsLifecycle"
         Effect = "Allow"
         Action = [
@@ -262,11 +230,10 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "arn:aws:rds:${local.region}:${local.account_id}:subgrp:mmgis-${each.key}*"
       },
       {
-        # Security group ids are generated by EC2 and the VPC id is an
-        # uncommitted per-account input, so no honest resource pattern exists.
-        # Resource "*" plus this exact action allowlist is the documented trade
-        # (honesty table in README.md). Includes the phase-2 ingress rule the
-        # module adds to the ECS-managed ALB security group.
+        # Security group ids are EC2-generated and the VPC id is an uncommitted
+        # per-account input, so no honest resource pattern exists — * plus this
+        # exact allowlist is the documented trade (docs/iac.md). Includes the
+        # phase-2 ingress rule on the ECS-managed ALB security group.
         Sid    = "SecurityGroups"
         Effect = "Allow"
         Action = [
@@ -283,13 +250,10 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "*"
       },
       {
-        # Two patterns because the scratch environment's bucket
-        # (mmgis-development-scratch-assets-<account_id>) cannot share a single
-        # pattern with the real one (mmgis-development-assets-<account_id>).
-        # Neither matches a mmgis-<env>-tfstate-<account_id> bucket.
-        #
-        # Bucket ARNs only, no object ARNs: Terraform manages the bucket and its
-        # configuration, never its contents. s3:Get* here reads bucket config.
+        # Two patterns because the scratch bucket
+        # (mmgis-development-scratch-assets-*) cannot share one with the real
+        # bucket; neither matches a -tfstate- bucket. Bucket ARNs only, no
+        # object ARNs: Terraform manages configuration, never contents.
         Sid    = "AssetsBucketLifecycle"
         Effect = "Allow"
         Action = [
@@ -310,11 +274,9 @@ resource "aws_iam_role_policy" "terraform_apply" {
         ]
       },
       {
-        # Distribution, VPC-origin and origin-access-control ids are generated by
-        # CloudFront, so nothing here can be name-scoped; the read half (Get*,
-        # List*) lives in ReadOnlyDiscovery. CloudFront ARNs are also global
-        # rather than regional, which the * accommodates. Allowlist honesty in
-        # README.md.
+        # Distribution, VPC-origin and origin-access-control ids are
+        # CloudFront-generated (and CloudFront ARNs are global, not regional),
+        # so nothing here can be name-scoped. Reads live in ReadOnlyDiscovery.
         Sid    = "CloudFrontLifecycle"
         Effect = "Allow"
         Action = [
@@ -333,21 +295,12 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "*"
       },
       {
-        # Three things worth knowing about this one pattern:
-        #
-        # (a) Secrets are PATH-style — mmgis/<env>/db, mmgis/<env>/session-secret,
-        #     … — a DIFFERENT convention from the mmgis-<env>-* resource prefix
-        #     used everywhere else. Carry it explicitly or every secret operation
-        #     fails.
-        # (b) No trailing slash before the *, so the documented scratch
-        #     environment (mmgis/development-scratch/…) is covered too. The same
-        #     wildcard absorbs the random -XXXXXX suffix Secrets Manager appends
-        #     to every secret ARN.
-        # (c) PutSecretValue is here for the CI secret bootstrap (#248), which
-        #     generates a value into a freshly created empty shell.
-        #     GetSecretValue is deliberately ABSENT: CI never needs to read a
-        #     secret value, and the plan/apply path must not be able to
-        #     exfiltrate one.
+        # Secrets are PATH-style (mmgis/<env>/db, …), a different convention
+        # from the mmgis-<env>-* prefix; no separator before the * so the
+        # scratch environment and the random -XXXXXX ARN suffix match.
+        # PutSecretValue serves the CI secret bootstrap (#248). GetSecretValue
+        # is deliberately absent: CI never reads a secret value, and the
+        # plan/apply path must not be able to exfiltrate one.
         Sid    = "SecretShells"
         Effect = "Allow"
         Action = [
@@ -363,12 +316,9 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:mmgis/${each.key}*"
       },
       {
-        # THE boundary-condition enforcement. A CreateRole that supplies no
-        # permissions boundary — or any boundary other than THIS environment's —
-        # is denied outright, so every role CI creates is capped by boundary.tf
-        # whether the module remembers to ask for it or not. The environment
-        # module must therefore attach this exact boundary to every role it
-        # creates; its amendments issue (#199) owns that half of the contract.
+        # A CreateRole without exactly this environment's boundary is denied,
+        # so every CI-created role is capped by boundary.tf whether the module
+        # remembers to ask or not (#199 owns the module half of the contract).
         Sid      = "CreateRoleOnlyWithBoundary"
         Effect   = "Allow"
         Action   = ["iam:CreateRole"]
@@ -380,10 +330,8 @@ resource "aws_iam_role_policy" "terraform_apply" {
         }
       },
       {
-        # The rest of the role lifecycle, scoped to the environment's own name
-        # prefix. Note the absence of CreateRole (it is conditioned above) and of
-        # UpdateAssumeRolePolicy — CI has no business editing any trust policy,
-        # and the fence below denies it besides.
+        # CreateRole is conditioned above; UpdateAssumeRolePolicy is absent —
+        # CI never edits trust policies (and the fence below denies it besides).
         Sid    = "RoleLifecycle"
         Effect = "Allow"
         Action = [
@@ -404,14 +352,9 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = local.env_role_arn_pattern[each.key]
       },
       {
-        # The module attaches exactly ONE managed policy — the Express
-        # infrastructure role's — so the condition pins that exact ARN rather
-        # than the whole AWS managed namespace: a role capable of attaching any
-        # AWS managed policy can attach AdministratorAccess, and only the
-        # boundary would stand between that and the account. Customer-managed
-        # attachment is not needed either, so it is not granted.
-        # (The lowercase "for" in the policy name is correct; the camel-cased
-        # spelling does not exist.)
+        # Pinned to the ONE managed policy the module attaches — a role that
+        # can attach any AWS managed policy can attach AdministratorAccess.
+        # (The lowercase "for" in the policy name is correct.)
         Sid      = "AttachExpressInfraManagedPolicyOnly"
         Effect   = "Allow"
         Action   = ["iam:AttachRolePolicy", "iam:DetachRolePolicy"]
@@ -423,9 +366,8 @@ resource "aws_iam_role_policy" "terraform_apply" {
         }
       },
       {
-        # Terraform may re-set or repair a role's boundary, but the same
-        # condition means it can only ever set THIS environment's boundary —
-        # never a weaker one, and never the other environment's.
+        # Same condition as CreateRole: repairs may only ever re-set THIS
+        # environment's boundary, never a weaker or foreign one.
         Sid      = "ReaffirmBoundaryOnly"
         Effect   = "Allow"
         Action   = ["iam:PutRolePermissionsBoundary"]
@@ -449,22 +391,14 @@ resource "aws_iam_role_policy" "terraform_apply" {
           }
         }
       },
-      # ── The escalation fence ──────────────────────────────────────────────
-      #
-      # The design rule the whole bootstrap/environment split exists to enforce:
-      # an automated apply may create IAM roles, but it may NEVER edit the
-      # identities GitHub itself assumes. A permissions boundary cannot express
-      # that — boundaries do not constrain trust-policy edits — so the fence is
-      # an explicit Deny, which overrides every Allow above, including the
-      # role/mmgis-<env>-* grants that DO cover the deploy role's name.
+      # The escalation fence: an automated apply may create roles but never
+      # edit the identities GitHub assumes. A boundary cannot express that
+      # (boundaries do not constrain trust-policy edits), so it is an explicit
+      # Deny that overrides every Allow above — including the mmgis-<env>-*
+      # grants that DO cover the deploy role's name.
       {
-        # NotAction + Deny: every iam action EXCEPT these reads is denied against
-        # the five OIDC-trusted roles. UpdateAssumeRolePolicy, PutRolePolicy,
-        # DeleteRole, AttachRolePolicy, PassRole, TagRole — all of it, gone.
-        #
-        # Reads stay allowed purely for debuggability (an `aws iam get-role`
-        # during incident response under the apply role's session); nothing in
-        # this root's state references these roles from an environment root.
+        # Everything except these reads is denied against the OIDC-trusted
+        # roles. Reads stay purely for incident-response debuggability.
         Sid    = "FenceOffGitHubTrustedRoles"
         Effect = "Deny"
         NotAction = [
@@ -479,11 +413,8 @@ resource "aws_iam_role_policy" "terraform_apply" {
       },
       {
         # Editing a boundary's default version would gut the cap without
-        # touching a single role, so the boundary policies themselves are off
-        # limits — BOTH of them, to either apply role. Denying only this
-        # environment's would let the development apply role rewrite
-        # production's cap, which is exactly the cross-environment reach the
-        # per-environment split exists to remove.
+        # touching a role. BOTH environments' boundaries are denied to both
+        # apply roles — else dev could rewrite production's cap.
         Sid    = "FenceOffBoundaryPolicy"
         Effect = "Deny"
         Action = [
@@ -495,8 +426,8 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = [for env in local.environments : aws_iam_policy.ci_role_boundary[env].arn]
       },
       {
-        # Stripping the boundary off a CI-created role is the other way around
-        # the cap. It is never legitimate for CI, on any role in the account.
+        # Stripping the boundary off a role is the other way around the cap —
+        # never legitimate for CI, on any role in the account.
         Sid      = "FenceOffBoundaryRemoval"
         Effect   = "Deny"
         Action   = ["iam:DeleteRolePermissionsBoundary"]

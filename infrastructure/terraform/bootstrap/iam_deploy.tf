@@ -1,27 +1,16 @@
-# The per-environment image-roll deploy role, relocated here from the
-# environment module's iam_deploy.tf. Its POWERS are unchanged — the five
-# statements below are the module's, verbatim, with their empirically-learned
-# comments intact. The amendments branch (#199) deletes the in-module twin, so
-# no duplicate identity survives; the role NAME (mmgis-<env>-github-deploy) is
-# the contract between the two halves.
-#
-# Two things did change in the move:
-#   - trust is re-scoped from the old branch-ref subject to the GitHub
-#     Environment subject, because the app deploy engine (#247) binds
-#     `environment:` at job level;
-#   - resource ARNs are CONSTRUCTED from the mmgis-<env>-* naming convention
-#     instead of resolved through module attributes. Bootstrap applies before
-#     the environment exists, and IAM accepts ARNs for resources that do not
-#     exist yet.
-#
-# Unlike the apply roles, there is no operator-assume statement: nothing
-# requires a human to hold this role, so the surface stays minimal.
+# Per-environment image-roll deploy role, relocated verbatim from the
+# environment module (#199 deletes the in-module twin; the role NAME,
+# mmgis-<env>-github-deploy, is the contract between the halves). Two changes
+# in the move: trust is re-scoped from the old branch-ref subject to the
+# GitHub Environment subject (#247 binds `environment:` at job level), and
+# ARNs are constructed from the naming convention because bootstrap applies
+# before the environment exists. No operator-assume statement: nothing
+# requires a human to hold this role.
 
 locals {
   deploy_service_arns = { for env in local.environments : env => "arn:aws:ecs:${local.region}:${local.account_id}:service/mmgis-${env}/mmgis-${env}-admin" }
 
-  # The five runtime roles the module creates, per environment, by constructed
-  # name. PassRole is pinned to exactly these — not to a prefix.
+  # PassRole is pinned to exactly these five runtime roles — not to a prefix.
   deploy_passable_role_arns = { for env in local.environments : env => [
     "arn:aws:iam::${local.account_id}:role/mmgis-${env}-admin-task-execution",
     "arn:aws:iam::${local.account_id}:role/mmgis-${env}-admin-task",
@@ -39,10 +28,8 @@ resource "aws_iam_role" "deploy" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      # Environment-form subject: the deploy job binds `environment: <env>` at
-      # job level, so its OIDC token presents
-      # repo:<owner/name>:environment:<env>. The GitHub Environment names must
-      # keep matching these strings exactly.
+      # Environment-bound jobs present repo:<owner/name>:environment:<env>;
+      # the GitHub Environment names must keep matching these strings exactly.
       Sid       = "GitHubOidcEnvironmentScoped"
       Effect    = "Allow"
       Principal = { Federated = data.aws_iam_openid_connect_provider.github.arn }
@@ -72,8 +59,8 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = "*"
       },
       {
-        # ECR push scoped to THIS environment's repository only — the exact
-        # name, no wildcard: CI only ever pushes to the real environment repo.
+        # Exact repository name, no wildcard: CI only ever pushes to the real
+        # environment repo.
         Sid    = "EcrPushToEnvRepo"
         Effect = "Allow"
         Action = [
@@ -88,8 +75,7 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = "arn:aws:ecr:${local.region}:${local.account_id}:repository/mmgis-${each.key}"
       },
       {
-        # RegisterTaskDefinition / DescribeTaskDefinition support no
-        # resource-level scoping, so they authorize against *.
+        # Register/DescribeTaskDefinition support no resource-level scoping.
         Sid      = "RegisterAndDescribeTaskDefinitions"
         Effect   = "Allow"
         Action   = ["ecs:RegisterTaskDefinition", "ecs:DescribeTaskDefinition"]
@@ -103,12 +89,10 @@ resource "aws_iam_role_policy" "deploy" {
         Resource = local.deploy_service_arns[each.key]
       },
       {
-        # Update + Describe only — CI rolls the EXISTING service; creating a
-        # service is Terraform's job under the apply role, and a compromised
-        # deploy token must not be able to stand up new services. The API
-        # authorizes Update/Describe against the SERVICE ARN (learned
-        # empirically), NOT the express-gateway-service/* shape, so the Resource
-        # lists BOTH.
+        # Update + Describe only — creating a service is Terraform's job, and
+        # a compromised deploy token must not stand up new services. The API
+        # authorizes these against the SERVICE ARN (learned empirically), not
+        # the express-gateway-service/* shape, so both are listed.
         Sid    = "ExpressGatewayServiceDeploy"
         Effect = "Allow"
         Action = [
@@ -121,9 +105,8 @@ resource "aws_iam_role_policy" "deploy" {
         ]
       },
       {
-        # Pinned PassRole: registering task-def revisions passes the task/exec
-        # roles; an Express service update passes the infra role too. The
-        # PassedToService condition mirrors the runtime roles' pattern.
+        # Registering task-def revisions passes the task/exec roles; an
+        # Express service update passes the infra role too.
         Sid      = "PassEnvTaskRoles"
         Effect   = "Allow"
         Action   = ["iam:PassRole"]

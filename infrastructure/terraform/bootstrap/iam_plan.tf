@@ -1,22 +1,9 @@
-# The read-only role assumed by the PR plan-preview workflow (#246).
-#
-# TRUST-SUBJECT DECISION, taken jointly with that issue: the plan job runs
-# UNBOUND — it declares no `environment:` — because binding one would flip the
-# OIDC subject to the environment form and, for production, park a mere PR check
-# behind the required-reviewer gate. Unbound pull_request jobs present
-# repo:<owner/name>:pull_request, so that exact subject is what this role trusts.
-# Fork PRs on a public repo get no OIDC token at all, so an outside
-# contributor's infrastructure PR gets no preview; that is accepted, and the
-# workflow explains itself with a neutral notice.
-#
-# ONE role covers BOTH environments' roots: a preview plans both, and read
-# powers this narrow do not justify two trust anchors. The name sits outside the
-# mmgis-<env>-* namespace so the apply roles' IAM grants cannot reach it even
-# before the Deny fence in iam_apply.tf applies.
-#
-# Read-only is enforced BY CONSTRUCTION: no write action appears anywhere below.
-# The deliberate mutation-denial check is in README.md's verified-at-apply-time
-# list.
+# Read-only role for PR plan previews (#246). The plan job runs UNBOUND (no
+# `environment:`) so its OIDC subject is repo:<owner/name>:pull_request —
+# binding an environment would park a mere PR check behind production's
+# required-reviewer gate. One role covers both environments' roots. Fork PRs
+# get no OIDC token, so no preview (accepted). Named outside mmgis-<env>-* so
+# the apply roles' IAM grants cannot reach it. Identity model: docs/iac.md.
 
 locals {
   plan_state_object_arns = [for env in local.environments : "arn:aws:s3:::${local.state_bucket_names[env]}/mmgis/*"]
@@ -50,9 +37,8 @@ resource "aws_iam_role_policy" "terraform_plan" {
     Version = "2012-10-17"
     Statement = [
       {
-        # Plans run with -lock=false, so no lock object is ever written and no
-        # write permission is granted to make one. The bootstrap bucket is
-        # deliberately absent: nothing CI-facing needs this root's state.
+        # Plans run with -lock=false, so no lock-object write is granted. The
+        # bootstrap bucket is deliberately absent.
         Sid      = "ReadStateObjects"
         Effect   = "Allow"
         Action   = ["s3:GetObject"]
@@ -65,9 +51,8 @@ resource "aws_iam_role_policy" "terraform_plan" {
         Resource = local.plan_state_bucket_arns
       },
       {
-        # Identical to the apply role's discovery statement, for the same
-        # reason: these reads are either unscopeable or address AWS-generated
-        # ids. See the per-service honesty table in README.md.
+        # Same as the apply role's discovery statement: unscopeable APIs or
+        # AWS-generated ids (honesty table: docs/iac.md).
         Sid    = "ReadOnlyDiscovery"
         Effect = "Allow"
         Action = [
@@ -84,10 +69,8 @@ resource "aws_iam_role_policy" "terraform_plan" {
         Resource = "*"
       },
       {
-        # The environment module currently declares a data source for the
-        # GitHub OIDC provider; #199 deletes it, but plans of the branch as it
-        # stands must not fail on the lookup. Read-only, pinned to the one
-        # provider.
+        # The environment module still declares this data source (#199 deletes
+        # it); plans of the branch as it stands must not fail on the lookup.
         Sid      = "ReadGithubOidcProvider"
         Effect   = "Allow"
         Action   = ["iam:GetOpenIDConnectProvider"]
@@ -118,20 +101,16 @@ resource "aws_iam_role_policy" "terraform_plan" {
         ]
       },
       {
-        # Bucket ARNs only — this reads the asset buckets' CONFIGURATION for the
-        # plan diff, not their contents. Note this is NOT the tfstate buckets:
-        # their objects are covered above and their configuration is
-        # bootstrap-owned, so no CI role reads it.
+        # Asset-bucket CONFIGURATION for the plan diff, not contents. The
+        # tfstate buckets' configuration is bootstrap-owned; no CI role reads it.
         Sid      = "ReadAssetBucketsConfig"
         Effect   = "Allow"
         Action   = ["s3:Get*", "s3:ListBucket"]
         Resource = "arn:aws:s3:::mmgis-*-assets-*"
       },
       {
-        # secretsmanager:GetSecretValue is DELIBERATELY ABSENT. A hijacked PR
-        # workflow must not be able to read a single secret value; metadata is
-        # all a plan diff needs, because the module manages shells and never
-        # values.
+        # GetSecretValue is deliberately absent: a hijacked PR workflow must
+        # not read a secret value, and metadata is all a plan diff needs.
         Sid      = "ReadSecretMetadata"
         Effect   = "Allow"
         Action   = ["secretsmanager:DescribeSecret", "secretsmanager:GetResourcePolicy"]

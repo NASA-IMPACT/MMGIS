@@ -1,17 +1,10 @@
-# Terraform state homes. One bucket per environment and NOTHING shared:
-# applying one environment can never touch another's state, because no CI role's
-# policy names a bucket but its own. The bootstrap bucket is separate again —
-# this root's state describes the CI roles themselves, so no CI-facing role is
-# granted a single action against it; only the per-environment buckets ever
-# appear in a CI role policy.
-#
-# DR posture: versioning is the recovery mechanism and state carries no secret
-# values. See README.md ("Disaster-recovery posture") for what a total loss
-# actually costs.
+# Terraform state homes: one bucket per environment plus a separate bootstrap
+# bucket that no CI role can touch. State/bootstrap model and DR posture:
+# docs/iac.md.
 
 locals {
-  # env key => bucket name; "bootstrap" rides along so every bucket gets
-  # identical hardening from the same for_each resources.
+  # "bootstrap" rides along so every bucket gets identical hardening from the
+  # same for_each resources.
   all_state_buckets = merge(local.state_bucket_names, { bootstrap = local.bootstrap_state_bucket })
 }
 
@@ -19,15 +12,15 @@ resource "aws_s3_bucket" "state" {
   for_each = local.all_state_buckets
   bucket   = each.value
 
-  # Deletion protection: state loss is survivable (see README.md) but never
-  # acceptable by accident. Removing this guard is a deliberate two-step.
+  # State loss must never be accidental; removing this guard is a deliberate
+  # two-step (edit, then destroy).
   lifecycle {
     prevent_destroy = true
   }
 }
 
-# Versioning is the disaster-recovery mechanism: every state revision stays
-# recoverable, so a truncated or clobbered write is a rollback, not an outage.
+# Versioning is the disaster-recovery mechanism: a truncated or clobbered
+# write is a rollback, not an outage.
 resource "aws_s3_bucket_versioning" "state" {
   for_each = aws_s3_bucket.state
   bucket   = each.value.id
@@ -48,8 +41,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
   }
 }
 
-# State is never public under any circumstance. Blocking it at the bucket level
-# means no later bucket-policy mistake can expose it.
+# Blocking public access at the bucket level means no later bucket-policy
+# mistake can expose state.
 resource "aws_s3_bucket_public_access_block" "state" {
   for_each = aws_s3_bucket.state
   bucket   = each.value.id
