@@ -24,6 +24,11 @@ variable "rds_ca_bundle_base64" {
   type        = string
 }
 
+variable "permissions_boundary" {
+  description = "ARN of the account's IAM permissions-boundary policy (created by the bootstrap root). Carries the account id, so it is supplied via uncommitted tfvars."
+  type        = string
+}
+
 variable "express_internal_alb_arn" {
   description = "Phase 2 only. Internal ALB ARN from `aws ecs describe-express-gateway-service`. Leave empty for the first apply."
   type        = string

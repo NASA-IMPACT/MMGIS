@@ -8,6 +8,10 @@
 vpc_id             = "vpc-xxxxxxxxxxxxxxxxx"
 private_subnet_ids = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
 
+# IAM permissions-boundary policy every module-created role carries (created by
+# the bootstrap root).
+permissions_boundary = "arn:aws:iam::ACCOUNT:policy/POLICY_NAME"
+
 # base64 of the region's RDS CA bundle. Generate with:
 #   curl -s https://truststore.pki.rds.amazonaws.com/us-west-2/us-west-2-bundle.pem | base64 | tr -d '\n'
 rds_ca_bundle_base64 = "PASTE_BASE64_HERE"

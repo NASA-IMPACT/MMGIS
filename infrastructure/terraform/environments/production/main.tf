@@ -8,6 +8,9 @@ module "mmgis" {
   vpc_id             = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
 
+  # Every role the module creates carries the account's boundary policy.
+  permissions_boundary = var.permissions_boundary
+
   # RDS — runtime spec is IDENTICAL to development (the admin is internal
   # tooling; the shipped product is the published dashboards, which serve
   # independently of this stack). The environments differ only in DELETION

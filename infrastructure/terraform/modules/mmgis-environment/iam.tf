@@ -35,9 +35,10 @@ locals {
 
 # ── Admin execution role (image pull, logs, secret injection) ──
 resource "aws_iam_role" "admin_exec" {
-  name               = "${local.name_prefix}-admin-task-execution"
-  description        = "ECS-side role for the ${local.admin_family} task: pull image, write logs, inject admin secrets[]. Lean deployment only."
-  assume_role_policy = local.ecs_tasks_assume_role
+  name                 = "${local.name_prefix}-admin-task-execution"
+  description          = "ECS-side role for the ${local.admin_family} task: pull image, write logs, inject admin secrets[]. Lean deployment only."
+  assume_role_policy   = local.ecs_tasks_assume_role
+  permissions_boundary = var.permissions_boundary
 }
 
 resource "aws_iam_role_policy" "admin_exec" {
@@ -79,9 +80,10 @@ resource "aws_iam_role_policy" "admin_exec" {
 
 # ── Admin task role (runtime container code) ──
 resource "aws_iam_role" "admin_task" {
-  name               = "${local.name_prefix}-admin-task"
-  description        = "Runtime role for the ${local.admin_family} container: RunTask + PassRole of the publish roles, dashboard stack read/delete + teardown, admin asset upload. Lean deployment only."
-  assume_role_policy = local.ecs_tasks_assume_role
+  name                 = "${local.name_prefix}-admin-task"
+  description          = "Runtime role for the ${local.admin_family} container: RunTask + PassRole of the publish roles, dashboard stack read/delete + teardown, admin asset upload. Lean deployment only."
+  assume_role_policy   = local.ecs_tasks_assume_role
+  permissions_boundary = var.permissions_boundary
 }
 
 resource "aws_iam_role_policy" "admin_task" {
@@ -167,9 +169,10 @@ resource "aws_iam_role_policy" "admin_task" {
 
 # ── Publish execution role ──
 resource "aws_iam_role" "publish_exec" {
-  name               = "${local.name_prefix}-publish-task-execution"
-  description        = "ECS-side role for the ${local.publish_family} task: pull image, write logs, inject publish secrets[]. Lean deployment only."
-  assume_role_policy = local.ecs_tasks_assume_role
+  name                 = "${local.name_prefix}-publish-task-execution"
+  description          = "ECS-side role for the ${local.publish_family} task: pull image, write logs, inject publish secrets[]. Lean deployment only."
+  assume_role_policy   = local.ecs_tasks_assume_role
+  permissions_boundary = var.permissions_boundary
 }
 
 resource "aws_iam_role_policy" "publish_exec" {
@@ -208,9 +211,10 @@ resource "aws_iam_role_policy" "publish_exec" {
 
 # ── Publish task role (runtime container code) ──
 resource "aws_iam_role" "publish_task" {
-  name               = "${local.name_prefix}-publish-task"
-  description        = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/delete the mmgis-dashboard-* stacks and their S3/CloudFront resources, read the shared asset bucket. No secretsmanager (password rides the exec role's secrets[]). No rds-db:connect (password auth). Lean deployment only."
-  assume_role_policy = local.ecs_tasks_assume_role
+  name                 = "${local.name_prefix}-publish-task"
+  description          = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/delete the mmgis-dashboard-* stacks and their S3/CloudFront resources, read the shared asset bucket. No secretsmanager (password rides the exec role's secrets[]). No rds-db:connect (password auth). Lean deployment only."
+  assume_role_policy   = local.ecs_tasks_assume_role
+  permissions_boundary = var.permissions_boundary
 }
 
 resource "aws_iam_role_policy" "publish_task" {
@@ -313,8 +317,9 @@ resource "aws_iam_role_policy" "publish_task" {
 # Trust-only plus the AWS managed policy — NO inline policy. Cannot be modified
 # after the service is created.
 resource "aws_iam_role" "express_infra" {
-  name        = "${local.name_prefix}-express-infrastructure"
-  description = "Infrastructure role for the ${local.service_name} Express service. Trust-only + AWS managed policy; no inline policy. Immutable after service creation. Lean deployment only."
+  name                 = "${local.name_prefix}-express-infrastructure"
+  description          = "Infrastructure role for the ${local.service_name} Express service. Trust-only + AWS managed policy; no inline policy. Immutable after service creation. Lean deployment only."
+  permissions_boundary = var.permissions_boundary
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

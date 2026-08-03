@@ -8,6 +8,9 @@ module "mmgis" {
   vpc_id             = var.vpc_id
   private_subnet_ids = var.private_subnet_ids
 
+  # Every role the module creates carries the account's boundary policy.
+  permissions_boundary = var.permissions_boundary
+
   # RDS — development is disposable, so allow a clean teardown.
   db_instance_class      = "db.t3.micro"
   db_allocated_storage   = 20

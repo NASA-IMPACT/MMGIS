@@ -115,6 +115,18 @@ variable "ecr_force_delete" {
   default     = false
 }
 
+# ── IAM ──
+
+variable "permissions_boundary" {
+  description = "ARN of the IAM permissions-boundary policy attached to EVERY role this module creates. Required (no default): the CI pipeline's apply role is only allowed to create roles that carry a boundary, so an unboundaried role fails the very first apply. The boundary policy itself is created by the bootstrap root."
+  type        = string
+
+  validation {
+    condition     = can(regex("^arn:aws:iam::[0-9]{12}:policy/", var.permissions_boundary))
+    error_message = "permissions_boundary must be an IAM policy ARN (arn:aws:iam::<account>:policy/...)."
+  }
+}
+
 # ── CloudFront two-phase inputs ──
 # The Express service's internal ALB ARN and on.aws endpoint are NOT exposed
 # as Terraform attributes of aws_ecs_express_gateway_service (only service_arn
