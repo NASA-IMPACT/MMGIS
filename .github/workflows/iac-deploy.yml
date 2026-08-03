@@ -758,7 +758,7 @@ jobs:
 
             if [ "$populated" = "true" ]; then
               echo "$secret_id: already set — leaving it untouched."
-              printf '| `%s` | already set (left untouched) |\n' "$secret_id" >> /tmp/secret-rows.md
+              printf "| \`%s\` | already set (left untouched) |\n" "$secret_id" >> /tmp/secret-rows.md
               continue
             fi
 
@@ -803,7 +803,7 @@ jobs:
               echo "aws secretsmanager put-secret-value failed for '$secret_id' (exit $rc)." >&2
               exit 1
             fi
-            printf '| `%s` | generated (new version) |\n' "$secret_id" >> /tmp/secret-rows.md
+            printf "| \`%s\` | generated (new version) |\n" "$secret_id" >> /tmp/secret-rows.md
           done <<'SLOTS'
           session-secret 8
           superadmin-username 3
