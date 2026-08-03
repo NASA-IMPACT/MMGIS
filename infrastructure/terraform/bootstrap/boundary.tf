@@ -83,9 +83,9 @@ resource "aws_iam_policy" "ci_role_boundary" {
       },
       {
         # Dashboards are published by the application at runtime (one
-        # CloudFormation stack each), not by Terraform. Not yet namespaced per
-        # environment; #250 renames them mmgis-<env>-dashboard-* and this
-        # pattern tightens then.
+        # CloudFormation stack each), not by Terraform. Stack names carry the
+        # per-environment mmgis-<env>-dashboard- prefix, so a dev-created role
+        # can never touch another environment's dashboards.
         Sid    = "DashboardStacks"
         Effect = "Allow"
         Action = [
@@ -94,14 +94,15 @@ resource "aws_iam_policy" "ci_role_boundary" {
           "cloudformation:DescribeStackEvents",
           "cloudformation:DeleteStack",
         ]
-        Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/mmgis-dashboard-*/*"
+        Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/mmgis-${each.key}-dashboard-*/*"
       },
       {
         # Two asset patterns because the scratch bucket
         # (mmgis-development-scratch-assets-*) cannot share one pattern with the
-        # real one. mmgis-dashboard-* stays env-unscoped until #250 (see above).
-        # No pattern here can match a *-tfstate-* bucket name, so even a
-        # mis-granted runtime role is structurally fenced off state.
+        # real one. Dashboard buckets carry the same per-environment
+        # mmgis-<env>-dashboard- prefix as the stacks. No pattern here can
+        # match a *-tfstate-* bucket name, so even a mis-granted runtime role
+        # is structurally fenced off state.
         Sid    = "DashboardAndAssetBuckets"
         Effect = "Allow"
         Action = [
@@ -119,8 +120,8 @@ resource "aws_iam_policy" "ci_role_boundary" {
           "s3:DeleteObject",
         ]
         Resource = [
-          "arn:aws:s3:::mmgis-dashboard-*",
-          "arn:aws:s3:::mmgis-dashboard-*/*",
+          "arn:aws:s3:::mmgis-${each.key}-dashboard-*",
+          "arn:aws:s3:::mmgis-${each.key}-dashboard-*/*",
           "arn:aws:s3:::mmgis-${each.key}-assets-*",
           "arn:aws:s3:::mmgis-${each.key}-assets-*/*",
           "arn:aws:s3:::mmgis-${each.key}-*-assets-*",
@@ -130,7 +131,8 @@ resource "aws_iam_policy" "ci_role_boundary" {
       {
         # Distribution and origin-access-control ids are CloudFront-generated,
         # so only the function name can be prefix-scoped (honesty table:
-        # docs/infrastructure/README.md). Function names stay env-unscoped until #250.
+        # docs/infrastructure/README.md). Function names carry the
+        # per-environment mmgis-<env>-dashboard- prefix.
         Sid    = "DashboardCloudFront"
         Effect = "Allow"
         Action = [
@@ -154,7 +156,7 @@ resource "aws_iam_policy" "ci_role_boundary" {
         ]
         Resource = [
           "arn:aws:cloudfront::${local.account_id}:distribution/*",
-          "arn:aws:cloudfront::${local.account_id}:function/mmgis-dashboard-*",
+          "arn:aws:cloudfront::${local.account_id}:function/mmgis-${each.key}-dashboard-*",
           "arn:aws:cloudfront::${local.account_id}:origin-access-control/*",
         ]
       },
