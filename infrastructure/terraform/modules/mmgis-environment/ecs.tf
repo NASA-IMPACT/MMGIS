@@ -53,7 +53,7 @@ locals {
     { name = "MMGIS_PUBLISH_SECURITY_GROUPS", value = aws_security_group.service.id },
     { name = "MMGIS_PUBLISH_CONTAINER_NAME", value = "mmgis" },
     { name = "MMGIS_SHARED_ASSET_BUCKET", value = local.asset_bucket_name },
-  ])
+  ], var.overwrite_demo_mission ? [{ name = "OVERWRITE_DEMO_MISSION", value = "true" }] : [])
 
   publish_environment = concat(local.db_environment, [
     { name = "MMGIS_DEPLOYMENT_MODE", value = "lean" },

@@ -156,6 +156,12 @@ variable "express_alb_security_group_id" {
   default     = ""
 }
 
+variable "overwrite_demo_mission" {
+  description = "When true, sets OVERWRITE_DEMO_MISSION=true on the admin task (task definition + Express primary container) so each boot re-seeds the demo mission. Development only; never set in production. Publish task unaffected."
+  type        = bool
+  default     = false
+}
+
 variable "secret_recovery_window_days" {
   description = "Secrets Manager recovery window on delete. 0 frees the secret names immediately, so a destroy/re-apply cycle never collides with a ghost name still held in a recovery window. Both environments deliberately run 0."
   type        = number
