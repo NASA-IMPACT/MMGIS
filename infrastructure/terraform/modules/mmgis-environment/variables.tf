@@ -161,7 +161,7 @@ variable "express_alb_security_group_id" {
 }
 
 variable "overwrite_demo_mission" {
-  description = "When true, sets OVERWRITE_DEMO_MISSION=true on the admin task (task definition + Express primary container) so each boot re-seeds the demo mission. Development only; never set in production. Publish task unaffected."
+  description = "When true, sets OVERWRITE_DEMO_MISSION=true on the admin task (task definition + Express primary container) so each boot re-seeds the demo mission. Development only; never set in production. Publish task unaffected. The app-side consumer of the flag lands with the demo-mission seeding work; the environment carries it from day one so that rollout needs no infrastructure change."
   type        = bool
   default     = false
 }

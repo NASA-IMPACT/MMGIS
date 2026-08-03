@@ -8,8 +8,11 @@
 vpc_id             = "vpc-xxxxxxxxxxxxxxxxx"
 private_subnet_ids = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
 
-# The image the tasks run. CI supplies it on every apply (TF_VAR_deployed_image);
-# leave it unset for hand runs and for the first-ever apply.
+# The image the tasks run. CI supplies it on every apply (TF_VAR_deployed_image).
+# For a hand apply, set it to the image currently deployed (an apply with it
+# unset re-registers the task defs against a nonexistent placeholder tag and
+# breaks Publish until the next deploy-lean.yml run). Leave unset only for the
+# first-ever apply of a brand-new environment.
 # deployed_image = "ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/mmgis-development:COMMIT_SHA"
 
 # IAM permissions-boundary policy every module-created role carries (created by

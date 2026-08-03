@@ -29,7 +29,7 @@ infrastructure/
 │   ├── modules/mmgis-environment/     # one complete environment, parameterized
 │   └── environments/
 │       ├── development/               # thin root: module call + backend + tfvars
-│       └── production/                # thin root (instantiated by #195)
+│       └── production/                # thin root (applied by #195)
 ├── ecs/*.json                         # recipe source (provenance; see below)
 ├── iam/*.json                         # recipe source (provenance)
 ├── cloudfront-admin.json              # recipe source (provenance)
@@ -53,6 +53,10 @@ where each Terraform value came from and are referenced by #195 discussions.
 `cloudfront-function.js` is still load-bearing as the canonical reference the
 publish generator (`scripts/lib/cfn-template.js`) is kept in sync with (see
 `tests/unit/infrastructure.spec.js`). Nothing here is applied directly anymore.
+One deliberate divergence: the recipes inject all five `DB_*` keys from an
+app-shaped DB secret (`<DB_SECRET_ARN>`) that the module has since retired —
+`DB_PASS` now comes straight from the RDS-managed master secret, and
+host/port/user/name ride as plain environment values.
 
 ## Prerequisites (operator-provided, not created by Terraform)
 
@@ -68,7 +72,13 @@ publish generator (`scripts/lib/cfn-template.js`) is kept in sync with (see
   ARN is a required input (`permissions_boundary`, via tfvars — it carries the
   account id): every role this module creates carries the boundary, because the
   CI apply role is only allowed to create boundaried roles. An unboundaried
-  role fails on the very first apply.
+  role fails on the very first apply. The **bootstrap root is #245's
+  deliverable** (state buckets plus all GitHub-facing AWS identity, the CI
+  deploy role included) and lives outside this directory until it lands —
+  apply it first. On a cutover from an environment whose deploy role was
+  module-created, repoint the `AWS_DEPLOY_ROLE_ARN` secret at the
+  bootstrap-created role **before** applying this root: this apply deletes
+  the old role.
 - **Secret values**, set out-of-band (below). Terraform defines the secrets'
   existence and names only.
 - **The RDS regional CA bundle**, supplied as `rds_ca_bundle_base64` (below).
@@ -170,7 +180,7 @@ at a **placeholder image that does not exist in ECR** (CI pushes commit-SHA
 tags only) and the tasks crash-loop until a real image arrives. Push one
 through the pipeline now:
 
-1. Set the repository's GitHub Actions variables from
+1. Set the environment's GitHub Actions variables from
    `terraform output -json workflow_variables` — one call returns all six
    (region, ECR repo, cluster, service, both task families), keyed by the
    variable names. The `AWS_DEPLOY_ROLE_ARN` secret comes from the **bootstrap
@@ -289,7 +299,9 @@ holds nothing that grants CI access to the account.
 
 The recipe files still use `<ACCOUNT_ID>`, `<REGION>`, `<ECR_REPOSITORY_NAME>`,
 `<ECS_CLUSTER_NAME>`, `<SUBNET_IDS>`, `<SECURITY_GROUP_IDS>`,
-`<ASSET_BUCKET_NAME>`, the `<*_SECRET_ARN>` set, `<EXPRESS_ONAWS_ENDPOINT>`,
+`<ASSET_BUCKET_NAME>`, the `<*_SECRET_ARN>` set (of which `<DB_SECRET_ARN>` is
+superseded by the managed master secret — see the provenance note above),
+`<EXPRESS_ONAWS_ENDPOINT>`,
 `<VPC_ORIGIN_ID>`, `<ASSET_BUCKET_OAC_ID>`, and `<ADMIN_DISTRIBUTION_ID>`. In
 the Terraform module these are resolved from `data.aws_caller_identity`, the
 `region` variable, resource attributes, and the two-phase CloudFront inputs —

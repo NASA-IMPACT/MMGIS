@@ -16,23 +16,29 @@ locals {
   db_environment = [
     { name = "DB_HOST", value = aws_db_instance.this.address },
     { name = "DB_PORT", value = "5432" },
-    # `postgres` for both: the master username is hard-coded postgres (rds.tf)
-    # and a fresh instance's only database is `postgres`.
+    # DB_USER must be `postgres`: the master username is hard-coded postgres
+    # (rds.tf) because init-db's bootstrap connection needs a database named
+    # after the user, and a fresh instance only has `postgres`.
     { name = "DB_USER", value = "postgres" },
+    # DB_NAME is a convention, not a constraint — init-db CREATEs it when it is
+    # missing, so any name would work; `postgres` keeps the app DB and the
+    # maintenance DB the same on the fresh instances this module builds.
     { name = "DB_NAME", value = "postgres" },
   ]
 
-  admin_secrets = concat([local.db_pass_secret], [
+  admin_secrets = [
+    local.db_pass_secret,
     # env name SECRET is what scripts/server.js reads (not SESSION_SECRET).
     { name = "SECRET", value_from = aws_secretsmanager_secret.session.arn },
     { name = "SEED_SUPERADMIN_USERNAME", value_from = aws_secretsmanager_secret.seed_username.arn },
     { name = "SEED_SUPERADMIN_PASSWORD", value_from = aws_secretsmanager_secret.seed_password.arn },
     { name = "MAPBOX_TOKEN", value_from = aws_secretsmanager_secret.mapbox_token.arn },
-  ])
+  ]
 
-  publish_secrets = concat([local.db_pass_secret], [
+  publish_secrets = [
+    local.db_pass_secret,
     { name = "MMGIS_DASHBOARDS_PASSWORD", value_from = aws_secretsmanager_secret.dashboards_password.arn },
-  ])
+  ]
 
   admin_environment = concat(local.db_environment, [
     { name = "MMGIS_DEPLOYMENT_MODE", value = "lean" },
