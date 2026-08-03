@@ -16,8 +16,9 @@ explicitly staying CloudFormation).
 
 **Dual-deployment posture:** the **full** deployment is the upstream MMGIS
 default (docker-compose, bundled sidecar services) and uses **none** of this
-directory. The **lean** deployment is this directory plus
-`.github/workflows/deploy-lean.yml`. The same image serves both;
+directory. The **lean** deployment is this directory plus the workflows that
+deploy it — the composed pipeline below, and `deploy-lean.yml` until the
+staging environment is cut over to it. The same image serves both;
 `MMGIS_DEPLOYMENT_MODE` is a runtime ECS environment variable, never a Docker
 build-arg (the `Dockerfile` is shared and unmodified).
 
@@ -119,6 +120,11 @@ endpoint as Terraform attributes (only `service_arn` and `ingress_paths` are
 exported), and the CloudFront VPC origin needs the ALB ARN. So the front door
 is built in a **second apply**.
 
+This section describes the flow run **by hand**. For an environment wired to
+[CI-driven deploys](#ci-driven-deploys-the-composed-pipeline) the pipeline does
+all of it — both phases, the discovery between them, and the image — on every
+merge; a hand apply is then the break-glass path, not the normal one.
+
 From `terraform/environments/development/` (production is analogous):
 
 ```sh
@@ -190,17 +196,45 @@ image arrives. Push one through the pipeline now:
 2. Run `deploy-lean.yml` (manual dispatch) and wait for the rollout to
    converge — the run summary shows the deployed image.
 
+Both steps are for hand-built environments only. A CI-built environment sets
+none of those variables and dispatches nothing: the composed pipeline reads the
+six names from state at run time and its app phase pushes the first real image
+in the same run as the first apply.
+
 Only then move on: phase 2's inputs are read from the now-healthy service, and
 Publish depends on the task families pointing at a real image.
 
 ### Phase 2 — CloudFront front door
 
-Read **three values** off the service's newest revision —
-`aws ecs describe-service-revisions`, whose
-`serviceRevisions[0].ecsManagedResources.ingressPaths[]` carries all three:
-the internal ALB ARN, the on.aws endpoint host (also visible via
-`terraform output express_ingress_paths`), and the ECS-managed ALB's
-**security-group id**. Set them in `terraform.tfvars` and re-apply:
+Read **three values** from the running service: the internal ALB ARN, the
+on.aws endpoint host, and the ECS-managed ALB's **security-group id**. It takes
+**two calls** — the describe that names the service's active configuration
+carries no load-balancer information at all, and the load balancer only appears
+on the service *revision* that configuration points at:
+
+```sh
+SERVICE_ARN=$(terraform output -raw express_service_arn)
+
+# 1. Newest active configuration -> the serving image and its revision ARN.
+#    Old and new configurations are listed side by side while a rollout
+#    drains, so take the newest by createdAt rather than the first entry.
+REV_ARN=$(aws ecs describe-express-gateway-service --service-arn "$SERVICE_ARN" \
+  | jq -r '[.service.activeConfigurations[]] | sort_by(.createdAt) | last.serviceRevisionArn')
+
+# 2. That revision's ECS-managed ingress paths -> the endpoint, the ALB ARN,
+#    and the ALB's security groups. Pick the path that actually carries a load
+#    balancer; the others have none.
+aws ecs describe-service-revisions --service-revision-arns "$REV_ARN" \
+  | jq -r '.serviceRevisions[0].ecsManagedResources.ingressPaths[]
+           | select(.loadBalancer.arn != null)
+           | {endpoint, alb: .loadBalancer.arn, sg: .loadBalancer.securityGroupIds[0]}'
+```
+
+The endpoint host is also visible via `terraform output express_ingress_paths`.
+Prefer `.loadBalancer.securityGroupIds` over the sibling
+`.loadBalancerSecurityGroups[]`, whose entries carry only an `.arn`; if a CLI
+version omits it, `aws elbv2 describe-load-balancers --load-balancer-arns` has
+the same id. Set the three values in `terraform.tfvars` and re-apply:
 
 ```hcl
 express_internal_alb_arn      = "arn:aws:elasticloadbalancing:<REGION>:<ACCOUNT>:loadbalancer/app/ecs-express-gateway-alb-xxxx/xxxx"
@@ -221,6 +255,10 @@ VPC origins **cannot be updated while status=Deploying** and deploy cycles run
 ~6–10 minutes — be patient between changes.
 
 ## Workflow variables
+
+**The composed pipeline does not need any of these set** — it reads the same
+object out of state at run time. This table is for the legacy `deploy-lean.yml`
+pipeline and for hand-run deploys, which have no other way to learn the names.
 
 `terraform output -json workflow_variables` prints the exact values in one
 object whose keys **are** the variable names. Set them as the environment's
@@ -309,12 +347,153 @@ the Terraform module these are resolved from `data.aws_caller_identity`, the
 `region` variable, resource attributes, and the two-phase CloudFront inputs —
 you do not fill them in by hand anymore.
 
-## Deploy pipeline
+## CI-driven deploys (the composed pipeline)
 
-`.github/workflows/deploy-lean.yml` runs on push to `development` (and via
-`workflow_dispatch`): it builds theme assets (`npm run build:themes`), builds
-and pushes the image to ECR, registers new `ADMIN_TASK_FAMILY` **and**
-`PUBLISH_TASK_FAMILY` task-def revisions pointing at the new image, and rolls
-the Express Mode service by updating its primary container. It defines no
-ALB/target-group/scaling resources (Express Mode owns those). See the
-[Workflow variables](#workflow-variables) table for its configuration.
+An environment is deployed by **one composed run**: a thin per-environment
+trigger calls two shared, reusable engines. There is one implementation of
+"converge the infrastructure" and one of "ship the app"; a new environment adds
+a trigger, not a pipeline.
+
+```
+.github/workflows/deploy-development.yml   trigger — when, and in which mode
+├── .github/workflows/iac-deploy.yml       infrastructure engine (always runs)
+└── .github/workflows/app-deploy.yml       app engine (every merge)
+```
+
+The trigger runs on every push to `development`, and on manual dispatch with an
+optional **plan-only** box. It first decides a *mode* from the pushed diff, then
+calls the engines:
+
+| Mode | When | Infrastructure engine | App engine |
+|---|---|---|---|
+| `apply` | the push touched `infrastructure/terraform/**` or one of the three pipeline files; any dispatch that is not plan-only; any push whose diff is unknowable (new branch, force push) | two-phase converge | runs |
+| `read` | every other push — the app-only merges, which are most of them | init and read the state outputs; describes nothing, changes nothing | runs |
+| `plan` | plan-only dispatch | plan, published to the run summary | skipped |
+
+**The infrastructure job always runs**, in one mode or another. Skipping it on
+app-only merges is the obvious design and it does not work: a skipped job emits
+no outputs on GitHub, so the app job would receive six empty names on exactly
+the merges that touch no infrastructure. Path-awareness gates the mode, never
+the job.
+
+One concurrency group (`deploy-development`) spans the whole composed run and
+**queues** rather than cancels — an interrupted apply leaves state locked and
+infrastructure half-converged. Neither engine carries a group of its own so
+that this one can cover both. GitHub keeps at most one *pending* run per group
+and supersedes an older pending run, so a middle merge in a rapid burst can be
+dropped; that is safe, because a later push to `development` contains the
+earlier one's commits. What can never happen is two runs converging the same
+environment at once.
+
+Plan-only is how an environment is reviewed before its first real apply: expect
+an ~80-resource all-creates listing, which is the whole environment being
+proposed rather than a problem.
+
+### Configuration contract
+
+All five values are **GitHub Environment-scoped** (on the `development`
+Environment, not the repository), which is what lets one engine serve every
+environment without suffixed names. Populated per #252.
+
+| Name | Kind | Where it comes from |
+|---|---|---|
+| `IAC_APPLY_ROLE_ARN` | secret | bootstrap root — the `mmgis-terraform-apply-<env>` role |
+| `IAC_DEPLOY_ROLE_ARN` | secret | bootstrap root — the `mmgis-<env>-github-deploy` role |
+| `IAC_AWS_REGION` | variable | account fact; the backend region, the credential default, and the root's `region` |
+| `IAC_TFSTATE_BUCKET` | variable | the environment's own state bucket (the backend's `key`/`encrypt`/`use_lockfile` are committed) |
+| `IAC_TFVARS` | variable | JSON object of the root's required no-default inputs: `vpc_id`, `private_subnet_ids`, `rds_ca_bundle_base64`, `permissions_boundary` |
+
+Both engines bind `environment:` on their job, which is load-bearing twice
+over: it is what makes GitHub mint the environment-form OIDC subject the two
+roles' trust policies accept, and it is what makes the Environment-scoped
+values above resolve. A caller cannot supply it, so triggers pass
+`secrets: inherit` and name no value themselves.
+
+Missing configuration fails the run **red**, listing every missing name at
+once. A deploy that cannot configure itself is broken, not pending.
+
+### Nothing is written back into GitHub
+
+No workflow in this pipeline writes a GitHub variable or secret. The six
+runtime names (region, ECR repository, cluster, service, both task families)
+are read out of terraform state at run time with
+`terraform output -json workflow_variables` and handed from the infrastructure
+engine to the app engine as workflow outputs. Writing them back would mean
+minting and hand-rotating a PAT — `GITHUB_TOKEN` has no variables scope — and
+would leave a second copy of the truth free to drift from state.
+
+### The image sandwich, and greenfield
+
+Terraform never decides which image runs, but it does decide which image the
+two task-definition **families** get registered with, and the backend starts
+publish jobs with `RunTask` on the bare family name. So an infra apply must
+never feed the families a tag that is not in ECR.
+
+In steady state the run is a sandwich: the infrastructure engine discovers the
+image the service is already serving and applies with it, then the app engine
+builds the new image and rolls the service exactly once. Infra never moves the
+image forward; it only avoids moving it backwards. If a live service exists but
+no image can be resolved for it, the engine **refuses to apply** rather than
+silently pin the families to the nonexistent placeholder.
+
+On greenfield there is nothing to discover: the first apply registers the
+families against the module's `:latest` placeholder, which does not exist in
+ECR, and the service crash-loops for a few minutes. This is expected and
+self-healing — the app phase of the *same run* pushes a real image and rolls
+the service, and ECS's launch retry picks it up. The RDS-managed master secret
+appears roughly ten minutes into that first apply. Nothing here needs a human.
+
+CloudFront is the one part that may not finish on the first run: it is only
+built once the Express service's ECS-managed ALB exists, so the engine
+re-discovers after applying and waits up to five minutes for the load balancer
+to surface. If it does not, the phase-2 apply is skipped and any later
+infrastructure run completes the front door; the environment is reachable on
+its on.aws endpoint meanwhile.
+
+### Database content is sacred
+
+An infrastructure apply never touches, replaces, or reseeds database content.
+The module manages the RDS **instance** — engine, size, subnet group, its
+managed master secret — and nothing inside it; no workflow in the pipeline runs
+a migration, a seed, or a restore. The superadmin seed values only seed an
+account at first boot. This is verified rather than assumed: create content
+through the app, merge a change that touches `infrastructure/terraform/**` so
+the run applies, and confirm the content is still there afterwards. That
+check is part of proving a new environment.
+
+### Rollback and break-glass
+
+**App rollback — re-run the last green composed run** from the Actions UI. Its
+image is already built and tagged with that commit's short SHA in ECR, so the
+re-run re-registers both task-definition families against exactly that image
+and re-rolls the service onto it. No hand-built image, no tag juggling, and the
+infrastructure converges to the same commit's configuration on the way through.
+
+**Infrastructure rollback** is a revert commit merged to `development`: the
+next composed run applies it. Terraform state is versioned in the state bucket,
+but rolling state back by hand is not a rollback — it is a way to lose track of
+what exists.
+
+**Break-glass** is for when CI itself is the thing that is broken. An operator
+assumes `mmgis-terraform-apply-<env>` with short-lived credentials (the role
+carries an operator-assume statement for exactly this) and runs the hand-apply
+flow above. It is an escape hatch and never the mechanism: anything applied by
+hand is drift until the same change is committed and a CI run converges on it.
+
+## Legacy deploy pipeline (staging)
+
+`.github/workflows/deploy-lean.yml` is the **pre-composition** pipeline. It
+still deploys the existing staging environment, is deliberately left untouched
+by the rebuild, and keeps running until that environment is cut over to the
+composed pipeline above — retiring it is an explicit later step, never a side
+effect.
+
+It runs on push to `development` (and via `workflow_dispatch`): it builds theme
+assets (`npm run build:themes`), builds and pushes the image to ECR, registers
+new `ADMIN_TASK_FAMILY` **and** `PUBLISH_TASK_FAMILY` task-def revisions
+pointing at the new image, and rolls the Express Mode service by updating its
+primary container. It defines no ALB/target-group/scaling resources (Express
+Mode owns those). See the [Workflow variables](#workflow-variables) table for
+its configuration — hand-set repository variables, disjoint from the composed
+pipeline's Environment-scoped `IAC_*` values, so neither pipeline can drive the
+other's environment.
