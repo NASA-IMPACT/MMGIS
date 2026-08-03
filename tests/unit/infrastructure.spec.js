@@ -147,6 +147,45 @@ test.describe('infrastructure/ JSON recipes', () => {
         }
     })
 
+    test('terraform module stays in lockstep with the app dashboard prefix', () => {
+        // Pins the module to the exact strings the app composes from
+        // MMGIS_ENVIRONMENT (scripts/lib/cfn-template.js), so silent drift on
+        // either side fails CI instead of at publish time as an AccessDenied.
+        const MODULE = path.join(
+            INFRA,
+            'terraform',
+            'modules',
+            'mmgis-environment'
+        )
+        const read = (f) => fs.readFileSync(path.join(MODULE, f), 'utf8')
+
+        // main.tf composes mmgis-<env>-dashboard- exactly like stackNamePrefix()
+        const mainTf = read('main.tf')
+        expect(mainTf).toContain('name_prefix = "mmgis-${var.environment}"')
+        expect(mainTf).toContain(
+            'dashboard_prefix = "${local.name_prefix}-dashboard-"'
+        )
+
+        // Both task environments inject the variable the app reads
+        const ecsTf = read('ecs.tf')
+        const injections = ecsTf.match(
+            /\{ name = "MMGIS_ENVIRONMENT", value = var\.environment \}/g
+        )
+        expect(injections).toHaveLength(2)
+
+        // The module validation matches the app-side guard (regex + length cap)
+        const variablesTf = read('variables.tf')
+        expect(variablesTf).toContain('regex("^[a-z][a-z0-9-]*$", var.environment)')
+        expect(variablesTf).toContain('length(var.environment) <= 11')
+
+        // Every dashboard-facing IAM pattern uses the shared local, never a literal
+        const iamTf = read('iam.tf')
+        expect(iamTf).not.toContain('mmgis-dashboard-')
+        expect(
+            iamTf.match(/\$\{local\.dashboard_prefix\}\*/g).length
+        ).toBeGreaterThanOrEqual(9)
+    })
+
     test('admin task role can complete inline DeleteStack teardown', () => {
         // The DELETE handler calls DeleteStack with no CloudFormation
         // service role, so CloudFormation deletes the dashboard's S3 bucket

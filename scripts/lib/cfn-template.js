@@ -19,6 +19,11 @@ const BASIC_AUTH_USER = "mmgis";
 // infrastructure/terraform/modules/mmgis-environment/variables.tf.
 const ENVIRONMENT_PATTERN = /^[a-z][a-z0-9-]*$/;
 
+// 11 = the S3 bucket-name budget for CFN-generated dashboard bucket names;
+// see the length validation in
+// infrastructure/terraform/modules/mmgis-environment/variables.tf.
+const MAX_ENVIRONMENT_LENGTH = 11;
+
 /**
  * The stack-name prefix for this runtime. When MMGIS_ENVIRONMENT is set
  * (the Terraform module sets it to the environment name, e.g. "development"),
@@ -37,6 +42,12 @@ function stackNamePrefix() {
     throw new Error(
       `MMGIS_ENVIRONMENT '${env}' must be lowercase alphanumeric/hyphen ` +
         "(matching the Terraform module's environment validation)"
+    );
+  if (env.length > MAX_ENVIRONMENT_LENGTH)
+    throw new Error(
+      `MMGIS_ENVIRONMENT '${env}' must be at most ${MAX_ENVIRONMENT_LENGTH} ` +
+        "characters — longer names blow the 63-character S3 bucket-name " +
+        "budget for CFN-generated dashboard buckets"
     );
   return `mmgis-${env}-dashboard-`;
 }

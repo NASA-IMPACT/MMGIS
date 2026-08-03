@@ -71,6 +71,18 @@ test.describe('MMGIS_ENVIRONMENT namespacing', () => {
         vi.stubEnv('MMGIS_ENVIRONMENT', '-development')
         expect(() => stackNameForDeployment(1)).toThrow(/MMGIS_ENVIRONMENT/)
     })
+
+    test('rejects a value longer than the S3 bucket-name budget', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'developments')
+        expect(() => stackNamePrefix()).toThrow(/MMGIS_ENVIRONMENT/)
+        expect(() => stackNameForDeployment(1)).toThrow(/MMGIS_ENVIRONMENT/)
+    })
+
+    test('accepts a value at the 11-character cap', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'development')
+        expect('development'.length).toBe(11)
+        expect(stackNamePrefix()).toBe('mmgis-development-dashboard-')
+    })
 })
 
 test.describe('renderCfnTemplate', () => {
