@@ -247,6 +247,11 @@
     gap: 8px;
 }
 
+/* Names the popover's mode without competing with the dates below it. */
+.date-picker-title {
+    font-size: 10px;
+}
+
 .date-input-form input[type='time'],
 .date-input-form .time-input-field {
     padding: 8px;
@@ -351,8 +356,8 @@
     border-radius: 4px;
     background: transparent;
     font-family: inherit;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 10px;
+    font-weight: 400;
     color: var(--theme-color-base-darker, #3d4551);
     cursor: pointer;
     transition: background 0.2s ease, color 0.2s ease;
