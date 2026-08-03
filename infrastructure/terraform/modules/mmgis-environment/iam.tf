@@ -14,6 +14,7 @@ locals {
     aws_secretsmanager_secret.session.arn,
     aws_secretsmanager_secret.seed_username.arn,
     aws_secretsmanager_secret.seed_password.arn,
+    aws_secretsmanager_secret.mapbox_token.arn,
   ]
 
   publish_exec_secret_arns = [

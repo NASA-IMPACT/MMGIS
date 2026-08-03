@@ -29,3 +29,12 @@ resource "aws_secretsmanager_secret" "dashboards_password" {
   description             = "MMGIS ${var.environment} shared dashboards password (MMGIS_DASHBOARDS_PASSWORD). Value set out-of-band."
   recovery_window_in_days = var.secret_recovery_window_days
 }
+
+# External credential: hand-set ONCE per environment, and excluded from CI
+# secret generation (CI generates the session/seed/dashboards values; it can
+# never invent a Mapbox token). Injected into the admin task only.
+resource "aws_secretsmanager_secret" "mapbox_token" {
+  name                    = local.secret_mapbox_name
+  description             = "MMGIS ${var.environment} Mapbox token (injected as MAPBOX_TOKEN, admin task only). External credential: hand-set once, excluded from CI secret generation."
+  recovery_window_in_days = var.secret_recovery_window_days
+}

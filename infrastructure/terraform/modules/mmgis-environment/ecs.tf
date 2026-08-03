@@ -27,6 +27,7 @@ locals {
     { name = "SECRET", value_from = aws_secretsmanager_secret.session.arn },
     { name = "SEED_SUPERADMIN_USERNAME", value_from = aws_secretsmanager_secret.seed_username.arn },
     { name = "SEED_SUPERADMIN_PASSWORD", value_from = aws_secretsmanager_secret.seed_password.arn },
+    { name = "MAPBOX_TOKEN", value_from = aws_secretsmanager_secret.mapbox_token.arn },
   ])
 
   publish_secrets = concat([local.db_pass_secret], [

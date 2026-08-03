@@ -30,6 +30,7 @@ locals {
   secret_seed_user_name = "mmgis/${var.environment}/superadmin-username"
   secret_seed_pass_name = "mmgis/${var.environment}/superadmin-password"
   secret_dash_pass_name = "mmgis/${var.environment}/dashboards-password"
+  secret_mapbox_name    = "mmgis/${var.environment}/mapbox-token"
 
   # The CloudFront front door is created only once its two-phase inputs are known.
   enable_cloudfront = var.express_internal_alb_arn != "" && var.express_onaws_endpoint != ""
