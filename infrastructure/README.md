@@ -41,8 +41,8 @@ The module builds: ECS cluster; the admin Express Mode gateway service;
 `mmgis-<env>-admin` / `mmgis-<env>-publish` task definitions; RDS PostgreSQL +
 subnet group; two task security groups; two log groups; five Secrets Manager
 secret shells; a per-environment ECR repository; the shared asset bucket + OAC
-(+ policy); the CloudFront distribution + VPC origin; the task/exec/infra IAM
-roles; and the per-environment GitHub OIDC deploy role.
+(+ policy); the CloudFront distribution + VPC origin; and the task/exec/infra
+IAM roles.
 
 ### The recipe JSON files are provenance, not applied
 
@@ -64,10 +64,11 @@ publish generator (`scripts/lib/cfn-template.js`) is kept in sync with (see
   make the admin reachable only through CloudFront.
 - **A per-environment Terraform state bucket**, bootstrapped once (below).
   Development's is created here; production's is created by #195.
-- **The account's GitHub OIDC identity provider**
-  (`token.actions.githubusercontent.com`) must already exist — the module
-  references it by data source and never creates it. The very first `plan`
-  fails without it.
+- **The IAM permissions-boundary policy**, created by the bootstrap root. Its
+  ARN is a required input (`permissions_boundary`, via tfvars — it carries the
+  account id): every role this module creates carries the boundary, because the
+  CI apply role is only allowed to create boundaried roles. An unboundaried
+  role fails on the very first apply.
 - **Secret values**, set out-of-band (below). Terraform defines the secrets'
   existence and names only.
 - **The RDS regional CA bundle**, supplied as `rds_ca_bundle_base64` (below).
@@ -109,7 +110,7 @@ is built in a **second apply**.
 From `terraform/environments/development/` (production is analogous, per #195):
 
 ```sh
-cp terraform.tfvars.example terraform.tfvars   # fill in vpc_id, subnets, CA bundle
+cp terraform.tfvars.example terraform.tfvars   # vpc_id, subnets, boundary ARN, CA bundle
 cp backend.hcl.example backend.hcl             # fill in the state bucket
 
 terraform init -backend-config=backend.hcl
@@ -124,48 +125,57 @@ terraform apply
 ```
 
 This creates the cluster, Express service (which provisions its own internal
-ALB), task defs, RDS, secrets shells, ECR, asset bucket + OAC, IAM roles, and
-the deploy role.
+ALB), task defs, RDS, secrets shells, ECR, asset bucket + OAC, and the IAM
+roles.
 
 ### Set the secret values out-of-band
 
 Terraform created empty secret shells; give them values (nothing here touches
-Terraform state). RDS generated the master password in its **own** managed
-secret — copy it (and the endpoint) into the app-shaped DB secret:
+Terraform state). **Nothing DB-related is hand-set.** The database password
+exists in exactly one place — the RDS-managed master secret — and the
+containers reference that secret's `password` key directly at task start; host,
+port, user, and database name are not secrets and ride as plain environment
+values on both task definitions.
 
 ```sh
-# Where RDS put the generated master password, and the DB endpoint:
-terraform output rds_managed_master_secret_arn
-terraform output rds_endpoint
-
-aws secretsmanager put-secret-value --secret-id mmgis/development/db \
-  --secret-string '{"DB_HOST":"<RDS_ENDPOINT_HOST>","DB_PORT":"5432","DB_NAME":"<APP_DB>","DB_USER":"postgres","DB_PASS":"<COPIED_FROM_MANAGED_SECRET>"}'
-
 aws secretsmanager put-secret-value --secret-id mmgis/development/session-secret       --secret-string '<random-session-secret>'
 aws secretsmanager put-secret-value --secret-id mmgis/development/superadmin-username   --secret-string '<superadmin-username>'
 aws secretsmanager put-secret-value --secret-id mmgis/development/superadmin-password   --secret-string '<superadmin-password>'
 aws secretsmanager put-secret-value --secret-id mmgis/development/dashboards-password   --secret-string '<dashboards-password>'
+aws secretsmanager put-secret-value --secret-id mmgis/development/mapbox-token          --secret-string '<mapbox-token>'
 ```
+
+The Mapbox token is an **external credential**: hand-set once per environment
+and deliberately excluded from CI secret generation (CI can generate the
+session, seed, and dashboards values; it can never invent a Mapbox token). It
+is injected as `MAPBOX_TOKEN` on the admin task only.
 
 The DB master **username must be `postgres`** (`scripts/init-db.js`'s bootstrap
 connection defaults the maintenance DB name to the username, and a fresh RDS
 instance only has the `postgres` database). That is enforced in the module.
 
 Secrets Manager keeps **deleted secret names for 30 days** by default, so a
-destroy/re-apply cycle collides on all five names. The development root sets
-`secret_recovery_window_days = 0` (immediate deletion) for exactly this
-reason; production keeps the 30-day window on purpose.
+destroy/re-apply cycle would collide on all five names. Both environments
+therefore set `secret_recovery_window_days = 0` (immediate deletion) — a
+deleted name frees at once and a rebuild never trips over a ghost. Production
+included: the one nuance it accepts is that the superadmin seed password seeds
+the account at first boot only, so regenerating that secret afterwards desyncs
+it from the real login password (the full note lives in
+`environments/production/main.tf`).
 
 ### First image deploy — before CloudFront
 
-A from-scratch phase 1 leaves the service pointing at a **placeholder image
-that does not exist in ECR** (CI pushes commit-SHA tags only), so the tasks
-crash-loop until a real image arrives. Push one through the pipeline now:
+A from-scratch phase 1 runs with `deployed_image` unset, so the service points
+at a **placeholder image that does not exist in ECR** (CI pushes commit-SHA
+tags only) and the tasks crash-loop until a real image arrives. Push one
+through the pipeline now:
 
 1. Set the repository's GitHub Actions variables from
-   `terraform output workflow_variables` (region, ECR repo, cluster, service,
-   both task families) and the `AWS_DEPLOY_ROLE_ARN` secret from
-   `terraform output deploy_role_arn`.
+   `terraform output -json workflow_variables` — one call returns all six
+   (region, ECR repo, cluster, service, both task families), keyed by the
+   variable names. The `AWS_DEPLOY_ROLE_ARN` secret comes from the **bootstrap
+   root's** outputs, not from here: the CI deploy role is created there, with
+   GitHub-Environment-scoped trust.
 2. Run `deploy-lean.yml` (manual dispatch) and wait for the rollout to
    converge — the run summary shows the deployed image.
 
@@ -200,36 +210,40 @@ VPC origins **cannot be updated while status=Deploying** and deploy cycles run
 
 ## Workflow variables
 
-`terraform output workflow_variables` prints the exact values. Set them as the
-environment's GitHub Actions variables (and the one secret):
+`terraform output -json workflow_variables` prints the exact values in one
+object whose keys **are** the variable names. Set them as the environment's
+GitHub Actions variables (the one secret comes from elsewhere):
 
-| Variable | Source output | Notes |
+| Variable | Source | Notes |
 |---|---|---|
-| `AWS_REGION` | `aws_region` | |
-| `ECR_REPOSITORY` | `ecr_repository_name` | per-environment repo |
-| `ECS_CLUSTER` | `ecs_cluster_name` | |
-| `ECS_SERVICE` | `ecs_service_name` | |
-| `ADMIN_TASK_FAMILY` | `admin_task_family` | `mmgis-<env>-admin` — **new**; the workflow now reads this (falls back to `mmgis-admin`) |
-| `PUBLISH_TASK_FAMILY` | `publish_task_family` | `mmgis-<env>-publish` — **new** (falls back to `mmgis-publish`) |
-| `AWS_DEPLOY_ROLE_ARN` (secret) | `deploy_role_arn` | OIDC-assumable; no long-lived keys |
+| `AWS_REGION` | `workflow_variables.AWS_REGION` | |
+| `ECR_REPOSITORY` | `workflow_variables.ECR_REPOSITORY` | per-environment repo |
+| `ECS_CLUSTER` | `workflow_variables.ECS_CLUSTER` | |
+| `ECS_SERVICE` | `workflow_variables.ECS_SERVICE` | |
+| `ADMIN_TASK_FAMILY` | `workflow_variables.ADMIN_TASK_FAMILY` | `mmgis-<env>-admin` — **new**; the workflow now reads this (falls back to `mmgis-admin`) |
+| `PUBLISH_TASK_FAMILY` | `workflow_variables.PUBLISH_TASK_FAMILY` | `mmgis-<env>-publish` — **new** (falls back to `mmgis-publish`) |
+| `AWS_DEPLOY_ROLE_ARN` (secret) | the bootstrap root | OIDC-assumable; no long-lived keys |
 
 The two `*_TASK_FAMILY` variables are the one required change to
 `deploy-lean.yml`: families are region-global, so per-environment names stop a
 production deploy from registering a revision development's publish-by-family
 flow would silently pick up. Everything else the workflow needs already came
-from Actions variables. The deploy role's trust is **branch-scoped for now**
-(`repo:NASA-IMPACT/MMGIS:ref:refs/heads/<branch>`); #195 tightens both
-environments to GitHub-Environment-scoped trust when it wires `environment:`
-into the job.
+from Actions variables. The deploy role itself is **not** created here — the
+bootstrap root creates it, with GitHub-Environment-scoped trust, so this module
+holds nothing that grants CI access to the account.
 
 ## Operational notes (still true, now in the Terraform world)
 
-- **After ANY Terraform change that touches a task definition, run
-  `deploy-lean.yml`.** Terraform's task defs point at a placeholder `:latest`
-  tag that never exists in ECR; a re-registered revision therefore points at a
-  nonexistent image, and Publish (`RunTask` on the family's latest revision)
-  silently breaks until the deploy workflow re-registers both families with a
-  real commit-SHA image.
+- **Terraform never decides which image runs — CI does.** Every pipeline apply
+  hands the module the currently deployed image (`deployed_image`), so a
+  re-registered task-def revision points at the real image rather than at a
+  stale placeholder. The nonexistent-`:latest` fallback exists for exactly one
+  case: the first apply of a brand-new environment, where no image is in ECR
+  yet (CI pushes commit-SHA tags only) and the tasks crash-loop until the app
+  deploy later in the same run supplies one. A hand-run `apply` with
+  `deployed_image` unset lands in that same fallback, so follow it with
+  `deploy-lean.yml` before Publish (`RunTask` on the family's latest revision)
+  is used.
 - **Express Mode is not task-definition driven.** The service runs from its own
   inline `primary_container`; the deploy workflow rolls it with
   `aws ecs update-express-gateway-service --primary-container`, not
@@ -242,11 +256,12 @@ into the job.
   (base64 of the small **per-region** CA bundle from
   `truststore.pki.rds.amazonaws.com/<region>/<region>-bundle.pem` — the global
   bundle exceeds the ECS env-var size limit). Supply it as `rds_ca_bundle_base64`.
-- **Two secrets for the database, on purpose.** `manage_master_user_password`
-  makes RDS generate and rotate the master password in its own managed secret
-  (nothing in Terraform state). Its `{username,password}` shape does **not**
-  match what the app reads, so the separate app-shaped `mmgis/<env>/db` secret
-  (`DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASS`) exists too, set out-of-band.
+- **One secret for the database.** `manage_master_user_password` makes RDS
+  generate and rotate the master password in its own managed secret (nothing in
+  Terraform state), and both task defs read `DB_PASS` straight out of it with
+  the `:password::` JSON-key selector on the `secrets[]` entry. No app-shaped
+  copy exists, so there is no second place the password can drift or leak from;
+  `DB_HOST/DB_PORT/DB_USER/DB_NAME` are plain environment values.
 - **Two roles per task.** The *execution* role is what ECS uses (image pull,
   logs, `secrets[]` injection); the *task* role is what the container code's SDK
   calls use. The admin task role holds `iam:PassRole` on both publish role ARNs
@@ -260,13 +275,15 @@ into the job.
   `/assets/*` serves the shared bucket with **CachingOptimized**. The recipe's
   `MinimumProtocolVersion` is intentionally omitted — the provider forbids
   setting it alongside the default certificate.
-- **CI deploy role, hard-won facts** (encoded in the module):
-  `ecs:DescribeServices` on the admin service ARN (the workflow resolves
-  name→ARN); the ExpressGatewayService actions' `Resource` includes **both** the
-  `express-gateway-service/*` shape **and** the `service/<cluster>/<service>`
-  ARN (the API authorizes Update/Describe against the service ARN); and the CLI
-  rejects `--cluster` on `update-express-gateway-service` (ARN-only) — the
-  workflow already resolves the ARN first.
+- **CI deploy role, hard-won facts.** The role lives in the **bootstrap root**,
+  not in this module; these empirically-established facts remain the spec its
+  policy implements. `ecs:DescribeServices` on the admin service ARN (the
+  workflow resolves name→ARN); the ExpressGatewayService actions' `Resource`
+  includes **both** the `express-gateway-service/*` shape **and** the
+  `service/<cluster>/<service>` ARN (the API authorizes Update/Describe against
+  the service ARN); and the CLI rejects `--cluster` on
+  `update-express-gateway-service` (ARN-only) — the workflow already resolves
+  the ARN first.
 
 ## Placeholders in the recipe JSON
 
