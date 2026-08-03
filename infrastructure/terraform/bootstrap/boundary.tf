@@ -236,6 +236,49 @@ resource "aws_iam_policy" "ci_role_boundary" {
         ]
         Resource = "*"
       },
+      {
+        # The service wildcards above exist so an AWS-side extension of the
+        # managed policy cannot brick service provisioning — but nothing Express
+        # Mode does involves instances, volumes, images, or VPC topology.
+        # Denying those families here caps the worst case of a mis-written
+        # capped role at SG/ALB/certificate surface, not account-wide EC2.
+        # Describe* stays allowed above: provisioning reads VPC and subnet facts.
+        Sid    = "DenyEc2BlastRadius"
+        Effect = "Deny"
+        Action = [
+          "ec2:RunInstances",
+          "ec2:StartInstances",
+          "ec2:StopInstances",
+          "ec2:TerminateInstances",
+          "ec2:CreateVolume",
+          "ec2:CreateSnapshot",
+          "ec2:CreateSnapshots",
+          "ec2:CopySnapshot",
+          "ec2:CreateImage",
+          "ec2:CopyImage",
+          "ec2:RegisterImage",
+          "ec2:CreateVpc",
+          "ec2:DeleteVpc",
+          "ec2:ModifyVpcAttribute",
+          "ec2:CreateSubnet",
+          "ec2:DeleteSubnet",
+          "ec2:CreateRouteTable",
+          "ec2:DeleteRouteTable",
+          "ec2:CreateRoute",
+          "ec2:DeleteRoute",
+          "ec2:CreateInternetGateway",
+          "ec2:DeleteInternetGateway",
+          "ec2:AttachInternetGateway",
+          "ec2:DetachInternetGateway",
+          "ec2:CreateNatGateway",
+          "ec2:DeleteNatGateway",
+          "ec2:CreateVpcPeeringConnection",
+          "ec2:AcceptVpcPeeringConnection",
+          "ec2:CreateKeyPair",
+          "ec2:ImportKeyPair",
+        ]
+        Resource = "*"
+      },
     ]
   })
 }
