@@ -229,16 +229,13 @@
     text-decoration: underline;
 }
 
+/* Placed by FloatingPopover, which positions the portal it lives in. */
 .date-selector-dropdown {
-    position: absolute;
-    top: calc(100% + 10px);
-    left: 0;
     background: var(--theme-color-white, #ffffff);
     border: none;
     border-radius: 8px;
     box-shadow: 0 4px 16px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
     padding: 16px;
-    z-index: 1000;
     min-width: 250px;
     color: var(--theme-color-base-dark, #565c65);
     font-family: var(--theme-font-ui, 'Public Sans', system-ui, -apple-system, sans-serif);
@@ -250,19 +247,11 @@
     gap: 8px;
 }
 
-.date-input-form label {
-    font-size: 12px;
-    color: var(--theme-color-base-darker, #3d4551);
-}
-
-.date-input-form input[type='date'],
-.date-input-form input[type='month'],
-.date-input-form input[type='datetime-local'],
 .date-input-form input[type='time'],
 .date-input-form .time-input-field {
     padding: 8px;
     /* Frameless like the year field and month grid; the browser puts its own
-       border on native date inputs, so it has to be turned off explicitly. */
+       border on native time inputs, so it has to be turned off explicitly. */
     border: none;
     border-radius: 4px;
     background: transparent;
@@ -278,19 +267,13 @@
     font-weight: 700;
 }
 
-.date-input-form input[type='date']:hover,
-.date-input-form input[type='month']:hover,
-.date-input-form input[type='datetime-local']:hover,
 .date-input-form input[type='time']:hover,
 .date-input-form .time-input-field:hover {
     background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
-.date-input-form input[type='date']:focus,
-.date-input-form input[type='month']:focus,
-.date-input-form input[type='datetime-local']:focus,
-.date-input-form input[type='time']:focus,
-.date-input-form .time-input-field:focus {
+.date-input-form input[type='time']:focus:not(:focus-visible),
+.date-input-form .time-input-field:focus:not(:focus-visible) {
     outline: none;
 }
 

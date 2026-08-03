@@ -5,6 +5,7 @@ import {
     clampDate,
     formatDateByMode,
     stepTime,
+    snapMonthToRange,
 } from '../../src/essence/Tools/Timeline/lib/utils/timeUtils'
 
 const iso = (d) => d.toISOString()
@@ -124,6 +125,37 @@ describe('stepTime', () => {
         it('keeps a day step exactly 24 hours', () => {
             const before = new Date('2026-03-07T12:00:00Z')
             expect(iso(stepTime(before, 'DAY', 1))).toBe('2026-03-08T12:00:00.000Z')
+        })
+    })
+})
+
+describe('snapMonthToRange', () => {
+    // The timeline covers 2024-06-15 through 2026-03-20.
+    const start = new Date('2024-06-15T00:00:00Z')
+    const end = new Date('2026-03-20T00:00:00Z')
+
+    it('leaves a covered month alone', () => {
+        expect(snapMonthToRange(2025, 0, start, end)).toBe(0)
+        expect(snapMonthToRange(2025, 11, start, end)).toBe(11)
+        expect(snapMonthToRange(2024, 8, start, end)).toBe(8)
+    })
+
+    it('snaps up to the first covered month of the start year', () => {
+        expect(snapMonthToRange(2024, 0, start, end)).toBe(5) // June
+    })
+
+    it('snaps down to the last covered month of the end year', () => {
+        expect(snapMonthToRange(2026, 11, start, end)).toBe(2) // March
+    })
+
+    describe('away from UTC', () => {
+        withTimeZone('Asia/Tokyo')
+
+        it('takes the range bounds from their UTC months', () => {
+            // 2024-07-01T00:00Z is still June locally at UTC-something and
+            // already July in Tokyo; the UTC month is what bounds the picker.
+            const utcStart = new Date('2024-07-01T00:00:00Z')
+            expect(snapMonthToRange(2024, 0, utcStart, end)).toBe(6) // July
         })
     })
 })

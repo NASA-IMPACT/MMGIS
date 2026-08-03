@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react'
 import moment from 'moment'
 import { FloatingPopover } from '../../FloatingPopover'
 import { TimeMode } from '../../types'
+import { ChevronLeft, ChevronRight } from '../../icons/Chevron'
+import { snapMonthToRange } from '../../utils/timeUtils'
 import { DayCalendar } from './DayCalendar'
 
 export interface DateSelectorProps {
@@ -39,8 +41,10 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     const minYear = moment(startTime).year()
     const maxYear = moment(endTime).year()
 
-    // Format the selected date for display
-    let formattedDate = moment(selectedDate).format('MMM D, YYYY')
+    // Format the selected date for display. Deliberately not formatDateByMode:
+    // the axis labels a tick within a visible range and can stay terse, while
+    // this reads on its own and always carries the year.
+    let formattedDate = moment.utc(selectedDate).format('MMM D, YYYY')
     if (timeMode === 'YEAR') {
         formattedDate = moment(selectedDate).format('YYYY')
     } else if (timeMode === 'MONTH') {
@@ -106,11 +110,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
             commit(moment({ year, month: 0, day: 1 }), closeAfter)
             return
         }
-        // Changing the year can leave the held month outside the timeline, so
-        // snap to the nearest month that year does cover rather than erroring.
-        const firstMonth = year === minYear ? moment(startTime).month() : 0
-        const lastMonth = year === maxYear ? moment(endTime).month() : 11
-        const snapped = Math.min(lastMonth, Math.max(firstMonth, month))
+        const snapped = snapMonthToRange(year, month, startTime, endTime)
         if (snapped !== month) setMonthIndex(snapped)
         commit(moment({ year, month: snapped, day: 1 }), closeAfter)
     }
@@ -208,19 +208,9 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 disabled={hasYear && yearNumber <= minYear}
                 aria-label="Previous year"
             >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true"
-                >
-                    <path d="M14.7 17.3L9.4 12L14.7 6.7L16.1 8.1L12.2 12L16.1 15.9L14.7 17.3Z" />
-                </svg>
+                <ChevronLeft />
             </button>
             <input
-                id="date-input"
                 className="date-field-input"
                 type="text"
                 inputMode="numeric"
@@ -240,16 +230,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 disabled={hasYear && yearNumber >= maxYear}
                 aria-label="Next year"
             >
-                <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true"
-                >
-                    <path d="M9.3 6.7L14.6 12L9.3 17.3L7.9 15.9L11.8 12L7.9 8.1L9.3 6.7Z" />
-                </svg>
+                <ChevronRight />
             </button>
         </div>
     )
@@ -292,11 +273,15 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 placement="bottom"
                 offset={10}
             >
-                <div className="date-selector-dropdown" style={{ position: 'relative', top: 0, left: 0 }}>
-                    <form onSubmit={handleInputSubmit} className="date-input-form">
-                        <label htmlFor="date-input">
-                            {timeMode === 'YEAR' ? 'Select Year' : timeMode === 'MONTH' ? 'Select Month' : timeMode === 'HOUR' ? 'Select Date & Time' : 'Select Date'}
-                        </label>
+                <div className="date-selector-dropdown">
+                    <form
+                        onSubmit={handleInputSubmit}
+                        className="date-input-form"
+                        aria-labelledby="date-picker-title"
+                    >
+                        <div className="date-picker-title" id="date-picker-title">
+                            {popoverTitle}
+                        </div>
 
                         {timeMode === 'YEAR' && yearField}
 

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import moment from 'moment'
+import { ChevronLeft, ChevronRight } from '../../icons/Chevron'
+import { snapMonthToRange } from '../../utils/timeUtils'
 
 export interface DayCalendarProps {
     value: Date
@@ -7,32 +9,6 @@ export interface DayCalendarProps {
     endTime: Date
     onSelect: (date: Date) => void
 }
-
-const ChevronLeft = () => (
-    <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-    >
-        <path d="M14.7 17.3L9.4 12L14.7 6.7L16.1 8.1L12.2 12L16.1 15.9L14.7 17.3Z" />
-    </svg>
-)
-
-const ChevronRight = () => (
-    <svg
-        xmlns="http://www.w3.org/2000/svg"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-    >
-        <path d="M9.3 6.7L14.6 12L9.3 17.3L7.9 15.9L11.8 12L7.9 8.1L9.3 6.7Z" />
-    </svg>
-)
 
 export const DayCalendar: React.FC<DayCalendarProps> = ({
     value,
@@ -62,19 +38,11 @@ export const DayCalendar: React.FC<DayCalendarProps> = ({
         month.clone().endOf('month').toDate() >= startTime &&
         month.toDate() <= endTime
 
-    // Months of a given year the timeline actually covers; a year step lands on
-    // the nearest of these so it never has to be refused outright.
-    const monthBounds = (year: number) => ({
-        first: year === moment(startTime).year() ? moment(startTime).month() : 0,
-        last: year === moment(endTime).year() ? moment(endTime).month() : 11,
-    })
-
     const yearTarget = (delta: number) => {
         const year = viewMonth.year() + delta
-        if (year < moment(startTime).year() || year > moment(endTime).year()) return null
-        const { first, last } = monthBounds(year)
-        const month = Math.min(last, Math.max(first, viewMonth.month()))
-        return moment({ year, month, day: 1 })
+        if (year < moment.utc(startTime).year() || year > moment.utc(endTime).year()) return null
+        const month = snapMonthToRange(year, viewMonth.month(), startTime, endTime)
+        return moment.utc({ year, month, day: 1 })
     }
 
     // The month steps within its year, so neither control moves the other.
@@ -104,10 +72,12 @@ export const DayCalendar: React.FC<DayCalendarProps> = ({
         setYearText(digits)
         if (!/^\d{4}$/.test(digits)) return
         const year = parseInt(digits, 10)
-        if (year < moment(startTime).year() || year > moment(endTime).year()) return
-        const { first, last } = monthBounds(year)
-        const month = Math.min(last, Math.max(first, viewMonth.month()))
-        setViewMonth(moment({ year, month, day: 1 }))
+        if (year < moment.utc(startTime).year() || year > moment.utc(endTime).year()) return
+        const month = snapMonthToRange(year, viewMonth.month(), startTime, endTime)
+        const target = moment.utc({ year, month, day: 1 })
+        setViewMonth(target)
+        // The year can push the month inside the covered range.
+        setMonthText(target.format('MMM'))
     }
 
     // Accepts a month name, an abbreviation, or its number.
