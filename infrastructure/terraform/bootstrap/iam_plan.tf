@@ -84,11 +84,14 @@ resource "aws_iam_role_policy" "terraform_plan" {
         Resource = "*"
       },
       {
-        # DescribeTaskDefinition supports no resource-level scoping.
-        Sid      = "ReadTaskDefinitions"
+        # The environment module currently declares a data source for the
+        # GitHub OIDC provider; #199 deletes it, but plans of the branch as it
+        # stands must not fail on the lookup. Read-only, pinned to the one
+        # provider.
+        Sid      = "ReadGithubOidcProvider"
         Effect   = "Allow"
-        Action   = ["ecs:DescribeTaskDefinition"]
-        Resource = "*"
+        Action   = ["iam:GetOpenIDConnectProvider"]
+        Resource = data.aws_iam_openid_connect_provider.github.arn
       },
       {
         Sid      = "ReadEcrConfig"
@@ -146,14 +149,6 @@ resource "aws_iam_role_policy" "terraform_plan" {
           "iam:ListInstanceProfilesForRole",
         ]
         Resource = "arn:aws:iam::${local.account_id}:role/mmgis-*"
-      },
-      {
-        # The module reads the boundary policy it attaches, so a plan of the
-        # module needs to read it too.
-        Sid      = "ReadBoundaryPolicy"
-        Effect   = "Allow"
-        Action   = ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions"]
-        Resource = [for env in local.environments : aws_iam_policy.ci_role_boundary[env].arn]
       },
     ]
   })

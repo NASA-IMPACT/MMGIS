@@ -122,6 +122,16 @@ resource "aws_iam_role_policy" "terraform_apply" {
         Resource = "*"
       },
       {
+        # The environment module currently declares a data source for the
+        # GitHub OIDC provider; #199 deletes it, but applies of the branch as it
+        # stands must not fail on the lookup. Read-only, pinned to the one
+        # provider.
+        Sid      = "ReadGithubOidcProvider"
+        Effect   = "Allow"
+        Action   = ["iam:GetOpenIDConnectProvider"]
+        Resource = data.aws_iam_openid_connect_provider.github.arn
+      },
+      {
         # Repository name is mmgis-<env>; the trailing * with no separator also
         # covers the scratch environment's repo (mmgis-development-scratch).
         Sid    = "EcrRepoLifecycle"
