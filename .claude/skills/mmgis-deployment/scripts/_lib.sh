@@ -168,6 +168,12 @@ mw_dashboard_url() {
   echo "http://localhost:$((port + 1))"
 }
 
+# Configure (CMS) URL for a deployment (served on PORT itself, not PORT+1).
+mw_configure_url() {
+  local port="$1"
+  echo "http://localhost:${port}/configure"
+}
+
 # Poll the API healthcheck until it returns 200 or timeout (seconds).
 mw_wait_healthy() {
   local port="$1" timeout="${2:-90}" url

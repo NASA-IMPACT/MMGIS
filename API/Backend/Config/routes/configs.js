@@ -47,6 +47,7 @@ const WebSocket = require("isomorphic-ws");
 
 const fs = require("fs");
 const deepmerge = require("deepmerge");
+const mergeConfigWithTemplate = require("../mergeConfigWithTemplate");
 
 let fullAccess = false;
 if (
@@ -248,9 +249,11 @@ router.get("/get", function (req, res, next) {
 function add(req, res, next, cb) {
   let configTemplate = JSON.parse(JSON.stringify(config_template));
 
-  // If a config is provided, deep merge it with the template
+  // If a config is provided, merge it over the template. The template acts
+  // only as fallback defaults: posted arrays replace the template's arrays
+  // rather than concatenating with them (issue #194).
   if (req.body.config) {
-    configTemplate = deepmerge(configTemplate, req.body.config);
+    configTemplate = mergeConfigWithTemplate(configTemplate, req.body.config);
   }
 
   configTemplate.msv.mission = req.body.mission;

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 
 // Tests for the lean deployment's AWS recipes in infrastructure/.
 // These are static checks: every JSON file must parse, the IAM must stay

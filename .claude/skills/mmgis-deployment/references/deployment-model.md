@@ -36,15 +36,15 @@ They differ only in `PORT` and `DB_NAME`, against one shared container:
 
 A fresh database has no admin and no missions, so the landing page would be empty. Two ways to populate it:
 
-- **Golden clone (default).** A frozen baseline database `mmgis_golden` holds a baseline admin (`admin`, permission `111`) and a mission. Each new deployment's database is created as `CREATE DATABASE <db> TEMPLATE mmgis_golden`, so it boots already populated and then evolves independently. Postgres requires the template to have no active connections — that's why `mmgis_golden` is frozen (nothing connects to it) and why you must never clone from the live `mmgis` database.
-- **First-run signup.** Without a golden, the `/first_signup` endpoint makes the first account created a full admin (permission `111`); you then build missions in the Configure page.
+- **Template-DB clone (default).** A frozen baseline database `mmgis_template_db` holds a baseline admin (`admin`, permission `111`) and a mission. Each new deployment's database is created as `CREATE DATABASE <db> TEMPLATE mmgis_template_db`, so it boots already populated and then evolves independently. Postgres requires the template to have no active connections — that's why `mmgis_template_db` is frozen (nothing connects to it) and why you must never clone from the live `mmgis` database.
+- **First-run signup.** Without a template DB, the `/first_signup` endpoint makes the first account created a full admin (permission `111`); you then build missions in the Configure page.
 
-Where the golden itself comes from — it lives only in the local Docker volume, so each machine builds its own:
+Where the template DB itself comes from — it lives only in the local Docker volume, so each machine builds its own:
 
-- **Seed (fresh machine).** `seed-golden.sh` builds it from the committed `seed/baseline-mission.json`: it boots a temporary server against a scratch database (Sequelize creates the schema), seeds an admin + the baseline mission through MMGIS's own APIs (`first_signup` → `login` → `/api/configure/add`), then renames the scratch DB to `mmgis_golden`. The basemap token is injected at seed time from `MAPBOX_TOKEN` (env or the main checkout's `.env`) — **tokens are never committed to git**; the seed file holds a `{{MAPBOX_TOKEN}}` placeholder.
-- **Snapshot (existing machine).** `refresh-golden.sh` re-baselines from a live database via `pg_dump` (default source: `mmgis`).
+- **Seed (fresh machine).** `seed-template-db.sh` builds it from the committed `mission-profiles/generated/full-demo-mission.json` (generated from `mission-profiles/full-demo.json` by `scripts/generate-mission-config.js`): it boots a temporary server against a scratch database (Sequelize creates the schema), seeds an admin + the baseline mission through MMGIS's own APIs (`first_signup` → `login` → `/api/configure/add`), then renames the scratch DB to `mmgis_template_db`. The basemap token is injected at seed time from `MAPBOX_TOKEN` (env or the main checkout's `.env`) — **tokens are never committed to git**; the seed file holds a `{{MAPBOX_TOKEN}}` placeholder.
+- **Snapshot (existing machine).** `refresh-template-db.sh` re-baselines from a live database via `pg_dump` (default source: `mmgis`).
 
-Note the golden does **not** survive `docker-compose down -v` or deleting the `mmgis_mmgis-local-db` volume — that wipes every database. Re-seed or re-snapshot afterward.
+Note the template DB does **not** survive `docker-compose down -v` or deleting the `mmgis_mmgis-local-db` volume — that wipes every database. Re-seed or re-snapshot afterward.
 
 `FORCE_CONFIG_PATH=<file.json>` forces a single read-only mission from a file and **bypasses the Configure system** — a special case, not how normal deployments are configured.
 

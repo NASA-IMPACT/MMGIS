@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import { uploadImage } from '../../../configure/src/core/upload.js'
 
 const installFetchMock = (impl) => {
