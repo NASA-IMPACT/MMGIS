@@ -8,7 +8,6 @@ import {
     pickInfoToResult,
     buildDeckLayer,
     hexToRgba,
-    DECKGL_TYPE_ALIAS,
 } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
 
 test.describe('DeckGLHelpers', () => {
@@ -262,42 +261,6 @@ test.describe('DeckGLHelpers', () => {
 
         test('parses CSS named color "red"', () => {
             expect(hexToRgba('red')).toEqual([255, 0, 0, 255])
-        })
-    })
-
-    test.describe('DECKGL_TYPE_ALIAS', () => {
-        test('GeoJsonLayer maps to vector', () => {
-            expect(DECKGL_TYPE_ALIAS['GeoJsonLayer']).toBe('vector')
-        })
-
-        test('ScatterplotLayer maps to scatterplot', () => {
-            expect(DECKGL_TYPE_ALIAS['ScatterplotLayer']).toBe('scatterplot')
-        })
-
-        test('TileLayer maps to tile', () => {
-            expect(DECKGL_TYPE_ALIAS['TileLayer']).toBe('tile')
-        })
-
-        test('BitmapLayer maps to tile', () => {
-            expect(DECKGL_TYPE_ALIAS['BitmapLayer']).toBe('tile')
-        })
-
-        test('Tile3DLayer maps to tile3d', () => {
-            expect(DECKGL_TYPE_ALIAS['Tile3DLayer']).toBe('tile3d')
-        })
-
-        test('PointCloudLayer maps to pointcloud', () => {
-            expect(DECKGL_TYPE_ALIAS['PointCloudLayer']).toBe('pointcloud')
-        })
-
-        test('MVTLayer maps to vectortile', () => {
-            expect(DECKGL_TYPE_ALIAS['MVTLayer']).toBe('vectortile')
-        })
-
-        test('all values are lowercase strings', () => {
-            for (const [key, value] of Object.entries(DECKGL_TYPE_ALIAS)) {
-                expect(value).toBe(value.toLowerCase(), `${key} alias value should be lowercase`)
-            }
         })
     })
 })

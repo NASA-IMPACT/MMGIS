@@ -17,6 +17,7 @@ import { color as parseColor } from 'd3'
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
 import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions, VectorTileLayerOptions, PointCloudLayerOptions } from '../types/layers'
 import type { FeaturePickResult } from '../types/events'
+import { toCanonicalLayerType } from '../types/engine'
 
 /**
  * View state shape for deck.gl's WebMercatorView.
@@ -146,21 +147,6 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
 }
 
 /**
- * Maps DeckGL class names (as stored in layer configs) to the canonical type
- * string used by buildDeckLayer's switch.
- * Add entries here when new DeckGL layer types are introduced.
- */
-export const DECKGL_TYPE_ALIAS: Record<string, string> = {
-    GeoJsonLayer: 'vector',
-    ScatterplotLayer: 'scatterplot',
-    TileLayer: 'tile',
-    BitmapLayer: 'tile',
-    Tile3DLayer: 'tile3d',
-    PointCloudLayer: 'pointcloud',
-    MVTLayer: 'vectortile',
-}
-
-/**
  * Reads a nested value from a GeoJSON feature or plain object by dot-notation path.
  * Checks `.properties` first, then the object itself.
  * @param object - GeoJSON feature or plain data record.
@@ -187,12 +173,12 @@ function getPropValue(object: unknown, path: string | undefined): unknown {
  * Supports `'tile'` (TileLayer + BitmapLayer), `'vector'` (GeoJsonLayer),
  * and `'pointcloud'` (PointCloudLayer).
  * DeckGL class names (e.g. `'GeoJsonLayer'`) are automatically normalised
- * via {@link DECKGL_TYPE_ALIAS}. Use `nativeOptions` for deck.gl-specific props.
+ * via {@link toCanonicalLayerType}. Use `nativeOptions` for deck.gl-specific props.
  *
  * @throws {Error} If `options.type` is not a supported layer type.
  */
 export function buildDeckLayer(id: string, options: LayerOptions): Layer {
-    const resolvedType = DECKGL_TYPE_ALIAS[options.type ?? ''] ?? options.type
+    const resolvedType = toCanonicalLayerType(options.type)
     switch (resolvedType) {
         case 'tile': {
             const o = options as TileLayerOptions

@@ -863,6 +863,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const updated = existing.clone({
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
+            ...(options.url !== undefined ? { data: options.url } : {}),
         }) as Layer
         this._layers.set(id, updated)
         this._syncLayers()
@@ -1301,6 +1302,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * - Standalone mode: `_deck.setProps({ layers })` — direct deck.gl update.
      */
     private _syncLayers(): void {
+        // DeckGL diffs by array identity to detect changes and re-ordering.
+        // Since we manage layers imperatively, we hand it a fresh copy of the
+        // layers *array* (the layer instances themselves are reused) so the diff
+        // picks up additions, removals, and drawing-order changes.
         const layers = [...this._layers.values()]
         if (this._isOverlayMode) {
             this._overlay?.setProps({ layers })

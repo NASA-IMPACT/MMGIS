@@ -19,6 +19,7 @@ export type MapEngineType = (typeof MAP_ENGINE)[keyof typeof MAP_ENGINE]
 export type DeckGLLayerType =
     | 'GeoJsonLayer'
     | 'TileLayer'
+    | 'BitmapLayer'
     | 'Tile3DLayer'
     | 'PointCloudLayer'
     | 'MVTLayer'
@@ -87,6 +88,52 @@ export function engineSupportsLayer(
     layerType: RenderableLayerType
 ): boolean {
     return ENGINE_LAYER_SUPPORT[engine].includes(layerType)
+}
+
+/**
+ * Maps deck.gl class names (as stored in layer configs) to the canonical MMGIS
+ * type string. deck.gl missions configure a layer by its deck.gl class name
+ * while Leaflet missions use the MMGIS type, so several class names normalise
+ * onto one type — `TileLayer` and `BitmapLayer` are both `tile`.
+ *
+ * Lives here rather than beside its consumer in DeckGLHelpers so that
+ * engine-agnostic modules can read it without pulling in the deck.gl bundle.
+ * Add entries here when new deck.gl layer types are introduced.
+ */
+export const DECKGL_TYPE_ALIAS: Partial<Record<DeckGLLayerType, string>> = {
+    GeoJsonLayer: 'vector',
+    ScatterplotLayer: 'scatterplot',
+    TileLayer: 'tile',
+    BitmapLayer: 'tile',
+    Tile3DLayer: 'tile3d',
+    PointCloudLayer: 'pointcloud',
+    MVTLayer: 'vectortile',
+}
+
+/**
+ * Normalises a configured `type` to the canonical MMGIS type. A deck.gl class
+ * name maps through DECKGL_TYPE_ALIAS; anything else — an MMGIS type from a
+ * Leaflet config, or a class name with no alias — passes through unchanged.
+ */
+export function toCanonicalLayerType(
+    type: string | undefined | null
+): string | undefined {
+    if (type == null) return undefined
+    return DECKGL_TYPE_ALIAS[type as DeckGLLayerType] ?? type
+}
+
+/**
+ * True when a layer config is a raster tile layer on any engine — `tile` in a
+ * Leaflet config, `TileLayer` or `BitmapLayer` in a deck.gl one. All of these
+ * are built by Map_.makeTileLayer and share the tile-URL pipeline.
+ *
+ * Takes a loose `{ type?: string }` because callers pass raw mission-config
+ * objects parsed from JSON, where `type` is whatever the config authored.
+ */
+export function isRasterTileLayerType(
+    layer: { type?: string } | null | undefined
+): boolean {
+    return toCanonicalLayerType(layer?.type) === 'tile'
 }
 
 /**

@@ -2,6 +2,7 @@ import $ from 'jquery'
 import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import ToolController_ from '../ToolController_/ToolController_'
+import TimeUI from '../TimeControl_/TimeUI'
 import Login from '../../Ancillary/Login/Login'
 
 import BottomBar from './BottomBar'
@@ -1612,13 +1613,10 @@ function resize() {
 
     shouldRotateSplitterText()
 
-    // Update TimeUI positions when layout changes
-    if (
-        L_.TimeControl_ &&
-        L_.TimeControl_.timeUI &&
-        typeof L_.TimeControl_.timeUI.alignPopovers === 'function'
-    ) {
-        L_.TimeControl_.timeUI.alignPopovers()
+    // Update TimeUI popover positions when the layout changes. Only when the
+    // TimeUI widget is mounted — alignPopovers reads its DOM elements.
+    if (TimeUI.startTempus != null) {
+        TimeUI.alignPopovers()
     }
 }
 function windowresize() {
