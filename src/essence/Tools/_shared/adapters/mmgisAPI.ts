@@ -100,7 +100,11 @@ export const mmgisGetViewState = (): Promise<ViewState | null> => {
     return mmgisRequestIfProvided<ViewState>('map:getViewState')
 }
 
-/** Every layer's config, keyed by layer UUID. */
+/**
+ * Every layer's config, keyed by layer UUID. Core registers this handler in
+ * Layers_.fina(), after the mission's layers load and after tools mount, so
+ * drive the call with useMMGISHandlerReady rather than requesting at mount.
+ */
 export const mmgisGetLayerConfigs = (): Promise<Record<
     string,
     LayerConfig
@@ -110,7 +114,8 @@ export const mmgisGetLayerConfigs = (): Promise<Record<
     )
 }
 
-/** Per-layer visibility, keyed by layer UUID. */
+/** Per-layer visibility, keyed by layer UUID. Registered as late as
+ *  mmgisGetLayerConfigs; the same readiness caveat applies. */
 export const mmgisGetVisibleLayers = (): Promise<Record<
     string,
     boolean

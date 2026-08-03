@@ -1,7 +1,7 @@
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TimelineAdapter } from './TimelineAdapter'
-import { mmgisRequest } from './adapters/mmgisAPI'
+import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 
 type ToolVars = {
     width?: number

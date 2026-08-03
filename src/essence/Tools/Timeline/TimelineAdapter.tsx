@@ -9,7 +9,7 @@ import {
     mmgisGetVisibleLayers,
     mmgisIsTimeEnabled,
     type LayerConfig,
-} from './adapters/mmgisAPI'
+} from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
     TimelineView,
