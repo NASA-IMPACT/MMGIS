@@ -157,6 +157,8 @@ describe('convergeDemoMission', () => {
         expect(h.created[0].version).toBe(5)
         expect(h.created[0].mission).toBe('Demo Dashboard')
         expect(h.created[0].config.layers[0].name).toBe('Layer A')
+        // The append-path write must share the lock's transaction too.
+        expect(h.createOptions[0].transaction).toBe(h.tx)
     })
 
     test('skips entirely when another instance holds the lock', async () => {
