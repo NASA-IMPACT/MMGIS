@@ -90,9 +90,11 @@ name: Deploy production
 #
 #   * Re-run the last green run from the Actions UI. The app engine rebuilds
 #     that same commit (`--no-cache`) and re-pushes it under the same short-SHA
-#     tag — the same image by construction, not by reusing what is in ECR —
-#     then re-registers both task-definition families against it and re-rolls
-#     the service onto it. Approval is requested again, twice, as for any run.
+#     tag — the same source, not what is already in ECR. Same source is not the
+#     same bits: a `--no-cache` rebuild re-resolves dependencies, which can
+#     drift within their declared ranges. It then re-registers both
+#     task-definition families against the rebuilt image and re-rolls the
+#     service onto it. Approval is requested again, twice, as for any run.
 #   * Merge a revert to `production` and let the resulting push run deploy it.
 #   * `workflow_dispatch` on the reverted or otherwise known-good `production`
 #     head.
@@ -279,19 +281,27 @@ jobs:
             echo "\"waiting\", not \"in progress\" — so stale parked runs accumulate."
             echo "Approve the newest, reject or cancel the rest."
             echo ""
-            echo "**Expect two approval prompts for this run.** The required-reviewers"
-            echo "gate is per job, not per run, and this run has two"
-            echo "environment-bound jobs: infrastructure, then app. The app job only"
-            echo "reaches the gate once the infrastructure job has finished, so a"
-            echo "second request appears mid-run. That is expected — the environment"
-            echo "binding on each engine job is what scopes the OIDC credentials and"
-            echo "enforces this gate, and it is deliberately not weakened to save a"
-            echo "click."
-            echo ""
-            echo "**Image provenance.** This run builds production's image from this"
-            echo "production-branch commit into production's own ECR repository."
-            echo "Images built for development are never promoted across"
-            echo "environments."
+            if [ "$MODE" = "plan" ]; then
+              echo "**Expect one approval prompt for this run.** The required-reviewers"
+              echo "gate is per job, not per run, and a plan-only run has exactly one"
+              echo "environment-bound job: the infrastructure engine, in plan mode. The"
+              echo "app job is skipped, so no image is built and nothing is deployed."
+              echo "Approving publishes a plan to the run summary and applies nothing."
+            else
+              echo "**Expect two approval prompts for this run.** The required-reviewers"
+              echo "gate is per job, not per run, and this run has two"
+              echo "environment-bound jobs: infrastructure, then app. The app job only"
+              echo "reaches the gate once the infrastructure job has finished, so a"
+              echo "second request appears mid-run. That is expected — the environment"
+              echo "binding on each engine job is what scopes the OIDC credentials and"
+              echo "enforces this gate, and it is deliberately not weakened to save a"
+              echo "click."
+              echo ""
+              echo "**Image provenance.** This run builds production's image from this"
+              echo "production-branch commit into production's own ECR repository."
+              echo "Images built for development are never promoted across"
+              echo "environments."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   # Always runs — see the header. `mode` decides how much work it does, not
