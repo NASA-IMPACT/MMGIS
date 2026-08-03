@@ -53,6 +53,15 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
         formattedDate = moment(selectedDate).format('MMM D, YYYY, HH:mm')
     }
 
+    const popoverTitle =
+        timeMode === 'YEAR'
+            ? 'Select Year'
+            : timeMode === 'MONTH'
+              ? 'Select Month'
+              : timeMode === 'HOUR'
+                ? 'Select Date & Time'
+                : 'Select Date'
+
     const getFormatPattern = () => {
         if (timeMode === 'YEAR') return 'YYYY'
         if (timeMode === 'MONTH') return 'YYYY-MM'
