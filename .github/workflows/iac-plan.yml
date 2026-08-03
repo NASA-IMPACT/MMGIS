@@ -10,7 +10,8 @@ name: Terraform plan preview
 #
 # Read-only by construction:
 #   - Credentials come from OIDC-assuming the dedicated read-only plan role
-#     (`IAC_PLAN_ROLE_ARN`, created by the bootstrap root in #245). No
+#     (`IAC_PLAN_ROLE_ARN`, created by the bootstrap root,
+#     `infrastructure/terraform/bootstrap`). No
 #     long-lived keys, and the role cannot mutate anything.
 #   - `terraform plan -lock=false` — a PR preview never takes or contends for
 #     the S3 state lock, so a preview can never block or corrupt a real apply.
@@ -29,10 +30,9 @@ name: Terraform plan preview
 #
 # Repository configuration (all repo-level, NOT environment-scoped — an unbound
 # job cannot read Environment-scoped values, and this job must stay unbound to
-# keep the OIDC subject above; the same decision is recorded in the value
-# inventory in #252):
+# keep the OIDC subject above):
 #   secrets: IAC_PLAN_ROLE_ARN
-#              ARN of the read-only plan role (bootstrap root, #245).
+#              ARN of the read-only plan role (bootstrap root).
 #   vars:    IAC_AWS_REGION
 #              Region for the S3 backend and the credential default, and
 #              injected as the root's `region` variable unless the tfvars JSON
@@ -53,8 +53,8 @@ name: Terraform plan preview
 #              public repo (run logs and PR comments) — the team accepted that:
 #              these are network identifiers, not secrets.
 #
-# Degrade path: the bootstrap root (#245) is not merged or applied yet, so at
-# first NONE of the values above are set. The workflow must not turn infra PRs
+# Degrade path: on a repository where the bootstrap root has not been applied,
+# NONE of the values above are set. The workflow must not turn infra PRs
 # red for that. When configuration is incomplete it skips the AWS steps, posts a
 # comment naming exactly which values are missing, and exits GREEN. Once
 # bootstrap is applied and the values are set, real plans start appearing with
@@ -136,9 +136,9 @@ jobs:
       TF_ROOT: infrastructure/terraform/environments/${{ matrix.root }}
       TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
     steps:
-      # `pull_request` checks out the PR's merge ref, not the base branch. That
-      # is why this workflow can land on development before the terraform tree
-      # does: PR #211's own runs check out a tree that contains it.
+      # `pull_request` checks out the PR's merge ref, not the base branch, so
+      # a PR that introduces or changes the terraform tree is planned against
+      # the tree its merge would produce.
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -237,9 +237,9 @@ jobs:
         run: |
           set -o pipefail
 
-          # A terraform-tree PR need not contain this root: e.g. the bootstrap
-          # root (#245) lands before the environment roots (#211) exist on
-          # development. Not this PR's fault, so it reads as a green notice,
+          # A terraform-tree PR need not contain this root: a PR can touch the
+          # bootstrap root while the environment roots are absent from its
+          # merge ref. Not this PR's fault, so it reads as a green notice,
           # not a red failure.
           if [ ! -d "$TF_ROOT" ]; then
             echo "status=root-missing" >> "$GITHUB_OUTPUT"
@@ -375,7 +375,8 @@ jobs:
                 echo "**$HEADLINE**"
                 echo ""
                 echo "The read-only plan role and the state buckets are created by the"
-                echo "bootstrap Terraform root (#245), which has not been applied yet."
+                echo "bootstrap Terraform root (infrastructure/terraform/bootstrap),"
+                echo "which has not been applied yet."
                 echo "Until it is applied and the values below are set on this repository,"
                 echo "no plan can be produced. This is the expected degrade path, so the"
                 echo "check stays green."
