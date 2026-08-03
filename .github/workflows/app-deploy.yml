@@ -314,11 +314,12 @@ jobs:
       - name: Write deployment summary
         if: ${{ !cancelled() && steps.build-image.outputs.IMAGE_URI != '' }}
         env:
+          ENVIRONMENT: ${{ inputs.environment }}
           IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
           JOB_STATUS: ${{ job.status }}
         run: |
           {
-            echo "## Lean deployment"
+            echo "## App deployment — \`$ENVIRONMENT\`"
             echo ""
             echo "- **Image pushed:** \`$IMAGE_URI\`"
             echo "- **Rollout:** $JOB_STATUS"

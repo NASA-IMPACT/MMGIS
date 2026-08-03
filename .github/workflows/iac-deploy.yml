@@ -111,9 +111,12 @@ on:
       deployed_image:
         description: >-
           Override the discovered image. Empty means "use whatever the live
-          service is serving". Unused by the development trigger; reserved for
-          the production pipeline (#251), which deploys a chosen build rather
-          than whatever is running.
+          service is serving". Unused by the development trigger; the
+          production trigger (#251) exposes it as a dispatch-only escape hatch
+          for when a live service's image cannot be discovered. It moves only
+          what this converge feeds the task-definition families — on any run
+          that deploys, the app engine still builds and rolls the trigger
+          commit's own image.
         required: false
         type: string
         default: ""
@@ -478,8 +481,10 @@ jobs:
           probe
 
           # Explicit override wins over whatever the service happens to be
-          # serving (the production pipeline deploys a chosen build). Applied
-          # after the probe so the phase-2 values are still discovered.
+          # serving (the production trigger's dispatch-time escape hatch for
+          # an undiscoverable live image — see the input's description).
+          # Applied after the probe so the phase-2 values are still
+          # discovered.
           if [ -n "$IMAGE_OVERRIDE" ]; then
             IMAGE="$IMAGE_OVERRIDE"
             echo "Using the caller-supplied image override."
