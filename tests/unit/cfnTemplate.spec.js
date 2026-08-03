@@ -1,11 +1,12 @@
-import { test, expect } from 'vitest'
+import { test, expect, afterEach, vi } from 'vitest'
 
 // Tests for the per-dashboard CloudFormation template renderer
 // (scripts/lib/cfn-template.js) used by the lean publish flow.
 
 const {
-    STACK_NAME_PREFIX,
+    DEFAULT_STACK_NAME_PREFIX,
     BASIC_AUTH_USER,
+    stackNamePrefix,
     stackNameForDeployment,
     renderAuthFunctionCode,
     renderCfnTemplate,
@@ -17,10 +18,35 @@ test.describe('stackNameForDeployment', () => {
     test('encodes the deployment id with the mmgis-dashboard- prefix', () => {
         expect(stackNameForDeployment(12)).toBe('mmgis-dashboard-12')
         expect(stackNameForDeployment('40')).toBe('mmgis-dashboard-40')
-        expect(STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
+        expect(DEFAULT_STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
+        expect(stackNamePrefix()).toBe('mmgis-dashboard-')
     })
 
     test('throws without an id', () => {
+        expect(() => stackNameForDeployment(null)).toThrow()
+        expect(() => stackNameForDeployment('')).toThrow()
+    })
+})
+
+test.describe('MMGIS_ENVIRONMENT namespacing', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs()
+    })
+
+    test('namespaces the prefix per environment when the var is set', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'development')
+        expect(stackNamePrefix()).toBe('mmgis-development-dashboard-')
+        expect(stackNameForDeployment(12)).toBe('mmgis-development-dashboard-12')
+    })
+
+    test('an empty value falls back to the legacy shared prefix', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', '')
+        expect(stackNamePrefix()).toBe(DEFAULT_STACK_NAME_PREFIX)
+        expect(stackNameForDeployment(12)).toBe('mmgis-dashboard-12')
+    })
+
+    test('still throws without an id', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'development')
         expect(() => stackNameForDeployment(null)).toThrow()
         expect(() => stackNameForDeployment('')).toThrow()
     })

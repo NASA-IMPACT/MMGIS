@@ -113,9 +113,14 @@ test.describe('infrastructure/ JSON recipes', () => {
 
     test('dashboard-facing grants are pinned to the mmgis-dashboard-* prefix', () => {
         // The prefix the IAM is pinned to must be the one the code creates
-        // stacks under.
-        const { STACK_NAME_PREFIX } = require('../../scripts/lib/cfn-template')
-        expect(STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
+        // stacks under. These JSON docs describe the hand-built environment,
+        // which never sets MMGIS_ENVIRONMENT, so they pin the DEFAULT prefix;
+        // the per-environment patterns live in the Terraform module
+        // (infrastructure/terraform/modules/mmgis-environment/iam.tf).
+        const {
+            DEFAULT_STACK_NAME_PREFIX,
+        } = require('../../scripts/lib/cfn-template')
+        expect(DEFAULT_STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
 
         const adminRole = readJson('iam/admin-task-role.json')
         const publishRole = readJson('iam/publish-task-role.json')
@@ -202,6 +207,12 @@ test.describe('infrastructure/ JSON recipes', () => {
         // container overrides (see infrastructure/README.md).
         const RUN_TASK_OVERRIDES = ['MMGIS_DEPLOYMENT_ID', 'MMGIS_DEPLOYMENT_ACTION']
 
+        // MMGIS_ENVIRONMENT is OPTIONAL by design: the Terraform module injects
+        // it to namespace dashboards per environment; the legacy hand-built
+        // environment deliberately omits it to keep the original
+        // mmgis-dashboard-* names.
+        const OPTIONAL_VARS = ['MMGIS_ENVIRONMENT']
+
         // Vars only the publish-side code (scripts/publish-static.js and the
         // template renderer it calls) reads. They ride the PUBLISH task
         // definition; the admin task deliberately does not carry them.
@@ -217,7 +228,8 @@ test.describe('infrastructure/ JSON recipes', () => {
                 const name = match[1] || match[2]
                 if (
                     (name.startsWith('MMGIS_') || name === 'AWS_REGION') &&
-                    !RUN_TASK_OVERRIDES.includes(name)
+                    !RUN_TASK_OVERRIDES.includes(name) &&
+                    !OPTIONAL_VARS.includes(name)
                 )
                     wanted.add(name)
             }
