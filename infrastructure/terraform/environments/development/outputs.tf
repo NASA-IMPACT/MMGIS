@@ -1,14 +1,6 @@
 output "workflow_variables" {
-  description = "Values to set as the environment's GitHub Actions variables/secrets."
-  value = {
-    AWS_REGION          = module.mmgis.aws_region
-    ECR_REPOSITORY      = module.mmgis.ecr_repository_name
-    ECS_CLUSTER         = module.mmgis.ecs_cluster_name
-    ECS_SERVICE         = module.mmgis.ecs_service_name
-    ADMIN_TASK_FAMILY   = module.mmgis.admin_task_family
-    PUBLISH_TASK_FAMILY = module.mmgis.publish_task_family
-    AWS_DEPLOY_ROLE_ARN = module.mmgis.deploy_role_arn
-  }
+  description = "Every value the deploy workflows need, in one object. Keys are the GitHub Actions variable names. The AWS_DEPLOY_ROLE_ARN secret comes from the bootstrap root, not from here."
+  value       = module.mmgis.workflow_variables
 }
 
 output "express_ingress_paths" {
@@ -20,20 +12,9 @@ output "express_service_arn" {
   value = module.mmgis.express_service_arn
 }
 
-output "rds_endpoint" {
-  value = module.mmgis.rds_endpoint
-}
-
 output "rds_managed_master_secret_arn" {
-  value = module.mmgis.rds_managed_master_secret_arn
-}
-
-output "app_db_secret_arn" {
-  value = module.mmgis.app_db_secret_arn
-}
-
-output "asset_bucket_name" {
-  value = module.mmgis.asset_bucket_name
+  description = "The ONLY place the DB password lives; the task defs reference it directly. Informational."
+  value       = module.mmgis.rds_managed_master_secret_arn
 }
 
 output "admin_distribution_id" {
