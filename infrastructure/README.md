@@ -66,8 +66,9 @@ host/port/user/name ride as plain environment values.
   different AZs (ECS Express Mode requires two) with **NAT egress** — a private
   task needs it or webhooks and AWS-API calls hang silently. Private subnets
   make the admin reachable only through CloudFront.
-- **A per-environment Terraform state bucket**, bootstrapped once (below).
-  Development's is created here; production's is created by #195.
+- **A per-environment Terraform state bucket**, bootstrapped once. The CLI
+  recipe below is the interim path that #245's bootstrap root replaces;
+  development's bucket was created with it, production's arrives with #195.
 - **The IAM permissions-boundary policy**, created by the bootstrap root. Its
   ARN is a required input (`permissions_boundary`, via tfvars — it carries the
   account id): every role this module creates carries the boundary, because the
