@@ -1546,8 +1546,6 @@ async function makeTileLayer(layerObj, mapContext = null) {
                 rawCogUrl: tileSource.fileUrl,
                 layerObj,
                 opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
-                minZoom: parseInt(layerObj.minZoom),
-                maxZoom: parseInt(layerObj.maxZoom),
             })
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()

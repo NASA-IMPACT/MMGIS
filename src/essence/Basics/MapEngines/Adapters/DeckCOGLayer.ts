@@ -343,8 +343,6 @@ export function buildDeckCOGLayer(
         rawCogUrl: string
         layerObj: Record<string, any>
         opacity?: number
-        minZoom?: number
-        maxZoom?: number
     }
 ): Layer {
     const l = options.layerObj
@@ -352,13 +350,17 @@ export function buildDeckCOGLayer(
     const rescaleMin = Number(l.currentCogMin ?? l.cogMin ?? 0)
     const rescaleMax = Number(l.currentCogMax ?? l.cogMax ?? 1)
     const nodata = l.cogNoData != null ? Number(l.cogNoData) : null
+    // Derived here rather than passed by callers so every rebuild path
+    // (creation, colormap/rescale refresh, time reload) keeps the same limits.
+    const minZoom = parseInt(l.minZoom)
+    const maxZoom = parseInt(l.maxZoom)
 
     return new ColormappedCOGLayer({
         id,
         geotiff: options.rawCogUrl,
         opacity: options.opacity ?? 1,
-        minZoom: options.minZoom,
-        maxZoom: options.maxZoom,
+        ...(Number.isFinite(minZoom) ? { minZoom } : {}),
+        ...(Number.isFinite(maxZoom) ? { maxZoom } : {}),
         // Supplying getTileData + renderTile makes COGLayer._parseGeoTIFF skip
         // its default inferRenderPipeline (which throws for float COGs).
         // getTileData uploads the band as r32float; renderTile is overridden by
