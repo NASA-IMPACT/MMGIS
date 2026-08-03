@@ -862,7 +862,18 @@ jobs:
         run: |
           set -o pipefail
 
-          NAMES_JSON=$(terraform -chdir="$TF_ROOT" output -json workflow_variables 2>/dev/null) || NAMES_JSON=""
+          # Same discipline as the discovery probes: `terraform output -json`
+          # exits 0 with `{}` on empty state, so a nonzero exit can only be a
+          # backend problem — fail red with the real error rather than emit
+          # empty names and send the caller's app job chasing a misleading
+          # "this environment has never been applied" message.
+          if ! ALL_OUTPUTS=$(terraform -chdir="$TF_ROOT" output -json 2>/tmp/tf-output.err); then
+            cat /tmp/tf-output.err >&2
+            echo "Failed to read terraform outputs from the backend." >&2
+            exit 1
+          fi
+
+          NAMES_JSON=$(printf '%s' "$ALL_OUTPUTS" | jq -c '.workflow_variables.value // empty')
           if [ -z "$NAMES_JSON" ] || [ "$NAMES_JSON" = "null" ]; then
             # Empty state and no apply this run — read or plan mode against an
             # environment that has never been built. Emitting empty strings is
