@@ -700,20 +700,64 @@ jobs:
           # pipeline, and the whole design below is that the value exists
           # nowhere a trace could reach it.
 
-          WORDLIST=".github/scripts/eff-large-wordlist.txt"
+          # The EFF large wordlist (7,776 words) is downloaded at run time
+          # rather than vendored — a hash pin gives the same integrity as a
+          # committed copy without carrying a 7,776-line data file in the repo,
+          # and this path runs rarely (apply-mode infra runs only, and the
+          # download itself only when a shell actually needs a value; see
+          # ensure_wordlist). The pinned SHA-256 is EFF's published digest,
+          # re-verified against the live URL when this step was written. The
+          # raw file is dice-index TAB word per line; the index column is
+          # stripped after verification.
+          WORDLIST_URL="https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt"
+          WORDLIST_SHA256="addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e"
+          WORDLIST_RAW="/tmp/eff-large-wordlist.raw"
+          WORDLIST="/tmp/eff-large-wordlist.txt"
 
-          # Guard the entropy source before generating anything. A bad checkout
-          # or a well-meaning edit that trims (or duplicates lines of) the list
-          # would silently weaken every passphrase generated afterwards, and
-          # nothing downstream would ever notice — hence UNIQUE words, not raw
-          # lines. `|| true` keeps a missing file on the friendly error path
-          # below instead of dying inside the command substitution.
-          WORD_COUNT=$(grep -v '^#' "$WORDLIST" 2>/dev/null | grep . | sort -u | wc -l || true)
-          if [ "${WORD_COUNT:-0}" -ne 7776 ]; then
-            echo "Wordlist '$WORDLIST' has ${WORD_COUNT:-0} unique words, expected 7776." >&2
-            echo "It is missing, truncated, or corrupted; generating from it would weaken every passphrase." >&2
-            exit 1
-          fi
+          # Download + verify, lazily: called only when a slot is actually
+          # empty, so a steady-state run (all four populated) never depends on
+          # eff.org being reachable. On failure it fails RED — there is no
+          # fallback to a weaker generator, ever.
+          ensure_wordlist() {
+            [ -s "$WORDLIST" ] && return 0
+
+            rc=0
+            curl -fsSL --retry 3 -o "$WORDLIST_RAW" "$WORDLIST_URL" || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "Could not download the EFF wordlist from $WORDLIST_URL (curl exit $rc)." >&2
+              echo "Likely transient — re-run the workflow. There is deliberately no fallback" >&2
+              echo "to a weaker generator." >&2
+              exit 1
+            fi
+
+            # The hash pin IS the integrity guarantee: it makes the download
+            # exactly as trustworthy as a vendored copy. A mismatch means the
+            # transfer was corrupted or upstream changed — either way, refuse.
+            ACTUAL_SHA256=$(sha256sum "$WORDLIST_RAW" | cut -d' ' -f1)
+            if [ "$ACTUAL_SHA256" != "$WORDLIST_SHA256" ]; then
+              echo "EFF wordlist hash mismatch:" >&2
+              echo "  expected $WORDLIST_SHA256" >&2
+              echo "  actual   $ACTUAL_SHA256" >&2
+              echo "Corrupted transfer (transient? re-run the workflow) or the upstream file" >&2
+              echo "changed. Refusing to generate; never falling back to a weaker generator." >&2
+              exit 1
+            fi
+
+            # Strip the dice-index column: "11111<TAB>abacus" -> "abacus".
+            cut -f2 "$WORDLIST_RAW" > "$WORDLIST"
+
+            # Belt to the hash pin's braces: the generator's entropy claims
+            # assume exactly 7,776 UNIQUE words, so verify that property on the
+            # processed file rather than trust the column-strip blindly.
+            # `|| true` keeps a failure on the friendly error path below
+            # instead of dying inside the command substitution.
+            WORD_COUNT=$(grep . "$WORDLIST" 2>/dev/null | sort -u | wc -l || true)
+            if [ "${WORD_COUNT:-0}" -ne 7776 ]; then
+              echo "Processed wordlist has ${WORD_COUNT:-0} unique words, expected 7776." >&2
+              echo "Generating from it would weaken every passphrase; refusing." >&2
+              exit 1
+            fi
+          }
 
           : > /tmp/secret-rows.md
 
@@ -800,9 +844,9 @@ jobs:
             # new version appeared, and its absence on a re-run is the evidence
             # that steady state generates nothing.
             echo "$secret_id: empty — generating a $words-word passphrase (new version id below)."
+            ensure_wordlist
             rc=0
-            grep -v '^#' "$WORDLIST" \
-              | shuf --random-source=/dev/urandom -rn "$words" \
+            shuf --random-source=/dev/urandom -rn "$words" "$WORDLIST" \
               | paste -sd- - \
               | tr -d '\n' \
               | aws secretsmanager put-secret-value \

@@ -206,6 +206,14 @@ a secret value back, so the values live only in Secrets Manager and in the
 tasks that consume them. Only `mapbox-token` still needs a human, once per
 environment.
 
+The words come from the EFF large wordlist (7,776 words), downloaded at run
+time and verified against a pinned SHA-256 rather than vendored — the hash pin
+gives the same integrity as a committed copy without a 7,776-line data file in
+the repo, and the download only happens on the rare run where a slot is
+actually empty (a steady-state run never contacts eff.org). A failed download
+or a hash mismatch fails the run red; there is no fallback to a weaker
+generator.
+
 **The hand path (break-glass, or the Mapbox token).** A value set by hand
 survives: the next CI run sees a populated shell and leaves it alone.
 
