@@ -651,11 +651,191 @@ jobs:
             exit "$rc"
           fi
 
-      # ── Secret-bootstrap slot ──────────────────────────────────────────────
-      # The application-secret bootstrap step belongs exactly HERE: after
-      # phase 1 has created the empty secret shells in Secrets Manager, and
-      # before the app phase of the composed run needs their values. This
-      # comment marks the seam.
+      # ── Application-secret bootstrap (#248) ────────────────────────────────
+      # Phase 1 above created the Secrets Manager secrets as empty shells: name
+      # and policy only, never a value, because a value in the configuration is
+      # a value in the state file. Four of those shells hold credentials only
+      # MMGIS itself consumes, so nobody outside this system has to choose
+      # them — this step fills each one the first time it finds it empty, and
+      # never touches one that already carries a value.
+      #
+      # Two secrets are deliberately absent from the list below.
+      # `mmgis/<env>/mapbox-token` is an external credential: a human sets it
+      # once per environment and CI has no business inventing it. The database
+      # password is the RDS-managed master secret, which nothing here goes
+      # near at all.
+      #
+      # The apply role this job runs under carries secretsmanager:DescribeSecret
+      # and secretsmanager:PutSecretValue on `mmgis/<env>*`, and deliberately no
+      # GetSecretValue anywhere (bootstrap root, #245) — CI can never read a
+      # secret value back. "Is this shell empty?" is therefore answered from
+      # describe-secret METADATA alone, never by reading the value.
+      #
+      # Greenfield: the same phase-1 apply that created these shells also
+      # launched the services whose tasks read them via `valueFrom`. Task
+      # launches in the window before this step lands the values fail; ECS
+      # launch retries self-heal once the values exist. That is expected — do
+      # not add ordering machinery for it.
+      #
+      # No `!cancelled()` guard: if phase 1 failed, the job has already
+      # stopped, which is correct. The shells this step fills only certainly
+      # exist after a SUCCESSFUL phase-1 apply.
+      - name: Bootstrap application secrets
+        id: secrets
+        if: inputs.mode == 'apply'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -o pipefail
+
+          # Never add `set -x` to this step. Tracing would print the generation
+          # pipeline, and the whole design below is that the value exists
+          # nowhere a trace could reach it.
+
+          WORDLIST=".github/scripts/eff-large-wordlist.txt"
+
+          # Guard the entropy source before generating anything. A bad checkout
+          # or a well-meaning edit that trims the list would silently weaken
+          # every passphrase generated afterwards, and nothing downstream would
+          # ever notice. `grep -c` exits 1 on a zero count, hence the `|| true`.
+          WORD_COUNT=$(grep -cv '^#' "$WORDLIST" 2>/dev/null || true)
+          if [ "${WORD_COUNT:-0}" -ne 7776 ]; then
+            echo "Wordlist '$WORDLIST' has ${WORD_COUNT:-0} words, expected 7776." >&2
+            echo "It is missing or truncated; generating from it would weaken every passphrase." >&2
+            exit 1
+          fi
+
+          : > /tmp/secret-rows.md
+
+          # Word counts, at ~12.925 bits per word:
+          #   session-secret       8 words (~103 bits). A machine-only signing
+          #                        key nobody ever types, so take the extra
+          #                        length for free.
+          #   superadmin-username  3 words. A username, not a secret proper;
+          #                        word-shaped and collision-proof is what
+          #                        matters.
+          #   superadmin-password  6 words (~78 bits).
+          #   dashboards-password  6 words (~78 bits).
+          #
+          # Fed by here-doc rather than a pipe on purpose: a piped `while` runs
+          # in a subshell, where the `exit 1`s below would kill only the
+          # subshell.
+          while read -r suffix words; do
+            [ -n "$suffix" ] || continue
+            secret_id="mmgis/$ENVIRONMENT/$suffix"
+
+            # Any describe failure — including ResourceNotFoundException, which
+            # cannot happen after a successful phase-1 apply — is investigation
+            # territory, never "assume empty". Assuming empty is the one
+            # mistake that could overwrite a live credential.
+            rc=0
+            meta=$(aws secretsmanager describe-secret \
+              --secret-id "$secret_id" \
+              --output json 2>/tmp/describe-secret.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              cat /tmp/describe-secret.err >&2
+              echo "aws secretsmanager describe-secret failed for '$secret_id' (exit $rc)." >&2
+              echo "Phase 1 applied successfully, so this shell must exist. Investigate rather than retry." >&2
+              exit 1
+            fi
+
+            # Near-impossible with the module's 0-day recovery window, but a
+            # put onto a shell that is scheduled for deletion would resurrect
+            # it into a confusing half-state. Fail loud instead of guessing.
+            deleted=$(printf '%s' "$meta" | jq -r '.DeletedDate // empty')
+            if [ -n "$deleted" ]; then
+              echo "'$secret_id' is scheduled for deletion (DeletedDate $deleted)." >&2
+              echo "Restore or recreate it before deploying; this step will not put a value onto it." >&2
+              exit 1
+            fi
+
+            # Emptiness, from metadata only: a secret holds a usable value iff
+            # some version carries the AWSCURRENT stage. `--output json` gives
+            # VersionIdsToStages as {versionId: [stage, ...]}.
+            populated=$(printf '%s' "$meta" \
+              | jq '[.VersionIdsToStages // {} | to_entries[].value[]] | any(. == "AWSCURRENT")')
+            version_count=$(printf '%s' "$meta" | jq '(.VersionIdsToStages // {}) | length')
+
+            if [ "$populated" = "true" ]; then
+              echo "$secret_id: already set — leaving it untouched."
+              printf '| `%s` | already set (left untouched) |\n' "$secret_id" >> /tmp/secret-rows.md
+              continue
+            fi
+
+            if [ "$version_count" -ne 0 ]; then
+              # Versions but no AWSCURRENT — an orphaned AWSPENDING, say. This
+              # cannot arise under normal operation (there is no rotation
+              # programme on these secrets), ECS `valueFrom` reads AWSCURRENT
+              # so the app cannot use the secret in this shape anyway, and
+              # putting a fresh value on top would break the never-overwrite
+              # rule while hiding whatever happened. A human investigates.
+              echo "'$secret_id' has $version_count version(s) but none staged AWSCURRENT." >&2
+              echo "Nothing in this system produces that state; resolve it by hand before deploying." >&2
+              exit 1
+            fi
+
+            # Empty shell → generate. The value must never exist in the shell:
+            #   * `shuf --random-source=/dev/urandom -r` draws words WITH
+            #     replacement from a cryptographic seed; `paste -sd- -`
+            #     hyphen-joins them; `tr -d '\n'` strips the trailing newline
+            #     so it does not become part of the stored value.
+            #   * `--secret-string file:///dev/stdin` makes the CLI read the
+            #     value off the pipe, so it is never in a shell variable, never
+            #     in argv (argv is world-readable through /proc on a shared
+            #     runner), never in the environment, and never echoed. That is
+            #     strictly stronger than `::add-mask::`, which would require
+            #     materialising the value in the shell first — exactly what
+            #     this avoids. There is deliberately nothing here to mask.
+            # The VersionId prints to the log on purpose: it is the evidence a
+            # new version appeared, and its absence on a re-run is the evidence
+            # that steady state generates nothing.
+            echo "$secret_id: empty — generating a $words-word passphrase (new version id below)."
+            rc=0
+            grep -v '^#' "$WORDLIST" \
+              | shuf --random-source=/dev/urandom -rn "$words" \
+              | paste -sd- - \
+              | tr -d '\n' \
+              | aws secretsmanager put-secret-value \
+                  --secret-id "$secret_id" \
+                  --secret-string file:///dev/stdin \
+                  --query VersionId --output text || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "aws secretsmanager put-secret-value failed for '$secret_id' (exit $rc)." >&2
+              exit 1
+            fi
+            printf '| `%s` | generated (new version) |\n' "$secret_id" >> /tmp/secret-rows.md
+          done <<'SLOTS'
+          session-secret 8
+          superadmin-username 3
+          superadmin-password 6
+          dashboards-password 6
+          SLOTS
+
+          # Secrets Manager has no conditional put, so probe-then-put carries a
+          # theoretical TOCTOU window. The caller's per-environment concurrency
+          # group already serialises runs, and the worst case — losing the race
+          # to a human setting a value by hand — adds a version rather than
+          # deleting theirs. Noted and accepted.
+
+          # Names only in the summary. Never values.
+          {
+            echo "## Application secrets — \`$ENVIRONMENT\`"
+            echo ""
+            echo "| Secret | Action |"
+            echo "| --- | --- |"
+            cat /tmp/secret-rows.md
+            echo ""
+            echo "\`mmgis/$ENVIRONMENT/mapbox-token\` is excluded — an external credential a human"
+            echo "sets once per environment. The database password is the RDS-managed master"
+            echo "secret and is never touched."
+            echo ""
+            echo "**Superadmin lockout nuance.** The seed credentials only seed the superadmin"
+            echo "while the users table is empty, i.e. on first boot. After that the real"
+            echo "credential is a bcrypt hash in the database, so regenerating"
+            echo "\`superadmin-password\` later diverges the secret from the password that"
+            echo "actually logs in. This matters most in production, where the database"
+            echo "outlives everything else."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Phase 1 is what brings the Express service (and therefore its
       # ECS-managed ALB) into existence, so on greenfield the phase-2 values
