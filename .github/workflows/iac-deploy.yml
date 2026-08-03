@@ -686,7 +686,15 @@ jobs:
         env:
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
-          set -o pipefail
+          # `-e` is GitHub's own default for run steps (`bash -e {0}`), restated
+          # here because for THIS step it is load-bearing rather than hygiene:
+          # if a `jq` parse of the describe-secret metadata ever failed, the
+          # emptiness variables below would be empty strings, and empty is not
+          # "true" — without -e the decision could fall through to generating
+          # onto a secret whose state was never actually read. With -e the
+          # failed assignment stops the step first. The never-overwrite
+          # guarantee must not hinge on an implicit runner default.
+          set -e -o pipefail
 
           # Never add `set -x` to this step. Tracing would print the generation
           # pipeline, and the whole design below is that the value exists
@@ -695,13 +703,15 @@ jobs:
           WORDLIST=".github/scripts/eff-large-wordlist.txt"
 
           # Guard the entropy source before generating anything. A bad checkout
-          # or a well-meaning edit that trims the list would silently weaken
-          # every passphrase generated afterwards, and nothing downstream would
-          # ever notice. `grep -c` exits 1 on a zero count, hence the `|| true`.
-          WORD_COUNT=$(grep -cv '^#' "$WORDLIST" 2>/dev/null || true)
+          # or a well-meaning edit that trims (or duplicates lines of) the list
+          # would silently weaken every passphrase generated afterwards, and
+          # nothing downstream would ever notice — hence UNIQUE words, not raw
+          # lines. `|| true` keeps a missing file on the friendly error path
+          # below instead of dying inside the command substitution.
+          WORD_COUNT=$(grep -v '^#' "$WORDLIST" 2>/dev/null | sort -u | wc -l || true)
           if [ "${WORD_COUNT:-0}" -ne 7776 ]; then
-            echo "Wordlist '$WORDLIST' has ${WORD_COUNT:-0} words, expected 7776." >&2
-            echo "It is missing or truncated; generating from it would weaken every passphrase." >&2
+            echo "Wordlist '$WORDLIST' has ${WORD_COUNT:-0} unique words, expected 7776." >&2
+            echo "It is missing, truncated, or corrupted; generating from it would weaken every passphrase." >&2
             exit 1
           fi
 
@@ -800,7 +810,17 @@ jobs:
                   --secret-string file:///dev/stdin \
                   --query VersionId --output text || rc=$?
             if [ "$rc" -ne 0 ]; then
-              echo "aws secretsmanager put-secret-value failed for '$secret_id' (exit $rc)." >&2
+              # Under pipefail this exit code can come from ANY stage of the
+              # pipeline, not just the put — and the stages run concurrently,
+              # so in the pathological case (a generator dying mid-stream while
+              # the put still succeeded on what it read) a version MAY exist
+              # holding a short value. Say so, rather than blame the put and
+              # send the operator the wrong way: a populated shell is skipped
+              # forever, so a suspect value must be replaced by hand.
+              echo "Generating or storing the value for '$secret_id' failed (exit $rc)." >&2
+              echo "If this failed attempt did store a version (rare: generator died mid-pipeline" >&2
+              echo "while the put succeeded), treat that value as suspect and put a fresh one by" >&2
+              echo "hand — CI never overwrites a populated shell." >&2
               exit 1
             fi
             printf "| \`%s\` | generated (new version) |\n" "$secret_id" >> /tmp/secret-rows.md
