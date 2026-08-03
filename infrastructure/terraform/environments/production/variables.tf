@@ -1,5 +1,5 @@
 # Only values that must NOT be committed are variables. See development for the
-# same pattern. Production is applied by #195.
+# same pattern.
 
 variable "region" {
   description = "AWS region."

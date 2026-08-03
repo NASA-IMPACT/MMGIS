@@ -29,7 +29,7 @@ infrastructure/
 │   ├── modules/mmgis-environment/     # one complete environment, parameterized
 │   └── environments/
 │       ├── development/               # thin root: module call + backend + tfvars
-│       └── production/                # thin root (applied by #195)
+│       └── production/                # thin root (same shape as development)
 ├── ecs/*.json                         # recipe source (provenance; see below)
 ├── iam/*.json                         # recipe source (provenance)
 ├── cloudfront-admin.json              # recipe source (provenance)
@@ -49,7 +49,7 @@ IAM roles.
 `ecs/*.json`, `iam/*.json`, `cloudfront-admin.json`, and `s3-asset-bucket.json`
 are the June recipes the Terraform module was translated from — every attribute
 value in them is production-tested. They are **kept in place**: they document
-where each Terraform value came from and are referenced by #195 discussions.
+where each Terraform value came from.
 `cloudfront-function.js` is still load-bearing as the canonical reference the
 publish generator (`scripts/lib/cfn-template.js`) is kept in sync with (see
 `tests/unit/infrastructure.spec.js`). Nothing here is applied directly anymore.
@@ -66,17 +66,18 @@ host/port/user/name ride as plain environment values.
   different AZs (ECS Express Mode requires two) with **NAT egress** — a private
   task needs it or webhooks and AWS-API calls hang silently. Private subnets
   make the admin reachable only through CloudFront.
-- **A per-environment Terraform state bucket**, bootstrapped once. The CLI
-  recipe below is the interim path that #245's bootstrap root replaces;
-  development's bucket was created with it, production's arrives with #195.
+- **A per-environment Terraform state bucket**, bootstrapped once. The
+  bootstrap root (`terraform/bootstrap`) owns state-bucket creation; the CLI
+  recipe below is the manual equivalent, and is how development's bucket was
+  originally created.
 - **The IAM permissions-boundary policy**, created by the bootstrap root. Its
   ARN is a required input (`permissions_boundary`, via tfvars — it carries the
   account id): every role this module creates carries the boundary, because the
   CI apply role is only allowed to create boundaried roles. An unboundaried
-  role fails on the very first apply. The **bootstrap root is #245's
-  deliverable** (state buckets plus all GitHub-facing AWS identity, the CI
-  deploy role included) and lives outside this directory until it lands —
-  apply it first. On a cutover from an environment whose deploy role was
+  role fails on the very first apply. The **bootstrap root**
+  (`terraform/bootstrap`) creates the boundary, the state buckets, and all
+  GitHub-facing AWS identity, the CI deploy role included — apply it first.
+  On a cutover from an environment whose deploy role was
   module-created, repoint the `AWS_DEPLOY_ROLE_ARN` secret at the
   bootstrap-created role **before** applying this root: this apply deletes
   the old role.
@@ -118,7 +119,7 @@ endpoint as Terraform attributes (only `service_arn` and `ingress_paths` are
 exported), and the CloudFront VPC origin needs the ALB ARN. So the front door
 is built in a **second apply**.
 
-From `terraform/environments/development/` (production is analogous, per #195):
+From `terraform/environments/development/` (production is analogous):
 
 ```sh
 cp terraform.tfvars.example terraform.tfvars   # vpc_id, subnets, boundary ARN, CA bundle
