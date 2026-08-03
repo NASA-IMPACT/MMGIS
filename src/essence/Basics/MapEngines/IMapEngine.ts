@@ -218,8 +218,13 @@ export interface IMapEngine<
 
     /**
      * Set the opacity of a layer.
+     *
+     * Engines with immutable layer objects (deck.gl) return the instance that
+     * carries the new opacity; callers holding a reference to the layer must
+     * replace it with the returned one. Engines that mutate in place (Leaflet)
+     * return nothing.
      */
-    setLayerOpacity(layer: TLayer | string, opacity: number): void
+    setLayerOpacity(layer: TLayer | string, opacity: number): TLayer | void
 
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).

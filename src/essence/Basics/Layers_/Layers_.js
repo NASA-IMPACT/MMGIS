@@ -6,11 +6,33 @@ import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { isRasterTileLayerType } from '../MapEngines/types/engine'
+import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
+
+/**
+ * True when a registry layer belongs to the active map engine, not Leaflet.
+ * Leaflet layers carry `options`, engine-owned ones do not; engine-owned
+ * layers go through the IMapEngine facade rather than Leaflet's methods.
+ *
+ * Which types are engine-owned is per-engine, not universal — see
+ * ENGINE_LAYER_SUPPORT. deck.gl, the only non-Leaflet engine today, owns
+ * vector, tile and vectortile; velocity, model, data, image and video have no
+ * deck.gl builder and stay Leaflet-built, so the registry holds a mix.
+ *
+ * @param {object} layer - A registry entry from `L_.layers.layer`.
+ * @returns {boolean}
+ */
+function isEngineOwnedLayer(layer) {
+    return (
+        layer != null &&
+        layer.options == null &&
+        L_.Map_?.engine != null &&
+        L_.Map_.engine.engineType !== MAP_ENGINE.LEAFLET
+    )
+}
 
 const L_ = {
     url: window.location.href,
@@ -1900,7 +1922,21 @@ const L_ = {
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
         let l = L_.layers.layer[name]
 
-        if (l) {
+        // Engine-owned layers go through the IMapEngine facade, which may return
+        // a replacement instance for the registry to hold (deck.gl layers are
+        // immutable). They have no attachments and no Leaflet marker elements,
+        // so the sublayer and CSS passes below do not apply to them.
+        if (isEngineOwnedLayer(l)) {
+            const updated = L_.Map_.engine.setLayerOpacity(
+                L_.Map_.nativeLayer(l),
+                newOpacity
+            )
+            if (updated) L_.layers.layer[name] = updated
+        } else if (l && l.options) {
+            // Leaflet layers only. A registry entry with no `options` is either
+            // engine-owned or a load failure sentinel (`false`); both fall
+            // through to the registry write below, which is the value the
+            // engine reads when it builds or re-adds the layer.
             if (l.options.initialFillOpacity == null)
                 l.options.initialFillOpacity =
                     L_.layers.data[name]?.style?.fillOpacity != null
@@ -1977,6 +2013,10 @@ const L_ = {
         var l = L_.layers.layer[name]
 
         if (l == null) return 0
+
+        // Engine-owned layer objects carry no Leaflet `options`; the registry is
+        // the authority on their opacity.
+        if (isEngineOwnedLayer(l)) return L_.layers.opacity[name] ?? 1
 
         var opacity
         try {
@@ -4182,8 +4222,17 @@ async function parseConfig(configData, urlOnLayers) {
                     standardId = d[i].display_name
                 if (standardId != null) {
                     L_.layers.on[d[i].name] = true
+                    // `on=<layer>` with no `$opacity` suffix parses to NaN, and
+                    // out-of-range values are meaningless; both fall back to 1.
+                    // A url-given 0 is a real request for a hidden layer.
+                    const urlOpacity =
+                        urlOnLayers.onLayers[standardId].opacity
                     L_.layers.opacity[d[i].name] =
-                        urlOnLayers.onLayers[standardId].opacity || 1
+                        Number.isFinite(urlOpacity) &&
+                        urlOpacity >= 0 &&
+                        urlOpacity <= 1
+                            ? urlOpacity
+                            : 1
                 } else if (urlOnLayers.method == 'replace') {
                     L_.layers.on[d[i].name] = false
                 }

@@ -1135,14 +1135,15 @@ async function makeVectorLayer(
                 }
 
                 layerObj.style = layerObj.style || {}
-                layerObj.style.opacity =
-                    ctx.layerRegistry.opacity[layerObj.name] || 1
+                // Layer opacity rides the deck.gl `opacity` prop alone — the
+                // one prop setLayerOpacity updates. style.opacity is the
+                // configured stroke alpha; deck multiplies the two.
                 ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
                         type: layerObj.type,
                         data,
-                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
                         interactive: true,
@@ -1221,17 +1222,16 @@ async function makeVectorLayer(
             layerObj.style = layerObj.style || {}
             layerObj.style.layerName = layerObj.name
 
-            layerObj.style.opacity =
-                ctx.layerRegistry.opacity[layerObj.name] || 1
-            //layerObj.style.fillOpacity = ctx.layerRegistry.opacity[layerObj.name]
-
             if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+                // Layer opacity rides the deck.gl `opacity` prop alone — the
+                // one prop setLayerOpacity updates. style.opacity is the
+                // configured stroke alpha; deck multiplies the two.
                 ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
                         type: layerObj.type || 'vector',
                         geojson: data,
-                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
                         interactive: true,
@@ -1244,6 +1244,10 @@ async function makeVectorLayer(
                 resolve()
                 return
             }
+
+            // Leaflet carries layer opacity in the style itself
+            layerObj.style.opacity =
+                ctx.layerRegistry.opacity[layerObj.name] ?? 1
 
             const vl = constructVectorLayer(
                 data,
@@ -1268,6 +1272,10 @@ async function makeVectorLayer(
                 )
             }
 
+            // Only Leaflet vector layers reach here — the deck.gl branch above
+            // returns first. Attachments are therefore Leaflet-only, which is
+            // why L_.setLayerOpacity skips its sublayer pass for engine-owned
+            // layers.
             ctx.layerRegistry.attachments[layerObj.name] = vl.sublayers
             ctx.layerRegistry.layer[layerObj.name] = vl.layer
 
@@ -1543,7 +1551,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'tile',
             url: layerUrl,
-            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
@@ -1581,7 +1589,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     L_.setLayerOpacity(
         layerObj.name,
-        ctx.layerRegistry.opacity[layerObj.name] || 1
+        ctx.layerRegistry.opacity[layerObj.name] ?? 1
     )
 
     L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
@@ -1655,7 +1663,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'vectortile',
             url: layerUrl,
-            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
