@@ -3,7 +3,6 @@
 // - Leaflet hides deck-only fields (DECK_ONLY_FIELDS), e.g. the client-side
 //   COG renderer option, which must be ABSENT (not just disabled) in Leaflet.
 
-// Moved verbatim from LayerModal.js (keep existing entries).
 export const ENGINE_HIDDEN_FIELDS = {
     deckgl: {
         _all: new Set([

@@ -6,16 +6,13 @@
  *   - `ColormappedCOGLayer` — deck.gl layer subclass; requires a GPU context at runtime.
  *   - `buildDeckCOGLayer` — factory used by Map_.js for the deckRaster code path.
  *
- * Runtime render verification is deferred to Task 8 (demo task). The subclass
- * and factory are verified here only by import resolution and the unit test.
- *
- * Deviation from brief (module resolution):
+ * Module resolution note:
  *   tsconfig.json uses `moduleResolution: "node"` which does not read package
  *   `exports` maps, so tsc cannot resolve the `./gpu-modules` subpath export.
  *   The import below uses `@ts-ignore` to suppress that tsc-only error; the
  *   import resolves correctly at runtime (Node.js + Playwright + Webpack all
  *   honour the exports map). Updating tsconfig to `node16`/`bundler` would
- *   remove the need for the ignore comment but is out of scope for this task.
+ *   remove the need for the ignore comment.
  */
 
 import type { Layer, UpdateParameters } from '@deck.gl/core'
@@ -64,11 +61,6 @@ type PipelineResult = {
  *
  * Pipeline order for single-band data (value lands in color.r):
  *   [base modules…] → [FilterNoDataVal?] → LinearRescale → Colormap
- *
- * Note: exact integration with COGLayer's photometric default pipeline must be
- * confirmed by a live render in Task 8. If the band value does not land in
- * `color.r` after the default pipeline, a BlackIsZero or channel-copy step
- * will need to be inserted before LinearRescale.
  */
 export function composeColormapPipeline(
     baseResult: { image?: unknown; renderPipeline?: PipelineEntry[] },
@@ -334,8 +326,8 @@ export class ColormappedCOGLayer extends COGLayer<any> {
  *
  * @param id        - Layer id (layer name from layerObj).
  * @param options   - Raw COG file URL + layer config. `rawCogUrl` is the bare
- *                    `.tif` URL with no TiTiler host or query params (saved by
- *                    Map_.js before `ServiceUrls.buildTiTilerCogTilesUrl` runs).
+ *                    `.tif` URL with no TiTiler host or query params
+ *                    (resolveTileLayerSource's `fileUrl`).
  */
 export function buildDeckCOGLayer(
     id: string,

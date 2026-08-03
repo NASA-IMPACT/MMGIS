@@ -200,7 +200,6 @@ const LAYER_TYPE_CONFIGS = {
   MVTLayer: vectortileConfig,
 };
 
-
 const MODAL_NAME = "layer";
 const LayerModal = (props) => {
   const c = useStyles();
