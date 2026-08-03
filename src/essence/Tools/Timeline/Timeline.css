@@ -158,8 +158,10 @@
     flex-direction: column;
 }
 
+/* Heights of the header bars and layer rows live in TimelineView, which needs
+   them to lay the SVG out; they arrive as inline styles rather than being
+   restated here. */
 .timeline-sidebar-header {
-    height: 24px; /* matches timeline-top-bar */
     border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     box-sizing: border-box;
     /* Pinned so the layer list scrolls beneath it when the panel is short. */
@@ -178,7 +180,6 @@
 .layer-item {
     display: flex;
     align-items: center;
-    height: 20px;
     padding: 0 10px;
     box-sizing: border-box;
 }
@@ -211,7 +212,6 @@
 }
 
 .timeline-top-bar {
-    height: 24px;
     background-color: var(--theme-color-base-lightest, #f1f3f6);
     border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     overflow: hidden;
@@ -253,10 +253,6 @@
 }
 
 /* Re-enabled so each range's <title> tooltip can surface. */
-.layer-time-range {
-    pointer-events: auto;
-}
-
 .layer-row-bg {
     stroke: var(--theme-color-base-lighter, #dfe1e2);
     stroke-width: 1px;
@@ -264,6 +260,7 @@
 }
 
 .layer-time-range {
+    pointer-events: auto;
     transition: opacity 0.2s ease;
 }
 
@@ -287,15 +284,6 @@
 /* The inner outline that separates the marker from the bars behind it */
 .timeline-scrubber-marker-inline {
     stroke: var(--theme-color-white, #ffffff);
-}
-
-.timeline-instructions {
-    text-align: center;
-    padding: 8px 12px;
-    font-size: 11px;
-    color: var(--theme-color-base, #71767a);
-    background: var(--theme-color-white, #ffffff);
-    border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
 }
 
 /* Timeline Toolbar */

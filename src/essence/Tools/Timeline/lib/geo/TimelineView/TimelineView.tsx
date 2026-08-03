@@ -1,10 +1,10 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react'
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { scaleTime } from 'd3-scale'
 import { axisBottom } from 'd3-axis'
 import { select } from 'd3-selection'
 import { zoom, zoomIdentity, ZoomBehavior } from 'd3-zoom'
 import type { TimeMode, LayerTimeData } from '../../types'
-import { generateTimeTicks, formatDateByMode, clampDate, getTimeStep } from '../../utils/timeUtils'
+import { generateTimeTicks, formatDateByMode, clampDate, stepTime } from '../../utils/timeUtils'
 import moment from 'moment'
 import { LayerTimeline } from '../LayerTimeline/LayerTimeline'
 
@@ -35,7 +35,6 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     const svgRef = useRef<SVGSVGElement>(null)
     const axisRef = useRef<SVGGElement>(null)
     const topAxisRef = useRef<SVGGElement>(null)
-    const scrubberRef = useRef<SVGGElement>(null)
     const [isDragging, setIsDragging] = useState(false)
     // Where the scrubber sits mid-drag. The committed time only changes on mouse up.
     const [dragTime, setDragTime] = useState<Date | null>(null)
@@ -70,12 +69,18 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         return () => resizeObserver.disconnect()
     }, [requiredHeight])
 
-    // Create scales
-    const xScale = scaleTime()
-        .domain([startTime, endTime])
-        .range([0, dimensions.width])
+    // Scales are memoized so the axis effects below only fire when the domain,
+    // the width or the zoom actually change. Rebuilt every render they would
+    // tear down and redraw both axes on every pointermove of a scrubber drag.
+    const xScale = useMemo(
+        () => scaleTime().domain([startTime, endTime]).range([0, dimensions.width]),
+        [startTime, endTime, dimensions.width]
+    )
 
-    const transformedXScale = zoomTransform.rescaleX(xScale)
+    const transformedXScale = useMemo(
+        () => zoomTransform.rescaleX(xScale),
+        [zoomTransform, xScale]
+    )
 
     // Render bottom axis
     useEffect(() => {
@@ -99,7 +104,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         // Sizing only — fill and family come from .timeline-axis .tick text
         axisGroup.selectAll('.tick text')
             .style('font-size', '11px')
-    }, [transformedXScale, timeMode, totalLayersHeight, startTime, endTime])
+    }, [transformedXScale, timeMode, totalLayersHeight, dimensions.width])
 
     // Render top axis for month/year (like JAN 2025)
     useEffect(() => {
@@ -121,7 +126,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
         topAxisGroup.selectAll('.tick text')
             .style('font-size', '11px')
             .style('font-weight', '600')
-    }, [transformedXScale, startTime, endTime])
+    }, [transformedXScale, dimensions.width])
 
     // Setup zoom behavior
     useEffect(() => {
@@ -214,17 +219,16 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
     /** Arrow keys step by the current granularity; Home/End jump to the ends. */
     const handleScrubberKeyDown = useCallback(
         (event: React.KeyboardEvent) => {
-            const { unit, value } = getTimeStep(timeMode)
             let next: Date | null = null
 
             switch (event.key) {
                 case 'ArrowLeft':
                 case 'ArrowDown':
-                    next = moment(currentTime).subtract(value, unit).toDate()
+                    next = stepTime(currentTime, timeMode, -1)
                     break
                 case 'ArrowRight':
                 case 'ArrowUp':
-                    next = moment(currentTime).add(value, unit).toDate()
+                    next = stepTime(currentTime, timeMode, 1)
                     break
                 case 'Home':
                     next = startTime
@@ -347,7 +351,7 @@ export const TimelineView: React.FC<TimelineViewProps> = ({
                         />
 
                         {/* Current time scrubber */}
-                        <g ref={scrubberRef} className="timeline-scrubber">
+                        <g className="timeline-scrubber">
                             {/* Scrubber line through all layers */}
                             <line
                                 x1={scrubberX}
