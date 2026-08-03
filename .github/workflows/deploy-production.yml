@@ -72,24 +72,27 @@ name: Deploy production
 # Honest about what GitHub actually guarantees: it keeps at most ONE pending run
 # per group and supersedes an older pending run when a newer one arrives. That
 # is safe here — a later push to `production` contains the earlier push's
-# commits, so the run that does execute deploys a superset. What can never
-# happen, which is the property that matters, is two runs converging production
-# at the same time.
+# commits, so the run that does execute deploys a superset.
 #
-# The gate adds a wrinkle: the group serialises EXECUTING runs, and a run parked
-# at an approval gate counts as "waiting", not "in progress". Even
-# `cancel-in-progress: true` would not reliably clean parked runs up — which is
-# precisely why the discipline above is a human rule (approve the newest, reject
-# the rest) rather than something delegated to auto-cancel.
+# The gate adds a wrinkle. The group serialises the runs GitHub is executing or
+# has queued; a run parked at an approval gate counts as "waiting", not "in
+# progress", and so sits outside that machinery altogether. Two approvals
+# released in quick succession therefore lean on three things in order: the
+# group catching the second run once it starts executing, terraform's S3 state
+# lock as the infrastructure backstop, and — the real control — the human rule
+# above, approve the newest and reject the rest. Even `cancel-in-progress: true`
+# would not reliably clean parked runs up, which is precisely why that
+# discipline is a rule rather than a setting.
 #
 # ── Rollback and re-run ──────────────────────────────────────────────────────
 # All three paths are manual, and all three are gated identically, because the
 # gate is in the engines rather than in any one entry point:
 #
-#   * Re-run the last green run from the Actions UI. Its image is already in
-#     ECR under that commit's short SHA, so the re-run re-registers both
-#     task-definition families against exactly that image and re-rolls the
-#     service onto it. Approval is requested again, twice, as for any run.
+#   * Re-run the last green run from the Actions UI. The app engine rebuilds
+#     that same commit (`--no-cache`) and re-pushes it under the same short-SHA
+#     tag — the same image by construction, not by reusing what is in ECR —
+#     then re-registers both task-definition families against it and re-rolls
+#     the service onto it. Approval is requested again, twice, as for any run.
 #   * Merge a revert to `production` and let the resulting push run deploy it.
 #   * `workflow_dispatch` on the reverted or otherwise known-good `production`
 #     head.
@@ -124,10 +127,14 @@ on:
         description: >-
           Optional. Overrides the image the infrastructure converge feeds the
           two task-definition families — the escape hatch for the engine's
-          refusal guard when a live service's image cannot be discovered, and a
-          way to pin the families at a known image. It does NOT change what the
-          app job builds and rolls: unless this is a plan-only run, the app job
-          still builds THIS commit and rolls the service onto it.
+          refusal guard, for when a live service exists but the image it is
+          serving cannot be discovered. It pins nothing durably: on any run that
+          is not plan-only, the app job builds THIS commit and re-registers both
+          families against that fresh image minutes later, and a plan-only run
+          applies nothing at all. The URI must reference an image in THIS
+          environment's own ECR registry; supplying another environment's image
+          is cross-environment promotion, which the provenance rule above
+          forbids.
         type: string
         default: ""
 
@@ -234,10 +241,14 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           SHA: ${{ github.sha }}
+          MODE: ${{ steps.mode.outputs.mode }}
         run: |
           set -o pipefail
 
-          SHORT_SHA=$(git rev-parse --short "$SHA")
+          # Not `git rev-parse --short`: the abbreviation length it picks depends
+          # on the clone, so this fetch-depth-0 checkout can produce a longer
+          # prefix than the app engine's shallow one. Seven characters, always.
+          SHORT_SHA=$(printf '%s' "$SHA" | cut -c1-7)
 
           case "$EVENT_NAME" in
             push) TRIGGERED_BY="a push to \`production\`" ;;
@@ -248,8 +259,18 @@ jobs:
           {
             echo "## Before you approve — production"
             echo ""
-            echo "**This run deploys commit \`$SHA\`** (short \`$SHORT_SHA\`, which"
-            echo "will also be the image tag), started by $TRIGGERED_BY."
+            if [ "$MODE" = "plan" ]; then
+              echo "**This is a plan-only run** for commit \`$SHA\`: it previews the"
+              echo "infrastructure changes and deploys nothing. Started by"
+              echo "$TRIGGERED_BY."
+            else
+              echo "**This run deploys commit \`$SHA\`**, started by $TRIGGERED_BY."
+              echo "Expected image tag \`$SHORT_SHA\` — the commit's short SHA; the"
+              echo "exact tag is recorded in the app job's deploy summary once"
+              echo "built."
+            fi
+            echo ""
+            echo "Mode: \`$MODE\`."
             echo ""
             echo "**Approve the newest run only.** Successive merges to"
             echo "\`production\` park successive runs, and approving an older parked"

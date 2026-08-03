@@ -290,8 +290,10 @@ interrupted apply leaves state locked and infrastructure half-converged. Neither
 engine carries a group of its own so that this one can cover both. GitHub keeps
 at most one *pending* run per group and supersedes an older pending run, so a
 middle merge in a rapid burst can be dropped; that is safe, because a later push
-to the branch contains the earlier one's commits. What can never happen is two
-runs converging the same environment at once.
+to the branch contains the earlier one's commits. On development, which has no
+gate, that means two runs never converge the environment at once. The gated
+production trigger carries a caveat — a run parked at the approval gate is
+outside the group — described in [its own section](#production-the-gated-trigger).
 
 Plan-only is how an environment is reviewed before its first real apply: expect
 an ~80-resource all-creates listing, which is the whole environment being
@@ -304,8 +306,9 @@ run that **parks** at GitHub's native required-reviewers gate on the
 `production` Environment (configured by #252), with **zero AWS activity behind
 it**. The only job that runs ungated is the mode decider — pure git and pure
 bash, no credentials, no `environment:` key — which also writes the approver's
-notes into the run summary, so the commit being deployed, its image tag, and
-the rules below are on the run page at the moment the decision is made. A run
+notes into the run summary, so the commit being deployed, its expected image
+tag, the run's mode, and the rules below are on the run page at the moment the
+decision is made. A run
 that is rejected, or simply never approved, deploys nothing at all.
 
 The gate lives in the **engines**, not in the trigger: both engine jobs bind
@@ -326,9 +329,11 @@ values resolve. A click is cheaper than either.
 approving an older parked run deploys an older commit over a newer one.
 Auto-cancel cannot be relied on to tidy the rest up — a run waiting at an
 approval gate counts as "waiting", not "in progress" — so stale parked runs
-accumulate. Approve the newest, reject or cancel the others. This is a human
-rule, which is why the trigger writes it into every run's summary rather than
-delegating it to concurrency settings.
+accumulate outside the concurrency group entirely. Releasing two approvals in
+quick succession therefore leans on the group catching the second run once it
+starts executing, on terraform's state lock as the infrastructure backstop, and
+above all on this rule. That is why the trigger writes it into every run's
+summary rather than delegating it to concurrency settings.
 
 **Image provenance.** Production builds its own image, from the
 production-branch commit, into production's own ECR repository, tagged with
@@ -339,10 +344,13 @@ holds only images built from that environment's branch.
 **Manual dispatch is gated identically**, because the gate is in the engines
 rather than in any one entry point. Plan-only previews the converge without
 applying or deploying anything. The `deployed_image` dispatch input is the
-escape hatch for the infrastructure engine's refusal guard when a live
-service's image cannot be discovered, and a way to pin the two task-definition
-families at a known image; it does **not** change what the app job builds and
-rolls, which is still the dispatched commit.
+escape hatch for the infrastructure engine's refusal guard — a live service
+whose serving image cannot be discovered — and nothing more. It pins nothing
+durably: on any run that is not plan-only, the app job builds the dispatched
+commit and re-registers both task-definition families against that fresh image
+minutes later, and a plan-only run applies nothing at all. The URI must point
+at an image in that environment's own ECR registry; another environment's image
+would be cross-environment promotion, which the provenance rule above forbids.
 
 **Dormant until #252.** The `production` branch, its Environment (required
 reviewers plus the deployment-branch policy), and its configuration values do
