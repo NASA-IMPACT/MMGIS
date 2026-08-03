@@ -1,7 +1,7 @@
 name: App deploy engine
 
 # The shared application engine. Every environment's trigger workflow
-# (`deploy-development.yml`, and later production) calls this file after the
+# (`deploy-development.yml`, `deploy-production.yml`) calls this file after the
 # infrastructure engine has converged: build theme assets -> build image ->
 # push to ECR -> register new admin + publish task-definition revisions ->
 # point the ECS Express Mode gateway service's primary container at the new
@@ -44,8 +44,9 @@ name: App deploy engine
 #            outputs, which are read out of terraform state at run time; nothing
 #            here is hand-set.
 #   secrets: IAC_DEPLOY_ROLE_ARN — ARN of `mmgis-<env>-github-deploy`
-#            (OIDC-assumable; no long-lived keys). Environment-scoped, populated
-#            per #252. Secrets cannot be workflow_call inputs, so this is the
+#            (OIDC-assumable; no long-lived keys). Environment-scoped, set when
+#            the GitHub Environment is configured. Secrets cannot be
+#            workflow_call inputs, so this is the
 #            one parameterized name that arrives as a secret: callers MUST pass
 #            `secrets: inherit`, and it resolves against the environment the
 #            job below binds.

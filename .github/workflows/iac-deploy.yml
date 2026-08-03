@@ -1,7 +1,7 @@
 name: Infrastructure deploy engine
 
 # The shared infrastructure engine. Every environment's trigger workflow
-# (`deploy-development.yml`, and later production) calls this file — there is
+# (`deploy-development.yml`, `deploy-production.yml`) calls this file — there is
 # one implementation of "converge an environment's infrastructure", and the
 # triggers differ only in which GitHub Environment they name and when they run.
 #
@@ -24,14 +24,15 @@ name: Infrastructure deploy engine
 # variables resolve against the environment the CALLED job binds, so `inherit`
 # forwards the caller's access without the caller naming any value.
 #
-# ── Configuration contract (environment-scoped; populated per #252) ──────────
+# ── Configuration contract (environment-scoped) ──────────────────────────────
 #   secrets: IAC_APPLY_ROLE_ARN
-#              ARN of `mmgis-terraform-apply-<env>` (bootstrap root, #245).
+#              ARN of `mmgis-terraform-apply-<env>` (bootstrap root).
 #   vars:    IAC_AWS_REGION
 #              Region for the S3 backend, the credential default, and the
-#              root's `region` variable. May also exist repo-level from #246 —
-#              the name is deliberately the same, and for a job bound to an
-#              Environment the environment-scoped value shadows the repo one.
+#              root's `region` variable. May also exist repo-level for the PR
+#              plan preview — the name is deliberately the same, and for a job
+#              bound to an Environment the environment-scoped value shadows the
+#              repo one.
 #            IAC_TFSTATE_BUCKET
 #              The environment's own state bucket. The root commits its backend
 #              `key`/`encrypt`/`use_lockfile`; `bucket` and `region` arrive here
@@ -42,7 +43,7 @@ name: Infrastructure deploy engine
 #               "rds_ca_bundle_base64":"...","permissions_boundary":"arn:..."}
 #              Written verbatim to `ci.auto.tfvars.json` inside the root.
 # No `_DEVELOPMENT`/`_PRODUCTION` suffixes here, unlike the PR plan preview
-# (#246): that workflow must stay Environment-unbound to keep its
+# (iac-plan.yml): that workflow must stay Environment-unbound to keep its
 # `pull_request` OIDC subject, so it can only read repo-level values and needs
 # the suffix to tell environments apart. Environment scoping replaces the
 # suffix for everything downstream of this file.
@@ -112,7 +113,7 @@ on:
         description: >-
           Override the discovered image. Empty means "use whatever the live
           service is serving". Unused by the development trigger; the
-          production trigger (#251) exposes it as a dispatch-only escape hatch
+          production trigger exposes it as a dispatch-only escape hatch
           for when a live service's image cannot be discovered. It moves only
           what this converge feeds the task-definition families — on any run
           that deploys, the app engine still builds and rolls the trigger
@@ -228,7 +229,7 @@ jobs:
             note_missing "IAC_TFVARS (variable; set but not a JSON object)"
           fi
 
-          # Red, not green: unlike the pull-request plan preview (#246), which
+          # Red, not green: unlike the pull-request plan preview (iac-plan.yml), which
           # degrades to a friendly comment while bootstrap is pending, a deploy
           # that cannot configure itself has failed. There is nothing to wait
           # for and nothing was deployed.
@@ -238,7 +239,7 @@ jobs:
               printf '%s\n' "$MISSING" | tr ',' '\n' | sed 's/^[[:space:]]*//'
               echo ""
               echo "These are GitHub Environment-scoped secrets and variables."
-              echo "See the value inventory in #252 for where each one comes from."
+              echo "Each value is documented in the configuration contract in infrastructure/README.md."
             } >&2
             exit 1
           fi
@@ -650,12 +651,11 @@ jobs:
             exit "$rc"
           fi
 
-      # ── #248 slot ──────────────────────────────────────────────────────────
-      # The application-secret bootstrap (#248) inserts its step exactly HERE:
-      # after phase 1 has created the empty secret shells in Secrets Manager,
-      # and before the app phase of the composed run needs their values. Nothing
-      # to implement in this issue — this comment marks the seam so #248 does
-      # not have to re-derive where it goes.
+      # ── Secret-bootstrap slot ──────────────────────────────────────────────
+      # The application-secret bootstrap step belongs exactly HERE: after
+      # phase 1 has created the empty secret shells in Secrets Manager, and
+      # before the app phase of the composed run needs their values. This
+      # comment marks the seam.
 
       # Phase 1 is what brings the Express service (and therefore its
       # ECS-managed ALB) into existence, so on greenfield the phase-2 values

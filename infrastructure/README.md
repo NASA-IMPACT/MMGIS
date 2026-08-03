@@ -393,7 +393,8 @@ proposed rather than a problem.
 
 All five values are **GitHub Environment-scoped** (on the `development`
 Environment, not the repository), which is what lets one engine serve every
-environment without suffixed names. Populated per #252.
+environment without suffixed names. Set once, when the GitHub Environment is
+configured, from the bootstrap root's outputs and the account facts.
 
 | Name | Kind | Where it comes from |
 |---|---|---|
@@ -411,8 +412,8 @@ values above resolve. A caller cannot supply it, so triggers pass
 Environment's **deployment-branch policy** load-bearing security rather than
 hygiene: any workflow on any branch in the repository could otherwise call
 these engines with `environment: development` and mint the trusted OIDC
-subject, so restricting which branches may deploy to the Environment is #252's
-half of this contract.
+subject, so restricting which branches may deploy to the Environment is the
+Environment configuration's half of this contract.
 
 Missing configuration fails the run **red**, listing every missing name at
 once. A deploy that cannot configure itself is broken, not pending.
