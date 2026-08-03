@@ -20,8 +20,7 @@
 
     &__bar {
         width: 100%;
-        height: 14px;
-        border-radius: 3px;
+        height: 8px;
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
     }
 
@@ -86,13 +85,14 @@
         justify-content: space-between;
         align-items: flex-start;
         width: calc(100% - 36px);
-        margin-top: 2px;
+        /* Spacing to the bar comes from the container's --theme-spacing-05 gap */
+        margin-top: 0;
     }
 
     &__label {
-        font-size: var(--theme-font-size-xs, 0.83rem);
-        color: var(--theme-color-ink, #1b1b1b);
-        line-height: 1.2;
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        color: var(--theme-color-base-dark, #565c65);
+        line-height: 1;
 
         &--min {
             text-align: left;
