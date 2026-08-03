@@ -31,7 +31,6 @@ locals {
 
   # Secret paths (path-style, per account convention). Shells only — values
   # are set out-of-band and never pass through Terraform state.
-  secret_db_name        = "mmgis/${var.environment}/db"
   secret_session_name   = "mmgis/${var.environment}/session-secret"
   secret_seed_user_name = "mmgis/${var.environment}/superadmin-username"
   secret_seed_pass_name = "mmgis/${var.environment}/superadmin-password"

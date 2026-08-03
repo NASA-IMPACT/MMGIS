@@ -6,15 +6,18 @@
 locals {
   ecr_repo_arn = aws_ecr_repository.this.arn
 
+  # The RDS-managed master secret must be an ATTRIBUTE reference, never a
+  # literal ARN: the secret does not exist until the DB does, so a literal
+  # would break a greenfield apply.
   admin_exec_secret_arns = [
-    aws_secretsmanager_secret.db.arn,
+    aws_db_instance.this.master_user_secret[0].secret_arn,
     aws_secretsmanager_secret.session.arn,
     aws_secretsmanager_secret.seed_username.arn,
     aws_secretsmanager_secret.seed_password.arn,
   ]
 
   publish_exec_secret_arns = [
-    aws_secretsmanager_secret.db.arn,
+    aws_db_instance.this.master_user_secret[0].secret_arn,
     aws_secretsmanager_secret.dashboards_password.arn,
   ]
 

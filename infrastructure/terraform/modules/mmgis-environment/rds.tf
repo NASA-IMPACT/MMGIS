@@ -22,8 +22,8 @@ resource "aws_db_instance" "this" {
   # RDS generates and rotates the master password in its OWN managed secret
   # (master_user_secret) — nothing lands in Terraform state. This satisfies
   # aws_db_instance's create-time password requirement without a
-  # random_password. The app reads DB_PASS from the separate app-shaped secret
-  # (secrets.tf), whose value is copied from this managed secret out-of-band.
+  # random_password. The app reads DB_PASS straight from this managed secret:
+  # both task defs reference its `password` JSON key in their secrets[].
   manage_master_user_password = true
 
   # db_name intentionally unset: the app's init defaults the maintenance DB to

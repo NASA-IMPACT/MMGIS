@@ -7,29 +7,36 @@ locals {
   # deploy re-registers both families with a real image. After ANY task-def
   # change here, run deploy-lean.yml. (See README "Operational notes".)
   placeholder_image = "${aws_ecr_repository.this.repository_url}:latest"
-  db_secret_arn     = aws_secretsmanager_secret.db.arn
 
-  # DB credentials are injected per-JSON-key from the app-shaped DB secret.
-  db_secrets = [
-    { name = "DB_HOST", value_from = "${local.db_secret_arn}:DB_HOST::" },
-    { name = "DB_PORT", value_from = "${local.db_secret_arn}:DB_PORT::" },
-    { name = "DB_NAME", value_from = "${local.db_secret_arn}:DB_NAME::" },
-    { name = "DB_USER", value_from = "${local.db_secret_arn}:DB_USER::" },
-    { name = "DB_PASS", value_from = "${local.db_secret_arn}:DB_PASS::" },
+  # DB_PASS comes straight from the RDS-managed master secret ({username,password}
+  # JSON) — the ONLY place the password exists. The other connection values are
+  # not secrets; they ride as plain environment (below).
+  db_pass_secret = {
+    name       = "DB_PASS"
+    value_from = "${aws_db_instance.this.master_user_secret[0].secret_arn}:password::"
+  }
+
+  db_environment = [
+    { name = "DB_HOST", value = aws_db_instance.this.address },
+    { name = "DB_PORT", value = "5432" },
+    # `postgres` for both: the master username is hard-coded postgres (rds.tf)
+    # and a fresh instance's only database is `postgres`.
+    { name = "DB_USER", value = "postgres" },
+    { name = "DB_NAME", value = "postgres" },
   ]
 
-  admin_secrets = concat(local.db_secrets, [
+  admin_secrets = concat([local.db_pass_secret], [
     # env name SECRET is what scripts/server.js reads (not SESSION_SECRET).
     { name = "SECRET", value_from = aws_secretsmanager_secret.session.arn },
     { name = "SEED_SUPERADMIN_USERNAME", value_from = aws_secretsmanager_secret.seed_username.arn },
     { name = "SEED_SUPERADMIN_PASSWORD", value_from = aws_secretsmanager_secret.seed_password.arn },
   ])
 
-  publish_secrets = concat(local.db_secrets, [
+  publish_secrets = concat([local.db_pass_secret], [
     { name = "MMGIS_DASHBOARDS_PASSWORD", value_from = aws_secretsmanager_secret.dashboards_password.arn },
   ])
 
-  admin_environment = [
+  admin_environment = concat(local.db_environment, [
     { name = "MMGIS_DEPLOYMENT_MODE", value = "lean" },
     { name = "DISABLE_FIRST_SIGNUP", value = "true" },
     { name = "ENABLE_MMGIS_WEBSOCKETS", value = "true" },
@@ -46,16 +53,16 @@ locals {
     { name = "MMGIS_PUBLISH_SECURITY_GROUPS", value = aws_security_group.service.id },
     { name = "MMGIS_PUBLISH_CONTAINER_NAME", value = "mmgis" },
     { name = "MMGIS_SHARED_ASSET_BUCKET", value = local.asset_bucket_name },
-  ]
+  ])
 
-  publish_environment = [
+  publish_environment = concat(local.db_environment, [
     { name = "MMGIS_DEPLOYMENT_MODE", value = "lean" },
     { name = "NODE_ENV", value = "production" },
     { name = "DB_SSL", value = "true" },
     { name = "DB_SSL_CERT_BASE64", value = var.rds_ca_bundle_base64 },
     { name = "AWS_REGION", value = local.region },
     { name = "MMGIS_SHARED_ASSET_BUCKET", value = local.asset_bucket_name },
-  ]
+  ])
 }
 
 resource "aws_ecs_cluster" "this" {
