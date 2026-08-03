@@ -303,7 +303,7 @@ proposed rather than a problem.
 
 Merging to `production` expresses intent; it does not deploy. The push starts a
 run that **parks** at GitHub's native required-reviewers gate on the
-`production` Environment (configured by #252), with **zero AWS activity behind
+`production` Environment, with **zero AWS activity behind
 it**. The only job that runs ungated is the mode decider — pure git and pure
 bash, no credentials, no `environment:` key — which also writes the approver's
 notes into the run summary, so the commit being deployed, its expected image
@@ -352,18 +352,20 @@ minutes later, and a plan-only run applies nothing at all. The URI must point
 at an image in that environment's own ECR registry; another environment's image
 would be cross-environment promotion, which the provenance rule above forbids.
 
-**Dormant until #252.** The `production` branch, its Environment (required
-reviewers plus the deployment-branch policy), and its configuration values do
-not exist yet, so the trigger never fires: there is no branch to push to and no
-Environment to dispatch against. The first gated run is #254's one-time
-greenfield standup.
+**Dormant until production is stood up.** The `production` branch, its
+Environment (required reviewers plus the deployment-branch policy), and its
+configuration values are operator-created; on a repository where they do not
+exist, the trigger never fires: there is no branch to push to and no
+Environment to dispatch against. The first gated run is the one-time
+greenfield standup of the production environment.
 
 ### Configuration contract
 
 All five values are **GitHub Environment-scoped** — each Environment carries
 its own copy of the five, on the Environment rather than the repository — which
 is what lets one engine serve every environment without suffixed names.
-Populated per #252.
+Set once, when each GitHub Environment is configured, from the bootstrap
+root's outputs and the account facts.
 
 | Name | Kind | Where it comes from |
 |---|---|---|

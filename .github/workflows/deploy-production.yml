@@ -12,7 +12,7 @@ name: Deploy production
 # ── The gate ─────────────────────────────────────────────────────────────────
 # Merging to `production` expresses intent; it does not deploy. Both engine jobs
 # bind `environment: production`, so a run reaches GitHub's native
-# required-reviewers gate on that Environment (configured in #252) and PARKS
+# required-reviewers gate on that Environment and PARKS
 # there with ZERO AWS activity behind it. The only job that runs ungated is
 # `changes` below — pure git and pure bash, no credentials, no `environment:`
 # key, nothing but a diff and a step summary. A run that is rejected, or simply
@@ -105,10 +105,10 @@ name: Deploy production
 #
 # ── Dormant until the branch exists ──────────────────────────────────────────
 # The `production` branch, its GitHub Environment (required reviewers plus the
-# deployment-branch policy), and its configuration values are created by #252;
-# the first gated greenfield run is #254's one-time standup. Until then this
-# workflow simply never fires — there is no `production` branch to push to and
-# no Environment to dispatch against.
+# deployment-branch policy), and its configuration values are operator-created.
+# On a repository where they do not exist, this workflow simply never fires —
+# there is no `production` branch to push to and no Environment to dispatch
+# against. The first gated run is the one-time greenfield standup.
 #
 # ── Coexistence ──────────────────────────────────────────────────────────────
 # The development pipeline (`deploy-development.yml`) and the legacy
