@@ -4,11 +4,6 @@ data "aws_vpc" "this" {
   id = var.vpc_id
 }
 
-# Reference the existing GitHub OIDC provider — never create it here.
-data "aws_iam_openid_connect_provider" "github" {
-  url = "https://token.actions.githubusercontent.com"
-}
-
 locals {
   account_id  = data.aws_caller_identity.current.account_id
   region      = var.region
@@ -35,10 +30,6 @@ locals {
   secret_seed_user_name = "mmgis/${var.environment}/superadmin-username"
   secret_seed_pass_name = "mmgis/${var.environment}/superadmin-password"
   secret_dash_pass_name = "mmgis/${var.environment}/dashboards-password"
-
-  service_arn = "arn:aws:ecs:${local.region}:${local.account_id}:service/${local.cluster_name}/${local.service_name}"
-
-  deploy_branch = var.deploy_role_branch != "" ? var.deploy_role_branch : var.environment
 
   # The CloudFront front door is created only once its two-phase inputs are known.
   enable_cloudfront = var.express_internal_alb_arn != "" && var.express_onaws_endpoint != ""

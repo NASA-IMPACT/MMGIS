@@ -21,11 +21,6 @@ module "mmgis" {
   db_skip_final_snapshot = false
   rds_ca_bundle_base64   = var.rds_ca_bundle_base64
 
-  # CI deploy role. NOTE: branch-scoped for now; #195 tightens both environments
-  # to GitHub-Environment-scoped trust when it wires `environment:` into the job.
-  github_repo        = "NASA-IMPACT/MMGIS"
-  deploy_role_branch = "production"
-
   # No recovery window, production included: deleted secret names free
   # immediately, so a destroy/re-apply never collides with a name still held
   # in recovery. One nuance this accepts: the superadmin seed password only

@@ -115,20 +115,6 @@ variable "ecr_force_delete" {
   default     = false
 }
 
-# ── CI deploy role (GitHub OIDC) ──
-
-variable "github_repo" {
-  description = "owner/name of the GitHub repository whose Actions runs may assume the deploy role."
-  type        = string
-  default     = "NASA-IMPACT/MMGIS"
-}
-
-variable "deploy_role_branch" {
-  description = "Git branch the deploy role's trust is scoped to. Branch-scoped for now (repo:...:ref:refs/heads/<branch>); #195 tightens both environments to GitHub-Environment-scoped trust. Defaults to the environment name."
-  type        = string
-  default     = ""
-}
-
 # ── CloudFront two-phase inputs ──
 # The Express service's internal ALB ARN and on.aws endpoint are NOT exposed
 # as Terraform attributes of aws_ecs_express_gateway_service (only service_arn

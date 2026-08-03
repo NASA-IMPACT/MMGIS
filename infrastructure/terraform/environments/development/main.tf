@@ -16,10 +16,6 @@ module "mmgis" {
   db_skip_final_snapshot = true
   rds_ca_bundle_base64   = var.rds_ca_bundle_base64
 
-  # CI deploy role: development branch, this repo.
-  github_repo        = "NASA-IMPACT/MMGIS"
-  deploy_role_branch = "development"
-
   # Re-seed the demo mission on every admin boot. Development only.
   overwrite_demo_mission = true
 
