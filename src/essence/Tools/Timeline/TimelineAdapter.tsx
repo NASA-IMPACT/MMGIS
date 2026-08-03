@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import moment from 'moment'
 import { FloatingPopover } from './lib/FloatingPopover'
 import {
     mmgisRequest,
@@ -22,7 +21,7 @@ import {
     type TimeMode,
     type LayerTimeData
 } from './lib'
-import { getTimeStep, clampDate } from './lib/utils/timeUtils'
+import { stepTime, clampDate } from './lib/utils/timeUtils'
 import './Timeline.css'
 
 /** The wire shape of both 'time:changeRequested' and 'time:changed'. */
@@ -270,7 +269,10 @@ export const TimelineAdapter: React.FC = () => {
                 requested.endTime === data.endTime &&
                 requested.currentTime === data.currentTime
             ) {
-                // This plugin's own commit; local state already matches.
+                // This plugin's own commit; local state already matches. The
+                // match is consumed so a later external commit landing on the
+                // same instant is treated as the real change it is.
+                lastRequestedRef.current = null
                 return
             }
 
@@ -294,21 +296,15 @@ export const TimelineAdapter: React.FC = () => {
         setCurrentTime((prev) => preserveIdentity(prev, newTime))
     }, [])
 
-    const handleCurrentDateChange = handleCurrentTimeChange
-
     const canStepBackward = currentTime > startTime
     const canStepForward = currentTime < endTime
 
     const handleStepForward = useCallback(() => {
-        const { unit, value } = getTimeStep(timeMode)
-        const nextTime = moment(currentTimeRef.current).add(value, unit).toDate()
-        handleCurrentTimeChange(nextTime)
+        handleCurrentTimeChange(stepTime(currentTimeRef.current, timeMode, 1))
     }, [timeMode, handleCurrentTimeChange])
 
     const handleStepBackward = useCallback(() => {
-        const { unit, value } = getTimeStep(timeMode)
-        const prevTime = moment(currentTimeRef.current).subtract(value, unit).toDate()
-        handleCurrentTimeChange(prevTime)
+        handleCurrentTimeChange(stepTime(currentTimeRef.current, timeMode, -1))
     }, [timeMode, handleCurrentTimeChange])
 
     const handleGoToStart = useCallback(() => {
@@ -334,13 +330,12 @@ export const TimelineAdapter: React.FC = () => {
     useEffect(() => {
         if (!isPlaying) return
 
-        const { unit, value } = getTimeStep(timeMode)
         // One step per second, divided by the speed multiplier
         // (2x -> 500ms, 4x -> 250ms, 0.5x -> 2000ms).
         const speed = 1000 / playbackSpeed
 
         const interval = setInterval(() => {
-            const nextTime = moment(currentTimeRef.current).add(value, unit).toDate()
+            const nextTime = stepTime(currentTimeRef.current, timeMode, 1)
             if (nextTime > endTimeRef.current) {
                 setIsPlaying(false)
                 return
@@ -383,7 +378,7 @@ export const TimelineAdapter: React.FC = () => {
                         startTime={startTime}
                         endTime={endTime}
                         timeMode={timeMode}
-                        onDateChange={handleCurrentDateChange}
+                        onDateChange={handleCurrentTimeChange}
                     />
                 </div>
                 <div className="timeline-header-center">

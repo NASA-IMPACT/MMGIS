@@ -34,6 +34,26 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
 }) => {
     const popupRef = useRef<HTMLDivElement>(null)
     const [pos, setPos] = useState({ top: 0, left: 0 })
+    // Whether focus currently sits inside the popover. Read on close, when the
+    // portal's DOM is already detached and document.activeElement has fallen
+    // back to <body>, so it can't be worked out from the DOM by then.
+    const focusInsideRef = useRef(false)
+
+    useEffect(() => {
+        if (!isOpen) return
+
+        const trackFocus = () => {
+            focusInsideRef.current = !!(
+                popupRef.current &&
+                document.activeElement &&
+                popupRef.current.contains(document.activeElement)
+            )
+        }
+
+        trackFocus()
+        document.addEventListener('focusin', trackFocus)
+        return () => document.removeEventListener('focusin', trackFocus)
+    }, [isOpen])
 
     // Escape closes from anywhere, including while focus sits on the trigger.
     useEffect(() => {
@@ -65,17 +85,15 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
         }
 
         return () => {
+            // Only reclaim focus if the popover held it as it closed; a click
+            // elsewhere has already placed focus where the user wants it.
+            if (!focusInsideRef.current) return
+            focusInsideRef.current = false
+
             const anchor = anchorRef.current
             const restoreTo =
                 anchor && document.contains(anchor) ? anchor : previouslyFocused
-            // Only reclaim focus if it is still inside the closing popover.
-            if (
-                popupRef.current &&
-                document.activeElement &&
-                popupRef.current.contains(document.activeElement)
-            ) {
-                restoreTo?.focus()
-            }
+            restoreTo?.focus()
         }
     }, [isOpen, autoFocus, anchorRef])
 
@@ -164,11 +182,21 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
         window.addEventListener('resize', updatePosition)
         window.addEventListener('scroll', updatePosition, true)
 
+        // Content can change size after opening — a validation message
+        // appearing, a calendar switching to a longer month — which moves where
+        // the popover should sit relative to its anchor.
+        const contentObserver =
+            typeof ResizeObserver !== 'undefined'
+                ? new ResizeObserver(updatePosition)
+                : null
+        if (popupRef.current) contentObserver?.observe(popupRef.current)
+
         // Wait a tick and update again in case children render changed dimensions
         const timeout = setTimeout(updatePosition, 0)
 
         return () => {
             clearTimeout(timeout)
+            contentObserver?.disconnect()
             window.removeEventListener('resize', updatePosition)
             window.removeEventListener('scroll', updatePosition, true)
         }

@@ -1,11 +1,26 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import {
     generateTimeTicks,
     getTimeStep,
     clampDate,
+    formatDateByMode,
+    stepTime,
 } from '../../src/essence/Tools/Timeline/lib/utils/timeUtils'
 
 const iso = (d) => d.toISOString()
+
+// The timeline displays UTC everywhere, so every helper has to compute in UTC
+// too. Running these under a non-UTC zone is what makes that observable: on a
+// UTC machine local and UTC arithmetic agree and the assertions pass either way.
+const withTimeZone = (zone) => {
+    const original = process.env.TZ
+    beforeAll(() => {
+        process.env.TZ = zone
+    })
+    afterAll(() => {
+        process.env.TZ = original
+    })
+}
 
 describe('getTimeStep', () => {
     it('maps every time mode to a one-unit step', () => {
@@ -69,6 +84,47 @@ describe('generateTimeTicks', () => {
         const start = new Date('1990-01-01T00:00:00Z')
         const end = new Date('2026-01-01T00:00:00Z')
         expect(() => generateTimeTicks(start, end, 'HOUR')).not.toThrow()
+    })
+})
+
+describe('UTC handling away from UTC', () => {
+    // UTC+9, no daylight saving: a local day boundary sits at 15:00Z.
+    withTimeZone('Asia/Tokyo')
+
+    it('snaps day ticks to UTC midnight, not local midnight', () => {
+        const start = new Date('2026-08-01T00:00:00Z')
+        const end = new Date('2026-08-05T00:00:00Z')
+
+        for (const tick of generateTimeTicks(start, end, 'DAY')) {
+            expect(tick.getUTCHours()).toBe(0)
+        }
+    })
+
+    it('labels an instant with its UTC date', () => {
+        const instant = new Date('2026-08-03T00:00:00Z')
+        expect(formatDateByMode(instant, 'DAY')).toBe('Aug 3')
+        expect(formatDateByMode(instant, 'HOUR')).toBe('00:00')
+    })
+})
+
+describe('stepTime', () => {
+    it('advances and rewinds by one unit of the mode', () => {
+        const from = new Date('2026-08-03T12:00:00Z')
+        expect(iso(stepTime(from, 'DAY', 1))).toBe('2026-08-04T12:00:00.000Z')
+        expect(iso(stepTime(from, 'DAY', -1))).toBe('2026-08-02T12:00:00.000Z')
+        expect(iso(stepTime(from, 'HOUR', 1))).toBe('2026-08-03T13:00:00.000Z')
+        expect(iso(stepTime(from, 'MONTH', 1))).toBe('2026-09-03T12:00:00.000Z')
+        expect(iso(stepTime(from, 'YEAR', 1))).toBe('2027-08-03T12:00:00.000Z')
+    })
+
+    describe('across a daylight-saving boundary', () => {
+        // US DST starts 2026-03-08; a local "one day" step spans 23 hours there.
+        withTimeZone('America/New_York')
+
+        it('keeps a day step exactly 24 hours', () => {
+            const before = new Date('2026-03-07T12:00:00Z')
+            expect(iso(stepTime(before, 'DAY', 1))).toBe('2026-03-08T12:00:00.000Z')
+        })
     })
 })
 

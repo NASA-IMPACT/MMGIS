@@ -32,8 +32,11 @@ export function generateTimeTicks(
     const ticks: Date[] = []
     const { unit, value } = getTimeStep(mode)
 
-    const start = moment(startTime)
-    const end = moment(endTime)
+    // The whole plugin reads and writes UTC, so ticks snap to UTC unit
+    // boundaries. Local snapping would offset every label from the date it
+    // carries by the viewer's UTC offset.
+    const start = moment.utc(startTime)
+    const end = moment.utc(endTime)
     if (!end.isAfter(start)) return [startTime]
 
     // Snapping to the unit boundary can land before the domain; step forward
@@ -83,10 +86,11 @@ export function generateTimeTicks(
 }
 
 /**
- * Format date based on time mode
+ * Format date based on time mode. UTC, matching the header, the layer bar
+ * tooltips and the scrubber's accessible value.
  */
 export function formatDateByMode(date: Date, mode: TimeMode): string {
-    const m = moment(date)
+    const m = moment.utc(date)
     switch (mode) {
         case 'YEAR':
             return m.format('YYYY')
@@ -100,31 +104,16 @@ export function formatDateByMode(date: Date, mode: TimeMode): string {
 }
 
 /**
- * Calculate zoom extents for the timeline
+ * Move an instant by whole time-mode units, in UTC. Local calendar arithmetic
+ * would make a step across the viewer's daylight-saving boundary 23 or 25
+ * hours long, drifting the displayed UTC clock by an hour each time.
  */
-export function calculateZoomExtent(
-    totalDuration: number,
-    mode: TimeMode
-): [number, number] {
-    // Minimum zoom shows at least 2 units
-    // Maximum zoom shows the entire range
-    const minUnits = 2
-    const maxUnits = Math.ceil(totalDuration / getMillisecondsPerUnit(mode))
-
-    return [1, Math.max(maxUnits / minUnits, 1)]
-}
-
-function getMillisecondsPerUnit(mode: TimeMode): number {
-    switch (mode) {
-        case 'YEAR':
-            return 365 * 24 * 60 * 60 * 1000 // Approximate
-        case 'MONTH':
-            return 30 * 24 * 60 * 60 * 1000 // Approximate
-        case 'DAY':
-            return 24 * 60 * 60 * 1000
-        case 'HOUR':
-            return 60 * 60 * 1000
-    }
+export function stepTime(date: Date, mode: TimeMode, steps: number): Date {
+    const { unit, value } = getTimeStep(mode)
+    return moment
+        .utc(date)
+        .add(steps * value, unit)
+        .toDate()
 }
 
 /**
