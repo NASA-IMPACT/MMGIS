@@ -9,10 +9,41 @@ export interface LayerTimelineProps {
     height: number
 }
 
-/**
- * Placeholder for a single layer's row of time-range bars. Renders an empty
- * group; the bars arrive with the timeline view PR of this stack.
- */
-export const LayerTimeline: React.FC<LayerTimelineProps> = () => {
-    return <g className="layer-timeline" />
+export const LayerTimeline: React.FC<LayerTimelineProps> = ({
+    layer,
+    xScale,
+    y,
+    height,
+}) => {
+    return (
+        <g className="layer-timeline">
+            {/* Time range bars */}
+            {layer.timeRanges.map((range, index) => {
+                const x1 = xScale(range.start)
+                const x2 = xScale(range.end)
+                const width = Math.max(x2 - x1, 2) // Minimum 2px width
+
+                return (
+                    <rect
+                        key={index}
+                        x={x1}
+                        y={y + 4}
+                        width={width}
+                        height={height - 6}
+                        /* Set as a style, not a fill attribute, so a var() colour resolves */
+                        style={{ fill: layer.color }}
+                        opacity={0.85}
+                        rx={4}
+                        className="layer-time-range"
+                    >
+                        <title>
+                            {layer.displayName}
+                            {'\n'}
+                            {range.start.toISOString()} to {range.end.toISOString()}
+                        </title>
+                    </rect>
+                )
+            })}
+        </g>
+    )
 }

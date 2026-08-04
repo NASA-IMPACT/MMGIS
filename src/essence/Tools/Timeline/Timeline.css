@@ -142,6 +142,150 @@
     color: var(--theme-color-base, #71767a);
 }
 
+/* Timeline View Layout */
+.timeline-view-container {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    background: var(--theme-color-white, #ffffff);
+}
+
+.timeline-sidebar {
+    width: 160px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    display: flex;
+    flex-direction: column;
+}
+
+/* Heights of the header bars and layer rows live in TimelineView, which needs
+   them to lay the SVG out; they arrive as inline styles rather than being
+   restated here. */
+.timeline-sidebar-header {
+    border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-sizing: border-box;
+    /* Pinned so the layer list scrolls beneath it when the panel is short. */
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--theme-color-white, #ffffff);
+}
+
+.timeline-sidebar-layers {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+}
+
+.layer-item {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    box-sizing: border-box;
+}
+
+.layer-color-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.layer-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--theme-color-base-darker, #3d4551);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.timeline-svg-container {
+    flex-grow: 1;
+    /* Must stay visible (not hidden) so the sticky date bar below pins to the
+       outer scroll container rather than to this element. */
+    overflow: visible;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.timeline-top-bar {
+    background-color: var(--theme-color-base-lightest, #f1f3f6);
+    border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    overflow: hidden;
+    /* Pinned alongside the sidebar header so the date axis stays constant. */
+    position: sticky;
+    top: 0;
+    z-index: 3;
+}
+
+.timeline-top-axis .domain,
+.timeline-top-axis .tick line {
+    display: none;
+}
+
+.timeline-top-axis .tick text {
+    fill: var(--theme-color-base, #71767a);
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--theme-font-ui, 'Public Sans', system-ui, -apple-system, sans-serif);
+}
+
+.timeline-axis .domain {
+    display: none;
+}
+
+.timeline-axis .tick line {
+    stroke: var(--theme-color-base-lighter, #dfe1e2);
+    stroke-dasharray: 2 2;
+}
+
+.timeline-axis .tick text {
+    fill: var(--theme-color-base-darker, #3d4551);
+    font-size: 11px;
+    font-family: var(--theme-font-ui, 'Public Sans', system-ui, -apple-system, sans-serif);
+}
+
+.layer-timelines {
+    pointer-events: none;
+}
+
+/* Re-enabled so each range's <title> tooltip can surface. */
+.layer-row-bg {
+    stroke: var(--theme-color-base-lighter, #dfe1e2);
+    stroke-width: 1px;
+    stroke-dasharray: 4 4;
+}
+
+.layer-time-range {
+    pointer-events: auto;
+    transition: opacity 0.2s ease;
+}
+
+.timeline-scrubber {
+    pointer-events: all;
+}
+
+/* Claims the touch gesture so dragging the scrubber doesn't scroll the panel. */
+.timeline-scrubber-handle {
+    touch-action: none;
+}
+
+.timeline-scrubber-line {
+    stroke: var(--theme-color-primary, #0e7482);
+}
+
+.timeline-scrubber-marker {
+    fill: var(--theme-color-primary, #0e7482);
+}
+
+/* The inner outline that separates the marker from the bars behind it */
+.timeline-scrubber-marker-inline {
+    stroke: var(--theme-color-white, #ffffff);
+}
+
 /* Timeline Toolbar */
 .timeline-toolbar {
     display: flex;
