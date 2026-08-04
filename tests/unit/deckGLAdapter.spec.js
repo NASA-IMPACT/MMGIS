@@ -214,6 +214,12 @@ test.describe('DeckGLAdapter', () => {
             const adapter = makeAdapter()
             expect(adapter.setLayerOpacity('nonexistent', 0.5)).toBeUndefined()
         })
+
+        test('setLayerOpacity on a value with nothing to clone returns undefined without throwing', () => {
+            const adapter = makeAdapter()
+            expect(() => adapter.setLayerOpacity(false, 0.5)).not.toThrow()
+            expect(adapter.setLayerOpacity(false, 0.5)).toBeUndefined()
+        })
     })
 
     test.describe('event system', () => {

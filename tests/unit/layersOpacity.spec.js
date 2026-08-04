@@ -130,6 +130,29 @@ describe('L_.setLayerOpacity engine dispatch', () => {
         expect(() => L_.setLayerOpacity('vec', 0.4)).not.toThrow()
         expect(L_.layers.opacity.vec).toBe(0.4)
     })
+
+    test('a load-failure sentinel (false) under deck.gl skips the engine and keeps the registry write', () => {
+        const setLayerOpacity = vi.fn()
+        setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)
+        L_.layers.layer.vec = false
+
+        expect(() => L_.setLayerOpacity('vec', 0.4)).not.toThrow()
+
+        expect(setLayerOpacity).not.toHaveBeenCalled()
+        expect(L_.layers.layer.vec).toBe(false)
+        expect(L_.layers.opacity.vec).toBe(0.4)
+    })
+
+    test('an aggregate registry entry (array of Leaflet layers) is not routed to the engine', () => {
+        const setLayerOpacity = vi.fn()
+        setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)
+        L_.layers.layer.arrows = [makeLeafletLayer(), makeLeafletLayer()]
+
+        expect(() => L_.setLayerOpacity('arrows', 0.4)).not.toThrow()
+
+        expect(setLayerOpacity).not.toHaveBeenCalled()
+        expect(L_.layers.opacity.arrows).toBe(0.4)
+    })
 })
 
 describe('L_.getLayerOpacity engine dispatch', () => {
@@ -236,5 +259,15 @@ describe('initial opacity from the url', () => {
     test('a configured initialOpacity of 0 is kept when the url says nothing', async () => {
         await L_.init(configFor(0), [], null)
         expect(L_.layers.opacity.Vec).toBe(0)
+    })
+
+    test('a cleared configure field (empty string) falls back to 1', async () => {
+        await L_.init(configFor(''), [], null)
+        expect(L_.layers.opacity.Vec).toBe(1)
+    })
+
+    test('a numeric-string initialOpacity is stored as a number', async () => {
+        await L_.init(configFor('0.5'), [], null)
+        expect(L_.layers.opacity.Vec).toBe(0.5)
     })
 })

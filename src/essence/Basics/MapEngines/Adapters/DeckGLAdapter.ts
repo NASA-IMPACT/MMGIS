@@ -911,13 +911,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      *
      * A layer on the map goes through {@link updateLayer}, which re-syncs the
      * render list. One that is off the map is cloned instead, so it comes back
-     * at the requested opacity when it is added.
+     * at the requested opacity when it is added. A reference that is neither
+     * on the map nor a clonable layer instance (an unknown id, or a registry
+     * value that never became a layer) yields no replacement.
      */
     setLayerOpacity(layer: Layer | string, opacity: number): Layer | undefined {
         const id = resolveLayerId(layer)
         if (this._layers.has(id)) return this.updateLayer(id, { opacity })
-        if (typeof layer === 'string') return undefined
-        return layer.clone({ opacity }) as Layer
+        if (typeof (layer as Layer)?.clone !== 'function') return undefined
+        return (layer as Layer).clone({ opacity }) as Layer
     }
 
     /**
