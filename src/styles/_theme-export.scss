@@ -15,6 +15,14 @@
     --theme-color-primary-dark: #{color("primary-dark")};
     --theme-color-primary-darker: #{color("primary-darker")};
     --theme-color-primary-light: #{color("primary-light")};
+    --theme-color-primary-lighter: #{color("primary-lighter")};
+    /* Tinted hover surface. USWDS leaves the lightest grade unset by default;
+       brands without one fall back to their own primary-lighter. */
+    --theme-color-primary-lightest: #{if(
+      $theme-color-primary-lightest,
+      color("primary-lightest"),
+      color("primary-lighter")
+    )};
 
     /* USWDS leaves the outer primary grades off unless a theme opts in, and
        color() errors on a grade set to false — so only emit what exists. */
