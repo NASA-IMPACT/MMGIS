@@ -90,6 +90,19 @@ export function composeColormapPipeline(
     }
 }
 
+/**
+ * Resolves the nodata sentinel to filter: an explicitly configured value wins,
+ * otherwise the COG's own GDAL_NODATA tag. Returns null for NaN — the shader's
+ * `==` comparison can never match NaN, and FilterNaN already discards it.
+ */
+export function resolveNoDataValue(
+    configNoData: number | null | undefined,
+    fileNoData: number | null | undefined
+): number | null {
+    const value = configNoData ?? fileNoData
+    return Number.isFinite(value as number) ? (value as number) : null
+}
+
 // ---------------------------------------------------------------------------
 // GPU helpers (browser/WebGL only)
 // ---------------------------------------------------------------------------
@@ -284,7 +297,14 @@ export class ColormappedCOGLayer extends COGLayer<any> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     protected override _renderTileCallback(): any {
         const p = this.props as any
-        const { rescaleMin, rescaleMax, nodata } = p
+        const { rescaleMin, rescaleMax } = p
+        // The COG's GDAL_NODATA tag (parsed by _parseGeoTIFF) makes nodata
+        // pixels transparent with no configuration. Safe to read here: tiles
+        // cannot render before the parse stores state.geotiff.
+        const nodata = resolveNoDataValue(
+            p.nodata,
+            (this.state as any)?.geotiff?.nodata
+        )
         // Capture colormapTexture at callback-construction time; the updateTriggers
         // on the layer force _renderTileCallback() to be re-called whenever
         // colormapName/rescaleMin/rescaleMax change, so the closure stays fresh.
