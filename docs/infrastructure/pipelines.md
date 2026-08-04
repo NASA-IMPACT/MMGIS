@@ -1,28 +1,46 @@
-# Pipelines — PR to converged
+# Pipelines — from pull request to deployed
 
-Part of the [infrastructure reference](README.md). Three entry points: a read-only plan preview on infrastructure PRs, and one composed deploy run per environment branch. There is one implementation of "converge the infrastructure" (`iac-deploy.yml`) and one of "ship the app" (`app-deploy.yml`); both are reusable engines with no triggers of their own, called in order by a thin per-environment trigger. A new environment adds a trigger, not a pipeline.
+The pipelines are the GitHub Actions workflows that deploy MMGIS: on every merge they update the AWS infrastructure to match the code, then build and deploy the MMGIS admin app onto it. A *run* is one execution of a workflow — one row in the repo's Actions tab, with its jobs, logs, and summary. Three things can start one:
 
-## The composed run
+- an infrastructure pull request — gets a read-only plan preview (`iac-plan.yml`)
+- a merge to `development` — runs that environment's deploy
+- a merge to `production` — runs its deploy, with every step gated behind reviewer approval
 
-A trigger fires on every push to its branch (and on manual dispatch, with an optional plan-only box). It first decides a *mode* from the pushed diff — pure git, no credentials — then calls the engines:
+The deploy logic is written once: `iac-deploy.yml` updates the infrastructure and `app-deploy.yml` builds and deploys MMGIS. Neither runs on its own — each environment branch has a small workflow that calls them in order, so adding a new environment means adding another small caller workflow, never duplicating the deploy logic.
 
-| Mode | When | Infrastructure engine | App engine |
+## A deploy run, step by step
+
+A push to `development` triggers `deploy-development.yml`; a push to `production` triggers `deploy-production.yml` — each file names its branch, and GitHub runs whichever one matches. A deploy run is that file executing three jobs, in order:
+
+1. **Decide the mode** — not a separate file: a small job written inside the environment's own workflow, a bash script that runs `git diff` on the push and picks how much work the next job should do. Pure git, no AWS credentials.
+2. **Infrastructure** (`iac-deploy.yml`) — brings the AWS environment up to date with the Terraform code, when that's needed. Whatever else it does, it always ends the same way: it reads six names out of Terraform state — region, ECR repository, cluster, service name, and the two task-definition families — the "where does this environment live" facts the next job needs.
+3. **App** (`app-deploy.yml`) — takes those six names, builds the image from this commit, pushes it to ECR, and rolls the service onto it.
+
+### The three modes
+
+The workflow runs on every push to its branch. A human can also *dispatch* it — GitHub's term for starting a workflow by hand from the repo's Actions page — and the dispatch form offers one checkbox: "preview the infrastructure changes without applying or deploying anything." The mode-deciding job (step 1 above) looks at how the run started — a push and what it changed, or a dispatch and its checkbox — and outputs a single word, the *mode*, which sets what the other two jobs do:
+
+| Mode | When | Infrastructure job | App job |
 |---|---|---|---|
-| `apply` | The push touched `infrastructure/terraform/**` or one of the three pipeline files; any non-plan-only dispatch; any push whose diff is unknowable | Two-phase converge | Runs |
-| `read` | Every other push (app-only merges — most of them) | Init and read state outputs; changes nothing | Runs |
-| `plan` | Plan-only dispatch | Plan, published to the run summary | Skipped |
+| `apply` | The push touched `infrastructure/terraform/**` or one of the three pipeline files; any dispatch without the preview box checked; any push where git cannot tell what changed (brand-new branch, or a force-push whose old commit is gone) — with no diff to check, the workflow plays safe and applies | Full apply, both phases ([environments](aws-environments.md#building-an-environment-takes-two-phases)), then read the six names | Runs |
+| `read` | Every other push (app-only merges — most of them) | Read the six names out of state; touch nothing in AWS | Runs |
+| `plan` | A dispatch with the preview box checked | Publish a plan to the run summary; apply nothing | Skipped |
 
-**The infrastructure job always runs.** Skipping it on app-only merges looks obvious and does not work: a skipped job emits no outputs, so the app job would receive six empty names on exactly the merges that touch no infrastructure. Path-awareness gates the *mode*, never the job.
+The `plan` mode is not the plan preview pull requests get automatically — that is `iac-plan.yml` commenting on the PR ([below](#plan-previews-on-pull-requests)). This checkbox previews a deploy outside any PR: what would applying this branch's current head actually change — useful before an environment's first real apply, or to check for drift.
 
-**Concurrency**: one group per trigger spans the whole composed run and queues rather than cancels — an interrupted apply leaves state locked and infrastructure half-converged. GitHub keeps at most one pending run per group; a superseded middle merge is safe because a later push contains its commits.
+**Why the infrastructure job runs even on app-only merges:** skipping it looks obvious and does not work. A skipped GitHub Actions job emits no outputs, so the app job would receive six empty names on exactly the merges that touch no infrastructure — which is most of them. `read` mode is the fix: the job runs, touches nothing in AWS, and still hands over the names.
 
-## A merge to `development`, end to end
+**One run at a time per environment.** Each trigger file declares a *concurrency group* — a GitHub feature: runs that share a label (`concurrency: group: deploy-development`) execute one at a time, and a newer run waits instead of cancelling the running one, because a run killed mid-apply would leave the Terraform state locked and the infrastructure half-updated. The label covers the whole run, all three jobs, so infrastructure and app work from two runs can never interleave; the two environments use different labels and never block each other. One GitHub quirk to know: at most one run waits per label — if merges stack up, only the newest keeps waiting and the middle ones are discarded. That is safe here, because a later push contains the earlier pushes' commits, so the run that does execute deploys everything.
+
+### The run in detail
+
+The same three jobs, with what each one actually says to AWS. Two steps in the diagram — "discover the serving image" and "bootstrap any empty application secrets" — get their own explanations right after.
 
 ```mermaid
 sequenceDiagram
-    participant T as Trigger
-    participant I as Infra engine
-    participant A as App engine
+    participant T as deploy-development.yml
+    participant I as iac-deploy.yml
+    participant A as app-deploy.yml
     participant AWS as AWS
 
     T->>T: decide mode from the pushed diff
@@ -44,52 +62,80 @@ sequenceDiagram
     A->>AWS: poll until only the new image is active
 ```
 
-**The image sandwich.** An infra apply must never feed the task-definition families a tag that is not in ECR (publishes resolve the bare family name to its latest revision — see [environments](environments.md#images-ci-decides-terraform-records)). In steady state the infra engine discovers the image the service is already serving and applies with it, then the app engine builds the new image and rolls the service exactly once. The engine **refuses to apply** if a live service exists but its image cannot be resolved (production's manual dispatch takes a `deployed_image` override for exactly that case), and likewise if state says CloudFront exists but the Express trio (ALB ARN, endpoint, security group) cannot be discovered — applying then would tear down the distribution and come back on a new domain. On greenfield the first apply registers a nonexistent placeholder, the service crash-loops for a few minutes, and the same run's app phase heals it; CloudFront may complete on a later run if the ALB is slow to surface.
+### Which image runs, and who may change it
 
-**Nothing is written back into GitHub.** The six runtime names are read out of Terraform state at run time (`terraform output -json workflow_variables`) and handed to the app engine as workflow outputs. Writing them into Actions variables would need a hand-rotated PAT and would leave a second copy of the truth free to drift.
+Two facts collide on every apply. First: the image reference is a field inside the Terraform-managed task definitions, so every apply must compute a value for it — and whenever that value differs from what is registered, the apply registers new revisions carrying it. Terraform, told nothing, falls back to `:latest`, a tag that never exists because CI pushes commit-SHA tags only. Second: each dashboard publish runs whatever image the newest publish revision names ([environments](aws-environments.md#images-and-task-definitions)). Put together: an apply left to its own devices would point the publish family at an image that resolves to nothing — and the next publish, possibly days later, would not even fail visibly. The image pull dies after the launch call the backend checks, so the deployment just sits in "provisioning" forever, with no error recorded and no deploy anywhere in sight to blame.
 
-**Database content is sacred.** The module manages the RDS *instance*, never its contents; no workflow runs a migration, seed, or restore. The superadmin values only seed an account at first boot.
+The design closes this with one rule — **the apply copies, the deploy moves**:
 
-## The secret bootstrap (apply-mode runs only)
+- Before applying, the infrastructure job asks ECS which image the service is serving right now, and applies with exactly that. An apply can rewrite the task definitions, but it can never change which build they name.
+- The app job is the only writer of a *new* image reference, and it pushes the image to ECR before referencing it anywhere — it cannot name something that does not exist, because it just created what it names.
 
-Phase 1 creates the Secrets Manager secrets as empty shells. Four hold credentials only MMGIS itself consumes, so the infra engine fills each one **the first time it finds it empty** and never touches one that carries a value. Design properties:
+To see what this buys, follow a run that fails halfway. Commit #2 merges; the infrastructure job applies commit #2's Terraform, writing back the serving image — commit #1's. Then the app job's build breaks. Resting state: infrastructure at #2, the service still serving #1, the task definitions still naming #1 — an image that exists, because it is being served. The environment is *stale*, one commit of skew between infrastructure and app, but every image reference resolves and publishing keeps working. The red run tells a human to fix the build; nothing else happened. Without the lookup, the identical failure leaves the publish task definition naming `:latest` — nothing visibly breaks that day, and the damage surfaces at the next publish.
 
-- Emptiness is decided from `describe-secret` **metadata** only — no CI role holds `GetSecretValue` anywhere, so CI can never read a secret value back.
-- Values are diceware passphrases generated from the EFF large wordlist, downloaded at run time and verified against a pinned SHA-256 (a hash pin is as trustworthy as a vendored copy); on any download or hash failure the run goes red — there is no fallback to a weaker generator.
-- Generated values flow through pipes straight into `put-secret-value`; they never land in a variable a trace could print.
-- Two secrets are deliberately excluded: the Mapbox token (external, hand-set) and the DB password (RDS-managed, untouched).
+Three edge cases complete the rule:
+
+- If a live service exists but its image cannot be determined, the infrastructure job **refuses to apply** rather than guess — a guess recreates exactly the failure above. (Production's dispatch form takes a `deployed_image` override for this case.)
+- It refuses likewise if Terraform state says CloudFront exists but the three values CloudFront is built from (ALB ARN, endpoint, security group) cannot be read from the live service — applying anyway would tear the distribution down and bring it back on a new domain, changing the admin URL.
+- On a brand-new environment there is no serving image to look up and nothing yet to protect, so the first apply knowingly registers the nonexistent placeholder; the service crash-loops for a few minutes until the app job later in the same run pushes the first real image and deploys it. If the new service's load balancer has not appeared by the end of the run, the CloudFront half simply stays unbuilt, and a later run completes it.
+
+### Two more rules that hold on every run
+
+**Nothing is written back into GitHub.** The six runtime names are read out of Terraform state at run time (`terraform output -json workflow_variables`) and handed to the app workflow as job outputs. Storing them in Actions variables instead would require a personal access token someone has to create and rotate by hand, and would leave a second copy of the truth free to drift from what Terraform actually built.
+
+**No workflow ever touches database content.** Terraform manages the RDS *instance*, never what is in it; no workflow runs a migration, a seed, or a restore. The superadmin seed values only create an account on the database's first-ever boot.
+
+## Generating the app's secrets (apply runs only)
+
+Phase 1 of an apply ([environments](aws-environments.md#building-an-environment-takes-two-phases)) creates the Secrets Manager secrets as empty shells. Four of them hold credentials only MMGIS itself consumes — nobody outside the system needs to know them — so the infrastructure workflow generates a value for each one **the first time it finds the shell empty**, and never touches one that already has a value. Safety rules:
+
+- "Is it empty?" is answered from `describe-secret` **metadata** only. No CI role has permission to read a secret's value, so CI can never read one back out.
+- Values are passphrases of random words drawn from a published wordlist, downloaded at run time and verified against a hash committed in the workflow. If the download or the hash check fails, the run fails — there is no fallback to a weaker generator.
+- A generated value flows through a pipe directly into `put-secret-value`; it is never stored in a shell variable, so no log or trace can print it.
+- Two secrets are deliberately excluded: the Mapbox token (an external credential a human sets once) and the database password (RDS manages it; nothing here goes near it).
 
 ## Plan previews on pull requests
 
-`iac-plan.yml` runs on every PR touching `infrastructure/terraform/**` and posts one sticky comment per environment root, updated in place per push — the plan *is* the review artifact. Read-only by construction: it OIDC-assumes the dedicated plan role, plans with `-lock=false` so a preview can never contend with a real apply, and deliberately binds **no** GitHub Environment — an unbound job presents the `pull_request`-form OIDC subject the plan role's trust policy is written for, and binding one would both flip the subject and park a PR check behind production's reviewer gate (see [identity](identity.md#oidc-subjects-environment-vs-pull_request)). It triggers on `pull_request`, never `pull_request_target`, because it effectively executes PR-authored Terraform. Two degrade paths stay green rather than red: missing configuration (pre-bootstrap) skips AWS and posts a comment naming exactly which values are absent, and fork PRs — which receive no OIDC token and no comment-writable token on a public repo — get a step-summary notice from a clearly labelled green job.
+`iac-plan.yml` runs on every PR that touches `infrastructure/terraform/**` and posts one comment per environment root, updated in place on each push — the plan is the thing the reviewer actually reviews. It is read-only by construction:
 
-## Production: the gated trigger
+- it signs in to the dedicated read-only plan role;
+- it plans with `-lock=false`, so a preview can never block or wait on a real apply;
+- it declares **no** GitHub environment — a job without one presents the `pull_request` identity the plan role trusts, and declaring one would make a mere PR check wait for production's reviewer approval (see [identity](identity.md#oidc-subjects-environment-vs-pull_request));
+- it runs on `pull_request`, never `pull_request_target`, because it executes Terraform written by the PR's author and must never do so with write-scoped credentials.
+
+Two expected situations produce a green check with an explanation rather than a failure: missing configuration (bootstrap not yet applied) skips AWS and posts a comment naming exactly which values are absent, and fork PRs — which receive no OIDC token and no comment-writing token on a public repo — get a notice in the job summary from a clearly labelled job.
+
+## Production: every deploy needs approval
 
 Merging to `production` expresses intent; it does not deploy.
 
 ```mermaid
 flowchart TD
-    M["Merge to production"] --> D["Mode decider — pure git and bash,<br/>no credentials, writes the rules<br/>into the run summary"]
-    D --> G1{"production Environment gate<br/>required reviewers"}
-    G1 -->|approve| I["Infrastructure engine<br/>converge or read"]
+    M["Merge to production"] --> D["Decide the mode — pure git and bash,<br/>no credentials, writes the rules<br/>into the run summary"]
+    D --> G1{"production GitHub environment gate<br/>required reviewers"}
+    G1 -->|approve| I["iac-deploy.yml<br/>apply or read"]
     G1 -->|"reject or ignore"| X["Run ends — zero AWS activity"]
     I --> G2{"gate again<br/>approval is per job"}
-    G2 -->|approve| A["App engine — build, push, roll"]
-    G2 -->|reject| Y["Infra converged, app unchanged"]
+    G2 -->|approve| A["app-deploy.yml — build, push, deploy"]
+    G2 -->|reject| Y["Infrastructure updated, app unchanged"]
 ```
 
-The gate lives in the **engines**, not the trigger: both engine jobs bind `environment: production`, and the binding is what asks for approval — so there is no path to AWS that bypasses it, manual dispatch included. Rules the trigger writes into every run summary:
+The approval gate lives in the **shared workflows**, not in production's own workflow: both jobs declare `environment: production`, and that declaration is what makes GitHub ask for approval — so there is no path to AWS that bypasses it, manual dispatches included. Rules the run summary states on every run:
 
-- **Two clicks per run is expected.** Required-reviewer approval is per job, and the app job only reaches the gate after the infra job finishes. It is deliberately not "fixed": the binding also mints the OIDC subject the production roles trust and resolves the Environment-scoped values.
-- **Approve the newest run only.** Runs parked at a gate sit outside the concurrency group ("waiting", not "in progress"), so stale parked runs accumulate; approving an older one deploys an older commit over a newer one.
-- **No cross-environment image promotion.** Production builds its own image from the production-branch commit into production's own ECR repository. Development images are never promoted — not by workflow, not by hand.
+- **Two approval clicks per run is expected.** Required-reviewer approval is per job, and the app job only reaches the gate after the infrastructure job finishes. This is deliberately not "fixed": the same `environment:` declaration is also what gives each job the OIDC identity the production roles trust and the values stored in the production GitHub environment.
+- **Approve the newest run only.** Runs waiting at the gate sit outside the concurrency group ("waiting", not "in progress"), so stale waiting runs accumulate; approving an older one deploys an older commit over a newer one.
+- **No cross-environment image promotion.** Production builds its own image from the production-branch commit into production's own ECR repository. Development images are never reused for production — not by workflow, not by hand.
 
-The Environment's deployment-branch policy is load-bearing security, not hygiene: without it, any workflow on any branch could call the engines with `environment:` set and mint the trusted OIDC subject.
+The GitHub environment's deployment-branch policy is a security control, not tidiness: without it, any workflow on any branch could declare `environment: production` and receive the OIDC identity the production roles trust.
 
-## Rollback and break-glass
+## Rolling back
 
-App rollback is **re-running the last green composed run**: the app engine rebuilds that commit from source (`--no-cache`), re-pushes it under the same short-SHA tag, re-registers the families, and re-rolls the service — the same source, though not bit-identical, since a rebuild re-resolves dependencies within their declared ranges (a run that decided `read` re-runs in `read` mode and applies nothing). Infrastructure rollback is a revert commit merged to the environment's branch — hand-editing state is not a rollback, it is losing track of what exists. On production, every path parks at the same gate. Break-glass — CI itself broken — is an operator assuming the apply role and running the hand-apply flow in the [infrastructure README](../../infrastructure/README.md#rollback-and-break-glass); anything applied by hand is drift until a CI run converges on the same committed change.
+- **To roll back the app**, re-run the last green run from the Actions page. The app workflow rebuilds that commit from source, re-pushes the image under the same tag, and re-deploys. Same source is not the same bits: the rebuild re-resolves dependencies within their declared version ranges. (A run that decided `read` mode re-runs in `read` mode and changes no infrastructure.)
+- **To roll back infrastructure**, merge a revert commit to the environment's branch and let the pipeline apply it. Hand-editing Terraform state is not a rollback — it is losing track of what exists.
+- **When CI itself is broken**, an operator signs in to the apply role and runs the by-hand apply steps in the [infrastructure README](../../infrastructure/README.md#rollback-and-break-glass). Anything applied by hand counts as drift until a CI run applies the same committed change.
+
+On production, every one of these paths waits at the same approval gate.
 
 ## Legacy: `deploy-lean.yml`
 
-The pre-composition pipeline still deploys the existing staging environment from hand-set repository variables (disjoint from the `IAC_*` Environment values, so neither pipeline can drive the other's environment).
+The older pipeline from before this split still deploys the existing staging environment from hand-set repository variables (different names from the `IAC_*` GitHub environment values, so neither pipeline can drive the other's environment).

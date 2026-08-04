@@ -1,8 +1,13 @@
 # Infrastructure & CI/CD — the map
 
-MMGIS's **lean** deployment (`MMGIS_DEPLOYMENT_MODE=lean`) runs on AWS: the admin app as an ECS Express Mode service behind CloudFront, a short-lived publish task that turns a mission into a standalone static dashboard, and RDS PostgreSQL underneath. Everything is Terraform, applied by CI on merge; one reusable module describes a complete environment and thin per-environment roots instantiate it. The **full** deployment (upstream docker-compose default) uses none of this.
+MMGIS's **lean** deployment (`MMGIS_DEPLOYMENT_MODE=lean`) runs on AWS: 
+- admin app as an ECS Express Mode service behind CloudFront
+- RDS PostgreSQL supporting the admin app
+- a short-lived publish task that turns missions into a standalone static dashboards 
 
-This page is the hub. It holds the whole-system picture and the where-values-live inventory; the three siblings hold the detail. Operational how-tos (apply steps, verification commands) live with the code they operate — the [bootstrap README](../../infrastructure/terraform/bootstrap/README.md) and the [infrastructure README](../../infrastructure/README.md) — never here.
+IAC is done via Terraform and applied by Github Actions CI on merge. One reusable module describes a complete environment, and a small per-environment root fills in each environment's settings. The **full** deployment (upstream docker-compose default) uses none of this.
+
+This file briefly explains the big picture and will link to more detailed docs on environments, pipelines, and identities. Operational how-tos (apply steps, verification commands) live with the code they operate — the [bootstrap README](../../infrastructure/terraform/bootstrap/README.md) and the [infrastructure README](../../infrastructure/README.md) — never here.
 
 ## The whole system
 
@@ -15,10 +20,10 @@ flowchart LR
     end
     subgraph wf["Workflows"]
         PLAN["iac-plan.yml<br/>read-only plan preview"]
-        TDEV["deploy-development.yml<br/>trigger"]
-        TPROD["deploy-production.yml<br/>trigger (engine jobs reviewer-gated)"]
-        IAC["iac-deploy.yml<br/>infrastructure engine"]
-        APP["app-deploy.yml<br/>app engine"]
+        TDEV["deploy-development.yml"]
+        TPROD["deploy-production.yml<br/>(jobs reviewer-gated)"]
+        IAC["iac-deploy.yml<br/>updates infrastructure"]
+        APP["app-deploy.yml<br/>builds + deploys MMGIS"]
     end
     subgraph aws["AWS account"]
         BOOT["bootstrap root — human-applied:<br/>CI roles, permissions boundaries,<br/>state buckets"]
@@ -31,39 +36,44 @@ flowchart LR
     TDEV --> IAC
     TPROD --> IAC
     IAC --> APP
-    PLAN -.->|"plan role, read-only,<br/>both environments"| ENVD
-    PLAN -.-> ENVP
-    IAC -->|"apply role, own env only"| ENVD
-    IAC --> ENVP
-    APP -->|"deploy role, image roll only"| ENVD
-    APP --> ENVP
+    PLAN -.->|"plan role, read-only"| ENVD
+    PLAN -.->|"plan role, read-only"| ENVP
+    IAC -->|"development apply role"| ENVD
+    IAC -->|"production apply role"| ENVP
+    APP -->|"development deploy role,<br/>image roll only"| ENVD
+    APP -->|"production deploy role,<br/>image roll only"| ENVP
     OP["Operator (human)"] -->|"terraform apply, rarely"| BOOT
 ```
 
-Two planes, deliberately split:
+The Terraform is split into two roots, so that different access permissions can be given to each:
 
-- **The bootstrap root** — applied by a human, rarely. It owns the things CI must never own: the CI roles themselves, the permissions boundaries that cap CI-created roles, and the state buckets. See [identity & containment](identity.md).
-- **Everything else** — applied by CI. Each environment branch (`development`, `production`) has a thin trigger workflow that calls two shared engines in order: converge the infrastructure, then ship the app. A new environment adds a trigger, not a pipeline. See [pipelines](pipelines.md).
+- **The bootstrap root** — run by a human, rarely. It creates the IAM roles CI runs as, the permissions boundaries that cap any role CI creates, and the S3 buckets that hold Terraform state. See [identity & containment](identity.md).
+- **Everything else** — run by CI, using those roles. CI has no permission to modify anything the bootstrap root created — it can't edit its own credentials or grant itself more. Each environment branch (`development`, `production`) has a small workflow of its own that calls the same two shared workflows in order: one updates the AWS infrastructure to match the code, the other builds and deploys MMGIS to that infrastructure. If we later add a new environment, we only add another small workflow file that calls those same two — the deploy logic is written once and never duplicated. See [pipelines](pipelines.md).
 
 ## The documents
 
 | Document | Question it answers |
 |---|---|
-| [environments.md](environments.md) | What exists in AWS per environment, how the module builds it, and where the app's secrets and images come from |
-| [pipelines.md](pipelines.md) | What happens on a PR, on a merge to `development`, and on a merge to `production` — engines, modes, gates, rollback |
-| [identity.md](identity.md) | Why any of those API calls are permitted — the two-root model, OIDC trust, the containment story, and the scoping honesty table |
+| [aws-environments.md](aws-environments.md) | What exists in AWS per environment, how the module builds it, and where the app's secrets and images come from |
+| [pipelines.md](pipelines.md) | What happens on a PR, on a merge to `development`, and on a merge to `production` — the shared workflows, run modes, approval gates, and rollback |
+| [identity.md](identity.md) | Why any of those API calls are permitted — how CI authenticates to AWS without stored keys, and what stops it from granting itself more access |
 
-Reading order for a newcomer: environments (the map), pipelines (the motion), identity (the trust).
+Reading order for a newcomer: environments, then pipelines, then identity.
 
 ## Where values live
 
-Nothing account-identifying is committed. Every value has exactly one home:
+Two things in these docs are both called an environment.
+- An **AWS environment** is a full copy of the deployment (development or production): the app, its database, and everything around them, with every resource named `mmgis-<env>-*`. The term is ours, not AWS's — both copies live in the same AWS account and VPC, and what separates them is that every credential's permissions are scoped to its own environment's name patterns
+- A **GitHub environment** is a settings object in this repo that holds the AWS environment's secrets and variables, plus production's required-reviewers approval gate.
 
-| Home | Values | Notes |
+Each AWS environment has a GitHub environment with exactly the same name, and the names have to match: a workflow job that declares `environment: development` presents that name to AWS as part of its identity, and the AWS roles only trust the exact string. Renaming a GitHub environment breaks CI's ability to sign in to AWS.
+
+Nothing account-identifying is committed as part of the code. Every value has exactly one home:
+
+| Home | What lives there | Exact list |
 |---|---|---|
-| Committed in the repo | The module and roots, the backend `key`/`encrypt`/`use_lockfile`, all five workflows, the `mmgis-<env>-*` naming patterns, the wordlist hash pin | Everything reviewable in a PR; plans are the review artifact |
-| GitHub Environment (one copy per environment) | Secrets `IAC_APPLY_ROLE_ARN`, `IAC_DEPLOY_ROLE_ARN`; variables `IAC_AWS_REGION`, `IAC_TFSTATE_BUCKET`, `IAC_TFVARS` (JSON: `vpc_id`, `private_subnet_ids`, `rds_ca_bundle_base64`, `permissions_boundary`) | Binding the Environment is what resolves these *and* mints the OIDC subject the roles trust — one mechanism, both jobs |
-| GitHub repo-level (plan preview only) | Secret `IAC_PLAN_ROLE_ARN`; variables `IAC_AWS_REGION`, `IAC_TFSTATE_BUCKET_<ENV>`, `IAC_TFVARS_<ENV>` | The plan job is deliberately Environment-unbound, so it cannot read Environment-scoped values |
-| AWS Secrets Manager (`mmgis/<env>/...`) | `session-secret`, `superadmin-username`, `superadmin-password`, `dashboards-password` (CI-generated once, never overwritten), `mapbox-token` (hand-set external credential), plus the RDS-managed master secret | Terraform creates empty shells only; no secret value ever passes through Terraform state |
-| Terraform outputs, read at run time | The six runtime names (`workflow_variables`: region, ECR repo, cluster, service, both task families), `admin_url`, the Express phase-2 handoff values | Never written back into GitHub — state is the only copy, so there is no second copy to drift |
-| Legacy repo variables (staging) | `AWS_REGION`, `ECR_REPOSITORY`, `ECS_CLUSTER`, `ECS_SERVICE`, secret `AWS_DEPLOY_ROLE_ARN` (the task families are hard-coded in the workflow) | Read only by the pre-composition `deploy-lean.yml`; disjoint from `IAC_*` by design so neither pipeline can drive the other's environment |
+| Files in git | all Terraform and workflow code; everything not account-identifying | the repo |
+| GitHub environments | the deploy pipeline's five settings: two role ARNs (secrets), region, state bucket, and the uncommittable Terraform inputs as one JSON value | `iac-deploy.yml` header |
+| Repo-wide Actions settings | the plan preview's own copies of the same kinds of values, name-suffixed per AWS environment because its job declares no GitHub environment; plus the legacy staging set read only by `deploy-lean.yml` | `iac-plan.yml` header; `deploy-lean.yml` header |
+| AWS Secrets Manager | the secret values the running app consumes (session key, seed admin login, dashboards password, Mapbox token, database password) — injected into the containers, unreadable by CI | [aws-environments.md](aws-environments.md#secrets-who-sets-each-value) |
+| Terraform state outputs | the non-secret names of what Terraform built (cluster, ECR repo, service, task families, admin URL) — read by the pipeline on every run instead of being stored anywhere in GitHub | the roots' `outputs.tf` |
