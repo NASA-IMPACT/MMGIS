@@ -93,7 +93,7 @@ export function composeColormapPipeline(
 /**
  * Resolves the nodata sentinel to filter: an explicitly configured value wins,
  * otherwise the COG's own GDAL_NODATA tag. Returns null for NaN — the shader's
- * `==` comparison can never match NaN, and FilterNaN already discards it.
+ * `==` comparison can never match NaN — NaN is canonicalized at upload instead.
  */
 export function resolveNoDataValue(
     configNoData: number | null | undefined,
@@ -101,6 +101,36 @@ export function resolveNoDataValue(
 ): number | null {
     const value = configNoData ?? fileNoData
     return Number.isFinite(value as number) ? (value as number) : null
+}
+
+/**
+ * The single canonical nodata value uploaded to the GPU: −FLT_MAX, exactly
+ * representable in float32 and never plausible as real data.
+ *
+ * Nodata cannot be filtered in the shader by testing for NaN — fast-math
+ * shader compilers may fold `x != x` to false (this regressed transparent
+ * oceans) — but exact `==` against a canonical finite value is deterministic.
+ */
+export const NODATA_SENTINEL = -3.4028234663852886e38
+
+/**
+ * Replaces (in place) every NaN pixel — and every pixel matching the file's
+ * declared nodata value, when one is given — with NODATA_SENTINEL, so the
+ * render pipeline needs exactly one FilterNoDataVal(NODATA_SENTINEL) module.
+ */
+export function canonicalizeNoData(
+    f32: Float32Array,
+    noData: number | null | undefined
+): Float32Array {
+    const hasNoData = noData != null
+    // The tag value is a double; pixels are float32 — round it the same way
+    // or a nodata like 1e20 would never compare equal.
+    const nd = hasNoData ? Math.fround(noData as number) : 0
+    for (let i = 0; i < f32.length; i++) {
+        const v = f32[i]
+        if (v !== v || (hasNoData && v === nd)) f32[i] = NODATA_SENTINEL
+    }
+    return f32
 }
 
 // ---------------------------------------------------------------------------
@@ -126,8 +156,9 @@ type TileData = {
  *
  *  - **Single-band** (the primary case): upload the band as a single-channel
  *    `r32float` texture so the RAW value lands in `color.r` for the downstream
- *    FilterNaN + LinearRescale + Colormap modules. Nearest sampling (float
- *    linear filtering is not guaranteed in WebGL2).
+ *    FilterNoDataVal + LinearRescale + Colormap modules. NaN and the file's
+ *    declared nodata are canonicalized to NODATA_SENTINEL before upload.
+ *    Nearest sampling (float linear filtering is not guaranteed in WebGL2).
  *  - **Multi-band uint (RGB/RGBA)**: upload as `rgba8unorm` and display the
  *    colour directly via CreateTexture (no colormap/rescale). This is the
  *    multi-band case #158 defers — supported here as a passthrough so true-colour
@@ -140,11 +171,19 @@ type TileData = {
  * @param image   A `GeoTIFF` (full-res) or `Overview`, selected per-zoom by
  *                COGLayer's `_getTileDataCallback` wrapper — this is what makes
  *                higher zooms load finer overviews.
- * @param options `{ device, x, y, signal, pool }` supplied by the wrapper.
+ * @param options `{ device, x, y, signal, pool }` supplied by the wrapper,
+ *                plus `noDataOverride` bound in by buildDeckCOGLayer.
  */
 async function cogGetTileData(
     image: any,
-    options: { device: any; x: number; y: number; signal?: AbortSignal; pool?: any }
+    options: {
+        device: any
+        x: number
+        y: number
+        signal?: AbortSignal
+        pool?: any
+        noDataOverride?: number | null
+    }
 ): Promise<TileData> {
     const { device, x, y, signal, pool } = options
     let array = (await image.fetchTile(x, y, { boundless: false, pool, signal }))?.array
@@ -161,6 +200,12 @@ async function cogGetTileData(
                 ? array.bands[0]
                 : array.data
         const f32 = src instanceof Float32Array ? src : Float32Array.from(src)
+        // Overview.nodata delegates to the parent GeoTIFF, so this reads the
+        // file's GDAL_NODATA at any zoom level.
+        canonicalizeNoData(
+            f32,
+            resolveNoDataValue(options.noDataOverride, image?.nodata)
+        )
         const texture = device.createTexture({
             data: f32,
             format: 'r32float',
@@ -192,23 +237,6 @@ async function cogGetTileData(
 const RENDER_TILE_PLACEHOLDER = (): null => null
 
 /**
- * GPU module that discards NaN pixels. Float COGs almost always encode nodata
- * as NaN (GDAL_NODATA="nan"), and the library's FilterNoDataVal uses `==`
- * equality — which never matches NaN. `color.r != color.r` is the portable
- * self-inequality NaN test (NaN is the only value not equal to itself), so this
- * discards ocean/fill pixels and leaves them transparent. Harmless for integer
- * data (no pixel is NaN). Runs right after CreateTexture, before rescale.
- */
-const FilterNaN = {
-    name: 'filter-nan',
-    inject: {
-        'fs:DECKGL_FILTER_COLOR': `
-      if (color.r != color.r) { discard; }
-    `,
-    },
-}
-
-/**
  * GPU module for the multi-band RGB path: discards fully-black pixels. Satellite
  * true-colour COGs (e.g. Sentinel-2 TCI) encode nodata as exact black (0,0,0) —
  * most visibly the rotated UTM tile edges — so this leaves them transparent
@@ -237,7 +265,10 @@ const FilterBlack = {
  *   - colormapName: string  — matplotlib-compatible colormap name
  *   - rescaleMin: number    — data value → 0.0
  *   - rescaleMax: number    — data value → 1.0
- *   - nodata: number | null — pixel value to discard (FilterNoDataVal)
+ *
+ * Nodata (NaN or the file's GDAL_NODATA, optionally overridden by config) is
+ * canonicalized to NODATA_SENTINEL at tile upload and discarded by a single
+ * FilterNoDataVal in the pipeline.
  *
  * GPU state:
  *   - colormapTexture: Texture — Texture2DArray built from the LUT; stored in
@@ -298,13 +329,6 @@ export class ColormappedCOGLayer extends COGLayer<any> {
     protected override _renderTileCallback(): any {
         const p = this.props as any
         const { rescaleMin, rescaleMax } = p
-        // The COG's GDAL_NODATA tag (parsed by _parseGeoTIFF) makes nodata
-        // pixels transparent with no configuration. Safe to read here: tiles
-        // cannot render before the parse stores state.geotiff.
-        const nodata = resolveNoDataValue(
-            p.nodata,
-            (this.state as any)?.geotiff?.nodata
-        )
         // Capture colormapTexture at callback-construction time; the updateTriggers
         // on the layer force _renderTileCallback() to be re-called whenever
         // colormapName/rescaleMin/rescaleMax change, so the closure stays fresh.
@@ -323,15 +347,22 @@ export class ColormappedCOGLayer extends COGLayer<any> {
                     ],
                 }
             }
-            // Single-band: raw value in color.r → discard NaN → rescale → colormap.
+            // Single-band: raw value in color.r → discard nodata → rescale →
+            // colormap. NaN and the file's declared nodata were canonicalized
+            // to NODATA_SENTINEL at upload, so one exact-equality filter
+            // catches everything.
             return composeColormapPipeline(
                 {
                     renderPipeline: [
                         { module: CreateTexture, props: { textureName: data.texture } },
-                        { module: FilterNaN },
                     ],
                 },
-                { rescaleMin, rescaleMax, colormapTexture, nodata }
+                {
+                    rescaleMin,
+                    rescaleMax,
+                    colormapTexture,
+                    nodata: NODATA_SENTINEL,
+                }
             )
         }
     }
@@ -377,17 +408,22 @@ export function buildDeckCOGLayer(
         // its default inferRenderPipeline (which throws for float COGs).
         // getTileData uploads the band as r32float; renderTile is overridden by
         // the subclass (this placeholder only satisfies the parse-time guard).
-        getTileData: cogGetTileData,
+        // The config nodata (if any) is bound in as an override of the file's
+        // GDAL_NODATA; both canonicalize to NODATA_SENTINEL at upload.
+        getTileData: (image: any, opts: any) =>
+            cogGetTileData(image, { ...opts, noDataOverride: nodata }),
         renderTile: RENDER_TILE_PLACEHOLDER,
         // Custom props consumed in updateState and _renderTileCallback:
         colormapName,
         rescaleMin,
         rescaleMax,
-        nodata,
         updateTriggers: {
             // Forces _renderTileCallback() to be re-evaluated (tiles re-rendered
-            // without re-fetching) when colormap, rescale range, or nodata changes.
-            renderTile: [colormapName, rescaleMin, rescaleMax, nodata],
+            // without re-fetching) when the colormap or rescale range changes.
+            renderTile: [colormapName, rescaleMin, rescaleMax],
+            // Nodata is baked into tile data at upload, so changing it needs a
+            // re-fetch, not just a re-render.
+            getTileData: [nodata],
         },
     } as any) as unknown as Layer
 }
