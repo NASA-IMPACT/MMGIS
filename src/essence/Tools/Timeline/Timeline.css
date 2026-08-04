@@ -489,6 +489,34 @@
     background: var(--theme-color-primary-lightest, #e6f4f6);
 }
 
+/* Time Mode Control */
+.time-mode-control {
+    display: flex;
+    background: var(--theme-color-white, #ffffff);
+}
+
+.time-mode-button {
+    padding: 4px 12px;
+    background: transparent;
+    border: none;
+    font-size: 10px;
+    font-weight: 800;
+    /* 10px text needs the 4.5:1 grade against the white control background. */
+    color: var(--theme-color-base-darker, #3d4551);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.time-mode-button:hover {
+    color: var(--theme-color-primary, #0e7482);
+    background-color: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
+.time-mode-button.active {
+    background: var(--theme-color-primary, #0e7482);
+    color: var(--theme-color-white, #ffffff);
+}
+
 /* Timeline View Layout */
 .timeline-view-container {
     display: flex;

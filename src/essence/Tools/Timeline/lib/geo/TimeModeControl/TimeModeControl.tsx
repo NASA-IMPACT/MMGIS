@@ -1,5 +1,5 @@
 import React from 'react'
-import { type TimeMode } from '../../types'
+import { TIME_MODE_ORDER, type TimeMode } from '../../types'
 
 export interface TimeModeControlProps {
     currentMode: TimeMode
@@ -8,11 +8,24 @@ export interface TimeModeControlProps {
     modes?: TimeMode[]
 }
 
-/**
- * Placeholder for the granularity switcher. Renders an empty slot; the
- * YEAR/MONTH/DAY/HOUR buttons arrive with the time mode control PR of this
- * stack.
- */
-export const TimeModeControl: React.FC<TimeModeControlProps> = () => {
-    return <div className="time-mode-control" />
+export const TimeModeControl: React.FC<TimeModeControlProps> = ({
+    currentMode,
+    onModeChange,
+    modes = TIME_MODE_ORDER,
+}) => {
+    return (
+        <div className="time-mode-control" role="group" aria-label="Time granularity">
+            {modes.map((mode) => (
+                <button
+                    key={mode}
+                    className={`time-mode-button${currentMode === mode ? ' active' : ''}`}
+                    onClick={() => onModeChange(mode)}
+                    type="button"
+                    aria-pressed={currentMode === mode}
+                >
+                    {mode}
+                </button>
+            ))}
+        </div>
+    )
 }
