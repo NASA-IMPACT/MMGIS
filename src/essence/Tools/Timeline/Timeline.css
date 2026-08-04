@@ -426,6 +426,69 @@
     color: var(--theme-color-secondary-dark, #971453);
 }
 
+/* Playback Controls */
+.playback-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--theme-color-primary, #0e7482);
+}
+
+.playback-btn {
+    background: transparent;
+    border: none;
+    height: 24px;
+    width: 24px;
+    cursor: pointer;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+}
+
+/* Hover shows the light-grey rectangle only — the icon keeps its colour. */
+.playback-btn:hover:not(:disabled) {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
+/* At either end of the range the step and skip buttons are inert. */
+.playback-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.play-btn {
+    color: var(--theme-color-primary, #0e7482);
+}
+
+.play-btn svg {
+    fill: currentColor;
+}
+
+/* Playback Speed Control */
+.playback-speed-control {
+    background: transparent;
+    border: none;
+    padding: 0 6px;
+    margin-left: 4px;
+    height: 24px;
+    min-width: 32px;
+    cursor: pointer;
+    color: var(--theme-color-primary, #0e7482);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease;
+}
+
+.playback-speed-control:hover {
+    background: var(--theme-color-primary-lightest, #e6f4f6);
+}
+
 /* Timeline View Layout */
 .timeline-view-container {
     display: flex;

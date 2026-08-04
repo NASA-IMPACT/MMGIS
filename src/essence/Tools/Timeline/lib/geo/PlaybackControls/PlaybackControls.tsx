@@ -15,11 +15,97 @@ export interface PlaybackControlsProps {
     canStepBackward?: boolean
 }
 
-/**
- * Placeholder for the transport controls. Holds the slot and the prop contract
- * the adapter already wires up; the play, step and skip buttons arrive with the
- * playback controls PR of this stack.
- */
-export const PlaybackControls: React.FC<PlaybackControlsProps> = () => {
-    return <div className="playback-controls" />
+export const PlaybackControls: React.FC<PlaybackControlsProps> = ({
+    onPlayToggle,
+    onStepForward,
+    onStepBackward,
+    onGoToStart,
+    onGoToEnd,
+    isPlaying = false,
+    showPlayButton = true,
+    canStepForward = true,
+    canStepBackward = true
+}) => {
+    return (
+        <div className="playback-controls" role="group" aria-label="Playback">
+            <button
+                type="button"
+                className="playback-btn"
+                onClick={onGoToStart}
+                title="Go to start"
+                aria-label="Go to start"
+                disabled={!canStepBackward}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                fill="currentColor" aria-hidden="true" focusable="false">
+                    <path d="M7 6L7 18L5 18L5 6L7 6ZM18 6L18 18L9 12L18 6ZM16 9.75L12.6 12L16 14.25L16 9.75Z" />
+                </svg>
+            </button>
+            <button
+                type="button"
+                className="playback-btn"
+                onClick={onStepBackward}
+                title="Step backward"
+                aria-label="Step backward"
+                disabled={!canStepBackward}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                fill="currentColor" aria-hidden="true" focusable="false">
+                    <path d="M17 6L17 18L8 12L17 6ZM15 9.75L11.6 12L15 14.25L15 9.75Z" />
+                </svg>
+            </button>
+            {showPlayButton && (
+                <button
+                    type="button"
+                    className="playback-btn play-btn"
+                    onClick={onPlayToggle}
+                    title={isPlaying ? 'Pause' : 'Play'}
+                    aria-label={isPlaying ? 'Pause' : 'Play'}
+                    aria-pressed={isPlaying}
+                >
+                    {/* Drawn in the same 24-unit space as the transport icons
+                        beside them. Play and pause stay a little larger than
+                        those: this is the group's primary control. */}
+                    {isPlaying ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="currentColor" aria-hidden="true" focusable="false">
+                            <path fillRule="evenodd" clipRule="evenodd" d="M5 4H10V20H5V4Z" />
+                            <path fillRule="evenodd" clipRule="evenodd" d="M14 4H19V20H14V4Z" />
+                        </svg>
+                    ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                        fill="currentColor" aria-hidden="true" focusable="false">
+                            <path d="M6 20V4L20 12L6 20Z" />
+                        </svg>
+                    )}
+                </button>
+            )}
+            <button
+                type="button"
+                className="playback-btn"
+                onClick={onStepForward}
+                title="Step forward"
+                aria-label="Step forward"
+                disabled={!canStepForward}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                fill="currentColor" aria-hidden="true" focusable="false">
+                    <path d="M7 18L7 6L16 12L7 18ZM9 14.25L12.4 12L9 9.75L9 14.25Z" />
+                </svg>
+            </button>
+            <button
+                type="button"
+                className="playback-btn"
+                onClick={onGoToEnd}
+                title="Go to end"
+                aria-label="Go to end"
+                disabled={!canStepForward}
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+                fill="currentColor" aria-hidden="true" focusable="false">
+                    <path d="M17 18L17 6L19 6L19 18L17 18ZM6 18L6 6L15 12L6 18ZM8 14.25L11.4 12L8 9.75L8 14.25Z" />
+                </svg>
+            </button>
+        </div>
+    )
 }
