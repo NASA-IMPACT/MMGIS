@@ -117,6 +117,25 @@ export function stepTime(date: Date, mode: TimeMode, steps: number): Date {
 }
 
 /**
+ * The month of `year` nearest to `month` that [startTime, endTime] covers.
+ * Stepping or typing a year can leave the held month outside the timeline —
+ * January of the end year, say, when the range only reaches back to June — so
+ * the pickers snap to the nearest covered month instead of refusing the year.
+ */
+export function snapMonthToRange(
+    year: number,
+    month: number,
+    startTime: Date,
+    endTime: Date
+): number {
+    const start = moment.utc(startTime)
+    const end = moment.utc(endTime)
+    const first = year === start.year() ? start.month() : 0
+    const last = year === end.year() ? end.month() : 11
+    return Math.min(last, Math.max(first, month))
+}
+
+/**
  * Clamp a date to be within a range
  */
 export function clampDate(date: Date, min: Date, max: Date): Date {
