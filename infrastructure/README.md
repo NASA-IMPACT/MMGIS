@@ -10,17 +10,17 @@ reference, and the shared S3 asset bucket.
 Standing up or changing an environment is `terraform plan` → review → `apply` —
 never a runbook of CLI commands. One reusable module describes a complete
 environment; thin per-environment roots instantiate it. The only things outside
-Terraform are the one-time state-bucket bootstrap, the secret **values**, and
-the runtime-created per-dashboard CloudFormation stacks (application behavior,
+Terraform's applies here are the bootstrap root's one-time apply (state buckets
+and CI identity — `terraform/bootstrap`), the secret **values**, and the
+runtime-created per-dashboard CloudFormation stacks (application behavior,
 explicitly staying CloudFormation).
 
 **Dual-deployment posture:** the **full** deployment is the upstream MMGIS
 default (docker-compose, bundled sidecar services) and uses **none** of this
-directory. The **lean** deployment is this directory plus the workflows that
-deploy it — the composed pipeline below, and `deploy-lean.yml` until the
-staging environment is cut over to it. The same image serves both;
-`MMGIS_DEPLOYMENT_MODE` is a runtime ECS environment variable, never a Docker
-build-arg (the `Dockerfile` is shared and unmodified).
+directory. The **lean** deployment is this directory plus the composed pipeline
+below. The same image serves both; `MMGIS_DEPLOYMENT_MODE` is a runtime ECS
+environment variable, never a Docker build-arg (the `Dockerfile` is shared and
+unmodified).
 
 ## Layout
 
@@ -48,7 +48,7 @@ IAM roles.
 ### The recipe JSON files are provenance, not applied
 
 `ecs/*.json`, `iam/*.json`, `cloudfront-admin.json`, and `s3-asset-bucket.json`
-are the June recipes the Terraform module was translated from — every attribute
+are the recipe JSONs the Terraform module was translated from — every attribute
 value in them is production-tested. They are **kept in place**: they document
 where each Terraform value came from.
 `cloudfront-function.js` is still load-bearing as the canonical reference the
@@ -67,21 +67,12 @@ host/port/user/name ride as plain environment values.
   different AZs (ECS Express Mode requires two) with **NAT egress** — a private
   task needs it or webhooks and AWS-API calls hang silently. Private subnets
   make the admin reachable only through CloudFront.
-- **A per-environment Terraform state bucket**, bootstrapped once. The
-  bootstrap root (`terraform/bootstrap`) owns state-bucket creation; the CLI
-  recipe below is the manual equivalent, and is how development's bucket was
-  originally created.
-- **The IAM permissions-boundary policy**, created by the bootstrap root. Its
-  ARN is a required input (`permissions_boundary`, via tfvars — it carries the
-  account id): every role this module creates carries the boundary, because the
-  CI apply role is only allowed to create boundaried roles. An unboundaried
-  role fails on the very first apply. The **bootstrap root**
-  (`terraform/bootstrap`) creates the boundary, the state buckets, and all
-  GitHub-facing AWS identity, the CI deploy role included — apply it first.
-  On a cutover from an environment whose deploy role was
-  module-created, repoint the `AWS_DEPLOY_ROLE_ARN` secret at the
-  bootstrap-created role **before** applying this root: this apply deletes
-  the old role.
+- **A per-environment Terraform state bucket** and **the IAM
+  permissions-boundary policy**, both created by the bootstrap root
+  (`terraform/bootstrap`) — apply it first. The boundary ARN is a required
+  input (`permissions_boundary`, uncommitted: it carries the account id); every
+  role this module creates carries the boundary because the CI apply role may
+  only create boundaried roles.
 - **Secret values**, set after the apply ([below](#secret-values)). Terraform
   defines the secrets' existence and names only.
 - **The RDS regional CA bundle**, supplied as `rds_ca_bundle_base64` (below).
@@ -89,29 +80,7 @@ host/port/user/name ride as plain environment values.
   `*.cloudfront.net` certificate; the distribution carries no aliases.
 - **linux/amd64 images only.** The task defs pin `X86_64`; a local build on
   Apple Silicon must use `docker buildx build --platform linux/amd64`. The
-  GitHub-hosted CI runners are amd64, so `deploy-lean.yml`'s plain build is fine.
-
-## One-time state-bucket bootstrap (per environment)
-
-Create the bucket that holds this environment's state (S3 native locking, so no
-DynamoDB table). Do this once per environment, before the first `init`:
-
-```sh
-aws s3api create-bucket \
-  --bucket mmgis-development-tfstate-<ACCOUNT_ID> \
-  --region <REGION> \
-  --create-bucket-configuration LocationConstraint=<REGION>
-aws s3api put-bucket-versioning \
-  --bucket mmgis-development-tfstate-<ACCOUNT_ID> \
-  --versioning-configuration Status=Enabled
-aws s3api put-public-access-block \
-  --bucket mmgis-development-tfstate-<ACCOUNT_ID> \
-  --public-access-block-configuration \
-    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
-```
-
-Record the bucket name; init receives it via `-backend-config` flags. Nothing
-is shared between environments — applying one can never touch another's state.
+  GitHub-hosted CI runners are amd64, so the pipeline's plain build is fine.
 
 ## Hand applies (break-glass)
 
@@ -221,35 +190,7 @@ The same command sets any of the five slots. Nothing DB-related is ever set
 this way: the database password lives only in the RDS-managed master secret,
 which the task definitions reference directly.
 
-## Workflow variables
-
-**The composed pipeline does not need any of these set** — it reads the same
-object out of state at run time. This table is for the legacy `deploy-lean.yml`
-pipeline and for hand-run deploys, which have no other way to learn the names.
-
-`terraform output -json workflow_variables` prints the exact values in one
-object whose keys **are** the variable names. Set them as the environment's
-GitHub Actions variables (the one secret comes from elsewhere):
-
-| Variable | Source | Notes |
-|---|---|---|
-| `AWS_REGION` | `workflow_variables.AWS_REGION` | |
-| `ECR_REPOSITORY` | `workflow_variables.ECR_REPOSITORY` | per-environment repo |
-| `ECS_CLUSTER` | `workflow_variables.ECS_CLUSTER` | |
-| `ECS_SERVICE` | `workflow_variables.ECS_SERVICE` | |
-| `ADMIN_TASK_FAMILY` | `workflow_variables.ADMIN_TASK_FAMILY` | `mmgis-<env>-admin` — **new**; the workflow now reads this (falls back to `mmgis-admin`) |
-| `PUBLISH_TASK_FAMILY` | `workflow_variables.PUBLISH_TASK_FAMILY` | `mmgis-<env>-publish` — **new** (falls back to `mmgis-publish`) |
-| `AWS_DEPLOY_ROLE_ARN` (secret) | the bootstrap root | OIDC-assumable; no long-lived keys |
-
-The two `*_TASK_FAMILY` variables are the one required change to
-`deploy-lean.yml`: families are region-global, so per-environment names stop a
-production deploy from registering a revision development's publish-by-family
-flow would silently pick up. Everything else the workflow needs already came
-from Actions variables. The deploy role itself is **not** created here — the
-bootstrap root creates it, with GitHub-Environment-scoped trust, so this module
-holds nothing that grants CI access to the account.
-
-## Operational notes (still true, now in the Terraform world)
+## Operational notes
 
 - **Terraform never decides which image runs — CI does.** Every pipeline apply
   hands the module the currently deployed image (`deployed_image`), so a
@@ -290,9 +231,9 @@ holds nothing that grants CI access to the account.
   `/assets/*` serves the shared bucket with **CachingOptimized**. The recipe's
   `MinimumProtocolVersion` is intentionally omitted — the provider forbids
   setting it alongside the default certificate.
-- **CI deploy role, hard-won facts.** The role lives in the **bootstrap root**,
-  not in this module; these empirically-established facts remain the spec its
-  policy implements. `ecs:DescribeServices` on the admin service ARN (the
+- **CI deploy role facts.** The role lives in the **bootstrap root**, not in
+  this module; these empirically-established facts remain the spec its policy
+  implements. `ecs:DescribeServices` on the admin service ARN (the
   workflow resolves name→ARN); the ExpressGatewayService actions' `Resource`
   includes **both** the `express-gateway-service/*` shape **and** the
   `service/<cluster>/<service>` ARN (the API authorizes Update/Describe against
@@ -468,21 +409,3 @@ does — the recipe is in [Hand applies
 them. It is an escape hatch and never the mechanism: anything applied
 by hand is drift until the same change is committed and a CI run converges on
 it.
-
-## Legacy deploy pipeline (staging)
-
-`.github/workflows/deploy-lean.yml` is the **pre-composition** pipeline. It
-still deploys the existing staging environment, is deliberately left untouched
-by the rebuild, and keeps running until that environment is cut over to the
-composed pipeline above — retiring it is an explicit later step, never a side
-effect.
-
-It runs on push to `development` (and via `workflow_dispatch`): it builds theme
-assets (`npm run build:themes`), builds and pushes the image to ECR, registers
-new `ADMIN_TASK_FAMILY` **and** `PUBLISH_TASK_FAMILY` task-def revisions
-pointing at the new image, and rolls the Express Mode service by updating its
-primary container. It defines no ALB/target-group/scaling resources (Express
-Mode owns those). See the [Workflow variables](#workflow-variables) table for
-its configuration — hand-set repository variables, disjoint from the composed
-pipeline's Environment-scoped `IAC_*` values, so neither pipeline can drive the
-other's environment.
