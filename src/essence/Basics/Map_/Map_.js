@@ -1659,7 +1659,8 @@ async function makeTileLayer(layerObj, mapContext = null) {
             ctx.layerRegistry.layer[layerObj.name] = buildDeckCOGLayer(layerObj.name, {
                 rawCogUrl: resolveDeckCOGFileUrl(layerObj, tileSource),
                 layerObj,
-                opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                // ?? not ||: an opacity of 0 is a real value, not "default to 1"
+                opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             })
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()
