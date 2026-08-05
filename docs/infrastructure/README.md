@@ -26,7 +26,7 @@ flowchart LR
         APP["app-deploy.yml<br/>builds + deploys MMGIS"]
     end
     subgraph aws["AWS account"]
-        BOOT["bootstrap root — human-applied:<br/>CI roles, permissions boundaries,<br/>state buckets"]
+        BOOT["bootstrap root — human-applied:<br/>CI roles, permissions boundaries,<br/>state buckets, database-secret key"]
         ENVD["development environment<br/>mmgis-development-*"]
         ENVP["production environment<br/>mmgis-production-*"]
     end
@@ -47,7 +47,7 @@ flowchart LR
 
 The Terraform is split into two roots, so that different access permissions can be given to each:
 
-- **The bootstrap root** — run by a human, rarely. It creates the IAM roles CI runs as, the permissions boundaries that cap any role CI creates, and the S3 buckets that hold Terraform state. See [identity & containment](identity.md).
+- **The bootstrap root** — run by a human, rarely. It creates the IAM roles CI runs as, the permissions boundaries that cap any role CI creates, the S3 buckets that hold Terraform state, and the KMS key that encrypts each database's admin password. See [identity & containment](identity.md).
 - **Everything else** — run by CI, using those roles. CI has no permission to modify anything the bootstrap root created — it can't edit its own credentials or grant itself more. Each environment branch (`development`, `production`) has a small workflow of its own that calls the same two shared workflows in order: one updates the AWS infrastructure to match the code, the other builds and deploys MMGIS to that infrastructure. If we later add a new environment, we only add another small workflow file that calls those same two — the deploy logic is written once and never duplicated. See [pipelines](pipelines.md).
 
 ## The documents

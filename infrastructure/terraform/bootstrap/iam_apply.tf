@@ -201,9 +201,8 @@ resource "aws_iam_role_policy" "terraform_apply" {
       },
       {
         # CreateDBInstance authorizes against BOTH the db and subnet-group
-        # ARNs. No secretsmanager grant is needed for
-        # manage_master_user_password: RDS creates and rotates the managed
-        # master secret itself, under its own service principal.
+        # ARNs. Creating an instance with a managed master password additionally
+        # needs the secretsmanager and kms grants in the three statements below.
         Sid    = "RdsLifecycle"
         Effect = "Allow"
         Action = [
@@ -218,6 +217,50 @@ resource "aws_iam_role_policy" "terraform_apply" {
           "arn:aws:rds:${local.region}:${local.account_id}:db:mmgis-${each.key}*",
           "arn:aws:rds:${local.region}:${local.account_id}:subgrp:mmgis-${each.key}*",
         ]
+      },
+      {
+        # AWS requires the CALLER of CreateDBInstance to hold
+        # secretsmanager:CreateSecret and secretsmanager:TagResource when
+        # manage_master_user_password is set — RDS fills and rotates the secret
+        # under its own service principal, but the create is attributed to the
+        # caller. RDS names it rds!db-<id>, which the mmgis/<env>* pattern of
+        # SecretShells cannot match, so it needs its own statement.
+        # GetSecretValue stays absent here as everywhere on the CI roles: the
+        # apply path creates the secret without ever being able to read it.
+        Sid      = "CreateRdsManagedMasterSecret"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:CreateSecret", "secretsmanager:TagResource"]
+        Resource = "arn:aws:secretsmanager:${local.region}:${local.account_id}:secret:rds!*"
+      },
+      {
+        # CreateDBInstance with a managed master password authorizes against
+        # the key that encrypts the secret, and RDS takes a grant on it to
+        # rotate. The key is bootstrap-owned (kms.tf) precisely so these
+        # actions can be granted: the account's default aws/secretsmanager key
+        # accepts no identity-based grant, and CreateDBInstance against it
+        # fails with KMSKeyNotAccessibleFault.
+        Sid    = "RdsMasterSecretKey"
+        Effect = "Allow"
+        Action = [
+          "kms:DescribeKey",
+          "kms:GenerateDataKey*",
+          "kms:Decrypt",
+        ]
+        Resource = aws_kms_key.master_secret.arn
+      },
+      {
+        # Split from the statement above for the condition: the apply role may
+        # only create grants that an AWS service takes on its behalf, never a
+        # free-standing grant to a principal of its choosing.
+        Sid      = "RdsMasterSecretKeyGrant"
+        Effect   = "Allow"
+        Action   = ["kms:CreateGrant"]
+        Resource = aws_kms_key.master_secret.arn
+        Condition = {
+          Bool = {
+            "kms:GrantIsForAWSResource" = "true"
+          }
+        }
       },
       {
         Sid    = "RdsSubnetGroupLifecycle"
