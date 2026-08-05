@@ -23,6 +23,7 @@ import {
 } from '../Layers_/tileUrlUtils'
 import {
     resolveTileLayerSource,
+    resolveDeckCOGFileUrl,
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
 import { Kinds } from '../../../pre/tools'
@@ -1538,12 +1539,11 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         // Client-side COG rendering via ColormappedCOGLayer (bypasses TiTiler).
-        // tileSource.fileUrl is the bare .tif URL (no TiTiler host, no query
-        // params), resolved before the COG source was wrapped in a TiTiler
-        // tiles URL.
+        // resolveDeckCOGFileUrl yields the bare, time-substituted .tif URL —
+        // the same derivation every rebuild path uses.
         if (shouldUseDeckRaster(Map_.engine.engineType, splitColonType, layerObj)) {
             ctx.layerRegistry.layer[layerObj.name] = buildDeckCOGLayer(layerObj.name, {
-                rawCogUrl: tileSource.fileUrl,
+                rawCogUrl: resolveDeckCOGFileUrl(layerObj, tileSource),
                 layerObj,
                 opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
             })

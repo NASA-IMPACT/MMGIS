@@ -12,8 +12,10 @@ import {
     buildTileUrlOptions,
     shouldUseDeckRaster,
 } from '../Layers_/tileUrlUtils'
-import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
-import { buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import {
+    resolveTileLayerSource,
+    resolveDeckCOGFileUrl,
+} from '../Layers_/tileLayerSource'
 import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
 
 import './TimeControl.css'
@@ -427,23 +429,13 @@ var TimeControl = {
                         // The client-side COG renderer reads the file directly —
                         // the compiled TiTiler tiles URL above is meaningless to
                         // it, and updateLayer({url}) would be silently ignored
-                        // (COGLayer is keyed on its `geotiff` prop). Substitute
-                        // times into the raw file URL and rebuild, so deck.gl
-                        // swaps the layer in place by id.
-                        const fileUrl = compileTileUrl(tileSource.fileUrl, {
-                            ...tileOptions,
-                            // Placeholder substitution only — no COG/TMS query
-                            // params on a bare file URL.
-                            splitColonType: undefined,
-                            tileFormat: undefined,
-                        })
-                        const rebuilt = buildDeckCOGLayer(layer.name, {
-                            rawCogUrl: fileUrl,
-                            layerObj: layer,
-                            opacity: L_.layers.opacity[layer.name] ?? 1,
-                        })
-                        L_.layers.layer[layer.name] = rebuilt
-                        Map_.engine.addLayer(rebuilt)
+                        // (COGLayer is keyed on its `geotiff` prop). Rebuild
+                        // from the time-substituted file URL so deck.gl swaps
+                        // the layer in place by id.
+                        L_.rebuildDeckCOGLayer(
+                            layer,
+                            resolveDeckCOGFileUrl(layer, tileSource)
+                        )
                     } else if (
                         tileLayer &&
                         typeof tileLayer.refresh === 'function'
