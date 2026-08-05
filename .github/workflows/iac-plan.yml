@@ -15,6 +15,14 @@ name: Terraform plan preview
 #     long-lived keys, and the role cannot mutate anything.
 #   - `terraform plan -lock=false` — a PR preview never takes or contends for
 #     the S3 state lock, so a preview can never block or corrupt a real apply.
+#   - Before planning, the workflow discovers the live environment's serving
+#     image and Express trio with the same read-only describes the deploy
+#     engine uses (the plan role's ReadOnlyDiscovery statement covers them),
+#     and passes `greenfield=true` only when discovery verifies the environment
+#     has never been fully built — so the preview shows exactly what the next
+#     apply would do, and a preview that cannot read the live facts fails red
+#     instead of faking a plan. The probe is an adapted copy of
+#     iac-deploy.yml's probe; change them together.
 #   - The `plan` job deliberately does NOT bind a GitHub Environment (no
 #     `environment:` key). An unbound pull_request job presents the
 #     `pull_request`-form OIDC subject (`repo:NASA-IMPACT/MMGIS:pull_request`),
@@ -44,9 +52,14 @@ name: Terraform plan preview
 #            IAC_TFVARS_DEVELOPMENT / IAC_TFVARS_PRODUCTION
 #              A JSON object of the root's required input variables, e.g.
 #              {"vpc_id":"vpc-...","private_subnet_ids":["subnet-a","subnet-b"],
-#               "rds_ca_bundle_base64":"..."}
+#               "rds_ca_bundle_base64":"...","permissions_boundary":"arn:..."}
 #              CI writes it verbatim to `ci.auto.tfvars.json` inside the root
 #              before planning (terraform auto-loads `*.auto.tfvars.json`).
+#              Exactly these keys (plus an optional `region` override) and
+#              nothing else — the object lands in `ci.auto.tfvars.json`, which
+#              outranks the `TF_VAR_*` values this workflow computes per run,
+#              so a `greenfield` or live-fact key here would override
+#              discovery and disable the module's guards.
 #              These are account-identifying values that must never be
 #              committed. Repo Actions variables are visible only to repo
 #              collaborators, but the plan text they produce is public on a
@@ -58,7 +71,9 @@ name: Terraform plan preview
 # red for that. When configuration is incomplete it skips the AWS steps, posts a
 # comment naming exactly which values are missing, and exits GREEN. Once
 # bootstrap is applied and the values are set, real plans start appearing with
-# no change to this file.
+# no change to this file. Missing configuration degrades green; INVALID
+# configuration (an `IAC_TFVARS_*` object carrying keys outside its contract)
+# fails red — a real error must not read as a pending bootstrap.
 #
 # Fork PRs get a step-summary notice instead of a plan — see the `fork-notice`
 # job for why a comment is impossible there.
@@ -162,6 +177,7 @@ jobs:
           # so no entry below may itself contain a comma — the comment step splits
           # this list on commas to render one bullet per name.
           MISSING=""
+          INVALID=""
           note_missing() {
             MISSING="${MISSING:+$MISSING, }$1"
           }
@@ -179,16 +195,27 @@ jobs:
             # `*.auto.tfvars.json` as a map of variable names to values, so a
             # bare scalar or array parses fine here and explodes at plan time.
             note_missing "IAC_TFVARS_$SUFFIX (set but not a JSON object)"
+          elif printf '%s' "$TFVARS_JSON" | jq -e '
+              keys - ["vpc_id", "private_subnet_ids", "rds_ca_bundle_base64",
+                      "permissions_boundary", "region"] | length > 0
+            ' >/dev/null 2>&1; then
+            # The object is written to ci.auto.tfvars.json, and auto-tfvars
+            # OUTRANK the TF_VAR_* values this workflow computes per run — a
+            # greenfield or deployed_image/express_* key here would silently
+            # override discovery and disable the module's empty-fact guards.
+            # Not note_missing: a violation must not read as a pending bootstrap.
+            INVALID="IAC_TFVARS_$SUFFIX carries keys outside the contract (allowed: vpc_id / private_subnet_ids / rds_ca_bundle_base64 / permissions_boundary / optionally region)"
           fi
 
-          if [ -n "$MISSING" ]; then
-            echo "Plan preview unavailable; missing configuration: $MISSING"
+          if [ -n "$MISSING" ] || [ -n "$INVALID" ]; then
+            echo "Plan preview unavailable; missing: $MISSING invalid: $INVALID"
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "All required configuration is present."
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
           echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
+          echo "invalid=$INVALID" >> "$GITHUB_OUTPUT"
 
       # Providers are large and identical across both roots; the committed
       # .terraform.lock.hcl files make the cache key exact. The cache only
@@ -282,6 +309,201 @@ jobs:
             exit 0
           fi
 
+          # ── Discover the live environment ───────────────────────────────────
+          # An honest preview needs the same four live facts the apply gets:
+          # the serving image and the Express trio. The module refuses empty
+          # values without `greenfield`, and the CloudFront distribution
+          # carries prevent_destroy, so a preview that guessed would either
+          # error or lie. This probe is an adapted copy of iac-deploy.yml's
+          # discovery step (which also carries a second copy in its post-apply
+          # re-discovery) — the only change is error handling: a failure here
+          # records a status and exits 0 so the sticky comment still posts,
+          # where the deploy engine exits 1. If you change one, change the
+          # others.
+          #
+          # $1 = one-line reason; $2 (optional) = stderr file to include.
+          discovery_failed() {
+            echo "status=discovery-failed" >> "$GITHUB_OUTPUT"
+            if [ -n "${2:-}" ]; then
+              cat "$2" >> /tmp/discovery.err 2>/dev/null || true
+              cat "$2" >&2 || true
+            fi
+            printf '%s\n' "$1" >> /tmp/discovery.err
+            tail -n 100 /tmp/discovery.err 2>/dev/null | head -c 60000 > tf-output-tail.txt
+            exit 0
+          }
+
+          IMAGE=""
+          ALB_ARN=""
+          ENDPOINT=""
+          ALB_SG=""
+          HAVE_SERVICE="false"
+          CF_IN_STATE=""
+
+          probe() {
+            IMAGE=""
+            ALB_ARN=""
+            ENDPOINT=""
+            ALB_SG=""
+            HAVE_SERVICE="false"
+            CF_IN_STATE=""
+
+            # `terraform output -json` returns `{}` with exit 0 for empty
+            # state, so a nonzero exit is a backend problem (S3 hiccup,
+            # expired credentials, a wrong bucket) — never greenfield.
+            local outputs_json="" names_json="" rc=0
+            outputs_json=$(terraform -chdir="$TF_ROOT" output -json 2>/tmp/tf-output.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              discovery_failed "terraform output failed (exit $rc); refusing to read a failed state read as greenfield." /tmp/tf-output.err
+            fi
+
+            # admin_distribution_id is null until the CloudFront phase has
+            # applied. A non-empty value is state's own word that this
+            # environment already has a front door.
+            CF_IN_STATE=$(printf '%s' "$outputs_json" | jq -r '.admin_distribution_id.value // ""')
+
+            # An absent (or null) workflow_variables output means nothing has
+            # ever been applied here. Greenfield, not an error.
+            names_json=$(printf '%s' "$outputs_json" | jq -c '.workflow_variables.value // empty')
+            if [ -z "$names_json" ]; then
+              echo "No workflow_variables in state — greenfield environment."
+              return 0
+            fi
+
+            local cluster service
+            cluster=$(printf '%s' "$names_json" | jq -r '.ECS_CLUSTER // ""')
+            service=$(printf '%s' "$names_json" | jq -r '.ECS_SERVICE // ""')
+            if [ -z "$cluster" ] || [ -z "$service" ]; then
+              echo "State has no cluster/service names yet — treating as greenfield."
+              return 0
+            fi
+
+            # A missing SERVICE exits 0 and reports the name under .failures[];
+            # a missing CLUSTER exits nonzero with ClusterNotFoundException.
+            # Both mean "state exists but the service does not". Any OTHER
+            # failure must not be read as greenfield.
+            local services_json rc=0
+            services_json=$(aws ecs describe-services \
+              --cluster "$cluster" \
+              --services "$service" \
+              --output json 2>/tmp/describe-services.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              if grep -q 'ClusterNotFoundException' /tmp/describe-services.err; then
+                echo "Cluster '$cluster' does not exist yet — no live service."
+                return 0
+              fi
+              discovery_failed "aws ecs describe-services failed (exit $rc)." /tmp/describe-services.err
+            fi
+
+            local service_arn
+            service_arn=$(printf '%s' "$services_json" | jq -r '.services[0].serviceArn // ""')
+            if [ -z "$service_arn" ]; then
+              echo "Service '$service' is not present in cluster '$cluster' — no live service."
+              return 0
+            fi
+            HAVE_SERVICE="true"
+            echo "Live service: $service_arn"
+
+            local egs_json newest rev_arn
+            egs_json=$(aws ecs describe-express-gateway-service \
+              --service-arn "$service_arn" \
+              --output json 2>/tmp/describe-egs.err) \
+              || discovery_failed "aws ecs describe-express-gateway-service failed." /tmp/describe-egs.err
+
+            # Old and new configurations are listed side by side while a
+            # rollout drains, so the serving image is the NEWEST by createdAt.
+            newest=$(printf '%s' "$egs_json" \
+              | jq -c '[.service.activeConfigurations[]?] | sort_by(.createdAt) | last // {}')
+            IMAGE=$(printf '%s' "$newest" | jq -r '.primaryContainer.image // ""')
+            rev_arn=$(printf '%s' "$newest" | jq -r '.serviceRevisionArn // ""')
+
+            if [ -z "$rev_arn" ]; then
+              echo "No active service revision yet — no load-balancer values to discover."
+              return 0
+            fi
+
+            # The ALB ARN and its security groups are only on the service
+            # revision. Pick the ingress path that actually carries a load
+            # balancer; the public/other paths have none.
+            local rev_json lb_path
+            rev_json=$(aws ecs describe-service-revisions \
+              --service-revision-arns "$rev_arn" \
+              --output json 2>/tmp/describe-revisions.err) \
+              || discovery_failed "aws ecs describe-service-revisions failed." /tmp/describe-revisions.err
+            lb_path=$(printf '%s' "$rev_json" \
+              | jq -c '[.serviceRevisions[0].ecsManagedResources.ingressPaths[]?
+                        | select(.loadBalancer.arn != null)] | first // {}')
+
+            ALB_ARN=$(printf '%s' "$lb_path" | jq -r '.loadBalancer.arn // ""')
+            ENDPOINT=$(printf '%s' "$lb_path" | jq -r '.endpoint // ""')
+            # Prefer .loadBalancer.securityGroupIds — the sibling
+            # .loadBalancerSecurityGroups[] entries carry only an .arn.
+            ALB_SG=$(printf '%s' "$lb_path" | jq -r '(.loadBalancer.securityGroupIds // [])[0] // ""')
+
+            # The module wants a bare host for the CloudFront origin.
+            ENDPOINT="${ENDPOINT#https://}"
+            ENDPOINT="${ENDPOINT#http://}"
+            ENDPOINT="${ENDPOINT%/}"
+
+            # Fallback for CLI versions that omit securityGroupIds from the
+            # revision; the plan role carries elasticloadbalancing:Describe*
+            # for exactly this.
+            if [ -n "$ALB_ARN" ] && [ -z "$ALB_SG" ]; then
+              ALB_SG=$(aws elbv2 describe-load-balancers \
+                --load-balancer-arns "$ALB_ARN" \
+                --query 'LoadBalancers[0].SecurityGroups[0]' \
+                --output text 2>/dev/null) || ALB_SG=""
+              [ "$ALB_SG" = "None" ] && ALB_SG=""
+            fi
+
+            # The trio is all-or-nothing: applying a partial trio would build
+            # the distribution without the :443 ingress rule (front door 504).
+            # Blank all three so a partial read means "no CloudFront this run",
+            # which a later run completes — never a half-built front door.
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+              ALB_ARN=""
+              ENDPOINT=""
+              ALB_SG=""
+            fi
+
+            return 0
+          }
+
+          echo "::group::live-environment discovery"
+          probe
+          echo "::endgroup::"
+
+          # A live service whose image cannot be resolved: planning from a
+          # guessed image would show both task-definition families being
+          # re-registered onto a tag that does not exist.
+          if [ "$HAVE_SERVICE" = "true" ] && [ -z "$IMAGE" ]; then
+            discovery_failed "A live service exists but its serving image could not be resolved; a preview against guessed facts would be dishonest."
+          fi
+
+          # State says CloudFront exists but the trio is incomplete: the plan
+          # would show the distribution being destroyed (or error on its
+          # prevent_destroy). Either way that is a discovery problem, not a
+          # real proposal.
+          if [ -n "$CF_IN_STATE" ] && { [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; }; then
+            discovery_failed "State says CloudFront exists but the Express trio could not be resolved; the plan would show its destruction, which is a discovery problem, not a real proposal."
+          fi
+
+          # Greenfield, decided AFTER the guards: an emptiness that survives
+          # them is verified-absent. The flag is what makes the empties legal
+          # to the module (var.greenfield); with all four facts present it is
+          # false and relaxes nothing.
+          GREENFIELD="false"
+          if [ -z "$IMAGE" ] || [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+            GREENFIELD="true"
+          fi
+          export TF_VAR_deployed_image="$IMAGE"
+          export TF_VAR_express_internal_alb_arn="$ALB_ARN"
+          export TF_VAR_express_onaws_endpoint="$ENDPOINT"
+          export TF_VAR_express_alb_security_group_id="$ALB_SG"
+          export TF_VAR_greenfield="$GREENFIELD"
+
+          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE' greenfield='$GREENFIELD'"
+
           # -lock=false: a preview must never take or wait on the state lock.
           # -detailed-exitcode: 0 = no changes, 2 = changes, anything else = error.
           # This tee is what makes "full plan in the run log" literally true —
@@ -324,9 +546,10 @@ jobs:
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
           echo "summary=$SUMMARY" >> "$GITHUB_OUTPUT"
 
-      # Runs for every terminal path — missing-config, init-failed, plan-failed,
-      # no-changes, changes — because a PR with no comment is indistinguishable
-      # from a PR the workflow never noticed.
+      # Runs for every terminal path — missing-config, invalid-config,
+      # init-failed, discovery-failed, plan-failed, no-changes, changes —
+      # because a PR with no comment is indistinguishable from a PR the
+      # workflow never noticed.
       - name: Compose comment body
         id: body
         if: ${{ !cancelled() && steps.config.outcome == 'success' }}
@@ -334,13 +557,16 @@ jobs:
           ROOT: ${{ matrix.root }}
           READY: ${{ steps.config.outputs.ready }}
           MISSING: ${{ steps.config.outputs.missing }}
+          INVALID: ${{ steps.config.outputs.invalid }}
           PLAN_STATUS: ${{ steps.plan.outputs.status }}
           PLAN_SUMMARY: ${{ steps.plan.outputs.summary }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -o pipefail
 
-          if [ "$READY" != "true" ]; then
+          if [ -n "$INVALID" ]; then
+            STATUS="invalid-config"
+          elif [ "$READY" != "true" ]; then
             STATUS="missing-config"
           else
             # Empty when the plan step never ran — e.g. AssumeRole failed, so the
@@ -369,6 +595,17 @@ jobs:
           } > comment.md
 
           case "$STATUS" in
+            invalid-config)
+              HEADLINE="Repository configuration is invalid."
+              {
+                echo "**$HEADLINE**"
+                echo ""
+                echo "\`$INVALID\`"
+                echo ""
+                echo "This is a configuration error, not the pending-bootstrap degrade"
+                echo "path; fix the variable."
+              } >> comment.md
+              ;;
             missing-config)
               HEADLINE="Preview unavailable — repository configuration is incomplete."
               {
@@ -381,7 +618,7 @@ jobs:
                 echo "no plan can be produced. This is the expected degrade path, so the"
                 echo "check stays green."
                 echo ""
-                echo "Missing or invalid:"
+                echo "Missing:"
                 echo ""
                 printf '%s\n' "$MISSING" \
                   | tr ',' '\n' \
@@ -402,6 +639,22 @@ jobs:
                 echo "terraform tree (the bootstrap root, say) without the environment"
                 echo "roots existing in its merge ref. It is expected, so the check stays"
                 echo "green."
+              } >> comment.md
+              ;;
+            discovery-failed)
+              HEADLINE="Live-environment discovery failed."
+              {
+                echo "**$HEADLINE** The preview reads the live environment's serving image and Express trio before planning; without them an honest plan is impossible. The full output is in the [run log]($RUN_URL)."
+                echo ""
+                echo "<details>"
+                echo "<summary>Last 100 lines of output</summary>"
+                echo ""
+                echo '```text'
+                cat tf-output-tail.txt
+                echo ""
+                echo '```'
+                echo ""
+                echo "</details>"
               } >> comment.md
               ;;
             init-failed|plan-failed)
@@ -525,10 +778,23 @@ jobs:
       # explaining it has been posted. Missing configuration stays green: that
       # is the documented degrade path, not a broken PR.
       - name: Fail if terraform failed
-        if: steps.plan.outputs.status == 'init-failed' || steps.plan.outputs.status == 'plan-failed'
+        if: >-
+          ${{ steps.plan.outputs.status == 'init-failed'
+          || steps.plan.outputs.status == 'plan-failed'
+          || steps.plan.outputs.status == 'discovery-failed'
+          || steps.config.outputs.invalid != '' }}
         env:
           PLAN_STATUS: ${{ steps.plan.outputs.status }}
+          INVALID: ${{ steps.config.outputs.invalid }}
           ROOT: ${{ matrix.root }}
         run: |
-          echo "Terraform $PLAN_STATUS for $ROOT; see the plan comment." >&2
+          # Invalid configuration forces ready=false, so the plan step is
+          # skipped and PLAN_STATUS is empty in exactly that case.
+          if [ -n "$INVALID" ]; then
+            echo "Invalid repository configuration for $ROOT; see the plan comment." >&2
+          elif [ "$PLAN_STATUS" = "discovery-failed" ]; then
+            echo "Live-environment discovery failed for $ROOT; see the plan comment." >&2
+          else
+            echo "Terraform $PLAN_STATUS for $ROOT; see the plan comment." >&2
+          fi
           exit 1
