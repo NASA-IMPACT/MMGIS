@@ -1,10 +1,22 @@
 variable "environment" {
-  description = "Environment name. Full word matching the deploy branch (development / production). Used as the mmgis-<env>-* naming prefix for every resource."
+  description = "Environment name. Full word matching the deploy branch (development / production). Used as the mmgis-<env>-* naming prefix for every resource. Capped at 11 characters: longer names overflow the 63-char budget for the dashboard bucket names CloudFormation generates under the mmgis-<env>-dashboard-<id> stacks."
   type        = string
 
   validation {
     condition     = can(regex("^[a-z][a-z0-9-]*$", var.environment))
     error_message = "environment must be lowercase alphanumeric/hyphen (e.g. development, production)."
+  }
+
+  validation {
+    # S3 bucket names cap at 63 chars and CloudFormation's auto-generated
+    # dashboard bucket name is "<stack-name>-dashboardbucket-<13-char suffix>".
+    # Truncation would eat the stack-name portion and break the module's
+    # s3:::mmgis-<env>-dashboard-* IAM match. Budget: 63 total - 30 fixed
+    # ("-dashboardbucket-" + 13-char suffix) - 17 ("mmgis-" + "-dashboard-")
+    # - 5 (deployment-id digits, up to 99999) = 11 chars for the name.
+    # "development" (11) and "production" (10) fit.
+    condition     = length(var.environment) <= 11
+    error_message = "environment must be 11 characters or fewer: longer names overflow the 63-char S3 bucket-name budget for mmgis-<env>-dashboard-<id> dashboard buckets."
   }
 }
 

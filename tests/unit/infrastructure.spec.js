@@ -113,9 +113,14 @@ test.describe('infrastructure/ JSON recipes', () => {
 
     test('dashboard-facing grants are pinned to the mmgis-dashboard-* prefix', () => {
         // The prefix the IAM is pinned to must be the one the code creates
-        // stacks under.
-        const { STACK_NAME_PREFIX } = require('../../scripts/lib/cfn-template')
-        expect(STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
+        // stacks under. These JSON docs describe the hand-built environment,
+        // which never sets MMGIS_ENVIRONMENT, so they pin the DEFAULT prefix;
+        // the per-environment patterns live in the Terraform module
+        // (infrastructure/terraform/modules/mmgis-environment/iam.tf).
+        const {
+            DEFAULT_STACK_NAME_PREFIX,
+        } = require('../../scripts/lib/cfn-template')
+        expect(DEFAULT_STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
 
         const adminRole = readJson('iam/admin-task-role.json')
         const publishRole = readJson('iam/publish-task-role.json')
@@ -140,6 +145,45 @@ test.describe('infrastructure/ JSON recipes', () => {
                 )
             }
         }
+    })
+
+    test('terraform module stays in lockstep with the app dashboard prefix', () => {
+        // Pins the module to the exact strings the app composes from
+        // MMGIS_ENVIRONMENT (scripts/lib/cfn-template.js), so silent drift on
+        // either side fails CI instead of at publish time as an AccessDenied.
+        const MODULE = path.join(
+            INFRA,
+            'terraform',
+            'modules',
+            'mmgis-environment'
+        )
+        const read = (f) => fs.readFileSync(path.join(MODULE, f), 'utf8')
+
+        // main.tf composes mmgis-<env>-dashboard- exactly like stackNamePrefix()
+        const mainTf = read('main.tf')
+        expect(mainTf).toContain('name_prefix = "mmgis-${var.environment}"')
+        expect(mainTf).toContain(
+            'dashboard_prefix = "${local.name_prefix}-dashboard-"'
+        )
+
+        // Both task environments inject the variable the app reads
+        const ecsTf = read('ecs.tf')
+        const injections = ecsTf.match(
+            /\{ name = "MMGIS_ENVIRONMENT", value = var\.environment \}/g
+        )
+        expect(injections).toHaveLength(2)
+
+        // The module validation matches the app-side guard (regex + length cap)
+        const variablesTf = read('variables.tf')
+        expect(variablesTf).toContain('regex("^[a-z][a-z0-9-]*$", var.environment)')
+        expect(variablesTf).toContain('length(var.environment) <= 11')
+
+        // Every dashboard-facing IAM pattern uses the shared local, never a literal
+        const iamTf = read('iam.tf')
+        expect(iamTf).not.toContain('mmgis-dashboard-')
+        expect(
+            iamTf.match(/\$\{local\.dashboard_prefix\}\*/g).length
+        ).toBeGreaterThanOrEqual(9)
     })
 
     test('admin task role can complete inline DeleteStack teardown', () => {
@@ -202,6 +246,12 @@ test.describe('infrastructure/ JSON recipes', () => {
         // container overrides (see infrastructure/README.md).
         const RUN_TASK_OVERRIDES = ['MMGIS_DEPLOYMENT_ID', 'MMGIS_DEPLOYMENT_ACTION']
 
+        // MMGIS_ENVIRONMENT is OPTIONAL by design: the Terraform module injects
+        // it to namespace dashboards per environment; the legacy hand-built
+        // environment deliberately omits it to keep the original
+        // mmgis-dashboard-* names.
+        const OPTIONAL_VARS = ['MMGIS_ENVIRONMENT']
+
         // Vars only the publish-side code (scripts/publish-static.js and the
         // template renderer it calls) reads. They ride the PUBLISH task
         // definition; the admin task deliberately does not carry them.
@@ -217,7 +267,8 @@ test.describe('infrastructure/ JSON recipes', () => {
                 const name = match[1] || match[2]
                 if (
                     (name.startsWith('MMGIS_') || name === 'AWS_REGION') &&
-                    !RUN_TASK_OVERRIDES.includes(name)
+                    !RUN_TASK_OVERRIDES.includes(name) &&
+                    !OPTIONAL_VARS.includes(name)
                 )
                     wanted.add(name)
             }
