@@ -42,6 +42,11 @@ name: Infrastructure deploy engine
 #              {"vpc_id":"vpc-...","private_subnet_ids":["subnet-a","subnet-b"],
 #               "rds_ca_bundle_base64":"...","permissions_boundary":"arn:..."}
 #              Written verbatim to `ci.auto.tfvars.json` inside the root.
+#              Exactly these keys (plus an optional `region` override) and
+#              nothing else — the object lands in `ci.auto.tfvars.json`, which
+#              outranks the `TF_VAR_*` values this workflow computes per run,
+#              so a `greenfield` or live-fact key here would override
+#              discovery and disable the module's guards.
 # No `_DEVELOPMENT`/`_PRODUCTION` suffixes here, unlike the PR plan preview
 # (iac-plan.yml): that workflow must stay Environment-unbound to keep its
 # `pull_request` OIDC subject, so it can only read repo-level values and needs
@@ -78,7 +83,9 @@ name: Infrastructure deploy engine
 # `:latest` placeholder, which does not exist in ECR, and the service
 # crash-loops for a few minutes. That is expected and harmless: the app phase of
 # the SAME composed run pushes a real image and rolls the service, and ECS's
-# launch retry self-heals. Do not "fix" it by hand.
+# launch retry self-heals. Do not "fix" it by hand. These runs pass the module
+# `greenfield = true` (TF_VAR_greenfield) — the module refuses empty live facts
+# without it, which is what protects a hand apply that has no discovery step.
 #
 # ── The two phases ───────────────────────────────────────────────────────────
 # CloudFront is only created once `express_internal_alb_arn` and
@@ -88,7 +95,10 @@ name: Infrastructure deploy engine
 # run already knows all three phase-2 values and converges fully in phase 1;
 # phase 2 is the greenfield/values-changed path only. Passing them on every
 # apply is mandatory, not optional: applying with them empty against a live
-# environment would DESTROY CloudFront.
+# environment would DESTROY CloudFront — which the module refuses outright
+# (validation without greenfield, prevent_destroy on the distribution); the
+# guards in this file remain because only they can tell a transient read
+# failure from true greenfield.
 
 on:
   workflow_call:
@@ -227,6 +237,16 @@ jobs:
             # variable names to values, so a bare scalar or array parses here
             # and explodes at apply time.
             note_missing "IAC_TFVARS (variable; set but not a JSON object)"
+          elif printf '%s' "$TFVARS_JSON" | jq -e '
+              keys - ["vpc_id", "private_subnet_ids", "rds_ca_bundle_base64",
+                      "permissions_boundary", "region"] | length > 0
+            ' >/dev/null 2>&1; then
+            # The object is written to ci.auto.tfvars.json, and auto-tfvars
+            # OUTRANK the TF_VAR_* values this workflow computes per run — a
+            # greenfield or deployed_image/express_* key here would silently
+            # override discovery and disable the module's empty-fact guards
+            # on every future run. Unknown keys are refused, not ignored.
+            note_missing "IAC_TFVARS (variable; carries keys outside the contract — allowed: vpc_id / private_subnet_ids / rds_ca_bundle_base64 / permissions_boundary / optionally region)"
           fi
 
           # Red, not green: unlike the pull-request plan preview (iac-plan.yml), which
@@ -333,12 +353,14 @@ jobs:
         run: |
           set -o pipefail
 
-          # The probe below is duplicated verbatim (minus these comments) in the
-          # post-apply re-discovery step. Deliberately duplicated rather than
-          # factored into a committed script: a shell file in the repo would be
-          # a second thing to keep in step with the workflow, and a workflow
-          # cannot share a step body with itself. If you change one, change the
-          # other — the comments explaining each call live on this copy.
+          # The probe below is duplicated verbatim (minus these comments) in
+          # the post-apply re-discovery step, and, adapted to
+          # report-instead-of-exit error handling, in iac-plan.yml's preview
+          # probe. If you change one, change the others. Deliberately
+          # duplicated rather than factored into a committed script: a shell
+          # file in the repo would be a second thing to keep in step with the
+          # workflow, and a workflow cannot share a step body with itself —
+          # the comments explaining each call live on this copy.
           IMAGE=""
           ALB_ARN=""
           ENDPOINT=""
@@ -476,6 +498,16 @@ jobs:
               [ "$ALB_SG" = "None" ] && ALB_SG=""
             fi
 
+            # The trio is all-or-nothing: applying a partial trio would build
+            # the distribution without the :443 ingress rule (front door 504).
+            # Blank all three so a partial read means "no CloudFront this run",
+            # which a later run completes — never a half-built front door.
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+              ALB_ARN=""
+              ENDPOINT=""
+              ALB_SG=""
+            fi
+
             return 0
           }
 
@@ -534,15 +566,32 @@ jobs:
             exit 1
           fi
 
+          # Greenfield, decided AFTER the guards. The guards verify the image
+          # whenever a live service exists and the trio whenever state holds a
+          # CloudFront distribution, so an emptiness that survives them is
+          # verified-absent in exactly those cases; the one unguarded shape —
+          # service live, no CloudFront in state, trio not readable off the
+          # revision yet — is blessed greenfield. Its worst case: CloudFront
+          # stays unbuilt this run until a later run re-discovers the complete
+          # trio.
+          # The flag is what makes the empties legal to the module
+          # (var.greenfield); with all four facts present it is false and
+          # relaxes nothing.
+          GREENFIELD="false"
+          if [ -z "$IMAGE" ] || [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+            GREENFIELD="true"
+          fi
+
           {
             echo "image=$IMAGE"
             echo "alb_arn=$ALB_ARN"
             echo "endpoint=$ENDPOINT"
             echo "alb_sg=$ALB_SG"
             echo "have_service=$HAVE_SERVICE"
+            echo "greenfield=$GREENFIELD"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE'"
+          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE' greenfield='$GREENFIELD'"
 
       # Plan mode changes nothing. It is how an environment gets reviewed before
       # its first real apply, and how a human previews a converge from the
@@ -558,6 +607,7 @@ jobs:
           TF_VAR_express_internal_alb_arn: ${{ steps.discover.outputs.alb_arn }}
           TF_VAR_express_onaws_endpoint: ${{ steps.discover.outputs.endpoint }}
           TF_VAR_express_alb_security_group_id: ${{ steps.discover.outputs.alb_sg }}
+          TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -o pipefail
@@ -635,6 +685,7 @@ jobs:
           TF_VAR_express_internal_alb_arn: ${{ steps.discover.outputs.alb_arn }}
           TF_VAR_express_onaws_endpoint: ${{ steps.discover.outputs.endpoint }}
           TF_VAR_express_alb_security_group_id: ${{ steps.discover.outputs.alb_sg }}
+          TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
         run: |
           set -o pipefail
 
@@ -651,11 +702,255 @@ jobs:
             exit "$rc"
           fi
 
-      # ── Secret-bootstrap slot ──────────────────────────────────────────────
-      # The application-secret bootstrap step belongs exactly HERE: after
-      # phase 1 has created the empty secret shells in Secrets Manager, and
-      # before the app phase of the composed run needs their values. This
-      # comment marks the seam.
+      # ── Application-secret bootstrap ───────────────────────────────────────
+      # Phase 1 above created the Secrets Manager secrets as empty shells: name
+      # and policy only, never a value, because a value in the configuration is
+      # a value in the state file. Four of those shells hold credentials only
+      # MMGIS itself consumes, so nobody outside this system has to choose
+      # them — this step fills each one the first time it finds it empty, and
+      # never touches one that already carries a value.
+      #
+      # Two secrets are deliberately absent from the list below.
+      # `mmgis/<env>/mapbox-token` is an external credential: a human sets it
+      # once per environment and CI has no business inventing it. The database
+      # password is the RDS-managed master secret, which nothing here goes
+      # near at all.
+      #
+      # The apply role this job runs under carries secretsmanager:DescribeSecret
+      # and secretsmanager:PutSecretValue on `mmgis/<env>*`, and deliberately no
+      # GetSecretValue anywhere (bootstrap root) — CI can never read a
+      # secret value back. "Is this shell empty?" is therefore answered from
+      # describe-secret METADATA alone, never by reading the value.
+      #
+      # Greenfield: the same phase-1 apply that created these shells also
+      # launched the services whose tasks read them via `valueFrom`. Task
+      # launches in the window before this step lands the values fail; ECS
+      # launch retries self-heal once the values exist. That is expected — do
+      # not add ordering machinery for it.
+      #
+      # No `!cancelled()` guard: if phase 1 failed, the job has already
+      # stopped, which is correct. The shells this step fills only certainly
+      # exist after a SUCCESSFUL phase-1 apply.
+      - name: Bootstrap application secrets
+        id: secrets
+        if: inputs.mode == 'apply'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          # `-e` is GitHub's own default for run steps (`bash -e {0}`), restated
+          # here because for THIS step it is load-bearing rather than hygiene:
+          # if a `jq` parse of the describe-secret metadata ever failed, the
+          # emptiness variables below would be empty strings, and empty is not
+          # "true" — without -e the decision could fall through to generating
+          # onto a secret whose state was never actually read. With -e the
+          # failed assignment stops the step first. The never-overwrite
+          # guarantee must not hinge on an implicit runner default.
+          set -e -o pipefail
+
+          # Never add `set -x` to this step. Tracing would print the generation
+          # pipeline, and the whole design below is that the value exists
+          # nowhere a trace could reach it.
+
+          # The EFF large wordlist (7,776 words) is downloaded at run time
+          # rather than vendored — a hash pin gives the same integrity as a
+          # committed copy without carrying a 7,776-line data file in the repo,
+          # and this path runs rarely (apply-mode infra runs only, and the
+          # download itself only when a shell actually needs a value; see
+          # ensure_wordlist). The pinned SHA-256 is EFF's published digest,
+          # re-verified against the live URL when this step was written. The
+          # raw file is dice-index TAB word per line; the index column is
+          # stripped after verification.
+          WORDLIST_URL="https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt"
+          WORDLIST_SHA256="addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e"
+          WORDLIST_RAW="/tmp/eff-large-wordlist.raw"
+          WORDLIST="/tmp/eff-large-wordlist.txt"
+
+          # Download + verify, lazily: called only when a slot is actually
+          # empty, so a steady-state run (all four populated) never depends on
+          # eff.org being reachable. On failure it fails RED — there is no
+          # fallback to a weaker generator, ever.
+          ensure_wordlist() {
+            [ -s "$WORDLIST" ] && return 0
+
+            rc=0
+            curl -fsSL --retry 3 -o "$WORDLIST_RAW" "$WORDLIST_URL" || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "Could not download the EFF wordlist from $WORDLIST_URL (curl exit $rc)." >&2
+              echo "Likely transient — re-run the workflow. There is deliberately no fallback" >&2
+              echo "to a weaker generator." >&2
+              exit 1
+            fi
+
+            # The hash pin IS the integrity guarantee: it makes the download
+            # exactly as trustworthy as a vendored copy. A mismatch means the
+            # transfer was corrupted or upstream changed — either way, refuse.
+            ACTUAL_SHA256=$(sha256sum "$WORDLIST_RAW" | cut -d' ' -f1)
+            if [ "$ACTUAL_SHA256" != "$WORDLIST_SHA256" ]; then
+              echo "EFF wordlist hash mismatch:" >&2
+              echo "  expected $WORDLIST_SHA256" >&2
+              echo "  actual   $ACTUAL_SHA256" >&2
+              echo "Corrupted transfer (transient? re-run the workflow) or the upstream file" >&2
+              echo "changed. Refusing to generate; never falling back to a weaker generator." >&2
+              exit 1
+            fi
+
+            # Strip the dice-index column: "11111<TAB>abacus" -> "abacus".
+            cut -f2 "$WORDLIST_RAW" > "$WORDLIST"
+
+            # Belt to the hash pin's braces: the generator's entropy claims
+            # assume exactly 7,776 UNIQUE words, so verify that property on the
+            # processed file rather than trust the column-strip blindly.
+            # `|| true` keeps a failure on the friendly error path below
+            # instead of dying inside the command substitution.
+            WORD_COUNT=$(grep . "$WORDLIST" 2>/dev/null | sort -u | wc -l || true)
+            if [ "${WORD_COUNT:-0}" -ne 7776 ]; then
+              echo "Processed wordlist has ${WORD_COUNT:-0} unique words, expected 7776." >&2
+              echo "Generating from it would weaken every passphrase; refusing." >&2
+              exit 1
+            fi
+          }
+
+          : > /tmp/secret-rows.md
+
+          # Word counts, at ~12.925 bits per word:
+          #   session-secret       8 words (~103 bits). A machine-only signing
+          #                        key nobody ever types, so take the extra
+          #                        length for free.
+          #   superadmin-username  3 words. A username, not a secret proper;
+          #                        word-shaped and collision-proof is what
+          #                        matters.
+          #   superadmin-password  6 words (~78 bits).
+          #   dashboards-password  6 words (~78 bits).
+          #
+          # Fed by here-doc rather than a pipe on purpose: a piped `while` runs
+          # in a subshell, where the `exit 1`s below would kill only the
+          # subshell.
+          while read -r suffix words; do
+            [ -n "$suffix" ] || continue
+            secret_id="mmgis/$ENVIRONMENT/$suffix"
+
+            # Any describe failure — including ResourceNotFoundException, which
+            # cannot happen after a successful phase-1 apply — is investigation
+            # territory, never "assume empty". Assuming empty is the one
+            # mistake that could overwrite a live credential.
+            rc=0
+            meta=$(aws secretsmanager describe-secret \
+              --secret-id "$secret_id" \
+              --output json 2>/tmp/describe-secret.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              cat /tmp/describe-secret.err >&2
+              echo "aws secretsmanager describe-secret failed for '$secret_id' (exit $rc)." >&2
+              echo "Phase 1 applied successfully, so this shell must exist. Investigate rather than retry." >&2
+              exit 1
+            fi
+
+            # Near-impossible with the module's 0-day recovery window, but a
+            # put onto a shell that is scheduled for deletion would resurrect
+            # it into a confusing half-state. Fail loud instead of guessing.
+            deleted=$(printf '%s' "$meta" | jq -r '.DeletedDate // empty')
+            if [ -n "$deleted" ]; then
+              echo "'$secret_id' is scheduled for deletion (DeletedDate $deleted)." >&2
+              echo "Restore or recreate it before deploying; this step will not put a value onto it." >&2
+              exit 1
+            fi
+
+            # Emptiness, from metadata only: a secret holds a usable value iff
+            # some version carries the AWSCURRENT stage. `--output json` gives
+            # VersionIdsToStages as {versionId: [stage, ...]}.
+            populated=$(printf '%s' "$meta" \
+              | jq '[.VersionIdsToStages // {} | to_entries[].value[]] | any(. == "AWSCURRENT")')
+            version_count=$(printf '%s' "$meta" | jq '(.VersionIdsToStages // {}) | length')
+
+            if [ "$populated" = "true" ]; then
+              echo "$secret_id: already set — leaving it untouched."
+              printf "| \`%s\` | already set (left untouched) |\n" "$secret_id" >> /tmp/secret-rows.md
+              continue
+            fi
+
+            if [ "$version_count" -ne 0 ]; then
+              # Versions but no AWSCURRENT — an orphaned AWSPENDING, say. This
+              # cannot arise under normal operation (there is no rotation
+              # programme on these secrets), ECS `valueFrom` reads AWSCURRENT
+              # so the app cannot use the secret in this shape anyway, and
+              # putting a fresh value on top would break the never-overwrite
+              # rule while hiding whatever happened. A human investigates.
+              echo "'$secret_id' has $version_count version(s) but none staged AWSCURRENT." >&2
+              echo "Nothing in this system produces that state; resolve it by hand before deploying." >&2
+              exit 1
+            fi
+
+            # Empty shell → generate. The value must never exist in the shell:
+            #   * `shuf --random-source=/dev/urandom -r` draws words WITH
+            #     replacement from a cryptographic seed; `paste -sd- -`
+            #     hyphen-joins them; `tr -d '\n'` strips the trailing newline
+            #     so it does not become part of the stored value.
+            #   * `--secret-string file:///dev/stdin` makes the CLI read the
+            #     value off the pipe, so it is never in a shell variable, never
+            #     in argv (argv is world-readable through /proc on a shared
+            #     runner), never in the environment, and never echoed. That is
+            #     strictly stronger than `::add-mask::`, which would require
+            #     materialising the value in the shell first — exactly what
+            #     this avoids. There is deliberately nothing here to mask.
+            # The VersionId prints to the log on purpose: it is the evidence a
+            # new version appeared, and its absence on a re-run is the evidence
+            # that steady state generates nothing.
+            echo "$secret_id: empty — generating a $words-word passphrase (new version id below)."
+            ensure_wordlist
+            rc=0
+            shuf --random-source=/dev/urandom -rn "$words" "$WORDLIST" \
+              | paste -sd- - \
+              | tr -d '\n' \
+              | aws secretsmanager put-secret-value \
+                  --secret-id "$secret_id" \
+                  --secret-string file:///dev/stdin \
+                  --query VersionId --output text || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              # Under pipefail this exit code can come from ANY stage of the
+              # pipeline, not just the put — and the stages run concurrently,
+              # so in the pathological case (a generator dying mid-stream while
+              # the put still succeeded on what it read) a version MAY exist
+              # holding a short value. Say so, rather than blame the put and
+              # send the operator the wrong way: a populated shell is skipped
+              # forever, so a suspect value must be replaced by hand.
+              echo "Generating or storing the value for '$secret_id' failed (exit $rc)." >&2
+              echo "If this failed attempt did store a version (rare: generator died mid-pipeline" >&2
+              echo "while the put succeeded), treat that value as suspect and put a fresh one by" >&2
+              echo "hand — CI never overwrites a populated shell." >&2
+              exit 1
+            fi
+            printf "| \`%s\` | generated (new version) |\n" "$secret_id" >> /tmp/secret-rows.md
+          done <<'SLOTS'
+          session-secret 8
+          superadmin-username 3
+          superadmin-password 6
+          dashboards-password 6
+          SLOTS
+
+          # Secrets Manager has no conditional put, so probe-then-put carries a
+          # theoretical TOCTOU window. The caller's per-environment concurrency
+          # group already serialises runs, and the worst case — losing the race
+          # to a human setting a value by hand — adds a version rather than
+          # deleting theirs. Noted and accepted.
+
+          # Names only in the summary. Never values.
+          {
+            echo "## Application secrets — \`$ENVIRONMENT\`"
+            echo ""
+            echo "| Secret | Action |"
+            echo "| --- | --- |"
+            cat /tmp/secret-rows.md
+            echo ""
+            echo "\`mmgis/$ENVIRONMENT/mapbox-token\` is excluded — an external credential a human"
+            echo "sets once per environment. The database password is the RDS-managed master"
+            echo "secret and is never touched."
+            echo ""
+            echo "**Superadmin lockout nuance.** The seed credentials only seed the superadmin"
+            echo "while the users table is empty, i.e. on first boot. After that the real"
+            echo "credential is a bcrypt hash in the database, so regenerating"
+            echo "\`superadmin-password\` later diverges the secret from the password that"
+            echo "actually logs in. This matters most in production, where the database"
+            echo "outlives everything else."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Phase 1 is what brings the Express service (and therefore its
       # ECS-managed ALB) into existence, so on greenfield the phase-2 values
@@ -770,6 +1065,12 @@ jobs:
               [ "$ALB_SG" = "None" ] && ALB_SG=""
             fi
 
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+              ALB_ARN=""
+              ENDPOINT=""
+              ALB_SG=""
+            fi
+
             return 0
           }
 
@@ -837,6 +1138,10 @@ jobs:
           TF_VAR_express_internal_alb_arn: ${{ steps.rediscover.outputs.alb_arn }}
           TF_VAR_express_onaws_endpoint: ${{ steps.rediscover.outputs.endpoint }}
           TF_VAR_express_alb_security_group_id: ${{ steps.rediscover.outputs.alb_sg }}
+          # Same vintage as the image: the PRE-apply verdict. On greenfield it
+          # stays true, keeping the deliberately-empty image legal while the
+          # re-discovered trio is applied.
+          TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
         run: |
           set -o pipefail
 
@@ -926,7 +1231,11 @@ jobs:
             esac
           }
 
-          if [ -n "$APPLIED_IMAGE" ]; then
+          # Read mode skips discovery, so APPLIED_IMAGE and HAVE_SERVICE are
+          # both empty for a reason that has nothing to do with greenfield.
+          if [ "$MODE" = "read" ]; then
+            IMAGE_LINE="untouched (read mode — nothing applied)"
+          elif [ -n "$APPLIED_IMAGE" ]; then
             IMAGE_LINE="\`$APPLIED_IMAGE\`"
           elif [ "$HAVE_SERVICE" = "true" ]; then
             IMAGE_LINE="none resolved"
