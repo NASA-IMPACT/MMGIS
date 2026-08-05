@@ -42,6 +42,11 @@ name: Infrastructure deploy engine
 #              {"vpc_id":"vpc-...","private_subnet_ids":["subnet-a","subnet-b"],
 #               "rds_ca_bundle_base64":"...","permissions_boundary":"arn:..."}
 #              Written verbatim to `ci.auto.tfvars.json` inside the root.
+#              Exactly these keys (plus an optional `region` override) and
+#              nothing else — the object lands in `ci.auto.tfvars.json`, which
+#              outranks the `TF_VAR_*` values this workflow computes per run,
+#              so a `greenfield` or live-fact key here would override
+#              discovery and disable the module's guards.
 # No `_DEVELOPMENT`/`_PRODUCTION` suffixes here, unlike the PR plan preview
 # (iac-plan.yml): that workflow must stay Environment-unbound to keep its
 # `pull_request` OIDC subject, so it can only read repo-level values and needs
@@ -78,7 +83,9 @@ name: Infrastructure deploy engine
 # `:latest` placeholder, which does not exist in ECR, and the service
 # crash-loops for a few minutes. That is expected and harmless: the app phase of
 # the SAME composed run pushes a real image and rolls the service, and ECS's
-# launch retry self-heals. Do not "fix" it by hand.
+# launch retry self-heals. Do not "fix" it by hand. These runs pass the module
+# `greenfield = true` (TF_VAR_greenfield) — the module refuses empty live facts
+# without it, which is what protects a hand apply that has no discovery step.
 #
 # ── The two phases ───────────────────────────────────────────────────────────
 # CloudFront is only created once `express_internal_alb_arn` and
@@ -88,7 +95,10 @@ name: Infrastructure deploy engine
 # run already knows all three phase-2 values and converges fully in phase 1;
 # phase 2 is the greenfield/values-changed path only. Passing them on every
 # apply is mandatory, not optional: applying with them empty against a live
-# environment would DESTROY CloudFront.
+# environment would DESTROY CloudFront — which the module refuses outright
+# (validation without greenfield, prevent_destroy on the distribution); the
+# guards in this file remain because only they can tell a transient read
+# failure from true greenfield.
 
 on:
   workflow_call:
@@ -227,6 +237,16 @@ jobs:
             # variable names to values, so a bare scalar or array parses here
             # and explodes at apply time.
             note_missing "IAC_TFVARS (variable; set but not a JSON object)"
+          elif printf '%s' "$TFVARS_JSON" | jq -e '
+              keys - ["vpc_id", "private_subnet_ids", "rds_ca_bundle_base64",
+                      "permissions_boundary", "region"] | length > 0
+            ' >/dev/null 2>&1; then
+            # The object is written to ci.auto.tfvars.json, and auto-tfvars
+            # OUTRANK the TF_VAR_* values this workflow computes per run — a
+            # greenfield or deployed_image/express_* key here would silently
+            # override discovery and disable the module's empty-fact guards
+            # on every future run. Unknown keys are refused, not ignored.
+            note_missing "IAC_TFVARS (variable; carries keys outside the contract — allowed: vpc_id / private_subnet_ids / rds_ca_bundle_base64 / permissions_boundary / optionally region)"
           fi
 
           # Red, not green: unlike the pull-request plan preview (iac-plan.yml), which
@@ -333,12 +353,14 @@ jobs:
         run: |
           set -o pipefail
 
-          # The probe below is duplicated verbatim (minus these comments) in the
-          # post-apply re-discovery step. Deliberately duplicated rather than
-          # factored into a committed script: a shell file in the repo would be
-          # a second thing to keep in step with the workflow, and a workflow
-          # cannot share a step body with itself. If you change one, change the
-          # other — the comments explaining each call live on this copy.
+          # The probe below is duplicated verbatim (minus these comments) in
+          # the post-apply re-discovery step, and, adapted to
+          # report-instead-of-exit error handling, in iac-plan.yml's preview
+          # probe. If you change one, change the others. Deliberately
+          # duplicated rather than factored into a committed script: a shell
+          # file in the repo would be a second thing to keep in step with the
+          # workflow, and a workflow cannot share a step body with itself —
+          # the comments explaining each call live on this copy.
           IMAGE=""
           ALB_ARN=""
           ENDPOINT=""
@@ -476,6 +498,16 @@ jobs:
               [ "$ALB_SG" = "None" ] && ALB_SG=""
             fi
 
+            # The trio is all-or-nothing: applying a partial trio would build
+            # the distribution without the :443 ingress rule (front door 504).
+            # Blank all three so a partial read means "no CloudFront this run",
+            # which a later run completes — never a half-built front door.
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+              ALB_ARN=""
+              ENDPOINT=""
+              ALB_SG=""
+            fi
+
             return 0
           }
 
@@ -534,15 +566,32 @@ jobs:
             exit 1
           fi
 
+          # Greenfield, decided AFTER the guards. The guards verify the image
+          # whenever a live service exists and the trio whenever state holds a
+          # CloudFront distribution, so an emptiness that survives them is
+          # verified-absent in exactly those cases; the one unguarded shape —
+          # service live, no CloudFront in state, trio not readable off the
+          # revision yet — is blessed greenfield. Its worst case: CloudFront
+          # stays unbuilt this run until a later run re-discovers the complete
+          # trio.
+          # The flag is what makes the empties legal to the module
+          # (var.greenfield); with all four facts present it is false and
+          # relaxes nothing.
+          GREENFIELD="false"
+          if [ -z "$IMAGE" ] || [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+            GREENFIELD="true"
+          fi
+
           {
             echo "image=$IMAGE"
             echo "alb_arn=$ALB_ARN"
             echo "endpoint=$ENDPOINT"
             echo "alb_sg=$ALB_SG"
             echo "have_service=$HAVE_SERVICE"
+            echo "greenfield=$GREENFIELD"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE'"
+          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE' greenfield='$GREENFIELD'"
 
       # Plan mode changes nothing. It is how an environment gets reviewed before
       # its first real apply, and how a human previews a converge from the
@@ -558,6 +607,7 @@ jobs:
           TF_VAR_express_internal_alb_arn: ${{ steps.discover.outputs.alb_arn }}
           TF_VAR_express_onaws_endpoint: ${{ steps.discover.outputs.endpoint }}
           TF_VAR_express_alb_security_group_id: ${{ steps.discover.outputs.alb_sg }}
+          TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -o pipefail
@@ -635,6 +685,7 @@ jobs:
           TF_VAR_express_internal_alb_arn: ${{ steps.discover.outputs.alb_arn }}
           TF_VAR_express_onaws_endpoint: ${{ steps.discover.outputs.endpoint }}
           TF_VAR_express_alb_security_group_id: ${{ steps.discover.outputs.alb_sg }}
+          TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
         run: |
           set -o pipefail
 
@@ -1014,6 +1065,12 @@ jobs:
               [ "$ALB_SG" = "None" ] && ALB_SG=""
             fi
 
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+              ALB_ARN=""
+              ENDPOINT=""
+              ALB_SG=""
+            fi
+
             return 0
           }
 
@@ -1081,6 +1138,10 @@ jobs:
           TF_VAR_express_internal_alb_arn: ${{ steps.rediscover.outputs.alb_arn }}
           TF_VAR_express_onaws_endpoint: ${{ steps.rediscover.outputs.endpoint }}
           TF_VAR_express_alb_security_group_id: ${{ steps.rediscover.outputs.alb_sg }}
+          # Same vintage as the image: the PRE-apply verdict. On greenfield it
+          # stays true, keeping the deliberately-empty image legal while the
+          # re-discovered trio is applied.
+          TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
         run: |
           set -o pipefail
 
@@ -1170,7 +1231,11 @@ jobs:
             esac
           }
 
-          if [ -n "$APPLIED_IMAGE" ]; then
+          # Read mode skips discovery, so APPLIED_IMAGE and HAVE_SERVICE are
+          # both empty for a reason that has nothing to do with greenfield.
+          if [ "$MODE" = "read" ]; then
+            IMAGE_LINE="untouched (read mode — nothing applied)"
+          elif [ -n "$APPLIED_IMAGE" ]; then
             IMAGE_LINE="\`$APPLIED_IMAGE\`"
           elif [ "$HAVE_SERVICE" = "true" ]; then
             IMAGE_LINE="none resolved"
