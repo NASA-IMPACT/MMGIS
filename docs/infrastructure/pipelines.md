@@ -62,22 +62,15 @@ sequenceDiagram
     A->>AWS: poll until only the new image is active
 ```
 
-### Which image runs, and who may change it
+### Why the apply discovers the serving image
 
-Two facts collide on every apply. First: the image reference is a field inside the Terraform-managed task definitions, so every apply must compute a value for it — and whenever that value differs from what is registered, the apply registers new revisions carrying it. Terraform, told nothing, falls back to `:latest`, a tag that never exists because CI pushes commit-SHA tags only. Second: each dashboard publish runs whatever image the newest publish revision names ([environments](aws-environments.md#images-and-task-definitions)). Put together: an apply left to its own devices would point the publish family at an image that resolves to nothing — and the next publish, possibly days later, would not even fail visibly. The image pull dies after the launch call the backend checks, so the deployment just sits in "provisioning" forever, with no error recorded and no deploy anywhere in sight to blame.
+The task definitions Terraform manages carry an image reference, so every apply must write one — but which build runs is the app job's decision, never Terraform's ([environments](aws-environments.md#images-and-task-definitions)). The infrastructure job squares those two facts by asking ECS, before applying, which image the service is serving right now, and applying with exactly that. An apply can rewrite the task definitions, but never which build they name — so a run whose app job fails halfway leaves the environment stale but working: infrastructure at the new commit, the service still on the old image, and both task-definition families still naming a build that exists in ECR.
 
-The design closes this with one rule — **the apply copies, the deploy moves**:
+Guessing instead of asking would break quietly. With no image passed in, the module falls back to the environment's ECR repository at `:latest` — a tag that never exists, because CI pushes commit-SHA tags only. Nothing fails that day: the admin app starts a publish by calling ECS's `RunTask` and checks only whether ECS accepted the call, which it does; the container then dies pulling a tag that is not there. So the next publish, possibly days later, sits in "provisioning" with no error recorded and no recent deploy to blame. The job handles three cases explicitly:
 
-- Before applying, the infrastructure job asks ECS which image the service is serving right now, and applies with exactly that. An apply can rewrite the task definitions, but it can never change which build they name.
-- The app job is the only writer of a *new* image reference, and it pushes the image to ECR before referencing it anywhere — it cannot name something that does not exist, because it just created what it names.
-
-To see what this buys, follow a run that fails halfway. Commit #2 merges; the infrastructure job applies commit #2's Terraform, writing back the serving image — commit #1's. Then the app job's build breaks. Resting state: infrastructure at #2, the service still serving #1, the task definitions still naming #1 — an image that exists, because it is being served. The environment is *stale*, one commit of skew between infrastructure and app, but every image reference resolves and publishing keeps working. The red run tells a human to fix the build; nothing else happened. Without the lookup, the identical failure leaves the publish task definition naming `:latest` — nothing visibly breaks that day, and the damage surfaces at the next publish.
-
-Three edge cases complete the rule:
-
-- If a live service exists but its image cannot be determined, the infrastructure job **refuses to apply** rather than guess — a guess recreates exactly the failure above. (Production's dispatch form takes a `deployed_image` override for this case.)
-- It refuses likewise if Terraform state says CloudFront exists but the three values CloudFront is built from (ALB ARN, endpoint, security group) cannot be read from the live service — applying anyway would tear the distribution down and bring it back on a new domain, changing the admin URL.
-- On a brand-new environment there is no serving image to look up and nothing yet to protect, so the first apply knowingly registers the nonexistent placeholder; the service crash-loops for a few minutes until the app job later in the same run pushes the first real image and deploys it. If the new service's load balancer has not appeared by the end of the run, the CloudFront half simply stays unbuilt, and a later run completes it.
+- If a live service exists but its serving image cannot be read, the job **refuses to apply** rather than guess. (Production's dispatch form takes a `deployed_image` override for exactly this case.)
+- It refuses likewise if Terraform state says CloudFront exists but the live values behind it cannot be read: applying without the ALB ARN or the on.aws endpoint destroys the distribution, and a later run rebuilds it on a new domain, changing the admin URL; applying without the security-group id drops the `:443` ingress rule, and the front door starts answering 504.
+- On a brand-new environment there is no serving image and nothing yet to protect, so the first apply knowingly registers the nonexistent placeholder; the service crash-loops for a few minutes until the app job later in the same run pushes the first real image and deploys it. If the new service's load balancer has not appeared by the end of the run, the CloudFront half simply stays unbuilt, and a later run completes it.
 
 ### Two more rules that hold on every run
 
