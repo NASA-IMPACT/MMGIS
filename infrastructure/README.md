@@ -82,8 +82,8 @@ host/port/user/name ride as plain environment values.
   module-created, repoint the `AWS_DEPLOY_ROLE_ARN` secret at the
   bootstrap-created role **before** applying this root: this apply deletes
   the old role.
-- **Secret values**, set out-of-band (below). Terraform defines the secrets'
-  existence and names only.
+- **Secret values**, set after the apply ([below](#secret-values)). Terraform
+  defines the secrets' existence and names only.
 - **The RDS regional CA bundle**, supplied as `rds_ca_bundle_base64` (below).
 - **No custom domain.** Bare-CloudFront posture: viewers use the default
   `*.cloudfront.net` certificate; the distribution carries no aliases.
@@ -113,139 +113,92 @@ aws s3api put-public-access-block \
 Record the bucket name; init receives it via `-backend-config` flags. Nothing
 is shared between environments — applying one can never touch another's state.
 
-## Apply flow
+## Hand applies (break-glass)
 
-The Express Mode service does not expose its internal ALB ARN or on.aws
-endpoint as Terraform attributes (only `service_arn` and `ingress_paths` are
-exported), and the CloudFront VPC origin needs the ALB ARN. So the front door
-is built in a **second apply**.
+CI is the way this infrastructure changes: merge, and the composed pipeline
+([below](#ci-driven-deploys-the-composed-pipeline)) discovers the live facts,
+applies both phases, and deploys the app in one run. Run Terraform by hand only
+when the pipeline itself is broken — and treat everything applied by hand as
+drift until the same change merges and a CI run converges on it.
 
-This section describes the flow run **by hand**. For an environment wired to
-[CI-driven deploys](#ci-driven-deploys-the-composed-pipeline) the pipeline does
-all of it — both phases, the discovery between them, and the image — on every
-merge; a hand apply is then the break-glass path, not the normal one.
+The environment module refuses to apply without four facts about the live
+environment: the serving image (`deployed_image`) and the Express trio
+(`express_internal_alb_arn`, `express_onaws_endpoint`,
+`express_alb_security_group_id`). Their empty defaults are only legal under
+`greenfield = true`, which is CI's mechanism for first builds — never set it by
+hand against a live environment. The CloudFront distribution additionally
+carries `prevent_destroy`, so a plan that would destroy it fails instead;
+intentional teardown means editing that flag off in a working copy of the
+module's `cloudfront.tf` (never committed).
 
-From `terraform/environments/development/` (production is analogous):
+From `terraform/environments/<environment>/`:
 
-```sh
-cp terraform.tfvars.example terraform.tfvars   # vpc_id, subnets, boundary ARN, CA bundle
+1. **Assume the environment's apply role**, `mmgis-terraform-apply-<env>`
+   (bootstrap root; it carries an operator-assume statement for exactly this),
+   with short-lived credentials.
+2. **Fetch the uncommittable inputs** from the GitHub Environment (repository
+   Settings → Environments → `<env>`). From `IAC_TFVARS`: `vpc_id`,
+   `private_subnet_ids`, `rds_ca_bundle_base64`, `permissions_boundary` — that
+   variable is the authoritative copy; do not reconstruct these from memory or
+   an old tfvars file. It carries those four keys (plus an optional `region`
+   override) and nothing else: never add `greenfield` or the live facts below
+   to it (CI writes the object to an auto-tfvars file, which would override its
+   per-run discovery and disable the module's guards). Also note
+   `IAC_AWS_REGION` and `IAC_TFSTATE_BUCKET`.
+   Write the four values — plus `region = "<IAC_AWS_REGION>"` if the account
+   is not in the default `us-west-2`; the provider reads `var.region`, not
+   your CLI configuration — to an uncommitted `terraform.tfvars` here.
+3. **Init.** The backend commits `key`/`encrypt`/`use_lockfile`; bucket and
+   region are the two Environment values from step 2:
 
-terraform init -backend-config="bucket=<state-bucket>" -backend-config="region=<region>"
-```
+   ```sh
+   terraform init -backend-config="bucket=<IAC_TFSTATE_BUCKET>" -backend-config="region=<IAC_AWS_REGION>"
+   ```
 
-### Phase 1 — everything except CloudFront
+4. **Discover the four live facts** (needs the initialized backend — the first
+   command reads a terraform output). Re-run this before every hand apply —
+   the trio goes stale whenever ECS replaces the service's ALB, and the
+   serving image moves on every deploy:
 
-With `express_internal_alb_arn` / `express_onaws_endpoint` left empty:
+   ```sh
+   SERVICE_ARN=$(terraform output -raw express_service_arn)
 
-```sh
-terraform apply
-```
+   # 1. Newest active configuration -> the serving image (deployed_image) and
+   #    its revision ARN. Old and new configurations are listed side by side
+   #    while a rollout drains, so take the newest by createdAt rather than
+   #    the first entry.
+   # --output json on both calls: a CLI profile defaulting to text/table breaks jq.
+   EGS_JSON=$(aws ecs describe-express-gateway-service --service-arn "$SERVICE_ARN" --output json)
+   printf '%s' "$EGS_JSON" \
+     | jq -r '[.service.activeConfigurations[]] | sort_by(.createdAt) | last.primaryContainer.image'
+   REV_ARN=$(printf '%s' "$EGS_JSON" \
+     | jq -r '[.service.activeConfigurations[]] | sort_by(.createdAt) | last.serviceRevisionArn')
 
-This creates the cluster, Express service (which provisions its own internal
-ALB), task defs, RDS, secrets shells, ECR, asset bucket + OAC, and the IAM
-roles.
+   # 2. That revision's ECS-managed ingress paths -> the endpoint, the ALB ARN,
+   #    and the ALB's security groups. Pick the path that actually carries a
+   #    load balancer; the others have none.
+   aws ecs describe-service-revisions --service-revision-arns "$REV_ARN" --output json \
+     | jq -r '.serviceRevisions[0].ecsManagedResources.ingressPaths[]
+              | select(.loadBalancer.arn != null)
+              | {endpoint, alb: .loadBalancer.arn, sg: .loadBalancer.securityGroupIds[0]}'
+   ```
 
-### Set the secret values out-of-band
+   The endpoint host is also visible via
+   `terraform output express_ingress_paths`. Prefer
+   `.loadBalancer.securityGroupIds` over the sibling
+   `.loadBalancerSecurityGroups[]`, whose entries carry only an `.arn`; if a
+   CLI version omits it, `aws elbv2 describe-load-balancers
+   --load-balancer-arns` has the same id. Strip any scheme from the endpoint —
+   the module wants a bare host. Set all four live facts in `terraform.tfvars`.
+5. **Plan, then apply:**
 
-Terraform created empty secret shells; give them values (nothing here touches
-Terraform state). **Nothing DB-related is hand-set.** The database password
-exists in exactly one place — the RDS-managed master secret — and the
-containers reference that secret's `password` key directly at task start; host,
-port, user, and database name are not secrets and ride as plain environment
-values on both task definitions.
+   ```sh
+   terraform plan
+   terraform apply
+   ```
 
-```sh
-aws secretsmanager put-secret-value --secret-id mmgis/development/session-secret       --secret-string '<random-session-secret>'
-aws secretsmanager put-secret-value --secret-id mmgis/development/superadmin-username   --secret-string '<superadmin-username>'
-aws secretsmanager put-secret-value --secret-id mmgis/development/superadmin-password   --secret-string '<superadmin-password>'
-aws secretsmanager put-secret-value --secret-id mmgis/development/dashboards-password   --secret-string '<dashboards-password>'
-aws secretsmanager put-secret-value --secret-id mmgis/development/mapbox-token          --secret-string '<mapbox-token>'
-```
-
-The Mapbox token is an **external credential**: hand-set once per environment
-and deliberately excluded from CI secret generation (CI can generate the
-session, seed, and dashboards values; it can never invent a Mapbox token). It
-is injected as `MAPBOX_TOKEN` on the admin task only.
-
-The DB master **username must be `postgres`** (`scripts/init-db.js`'s bootstrap
-connection defaults the maintenance DB name to the username, and a fresh RDS
-instance only has the `postgres` database). That is enforced in the module.
-
-Secrets Manager keeps **deleted secret names for 30 days** by default, so a
-destroy/re-apply cycle would collide on all five names. Both environments
-therefore set `secret_recovery_window_days = 0` (immediate deletion) — a
-deleted name frees at once and a rebuild never trips over a ghost. Production
-included: the one nuance it accepts is that the superadmin seed password seeds
-the account at first boot only, so regenerating that secret afterwards desyncs
-it from the real login password (the full note lives in
-`environments/production/main.tf`).
-
-### First image deploy — before CloudFront
-
-A from-scratch phase 1 runs with `greenfield = true` and `deployed_image`
-empty, so the service points at a **placeholder image that does not exist in
-ECR** (CI pushes commit-SHA tags only) and the tasks crash-loop until a real
-image arrives. Push one through the pipeline now:
-
-1. Set the environment's GitHub Actions variables from
-   `terraform output -json workflow_variables` — one call returns all six
-   (region, ECR repo, cluster, service, both task families), keyed by the
-   variable names. The `AWS_DEPLOY_ROLE_ARN` secret comes from the **bootstrap
-   root's** outputs, not from here: the CI deploy role is created there, with
-   GitHub-Environment-scoped trust.
-2. Run `deploy-lean.yml` (manual dispatch) and wait for the rollout to
-   converge — the run summary shows the deployed image.
-
-Both steps are for hand-built environments only. A CI-built environment sets
-none of those variables and dispatches nothing: the composed pipeline reads the
-six names from state at run time and its app phase pushes the first real image
-in the same run as the first apply.
-
-Only then move on: phase 2's inputs are read from the now-healthy service, and
-Publish depends on the task families pointing at a real image.
-
-### Phase 2 — CloudFront front door
-
-Read **three values** from the running service: the internal ALB ARN, the
-on.aws endpoint host, and the ECS-managed ALB's **security-group id**. It takes
-**two calls** — the describe that names the service's active configuration
-carries no load-balancer information at all, and the load balancer only appears
-on the service *revision* that configuration points at:
-
-```sh
-SERVICE_ARN=$(terraform output -raw express_service_arn)
-
-# 1. Newest active configuration -> the serving image and its revision ARN.
-#    Old and new configurations are listed side by side while a rollout
-#    drains, so take the newest by createdAt rather than the first entry.
-REV_ARN=$(aws ecs describe-express-gateway-service --service-arn "$SERVICE_ARN" \
-  | jq -r '[.service.activeConfigurations[]] | sort_by(.createdAt) | last.serviceRevisionArn')
-
-# 2. That revision's ECS-managed ingress paths -> the endpoint, the ALB ARN,
-#    and the ALB's security groups. Pick the path that actually carries a load
-#    balancer; the others have none.
-aws ecs describe-service-revisions --service-revision-arns "$REV_ARN" \
-  | jq -r '.serviceRevisions[0].ecsManagedResources.ingressPaths[]
-           | select(.loadBalancer.arn != null)
-           | {endpoint, alb: .loadBalancer.arn, sg: .loadBalancer.securityGroupIds[0]}'
-```
-
-The endpoint host is also visible via `terraform output express_ingress_paths`.
-Prefer `.loadBalancer.securityGroupIds` over the sibling
-`.loadBalancerSecurityGroups[]`, whose entries carry only an `.arn`; if a CLI
-version omits it, `aws elbv2 describe-load-balancers --load-balancer-arns` has
-the same id. Set the three values in `terraform.tfvars` and re-apply:
-
-```hcl
-express_internal_alb_arn      = "arn:aws:elasticloadbalancing:<REGION>:<ACCOUNT>:loadbalancer/app/ecs-express-gateway-alb-xxxx/xxxx"
-express_onaws_endpoint        = "mm-xxxx.ecs.<REGION>.on.aws"
-express_alb_security_group_id = "sg-xxxxxxxxxxxxxxxxx"
-```
-
-```sh
-terraform apply   # VPC origin, distribution, asset-bucket policy, and the
-                  # :443-from-VPC-CIDR ingress rule on the ECS-managed ALB SG
-```
+Read the plan before approving it: with the four facts current, a hand apply
+should propose only the change you came to make.
 
 The ALB security group itself is created and owned by ECS Express Mode — the
 module only adds the one ingress rule to it, so no hand-executed mutation
@@ -253,6 +206,20 @@ remains anywhere in the flow.
 
 VPC origins **cannot be updated while status=Deploying** and deploy cycles run
 ~6–10 minutes — be patient between changes.
+
+## Secret values
+
+The apply creates the five secrets as empty shells — Terraform defines their
+existence and names only (`modules/mmgis-environment/secrets.tf`); a value in
+the configuration would be a value in the state file. Set each value once:
+
+```sh
+aws secretsmanager put-secret-value --secret-id mmgis/<env>/mapbox-token --secret-string '<mapbox-token>'
+```
+
+The same command sets any of the five slots. Nothing DB-related is ever set
+this way: the database password lives only in the RDS-managed master secret,
+which the task definitions reference directly.
 
 ## Workflow variables
 
@@ -291,9 +258,7 @@ holds nothing that grants CI access to the account.
   case: the first apply of a brand-new environment, where no image is in ECR
   yet (CI pushes commit-SHA tags only) and the tasks crash-loop until the app
   deploy later in the same run supplies one. An apply with `deployed_image`
-  empty is refused unless `greenfield = true` — the placeholder fallback exists
-  only for the first build, where the app phase of the same CI run supplies the
-  real image.
+  empty is refused unless `greenfield = true`.
 - **Express Mode is not task-definition driven.** The service runs from its own
   inline `primary_container`; the deploy workflow rolls it with
   `aws ecs update-express-gateway-service --primary-container`, not
@@ -452,6 +417,9 @@ ECR, and the service crash-loops for a few minutes. This is expected and
 self-healing — the app phase of the *same run* pushes a real image and rolls
 the service, and ECS's launch retry picks it up. The RDS-managed master secret
 appears roughly ten minutes into that first apply. Nothing here needs a human.
+The apply passes the module an explicit `greenfield = true` on these runs —
+Terraform refuses empty live facts without it, so a hand apply can never wander
+into the placeholder-and-no-CloudFront shape by accident.
 
 CloudFront is the one part that may not finish on the first run: it is only
 built once the Express service's ECS-managed ALB exists, so the engine
@@ -473,15 +441,16 @@ check is part of proving a new environment.
 
 ### Rollback and break-glass
 
-**App rollback — re-run the last green composed run** from the Actions UI. Its
-image is already built and tagged with that commit's short SHA in ECR, so the
-re-run re-registers both task-definition families against exactly that image
-and re-rolls the service onto it. No hand-built image, no tag juggling. Those
-two app halves *are* the rollback: a re-run replays the original push event and
-the mode that run decided, so a run that decided `read` re-runs the
-infrastructure engine in `read` mode and applies nothing. Rolling the
-infrastructure back to that commit's configuration is a separate act — a manual
-dispatch on the reverted code, or the revert merge below.
+**App rollback — re-run the last green composed run** from the Actions UI. The
+app engine rebuilds that commit from source and re-pushes the image under the
+same short-SHA tag, then re-registers both task-definition families against it
+and re-rolls the service onto it. Same source is not the same bits: the rebuild
+re-resolves dependencies within their declared version ranges. Those two app
+halves *are* the rollback: a re-run replays the original push event and the
+mode that run decided, so a run that decided `read` re-runs the infrastructure
+engine in `read` mode and applies nothing. Rolling the infrastructure back to
+that commit's configuration is a separate act — a manual dispatch on the
+reverted code, or the revert merge below.
 
 **Infrastructure rollback** is a revert commit merged to `development`: the
 next composed run applies it. Terraform state is versioned in the state bucket,
@@ -494,9 +463,9 @@ carries an operator-assume statement for exactly this) and runs the hand-apply
 flow above. On a live, CI-built environment there is no local `terraform.tfvars`
 to start from — set `deployed_image` **and the three `express_*` phase-2
 values** in tfvars before applying (discover them the same way the engine
-does), or the plan will propose destroying CloudFront and re-registering the
-task families against the placeholder; the interactive plan approval is the
-only backstop. It is an escape hatch and never the mechanism: anything applied
+does — the recipe is in [Hand applies
+(break-glass)](#hand-applies-break-glass)); the module refuses to plan without
+them. It is an escape hatch and never the mechanism: anything applied
 by hand is drift until the same change is committed and a CI run converges on
 it.
 
