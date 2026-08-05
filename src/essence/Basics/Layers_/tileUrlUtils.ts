@@ -266,24 +266,21 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 }
 
 /**
- * Returns true when the layer should be treated as a COG layer:
- * - splitColonType is 'COG' or 'stac-collection', OR
- * - layerObj.cogTransform === true
+ * Returns true when the layer is a COG file:
+ * - splitColonType is 'COG' (explicit URL prefix), OR
+ * - layerObj.cogTransform === true (a plain .tif URL with the single-band
+ *   transformation enabled)
  */
 export function isCogLayer(
     splitColonType: string | undefined,
     layerObj: Record<string, unknown>
 ): boolean {
-    return (
-        splitColonType === 'COG' ||
-        splitColonType === 'stac-collection' ||
-        layerObj.cogTransform === true
-    )
+    return splitColonType === 'COG' || layerObj.cogTransform === true
 }
 
 /**
  * Returns true when the deck.gl raster path should be used:
- * engineType must be 'deckgl', the layer must be a COG layer,
+ * engineType must be 'deckgl', the layer must be a COG file,
  * and cogRendererMode must be 'deckRaster'.
  */
 export function shouldUseDeckRaster(
@@ -294,6 +291,9 @@ export function shouldUseDeckRaster(
     return (
         engineType === 'deckgl' &&
         isCogLayer(splitColonType, layerObj) &&
+        // A STAC mosaic is COG-backed but server-side — many items composed
+        // per tile. The client-side renderer reads exactly one .tif, so a
+        // mosaic (even with cogTransform set) stays on the tile-server path.
         splitColonType !== 'stac-collection' &&
         layerObj.cogRendererMode === 'deckRaster'
     )
