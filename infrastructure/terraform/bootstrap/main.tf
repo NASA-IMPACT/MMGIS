@@ -5,6 +5,12 @@ data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }
 
+# The account's default Secrets Manager key. Resolved here because its ARN
+# carries the (never-committed) account id and its key id is account-specific.
+data "aws_kms_key" "secretsmanager_default" {
+  key_id = "alias/aws/secretsmanager"
+}
+
 locals {
   account_id = data.aws_caller_identity.current.account_id
   region     = var.region

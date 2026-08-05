@@ -202,7 +202,7 @@ resource "aws_iam_role_policy" "terraform_apply" {
       {
         # CreateDBInstance authorizes against BOTH the db and subnet-group
         # ARNs. Creating an instance with a managed master password additionally
-        # needs the secretsmanager and kms grants in the three statements below.
+        # needs the secretsmanager and kms grants in the four statements below.
         Sid    = "RdsLifecycle"
         Effect = "Allow"
         Action = [
@@ -261,6 +261,20 @@ resource "aws_iam_role_policy" "terraform_apply" {
             "kms:GrantIsForAWSResource" = "true"
           }
         }
+      },
+      {
+        # CreateDBInstance with a managed master password also describes the
+        # account's default aws/secretsmanager key, so the caller needs
+        # DescribeKey on it as well — the customer-managed key grants above
+        # alone are refused with KMSKeyNotAccessibleFault. AWS states it in
+        # passing: "The kms:DescribeKey permission is required to access your
+        # customer-managed key for the MasterUserSecretKmsKeyId and to describe
+        # aws/secretsmanager." Its own statement because DescribeKey is all the
+        # default key needs — no encrypt, decrypt or grant reaches it.
+        Sid      = "DescribeDefaultSecretsManagerKey"
+        Effect   = "Allow"
+        Action   = ["kms:DescribeKey"]
+        Resource = data.aws_kms_key.secretsmanager_default.arn
       },
       {
         Sid    = "RdsSubnetGroupLifecycle"
