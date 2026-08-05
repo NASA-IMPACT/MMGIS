@@ -207,23 +207,14 @@ const L_ = {
                         layerObj &&
                         layerObj.cogRendererMode === 'deckRaster'
                     ) {
-                        // Prefer reading the raw COG URL from the existing layer props
-                        // to avoid re-deriving it (Map_.js does prefix-stripping that
-                        // can produce a different result here). Fall back to getUrl only
-                        // if the existing instance or its props are unavailable.
+                        // The existing layer's geotiff prop is the already
+                        // resolved (and time-substituted) file URL; fall back
+                        // to getUrl only if the instance is unavailable.
                         const existing = L_.layers.layer[uuid]
                         const rawCogUrl =
                             (existing && existing.props && existing.props.geotiff) ||
                             L_.getUrl(layerObj.type, layerObj.url, layerObj)
-                        const rebuilt = buildDeckCOGLayer(uuid, {
-                            rawCogUrl,
-                            layerObj,
-                            opacity: L_.layers.opacity[uuid] || 1,
-                        })
-                        L_.layers.layer[uuid] = rebuilt
-                        // addLayer sets the layer by id in the adapter's registry
-                        // then calls _syncLayers() so deck.gl diffs and re-renders.
-                        L_.Map_.engine.addLayer(rebuilt)
+                        L_.rebuildDeckCOGLayer(layerObj, rawCogUrl)
                         return true
                     }
                     // Leaflet fallback — unchanged existing path.
@@ -414,6 +405,30 @@ const L_ = {
             }
             return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
         }
+    },
+    /**
+     * The single build-and-register path for every client-side deck COG
+     * update (colormap/rescale refresh, time reload). Rebuilds the layer
+     * from its current config and swaps it in by id — deck.gl diffs the new
+     * instance against the old one, so cached tiles are kept and only what
+     * updateTriggers name is recomputed.
+     * @param {object} layerObj - Layer config (L_.layers.data entry).
+     * @param {string} rawCogUrl - Bare, time-substituted .tif URL
+     *                             (resolveDeckCOGFileUrl, or the existing
+     *                             layer's geotiff prop).
+     */
+    rebuildDeckCOGLayer: function (layerObj, rawCogUrl) {
+        const uuid = L_.asLayerUUID(layerObj.name)
+        const rebuilt = buildDeckCOGLayer(uuid, {
+            rawCogUrl,
+            layerObj,
+            opacity: L_.layers.opacity[uuid] ?? 1,
+        })
+        L_.layers.layer[uuid] = rebuilt
+        // addLayer registers by id in the adapter's registry then syncs, so
+        // deck.gl diffs and re-renders in place.
+        L_.Map_.engine.addLayer(rebuilt)
+        return rebuilt
     },
     getUrl: function (type, url, layerData) {
         let wasCOG = false
