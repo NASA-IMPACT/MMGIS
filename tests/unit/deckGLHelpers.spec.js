@@ -216,6 +216,41 @@ test.describe('DeckGLHelpers', () => {
             })
             expect(layer.id).toBe('t3d-2')
         })
+
+        // Layer opacity is carried by the deck.gl `opacity` prop on every type,
+        // so setLayerOpacity has a single prop to update after construction.
+        test.each([
+            ['tile', { url: 'https://example.com/{z}/{x}/{y}.png' }],
+            ['vector', { geojson: { type: 'FeatureCollection', features: [] } }],
+            ['vectortile', { url: 'https://example.com/{z}/{x}/{y}.mvt' }],
+            ['scatterplot', { data: [{ position: [0, 0] }] }],
+            ['tile3d', { url: 'https://example.com/tileset.json' }],
+            ['pointcloud', { url: '/data/cloud.las' }],
+        ])('%s layer carries the opacity prop', (type, options) => {
+            const layer = buildDeckLayer(`op-${type}`, { type, opacity: 0.35, ...options })
+            expect(layer.props.opacity).toBe(0.35)
+        })
+
+        test('opacity defaults to 1 when not supplied', () => {
+            const layer = buildDeckLayer('op-default', {
+                type: 'vector',
+                geojson: { type: 'FeatureCollection', features: [] },
+            })
+            expect(layer.props.opacity).toBe(1)
+        })
+
+        test('vector layer opacity is independent of style.opacity', () => {
+            // style.opacity is the configured stroke alpha; layer opacity is a
+            // separate multiplier. Baking one into the other double-applies it.
+            const layer = buildDeckLayer('op-vec-style', {
+                type: 'vector',
+                geojson: { type: 'FeatureCollection', features: [] },
+                opacity: 0.5,
+                style: { color: '#ff0000', opacity: 1 },
+            })
+            expect(layer.props.opacity).toBe(0.5)
+            expect(layer.props.getLineColor).toEqual([255, 0, 0, 255])
+        })
     })
 
     test.describe('hexToRgba', () => {
