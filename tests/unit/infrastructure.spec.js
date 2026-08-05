@@ -34,6 +34,10 @@ function readJson(relative) {
     return JSON.parse(fs.readFileSync(path.join(INFRA, relative), 'utf8'))
 }
 
+const TF_MODULE = path.join(INFRA, 'terraform', 'modules', 'mmgis-environment')
+const readTfModuleFile = (relative) =>
+    fs.readFileSync(path.join(TF_MODULE, relative), 'utf8')
+
 // Every "Resource" value (string or array) in a parsed IAM document.
 function collectResources(node, found = []) {
     if (Array.isArray(node)) {
@@ -329,5 +333,28 @@ test.describe('infrastructure/ JSON recipes', () => {
             (o) => o.Id === assetBehavior.TargetOriginId
         )
         expect(assetOrigin.DomainName).toContain('<ASSET_BUCKET_NAME>')
+    })
+
+    test('module refuses empty live facts unless greenfield is set, and pins CloudFront', () => {
+        // The four live facts (serving image + express trio) default to the
+        // DESTRUCTIVE actions (placeholder image; CloudFront destruction), so
+        // empty is only legal under the explicit greenfield flag. Pin the
+        // validation conditions and the prevent_destroy backstop so a module
+        // edit cannot silently drop either fence.
+        const variablesTf = readTfModuleFile('variables.tf')
+        for (const guarded of [
+            'var.deployed_image != ""',
+            'var.express_internal_alb_arn != ""',
+            'var.express_onaws_endpoint != ""',
+            'var.express_alb_security_group_id != ""',
+        ]) {
+            expect(
+                variablesTf,
+                `validation gates ${guarded} behind var.greenfield`
+            ).toContain(`var.greenfield || ${guarded}`)
+        }
+
+        const cloudfrontTf = readTfModuleFile('cloudfront.tf')
+        expect(cloudfrontTf).toContain('prevent_destroy = true')
     })
 })
