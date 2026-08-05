@@ -311,18 +311,20 @@ trigger calls two shared, reusable engines. There is one implementation of
 a trigger, not a pipeline.
 
 ```
-.github/workflows/deploy-development.yml   trigger — when, and in which mode
-├── .github/workflows/iac-deploy.yml       infrastructure engine (always runs)
-└── .github/workflows/app-deploy.yml       app engine (every merge)
+.github/workflows/deploy-development.yml   trigger — push to `development`
+.github/workflows/deploy-production.yml    trigger — push to `production`, gated
+└── both call, in order:
+    ├── .github/workflows/iac-deploy.yml   infrastructure engine (always runs)
+    └── .github/workflows/app-deploy.yml   app engine (every merge)
 ```
 
-The trigger runs on every push to `development`, and on manual dispatch with an
+A trigger runs on every push to its own branch, and on manual dispatch with an
 optional **plan-only** box. It first decides a *mode* from the pushed diff, then
 calls the engines:
 
 | Mode | When | Infrastructure engine | App engine |
 |---|---|---|---|
-| `apply` | the push touched `infrastructure/terraform/**` or one of the three pipeline files; any dispatch that is not plan-only; any push whose diff is unknowable (new branch, force push) | two-phase converge | runs |
+| `apply` | the push touched `infrastructure/terraform/**` or one of its three pipeline files (the two engines or the trigger itself); any dispatch that is not plan-only; any push whose diff is unknowable (new branch, force push) | two-phase converge | runs |
 | `read` | every other push — the app-only merges, which are most of them | init and read the state outputs; describes nothing, changes nothing | runs |
 | `plan` | plan-only dispatch | plan, published to the run summary | skipped |
 
@@ -332,25 +334,88 @@ no outputs on GitHub, so the app job would receive six empty names on exactly
 the merges that touch no infrastructure. Path-awareness gates the mode, never
 the job.
 
-One concurrency group (`deploy-development`) spans the whole composed run and
-**queues** rather than cancels — an interrupted apply leaves state locked and
-infrastructure half-converged. Neither engine carries a group of its own so
-that this one can cover both. GitHub keeps at most one *pending* run per group
-and supersedes an older pending run, so a middle merge in a rapid burst can be
-dropped; that is safe, because a later push to `development` contains the
-earlier one's commits. What can never happen is two runs converging the same
-environment at once.
+One concurrency group per trigger (`deploy-development`, `deploy-production`)
+spans that trigger's whole composed run and **queues** rather than cancels — an
+interrupted apply leaves state locked and infrastructure half-converged. Neither
+engine carries a group of its own so that this one can cover both. GitHub keeps
+at most one *pending* run per group and supersedes an older pending run, so a
+middle merge in a rapid burst can be dropped; that is safe, because a later push
+to the branch contains the earlier one's commits. On development, which has no
+gate, that means two runs never converge the environment at once. The gated
+production trigger carries a caveat — a run parked at the approval gate is
+outside the group — described in [its own section](#production-the-gated-trigger).
 
 Plan-only is how an environment is reviewed before its first real apply: expect
 an ~80-resource all-creates listing, which is the whole environment being
 proposed rather than a problem.
 
+### Production: the gated trigger
+
+Merging to `production` expresses intent; it does not deploy. The push starts a
+run that **parks** at GitHub's native required-reviewers gate on the
+`production` Environment, with **zero AWS activity behind
+it**. The only job that runs ungated is the mode decider — pure git and pure
+bash, no credentials, no `environment:` key — which also writes the approver's
+notes into the run summary, so the commit being deployed, its expected image
+tag, the run's mode, and the rules below are on the run page at the moment the
+decision is made. A run
+that is rejected, or simply never approved, deploys nothing at all.
+
+The gate lives in the **engines**, not in the trigger: both engine jobs bind
+`environment: production`, and binding the Environment is what asks for
+approval. That is what makes it unbypassable — there is no path through this
+trigger that reaches AWS without first passing it.
+
+**Two approval clicks per run, and that is expected.** Required-reviewer
+approval is per *job*, not per run. The `needs:`-chained app job reaches the
+gate only after the infrastructure job has finished, so a second request
+appears mid-run, minutes after the first. It is deliberately not "fixed" by
+weakening the environment binding or by fronting a single unbound gate job: the
+binding is what makes GitHub mint the environment-form OIDC subject the
+production roles' trust policies accept, and what makes the Environment-scoped
+values resolve. A click is cheaper than either.
+
+**Approve the newest run only.** Successive merges park successive runs, and
+approving an older parked run deploys an older commit over a newer one.
+Auto-cancel cannot be relied on to tidy the rest up — a run waiting at an
+approval gate counts as "waiting", not "in progress" — so stale parked runs
+accumulate outside the concurrency group entirely. Releasing two approvals in
+quick succession therefore leans on the group catching the second run once it
+starts executing, on terraform's state lock as the infrastructure backstop, and
+above all on this rule. That is why the trigger writes it into every run's
+summary rather than delegating it to concurrency settings.
+
+**Image provenance.** Production builds its own image, from the
+production-branch commit, into production's own ECR repository, tagged with
+that commit's short SHA. Images built for development are never promoted across
+environments — not by a workflow, not by hand. Every environment's registry
+holds only images built from that environment's branch.
+
+**Manual dispatch is gated identically**, because the gate is in the engines
+rather than in any one entry point. Plan-only previews the converge without
+applying or deploying anything. The `deployed_image` dispatch input is the
+escape hatch for the infrastructure engine's refusal guard — a live service
+whose serving image cannot be discovered — and nothing more. It pins nothing
+durably: on any run that is not plan-only, the app job builds the dispatched
+commit and re-registers both task-definition families against that fresh image
+minutes later, and a plan-only run applies nothing at all. The URI must point
+at an image in that environment's own ECR registry; another environment's image
+would be cross-environment promotion, which the provenance rule above forbids.
+
+**Dormant until production is stood up.** The `production` branch, its
+Environment (required reviewers plus the deployment-branch policy), and its
+configuration values are operator-created; on a repository where they do not
+exist, the trigger never fires: there is no branch to push to and no
+Environment to dispatch against. The first gated run is the one-time
+greenfield standup of the production environment.
+
 ### Configuration contract
 
-All five values are **GitHub Environment-scoped** (on the `development`
-Environment, not the repository), which is what lets one engine serve every
-environment without suffixed names. Set once, when the GitHub Environment is
-configured, from the bootstrap root's outputs and the account facts.
+All five values are **GitHub Environment-scoped** — each Environment carries
+its own copy of the five, on the Environment rather than the repository — which
+is what lets one engine serve every environment without suffixed names.
+Set once, when each GitHub Environment is configured, from the bootstrap
+root's outputs and the account facts.
 
 | Name | Kind | Where it comes from |
 |---|---|---|
@@ -450,10 +515,13 @@ engine in `read` mode and applies nothing. Rolling the infrastructure back to
 that commit's configuration is a separate act — a manual dispatch on the
 reverted code, or the revert merge below.
 
-**Infrastructure rollback** is a revert commit merged to `development`: the
-next composed run applies it. Terraform state is versioned in the state bucket,
-but rolling state back by hand is not a rollback — it is a way to lose track of
-what exists.
+**Infrastructure rollback** is a revert commit merged to the environment's own
+branch: the next composed run applies it. Terraform state is versioned in the
+state bucket, but rolling state back by hand is not a rollback — it is a way to
+lose track of what exists.
+
+On production every one of these paths — the re-run, the revert merge, the
+manual dispatch — parks at the same approval gate as any other run.
 
 **Break-glass** is for when CI itself is the thing that is broken. An operator
 assumes `mmgis-terraform-apply-<env>` with short-lived credentials (the role
