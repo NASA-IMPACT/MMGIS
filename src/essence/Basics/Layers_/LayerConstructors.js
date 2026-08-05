@@ -165,69 +165,84 @@ L.Tooltip.include({
  */
 export const constructVectorLayer = (
     geojson,
-    layerObj,
+    layerConfig,
     onEachFeatureDefault,
     Map_
 ) => {
-    let col = layerObj.style.color
-    if (layerObj.style.colorProp != null && layerObj.style.colorProp !== '')
-        col = `prop:${layerObj.style.colorProp}`
-
-    let opa = String(layerObj.style.opacity)
-    if (layerObj.style.opacityProp != null && layerObj.style.opacityProp !== '')
-        opa = `prop:${layerObj.style.opacityProp}`
-
-    let wei = String(layerObj.style.weight)
-    if (layerObj.style.weightProp != null && layerObj.style.weightProp !== '')
-        wei = `prop:${layerObj.style.weightProp}`
-
-    let fiC = layerObj.style.fillColor
+    let colorOrProp = layerConfig.style.color
     if (
-        layerObj.style.fillColorProp != null &&
-        layerObj.style.fillColorProp !== ''
+        layerConfig.style.colorProp != null &&
+        layerConfig.style.colorProp !== ''
     )
-        fiC = `prop:${layerObj.style.fillColorProp}`
+        colorOrProp = `prop:${layerConfig.style.colorProp}`
 
-    let fiO = String(layerObj.style.fillOpacity)
+    let opacityOrProp = String(layerConfig.style.opacity)
     if (
-        layerObj.style.fillOpacityProp != null &&
-        layerObj.style.fillOpacityProp !== ''
+        layerConfig.style.opacityProp != null &&
+        layerConfig.style.opacityProp !== ''
     )
-        fiO = `prop:${layerObj.style.fillOpacityProp}`
+        opacityOrProp = `prop:${layerConfig.style.opacityProp}`
 
-    let rad = String(layerObj.style.radius || layerObj.radius)
-    if (rad === 'undefined') rad = '8'
-    if (layerObj.style.radiusProp != null && layerObj.style.radiusProp !== '')
-        rad = `prop:${layerObj.style.radiusProp}`
+    let weightOrProp = String(layerConfig.style.weight)
+    if (
+        layerConfig.style.weightProp != null &&
+        layerConfig.style.weightProp !== ''
+    )
+        weightOrProp = `prop:${layerConfig.style.weightProp}`
+
+    let fillColorOrProp = layerConfig.style.fillColor
+    if (
+        layerConfig.style.fillColorProp != null &&
+        layerConfig.style.fillColorProp !== ''
+    )
+        fillColorOrProp = `prop:${layerConfig.style.fillColorProp}`
+
+    let fillOpacityOrProp = String(layerConfig.style.fillOpacity)
+    if (
+        layerConfig.style.fillOpacityProp != null &&
+        layerConfig.style.fillOpacityProp !== ''
+    )
+        fillOpacityOrProp = `prop:${layerConfig.style.fillOpacityProp}`
+
+    let radiusOrProp = String(layerConfig.style.radius || layerConfig.radius)
+    if (radiusOrProp === 'undefined') radiusOrProp = '8'
+    if (
+        layerConfig.style.radiusProp != null &&
+        layerConfig.style.radiusProp !== ''
+    )
+        radiusOrProp = `prop:${layerConfig.style.radiusProp}`
 
     let leafletLayerObject = {
         style: function (feature, preferredStyle) {
             if (preferredStyle) {
-                col = preferredStyle.color != null ? preferredStyle.color : col
-                opa =
+                colorOrProp =
+                    preferredStyle.color != null
+                        ? preferredStyle.color
+                        : colorOrProp
+                opacityOrProp =
                     preferredStyle.opacity != null
                         ? String(preferredStyle.opacity)
-                        : opa
-                wei =
+                        : opacityOrProp
+                weightOrProp =
                     preferredStyle.weight != null
                         ? String(preferredStyle.weight)
-                        : wei
-                fiC =
+                        : weightOrProp
+                fillColorOrProp =
                     preferredStyle.fillColor != null
                         ? preferredStyle.fillColor
-                        : fiC
-                fiO =
+                        : fillColorOrProp
+                fillOpacityOrProp =
                     preferredStyle.fillOpacity != null
                         ? String(preferredStyle.fillOpacity)
-                        : fiO
-                rad =
+                        : fillOpacityOrProp
+                radiusOrProp =
                     preferredStyle.radius != null
                         ? String(preferredStyle.radius)
-                        : rad
+                        : radiusOrProp
             }
 
             // Check for legend-based property styling (takes priority over configured styles but not over feature.properties.style)
-            const legendData = L_.layers.data[layerObj.name]?._legend
+            const legendData = L_.layers.data[layerConfig.name]?._legend
             if (legendData && Array.isArray(legendData)) {
                 // Group legend entries by property name for gradient interpolation
                 const propertyGroups = {}
@@ -315,7 +330,7 @@ export const constructVectorLayer = (
                                       )
 
                             if (interpolatedFillColor) {
-                                fiC = interpolatedFillColor
+                                fillColorOrProp = interpolatedFillColor
                             }
                         }
 
@@ -331,7 +346,7 @@ export const constructVectorLayer = (
                                       )
 
                             if (interpolatedStrokeColor) {
-                                col = interpolatedStrokeColor
+                                colorOrProp = interpolatedStrokeColor
                             }
                         }
 
@@ -377,13 +392,13 @@ export const constructVectorLayer = (
 
                         if (exactMatch) {
                             if (exactMatch.color) {
-                                fiC = exactMatch.color
+                                fillColorOrProp = exactMatch.color
                             }
                             if (exactMatch.strokecolor) {
-                                col = exactMatch.strokecolor
+                                colorOrProp = exactMatch.strokecolor
                             }
                             if (exactMatch.color && !exactMatch.strokecolor) {
-                                col = exactMatch.color
+                                colorOrProp = exactMatch.color
                             }
                             break // Found styling, stop processing other properties
                         }
@@ -392,63 +407,74 @@ export const constructVectorLayer = (
             }
 
             if (feature.properties.hasOwnProperty('style')) {
-                let className = layerObj.uuid
-                let layerName = layerObj.style.layerName
-                layerObj.style = Object.assign({}, layerObj.style)
-                layerObj.style = {
-                    ...layerObj.style,
+                let className = layerConfig.uuid
+                let layerName = layerConfig.style.layerName
+                layerConfig.style = Object.assign({}, layerConfig.style)
+                layerConfig.style = {
+                    ...layerConfig.style,
                     ...JSON.parse(JSON.stringify(feature.properties.style)),
                 }
 
-                if (className) layerObj.style.className = className
-                if (layerName) layerObj.style.layerName = layerName
+                if (className) layerConfig.style.className = className
+                if (layerName) layerConfig.style.layerName = layerName
             } else {
                 // Priority to prop, prop.color, then style color.
-                var finalCol =
-                    col != null && col.toLowerCase().substring(0, 4) === 'prop'
-                        ? F_.parseColor(feature.properties[col.substring(5)]) ||
-                          '#FFF'
+                var finalColor =
+                    colorOrProp != null &&
+                    colorOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? F_.parseColor(
+                              feature.properties[colorOrProp.substring(5)]
+                          ) || '#FFF'
                         : feature.style && feature.style.stroke != null
                         ? feature.style.stroke
-                        : col
-                var finalOpa =
-                    opa != null && opa.toLowerCase().substring(0, 4) === 'prop'
-                        ? feature.properties[opa.substring(5)] || '1'
+                        : colorOrProp
+                var finalOpacity =
+                    opacityOrProp != null &&
+                    opacityOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? feature.properties[opacityOrProp.substring(5)] || '1'
                         : feature.style && feature.style.opacity != null
                         ? feature.style.opacity
-                        : opa
-                var finalWei =
-                    wei != null && wei.toLowerCase().substring(0, 4) === 'prop'
-                        ? feature.properties[wei.substring(5)] || '1'
+                        : opacityOrProp
+                var finalWeight =
+                    weightOrProp != null &&
+                    weightOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? feature.properties[weightOrProp.substring(5)] || '1'
                         : feature.style && feature.style.weight != null
                         ? feature.style.weight
-                        : wei
-                if (!isNaN(parseInt(finalWei))) finalWei = parseInt(finalWei)
-                var finalFiC =
-                    fiC != null && fiC.toLowerCase().substring(0, 4) === 'prop'
-                        ? F_.parseColor(feature.properties[fiC.substring(5)]) ||
-                          '#000'
+                        : weightOrProp
+                if (!isNaN(parseInt(finalWeight)))
+                    finalWeight = parseInt(finalWeight)
+                var finalFillColor =
+                    fillColorOrProp != null &&
+                    fillColorOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? F_.parseColor(
+                              feature.properties[fillColorOrProp.substring(5)]
+                          ) || '#000'
                         : feature.style && feature.style.fill != null
                         ? feature.style.fill
-                        : fiC
-                var finalFiO =
-                    fiO != null && fiO.toLowerCase().substring(0, 4) === 'prop'
-                        ? feature.properties[fiO.substring(5)] || '1'
+                        : fillColorOrProp
+                var finalFillOpacity =
+                    fillOpacityOrProp != null &&
+                    fillOpacityOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? feature.properties[fillOpacityOrProp.substring(5)] ||
+                          '1'
                         : feature.style && feature.style.fillopacity != null
                         ? feature.style.fillopacity
-                        : fiO
+                        : fillOpacityOrProp
 
-                var finalRad =
-                    rad != null && rad.toLowerCase().substring(0, 4) === 'prop'
-                        ? feature.properties[rad.substring(5)] ||
-                          layerObj.radius ||
+                var finalRadius =
+                    radiusOrProp != null &&
+                    radiusOrProp.toLowerCase().substring(0, 4) === 'prop'
+                        ? feature.properties[radiusOrProp.substring(5)] ||
+                          layerConfig.radius ||
                           '8'
                         : feature.style &&
                           feature.style.radius != null &&
                           feature.style.radius != 'undefined'
                         ? feature.style.radius
-                        : rad
-                if (!isNaN(parseInt(finalRad))) finalRad = parseInt(finalRad)
+                        : radiusOrProp
+                if (!isNaN(parseInt(finalRadius)))
+                    finalRadius = parseInt(finalRadius)
 
                 // Check for radius property if radius=1 (default/prop:radius)
 
@@ -457,40 +483,41 @@ export const constructVectorLayer = (
                         ? ' noPointerEvents'
                         : ''
 
-                layerObj.style.color = finalCol || '#FFF'
-                layerObj.style.opacity = finalOpa === 'undefined' ? 1 : finalOpa
-                layerObj.style.weight =
-                    finalWei === 'undefined' ? '2' : finalWei
-                layerObj.style.fillColor = finalFiC || '#FFF'
-                layerObj.style.fillOpacity =
-                    finalFiO === 'undefined' ? '1' : finalFiO
+                layerConfig.style.color = finalColor || '#FFF'
+                layerConfig.style.opacity =
+                    finalOpacity === 'undefined' ? 1 : finalOpacity
+                layerConfig.style.weight =
+                    finalWeight === 'undefined' ? '2' : finalWeight
+                layerConfig.style.fillColor = finalFillColor || '#FFF'
+                layerConfig.style.fillOpacity =
+                    finalFillOpacity === 'undefined' ? '1' : finalFillOpacity
 
-                layerObj.style.radius = finalRad || 8
+                layerConfig.style.radius = finalRadius || 8
             }
             if (
                 noPointerEventsClass != null &&
-                layerObj.style.className.indexOf(noPointerEventsClass) === -1
+                layerConfig.style.className.indexOf(noPointerEventsClass) === -1
             )
-                layerObj.style.className =
-                    layerObj.style.className + noPointerEventsClass
+                layerConfig.style.className =
+                    layerConfig.style.className + noPointerEventsClass
 
             // Add animation class if animation is enabled
             var animationClass = ''
             if (
-                layerObj.style.animation &&
-                layerObj.style.animation !== 'none'
+                layerConfig.style.animation &&
+                layerConfig.style.animation !== 'none'
             ) {
-                animationClass = ' mmgis-vector-' + layerObj.style.animation
+                animationClass = ' mmgis-vector-' + layerConfig.style.animation
             }
             if (
                 animationClass !== '' &&
-                layerObj.style.className.indexOf(animationClass) === -1
+                layerConfig.style.className.indexOf(animationClass) === -1
             ) {
-                layerObj.style.className =
-                    layerObj.style.className + animationClass
+                layerConfig.style.className =
+                    layerConfig.style.className + animationClass
             }
 
-            layerObj.style.metadata = geojson.metadata || {}
+            layerConfig.style.metadata = geojson.metadata || {}
 
             if (
                 feature.properties?.style?.geologic &&
@@ -503,7 +530,7 @@ export const constructVectorLayer = (
                 const style = feature.properties.style
                 const g = style.geologic
 
-                layerObj.style.fillPattern = LayerGeologic.getFillPattern(
+                layerConfig.style.fillPattern = LayerGeologic.getFillPattern(
                     LayerGeologic.getUrl(
                         g.type,
                         LayerGeologic.getTag(g.tag, g.color)
@@ -520,22 +547,22 @@ export const constructVectorLayer = (
                     Map_.map
                 )
             }
-            return layerObj.style
+            return layerConfig.style
         },
-        onEachFeature: (function (layerObjName) {
+        onEachFeature: (function (layerConfigName) {
             return onEachFeatureDefault
-        })(layerObj.name),
+        })(layerConfig.name),
     }
 
     let hasSublayers = false
 
-    if (layerObj.hasOwnProperty('radius')) {
+    if (layerConfig.hasOwnProperty('radius')) {
         let markerIcon = null
         if (
-            layerObj.hasOwnProperty('variables') &&
-            layerObj.variables.hasOwnProperty('markerIcon')
+            layerConfig.hasOwnProperty('variables') &&
+            layerConfig.variables.hasOwnProperty('markerIcon')
         ) {
-            let markerIconOptions = F_.clone(layerObj.variables.markerIcon)
+            let markerIconOptions = F_.clone(layerConfig.variables.markerIcon)
             if (
                 markerIconOptions.iconUrl &&
                 !F_.isUrlAbsolute(markerIconOptions.iconUrl)
@@ -561,7 +588,7 @@ export const constructVectorLayer = (
             // Bearing Attachment
             let yaw = 0
             const bearingVar = F_.getIn(
-                layerObj,
+                layerConfig,
                 'variables.markerAttachments.bearing'
             )
             if (
@@ -577,7 +604,7 @@ export const constructVectorLayer = (
                         yaw = yaw * (180 / Math.PI)
                     }
                     if (bearingVar.useCustomShape !== true)
-                        layerObj.shape = 'directional-circle'
+                        layerConfig.shape = 'directional-circle'
                 }
 
                 const markerXY = Map_.map.latLngToLayerPoint(latlong)
@@ -599,15 +626,15 @@ export const constructVectorLayer = (
 
             // Use style.shapeProp
             let finalShape =
-                layerObj.style.shapeIcon || layerObj.shape || 'none'
+                layerConfig.style.shapeIcon || layerConfig.shape || 'none'
 
             if (
-                layerObj.style.shapeProp != null &&
-                layerObj.style.shapeProp != ''
+                layerConfig.style.shapeProp != null &&
+                layerConfig.style.shapeProp != ''
             ) {
                 const candidateShape = F_.getIn(
                     feature.properties,
-                    layerObj.style.shapeProp,
+                    layerConfig.style.shapeProp,
                     null
                 )
                 if (candidateShape) finalShape = candidateShape
@@ -630,7 +657,7 @@ export const constructVectorLayer = (
                             pixelBuffer +
                             6
                         )})"fill="${
-                            layerObj.variables?.markerAttachments?.bearing
+                            layerConfig.variables?.markerAttachments?.bearing
                                 ?.color || featureStyle.color
                         }" stroke-width="1"/>`,
                         `<circle cx="12" cy="12" r="${12 - pixelBuffer}"/>`,
@@ -708,22 +735,28 @@ export const constructVectorLayer = (
                     layer = L.circleMarker(
                         latlong,
                         circleMarkerStyle
-                    ).setRadius(layerObj.style.radius || layerObj.radius || 8)
+                    ).setRadius(
+                        layerConfig.style.radius || layerConfig.radius || 8
+                    )
                     break
                 default:
                     svg = [
                         `<div style="color: ${
                             featureStyle.fillColor
                         }; transform: scale(${
-                            ((layerObj.style.radius || layerObj.radius || 8) *
+                            ((layerConfig.style.radius ||
+                                layerConfig.radius ||
+                                8) *
                                 2) /
                             24
                         }) rotate(${
-                            (layerObj.style.shapeRotationOffset != null
-                                ? parseFloat(layerObj.style.shapeRotationOffset)
+                            (layerConfig.style.shapeRotationOffset != null
+                                ? parseFloat(
+                                      layerConfig.style.shapeRotationOffset
+                                  )
                                 : 0) + (yaw || 0)
                         }deg); ${
-                            layerObj.style.weight != 0
+                            layerConfig.style.weight != 0
                                 ? `text-shadow:  
                             1px 1px 0px ${featureStyle.color}, 
                             -1px -1px 0px ${featureStyle.color}, 
@@ -757,18 +790,19 @@ export const constructVectorLayer = (
                 // Determine animation class
                 let animationClass = ''
                 if (
-                    layerObj.style.animation &&
-                    layerObj.style.animation !== 'none'
+                    layerConfig.style.animation &&
+                    layerConfig.style.animation !== 'none'
                 ) {
-                    animationClass = ' mmgis-vector-' + layerObj.style.animation
+                    animationClass =
+                        ' mmgis-vector-' + layerConfig.style.animation
                 }
 
                 layer = L.marker(latlong, {
                     icon: L.divIcon({
                         className: `leafletMarkerShape leafletMarkerShape_${F_.getSafeName(
-                            layerObj.name
+                            layerConfig.name
                         )} ${F_.getSafeName(
-                            layerObj.name
+                            layerConfig.name
                         )} leafletDivIcon${animationClass}`,
                         iconSize: [
                             (featureStyle.radius + pixelBuffer) * 2,
@@ -782,13 +816,13 @@ export const constructVectorLayer = (
 
             if (layer == null) return
 
-            layer.options.layerName = layerObj.name
+            layer.options.layerName = layerConfig.name
             return layer
         }
     }
 
     let layer
-    if (F_.getIn(layerObj, 'variables.hideMainFeature') === true)
+    if (F_.getIn(layerConfig, 'variables.hideMainFeature') === true)
         layer = L.geoJson(F_.getBaseGeoJSON(), leafletLayerObject)
     else layer = L.geoJson(geojson, leafletLayerObject)
 
@@ -797,19 +831,19 @@ export const constructVectorLayer = (
         layer._sourceGeoJSON = F_.getBaseGeoJSON(geojson)
     else layer._sourceGeoJSON = F_.getBaseGeoJSON()
 
-    layer._layerName = layerObj.name
+    layer._layerName = layerConfig.name
 
     Object.keys(layer._layers).forEach((idx) => {
-        let l = layer._layers[idx]
-        const savedUseKeyAsName = l.useKeyAsName
-        const savedOptions = l.options
+        let featureLayer = layer._layers[idx]
+        const savedUseKeyAsName = featureLayer.useKeyAsName
+        const savedOptions = featureLayer.options
 
-        if (l.feature?.properties?.style?.geologic != null) {
-            const geom = l.feature.geometry
-            const style = l.feature?.properties?.style
+        if (featureLayer.feature?.properties?.style?.geologic != null) {
+            const geom = featureLayer.feature.geometry
+            const style = featureLayer.feature?.properties?.style
 
             let made = false
-            switch (l.feature?.properties?.style?.geologic.type) {
+            switch (featureLayer.feature?.properties?.style?.geologic.type) {
                 case 'pattern':
                     // We can augment existing polygons for this so patterns are
                     // implemented above in the style object
@@ -818,7 +852,7 @@ export const constructVectorLayer = (
                 case 'linework':
                     if (geom.type.toLowerCase() === 'linestring') {
                         layer._layers[idx] = LayerGeologic.createLinework(
-                            l.feature,
+                            featureLayer.feature,
                             style
                         )
                         made = true
@@ -840,28 +874,30 @@ export const constructVectorLayer = (
             }
             if (made) {
                 layer._layers[idx].options.layerName = savedOptions.layerName
-                layer._layers[idx].feature = l.feature
+                layer._layers[idx].feature = featureLayer.feature
                 layer._layers[idx].useKeyAsName = savedUseKeyAsName
-                l.feature.style = l.feature.style || {}
-                onEachFeatureDefault(l.feature, layer._layers[idx])
+                featureLayer.feature.style = featureLayer.feature.style || {}
+                onEachFeatureDefault(featureLayer.feature, layer._layers[idx])
                 if (layer._layers[idx]._layers) {
                     Object.keys(layer._layers[idx]._layers).forEach((idx2) => {
                         layer._layers[idx]._layers[idx2].options.layerName =
                             savedOptions.layerName
-                        layer._layers[idx]._layers[idx2].feature = l.feature
+                        layer._layers[idx]._layers[idx2].feature =
+                            featureLayer.feature
                         layer._layers[idx]._layers[idx2].useKeyAsName =
                             savedUseKeyAsName
 
-                        l.feature.style = l.feature.style || {}
+                        featureLayer.feature.style =
+                            featureLayer.feature.style || {}
                         onEachFeatureDefault(
-                            l.feature,
+                            featureLayer.feature,
                             layer._layers[idx]._layers[idx2]
                         )
                     })
                 }
             }
-        } else if (l.feature?.properties?.arrow === true) {
-            const c = l.feature.geometry.coordinates
+        } else if (featureLayer.feature?.properties?.arrow === true) {
+            const c = featureLayer.feature.geometry.coordinates
             const start = new L.LatLng(c[0][1], c[0][0])
             const end = new L.LatLng(c[1][1], c[1][0])
 
@@ -869,8 +905,8 @@ export const constructVectorLayer = (
                 null,
                 start,
                 end,
-                l.feature?.properties?.style,
-                l.feature,
+                featureLayer.feature?.properties?.style,
+                featureLayer.feature,
                 idx,
                 null,
                 true
@@ -886,18 +922,18 @@ export const constructVectorLayer = (
                 layer._layers[idx]._layers[idx2]._isArrow = true
                 layer._layers[idx]._layers[idx2].options.layerName =
                     savedOptions.layerName
-                layer._layers[idx]._layers[idx2].feature = l.feature
+                layer._layers[idx]._layers[idx2].feature = featureLayer.feature
                 layer._layers[idx]._layers[idx2].useKeyAsName =
                     savedUseKeyAsName
-                l.feature.style = l.feature.style || {}
+                featureLayer.feature.style = featureLayer.feature.style || {}
                 onEachFeatureDefault(
-                    l.feature,
+                    featureLayer.feature,
                     layer._layers[idx]._layers[idx2]
                 )
             })
-        } else if (l.feature?.properties?.annotation === true) {
+        } else if (featureLayer.feature?.properties?.annotation === true) {
             layer._layers[idx] = L_.createAnnotation(
-                l.feature,
+                featureLayer.feature,
                 'LayerAnnotation',
                 layer._layers[idx].options.layerName,
                 idx
@@ -909,7 +945,7 @@ export const constructVectorLayer = (
         layer: layer,
         sublayers: constructSublayers(
             geojson,
-            layerObj,
+            layerConfig,
             leafletLayerObject,
             layer
         ),
@@ -918,32 +954,32 @@ export const constructVectorLayer = (
 
 export const constructSublayers = (
     geojson,
-    layerObj,
+    layerConfig,
     leafletLayerObject,
     layer
 ) => {
     // note: sublayer ordering here does denote render order (bottom on top).
     const sublayers = {
         labels: false,
-        pairings: pairings(geojson, layerObj, leafletLayerObject),
+        pairings: pairings(geojson, layerConfig, leafletLayerObject),
         uncertainty_ellipses: uncertaintyEllipses(
             geojson,
-            layerObj,
+            layerConfig,
             leafletLayerObject
         ),
-        image_overlays: imageOverlays(geojson, layerObj, leafletLayerObject),
-        models: models(geojson, layerObj, leafletLayerObject),
+        image_overlays: imageOverlays(geojson, layerConfig, leafletLayerObject),
+        models: models(geojson, layerConfig, leafletLayerObject),
         coordinate_markers: coordinateMarkers(
             geojson,
-            layerObj,
+            layerConfig,
             leafletLayerObject
         ),
-        path_gradient: pathGradient(geojson, layerObj, leafletLayerObject),
+        path_gradient: pathGradient(geojson, layerConfig, leafletLayerObject),
     }
     // We want this to show up first in the list and also want labels for other sublayers too
     sublayers.labels = labels(
         geojson,
-        layerObj,
+        layerConfig,
         leafletLayerObject,
         layer,
         sublayers
@@ -962,9 +998,9 @@ export const constructSublayers = (
 }
 
 // ======= SUBLAYER FUNCTIONS ============
-const labels = (geojson, layerObj, leafletLayerObject, layer, sublayers) => {
+const labels = (geojson, layerConfig, leafletLayerObject, layer, sublayers) => {
     //LABELS
-    const labelsVar = F_.getIn(layerObj, 'variables.layerAttachments.labels')
+    const labelsVar = F_.getIn(layerConfig, 'variables.layerAttachments.labels')
 
     if (
         labelsVar &&
@@ -1032,8 +1068,8 @@ const labels = (geojson, layerObj, leafletLayerObject, layer, sublayers) => {
 
                     if (l.feature?.geometry?.type === 'Point')
                         xOffset +=
-                            (layerObj.style?.radius || 0) +
-                            (layerObj.style?.weight || 0) * 2
+                            (layerConfig.style?.radius || 0) +
+                            (layerConfig.style?.weight || 0) * 2
 
                     customOptions.pointOffset[0] = xOffset
                     if (labelsVar.initialVisibility === true)
@@ -1090,8 +1126,8 @@ const labels = (geojson, layerObj, leafletLayerObject, layer, sublayers) => {
                             let xOffset = 1
                             if (l.feature?.geometry?.type === 'Point')
                                 xOffset +=
-                                    (layerObj.style?.radius || 0) +
-                                    (layerObj.style?.weight || 0) * 2
+                                    (layerConfig.style?.radius || 0) +
+                                    (layerConfig.style?.weight || 0) * 2
 
                             customOptions.pointOffset[0] = xOffset
                             l.bindTooltip(content, customOptions)
@@ -1181,8 +1217,8 @@ const labels = (geojson, layerObj, leafletLayerObject, layer, sublayers) => {
         }
 
         return {
-            on: L_.layers.attachments[layerObj.name]?.labels
-                ? L_.layers.attachments[layerObj.name]?.labels.on
+            on: L_.layers.attachments[layerConfig.name]?.labels
+                ? L_.layers.attachments[layerConfig.name]?.labels.on
                 : labelsVar.initialVisibility != null
                 ? labelsVar.initialVisibility
                 : true,
@@ -1197,10 +1233,10 @@ const labels = (geojson, layerObj, leafletLayerObject, layer, sublayers) => {
 }
 
 // Draws a thin faint line to the center of features from other layers that are connected to this layer
-const pairings = (geojson, layerObj, leafletLayerObject) => {
+const pairings = (geojson, layerConfig, leafletLayerObject) => {
     //PAIRINGS
     const pairingsVar = F_.getIn(
-        layerObj,
+        layerConfig,
         'variables.layerAttachments.pairings'
     )
 
@@ -1227,7 +1263,7 @@ const pairings = (geojson, layerObj, leafletLayerObject) => {
 
         if (layers.length === 0 || pairProp == null) {
             console.warn(
-                `Layer '${layerObj.name}' has badly formed 'pairings' attachments object. Missing 'layers' or 'pairProp'.`
+                `Layer '${layerConfig.name}' has badly formed 'pairings' attachments object. Missing 'layers' or 'pairProp'.`
             )
             return
         }
@@ -1285,7 +1321,7 @@ const pairings = (geojson, layerObj, leafletLayerObject) => {
 
             layer.on = (firstTime, sublayerLayer) => {
                 const layerMain =
-                    L_.layers.attachments?.[layerObj.name]?.pairings?.layer
+                    L_.layers.attachments?.[layerConfig.name]?.pairings?.layer
                 if (layerMain == null) return
 
                 layerMain.off()
@@ -1308,27 +1344,27 @@ const pairings = (geojson, layerObj, leafletLayerObject) => {
                         sublayerLayer == null ||
                         constructedTag !== layerMain.constructedTag
                     ) {
-                        L_.layers.attachments[layerObj.name].pairings.layer =
+                        L_.layers.attachments[layerConfig.name].pairings.layer =
                             getPairingLayer()
                         L_.layers.attachments[
-                            layerObj.name
+                            layerConfig.name
                         ].pairings.layer.constructedTag = constructedTag
                         if (sublayerLayer)
                             sublayerLayer =
-                                L_.layers.attachments[layerObj.name].pairings
+                                L_.layers.attachments[layerConfig.name].pairings
                                     .layer
                     }
                     L_.Map_.map.addLayer(layerMain)
                     layerMain.setZIndex(
                         L_._layersOrdered.length +
                             1 -
-                            L_._layersOrdered.indexOf(layerObj.name)
+                            L_._layersOrdered.indexOf(layerConfig.name)
                     )
                 }
             }
             layer.off = () => {
                 const layerMain =
-                    L_.layers.attachments?.[layerObj.name]?.pairings?.layer
+                    L_.layers.attachments?.[layerConfig.name]?.pairings?.layer
                 if (layerMain == null) return
 
                 L_.Map_.rmNotNull(layerMain)
@@ -1339,7 +1375,7 @@ const pairings = (geojson, layerObj, leafletLayerObject) => {
         // Doesn't matter if Map isn't attached to Layers for the first time
         if (L_.Map_) {
             L_.Map_.rmNotNull(
-                L_.layers.attachments?.[layerObj.name]?.pairings?.layer
+                L_.layers.attachments?.[layerConfig.name]?.pairings?.layer
             )
         }
         const layer = getPairingLayer(true)
@@ -1355,8 +1391,8 @@ const pairings = (geojson, layerObj, leafletLayerObject) => {
         }
 
         return {
-            on: L_.layers.attachments[layerObj.name]?.pairings
-                ? L_.layers.attachments[layerObj.name]?.pairings.on
+            on: L_.layers.attachments[layerConfig.name]?.pairings
+                ? L_.layers.attachments[layerConfig.name]?.pairings.on
                 : pairingsVar.initialVisibility != null
                 ? pairingsVar.initialVisibility
                 : true,
@@ -1377,10 +1413,10 @@ const pairings = (geojson, layerObj, leafletLayerObject) => {
     }
 }
 
-const uncertaintyEllipses = (geojson, layerObj, leafletLayerObject) => {
+const uncertaintyEllipses = (geojson, layerConfig, leafletLayerObject) => {
     //UNCERTAINTY
     const uncertaintyVar = F_.getIn(
-        layerObj,
+        layerConfig,
         'variables.markerAttachments.uncertainty'
     )
     let uncertaintyStyle
@@ -1397,11 +1433,11 @@ const uncertaintyEllipses = (geojson, layerObj, leafletLayerObject) => {
             uncertaintyVar.initialOpacity != null
                 ? uncertaintyVar.initialOpacity
                 : 1
-        if (L_.layers.attachments[L_.asLayerUUID(layerObj.name)]) {
+        if (L_.layers.attachments[L_.asLayerUUID(layerConfig.name)]) {
             existingOn =
-                L_.layers.attachments[L_.asLayerUUID(layerObj.name)]
+                L_.layers.attachments[L_.asLayerUUID(layerConfig.name)]
                     .uncertainty_ellipses.on
-            existingOpacity = L_.layers.opacity[layerObj.name]
+            existingOpacity = L_.layers.opacity[layerConfig.name]
         }
 
         const isOn =
@@ -1461,7 +1497,7 @@ const uncertaintyEllipses = (geojson, layerObj, leafletLayerObject) => {
         })
 
         curtainUncertaintyOptions = {
-            name: `markerAttachmentUncertainty_${layerObj.name}Curtain`,
+            name: `markerAttachmentUncertainty_${layerConfig.name}Curtain`,
             on: isOn,
             opacity: uncertaintyVar.opacity3d || 0.5,
             imageColor:
@@ -1473,7 +1509,7 @@ const uncertaintyEllipses = (geojson, layerObj, leafletLayerObject) => {
             },
         }
         clampedUncertaintyOptions = {
-            name: `markerAttachmentUncertainty_${layerObj.name}Clamped`,
+            name: `markerAttachmentUncertainty_${layerConfig.name}Clamped`,
             on: isOn,
             order: -9999,
             opacity: existingOpacity,
@@ -1554,13 +1590,13 @@ const uncertaintyEllipses = (geojson, layerObj, leafletLayerObject) => {
     } else return false
 }
 
-const imageOverlays = (geojson, layerObj, leafletLayerObject) => {
+const imageOverlays = (geojson, layerConfig, leafletLayerObject) => {
     // IMAGE
-    const imageVar = F_.getIn(layerObj, 'variables.markerAttachments.image')
+    const imageVar = F_.getIn(layerConfig, 'variables.markerAttachments.image')
 
     if (imageVar && (imageVar.enabled === true || imageVar.enabled == null)) {
         const imageShow = F_.getIn(
-            layerObj,
+            layerConfig,
             'variables.markerAttachments.image.show',
             'click'
         )
@@ -1569,12 +1605,12 @@ const imageOverlays = (geojson, layerObj, leafletLayerObject) => {
         let existingOn = null
         let existingOpacity =
             imageVar.initialOpacity != null ? imageVar.initialOpacity : 1
-        if (L_.layers.attachments[L_.asLayerUUID(layerObj.name)]) {
+        if (L_.layers.attachments[L_.asLayerUUID(layerConfig.name)]) {
             existingOn =
-                L_.layers.attachments[L_.asLayerUUID(layerObj.name)]
+                L_.layers.attachments[L_.asLayerUUID(layerConfig.name)]
                     .image_overlays.on
             existingOpacity =
-                L_.layers.attachments[L_.asLayerUUID(layerObj.name)]
+                L_.layers.attachments[L_.asLayerUUID(layerConfig.name)]
                     .image_overlays.opacity
         }
 
@@ -1589,7 +1625,7 @@ const imageOverlays = (geojson, layerObj, leafletLayerObject) => {
             leafletLayerObjectImageOverlay = {
                 pointToLayer: (feature, latlong) => {
                     const path = F_.getIn(
-                        layerObj,
+                        layerConfig,
                         'variables.markerAttachments.image.path',
                         'public/images/rovers/PerseveranceTopDown.png'
                     )
@@ -1597,39 +1633,39 @@ const imageOverlays = (geojson, layerObj, leafletLayerObject) => {
                         image: F_.getIn(
                             feature.properties,
                             F_.getIn(
-                                layerObj,
+                                layerConfig,
                                 'variables.markerAttachments.image.pathProp',
                                 path
                             ),
                             path
                         ),
                         widthMeters: F_.getIn(
-                            layerObj,
+                            layerConfig,
                             'variables.markerAttachments.image.widthMeters',
                             2.6924
                         ),
                         widthPixels: F_.getIn(
-                            layerObj,
+                            layerConfig,
                             'variables.markerAttachments.image.widthPixels',
                             420
                         ),
                         heightPixels: F_.getIn(
-                            layerObj,
+                            layerConfig,
                             'variables.markerAttachments.image.heightPixels',
                             600
                         ),
                         angleProp: F_.getIn(
-                            layerObj,
+                            layerConfig,
                             'variables.markerAttachments.image.angleProp',
                             'yaw_rad'
                         ),
                         angleUnit: F_.getIn(
-                            layerObj,
+                            layerConfig,
                             'variables.markerAttachments.image.angleUnit',
                             'rad'
                         ),
                         show: F_.getIn(
-                            layerObj,
+                            layerConfig,
                             'variables.markerAttachments.image.show',
                             'click'
                         ),
@@ -1705,8 +1741,8 @@ const imageOverlays = (geojson, layerObj, leafletLayerObject) => {
                         L.imageTransform(imageSettings.image, anchors, {
                             opacity: existingOpacity,
                             clip: anchors,
-                            id: `${layerObj.name}_${imageSettings.image}`,
-                            layerName: layerObj.name,
+                            id: `${layerConfig.name}_${imageSettings.image}`,
+                            layerName: layerConfig.name,
                         }),
                     ])
                 },
@@ -1724,9 +1760,9 @@ const imageOverlays = (geojson, layerObj, leafletLayerObject) => {
     } else return false
 }
 
-const models = (geojson, layerObj, leafletLayerObject) => {
+const models = (geojson, layerConfig, leafletLayerObject) => {
     // MODEL
-    const modelVar = F_.getIn(layerObj, 'variables.markerAttachments.model')
+    const modelVar = F_.getIn(layerConfig, 'variables.markerAttachments.model')
 
     if (modelVar && (modelVar.enabled === true || modelVar.enabled == null)) {
         const modelShow = F_.getIn(modelVar, 'show', 'click')
@@ -1867,7 +1903,7 @@ const models = (geojson, layerObj, leafletLayerObject) => {
             })
 
             modelOptions = {
-                name: `markerAttachmentModel_${layerObj.name}`,
+                name: `markerAttachmentModel_${layerConfig.name}`,
                 order: 99999,
                 on: true,
                 path: modelPaths,
@@ -1895,10 +1931,10 @@ const models = (geojson, layerObj, leafletLayerObject) => {
     } else return false
 }
 
-const coordinateMarkers = (geojson, layerObj, leafletLayerObject) => {
+const coordinateMarkers = (geojson, layerConfig, leafletLayerObject) => {
     // COORDINATE MARKERS
     const coordMarkerVar = F_.getIn(
-        layerObj,
+        layerConfig,
         'variables.coordinateAttachments.marker'
     )
 
@@ -1954,11 +1990,11 @@ const coordinateMarkers = (geojson, layerObj, leafletLayerObject) => {
     } else return false
 }
 
-const pathGradient = (geojson, layerObj, leafletLayerObject) => {
-    function getLayer(geojson, layerObj, overrideColorWithProp) {
+const pathGradient = (geojson, layerConfig, leafletLayerObject) => {
+    function getLayer(geojson, layerConfig, overrideColorWithProp) {
         // PATH GRADIENT
         const pathGradientVar = F_.getIn(
-            layerObj,
+            layerConfig,
             'variables.pathAttachments.gradient'
         )
         if (
@@ -2045,10 +2081,11 @@ const pathGradient = (geojson, layerObj, leafletLayerObject) => {
                         feature.geometry.coordinates,
                         (array, _path) => {
                             // Find breaks in the coordinate array to find sepearate features
-                            const splitPath = _path.split('.')
+                            const pathSegments = _path.split('.')
                             let parentIndex = null
-                            if (splitPath.length >= 2) {
-                                parentIndex = splitPath[splitPath.length - 2]
+                            if (pathSegments.length >= 2) {
+                                parentIndex =
+                                    pathSegments[pathSegments.length - 2]
                                 if (
                                     prevParentIndex != null &&
                                     parentIndex != prevParentIndex
@@ -2132,16 +2169,16 @@ const pathGradient = (geojson, layerObj, leafletLayerObject) => {
                     prop
                 )
             }
-            layer.layerObj = layerObj
+            layer.layerObj = layerConfig
 
             return layer
         } else return false
     }
 
-    const layer = getLayer(geojson, layerObj)
+    const layer = getLayer(geojson, layerConfig)
     if (layer) {
         const pathGradientVar = F_.getIn(
-            layerObj,
+            layerConfig,
             'variables.pathAttachments.gradient'
         )
 

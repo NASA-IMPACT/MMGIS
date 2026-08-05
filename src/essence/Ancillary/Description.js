@@ -854,14 +854,12 @@ const Description = {
         })
     },
     _featureNavTimeUpdate(layerName, feature, bounds, cb) {
-        const f = feature
-
-        const layerData = Description.L_.layers.data[layerName]
+        const layerConfig = Description.L_.layers.data[layerName]
 
         // Make sure feature geometry is within screen bounds,
         // If not, we pan to is regardless of the checkbox
-        if (!booleanIntersects(bounds, f)) {
-            const bboxf = bbox(f)
+        if (!booleanIntersects(bounds, feature)) {
+            const bboxf = bbox(feature)
             const southWest = new L.LatLng(bboxf[1], bboxf[0])
             const northEast = new L.LatLng(bboxf[3], bboxf[2])
             Description.Map_.map.fitBounds(
@@ -872,11 +870,11 @@ const Description = {
         // Next adjust time
         let startTime
         let endTime
-        if (layerData.time.startProp) {
-            startTime = F_.getIn(f.properties, layerData.time.startProp)
+        if (layerConfig.time.startProp) {
+            startTime = F_.getIn(feature.properties, layerConfig.time.startProp)
         }
-        if (layerData.time.endProp) {
-            endTime = F_.getIn(f.properties, layerData.time.endProp)
+        if (layerConfig.time.endProp) {
+            endTime = F_.getIn(feature.properties, layerConfig.time.endProp)
         }
         const currentStart = new Date(TimeControl.getStartTime()).getTime()
         const currentEnd = new Date(TimeControl.getEndTime()).getTime()
@@ -913,16 +911,16 @@ const Description = {
                     display: 'block',
                 })
             }
-            cb(f)
+            cb(feature)
             return
         })
 
         // Ignore the next dynamicExtent move thresholds
         if (
-            layerData.variables?.dynamicExtent === true &&
-            layerData.variables?.dynamicExtentMoveThreshold != null
+            layerConfig.variables?.dynamicExtent === true &&
+            layerConfig.variables?.dynamicExtentMoveThreshold != null
         )
-            layerData._ignoreDynamicExtentMoveThreshold = true
+            layerConfig._ignoreDynamicExtentMoveThreshold = true
         // Disable active feature so that the layer reload doesn't reselect it
         Description.L_.setActiveFeature(null)
         TimeControl.setTime(nextStart, nextEnd)
@@ -940,22 +938,22 @@ const Description = {
 
         let infos = []
 
-        for (let layer in this.L_.layers.data) {
-            let l = this.L_.layers.data[layer]
+        for (let layerName in this.L_.layers.data) {
+            let layerConfig = this.L_.layers.data[layerName]
             if (
-                this.L_.layers.on[layer] === true &&
-                this.L_.layers.layer[layer] &&
-                l.hasOwnProperty('variables') &&
-                l.variables.hasOwnProperty('info') &&
-                l.variables.info.hasOwnProperty('length')
+                this.L_.layers.on[layerName] === true &&
+                this.L_.layers.layer[layerName] &&
+                layerConfig.hasOwnProperty('variables') &&
+                layerConfig.variables.hasOwnProperty('info') &&
+                layerConfig.variables.info.hasOwnProperty('length')
             ) {
-                let layers = this.L_.layers.layer[layer]._layers
+                let layers = this.L_.layers.layer[layerName]._layers
 
                 if (
                     Object.keys(layers).length === 0 &&
-                    this.L_.layers.data[layer].variables.dynamicExtent
+                    this.L_.layers.data[layerName].variables.dynamicExtent
                 ) {
-                    let geodatasetName = this.L_.layers.data[layer].url
+                    let geodatasetName = this.L_.layers.data[layerName].url
                     if (
                         skipRequery !== true &&
                         geodatasetName.indexOf('geodatasets:') === 0
@@ -985,11 +983,11 @@ const Description = {
                 }
                 let newInfo = ''
 
-                for (let i = 0; i < l.variables.info.length; i++) {
+                for (let i = 0; i < layerConfig.variables.info.length; i++) {
                     let which = 0
                     which =
-                        l.variables.info[i].which != null &&
-                        !isNaN(l.variables.info[i].which)
+                        layerConfig.variables.info[i].which != null &&
+                        !isNaN(layerConfig.variables.info[i].which)
                             ? Math.max(
                                   Math.min(
                                       which,
@@ -1006,7 +1004,7 @@ const Description = {
                     }
 
                     let infoText = F_.bracketReplace(
-                        l.variables.info[i].value,
+                        layerConfig.variables.info[i].value,
                         feature.properties
                     )
                     let lat = !isNaN(feature.geometry.coordinates[1])
@@ -1024,16 +1022,16 @@ const Description = {
                         '" tabindex="' +
                         (301 + i) +
                         '">'
-                    if (l.variables.info[i].icon)
+                    if (layerConfig.variables.info[i].icon)
                         newInfo +=
                             "<i class='mdi mdi-" +
-                            l.variables.info[i].icon +
+                            layerConfig.variables.info[i].icon +
                             " mdi-18px'></i>"
                     newInfo += '<div>' + infoText + '</div></div>'
 
                     // Go initially
                     if (Description._infoAlreadyGone == false) {
-                        if (l.variables.info[i].go == true) {
+                        if (layerConfig.variables.info[i].go == true) {
                             if (lat != null && lng != null) {
                                 Description.Map_.map.setView(
                                     [lat, lng],
@@ -1107,21 +1105,23 @@ const Description = {
                 this.L_.layers.data[activeLayer.options.layerName] &&
                 this.L_.layers.data[activeLayer.options.layerName].variables
             ) {
-                let v =
+                let layerVariables =
                     this.L_.layers.data[activeLayer.options.layerName].variables
 
-                if (v.links) {
-                    for (let i = 0; i < v.links.length; i++) {
+                if (layerVariables.links) {
+                    for (let i = 0; i < layerVariables.links.length; i++) {
                         const link = F_.bracketReplace(
-                            v.links[i].link,
+                            layerVariables.links[i].link,
                             activeLayer.feature.properties,
-                            v.links[i].replace
+                            layerVariables.links[i].replace
                         )
                         if (link != null && link != '')
                             links.push({
-                                name: `<span style='display: flex; justify-content: space-between;'>${v.links[i].name}<i class='mdi mdi-open-in-new mdi-14px' style='margin-left: 4px; margin-top: 1px;'></i></span>`,
+                                name: `<span style='display: flex; justify-content: space-between;'>${layerVariables.links[i].name}<i class='mdi mdi-open-in-new mdi-14px' style='margin-left: 4px; margin-top: 1px;'></i></span>`,
                                 link: link,
-                                target: F_.cleanString(v.links[i].name),
+                                target: F_.cleanString(
+                                    layerVariables.links[i].name
+                                ),
                             })
                     }
                 }

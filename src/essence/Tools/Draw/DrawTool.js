@@ -757,39 +757,50 @@ var DrawTool = {
         this.dynamicExtent.lastRequestedLocation = {}
         this.dynamicExtent.isLoading = {}
 
-        for (var l in L_.layers.layer) {
-            var s = l.split('_')
-            var onId = s[1] != 'master' ? parseInt(s[1]) : s[1]
+        for (var layerName in L_.layers.layer) {
+            var layerNameParts = layerName.split('_')
+            var onId =
+                layerNameParts[1] != 'master'
+                    ? parseInt(layerNameParts[1])
+                    : layerNameParts[1]
 
-            if (s[0] == 'DrawTool' && DrawTool.filesOn.indexOf(onId) != -1) {
-                for (var i = 0; i < L_.layers.layer[l].length; i++) {
-                    var f = L_.layers.layer[l][i]
+            if (
+                layerNameParts[0] == 'DrawTool' &&
+                DrawTool.filesOn.indexOf(onId) != -1
+            ) {
+                for (var i = 0; i < L_.layers.layer[layerName].length; i++) {
+                    var drawnLayer = L_.layers.layer[layerName][i]
 
-                    if (!f) continue
+                    if (!drawnLayer) continue
 
                     if (
-                        !f.hasOwnProperty('feature') &&
-                        f.hasOwnProperty('_layers')
+                        !drawnLayer.hasOwnProperty('feature') &&
+                        drawnLayer.hasOwnProperty('_layers')
                     ) {
                         // If it's a non point layer
-                        f = f._layers[Object.keys(f._layers)[0]]
+                        drawnLayer =
+                            drawnLayer._layers[
+                                Object.keys(drawnLayer._layers)[0]
+                            ]
                     }
 
                     // Skip if feature still doesn't exist after drill-down
-                    if (!f || !f.feature) continue
+                    if (!drawnLayer || !drawnLayer.feature) continue
 
-                    var properties = f.feature.properties
+                    var properties = drawnLayer.feature.properties
 
-                    if (f.hasOwnProperty('_layers')) f = f._layers
-                    else f = { layer: f }
+                    let featureLayers
+                    if (drawnLayer.hasOwnProperty('_layers'))
+                        featureLayers = drawnLayer._layers
+                    else featureLayers = { layer: drawnLayer }
 
-                    for (let elayer in f) {
-                        let e = f[elayer]
+                    for (let featureLayerId in featureLayers) {
+                        let featureLayer = featureLayers[featureLayerId]
 
-                        e.off('click')
-                        e.on(
+                        featureLayer.off('click')
+                        featureLayer.on(
                             'click',
-                            (function (l) {
+                            (function (layerName) {
                                 return function (d) {
                                     if (
                                         ToolController_.activeTool &&
@@ -805,9 +816,13 @@ var DrawTool = {
                                             if (!_l.startsWith('DrawTool_'))
                                                 continue
 
-                                            for (var x in L_.layers.layer[l]) {
+                                            for (var x in L_.layers.layer[
+                                                layerName
+                                            ]) {
                                                 var childLayer =
-                                                    L_.layers.layer[l][x]
+                                                    L_.layers.layer[layerName][
+                                                        x
+                                                    ]
                                                 if ('hasLayer' in childLayer) {
                                                     if (
                                                         childLayer.hasOwnProperty(
@@ -844,7 +859,7 @@ var DrawTool = {
                                         Map_,
                                         layer.feature,
                                         layer,
-                                        l,
+                                        layerName,
                                         null,
                                         d
                                     )
@@ -858,13 +873,13 @@ var DrawTool = {
                                     )
                                     Viewer_.highlight(layer)
                                 }
-                            })(l)
+                            })(layerName)
                         )
                         //Add a mouseover event to the layer
-                        e.off('mouseover')
-                        e.on(
+                        featureLayer.off('mouseover')
+                        featureLayer.on(
                             'mouseover',
-                            (function (l) {
+                            (function (layerName) {
                                 return function (d) {
                                     let name
                                     // If the DrawTool layer that is hovered is an arrow, the parent arrow layer knows the name
@@ -874,9 +889,13 @@ var DrawTool = {
                                                 continue
                                             }
 
-                                            for (var x in L_.layers.layer[l]) {
+                                            for (var x in L_.layers.layer[
+                                                layerName
+                                            ]) {
                                                 var layer =
-                                                    L_.layers.layer[l][x]
+                                                    L_.layers.layer[layerName][
+                                                        x
+                                                    ]
                                                 if ('hasLayer' in layer) {
                                                     if (
                                                         layer.hasOwnProperty(
@@ -905,11 +924,11 @@ var DrawTool = {
                                         false
                                     )
                                 }
-                            })(l)
+                            })(layerName)
                         )
                         //Add a mouseout event
-                        e.off('mouseout')
-                        e.on('mouseout', function () {
+                        featureLayer.off('mouseout')
+                        featureLayer.on('mouseout', function () {
                             //Make it turn off CursorInfo
                             CursorInfo.hide()
                         })
@@ -1612,68 +1631,77 @@ var DrawTool = {
                     if (endField == null && t.isEnd === true) endField = t.field
                 })
             }
-            L_.layers.layer[`DrawTool_${fileId}`].forEach((l, index) => {
-                if (l == null) return
-                if (l.feature == null) {
-                    if (l._layers) {
-                        Object.keys(l._layers).forEach((l2) => {
-                            l2 = l._layers[l2]
-                            if (l2.feature) {
-                                const isVisible =
-                                    DrawTool._isFeatureTemporallyVisible(
-                                        l2.feature,
-                                        startField,
-                                        endField
-                                    )
+            L_.layers.layer[`DrawTool_${fileId}`].forEach((drawnLayer, index) => {
+                if (drawnLayer == null) return
+                if (drawnLayer.feature == null) {
+                    if (drawnLayer._layers) {
+                        Object.keys(drawnLayer._layers).forEach(
+                            (featureLayerId) => {
+                                const featureLayer =
+                                    drawnLayer._layers[featureLayerId]
+                                if (featureLayer.feature) {
+                                    const isVisible =
+                                        DrawTool._isFeatureTemporallyVisible(
+                                            featureLayer.feature,
+                                            startField,
+                                            endField
+                                        )
 
-                                if (l2.savedOptions == null)
-                                    l2.savedOptions = {
-                                        opacity: l2.options.opacity,
-                                        fillOpacity: l2.options.fillOpacity,
+                                    if (featureLayer.savedOptions == null)
+                                        featureLayer.savedOptions = {
+                                            opacity: featureLayer.options
+                                                .opacity,
+                                            fillOpacity:
+                                                featureLayer.options.fillOpacity,
+                                        }
+
+                                    featureLayer.temporallyHidden = !isVisible
+                                    if (featureLayer.temporallyHidden)
+                                        $(
+                                            `#drawToolShapeLiItem_DrawTool_${fileId}_${index}`
+                                        ).addClass('temporallyHidden')
+                                    else
+                                        $(
+                                            `#drawToolShapeLiItem_DrawTool_${fileId}_${index}`
+                                        ).removeClass('temporallyHidden')
+                                    if (featureLayer.temporallyHidden) {
+                                        featureLayer.setStyle({
+                                            opacity: 0,
+                                            fillOpacity: 0,
+                                        })
+                                        if (featureLayer._path?.style)
+                                            featureLayer._path.style.pointerEvents =
+                                                'none'
+                                    } else if (featureLayer.savedOptions) {
+                                        featureLayer.setStyle({
+                                            opacity: featureLayer.savedOptions
+                                                .opacity,
+                                            fillOpacity:
+                                                featureLayer.savedOptions
+                                                    .fillOpacity,
+                                        })
+                                        if (featureLayer._path?.style)
+                                            featureLayer._path.style.pointerEvents =
+                                                'all'
                                     }
-
-                                l2.temporallyHidden = !isVisible
-                                if (l2.temporallyHidden)
-                                    $(
-                                        `#drawToolShapeLiItem_DrawTool_${fileId}_${index}`
-                                    ).addClass('temporallyHidden')
-                                else
-                                    $(
-                                        `#drawToolShapeLiItem_DrawTool_${fileId}_${index}`
-                                    ).removeClass('temporallyHidden')
-                                if (l2.temporallyHidden) {
-                                    l2.setStyle({
-                                        opacity: 0,
-                                        fillOpacity: 0,
-                                    })
-                                    if (l2._path?.style)
-                                        l2._path.style.pointerEvents = 'none'
-                                } else if (l2.savedOptions) {
-                                    l2.setStyle({
-                                        opacity: l2.savedOptions.opacity,
-                                        fillOpacity:
-                                            l2.savedOptions.fillOpacity,
-                                    })
-                                    if (l2._path?.style)
-                                        l2._path.style.pointerEvents = 'all'
                                 }
                             }
-                        })
+                        )
                     }
                 } else {
                     const isVisible = DrawTool._isFeatureTemporallyVisible(
-                        l.feature,
+                        drawnLayer.feature,
                         startField,
                         endField
                     )
-                    if (l.savedOptions == null)
-                        l.savedOptions = {
-                            opacity: l.options.opacity,
-                            fillOpacity: l.options.fillOpacity,
+                    if (drawnLayer.savedOptions == null)
+                        drawnLayer.savedOptions = {
+                            opacity: drawnLayer.options.opacity,
+                            fillOpacity: drawnLayer.options.fillOpacity,
                         }
 
-                    l.temporallyHidden = !isVisible
-                    if (l.temporallyHidden)
+                    drawnLayer.temporallyHidden = !isVisible
+                    if (drawnLayer.temporallyHidden)
                         $(
                             `#drawToolShapeLiItem_DrawTool_${fileId}_${index}`
                         ).addClass('temporallyHidden')
@@ -1681,21 +1709,22 @@ var DrawTool = {
                         $(
                             `#drawToolShapeLiItem_DrawTool_${fileId}_${index}`
                         ).removeClass('temporallyHidden')
-                    if (l.setStyle) {
-                        if (l.temporallyHidden) {
-                            l.setStyle({
+                    if (drawnLayer.setStyle) {
+                        if (drawnLayer.temporallyHidden) {
+                            drawnLayer.setStyle({
                                 opacity: 0,
                                 fillOpacity: 0,
                             })
-                            if (l._path?.style)
-                                l._path.style.pointerEvents = 'none'
-                        } else if (l.savedOptions) {
-                            l.setStyle({
-                                opacity: l.savedOptions.opacity,
-                                fillOpacity: l.savedOptions.fillOpacity,
+                            if (drawnLayer._path?.style)
+                                drawnLayer._path.style.pointerEvents = 'none'
+                        } else if (drawnLayer.savedOptions) {
+                            drawnLayer.setStyle({
+                                opacity: drawnLayer.savedOptions.opacity,
+                                fillOpacity:
+                                    drawnLayer.savedOptions.fillOpacity,
                             })
-                            if (l._path?.style)
-                                l._path.style.pointerEvents = 'all'
+                            if (drawnLayer._path?.style)
+                                drawnLayer._path.style.pointerEvents = 'all'
                         }
                     }
                 }

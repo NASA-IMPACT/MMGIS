@@ -65,7 +65,7 @@ let ViewshedTool_Manager = {
             this.updateDesiredTiles(viewshedId)
             this.refreshData(viewshedId)
             this.locateSource(viewshedId)
-            this.queryDesiredTiles(viewshedId, progcb, function (dv) {
+            this.queryDesiredTiles(viewshedId, progcb, function (viewshedData) {
                 ViewshedTool_Manager.interpolateSeams(viewshedId)
                 ViewshedTool_Manager.finishUp(viewshedId)
                 ViewshedTool_Manager.data[viewshedId].result =
@@ -73,7 +73,7 @@ let ViewshedTool_Manager = {
                         ViewshedTool_Manager.data[viewshedId],
                         options
                     )
-                cb(dv)
+                cb(viewshedData)
             })
         } else {
             this.data[viewshedId].source = source
@@ -223,13 +223,18 @@ let ViewshedTool_Manager = {
     },
     locateSource: function (viewshedId) {
         // Locate source
-        let dv = this.data[viewshedId]
+        let viewshedData = this.data[viewshedId]
 
-        let topLeftTile = new L.Point(dv.topLeftTile.x, dv.topLeftTile.y)
-        let sourcePoint = Map_.map.project(dv.source, dv.zoom).divideBy(256)
+        let topLeftTile = new L.Point(
+            viewshedData.topLeftTile.x,
+            viewshedData.topLeftTile.y
+        )
+        let sourcePoint = Map_.map
+            .project(viewshedData.source, viewshedData.zoom)
+            .divideBy(256)
         this.data[viewshedId].dataSource = sourcePoint
             .subtract(topLeftTile)
-            .multiplyBy(dv.tileResolution)
+            .multiplyBy(viewshedData.tileResolution)
             .floor()
     },
     queryDesiredTiles: function (viewshedId, progcb, cb) {
@@ -244,7 +249,7 @@ let ViewshedTool_Manager = {
         let tilesQueried = 0
         let tilesPerStep = 8
 
-        function eachTile(d, start, heights) {
+        function eachTile(tileIndex, start, heights) {
             tilesLoaded++
 
             if (typeof progcb === 'function') {
@@ -254,7 +259,8 @@ let ViewshedTool_Manager = {
             const tileResolution =
                 ViewshedTool_Manager.data[viewshedId].tileResolution
 
-            let desired = ViewshedTool_Manager.data[viewshedId].desiredTiles[d]
+            let desired =
+                ViewshedTool_Manager.data[viewshedId].desiredTiles[tileIndex]
             let startingX =
                 (desired.x -
                     ViewshedTool_Manager.data[viewshedId].topLeftTile.x) *
@@ -303,7 +309,7 @@ let ViewshedTool_Manager = {
 
             if (tilesLoaded >= totalTiles) {
                 cb(ViewshedTool_Manager.data[viewshedId])
-            } else if (d == start + tilesPerStep - 1) {
+            } else if (tileIndex == start + tilesPerStep - 1) {
                 query()
             }
         }
@@ -311,14 +317,14 @@ let ViewshedTool_Manager = {
         const query = () => {
             let start = tilesQueried
             for (
-                let d = start;
-                d < totalTiles && d < start + tilesPerStep;
-                d++
+                let tileIndex = start;
+                tileIndex < totalTiles && tileIndex < start + tilesPerStep;
+                tileIndex++
             ) {
                 tilesQueried++
 
                 let desired =
-                    ViewshedTool_Manager.data[viewshedId].desiredTiles[d]
+                    ViewshedTool_Manager.data[viewshedId].desiredTiles[tileIndex]
                 let dlname =
                     ViewshedTool_Manager.data[viewshedId].dataLayer.name
                 let existingHeights = F_.getIn(
@@ -327,9 +333,10 @@ let ViewshedTool_Manager = {
                 )
 
                 if (existingHeights) {
-                    eachTile(d, start, existingHeights)
+                    eachTile(tileIndex, start, existingHeights)
                 } else {
-                    const tile = this.data[viewshedId].desiredTiles[d]
+                    const tile =
+                        this.data[viewshedId].desiredTiles[tileIndex]
                     const pxWorldBound = Map_.map.getPixelWorldBounds(tile.z)
                     const yTileWorldBound =
                         Math.ceil(pxWorldBound.max.y / 256) - 1
@@ -342,7 +349,7 @@ let ViewshedTool_Manager = {
                     filledUrl = filledUrl.replace('{z}', tile.z)
                     PNG.load(
                         filledUrl,
-                        (function (d) {
+                        (function (tileIndex) {
                             return function (img) {
                                 const tileResolution =
                                     ViewshedTool_Manager.data[viewshedId]
@@ -364,7 +371,10 @@ let ViewshedTool_Manager = {
                                                 viewshedId
                                             ]
                                         )
-                                    } else if (d == start + tilesPerStep - 1) {
+                                    } else if (
+                                        tileIndex ==
+                                        start + tilesPerStep - 1
+                                    ) {
                                         query()
                                     }
                                     return
@@ -392,9 +402,9 @@ let ViewshedTool_Manager = {
                                         )
                                 }
 
-                                eachTile(d, start, heights)
+                                eachTile(tileIndex, start, heights)
                             }
-                        })(d),
+                        })(tileIndex),
                         true
                     )
                 }
@@ -405,34 +415,34 @@ let ViewshedTool_Manager = {
     },
     interpolateSeams(viewshedId) {
         const tileRes = this.data[viewshedId].tileResolution
-        let d = this.data[viewshedId].data
+        let heightGrid = this.data[viewshedId].data
 
         // Vertical | |
-        for (let y = 0; y < d.length; y++) {
-            for (let x = 0; x < d[y].length; x += tileRes) {
-                if (x - 2 > 0 && x + 2 < d[y].length) {
-                    const a = d[y][x - 2]
-                    const b = d[y][x + 1]
+        for (let y = 0; y < heightGrid.length; y++) {
+            for (let x = 0; x < heightGrid[y].length; x += tileRes) {
+                if (x - 2 > 0 && x + 2 < heightGrid[y].length) {
+                    const a = heightGrid[y][x - 2]
+                    const b = heightGrid[y][x + 1]
 
                     const inc = (a - b) / 3
 
-                    d[y][x - 1] = a - inc
-                    d[y][x] = b + inc
+                    heightGrid[y][x - 1] = a - inc
+                    heightGrid[y][x] = b + inc
                 }
             }
         }
 
         // Horizontal _ _
-        for (let x = 0; x < d[0].length; x++) {
-            for (let y = 0; y < d.length; y += tileRes) {
-                if (d[y - 2] && d[y + 1]) {
-                    const a = d[y - 2][x]
-                    const b = d[y + 1][x]
+        for (let x = 0; x < heightGrid[0].length; x++) {
+            for (let y = 0; y < heightGrid.length; y += tileRes) {
+                if (heightGrid[y - 2] && heightGrid[y + 1]) {
+                    const a = heightGrid[y - 2][x]
+                    const b = heightGrid[y + 1][x]
 
                     const inc = (a - b) / 3
 
-                    d[y - 1][x] = a - inc
-                    d[y][x] = b + inc
+                    heightGrid[y - 1][x] = a - inc
+                    heightGrid[y][x] = b + inc
                 }
             }
         }

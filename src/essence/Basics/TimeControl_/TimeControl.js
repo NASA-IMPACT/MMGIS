@@ -98,19 +98,22 @@ var TimeControl = {
         // parseTimeWithOffset strips any " + N"/" - N" suffix, so compare the
         // parsed dateString (not the raw value) against 'now' — "now - 86400"
         // is a valid relative time, not an invalid date.
-        let dateAddSec = parseTimeWithOffset(rawEnd)
+        let timeWithOffset = parseTimeWithOffset(rawEnd)
         let initialEnd
-        if (dateAddSec.dateString != null && dateAddSec.dateString !== 'now') {
-            const dateStaged = new Date(dateAddSec.dateString)
-            if (isNaN(dateStaged.getTime())) {
+        if (
+            timeWithOffset.dateString != null &&
+            timeWithOffset.dateString !== 'now'
+        ) {
+            const parsedDate = new Date(timeWithOffset.dateString)
+            if (isNaN(parsedDate.getTime())) {
                 initialEnd = new Date()
                 console.warn(
                     "Invalid 'Initial End Time' provided. Defaulting to 'now'."
                 )
-            } else initialEnd = dateStaged
+            } else initialEnd = parsedDate
         } else initialEnd = new Date()
         initialEnd.setSeconds(
-            initialEnd.getSeconds() + dateAddSec.additionalSeconds
+            initialEnd.getSeconds() + timeWithOffset.additionalSeconds
         )
 
         // Initial start defaults to 1 month before the end time
@@ -122,27 +125,27 @@ var TimeControl = {
         if (rawStart == null)
             initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
         else {
-            dateAddSec = parseTimeWithOffset(rawStart)
+            timeWithOffset = parseTimeWithOffset(rawStart)
             // 'now' (optionally with an offset, e.g. "now - 86400") is valid
-            const dateStaged =
-                dateAddSec.dateString === 'now'
+            const parsedDate =
+                timeWithOffset.dateString === 'now'
                     ? new Date()
-                    : new Date(dateAddSec.dateString)
-            if (isNaN(dateStaged.getTime())) {
+                    : new Date(timeWithOffset.dateString)
+            if (isNaN(parsedDate.getTime())) {
                 initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
                 console.warn(
                     "Invalid 'Initial Start Time' provided. Defaulting to 1 month before the end time."
                 )
             } else {
-                dateStaged.setSeconds(
-                    dateStaged.getSeconds() + dateAddSec.additionalSeconds
+                parsedDate.setSeconds(
+                    parsedDate.getSeconds() + timeWithOffset.additionalSeconds
                 )
-                if (dateStaged.getTime() > initialEnd.getTime()) {
+                if (parsedDate.getTime() > initialEnd.getTime()) {
                     initialStart.setUTCMonth(initialStart.getUTCMonth() - 1)
                     console.warn(
                         "'Initial Start Time' cannot be later than the end time. Defaulting to 1 month before the end time."
                     )
-                } else initialStart = dateStaged
+                } else initialStart = parsedDate
             }
         }
 
@@ -375,13 +378,14 @@ var TimeControl = {
             : null
 
         if (tileSource) {
-            tileSource.url = await TimeControl.performTimeUrlReplacements(
-                tileSource.url,
-                layer,
-                forceRequery
-            )
+            tileSource.url =
+                await TimeControl.applyUrlReplacementsAndCacheBust(
+                    tileSource.url,
+                    layer,
+                    forceRequery
+                )
         } else {
-            layer.url = await TimeControl.performTimeUrlReplacements(
+            layer.url = await TimeControl.applyUrlReplacementsAndCacheBust(
                 layer.url,
                 layer,
                 forceRequery
@@ -401,13 +405,13 @@ var TimeControl = {
                     // the default source.
                     const {
                         url: resolvedUrl,
-                        splitColonType,
+                        tileSourceType,
                         tileFormat,
                     } = tileSource
 
                     const tileOptions = buildTileUrlOptions(
                         layer,
-                        splitColonType,
+                        tileSourceType,
                         tileFormat
                     )
 
@@ -539,7 +543,7 @@ var TimeControl = {
         if (layer.time && layer.time.enabled === true) layer.url = originalUrl
         return true
     },
-    performTimeUrlReplacements: async function (
+    applyUrlReplacementsAndCacheBust: async function (
         url,
         layer,
         forceRequery,
@@ -552,15 +556,16 @@ var TimeControl = {
             if (layer.variables?.urlReplacements) {
                 const keys = Object.keys(layer.variables.urlReplacements)
                 for (let i = 0; i < keys.length; i++) {
-                    const r = layer.variables.urlReplacements[keys[i]]
-                    if (r.on === 'timeChange') {
-                        const response = await fetch(r.url, {
-                            method: r.type,
+                    const urlReplacement =
+                        layer.variables.urlReplacements[keys[i]]
+                    if (urlReplacement.on === 'timeChange') {
+                        const response = await fetch(urlReplacement.url, {
+                            method: urlReplacement.type,
                             headers: {
                                 accept: 'application/json',
                                 'content-type': 'application/json',
                             },
-                            body: JSON.stringify(r.body)
+                            body: JSON.stringify(urlReplacement.body)
                                 .replaceAll(
                                     '{starttime}',
                                     layerTimeFormat(layer.time.start)
@@ -571,7 +576,7 @@ var TimeControl = {
                                 ),
                         })
                         const res = await response.json()
-                        const replacement = F_.getIn(res, r.return)
+                        const replacement = F_.getIn(res, urlReplacement.return)
                         if (replacement)
                             nextUrl = nextUrl.replace(
                                 `{${keys[i]}}`,
@@ -634,14 +639,14 @@ var TimeControl = {
         }
 
         for (let layerName in L_.layers.data) {
-            const layer = L_.layers.data[layerName]
+            const layerConfig = L_.layers.data[layerName]
             if (
-                layer.time &&
-                layer.time.enabled === true &&
-                layer.variables?.dynamicExtent !== true
+                layerConfig.time &&
+                layerConfig.time.enabled === true &&
+                layerConfig.variables?.dynamicExtent !== true
             ) {
-                TimeControl.reloadLayer(layer)
-                reloadedLayers.push(layer.name)
+                TimeControl.reloadLayer(layerConfig)
+                reloadedLayers.push(layerConfig.name)
             }
         }
 
@@ -707,20 +712,20 @@ var TimeControl = {
     updateLayersTime: function () {
         let updatedLayers = []
         for (let layerName in L_.layers.data) {
-            const layer = L_.layers.data[layerName]
-            if (layer.time && layer.time.enabled === true) {
-                layer.time.start = TimeControl.startTime
-                layer.time.end = TimeControl.currentTime
-                layer.time.customTimes = TimeControl.customTimes
-                $('.starttime.' + F_.getSafeName(layer.name)).text(
-                    layer.time.start
+            const layerConfig = L_.layers.data[layerName]
+            if (layerConfig.time && layerConfig.time.enabled === true) {
+                layerConfig.time.start = TimeControl.startTime
+                layerConfig.time.end = TimeControl.currentTime
+                layerConfig.time.customTimes = TimeControl.customTimes
+                $('.starttime.' + F_.getSafeName(layerConfig.name)).text(
+                    layerConfig.time.start
                 )
-                $('.endtime.' + F_.getSafeName(layer.name)).text(
-                    layer.time.end
+                $('.endtime.' + F_.getSafeName(layerConfig.name)).text(
+                    layerConfig.time.end
                 )
-                updatedLayers.push(layer.name)
-                if (isRasterTileLayerType(layer)) {
-                    TimeControl.setLayerWmsParams(layer)
+                updatedLayers.push(layerConfig.name)
+                if (isRasterTileLayerType(layerConfig)) {
+                    TimeControl.setLayerWmsParams(layerConfig)
                 }
             }
         }
@@ -743,71 +748,78 @@ var TimeControl = {
     setLayersTimeStatus: function (color) {
         var updatedLayers = []
         for (let layerName in L_.layers.data) {
-            const layer = L_.layers.data[layerName]
+            const layerConfig = L_.layers.data[layerName]
             if (
-                layer.time &&
-                layer.time.enabled === true &&
-                (layer.time.type === 'global' || layer.time.type === 'requery')
+                layerConfig.time &&
+                layerConfig.time.enabled === true &&
+                (layerConfig.time.type === 'global' ||
+                    layerConfig.time.type === 'requery')
             ) {
-                TimeControl.setLayerTimeStatus(layer, color)
-                updatedLayers.push(layer.name)
+                TimeControl.setLayerTimeStatus(layerConfig, color)
+                updatedLayers.push(layerConfig.name)
             }
         }
         return updatedLayers
     },
-    setLayerWmsParams: function (layer) {
+    setLayerWmsParams: function (layerConfig) {
         // Shared time formatter (see tileUrlUtils.formatLayerTime).
-        const layerTimeFormatter = formatLayerTime(layer.time?.format)
-        const l = L_.layers.layer[layer.name]
+        const layerTimeFormatter = formatLayerTime(layerConfig.time?.format)
+        const mapLayer = L_.layers.layer[layerConfig.name]
 
         // Leaflet-only: `options` is where the per-tile getTileUrl and the WMS
         // substitution read their times from. Deck layers expose `props`
         // instead and get their times baked into the URL by reloadLayer, so the
         // guard skips them rather than growing them an `options` nothing reads.
-        if (l != null && isRasterTileLayerType(layer) && l.options != null) {
-            l.options.time = layerTimeFormatter(layer.time.end)
-            l.options.starttime = layerTimeFormatter(layer.time.start)
-            l.options.endtime = layerTimeFormatter(layer.time.end)
+        if (
+            mapLayer != null &&
+            isRasterTileLayerType(layerConfig) &&
+            mapLayer.options != null
+        ) {
+            mapLayer.options.time = layerTimeFormatter(layerConfig.time.end)
+            mapLayer.options.starttime = layerTimeFormatter(
+                layerConfig.time.start
+            )
+            mapLayer.options.endtime = layerTimeFormatter(layerConfig.time.end)
         }
     },
 }
 
 function initLayerDataTimes() {
     for (let i in L_.layers.dataFlat) {
-        const layer = L_.layers.dataFlat[i]
-        if (layer.time && layer.time.enabled === true) {
-            layer.time.start = L_.FUTURES.startTime
+        const layerConfig = L_.layers.dataFlat[i]
+        if (layerConfig.time && layerConfig.time.enabled === true) {
+            layerConfig.time.start = L_.FUTURES.startTime
                 ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
                 : TimeControl.startTime
-            layer.time.end = L_.FUTURES.endTime
+            layerConfig.time.end = L_.FUTURES.endTime
                 ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
                 : TimeControl.endTime
-            layer.time.customTimes = TimeControl.customTimes
+            layerConfig.time.customTimes = TimeControl.customTimes
         }
     }
 }
 
 function initLayerTimes() {
     for (let layerName in L_.layers.data) {
-        const layer = L_.layers.data[layerName]
-        if (layer.time && layer.time.enabled === true) {
-            layer.time.start = L_.FUTURES.startTime
+        const layerConfig = L_.layers.data[layerName]
+        if (layerConfig.time && layerConfig.time.enabled === true) {
+            layerConfig.time.start = L_.FUTURES.startTime
                 ? L_.FUTURES.startTime.toISOString().split('.')[0] + 'Z'
                 : TimeControl.startTime
-            layer.time.end = L_.FUTURES.endTime
+            layerConfig.time.end = L_.FUTURES.endTime
                 ? L_.FUTURES.endTime.toISOString().split('.')[0] + 'Z'
                 : TimeControl.endTime
-            layer.time.customTimes = TimeControl.customTimes
-            $('.starttime.' + F_.getSafeName(layer.name)).text(
-                layer.time.start
+            layerConfig.time.customTimes = TimeControl.customTimes
+            $('.starttime.' + F_.getSafeName(layerConfig.name)).text(
+                layerConfig.time.start
             )
-            $('.endtime.' + F_.getSafeName(layer.name)).text(
-                layer.time.end
+            $('.endtime.' + F_.getSafeName(layerConfig.name)).text(
+                layerConfig.time.end
             )
 
             // Make sure to set the WMS parameters for WMS layers,
             // otherwise the first load will not have the WMS parameters
-            TimeControl.setLayerWmsParams(layer)
+            TimeControl.setLayerWmsParams(layerConfig)
         }
     }
 }

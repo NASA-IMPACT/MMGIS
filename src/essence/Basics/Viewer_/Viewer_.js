@@ -270,7 +270,7 @@ var Viewer_ = {
     },
     //exts is optional. It's an array of extensions to to the url
     //ext can also be false to skip changing the dropdown
-    //o is object with options url:"", isPanoramic:bool
+    //imageConfig is object with options url:"", isPanoramic:bool
     //and optional options exts:[],ext:int/false, masterImg:""
     changeImage: function (imageId, setLocAfter) {
         if (!this.wasInitialized) return
@@ -278,10 +278,10 @@ var Viewer_ = {
         if (Viewer_.Map_)
             Viewer_.Map_.rmNotNull(Viewer_.Map_.tempPhotosphereWedge)
 
-        let o = Viewer_.images[imageId]
+        let imageConfig = Viewer_.images[imageId]
 
         Viewer_.lastImageId = imageId
-        if (o == null) {
+        if (imageConfig == null) {
             this.imageModel.css('display', 'none')
             this.imagePDF.css('display', 'none')
             this.imagePanorama.css('display', 'none')
@@ -295,15 +295,18 @@ var Viewer_ = {
 
         //Make sure dropdown matches image
 
-        let url = o.url
+        let url = imageConfig.url
 
         Viewer_.toolBarLoading.html('Loading')
         this.url = url
 
         const extLow = F_.getExtension(url).toLowerCase()
 
-        if (o.hasOwnProperty('master') && o.master != null) {
-            this.masterImg = o.master
+        if (
+            imageConfig.hasOwnProperty('master') &&
+            imageConfig.master != null
+        ) {
+            this.masterImg = imageConfig.master
             //Check if it's absolute or relative
             //../../../../ is from get_profile to mmgis dir
             if (!F_.isUrlAbsolute(this.masterImg))
@@ -311,7 +314,7 @@ var Viewer_ = {
                     '../../../../' + L_.missionPath + this.masterImg
         } else this.masterImg = null
 
-        if (o.isModel) {
+        if (imageConfig.isModel) {
             this.imageModel.css('display', 'inherit')
             this.imagePDF.css('display', 'none')
             this.imagePanorama.css('display', 'none')
@@ -329,7 +332,7 @@ var Viewer_ = {
                 )
             }
 
-            let textureURL = o.texture
+            let textureURL = imageConfig.texture
             if (!F_.isUrlAbsolute(textureURL))
                 textureURL = '../../../../' + L_.missionPath + textureURL
 
@@ -366,7 +369,7 @@ var Viewer_ = {
                     }
                 }
             )
-        } else if (o.isPanoramic) {
+        } else if (imageConfig.isPanoramic) {
             this.imagePanorama.css('display', 'inherit')
             this.imageViewer.css('display', 'none')
             this.imageModel.css('display', 'none')
@@ -388,7 +391,7 @@ var Viewer_ = {
 
             Viewer_.toolBarLoading.css('opacity', '1')
             this.photosphere.changeImage(
-                o,
+                imageConfig,
                 Viewer_.feature,
                 Viewer_.layer,
                 function (err) {
@@ -411,7 +414,7 @@ var Viewer_ = {
                     }
                 }
             )
-        } else if (/*o.type === 'document' && */ extLow === 'pdf') {
+        } else if (/*imageConfig.type === 'document' && */ extLow === 'pdf') {
             this.imagePDF.css('display', 'inherit')
             this.imagePanorama.css('display', 'none')
             this.imageViewer.css('display', 'none')
@@ -432,7 +435,11 @@ var Viewer_ = {
                     console.log('here')
                 }
             })
-        } else if (o.isVideo || extLow === 'webm' || extLow === 'mp4') {
+        } else if (
+            imageConfig.isVideo ||
+            extLow === 'webm' ||
+            extLow === 'mp4'
+        ) {
             this.imageVideo.css('display', 'inherit')
             this.imagePDF.css('display', 'none')
             this.imagePanorama.css('display', 'none')
@@ -461,7 +468,7 @@ var Viewer_ = {
                     Viewer_.toolBarLoading.css('opacity', '0')
                 }, 2000)
             }
-        } else if (o.isGif || extLow === 'gif') {
+        } else if (imageConfig.isGif || extLow === 'gif') {
             this.imageGif.css('display', 'flex')
             this.imageVideo.css('display', 'none')
             this.imagePDF.css('display', 'none')
@@ -507,7 +514,10 @@ var Viewer_ = {
             //var oldImage = this.imageViewerMap.world.getItemAt( 0 );
             Viewer_.toolBarLoading.css('opacity', '1')
 
-            if (o.isDZI || F_.getExtension(url).toLowerCase() === 'xml') {
+            if (
+                imageConfig.isDZI ||
+                F_.getExtension(url).toLowerCase() === 'xml'
+            ) {
                 finishLoad()
                 this.imageViewerMap.open(url)
             } else {
@@ -572,10 +582,10 @@ var Viewer_ = {
         return Viewer_.lastImageId == null ? false : Viewer_.lastImageId
     },
     getLocation() {
-        var o = Viewer_.images[Viewer_.lastImageId]
-        if (o == null) return false
+        var imageConfig = Viewer_.images[Viewer_.lastImageId]
+        if (imageConfig == null) return false
 
-        if (o.isModel) {
+        if (imageConfig.isModel) {
             var cam = Viewer_.modelviewer.camera
             var con = Viewer_.modelviewer.controls
 
@@ -594,7 +604,7 @@ var Viewer_ = {
                 ',' +
                 tar.z
             )
-        } else if (o.isPanoramic) {
+        } else if (imageConfig.isPanoramic) {
             var tar = Viewer_.photosphere.getTarget()
             return (
                 tar[0].toFixed(5) +

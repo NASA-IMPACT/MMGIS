@@ -378,7 +378,12 @@ const fillInMissingFieldsWithDefaults = (layer) => {
     case "header":
       break;
     case "tile":
-      layer.tileformat = layer.tileformat == null ? "tms" : layer.tileformat;
+      // Legacy key alias, removable once stored configs are migrated
+      if (layer.tileformat != null && layer.tileFormat == null) {
+        layer.tileFormat = layer.tileformat;
+        delete layer.tileformat;
+      }
+      layer.tileFormat = layer.tileFormat == null ? "tms" : layer.tileFormat;
       break;
     case "vectortile":
       layer.style = layer.style || {};
@@ -388,7 +393,12 @@ const fillInMissingFieldsWithDefaults = (layer) => {
       layer.style = layer.style || {};
       layer.style.className = layer.name.replace(/ /g, "").toLowerCase();
 
-      layer.tileformat = layer.tileformat == null ? "tms" : layer.tileformat;
+      // Legacy key alias, removable once stored configs are migrated
+      if (layer.tileformat != null && layer.tileFormat == null) {
+        layer.tileFormat = layer.tileformat;
+        delete layer.tileformat;
+      }
+      layer.tileFormat = layer.tileFormat == null ? "tms" : layer.tileFormat;
       break;
     case "query":
       layer.style = layer.style || {};

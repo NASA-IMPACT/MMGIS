@@ -454,7 +454,7 @@ Implemented performance optimizations:
     "minZoom": 5,
     "maxNativeZoom": 15,
     "visibilitycutoff": 8,
-    "tileformat": "tms",
+    "tileFormat": "tms",
     "throughTileServer": false
 }
 ```

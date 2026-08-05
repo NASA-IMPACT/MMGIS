@@ -128,12 +128,12 @@ var Editing = {
         // If it is, remove it
         var deselecting = false
         if (ctrl) {
-            for (var c in DrawTool.contextMenuLayers) {
-                var cml = DrawTool.contextMenuLayers[c]
+            for (var selectionIndex in DrawTool.contextMenuLayers) {
+                var selectionEntry = DrawTool.contextMenuLayers[selectionIndex]
                 if (
-                    cml.l_i_f.layer == layer &&
-                    cml.l_i_f.index == index &&
-                    cml.l_i_f.fileid == fileid
+                    selectionEntry.l_i_f.layer == layer &&
+                    selectionEntry.l_i_f.index == index &&
+                    selectionEntry.l_i_f.fileid == fileid
                 ) {
                     //already selected
                     $(
@@ -142,9 +142,9 @@ var Editing = {
                     $('#drawToolShapeLiItem_' + layer + '_' + index)
                         .find('.drawToolShapeLiItemCheck')
                         .removeClass('checked')
-                    resetShape(c)
-                    Map_.rmNotNull(cml.selectionLayer)
-                    DrawTool.contextMenuLayers.splice(c, 1)
+                    resetShape(selectionIndex)
+                    Map_.rmNotNull(selectionEntry.selectionLayer)
+                    DrawTool.contextMenuLayers.splice(selectionIndex, 1)
                     deselecting = true
                 }
             }
@@ -161,8 +161,10 @@ var Editing = {
         if (!ctrl || !DrawTool.contextMenuLayer) {
             grouping = false
             //Turn off all selectLayers
-            for (var c in DrawTool.contextMenuLayers)
-                Map_.rmNotNull(DrawTool.contextMenuLayers[c].selectionLayer)
+            for (var selectionIndex in DrawTool.contextMenuLayers)
+                Map_.rmNotNull(
+                    DrawTool.contextMenuLayers[selectionIndex].selectionLayer
+                )
             DrawTool.contextMenuLayers = []
             DrawTool.contextMenuChanges.use = false
             DrawTool.contextMenuChanges.props.name = true
@@ -404,11 +406,11 @@ var Editing = {
                 [bbox[1], bbox[0]],
                 [bbox[3], bbox[2]],
             ]
-            var sl
+            var selectionLayer
             if (bounds[0][0] == bounds[1][0] && bounds[0][1] == bounds[1][1]) {
                 if (properties.annotation) {
                     bounds[0] = [bounds[0][1], bounds[0][0]]
-                    sl = L.circleMarker(bounds[0], {
+                    selectionLayer = L.circleMarker(bounds[0], {
                         color: 'white',
                         fillOpacity: 0,
                         weight: 2,
@@ -423,7 +425,7 @@ var Editing = {
                             parseInt(properties.style.weight) * 2) *
                         2
                     if (!isNaN(radius))
-                        sl = L.circleMarker(bounds[0], {
+                        selectionLayer = L.circleMarker(bounds[0], {
                             color: 'white',
                             weight: 2,
                             fillOpacity: 0,
@@ -437,7 +439,7 @@ var Editing = {
                 bounds[0][0] != Number.POSITIVE_INFINITY &&
                 bounds[0][0] != Number.NEGATIVE_INFINITY
             ) {
-                sl = L.rectangle(bounds, {
+                selectionLayer = L.rectangle(bounds, {
                     color: 'white',
                     weight: 2,
                     fillOpacity: 0,
@@ -457,7 +459,7 @@ var Editing = {
                 style: style,
                 file: file,
                 l_i_f: { layer: layer, index: index, fileid: fileid },
-                selectionLayer: sl,
+                selectionLayer: selectionLayer,
             })
 
             //selecting up to 1
@@ -1050,9 +1052,9 @@ var Editing = {
                 [bbox[1], bbox[0]],
                 [bbox[3], bbox[2]],
             ]
-            var sl
+            var selectionLayer
             if (bounds[0][0] == bounds[1][0] && bounds[0][1] == bounds[1][1])
-                sl = L.circleMarker(bounds[0], {
+                selectionLayer = L.circleMarker(bounds[0], {
                     color: 'white',
                     weight: 2,
                     fillOpacity: 0,
@@ -1062,7 +1064,7 @@ var Editing = {
                     .addTo(Map_.map)
                     .bringToBack()
             else {
-                sl = L.rectangle(bounds, {
+                selectionLayer = L.rectangle(bounds, {
                     color: 'white',
                     weight: 2,
                     fillOpacity: 0,
@@ -1076,7 +1078,7 @@ var Editing = {
                 [bbox[1], bbox[0]],
                 [bbox[3], bbox[2]],
             ]
-            DrawTool.contextMenuLayers[0].selectionLayer = sl
+            DrawTool.contextMenuLayers[0].selectionLayer = selectionLayer
         }
         DrawTool._updateSelectionLayer = updateSelectionLayer
 
@@ -1113,46 +1115,72 @@ var Editing = {
             if (DrawTool.plugins?.Geologic?.custom?.resetGeologic)
                 DrawTool.plugins.Geologic.custom.resetGeologic()
 
-            for (var c in DrawTool.contextMenuLayers) {
-                if (justThis != null) c = justThis
-                var l = DrawTool.contextMenuLayers[c]
+            for (var selectionIndex in DrawTool.contextMenuLayers) {
+                if (justThis != null) selectionIndex = justThis
+                var selectionEntry = DrawTool.contextMenuLayers[selectionIndex]
                 if (
                     !displayOnly &&
-                    l != null &&
-                    l.hasOwnProperty('l_i_f') &&
-                    L_.layers.layer[l.l_i_f.layer][l.l_i_f.index] != null
+                    selectionEntry != null &&
+                    selectionEntry.hasOwnProperty('l_i_f') &&
+                    L_.layers.layer[selectionEntry.l_i_f.layer][
+                        selectionEntry.l_i_f.index
+                    ] != null
                 ) {
                     //Properties
                     //Style
-                    updateStrokeColor(l.properties.style.color, l.shape)
-                    updateStrokeOpacity(l.properties.style.opacity, l.shape)
+                    updateStrokeColor(
+                        selectionEntry.properties.style.color,
+                        selectionEntry.shape
+                    )
+                    updateStrokeOpacity(
+                        selectionEntry.properties.style.opacity,
+                        selectionEntry.shape
+                    )
                     updateStrokeStyle(
-                        l.properties.style.dashArray,
+                        selectionEntry.properties.style.dashArray,
                         "<svg width='100%' height='100%'><line x1='0' y1='20' x2='80' y2='20' stroke='#222' stroke-width='4' stroke-dasharray='" +
                             (properties ? properties.style.dashArray : '') +
                             "' /></svg>",
-                        l.shape
+                        selectionEntry.shape
                     )
                     updateStrokeWeight(
-                        l.properties.style.weight,
+                        selectionEntry.properties.style.weight,
                         "<svg width='100%' height='100%'><line x1='0' y1='20' x2='80' y2='20' stroke='#222' stroke-width='" +
                             (properties ? properties.style.weight : 4) +
                             "' /></svg>",
-                        l.shape,
-                        l.properties.style
+                        selectionEntry.shape,
+                        selectionEntry.properties.style
                     )
                     updateFillColor(
-                        l.properties.style.fillColor,
-                        l.shape,
-                        l.properties.style
+                        selectionEntry.properties.style.fillColor,
+                        selectionEntry.shape,
+                        selectionEntry.properties.style
                     )
-                    updateFillOpacity(l.properties.style.fillOpacity, l.shape)
-                    updateSymbol(l.properties.style.symbol, l.shape)
-                    updateRadius(l.properties.style.radius, l.shape)
-                    updateWidth(l.properties.style.width, l.shape)
+                    updateFillOpacity(
+                        selectionEntry.properties.style.fillOpacity,
+                        selectionEntry.shape
+                    )
+                    updateSymbol(
+                        selectionEntry.properties.style.symbol,
+                        selectionEntry.shape
+                    )
+                    updateRadius(
+                        selectionEntry.properties.style.radius,
+                        selectionEntry.shape
+                    )
+                    updateWidth(
+                        selectionEntry.properties.style.width,
+                        selectionEntry.shape
+                    )
 
-                    updateFontSize(l.properties.style.fontSize, l.shape)
-                    updateRotation(l.properties.style.rotation, l.shape)
+                    updateFontSize(
+                        selectionEntry.properties.style.fontSize,
+                        selectionEntry.shape
+                    )
+                    updateRotation(
+                        selectionEntry.properties.style.rotation,
+                        selectionEntry.shape
+                    )
 
                     if (DrawTool.plugins?.Geologic?.custom?.resetGeologic)
                         DrawTool.plugins.Geologic.custom.resetGeologic()
@@ -1163,18 +1191,20 @@ var Editing = {
             //Geometry
             if (
                 !displayOnly &&
-                l != null &&
-                l.hasOwnProperty('l_i_f') &&
-                L_.layers.layer[l.l_i_f.layer][l.l_i_f.index] != null &&
-                l.properties.arrow == true
+                selectionEntry != null &&
+                selectionEntry.hasOwnProperty('l_i_f') &&
+                L_.layers.layer[selectionEntry.l_i_f.layer][
+                    selectionEntry.l_i_f.index
+                ] != null &&
+                selectionEntry.properties.arrow == true
             ) {
                 L_.addArrowToMap(
-                    l.l_i_f.layer,
+                    selectionEntry.l_i_f.layer,
                     DrawTool.contextMenuLayer.originalStart,
                     DrawTool.contextMenuLayer.originalEnd,
-                    l.properties.style,
-                    l.shape.feature,
-                    l.l_i_f.index,
+                    selectionEntry.properties.style,
+                    selectionEntry.shape.feature,
+                    selectionEntry.l_i_f.index,
                     () => {
                         DrawTool.populateShapes()
                     }
@@ -1333,16 +1363,16 @@ var Editing = {
         $('.strokecolorpick .colorgridsquare').on('click', function () {
             $('.strokecolorpick .colorgridsquare').removeClass('active')
             $(this).addClass('active')
-            var v = $(this).css('background-color')
-            updateStrokeColor(v)
+            var newColor = $(this).css('background-color')
+            updateStrokeColor(newColor)
         })
-        function updateStrokeColor(v, layer) {
+        function updateStrokeColor(newColor, targetLayer) {
             DrawTool.contextMenuChanges.style.color = true
 
-            $('.strokecolor').css('background-color', v)
-            $('#drawToolContextMenuStrokeColorInput').val(v)
-            $('.strokecolor').attr('v', v)
-            if (properties && v != properties.style.color)
+            $('.strokecolor').css('background-color', newColor)
+            $('#drawToolContextMenuStrokeColorInput').val(newColor)
+            $('.strokecolor').attr('v', newColor)
+            if (properties && newColor != properties.style.color)
                 $('.strokecolor')
                     .parent()
                     .parent()
@@ -1356,7 +1386,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.strokecolor')
                     .parent()
                     .prev()
@@ -1364,21 +1394,25 @@ var Editing = {
             else $('.strokecolor').parent().prev().css('background', 'inherit')
 
             const geoColor = F_.getIn(
-                layer,
+                targetLayer,
                 'feature.properties.style.geologic.color',
                 null
             )
-            if (geoColor) v = F_.colorCodeToColor(geoColor)
+            if (geoColor) newColor = F_.colorCodeToColor(geoColor)
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) layer.setStyle({ color: v })
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer) targetLayer.setStyle({ color: newColor })
                 else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
 
-                        if (s.isLinework) {
-                            for (let l in s._layers) {
-                                const lineworkLayer = s._layers[l]
+                        if (shapeLayer.isLinework) {
+                            for (let l in shapeLayer._layers) {
+                                const lineworkLayer = shapeLayer._layers[l]
                                 if (!lineworkLayer.isDecorated) {
                                     const geoColor = F_.getIn(
                                         lineworkLayer,
@@ -1388,48 +1422,54 @@ var Editing = {
                                     let color =
                                         geoColor != null
                                             ? F_.colorCodeToColor(geoColor)
-                                            : v
+                                            : newColor
                                     lineworkLayer.setStyle({ color: color })
                                 }
                             }
-                        } else if (typeof s.setStyle === 'function') {
-                            s.setStyle({ color: v })
+                        } else if (typeof shapeLayer.setStyle === 'function') {
+                            shapeLayer.setStyle({ color: newColor })
                         } else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.annotation == true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.annotation == true
                         ) {
-                            var p =
-                                DrawTool.contextMenuLayers[c].layer.feature
-                                    .properties._
+                            var metaProps =
+                                DrawTool.contextMenuLayers[selectionIndex].layer
+                                    .feature.properties._
                             $(
-                                '#DrawToolAnnotation_' + p.file_id + '_' + p.id
+                                '#DrawToolAnnotation_' +
+                                    metaProps.file_id +
+                                    '_' +
+                                    metaProps.id
                             ).css(
                                 'text-shadow',
                                 F_.getTextShadowString(
-                                    v,
+                                    newColor,
                                     $('.strokeopacity').attr('v'),
                                     $('.strokeweight').attr('v')
                                 )
                             )
                         } else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow == true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow == true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -1451,18 +1491,18 @@ var Editing = {
         })
         //STROKE OPACITY
         $('.strokeopacitypick > div').on('click', function () {
-            var v = $(this).attr('value')
-            updateStrokeOpacity(v)
+            var newOpacity = $(this).attr('value')
+            updateStrokeOpacity(newOpacity)
         })
-        function updateStrokeOpacity(v, layer) {
-            var t = v * 100 + '%'
+        function updateStrokeOpacity(newOpacity, targetLayer) {
+            var t = newOpacity * 100 + '%'
 
             DrawTool.contextMenuChanges.style.opacity = true
 
             $('.strokeopacity').text(t)
-            $('.strokeopacity').attr('v', v)
+            $('.strokeopacity').attr('v', newOpacity)
 
-            if (properties && v != properties.style.opacity)
+            if (properties && newOpacity != properties.style.opacity)
                 $('.strokeopacity')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -1474,55 +1514,65 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.strokeopacity')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
             else $('.strokeopacity').prev().css('background', 'inherit')
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) layer.setStyle({ opacity: v })
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer) targetLayer.setStyle({ opacity: newOpacity })
                 else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
-                        if (typeof s.setStyle === 'function')
-                            s.setStyle({ opacity: v })
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
+                        if (typeof shapeLayer.setStyle === 'function')
+                            shapeLayer.setStyle({ opacity: newOpacity })
                         else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.annotation == true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.annotation == true
                         ) {
-                            var p =
-                                DrawTool.contextMenuLayers[c].layer.feature
-                                    .properties._
+                            var metaProps =
+                                DrawTool.contextMenuLayers[selectionIndex].layer
+                                    .feature.properties._
                             $(
-                                '#DrawToolAnnotation_' + p.file_id + '_' + p.id
+                                '#DrawToolAnnotation_' +
+                                    metaProps.file_id +
+                                    '_' +
+                                    metaProps.id
                             ).css(
                                 'text-shadow',
                                 F_.getTextShadowString(
                                     $('.strokecolor').attr('v'),
-                                    v,
+                                    newOpacity,
                                     $('.strokeweight').attr('v')
                                 )
                             )
                         } else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -1535,44 +1585,51 @@ var Editing = {
         }
         //STROKE STYLE
         $('.strokestylepick > div').on('click', function () {
-            var v = $(this).attr('value')
-            var h = $(this).html()
-            updateStrokeStyle(v, h)
+            var newDashArray = $(this).attr('value')
+            var swatchHtml = $(this).html()
+            updateStrokeStyle(newDashArray, swatchHtml)
         })
-        function updateStrokeStyle(v, h, layer) {
+        function updateStrokeStyle(newDashArray, swatchHtml, targetLayer) {
             DrawTool.contextMenuChanges.style.dashArray = true
 
-            h = h.replace('y1="10"', 'y1="20"')
-            h = h.replace('y2="10"', 'y2="20"')
+            swatchHtml = swatchHtml.replace('y1="10"', 'y1="20"')
+            swatchHtml = swatchHtml.replace('y2="10"', 'y2="20"')
 
-            $('.strokestyle').html(h)
-            $('.strokestyle').attr('v', v)
+            $('.strokestyle').html(swatchHtml)
+            $('.strokestyle').attr('v', newDashArray)
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) layer.setStyle({ dashArray: v })
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer)
+                    targetLayer.setStyle({ dashArray: newDashArray })
                 else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
-                        if (typeof s.setStyle === 'function')
-                            s.setStyle({ dashArray: v })
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
+                        if (typeof shapeLayer.setStyle === 'function')
+                            shapeLayer.setStyle({ dashArray: newDashArray })
                         else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -1583,7 +1640,7 @@ var Editing = {
                 }
             }
 
-            if (properties && v != properties.style.dashArray)
+            if (properties && newDashArray != properties.style.dashArray)
                 $('.strokestyle')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -1595,7 +1652,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.strokestyle')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -1603,66 +1660,81 @@ var Editing = {
         }
         //STROKE WEIGHT
         $('.strokeweightpick > div').on('click', function () {
-            var v = $(this).attr('value')
-            var h = $(this).html()
-            updateStrokeWeight(v, h)
+            var newWeight = $(this).attr('value')
+            var swatchHtml = $(this).html()
+            updateStrokeWeight(newWeight, swatchHtml)
         })
-        function updateStrokeWeight(v, h, layer, resetStyle) {
+        function updateStrokeWeight(
+            newWeight,
+            swatchHtml,
+            targetLayer,
+            resetStyle
+        ) {
             DrawTool.contextMenuChanges.style.weight = true
 
-            h = h.replace('y1="10"', 'y1="20"')
-            h = h.replace('y2="10"', 'y2="20"')
+            swatchHtml = swatchHtml.replace('y1="10"', 'y1="20"')
+            swatchHtml = swatchHtml.replace('y2="10"', 'y2="20"')
 
-            $('.strokeweight').html(h)
-            $('.strokeweight').attr('v', v)
+            $('.strokeweight').html(swatchHtml)
+            $('.strokeweight').attr('v', newWeight)
 
-            v = parseInt(v)
+            newWeight = parseInt(newWeight)
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) {
-                    layer.setStyle({ weight: v })
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer) {
+                    targetLayer.setStyle({ weight: newWeight })
                 } else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
 
-                        if (typeof s.setStyle === 'function')
-                            s.setStyle({ weight: v })
+                        if (typeof shapeLayer.setStyle === 'function')
+                            shapeLayer.setStyle({ weight: newWeight })
                         else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.annotation == true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.annotation == true
                         ) {
-                            var p =
-                                DrawTool.contextMenuLayers[c].layer.feature
-                                    .properties._
+                            var metaProps =
+                                DrawTool.contextMenuLayers[selectionIndex].layer
+                                    .feature.properties._
                             $(
-                                '#DrawToolAnnotation_' + p.file_id + '_' + p.id
+                                '#DrawToolAnnotation_' +
+                                    metaProps.file_id +
+                                    '_' +
+                                    metaProps.id
                             ).css(
                                 'text-shadow',
                                 F_.getTextShadowString(
                                     $('.strokecolor').attr('v'),
                                     $('.strokeopacity').attr('v'),
-                                    v
+                                    newWeight
                                 )
                             )
                         } else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -1673,28 +1745,34 @@ var Editing = {
                 }
             } else if (resetStyle != null) {
                 //Reset notes
-                for (var c in DrawTool.contextMenuLayers) {
+                for (var selectionIndex in DrawTool.contextMenuLayers) {
                     if (
-                        DrawTool.contextMenuLayers[c].layer.feature &&
-                        DrawTool.contextMenuLayers[c].layer.feature.properties
-                            .annotation == true
+                        DrawTool.contextMenuLayers[selectionIndex].layer
+                            .feature &&
+                        DrawTool.contextMenuLayers[selectionIndex].layer.feature
+                            .properties.annotation == true
                     ) {
-                        var p =
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties._
-                        $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).css(
+                        var metaProps =
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties._
+                        $(
+                            '#DrawToolAnnotation_' +
+                                metaProps.file_id +
+                                '_' +
+                                metaProps.id
+                        ).css(
                             'text-shadow',
                             F_.getTextShadowString(
                                 resetStyle.color,
                                 resetStyle.opacity,
-                                v
+                                newWeight
                             )
                         )
                     }
                 }
             }
 
-            if (properties && v != properties.style.weight)
+            if (properties && newWeight != properties.style.weight)
                 $('.strokeweight')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -1706,7 +1784,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.strokeweight')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -1718,52 +1796,63 @@ var Editing = {
         $('.fillcolorpick .colorgridsquare').on('click', function () {
             $('.fillcolorpick .colorgridsquare').removeClass('active')
             $(this).addClass('active')
-            var v = $(this).css('background-color')
-            updateFillColor(v)
+            var newFillColor = $(this).css('background-color')
+            updateFillColor(newFillColor)
         })
-        function updateFillColor(v, layer, resetStyle) {
+        function updateFillColor(newFillColor, targetLayer, resetStyle) {
             DrawTool.contextMenuChanges.style.fillColor = true
 
-            $('.fillcolor').css('background-color', v)
-            $('.fillcolor').attr('v', v)
-            $('#drawToolContextMenuFillColorInput').val(v)
+            $('.fillcolor').css('background-color', newFillColor)
+            $('.fillcolor').attr('v', newFillColor)
+            $('#drawToolContextMenuFillColorInput').val(newFillColor)
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) layer.setStyle({ fillColor: v })
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer)
+                    targetLayer.setStyle({ fillColor: newFillColor })
                 else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
-                        if (typeof s.setStyle === 'function')
-                            s.setStyle({ fillColor: v })
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
+                        if (typeof shapeLayer.setStyle === 'function')
+                            shapeLayer.setStyle({ fillColor: newFillColor })
                         else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.annotation == true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.annotation == true
                         ) {
-                            var p =
-                                DrawTool.contextMenuLayers[c].layer.feature
-                                    .properties._
+                            var metaProps =
+                                DrawTool.contextMenuLayers[selectionIndex].layer
+                                    .feature.properties._
                             $(
-                                '#DrawToolAnnotation_' + p.file_id + '_' + p.id
-                            ).css('color', v)
+                                '#DrawToolAnnotation_' +
+                                    metaProps.file_id +
+                                    '_' +
+                                    metaProps.id
+                            ).css('color', newFillColor)
                         } else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -1774,16 +1863,22 @@ var Editing = {
                 }
             } else if (resetStyle != null) {
                 //Reset notes
-                for (var c in DrawTool.contextMenuLayers) {
+                for (var selectionIndex in DrawTool.contextMenuLayers) {
                     if (
-                        DrawTool.contextMenuLayers[c].layer.feature &&
-                        DrawTool.contextMenuLayers[c].layer.feature.properties
-                            .annotation == true
+                        DrawTool.contextMenuLayers[selectionIndex].layer
+                            .feature &&
+                        DrawTool.contextMenuLayers[selectionIndex].layer.feature
+                            .properties.annotation == true
                     ) {
-                        var p =
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties._
-                        $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).css(
+                        var metaProps =
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties._
+                        $(
+                            '#DrawToolAnnotation_' +
+                                metaProps.file_id +
+                                '_' +
+                                metaProps.id
+                        ).css(
                             'color',
                             resetStyle.fillColor
                         )
@@ -1791,7 +1886,7 @@ var Editing = {
                 }
             }
 
-            if (properties && v != properties.style.fillColor)
+            if (properties && newFillColor != properties.style.fillColor)
                 $('.fillcolor')
                     .parent()
                     .parent()
@@ -1805,7 +1900,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.fillcolor')
                     .parent()
                     .prev()
@@ -1824,43 +1919,50 @@ var Editing = {
 
         //FILL OPACITY
         $('.fillopacitypick > div').on('click', function () {
-            var v = $(this).attr('value')
-            updateFillOpacity(v)
+            var newFillOpacity = $(this).attr('value')
+            updateFillOpacity(newFillOpacity)
         })
-        function updateFillOpacity(v, layer) {
-            v = v != null ? v : 0.6
-            var t = v * 100 + '%'
+        function updateFillOpacity(newFillOpacity, targetLayer) {
+            newFillOpacity = newFillOpacity != null ? newFillOpacity : 0.6
+            var t = newFillOpacity * 100 + '%'
 
             DrawTool.contextMenuChanges.style.fillOpacity = true
 
             $('.fillopacity').text(t)
-            $('.fillopacity').attr('v', v)
+            $('.fillopacity').attr('v', newFillOpacity)
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) layer.setStyle({ fillOpacity: v })
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer)
+                    targetLayer.setStyle({ fillOpacity: newFillOpacity })
                 else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
-                        if (typeof s.setStyle === 'function')
-                            s.setStyle({ fillOpacity: v })
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
+                        if (typeof shapeLayer.setStyle === 'function')
+                            shapeLayer.setStyle({ fillOpacity: newFillOpacity })
                         else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -1871,7 +1973,7 @@ var Editing = {
                 }
             }
 
-            if (properties && v != properties.style.fillOpacity)
+            if (properties && newFillOpacity != properties.style.fillOpacity)
                 $('.fillopacity')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -1883,7 +1985,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.fillopacity')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -1892,16 +1994,16 @@ var Editing = {
 
         //SYMBOL
         $('.symbolpick > div').on('click', function () {
-            var v = $(this).text()
-            updateSymbol(v)
+            var newSymbol = $(this).text()
+            updateSymbol(newSymbol)
         })
-        function updateSymbol(v, layer) {
-            $('.symbol').text(v)
-            $('.symbol').attr('v', v)
+        function updateSymbol(newSymbol, targetLayer) {
+            $('.symbol').text(newSymbol)
+            $('.symbol').attr('v', newSymbol)
 
             DrawTool.contextMenuChanges.style.symbol = true
 
-            if (properties && v != properties.style.symbol)
+            if (properties && newSymbol != properties.style.symbol)
                 $('.symbol')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -1913,7 +2015,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.symbol')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -1922,40 +2024,46 @@ var Editing = {
 
         //RADIUS
         $('.radiuspick > div').on('click', function () {
-            var v = $(this).text()
-            updateRadius(v)
+            var newRadius = $(this).text()
+            updateRadius(newRadius)
         })
-        function updateRadius(v, layer) {
-            $('.radius').text(v)
-            $('.radius').attr('v', v)
+        function updateRadius(newRadius, targetLayer) {
+            $('.radius').text(newRadius)
+            $('.radius').attr('v', newRadius)
 
             DrawTool.contextMenuChanges.style.radius = true
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) layer.setStyle({ radius: v })
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer) targetLayer.setStyle({ radius: newRadius })
                 else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
-                        if (typeof s.setStyle === 'function')
-                            s.setStyle({ radius: v })
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
+                        if (typeof shapeLayer.setStyle === 'function')
+                            shapeLayer.setStyle({ radius: newRadius })
                         else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -1966,7 +2074,7 @@ var Editing = {
                 }
             }
 
-            if (properties && v != properties.style.radius)
+            if (properties && newRadius != properties.style.radius)
                 $('.radius')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -1978,7 +2086,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.radius')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -1987,43 +2095,49 @@ var Editing = {
 
         //WIDTH
         $('.widthpick > div').on('click', function () {
-            var v = $(this).text()
-            updateWidth(v)
+            var newWidth = $(this).text()
+            updateWidth(newWidth)
         })
-        function updateWidth(v, layer) {
-            if (v == null) return
-            v = parseInt(v)
+        function updateWidth(newWidth, targetLayer) {
+            if (newWidth == null) return
+            newWidth = parseInt(newWidth)
 
             DrawTool.contextMenuChanges.style.width = true
 
-            $('.width').text(v)
-            $('.width').attr('v', v)
+            $('.width').text(newWidth)
+            $('.width').attr('v', newWidth)
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) layer.setStyle({ weight: v })
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer) targetLayer.setStyle({ weight: newWidth })
                 else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
-                        if (typeof s.setStyle === 'function')
-                            s.setStyle({ weight: v })
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
+                        if (typeof shapeLayer.setStyle === 'function')
+                            shapeLayer.setStyle({ weight: newWidth })
                         else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -2034,7 +2148,7 @@ var Editing = {
                 }
             }
 
-            if (properties && v != properties.style.width)
+            if (properties && newWidth != properties.style.width)
                 $('.width')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -2046,48 +2160,54 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.width').prev().css('background', DrawTool.highlightGradient)
             else $('.width').prev().css('background', 'inherit')
         }
 
         //LENGTH
         $('.lengthpick > div').on('click', function () {
-            var v = $(this).text()
-            updateLength(v)
+            var newLength = $(this).text()
+            updateLength(newLength)
         })
-        function updateLength(v, layer) {
-            if (v == null) return
+        function updateLength(newLength, targetLayer) {
+            if (newLength == null) return
 
             DrawTool.contextMenuChanges.style.length = true
 
-            $('.length').text(v)
-            $('.length').attr('v', v)
+            $('.length').text(newLength)
+            $('.length').attr('v', newLength)
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) {
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer) {
                 } else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
-                        if (typeof s.setStyle === 'function') {
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
+                        if (typeof shapeLayer.setStyle === 'function') {
                         } else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -2098,7 +2218,7 @@ var Editing = {
                 }
             }
 
-            if (properties && v != properties.style.length)
+            if (properties && newLength != properties.style.length)
                 $('.length')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -2110,7 +2230,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.length')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -2119,41 +2239,47 @@ var Editing = {
 
         //LINECAP
         $('.linecappick > div').on('click', function () {
-            var v = $(this).text()
-            updateLineCap(v)
+            var newLineCap = $(this).text()
+            updateLineCap(newLineCap)
         })
-        function updateLineCap(v, layer) {
-            if (v == null) return
+        function updateLineCap(newLineCap, targetLayer) {
+            if (newLineCap == null) return
 
             DrawTool.contextMenuChanges.style.lineCap = true
 
-            $('.linecap').text(v)
-            $('.linecap').attr('v', v)
+            $('.linecap').text(newLineCap)
+            $('.linecap').attr('v', newLineCap)
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) {
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer) {
                 } else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
-                        if (typeof s.setStyle === 'function') {
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
+                        if (typeof shapeLayer.setStyle === 'function') {
                         } else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -2164,7 +2290,7 @@ var Editing = {
                 }
             }
 
-            if (properties && v != properties.style.lineCap)
+            if (properties && newLineCap != properties.style.lineCap)
                 $('.linecap')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -2176,7 +2302,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.linecap')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -2185,41 +2311,47 @@ var Editing = {
 
         //LINEJOIN
         $('.linejoinpick > div').on('click', function () {
-            var v = $(this).text()
-            updateLineJoin(v)
+            var newLineJoin = $(this).text()
+            updateLineJoin(newLineJoin)
         })
-        function updateLineJoin(v, layer) {
-            if (v == null) return
+        function updateLineJoin(newLineJoin, targetLayer) {
+            if (newLineJoin == null) return
 
             DrawTool.contextMenuChanges.style.lineJoin = true
 
-            $('.linejoin').text(v)
-            $('.linejoin').attr('v', v)
+            $('.linejoin').text(newLineJoin)
+            $('.linejoin').attr('v', newLineJoin)
 
-            if (!layer || (layer && typeof layer.setStyle === 'function')) {
-                if (layer) {
+            if (
+                !targetLayer ||
+                (targetLayer && typeof targetLayer.setStyle === 'function')
+            ) {
+                if (targetLayer) {
                 } else {
-                    for (var c in DrawTool.contextMenuLayers) {
-                        var s = DrawTool.contextMenuLayers[c].shape
-                        if (typeof s.setStyle === 'function') {
+                    for (var selectionIndex in DrawTool.contextMenuLayers) {
+                        var shapeLayer =
+                            DrawTool.contextMenuLayers[selectionIndex].shape
+                        if (typeof shapeLayer.setStyle === 'function') {
                         } else if (
-                            DrawTool.contextMenuLayers[c].layer.feature &&
-                            DrawTool.contextMenuLayers[c].layer.feature
-                                .properties.arrow === true
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature &&
+                            DrawTool.contextMenuLayers[selectionIndex].layer
+                                .feature.properties.arrow === true
                         ) {
                             //Arrow
-                            var lif = DrawTool.contextMenuLayers[c].l_i_f
+                            var lif =
+                                DrawTool.contextMenuLayers[selectionIndex].l_i_f
                             var style = Object.assign(
                                 {},
-                                s.feature.properties.style
+                                shapeLayer.feature.properties.style
                             )
                             style = setProperties({ style: style }).style
                             L_.addArrowToMap(
                                 lif.layer,
-                                s.start,
-                                s.end,
+                                shapeLayer.start,
+                                shapeLayer.end,
                                 style,
-                                s.feature,
+                                shapeLayer.feature,
                                 lif.index,
                                 () => {
                                     DrawTool.populateShapes()
@@ -2230,7 +2362,7 @@ var Editing = {
                 }
             }
 
-            if (properties && v != properties.style.lineJoin)
+            if (properties && newLineJoin != properties.style.lineJoin)
                 $('.linejoin')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -2242,7 +2374,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.linejoin')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -2251,27 +2383,33 @@ var Editing = {
 
         //FONTSIZE
         $('.fontsizepick > div').on('click', function () {
-            var v = $(this).text()
-            updateFontSize(v)
+            var newFontSize = $(this).text()
+            updateFontSize(newFontSize)
         })
-        function updateFontSize(v, layer) {
-            if (v == null) return
+        function updateFontSize(newFontSize, targetLayer) {
+            if (newFontSize == null) return
 
             DrawTool.contextMenuChanges.style.fontSize = true
 
-            $('.fontsize').text(v)
-            $('.fontsize').attr('v', v)
+            $('.fontsize').text(newFontSize)
+            $('.fontsize').attr('v', newFontSize)
 
-            for (var c in DrawTool.contextMenuLayers) {
-                var s = DrawTool.contextMenuLayers[c].shape
-                var p = s.feature.properties._
-                $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).css(
+            for (var selectionIndex in DrawTool.contextMenuLayers) {
+                var shapeLayer =
+                    DrawTool.contextMenuLayers[selectionIndex].shape
+                var metaProps = shapeLayer.feature.properties._
+                $(
+                    '#DrawToolAnnotation_' +
+                        metaProps.file_id +
+                        '_' +
+                        metaProps.id
+                ).css(
                     'font-size',
-                    v
+                    newFontSize
                 )
             }
 
-            if (properties && v != properties.style.fontSize)
+            if (properties && newFontSize != properties.style.fontSize)
                 $('.fontsize')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -2283,7 +2421,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.fontsize')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -2292,27 +2430,35 @@ var Editing = {
 
         //ROTATION
         $('.rotationpick > input').on('input', function () {
-            const v = $(this).val()
-            updateRotation(v)
+            const newRotation = $(this).val()
+            updateRotation(newRotation)
         })
-        function updateRotation(v, layer) {
-            if (v == null) return
+        function updateRotation(newRotation, targetLayer) {
+            if (newRotation == null) return
 
             DrawTool.contextMenuChanges.style.rotation = true
 
-            $('.rotation.stylevalue').text(v + 'deg')
-            $('.rotation.stylevalue').attr('v', v)
+            $('.rotation.stylevalue').text(newRotation + 'deg')
+            $('.rotation.stylevalue').attr('v', newRotation)
 
-            for (var c in DrawTool.contextMenuLayers) {
-                var s = DrawTool.contextMenuLayers[c].shape
-                var p = s.feature.properties._
-                $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).css(
+            for (var selectionIndex in DrawTool.contextMenuLayers) {
+                var shapeLayer =
+                    DrawTool.contextMenuLayers[selectionIndex].shape
+                var metaProps = shapeLayer.feature.properties._
+                $(
+                    '#DrawToolAnnotation_' +
+                        metaProps.file_id +
+                        '_' +
+                        metaProps.id
+                ).css(
                     'transform',
-                    `rotateZ(${parseInt(!isNaN(v) ? v : 0) * -1}deg)`
+                    `rotateZ(${
+                        parseInt(!isNaN(newRotation) ? newRotation : 0) * -1
+                    }deg)`
                 )
             }
 
-            if (properties && v != properties.style.rotation)
+            if (properties && newRotation != properties.style.rotation)
                 $('.rotation')
                     .parent()
                     .find('.drawToolStyleHighlight')
@@ -2324,7 +2470,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.rotation')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -2348,7 +2494,7 @@ var Editing = {
             updateVisibilityRange(e.detail.values[0], e.detail.values[1])
         })
 
-        function updateVisibilityRange(vMin, vMax, layer) {
+        function updateVisibilityRange(vMin, vMax, targetLayer) {
             if (vMin == null || vMax == null) return
 
             DrawTool.contextMenuChanges.style.visibilityRange = true
@@ -2371,7 +2517,7 @@ var Editing = {
                     .css('background', 'inherit')
 
             //Group change
-            if (!layer && DrawTool.contextMenuChanges.use)
+            if (!targetLayer && DrawTool.contextMenuChanges.use)
                 $('.rotation')
                     .prev()
                     .css('background', DrawTool.highlightGradient)
@@ -2410,8 +2556,10 @@ var Editing = {
                 resetShape()
             }
 
-            for (var c in DrawTool.contextMenuLayers)
-                Map_.rmNotNull(DrawTool.contextMenuLayers[c].selectionLayer)
+            for (var selectionIndex in DrawTool.contextMenuLayers)
+                Map_.rmNotNull(
+                    DrawTool.contextMenuLayers[selectionIndex].selectionLayer
+                )
             DrawTool.contextMenuLayers = []
 
             // Capture context menu layer data before clearing it
@@ -2528,14 +2676,14 @@ var Editing = {
         //NAME
         $('#drawToolContextMenuPropertiesName').on('input', function () {
             var v = $(this).val()
-            var c = $('.drawToolContextMenuHeaderName')
-            c.text(v)
+            var headerNameEl = $('.drawToolContextMenuHeaderName')
+            headerNameEl.text(v)
             if (v != properties.name) {
                 DrawTool.contextMenuChanges.props.name = true
-                c.css('color', 'rgb(127,255,0)')
+                headerNameEl.css('color', 'rgb(127,255,0)')
                 $(this).css('border-bottom', DrawTool.highlightBorder)
             } else {
-                c.css('color', 'inherit')
+                headerNameEl.css('color', 'inherit')
                 $(this).css('border-bottom', 'inherit')
             }
         })
@@ -2787,13 +2935,15 @@ var Editing = {
                             true
                         )
                     } else {
-                        var l = DrawTool.contextMenuLayers[i]
-                        if (!l.layer.hasOwnProperty('feature'))
-                            l.layer.feature = l.shape.feature
+                        var selectionEntry = DrawTool.contextMenuLayers[i]
+                        if (!selectionEntry.layer.hasOwnProperty('feature'))
+                            selectionEntry.layer.feature =
+                                selectionEntry.shape.feature
 
-                        var newProperties = l.layer.feature.properties
+                        var newProperties =
+                            selectionEntry.layer.feature.properties
                         newProperties.style =
-                            l.layer.feature.properties.style || {}
+                            selectionEntry.layer.feature.properties.style || {}
 
                         setProperties(newProperties)
 
@@ -2805,11 +2955,16 @@ var Editing = {
                         calls.api(
                             'draw_edit',
                             {
-                                feature_id: l.properties._.id,
-                                file_id: l.file.id,
+                                feature_id: selectionEntry.properties._.id,
+                                file_id: selectionEntry.file.id,
                                 properties: JSON.stringify(newProperties),
                             },
-                            (function (c, fileid, id, newProperties) {
+                            (function (
+                                selectionEntry,
+                                fileid,
+                                id,
+                                newProperties
+                            ) {
                                 return function (data) {
                                     $('.drawToolContextMenuSave').css(
                                         'background',
@@ -2827,7 +2982,12 @@ var Editing = {
                                         editLoop(i + 1)
                                     }, 2)
                                 }
-                            })(l, l.file.id, l.properties._.id, newProperties),
+                            })(
+                                selectionEntry,
+                                selectionEntry.file.id,
+                                selectionEntry.properties._.id,
+                                newProperties
+                            ),
                             function (err) {
                                 CursorInfo.update(
                                     `${err.message}${
@@ -2989,11 +3149,13 @@ var Editing = {
                 hasVisibilityRange &&
                 (force || DrawTool.contextMenuChanges.style.visibilityRange)
             ) {
-                const v = $('.drawToolContextMenu .visibilityrange.stylevalue')
+                const visibilityRangeParts = $(
+                    '.drawToolContextMenu .visibilityrange.stylevalue'
+                )
                     .attr('v')
                     .split(',')
-                newProperties.style.minZoom = parseInt(v[0])
-                newProperties.style.maxZoom = parseInt(v[1])
+                newProperties.style.minZoom = parseInt(visibilityRangeParts[0])
+                newProperties.style.maxZoom = parseInt(visibilityRangeParts[1])
             }
             return newProperties
         }
@@ -3006,13 +3168,18 @@ var Editing = {
     getSnapGuides: function (layer) {
         var guides = []
         for (var j = 0; j < DrawTool.filesOn.length; j++) {
-            for (var e of L_.layers.layer['DrawTool_' + DrawTool.filesOn[j]])
-                if (e != null) {
-                    var l = e
-                    if (l.hasOwnProperty('_layers'))
-                        l = l._layers[Object.keys(l._layers)[0]]
+            for (var drawnLayer of L_.layers.layer[
+                'DrawTool_' + DrawTool.filesOn[j]
+            ])
+                if (drawnLayer != null) {
+                    var featureLayer = drawnLayer
+                    if (featureLayer.hasOwnProperty('_layers'))
+                        featureLayer =
+                            featureLayer._layers[
+                                Object.keys(featureLayer._layers)[0]
+                            ]
                     // Ignore the same layer
-                    if (l != layer) guides.push(e)
+                    if (featureLayer != layer) guides.push(drawnLayer)
                 }
         }
         return guides
@@ -3023,8 +3190,13 @@ var Editing = {
             DrawTool.contextMenuLayer.feature.hasOwnProperty('properties') &&
             DrawTool.contextMenuLayer.feature.properties.annotation == true
         ) {
-            var p = DrawTool.contextMenuLayer.feature.properties._
-            $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).on(
+            var metaProps = DrawTool.contextMenuLayer.feature.properties._
+            $(
+                '#DrawToolAnnotation_' +
+                    metaProps.file_id +
+                    '_' +
+                    metaProps.id
+            ).on(
                 'mousedown',
                 DrawTool.cmLayerDown
             )
@@ -3056,8 +3228,13 @@ var Editing = {
             DrawTool.contextMenuLayer.feature.hasOwnProperty('properties') &&
             DrawTool.contextMenuLayer.feature.properties.annotation == true
         ) {
-            var p = DrawTool.contextMenuLayer.feature.properties._
-            $('#DrawToolAnnotation_' + p.file_id + '_' + p.id).off(
+            var metaProps = DrawTool.contextMenuLayer.feature.properties._
+            $(
+                '#DrawToolAnnotation_' +
+                    metaProps.file_id +
+                    '_' +
+                    metaProps.id
+            ).off(
                 'mousedown',
                 DrawTool.cmLayerDown
             )

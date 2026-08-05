@@ -94,11 +94,11 @@ const Utils = {
   traverseLayers: function (layers, onLayer) {
     let removedUUIDs = [];
     depthTraversal(layers, 0, []);
-    function depthTraversal(node, depth, path) {
-      for (var i = 0; i < node.length; i++) {
-        const ret = onLayer(node[i], path, i);
-        if (ret === "remove") {
-          const removed = node.splice(i, 1);
+    function depthTraversal(layerConfigs, depth, path) {
+      for (var i = 0; i < layerConfigs.length; i++) {
+        const layerAction = onLayer(layerConfigs[i], path, i);
+        if (layerAction === "remove") {
+          const removed = layerConfigs.splice(i, 1);
           if (removed.length > 0) {
             // Find and store the UUIDs of the sublayers of the removed layer
             const removedSubLayerUUIDs = Utils.findSubLayerUUIDs(removed);
@@ -108,14 +108,14 @@ const Utils = {
         }
         //Add other feature information while we're at it
         else if (
-          node[i] &&
-          node[i].sublayers != null &&
-          node[i].sublayers.length > 0
+          layerConfigs[i] &&
+          layerConfigs[i].sublayers != null &&
+          layerConfigs[i].sublayers.length > 0
         ) {
           depthTraversal(
-            node[i].sublayers,
+            layerConfigs[i].sublayers,
             depth + 1,
-            `${path.length > 0 ? path + "." : ""}${node[i].name}`
+            `${path.length > 0 ? path + "." : ""}${layerConfigs[i].name}`
           );
         }
       }
@@ -183,15 +183,15 @@ const Utils = {
 
     return isDockerCached;
   },
-  forceAlphaNumUnder: function (str) {
-    if (typeof str === "string") {
-      return str
+  forceAlphaNumUnder: function (input) {
+    if (typeof input === "string") {
+      return input
         .replace(/[`~!@#$%^&*|+\-=?;:'",.<>\{\}\[\]\\\//() ]/gi, "")
         .replace(/[^ -~]+/g, "");
-    } else if (typeof str === "number") {
-      return str;
-    } else if (Array.isArray(str)) {
-      return str
+    } else if (typeof input === "number") {
+      return input;
+    } else if (Array.isArray(input)) {
+      return input
         .join(",")
         .replace(/[`~!@#$%^&*|+\-=?;:'".<>\{\}\[\]\\\//() ]/gi, "")
         .replace(/[^ -~]+/g, "")

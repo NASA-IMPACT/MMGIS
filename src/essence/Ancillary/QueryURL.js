@@ -110,24 +110,26 @@ var QueryURL = {
         }
 
         if (selected !== false) {
-            var s = selected.split(',')
+            var selectedParts = selected.split(',')
             //1 and 2 could be either lat, lng or key, value
-            let isKeyValue = isNaN(parseFloat(s[1])) || isNaN(parseFloat(s[2]))
+            let isKeyValue =
+                isNaN(parseFloat(selectedParts[1])) ||
+                isNaN(parseFloat(selectedParts[2]))
             if (isKeyValue) {
                 L_.FUTURES.activePoint = {
-                    layerName: s[0],
-                    key: s[1],
-                    value: s[2],
-                    view: s[3],
-                    zoom: s[4],
+                    layerName: selectedParts[0],
+                    key: selectedParts[1],
+                    value: selectedParts[2],
+                    view: selectedParts[3],
+                    zoom: selectedParts[4],
                 }
             } else {
                 L_.FUTURES.activePoint = {
-                    layerName: s[0],
-                    lat: parseFloat(s[1]),
-                    lon: parseFloat(s[2]),
-                    view: s[3],
-                    zoom: s[4],
+                    layerName: selectedParts[0],
+                    lat: parseFloat(selectedParts[1]),
+                    lon: parseFloat(selectedParts[2]),
+                    view: selectedParts[3],
+                    zoom: selectedParts[4],
                 }
             }
         }
@@ -208,16 +210,18 @@ var QueryURL = {
 
             if (layersOn !== false) {
                 L_.initialLayersOn = layersOn
-                var arr = layersOn.split(',')
-                for (var l of arr) {
-                    let s = l.split('$')
-                    onLayers[s[0]] = { opacity: parseFloat(s[1]) }
+                var layerEntries = layersOn.split(',')
+                for (var l of layerEntries) {
+                    let nameAndOpacity = l.split('$')
+                    onLayers[nameAndOpacity[0]] = {
+                        opacity: parseFloat(nameAndOpacity[1]),
+                    }
                 }
             }
             //Turn the selected layer on too
             if (selected !== false) {
-                let s = selected.split(',')
-                onLayers[s[0]] = { opacity: 1 }
+                let selectedParts = selected.split(',')
+                onLayers[selectedParts[0]] = { opacity: 1 }
             }
 
             //This is so that when preselecting data the layer can turn on along with all default layers
@@ -360,12 +364,17 @@ var QueryURL = {
         //panePercents
         // getPanelPercents only exists on the classic/mobile UI controllers; the
         // modern layout has no such method, so fall back to a map-only split.
-        var pP =
+        var panelPercents =
             L_.UserInterface_ &&
             typeof L_.UserInterface_.getPanelPercents === 'function'
                 ? L_.UserInterface_.getPanelPercents()
                 : { viewer: 0, map: 100, globe: 0 }
-        var panePercents = pP.viewer + ',' + pP.map + ',' + pP.globe
+        var panePercents =
+            panelPercents.viewer +
+            ',' +
+            panelPercents.map +
+            ',' +
+            panelPercents.globe
         urlAppendage += '&panePercents=' + panePercents
 
         //on

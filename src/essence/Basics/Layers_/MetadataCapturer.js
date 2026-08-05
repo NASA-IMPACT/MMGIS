@@ -67,10 +67,10 @@ const MetadataCapturer = {
             layerData.url.indexOf('geodatasets:') != -1 &&
             layer.feature.properties._?.idx != null
         ) {
-            const urlSplit = layerData.url.split(':')
+            const urlParts = layerData.url.split(':')
 
             let body = {
-                layer: urlSplit[1],
+                layer: urlParts[1],
                 type: 'geojson',
                 group_id: layer.feature.properties.group_id,
                 id: layer.feature.properties._.idx,

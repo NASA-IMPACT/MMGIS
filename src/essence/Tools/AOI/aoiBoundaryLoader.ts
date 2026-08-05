@@ -109,8 +109,8 @@ function discover(kind: BoundaryKind): BoundarySource[] {
 }
 
 function keyToName(key: string): string {
-    const stripped = key.replace(/^\.\//, '').replace(/\.geojson$/i, '')
-    const basename = stripped.split('/').pop() || stripped
+    const pathWithoutExt = key.replace(/^\.\//, '').replace(/\.geojson$/i, '')
+    const basename = pathWithoutExt.split('/').pop() || pathWithoutExt
     return decodeURIComponent(basename)
 }
 

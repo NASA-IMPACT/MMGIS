@@ -78,19 +78,19 @@ let ShadeTool = {
                 if (tUrl[0] == 'ShadeTool') {
                     tUrl[1].split(';').forEach((elm, i) => {
                         if (elm.length > 0) {
-                            let p = elm.split('+')
+                            let urlParts = elm.split('+')
                             let initObj = {
-                                name: p[0],
-                                on: p[1],
-                                dataIndex: parseInt(p[2]),
+                                name: urlParts[0],
+                                on: urlParts[1],
+                                dataIndex: parseInt(urlParts[2]),
                                 color: {
-                                    r: parseInt(p[3].substr(0, 3)),
-                                    g: parseInt(p[3].substr(3, 3)),
-                                    b: parseInt(p[3].substr(6, 3)),
+                                    r: parseInt(urlParts[3].substr(0, 3)),
+                                    g: parseInt(urlParts[3].substr(3, 3)),
+                                    b: parseInt(urlParts[3].substr(6, 3)),
                                 },
-                                opacity: p[4],
-                                resolution: p[5],
-                                height: parseFloat(p[7]),
+                                opacity: urlParts[4],
+                                resolution: urlParts[5],
+                                height: parseFloat(urlParts[7]),
                             }
                             this.shade(null, i, null, initObj)
                         }
@@ -112,19 +112,19 @@ let ShadeTool = {
                     if (tUrl[0] == 'ShadeTool') {
                         tUrl[1].split(';').forEach((elm, i) => {
                             if (elm.length > 0) {
-                                let p = elm.split('+')
+                                let urlParts = elm.split('+')
                                 let initObj = {
-                                    name: p[0],
-                                    on: p[1],
-                                    dataIndex: p[2],
+                                    name: urlParts[0],
+                                    on: urlParts[1],
+                                    dataIndex: urlParts[2],
                                     color: {
-                                        r: parseInt(p[3].substr(0, 3)),
-                                        g: parseInt(p[3].substr(3, 3)),
-                                        b: parseInt(p[3].substr(6, 3)),
+                                        r: parseInt(urlParts[3].substr(0, 3)),
+                                        g: parseInt(urlParts[3].substr(3, 3)),
+                                        b: parseInt(urlParts[3].substr(6, 3)),
                                     },
-                                    opacity: p[4],
-                                    resolution: p[5],
-                                    height: p[7],
+                                    opacity: urlParts[4],
+                                    resolution: urlParts[5],
+                                    height: urlParts[7],
                                 }
                                 //this.delete(i)
                                 this.makeNewElm(initObj)
@@ -177,9 +177,9 @@ let ShadeTool = {
             $('.vstOptionTime input').val(
                 ShadeTool.parseToUTCTime(TimeControl.getEndTime(), true)
             )
-            const rawTime = ShadeTool.parseToUTCTime(TimeControl.getEndTime())
-            $('.vstOptionTime input').attr('raw', rawTime)
-            $('.vstOptionTime input').attr('title', rawTime)
+            const utcTime = ShadeTool.parseToUTCTime(TimeControl.getEndTime())
+            $('.vstOptionTime input').attr('raw', utcTime)
+            $('.vstOptionTime input').attr('title', utcTime)
             ShadeTool.updateObserverSpecificTime(id)
             // prettier-ignore
             if (
@@ -1069,7 +1069,7 @@ let ShadeTool = {
                             customEl,
                             customRange,
                         },
-                        function (s) {
+                        function (aerResponse) {
                             /*
                             Map_.rmNotNull(ShadeTool.tempIndicatorPoint)
                             ShadeTool.tempIndicatorPoint =
@@ -1084,7 +1084,10 @@ let ShadeTool = {
                             ShadeTool.indicatorDragOn()
                             */
 
-                            ShadeTool.updateRAEIndicators(s, activeElmId)
+                            ShadeTool.updateRAEIndicators(
+                                aerResponse,
+                                activeElmId
+                            )
                             // CLear result outputs
                             $('#shadeTool_results_outputs_az').text('--')
                             $('#shadeTool_results_outputs_el').text('--')
@@ -1092,12 +1095,16 @@ let ShadeTool = {
                             //$('#shadeTool_results_outputs_lng').text('--')
                             //$('#shadeTool_results_outputs_lat').text('--')
 
-                            if (s.message && s.message.indexOf('INSUFFDATA'))
-                                s.message =
+                            if (
+                                aerResponse.message &&
+                                aerResponse.message.indexOf('INSUFFDATA')
+                            )
+                                aerResponse.message =
                                     'Insufficient SPICE kernels for this source entity and time period.'
-                            if (s.error) {
+                            if (aerResponse.error) {
                                 CursorInfo.update(
-                                    s.message || 'LatLng to AzEl Error',
+                                    aerResponse.message ||
+                                        'LatLng to AzEl Error',
                                     6000,
                                     true,
                                     { x: 296, y: -5 },
@@ -1107,13 +1114,13 @@ let ShadeTool = {
                             } else {
                                 // Update result outputs
                                 $('#shadeTool_results_outputs_az').text(
-                                    s.azimuth.toFixed(3) + '°'
+                                    aerResponse.azimuth.toFixed(3) + '°'
                                 )
                                 $('#shadeTool_results_outputs_el').text(
-                                    s.elevation.toFixed(3) + '°'
+                                    aerResponse.elevation.toFixed(3) + '°'
                                 )
                                 $('#shadeTool_results_outputs_range').text(
-                                    s.range.toFixed(3) + 'km'
+                                    aerResponse.range.toFixed(3) + 'km'
                                 )
                                 /*
                                     $('#shadeTool_results_outputs_lng').text(
@@ -1125,12 +1132,12 @@ let ShadeTool = {
                                     */
 
                                 keepGoing({
-                                    lat: s.latitude,
-                                    lng: s.longitude,
-                                    altitude: s.horizontal_altitude,
-                                    az: s.azimuth,
-                                    el: s.elevation,
-                                    range: s.range,
+                                    lat: aerResponse.latitude,
+                                    lng: aerResponse.longitude,
+                                    altitude: aerResponse.horizontal_altitude,
+                                    az: aerResponse.azimuth,
+                                    el: aerResponse.elevation,
+                                    range: aerResponse.range,
                                 })
                             }
                         },
@@ -1188,17 +1195,17 @@ let ShadeTool = {
                     ).text('Regenerate')
                     // We'll use a single canvas for all tiles for capturing
                     // their dataURLs
-                    let c = document.createElement('canvas')
+                    let scratchCanvas = document.createElement('canvas')
                     const res =
                         data.tileResolution * Math.pow(2, data.resolution)
-                    c.width = res
-                    c.height = res
-                    let ctx = c.getContext('2d')
+                    scratchCanvas.width = res
+                    scratchCanvas.height = res
+                    let ctx = scratchCanvas.getContext('2d')
                     let cImgData = ctx.createImageData(res, res)
                     let cData = cImgData.data
 
-                    let dl = {}
-                    let dlc = {}
+                    let tileDataUrls = {}
+                    let tileCanvases = {}
 
                     for (let j = 0; j <= data.outputTopLeftTile.h; j++) {
                         for (let i = 0; i <= data.outputTopLeftTile.w; i++) {
@@ -1209,11 +1216,13 @@ let ShadeTool = {
                             const xO = data.outputTopLeftTile.x % 1 == 0
                             const yO = data.outputTopLeftTile.y % 1 == 0
 
-                            dl[z] = dl[z] || {}
-                            dl[z][Math.floor(x)] = dl[z][Math.floor(x)] || {}
+                            tileDataUrls[z] = tileDataUrls[z] || {}
+                            tileDataUrls[z][Math.floor(x)] =
+                                tileDataUrls[z][Math.floor(x)] || {}
 
-                            dlc[z] = dlc[z] || {}
-                            dlc[z][Math.floor(x)] = dlc[z][Math.floor(x)] || {}
+                            tileCanvases[z] = tileCanvases[z] || {}
+                            tileCanvases[z][Math.floor(x)] =
+                                tileCanvases[z][Math.floor(x)] || {}
 
                             const tileRow =
                                 (y -
@@ -1231,56 +1240,56 @@ let ShadeTool = {
 
                             // Draw canvas
                             let px = 0
-                            let val = null
                             for (let p = 0; p < cData.length; p += 4) {
                                 const isEdge =
                                     p / 4 < res ||
                                     p / 4 > cData.length - res - 1 ||
                                     (p / 4) % res == 0 ||
                                     (p / 4 + 1) % res == 0
-                                val =
+                                const resultRow =
                                     data.result[tileRow + Math.floor(px / res)]
-                                if (val != null) {
-                                    val = val[tileCol + (px % res)]
-                                    let c
-                                    switch (val) {
+                                if (resultRow != null) {
+                                    const visibilityCode =
+                                        resultRow[tileCol + (px % res)]
+                                    let pixelColor
+                                    switch (visibilityCode) {
                                         case 0:
-                                            c =
+                                            pixelColor =
                                                 options.invert == 0
                                                     ? { r: 0, g: 0, b: 0, a: 0 }
                                                     : options.color
                                             break
                                         case 1:
-                                            c =
+                                            pixelColor =
                                                 options.invert == 0
                                                     ? options.color
                                                     : { r: 0, g: 0, b: 0, a: 0 }
                                             break
                                         case 2:
-                                            c =
+                                            pixelColor =
                                                 options.invert == 0
                                                     ? options.color
                                                     : { r: 0, g: 0, b: 0, a: 0 }
                                             break
                                         case 3:
-                                            c = { r: 0, g: 255, b: 0, a: 0 }
+                                            pixelColor = { r: 0, g: 255, b: 0, a: 0 }
                                             break
                                         case 8:
-                                            c = { r: 0, g: 0, b: 0, a: 0 }
+                                            pixelColor = { r: 0, g: 0, b: 0, a: 0 }
                                             break
                                         case 9:
-                                            c = { r: 255, g: 0, b: 0, a: 35 }
+                                            pixelColor = { r: 255, g: 0, b: 0, a: 35 }
                                             break
                                         default:
-                                            c = { r: 0, g: 0, b: 0, a: 0 }
+                                            pixelColor = { r: 0, g: 0, b: 0, a: 0 }
                                     }
                                     if (ShadeTool.showTileEdges && isEdge)
-                                        c = { r: 255, g: 255, b: 255, a: 200 }
+                                        pixelColor = { r: 255, g: 255, b: 255, a: 200 }
 
-                                    cData[p] = c.r
-                                    cData[p + 1] = c.g
-                                    cData[p + 2] = c.b
-                                    cData[p + 3] = c.a
+                                    cData[p] = pixelColor.r
+                                    cData[p + 1] = pixelColor.g
+                                    cData[p + 2] = pixelColor.b
+                                    cData[p + 3] = pixelColor.a
                                 } else {
                                     cData[p] = 0
                                     cData[p + 1] = 0
@@ -1290,13 +1299,14 @@ let ShadeTool = {
                                 px++
                             }
                             ctx.putImageData(cImgData, 0, 0)
-                            dl[z][Math.floor(x)][Math.floor(y)] = c.toDataURL()
-                            dlc[z][Math.floor(x)][Math.floor(y)] =
-                                F_.cloneCanvas(c)
+                            tileDataUrls[z][Math.floor(x)][Math.floor(y)] =
+                                scratchCanvas.toDataURL()
+                            tileCanvases[z][Math.floor(x)][Math.floor(y)] =
+                                F_.cloneCanvas(scratchCanvas)
                         }
                     }
-                    ShadeTool.canvases[activeElmId] = dlc
-                    makeDataLayer(dl, activeElmId, dlc)
+                    ShadeTool.canvases[activeElmId] = tileCanvases
+                    makeDataLayer(tileDataUrls, activeElmId, tileCanvases)
                     $(
                         '#vstShades #vstId_' + activeElmId + ' .vstRegen'
                     ).removeClass('regening')
@@ -1308,7 +1318,7 @@ let ShadeTool = {
             )
         }
 
-        function makeDataLayer(layerUrl, activeElmId, dlc) {
+        function makeDataLayer(tileDataUrls, activeElmId, tileCanvases) {
             let layerName = 'shade' + activeElmId
 
             Map_.rmNotNull(L_.layers.layer[layerName])
@@ -1323,7 +1333,7 @@ let ShadeTool = {
                     maxZoom: 30,
                 },
                 fragmentShader: DataShaders['image'].frag,
-                tileUrls: [layerUrl],
+                tileUrls: [tileDataUrls],
                 uniforms: uniforms,
                 tileUrlsAsDataUrls: true,
             })
@@ -1799,7 +1809,7 @@ function interfaceWithMMGIS() {
         return
     }
 
-    const rawTime = ShadeTool.parseToUTCTime(TimeControl.getEndTime())
+    const utcTime = ShadeTool.parseToUTCTime(TimeControl.getEndTime())
     // prettier-ignore
     let markup = [
         "<div id='shadeTool'>",
@@ -1813,7 +1823,7 @@ function interfaceWithMMGIS() {
                 "<div class='vstOptionTime'>",
                     "<div class='flexbetween'>",
                         `<div class='vstClockIcon'><i class='mdi mdi-clock-outline mdi-18px'></i></div>`,
-                        `<input type='text' value='${ShadeTool.parseToUTCTime(TimeControl.getEndTime(), true)}' raw='${rawTime}' title='${rawTime}'>`,
+                        `<input type='text' value='${ShadeTool.parseToUTCTime(TimeControl.getEndTime(), true)}' raw='${utcTime}' title='${utcTime}'>`,
                     "</div>",
                 "</div>",
             "</div>",

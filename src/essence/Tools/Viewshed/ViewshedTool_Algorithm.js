@@ -12,8 +12,8 @@ let ViewshedTool_Algorithm = {
     // 8: visible but not within elevation bounds
     // 9: no data
     perOctant: false,
-    viewshed: function (d) {
-        if (d.useCurvature) this.curveData(d)
+    viewshed: function (viewshedData) {
+        if (viewshedData.useCurvature) this.curveData(viewshedData)
         /*
             console.log(d)
             // TESTING =====
@@ -38,410 +38,560 @@ let ViewshedTool_Algorithm = {
             // END
             */
 
-        let grids = this.initializeGrids(d)
-        this.processFirst(d, grids)
-        this.processUp(d, grids)
-        this.processDown(d, grids)
+        let grids = this.initializeGrids(viewshedData)
+        this.processFirst(viewshedData, grids)
+        this.processUp(viewshedData, grids)
+        this.processDown(viewshedData, grids)
 
-        this.mask(d, grids)
+        this.mask(viewshedData, grids)
 
         //console.log(grids)
 
         return grids.resultGrid
     },
-    initializeGrids: function (d) {
+    initializeGrids: function (viewshedData) {
         // Initialize grids with the same dimensions as the data grid and with 0s
         let refGrid = []
         let resultGrid = []
-        for (let i = 0; i < d.data.length; i++) {
-            refGrid.push(new Array(d.data[0].length).fill(0))
-            resultGrid.push(new Array(d.data[0].length).fill(0))
+        for (let i = 0; i < viewshedData.data.length; i++) {
+            refGrid.push(new Array(viewshedData.data[0].length).fill(0))
+            resultGrid.push(new Array(viewshedData.data[0].length).fill(0))
         }
 
         // Populate the ref grid with the observer's height
-        const o = d.dataSource //observer
-        d.source.surfaceHeight = d.data[o.y][o.x]
-        refGrid[o.y][o.x] = d.data[o.y][o.x]
-        resultGrid[o.y][o.x] = 2
+        const observerCell = viewshedData.dataSource
+        viewshedData.source.surfaceHeight =
+            viewshedData.data[observerCell.y][observerCell.x]
+        refGrid[observerCell.y][observerCell.x] =
+            viewshedData.data[observerCell.y][observerCell.x]
+        resultGrid[observerCell.y][observerCell.x] = 2
 
         // N
-        refGrid[o.y - 1][o.x] = d.data[o.y - 1][o.x]
-        resultGrid[o.y - 1][o.x] = 1
+        refGrid[observerCell.y - 1][observerCell.x] =
+            viewshedData.data[observerCell.y - 1][observerCell.x]
+        resultGrid[observerCell.y - 1][observerCell.x] = 1
 
         // NW
-        refGrid[o.y - 1][o.x - 1] = d.data[o.y - 1][o.x - 1]
-        resultGrid[o.y - 1][o.x - 1] = 1
+        refGrid[observerCell.y - 1][observerCell.x - 1] =
+            viewshedData.data[observerCell.y - 1][observerCell.x - 1]
+        resultGrid[observerCell.y - 1][observerCell.x - 1] = 1
 
         // W
-        refGrid[o.y][o.x - 1] = d.data[o.y][o.x - 1]
-        resultGrid[o.y][o.x - 1] = 1
+        refGrid[observerCell.y][observerCell.x - 1] =
+            viewshedData.data[observerCell.y][observerCell.x - 1]
+        resultGrid[observerCell.y][observerCell.x - 1] = 1
 
         // SW
-        refGrid[o.y + 1][o.x - 1] = d.data[o.y + 1][o.x - 1]
-        resultGrid[o.y + 1][o.x - 1] = 1
+        refGrid[observerCell.y + 1][observerCell.x - 1] =
+            viewshedData.data[observerCell.y + 1][observerCell.x - 1]
+        resultGrid[observerCell.y + 1][observerCell.x - 1] = 1
 
         // S
-        refGrid[o.y + 1][o.x] = d.data[o.y + 1][o.x]
-        resultGrid[o.y + 1][o.x] = 1
+        refGrid[observerCell.y + 1][observerCell.x] =
+            viewshedData.data[observerCell.y + 1][observerCell.x]
+        resultGrid[observerCell.y + 1][observerCell.x] = 1
 
         // SE
-        refGrid[o.y + 1][o.x + 1] = d.data[o.y + 1][o.x + 1]
-        resultGrid[o.y + 1][o.x + 1] = 1
+        refGrid[observerCell.y + 1][observerCell.x + 1] =
+            viewshedData.data[observerCell.y + 1][observerCell.x + 1]
+        resultGrid[observerCell.y + 1][observerCell.x + 1] = 1
 
         // E
-        refGrid[o.y][o.x + 1] = d.data[o.y][o.x + 1]
-        resultGrid[o.y][o.x + 1] = 1
+        refGrid[observerCell.y][observerCell.x + 1] =
+            viewshedData.data[observerCell.y][observerCell.x + 1]
+        resultGrid[observerCell.y][observerCell.x + 1] = 1
 
         // NE
-        refGrid[o.y - 1][o.x + 1] = d.data[o.y - 1][o.x + 1]
-        resultGrid[o.y - 1][o.x + 1] = 1
+        refGrid[observerCell.y - 1][observerCell.x + 1] =
+            viewshedData.data[observerCell.y - 1][observerCell.x + 1]
+        resultGrid[observerCell.y - 1][observerCell.x + 1] = 1
 
         return { refGrid, resultGrid }
     },
     // Viewsheds the "horizontal x" axis
-    processFirst: function (d, g) {
-        const o = d.dataSource //observer
+    processFirst: function (viewshedData, grids) {
+        const observerCell = viewshedData.dataSource
 
-        const observerHeight = g.refGrid[o.y][o.x] + d.source.height
-        let dataH
+        const observerHeight =
+            grids.refGrid[observerCell.y][observerCell.x] +
+            viewshedData.source.height
+        let cellTargetHeight
 
         // Process Left
-        for (let i = o.x - 2; i >= 0; i--) {
-            g.refGrid[o.y][i] = this.calcHeightLine(
-                i - o.x,
-                g.refGrid[o.y][i + 1],
+        for (let i = observerCell.x - 2; i >= 0; i--) {
+            grids.refGrid[observerCell.y][i] = this.calcHeightLine(
+                i - observerCell.x,
+                grids.refGrid[observerCell.y][i + 1],
                 observerHeight
             )
 
             // Set visibility if our value is less than the data's
-            dataH = d.data[o.y][i] + d.options.targetHeight
-            if (g.refGrid[o.y][i] <= dataH) {
-                if (this.isInElevationFOV(d, i, o.y, observerHeight, dataH))
-                    g.resultGrid[o.y][i] = 1
-                else g.resultGrid[o.y][i] = 0 //8
+            cellTargetHeight =
+                viewshedData.data[observerCell.y][i] +
+                viewshedData.options.targetHeight
+            if (grids.refGrid[observerCell.y][i] <= cellTargetHeight) {
+                if (
+                    this.isInElevationFOV(
+                        viewshedData,
+                        i,
+                        observerCell.y,
+                        observerHeight,
+                        cellTargetHeight
+                    )
+                )
+                    grids.resultGrid[observerCell.y][i] = 1
+                else grids.resultGrid[observerCell.y][i] = 0 //8
             }
 
             // Check if NoData
-            if (ViewshedTool_Algorithm.isNoData(d.data[o.y][i]))
-                g.resultGrid[o.y][i] = 9
+            if (
+                ViewshedTool_Algorithm.isNoData(
+                    viewshedData.data[observerCell.y][i]
+                )
+            )
+                grids.resultGrid[observerCell.y][i] = 9
 
             // Set ref position to the greater: plane height or actual elevation
-            g.refGrid[o.y][i] = Math.max(g.refGrid[o.y][i], d.data[o.y][i])
+            grids.refGrid[observerCell.y][i] = Math.max(
+                grids.refGrid[observerCell.y][i],
+                viewshedData.data[observerCell.y][i]
+            )
         }
 
         // Process Right
-        for (let i = o.x + 2; i < d.data[0].length; i++) {
-            g.refGrid[o.y][i] = this.calcHeightLine(
-                i - o.x,
-                g.refGrid[o.y][i - 1],
+        for (
+            let i = observerCell.x + 2;
+            i < viewshedData.data[0].length;
+            i++
+        ) {
+            grids.refGrid[observerCell.y][i] = this.calcHeightLine(
+                i - observerCell.x,
+                grids.refGrid[observerCell.y][i - 1],
                 observerHeight
             )
 
             // Set visibility if our value is less than the data's
-            dataH = d.data[o.y][i] + d.options.targetHeight
-            if (g.refGrid[o.y][i] <= dataH) {
-                if (this.isInElevationFOV(d, i, o.y, observerHeight, dataH))
-                    g.resultGrid[o.y][i] = 1
-                else g.resultGrid[o.y][i] = 0 //8
+            cellTargetHeight =
+                viewshedData.data[observerCell.y][i] +
+                viewshedData.options.targetHeight
+            if (grids.refGrid[observerCell.y][i] <= cellTargetHeight) {
+                if (
+                    this.isInElevationFOV(
+                        viewshedData,
+                        i,
+                        observerCell.y,
+                        observerHeight,
+                        cellTargetHeight
+                    )
+                )
+                    grids.resultGrid[observerCell.y][i] = 1
+                else grids.resultGrid[observerCell.y][i] = 0 //8
             }
 
             // Check if NoData
-            if (ViewshedTool_Algorithm.isNoData(d.data[o.y][i]))
-                g.resultGrid[o.y][i] = 9
+            if (
+                ViewshedTool_Algorithm.isNoData(
+                    viewshedData.data[observerCell.y][i]
+                )
+            )
+                grids.resultGrid[observerCell.y][i] = 9
 
             // Set ref position to the greater: plane height or actual elevation
-            g.refGrid[o.y][i] = Math.max(g.refGrid[o.y][i], d.data[o.y][i])
+            grids.refGrid[observerCell.y][i] = Math.max(
+                grids.refGrid[observerCell.y][i],
+                viewshedData.data[observerCell.y][i]
+            )
         }
 
         // Process Up
-        for (let j = o.y - 2; j >= 0; j--) {
-            g.refGrid[j][o.x] = this.calcHeightLine(
-                j - o.y,
-                g.refGrid[j + 1][o.x],
+        for (let j = observerCell.y - 2; j >= 0; j--) {
+            grids.refGrid[j][observerCell.x] = this.calcHeightLine(
+                j - observerCell.y,
+                grids.refGrid[j + 1][observerCell.x],
                 observerHeight
             )
 
             // Set visibility if our value is less than the data's
-            dataH = d.data[j][o.x] + d.options.targetHeight
-            if (g.refGrid[j][o.x] <= dataH) {
-                if (this.isInElevationFOV(d, o.x, j, observerHeight, dataH))
-                    g.resultGrid[j][o.x] = 1
-                else g.resultGrid[j][o.x] = 0 //8
+            cellTargetHeight =
+                viewshedData.data[j][observerCell.x] +
+                viewshedData.options.targetHeight
+            if (grids.refGrid[j][observerCell.x] <= cellTargetHeight) {
+                if (
+                    this.isInElevationFOV(
+                        viewshedData,
+                        observerCell.x,
+                        j,
+                        observerHeight,
+                        cellTargetHeight
+                    )
+                )
+                    grids.resultGrid[j][observerCell.x] = 1
+                else grids.resultGrid[j][observerCell.x] = 0 //8
             }
 
             // Check if NoData
-            if (ViewshedTool_Algorithm.isNoData(d.data[j][o.x]))
-                g.resultGrid[j][o.x] = 9
+            if (
+                ViewshedTool_Algorithm.isNoData(
+                    viewshedData.data[j][observerCell.x]
+                )
+            )
+                grids.resultGrid[j][observerCell.x] = 9
 
             // Set ref position to the greater: plane height or actual elevation
-            g.refGrid[j][o.x] = Math.max(g.refGrid[j][o.x], d.data[j][o.x])
+            grids.refGrid[j][observerCell.x] = Math.max(
+                grids.refGrid[j][observerCell.x],
+                viewshedData.data[j][observerCell.x]
+            )
         }
 
         // Process Down
-        for (let j = o.y + 2; j < d.data.length; j++) {
-            g.refGrid[j][o.x] = this.calcHeightLine(
-                j - o.y,
-                g.refGrid[j - 1][o.x],
+        for (
+            let j = observerCell.y + 2;
+            j < viewshedData.data.length;
+            j++
+        ) {
+            grids.refGrid[j][observerCell.x] = this.calcHeightLine(
+                j - observerCell.y,
+                grids.refGrid[j - 1][observerCell.x],
                 observerHeight
             )
 
             // Set visibility if our value is less than the data's
-            dataH = d.data[j][o.x] + d.options.targetHeight
-            if (g.refGrid[j][o.x] <= dataH) {
-                if (this.isInElevationFOV(d, o.x, j, observerHeight, dataH))
-                    g.resultGrid[j][o.x] = 1
-                else g.resultGrid[j][o.x] = 0 //8
+            cellTargetHeight =
+                viewshedData.data[j][observerCell.x] +
+                viewshedData.options.targetHeight
+            if (grids.refGrid[j][observerCell.x] <= cellTargetHeight) {
+                if (
+                    this.isInElevationFOV(
+                        viewshedData,
+                        observerCell.x,
+                        j,
+                        observerHeight,
+                        cellTargetHeight
+                    )
+                )
+                    grids.resultGrid[j][observerCell.x] = 1
+                else grids.resultGrid[j][observerCell.x] = 0 //8
             }
 
             // Check if NoData
-            if (ViewshedTool_Algorithm.isNoData(d.data[j][o.x]))
-                g.resultGrid[j][o.x] = 9
+            if (
+                ViewshedTool_Algorithm.isNoData(
+                    viewshedData.data[j][observerCell.x]
+                )
+            )
+                grids.resultGrid[j][observerCell.x] = 9
 
             // Set ref position to the greater: plane height or actual elevation
-            g.refGrid[j][o.x] = Math.max(g.refGrid[j][o.x], d.data[j][o.x])
+            grids.refGrid[j][observerCell.x] = Math.max(
+                grids.refGrid[j][observerCell.x],
+                viewshedData.data[j][observerCell.x]
+            )
         }
     },
-    processUp: function (d, g) {
-        const o = d.dataSource //observer
+    processUp: function (viewshedData, grids) {
+        const observerCell = viewshedData.dataSource
 
-        const observerHeight = g.refGrid[o.y][o.x] + d.source.height
-        let dataH
+        const observerHeight =
+            grids.refGrid[observerCell.y][observerCell.x] +
+            viewshedData.source.height
+        let cellTargetHeight
 
         // Scan Up
-        for (let j = o.y - 1; j >= 0; j--) {
+        for (let j = observerCell.y - 1; j >= 0; j--) {
             // Process Left
-            for (let i = o.x - 1; i >= 0; i--) {
+            for (let i = observerCell.x - 1; i >= 0; i--) {
                 if (ViewshedTool_Algorithm.perOctant) {
-                    g.refGrid[j][i] =
-                        i - o.x < j - o.y
+                    grids.refGrid[j][i] =
+                        i - observerCell.x < j - observerCell.y
                             ? this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y,
-                                  g.refGrid[j + 1][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y + 1,
+                                  i - observerCell.x,
+                                  j - observerCell.y,
+                                  grids.refGrid[j][i + 1],
+                                  i - observerCell.x + 1,
+                                  j - observerCell.y,
+                                  grids.refGrid[j + 1][i + 1],
+                                  i - observerCell.x + 1,
+                                  j - observerCell.y + 1,
                                   observerHeight
                               )
                             : this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j + 1][i],
-                                  i - o.x,
-                                  j - o.y + 1,
-                                  g.refGrid[j + 1][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y + 1,
+                                  i - observerCell.x,
+                                  j - observerCell.y,
+                                  grids.refGrid[j + 1][i],
+                                  i - observerCell.x,
+                                  j - observerCell.y + 1,
+                                  grids.refGrid[j + 1][i + 1],
+                                  i - observerCell.x + 1,
+                                  j - observerCell.y + 1,
                                   observerHeight
                               )
                 } else {
-                    g.refGrid[j][i] = this.calcHeightDiagonal(
-                        i - o.x,
-                        j - o.y,
-                        g.refGrid[j][i + 1],
-                        g.refGrid[j + 1][i],
+                    grids.refGrid[j][i] = this.calcHeightDiagonal(
+                        i - observerCell.x,
+                        j - observerCell.y,
+                        grids.refGrid[j][i + 1],
+                        grids.refGrid[j + 1][i],
                         observerHeight
                     )
                 }
 
                 // Set visibility if our value is less than the data's
-                dataH = d.data[j][i] + d.options.targetHeight
-                if (g.refGrid[j][i] <= dataH) {
-                    if (this.isInElevationFOV(d, i, j, observerHeight, dataH))
-                        g.resultGrid[j][i] = 1
-                    else g.resultGrid[j][i] = 0 //8
+                cellTargetHeight =
+                    viewshedData.data[j][i] + viewshedData.options.targetHeight
+                if (grids.refGrid[j][i] <= cellTargetHeight) {
+                    if (
+                        this.isInElevationFOV(
+                            viewshedData,
+                            i,
+                            j,
+                            observerHeight,
+                            cellTargetHeight
+                        )
+                    )
+                        grids.resultGrid[j][i] = 1
+                    else grids.resultGrid[j][i] = 0 //8
                 }
 
                 // Check if NoData
-                if (ViewshedTool_Algorithm.isNoData(d.data[j][i]))
-                    g.resultGrid[j][i] = 9
+                if (ViewshedTool_Algorithm.isNoData(viewshedData.data[j][i]))
+                    grids.resultGrid[j][i] = 9
 
                 // Set ref position to the greater: plane height or actual elevation
-                g.refGrid[j][i] = Math.max(g.refGrid[j][i], d.data[j][i])
+                grids.refGrid[j][i] = Math.max(
+                    grids.refGrid[j][i],
+                    viewshedData.data[j][i]
+                )
             }
 
             // Process Right
-            for (let i = o.x + 1; i < d.data[0].length; i++) {
+            for (
+                let i = observerCell.x + 1;
+                i < viewshedData.data[0].length;
+                i++
+            ) {
                 if (ViewshedTool_Algorithm.perOctant) {
-                    g.refGrid[j][i] =
-                        i - o.x > Math.abs(j - o.y)
+                    grids.refGrid[j][i] =
+                        i - observerCell.x > Math.abs(j - observerCell.y)
                             ? this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y,
-                                  g.refGrid[j + 1][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y + 1,
+                                  i - observerCell.x,
+                                  j - observerCell.y,
+                                  grids.refGrid[j][i - 1],
+                                  i - observerCell.x - 1,
+                                  j - observerCell.y,
+                                  grids.refGrid[j + 1][i - 1],
+                                  i - observerCell.x - 1,
+                                  j - observerCell.y + 1,
                                   observerHeight
                               )
                             : this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j + 1][i],
-                                  i - o.x,
-                                  j - o.y + 1,
-                                  g.refGrid[j + 1][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y + 1,
+                                  i - observerCell.x,
+                                  j - observerCell.y,
+                                  grids.refGrid[j + 1][i],
+                                  i - observerCell.x,
+                                  j - observerCell.y + 1,
+                                  grids.refGrid[j + 1][i - 1],
+                                  i - observerCell.x - 1,
+                                  j - observerCell.y + 1,
                                   observerHeight
                               )
                 } else {
-                    g.refGrid[j][i] = this.calcHeightDiagonal(
-                        i - o.x,
-                        j - o.y,
-                        g.refGrid[j][i - 1],
-                        g.refGrid[j + 1][i],
+                    grids.refGrid[j][i] = this.calcHeightDiagonal(
+                        i - observerCell.x,
+                        j - observerCell.y,
+                        grids.refGrid[j][i - 1],
+                        grids.refGrid[j + 1][i],
                         observerHeight
                     )
                 }
 
                 // Set visibility if our value is less than the data's
-                dataH = d.data[j][i] + d.options.targetHeight
-                if (g.refGrid[j][i] <= dataH) {
-                    if (this.isInElevationFOV(d, i, j, observerHeight, dataH))
-                        g.resultGrid[j][i] = 1
-                    else g.resultGrid[j][i] = 0 //8
+                cellTargetHeight =
+                    viewshedData.data[j][i] + viewshedData.options.targetHeight
+                if (grids.refGrid[j][i] <= cellTargetHeight) {
+                    if (
+                        this.isInElevationFOV(
+                            viewshedData,
+                            i,
+                            j,
+                            observerHeight,
+                            cellTargetHeight
+                        )
+                    )
+                        grids.resultGrid[j][i] = 1
+                    else grids.resultGrid[j][i] = 0 //8
                 }
 
                 // Check if NoData
-                if (ViewshedTool_Algorithm.isNoData(d.data[j][i]))
-                    g.resultGrid[j][i] = 9
+                if (ViewshedTool_Algorithm.isNoData(viewshedData.data[j][i]))
+                    grids.resultGrid[j][i] = 9
 
                 // Set ref position to the greater: plane height or actual elevation
-                g.refGrid[j][i] = Math.max(g.refGrid[j][i], d.data[j][i])
+                grids.refGrid[j][i] = Math.max(
+                    grids.refGrid[j][i],
+                    viewshedData.data[j][i]
+                )
             }
         }
     },
-    processDown: function (d, g) {
-        const o = d.dataSource //observer
+    processDown: function (viewshedData, grids) {
+        const observerCell = viewshedData.dataSource
 
-        const observerHeight = g.refGrid[o.y][o.x] + d.source.height
-        let dataH
+        const observerHeight =
+            grids.refGrid[observerCell.y][observerCell.x] +
+            viewshedData.source.height
+        let cellTargetHeight
 
         // Scan Down
-        for (let j = o.y + 1; j < d.data.length; j++) {
+        for (let j = observerCell.y + 1; j < viewshedData.data.length; j++) {
             // Process Left
-            for (let i = o.x - 1; i >= 0; i--) {
+            for (let i = observerCell.x - 1; i >= 0; i--) {
                 if (ViewshedTool_Algorithm.perOctant) {
-                    g.refGrid[j][i] =
-                        Math.abs(i - o.x) > j - o.y
+                    grids.refGrid[j][i] =
+                        Math.abs(i - observerCell.x) > j - observerCell.y
                             ? this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y,
-                                  g.refGrid[j - 1][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y - 1,
+                                  i - observerCell.x,
+                                  j - observerCell.y,
+                                  grids.refGrid[j][i + 1],
+                                  i - observerCell.x + 1,
+                                  j - observerCell.y,
+                                  grids.refGrid[j - 1][i + 1],
+                                  i - observerCell.x + 1,
+                                  j - observerCell.y - 1,
                                   observerHeight
                               )
                             : this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j - 1][i],
-                                  i - o.x,
-                                  j - o.y - 1,
-                                  g.refGrid[j - 1][i + 1],
-                                  i - o.x + 1,
-                                  j - o.y - 1,
+                                  i - observerCell.x,
+                                  j - observerCell.y,
+                                  grids.refGrid[j - 1][i],
+                                  i - observerCell.x,
+                                  j - observerCell.y - 1,
+                                  grids.refGrid[j - 1][i + 1],
+                                  i - observerCell.x + 1,
+                                  j - observerCell.y - 1,
                                   observerHeight
                               )
                 } else {
-                    g.refGrid[j][i] = this.calcHeightDiagonal(
-                        i - o.x,
-                        j - o.y,
-                        g.refGrid[j][i + 1],
-                        g.refGrid[j - 1][i],
+                    grids.refGrid[j][i] = this.calcHeightDiagonal(
+                        i - observerCell.x,
+                        j - observerCell.y,
+                        grids.refGrid[j][i + 1],
+                        grids.refGrid[j - 1][i],
                         observerHeight
                     )
                 }
 
                 // Set visibility if our value is less than the data's
-                dataH = d.data[j][i] + d.options.targetHeight
-                if (g.refGrid[j][i] <= dataH) {
-                    if (this.isInElevationFOV(d, i, j, observerHeight, dataH))
-                        g.resultGrid[j][i] = 1
-                    else g.resultGrid[j][i] = 0 //8
+                cellTargetHeight =
+                    viewshedData.data[j][i] + viewshedData.options.targetHeight
+                if (grids.refGrid[j][i] <= cellTargetHeight) {
+                    if (
+                        this.isInElevationFOV(
+                            viewshedData,
+                            i,
+                            j,
+                            observerHeight,
+                            cellTargetHeight
+                        )
+                    )
+                        grids.resultGrid[j][i] = 1
+                    else grids.resultGrid[j][i] = 0 //8
                 }
 
                 // Check if NoData
-                if (ViewshedTool_Algorithm.isNoData(d.data[j][i]))
-                    g.resultGrid[j][i] = 9
+                if (ViewshedTool_Algorithm.isNoData(viewshedData.data[j][i]))
+                    grids.resultGrid[j][i] = 9
 
                 // Set ref position to the greater: plane height or actual elevation
-                g.refGrid[j][i] = Math.max(g.refGrid[j][i], d.data[j][i])
+                grids.refGrid[j][i] = Math.max(
+                    grids.refGrid[j][i],
+                    viewshedData.data[j][i]
+                )
             }
 
             // Process Right
-            for (let i = o.x + 1; i < d.data[0].length; i++) {
+            for (
+                let i = observerCell.x + 1;
+                i < viewshedData.data[0].length;
+                i++
+            ) {
                 if (ViewshedTool_Algorithm.perOctant) {
-                    g.refGrid[j][i] =
-                        i - o.x > j - o.y
+                    grids.refGrid[j][i] =
+                        i - observerCell.x > j - observerCell.y
                             ? this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y,
-                                  g.refGrid[j - 1][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y - 1,
+                                  i - observerCell.x,
+                                  j - observerCell.y,
+                                  grids.refGrid[j][i - 1],
+                                  i - observerCell.x - 1,
+                                  j - observerCell.y,
+                                  grids.refGrid[j - 1][i - 1],
+                                  i - observerCell.x - 1,
+                                  j - observerCell.y - 1,
                                   observerHeight
                               )
                             : this.calcHeightDiagonal2(
-                                  i - o.x,
-                                  j - o.y,
-                                  g.refGrid[j - 1][i],
-                                  i - o.x,
-                                  j - o.y - 1,
-                                  g.refGrid[j - 1][i - 1],
-                                  i - o.x - 1,
-                                  j - o.y - 1,
+                                  i - observerCell.x,
+                                  j - observerCell.y,
+                                  grids.refGrid[j - 1][i],
+                                  i - observerCell.x,
+                                  j - observerCell.y - 1,
+                                  grids.refGrid[j - 1][i - 1],
+                                  i - observerCell.x - 1,
+                                  j - observerCell.y - 1,
                                   observerHeight
                               )
                 } else {
-                    g.refGrid[j][i] = this.calcHeightDiagonal(
-                        i - o.x,
-                        j - o.y,
-                        g.refGrid[j][i - 1],
-                        g.refGrid[j - 1][i],
+                    grids.refGrid[j][i] = this.calcHeightDiagonal(
+                        i - observerCell.x,
+                        j - observerCell.y,
+                        grids.refGrid[j][i - 1],
+                        grids.refGrid[j - 1][i],
                         observerHeight
                     )
                 }
 
                 // Set visibility if our value is less than the data's
-                dataH = d.data[j][i] + d.options.targetHeight
-                if (g.refGrid[j][i] <= dataH) {
-                    if (this.isInElevationFOV(d, i, j, observerHeight, dataH))
-                        g.resultGrid[j][i] = 1
-                    else g.resultGrid[j][i] = 0 //8
+                cellTargetHeight =
+                    viewshedData.data[j][i] + viewshedData.options.targetHeight
+                if (grids.refGrid[j][i] <= cellTargetHeight) {
+                    if (
+                        this.isInElevationFOV(
+                            viewshedData,
+                            i,
+                            j,
+                            observerHeight,
+                            cellTargetHeight
+                        )
+                    )
+                        grids.resultGrid[j][i] = 1
+                    else grids.resultGrid[j][i] = 0 //8
                 }
 
                 // Check if NoData
-                if (ViewshedTool_Algorithm.isNoData(d.data[j][i]))
-                    g.resultGrid[j][i] = 9
+                if (ViewshedTool_Algorithm.isNoData(viewshedData.data[j][i]))
+                    grids.resultGrid[j][i] = 9
 
                 // Set ref position to the greater: plane height or actual elevation
-                g.refGrid[j][i] = Math.max(g.refGrid[j][i], d.data[j][i])
+                grids.refGrid[j][i] = Math.max(
+                    grids.refGrid[j][i],
+                    viewshedData.data[j][i]
+                )
             }
         }
     },
-    isInElevationFOV(d, i, j, sourceHeight, height) {
-        if (d.options.FOVElevation < 180) {
+    isInElevationFOV(viewshedData, i, j, sourceHeight, height) {
+        if (viewshedData.options.FOVElevation < 180) {
             const srcLatLng = G_.litho.projection.tileXYZ2LatLng(
-                d.topLeftTile.x + d.dataSource.x / d.tileResolution,
-                d.topLeftTile.y + d.dataSource.y / d.tileResolution,
-                d.topLeftTile.z
+                viewshedData.topLeftTile.x +
+                    viewshedData.dataSource.x / viewshedData.tileResolution,
+                viewshedData.topLeftTile.y +
+                    viewshedData.dataSource.y / viewshedData.tileResolution,
+                viewshedData.topLeftTile.z
             )
             const latLng = G_.litho.projection.tileXYZ2LatLng(
-                d.topLeftTile.x + i / d.tileResolution,
-                d.topLeftTile.y + j / d.tileResolution,
-                d.topLeftTile.z
+                viewshedData.topLeftTile.x + i / viewshedData.tileResolution,
+                viewshedData.topLeftTile.y + j / viewshedData.tileResolution,
+                viewshedData.topLeftTile.z
             )
             const dist = F_.lngLatDistBetween(
                 srcLatLng.lng,
@@ -452,23 +602,31 @@ let ViewshedTool_Algorithm = {
             const ang =
                 Math.atan2(height - sourceHeight, dist) * (180 / Math.PI)
             if (
-                ang > d.options.centerElevation - d.options.FOVElevation / 2 &&
-                ang < d.options.centerElevation + d.options.FOVElevation / 2
+                ang >
+                    viewshedData.options.centerElevation -
+                        viewshedData.options.FOVElevation / 2 &&
+                ang <
+                    viewshedData.options.centerElevation +
+                        viewshedData.options.FOVElevation / 2
             )
                 return true
             return false
         }
         return true
     },
-    mask: function (d, grids) {
+    mask: function (viewshedData, grids) {
         // Azimuth
         // based on options.centerAzimuth and FOVAzimuth
-        if (d.options.FOVAzimuth < 360) {
+        if (viewshedData.options.FOVAzimuth < 360) {
             let minAz =
-                (d.options.centerAzimuth - d.options.FOVAzimuth / 2 + 90) *
+                (viewshedData.options.centerAzimuth -
+                    viewshedData.options.FOVAzimuth / 2 +
+                    90) *
                 (Math.PI / 180)
             let maxAz =
-                (d.options.centerAzimuth + d.options.FOVAzimuth / 2 + 90) *
+                (viewshedData.options.centerAzimuth +
+                    viewshedData.options.FOVAzimuth / 2 +
+                    90) *
                 (Math.PI / 180)
             if (minAz < 0) {
                 minAz += Math.PI * 2
@@ -476,7 +634,10 @@ let ViewshedTool_Algorithm = {
             }
             for (let y = 0; y < grids.resultGrid.length; y++) {
                 for (let x = 0; x < grids.resultGrid[y].length; x++) {
-                    let ang = Math.atan2(d.dataSource.y - y, d.dataSource.x - x)
+                    let ang = Math.atan2(
+                        viewshedData.dataSource.y - y,
+                        viewshedData.dataSource.x - x
+                    )
                     if (ang < 0) ang += Math.PI * 2
                     if (
                         !(
@@ -516,24 +677,29 @@ let ViewshedTool_Algorithm = {
         if (i == j) return this.calcHeightLine(i, Za, Zo)
         else return ((Za - Zo) * i + (Zb - Zo) * (j - i)) / (j - 1) + Zo
     },
-    curveData: function (d) {
-        if (d.hasDataCurved) return
-        d.hasDataCurved = true
-        for (let j = 0; j < d.data.length; j++) {
-            for (let i = 0; i < d.data[j].length; i++) {
-                d.data[j][i] = this.curve(i, j, d.data[j][i], d)
+    curveData: function (viewshedData) {
+        if (viewshedData.hasDataCurved) return
+        viewshedData.hasDataCurved = true
+        for (let j = 0; j < viewshedData.data.length; j++) {
+            for (let i = 0; i < viewshedData.data[j].length; i++) {
+                viewshedData.data[j][i] = this.curve(
+                    i,
+                    j,
+                    viewshedData.data[j][i],
+                    viewshedData
+                )
             }
         }
     },
-    curve: function (i, j, height, d) {
+    curve: function (i, j, height, viewshedData) {
         const ll = G_.litho.projection.tileXYZ2LatLng(
-            d.topLeftTile.x + i / d.tileResolution,
-            d.topLeftTile.y + j / d.tileResolution,
-            d.topLeftTile.z
+            viewshedData.topLeftTile.x + i / viewshedData.tileResolution,
+            viewshedData.topLeftTile.y + j / viewshedData.tileResolution,
+            viewshedData.topLeftTile.z
         )
         const dist = F_.lngLatDistBetween(
-            d.source.lng,
-            d.source.lat,
+            viewshedData.source.lng,
+            viewshedData.source.lat,
             ll.lng,
             ll.lat
         )
@@ -546,6 +712,7 @@ let ViewshedTool_Algorithm = {
         const q = { x: Ia, y: Ja, z: Za }
         const r = { x: Ib, y: Jb, z: Zb }
 
+        // Plane through p, q, r via cross product: a*x + b*y + c*z + d = 0
         const a1 = q.x - p.x
         const b1 = q.y - p.y
         const c1 = q.z - p.z

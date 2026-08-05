@@ -14,11 +14,11 @@ const DEFAULT_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
  * Mirrors the logic in Map_.makeTileLayer so both engines agree.
  */
 export function resolveTileFormat(layerObj: Record<string, any>): string {
-    if (typeof layerObj.tileformat === 'undefined') {
+    if (typeof layerObj.tileFormat === 'undefined') {
         const tms = typeof layerObj.tms === 'undefined' ? true : layerObj.tms
         return tms ? 'tms' : 'wmts'
     }
-    return layerObj.tileformat
+    return layerObj.tileFormat
 }
 
 /**
@@ -60,7 +60,7 @@ export function formatLayerTime(format?: string): (time: unknown) => string {
  */
 export function buildTileUrlOptions(
     layerObj: Record<string, any>,
-    splitColonType?: string,
+    tileSourceType?: string,
     tileFormat?: string
 ): Record<string, any> {
     const timeConfig = layerObj.time || {}
@@ -81,7 +81,7 @@ export function buildTileUrlOptions(
               }
 
     return {
-        splitColonType,
+        tileSourceType,
         time: formattedEnd,
         starttime: formattedStart,
         endtime: formattedEnd,
@@ -177,7 +177,7 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
 export function compileTileUrl(url: string, options: Record<string, any>): string {
     if (!url) return url
 
-    let nextUrl = url
+    let compiledUrl = url
 
     const timeStr = options.time
     const startTimeStr = options.starttime
@@ -191,13 +191,13 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
     // that ordering for the three standard tokens (L.Util.template substitutes
     // them from `options` before this function is ever called); DeckGL has no
     // such step, so a placeholder inside a query string reached the server raw.
-    nextUrl = nextUrl.replace(/{time}/g, timeStr || '')
-    nextUrl = nextUrl.replace(/{starttime}/g, startTimeStr || '')
-    nextUrl = nextUrl.replace(/{endtime}/g, endTimeStr || '')
+    compiledUrl = compiledUrl.replace(/{time}/g, timeStr || '')
+    compiledUrl = compiledUrl.replace(/{starttime}/g, startTimeStr || '')
+    compiledUrl = compiledUrl.replace(/{endtime}/g, endTimeStr || '')
 
     if (options.customTimes?.times && options.customTimes.times.length > 0) {
         for (let i = 0; i < options.customTimes.times.length; i++) {
-            nextUrl = nextUrl.replace(
+            compiledUrl = compiledUrl.replace(
                 new RegExp(`{customtime.${i}}`, 'g'),
                 options.customTimes.times[i]
             )
@@ -206,9 +206,9 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 
     // 2. STAC/COG datetime parameters
     if (
-        options.splitColonType === 'stac-collection' ||
-        options.splitColonType === 'COG' ||
-        options.splitColonType === 'titiler-url'
+        options.tileSourceType === 'stac-collection' ||
+        options.tileSourceType === 'COG' ||
+        options.tileSourceType === 'titiler-url'
     ) {
         // Times arrive already formatted (see buildTileUrlOptions). Empty string
         // means "no time configured" — `!= null` would treat '' as a real value
@@ -218,46 +218,46 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
             datetime = startTimeStr ? `${startTimeStr}/${endTimeStr}` : `../${endTimeStr}`
         }
         if (datetime != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}datetime=${datetime}`
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}datetime=${datetime}`
         }
 
-        if (options.splitColonType === 'stac-collection') {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}exitwhenfull=false&skipcovered=false`
+        if (options.tileSourceType === 'stac-collection') {
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}exitwhenfull=false&skipcovered=false`
         }
 
-        nextUrl = applyCogFieldsToUrl(nextUrl, options)
+        compiledUrl = applyCogFieldsToUrl(compiledUrl, options)
 
         // STAC mosaic limits arrive via buildTileUrlOptions, not globals.
         const limits = options.stacMosaicLimits
 
         if (limits?.itemLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}items_limit=${limits.itemLimit}`
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}items_limit=${limits.itemLimit}`
         }
         if (limits?.scanLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}scan_limit=${limits.scanLimit}`
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}scan_limit=${limits.scanLimit}`
         }
         if (limits?.timeLimit != null) {
-            nextUrl += `${nextUrl.indexOf('?') === -1 ? '?' : '&'}time_limit=${limits.timeLimit}`
+            compiledUrl += `${compiledUrl.indexOf('?') === -1 ? '?' : '&'}time_limit=${limits.timeLimit}`
         }
     }
 
     // 3. TMS specific options
     if (timeStr && options.tileFormat === 'tms') {
-        let paramDelimiter = nextUrl.indexOf('?') === -1 ? '?' : '&'
-        const urlParams = nextUrl.indexOf('?') !== -1 ? new URLSearchParams(nextUrl.split('?')[1]) : null
+        let paramDelimiter = compiledUrl.indexOf('?') === -1 ? '?' : '&'
+        const urlParams = compiledUrl.indexOf('?') !== -1 ? new URLSearchParams(compiledUrl.split('?')[1]) : null
 
         if (!urlParams || !urlParams.has('starttime')) {
-            nextUrl += `${paramDelimiter}starttime=${startTimeStr}`
+            compiledUrl += `${paramDelimiter}starttime=${startTimeStr}`
             paramDelimiter = '&'
         }
         if (!urlParams || !urlParams.has('time')) {
-            nextUrl += `${paramDelimiter}time=${endTimeStr}`
+            compiledUrl += `${paramDelimiter}time=${endTimeStr}`
             paramDelimiter = '&'
         }
         if ((!urlParams || !urlParams.has('composite')) && options.compositeTile === true) {
-            nextUrl += `${paramDelimiter}composite=true`
+            compiledUrl += `${paramDelimiter}composite=true`
         }
     }
 
-    return nextUrl
+    return compiledUrl
 }

@@ -70,18 +70,18 @@ function queryTilesetTimesDir(req, res) {
 
   const relUrl = originalUrl.replace("/Missions", "");
   if (originalUrl.indexOf("_time_") > -1) {
-    const urlSplit = originalUrl.split("_time_");
-    const relUrlSplit = relUrl.split("_time_");
+    const timeDirPath = originalUrl.split("_time_")[0];
+    const dirCacheKey = relUrl.split("_time_")[0];
 
-    if (dirStore[relUrlSplit[0]] == null) {
-      dirStore[relUrlSplit[0]] = {
+    if (dirStore[dirCacheKey] == null) {
+      dirStore[dirCacheKey] = {
         lastUpdated: 0,
         dirs: [],
       };
     }
-    if (Date.now() - dirStore[relUrlSplit[0]].lastUpdated > DIR_STORE_MAX_AGE) {
+    if (Date.now() - dirStore[dirCacheKey].lastUpdated > DIR_STORE_MAX_AGE) {
       fs.readdir(
-        path.join(rootDir, urlSplit[0]),
+        path.join(rootDir, timeDirPath),
         { withFileTypes: true },
         (error, files) => {
           if (!error) {
@@ -89,20 +89,20 @@ function queryTilesetTimesDir(req, res) {
               .filter((item) => item.isDirectory())
               .map((item) => item.name);
 
-            dirStore[relUrlSplit[0]].lastUpdated = Date.now();
+            dirStore[dirCacheKey].lastUpdated = Date.now();
             dirs.sort();
-            dirStore[relUrlSplit[0]].dirs = [];
+            dirStore[dirCacheKey].dirs = [];
             dirs.forEach((name) => {
-              const split = name.split("Z-");
-              let t = split.shift();
-              const n = split.join("");
-              t = t.replace(/_/g, ":");
-              if (t[t.length - 1] !== "Z") t += "Z";
-              dirStore[relUrlSplit[0]].dirs.push({ t: t, n: n });
+              const dirNameParts = name.split("Z-");
+              let timestamp = dirNameParts.shift();
+              const label = dirNameParts.join("");
+              timestamp = timestamp.replace(/_/g, ":");
+              if (timestamp[timestamp.length - 1] !== "Z") timestamp += "Z";
+              dirStore[dirCacheKey].dirs.push({ t: timestamp, n: label });
             });
 
             const inRange = getDirsInRange(
-              relUrlSplit[0],
+              dirCacheKey,
               req.query.starttime,
               req.query.endtime
             );
@@ -129,7 +129,7 @@ function queryTilesetTimesDir(req, res) {
       );
     } else {
       const inRange = getDirsInRange(
-        relUrlSplit[0],
+        dirCacheKey,
         req.query.starttime,
         req.query.endtime
       );

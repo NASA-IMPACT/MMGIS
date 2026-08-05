@@ -72,7 +72,7 @@
         {
           "components": [
             {
-              "field": "tileformat",
+              "field": "tileFormat",
               "name": "Tile Format",
               "description": "See URL description above. If a COG and 'Use TiTiler' is enabled, this format is overrided to be 'WMTS'.",
               "type": "dropdown",

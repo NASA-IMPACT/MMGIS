@@ -47,7 +47,7 @@ const makeNO2Layer = (type) => ({
     name: 'NO2 Monthly',
     type,
     url: 'https://openveda.cloud/api/raster/collections/no2-monthly/items/OMI_trno2_0.10x0.10_{time}_Col3_V4.nc/tiles/WebMercatorQuad/{z}/{x}/{y}.png?assets=cog_default',
-    tileformat: 'wmts',
+    tileFormat: 'wmts',
     controlled: false,
     time: { ...timeConfig },
 })

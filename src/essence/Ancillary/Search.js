@@ -339,22 +339,22 @@ function searchGeodatasets() {
     )
 }
 
-//doX is either "goto", "select" or "both"
-//forceX overrides searchbar entry, "false" for default
+//action is either "goto", "select" or "both"
+//forceSearchTerms overrides searchbar entry, "false" for default
 //forceSTS overrides dropdown, "false" for default
-//function doWithSearch( doX, forceX, forceSTS ) {
-function doWithSearch(doX, forceX, forceSTS, isURLSearch, value) {
-    var x
+//function doWithSearch( action, forceSearchTerms, forceSTS ) {
+function doWithSearch(action, forceSearchTerms, forceSTS, isURLSearch, value) {
+    var searchTerms
     var sTS
 
-    if (forceX == 'false' && !isURLSearch) {
-        x =
+    if (forceSearchTerms == 'false' && !isURLSearch) {
+        searchTerms =
             value != null
                 ? [value]
                 : [document.getElementById('auto_search').value] //what the user entered in search field
-    } else if (forceX == 'false' && isURLSearch) {
-        x = L_.searchStrings
-    } else x = forceX
+    } else if (forceSearchTerms == 'false' && isURLSearch) {
+        searchTerms = L_.searchStrings
+    } else searchTerms = forceSearchTerms
 
     if (forceSTS == 'false') sTS = Search.lname
     else sTS = forceSTS
@@ -378,7 +378,7 @@ function doWithSearch(doX, forceX, forceSTS, isURLSearch, value) {
         }
     }
 
-    if (doX == 'both' || doX == 'select') {
+    if (action == 'both' || action == 'select') {
         L_.resetLayerFills()
     }
 
@@ -389,14 +389,16 @@ function doWithSearch(doX, forceX, forceSTS, isURLSearch, value) {
             var shouldSearch = false
             var comparer = getSearchFieldStringForFeature(Search.lname, props)
 
-            for (var i = 0; i < x.length; i++) {
+            for (var i = 0; i < searchTerms.length; i++) {
                 if (
-                    x.length == 1
-                        ? x[i].toLowerCase() == comparer.toLowerCase()
-                        : x[i].toLowerCase().indexOf(comparer.toLowerCase()) >
-                              -1 ||
-                          comparer.toLowerCase().indexOf(x[i].toLowerCase()) >
-                              -1
+                    searchTerms.length == 1
+                        ? searchTerms[i].toLowerCase() == comparer.toLowerCase()
+                        : searchTerms[i]
+                              .toLowerCase()
+                              .indexOf(comparer.toLowerCase()) > -1 ||
+                          comparer
+                              .toLowerCase()
+                              .indexOf(searchTerms[i].toLowerCase()) > -1
                 ) {
                     shouldSearch = true
                     break
@@ -404,10 +406,10 @@ function doWithSearch(doX, forceX, forceSTS, isURLSearch, value) {
             }
 
             if (shouldSearch) {
-                if (doX == 'both' || doX == 'select') {
+                if (action == 'both' || action == 'select') {
                     selectLayers.push(layer)
                 }
-                if (doX == 'both' || doX == 'goto') {
+                if (action == 'both' || action == 'goto') {
                     gotoLayers.push(layer)
                 }
             }
@@ -459,21 +461,24 @@ function makeSearchFields(vars) {
 function getSearchFieldStringForFeature(name, props) {
     let str = ''
     if (Search.searchFields.hasOwnProperty(name)) {
-        const sf = Search.searchFields[name] //sf for search field
-        for (let i = 0; i < sf.length; i++) {
-            switch (sf[i][0].toLowerCase()) {
+        const searchFieldSpecs = Search.searchFields[name]
+        for (let i = 0; i < searchFieldSpecs.length; i++) {
+            switch (searchFieldSpecs[i][0].toLowerCase()) {
                 case '': //no function
-                    str += F_.getIn(props, sf[i][1])
+                    str += F_.getIn(props, searchFieldSpecs[i][1])
                     break
                 case 'round':
-                    str += Math.round(F_.getIn(props, sf[i][1]))
+                    str += Math.round(F_.getIn(props, searchFieldSpecs[i][1]))
                     break
                 case 'rmunder':
-                    if (F_.getIn(props, sf[i][1]))
-                        str += F_.getIn(props, sf[i][1]).replace('_', ' ')
+                    if (F_.getIn(props, searchFieldSpecs[i][1]))
+                        str += F_.getIn(props, searchFieldSpecs[i][1]).replace(
+                            '_',
+                            ' '
+                        )
                     break
             }
-            if (i != sf.length - 1) str += ' '
+            if (i != searchFieldSpecs.length - 1) str += ' '
         }
     }
     return str
@@ -482,9 +487,9 @@ function getSearchFieldStringForFeature(name, props) {
 function getSearchFieldKeys(name) {
     var str = ''
     if (Search.searchFields.hasOwnProperty(name)) {
-        var sf = Search.searchFields[name] //sf for search field
-        for (var i = 0; i < sf.length; i++) {
-            str += sf[i][1]
+        var searchFieldSpecs = Search.searchFields[name]
+        for (var i = 0; i < searchFieldSpecs.length; i++) {
+            str += searchFieldSpecs[i][1]
             str += ' '
         }
     }

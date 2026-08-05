@@ -43,36 +43,36 @@ function triggerWebhooks(action, payload) {
     return;
   }
 
-  webhooksConfig.forEach((wh) => {
-    switch (wh.action) {
+  webhooksConfig.forEach((webhook) => {
+    switch (webhook.action) {
       case "DrawFileChange":
         if (action === "drawFileChange") {
-          drawFileUpdate(wh, payload);
+          drawFileUpdate(webhook, payload);
         }
         break;
       case "DrawFileAdd":
         if (action === "drawFileAdd") {
-          drawFileUpdate(wh, payload);
+          drawFileUpdate(webhook, payload);
         }
         break;
       case "DrawFileDelete":
         if (action === "drawFileDelete") {
-          drawFileDelete(wh, payload);
+          drawFileDelete(webhook, payload);
         }
         break;
       case "DeploymentPublish":
         if (action === "deploymentPublish") {
-          deploymentEvent(wh, payload);
+          deploymentEvent(webhook, payload);
         }
         break;
       case "DeploymentUpdate":
         if (action === "deploymentUpdate") {
-          deploymentEvent(wh, payload);
+          deploymentEvent(webhook, payload);
         }
         break;
       case "DeploymentDelete":
         if (action === "deploymentDelete") {
-          deploymentEvent(wh, payload);
+          deploymentEvent(webhook, payload);
         }
         break;
       default:
@@ -96,12 +96,16 @@ function drawFileUpdate(webhook, payload) {
   };
 
   const response = {};
-  response.send = function (res) {
+  response.send = function (fileResponse) {
     const webhookHeader = JSON.parse(webhook.header);
     const webhookBody = JSON.parse(webhook.body);
 
-    const file = res.body?.file?.[0] || {};
-    const injectableVariables = getInjectableVariables("draw", file, res);
+    const file = fileResponse.body?.file?.[0] || {};
+    const injectableVariables = getInjectableVariables(
+      "draw",
+      file,
+      fileResponse
+    );
 
     // Build the body
     buildBody(webhookBody, injectableVariables);
@@ -131,12 +135,16 @@ function drawFileDelete(webhook, payload) {
   };
 
   const response = {};
-  response.send = function (res) {
+  response.send = function (fileResponse) {
     const webhookHeader = JSON.parse(webhook.header);
     const webhookBody = JSON.parse(webhook.body);
 
-    const file = res.body?.file?.[0] || {};
-    const injectableVariables = getInjectableVariables("draw", file, res);
+    const file = fileResponse.body?.file?.[0] || {};
+    const injectableVariables = getInjectableVariables(
+      "draw",
+      file,
+      fileResponse
+    );
 
     // Build the body
     buildBody(webhookBody, injectableVariables);
@@ -186,7 +194,7 @@ function deploymentEvent(webhook, payload) {
   }
 }
 
-function getInjectableVariables(type, file, res) {
+function getInjectableVariables(type, file, fileResponse) {
   const injectableVariables = {};
   switch (type) {
     case "draw":
@@ -210,7 +218,7 @@ function getInjectableVariables(type, file, res) {
         injectableVariables[name] = file[name];
       });
 
-      const geojson = res.body.geojson;
+      const geojson = fileResponse.body.geojson;
 
       injectableVariables.geojson = geojson;
       injectableVariables.file_id = injectableVariables.id;

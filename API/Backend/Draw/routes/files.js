@@ -995,28 +995,28 @@ const compile = function (req, res, callback) {
             }
             function addFeatureData(node, depth) {
               for (let i = 0; i < features.length; i++) {
-                let f = features[i];
-                if (node.id == f.id) {
-                  let properties = JSON.parse(f.properties);
+                let featureRow = features[i];
+                if (node.id == featureRow.id) {
+                  let properties = JSON.parse(featureRow.properties);
                   let feature = {};
                   properties._ = {
-                    id: f.id,
-                    file_id: f.file_id,
-                    level: f.level,
-                    intent: f.intent,
+                    id: featureRow.id,
+                    file_id: featureRow.file_id,
+                    level: featureRow.level,
+                    intent: featureRow.intent,
                   };
                   feature.type = "Feature";
                   feature.properties = properties;
-                  feature.geometry = JSON.parse(f.st_asgeojson);
+                  feature.geometry = JSON.parse(featureRow.st_asgeojson);
                   //id, file_id, level, intent, properties, ST_AsGeoJSON(geom)' + ' ' +
-                  node.file_id = f.file_id;
-                  node.level = f.level;
+                  node.file_id = featureRow.file_id;
+                  node.level = featureRow.level;
                   node.depth = depth;
-                  node.intent = f.intent;
+                  node.intent = featureRow.intent;
                   node.name = properties.name;
                   node.uuid = properties.uuid;
-                  node.properties = JSON.parse(f.properties);
-                  node.geometry = JSON.parse(f.st_asgeojson);
+                  node.properties = JSON.parse(featureRow.properties);
+                  node.geometry = JSON.parse(featureRow.st_asgeojson);
                   node.feature = feature;
                   return;
                 }
@@ -1076,30 +1076,30 @@ const compile = function (req, res, callback) {
                       ? node[i].children
                       : [];
                     for (let j = 0; j < features.length; j++) {
-                      let f = features[j];
-                      if (saviors[node[i].id].id == f.id) {
+                      let featureRow = features[j];
+                      if (saviors[node[i].id].id == featureRow.id) {
                         let outcast = {};
-                        let properties = JSON.parse(f.properties);
+                        let properties = JSON.parse(featureRow.properties);
                         let feature = {};
                         properties._ = {
-                          id: f.id,
-                          file_id: f.file_id,
-                          level: f.level,
-                          intent: f.intent,
+                          id: featureRow.id,
+                          file_id: featureRow.file_id,
+                          level: featureRow.level,
+                          intent: featureRow.intent,
                         };
                         feature.type = "Feature";
                         feature.properties = properties;
-                        feature.geometry = JSON.parse(f.st_asgeojson);
+                        feature.geometry = JSON.parse(featureRow.st_asgeojson);
 
                         outcast.name = properties.name;
                         outcast.uuid = properties.uuid;
-                        outcast.id = f.id;
-                        outcast.intent = f.intent;
-                        outcast.file_id = f.file_id;
-                        outcast.level = f.level;
+                        outcast.id = featureRow.id;
+                        outcast.intent = featureRow.intent;
+                        outcast.file_id = featureRow.file_id;
+                        outcast.level = featureRow.level;
                         outcast.depth = depth + 1;
-                        outcast.properties = JSON.parse(f.properties);
-                        outcast.geometry = JSON.parse(f.st_asgeojson);
+                        outcast.properties = JSON.parse(featureRow.properties);
+                        outcast.geometry = JSON.parse(featureRow.st_asgeojson);
                         outcast.feature = feature;
                         outcast.children = saviors[node[i].id] || [];
                         outcast.parent = saviors[node[i].id].parent || {};

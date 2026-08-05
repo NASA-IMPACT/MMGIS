@@ -7,7 +7,7 @@
  * Parses a date string with optional additional seconds offset
  * Supports format: "2024-03-04T14:05:00Z + 10000000" or "2024-03-04T14:05:00Z - 5000"
  *
- * @param {string} dateString - Date string with optional " + N" or " - N" suffix
+ * @param {string} timeString - Date string with optional " + N" or " - N" suffix
  * @returns {Object} { dateString: string, additionalSeconds: number }
  *
  * @example
@@ -17,25 +17,25 @@
  * parseTimeWithOffset("2024-01-01T00:00:00Z - 1800")
  * // Returns: { dateString: "2024-01-01T00:00:00Z", additionalSeconds: -1800 }
  */
-export function parseTimeWithOffset(d) {
-    let dateString = d
-    let opMult = 1
+export function parseTimeWithOffset(timeString) {
+    let dateString = timeString
+    let offsetSign = 1
     let additionalSeconds = 0
     if (typeof dateString === 'string') {
         const indexPlus = dateString.indexOf(' + ')
         const indexMinus = dateString.indexOf(' - ')
         if (indexPlus > -1 || indexMinus > -1) {
-            if (indexMinus > indexPlus) opMult = -1
-            const initialendSplit = dateString.split(
-                ` ${opMult === 1 ? '+' : '-'} `
+            if (indexMinus > indexPlus) offsetSign = -1
+            const dateAndOffsetParts = dateString.split(
+                ` ${offsetSign === 1 ? '+' : '-'} `
             )
-            dateString = initialendSplit[0]
-            additionalSeconds = parseInt(initialendSplit[1]) || 0
+            dateString = dateAndOffsetParts[0]
+            additionalSeconds = parseInt(dateAndOffsetParts[1]) || 0
             additionalSeconds = isNaN(additionalSeconds)
                 ? 0
                 : additionalSeconds
         }
-        additionalSeconds *= opMult
+        additionalSeconds *= offsetSign
     }
     return { dateString, additionalSeconds }
 }
@@ -58,8 +58,11 @@ export function parseTimeToSeconds(t) {
     if (t.toString().indexOf(':') === -1) {
         return parseInt(t)
     }
-    var s = t.split(':')
-    var seconds = +s[0].replace('-', '') * 60 * 60 + +s[1] * 60 + +s[2]
+    var hmsParts = t.split(':')
+    var seconds =
+        +hmsParts[0].replace('-', '') * 60 * 60 +
+        +hmsParts[1] * 60 +
+        +hmsParts[2]
     if (t.charAt(0) === '-') {
         seconds = seconds * -1
     }

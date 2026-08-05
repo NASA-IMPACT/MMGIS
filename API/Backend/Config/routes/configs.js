@@ -540,13 +540,13 @@ function upsert(req, res, next, cb, info) {
             }
 
             for (let i in infoLayerNames) {
-              const found = allNewUUIDs.findIndex(
+              const matchIndex = allNewUUIDs.findIndex(
                 (x) => x.name == infoLayerNames[i]
               );
-              if (found > -1) {
-                const result = allNewUUIDs[found];
-                infoLayerNames[i] = result.uuid;
-                allNewUUIDs.splice(found, 1);
+              if (matchIndex > -1) {
+                const matchedUuidEntry = allNewUUIDs[matchIndex];
+                infoLayerNames[i] = matchedUuidEntry.uuid;
+                allNewUUIDs.splice(matchIndex, 1);
               }
             }
 
@@ -1292,7 +1292,10 @@ function removeLayer(req, res, next, cb) {
           );
 
           const unableToRemoveUUIDs = layerUUIDs.filter(
-            (i) => !removedUUIDs.map((x) => x.uuid).includes(i)
+            (uuid) =>
+              !removedUUIDs
+                .map((removedLayer) => removedLayer.uuid)
+                .includes(uuid)
           );
           if (didRemove) {
             upsert(
@@ -1327,8 +1330,10 @@ function removeLayer(req, res, next, cb) {
               },
               {
                 type: "removeLayer",
-                layerName: layerUUIDs.filter((i) =>
-                  removedUUIDs.map((x) => x.uuid).includes(i)
+                layerName: layerUUIDs.filter((uuid) =>
+                  removedUUIDs
+                    .map((removedLayer) => removedLayer.uuid)
+                    .includes(uuid)
                 ),
               }
             );

@@ -48,6 +48,7 @@ mapEngineRegistry.register(MAP_ENGINE.LEAFLET, LeafletAdapter)
 mapEngineRegistry.register(MAP_ENGINE.DECKGL, DeckGLAdapter)
 
 import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
+// side-effect import: defines window.parseGeoraster
 import georaster from 'georaster'
 
 // The default color ramp used for image layer types
@@ -615,8 +616,8 @@ let Map_ = {
      */
     orderedBringToFront: function () {
         if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return
-        let hasIndex = []
-        let hasIndexRaster = []
+        let vectorAndImageIndices = []
+        let rasterIndices = []
 
         for (let i = L_._layersOrdered.length - 1; i >= 0; i--) {
             if (Map_.hasLayer(L_._layersOrdered[i])) {
@@ -625,12 +626,12 @@ let Map_ = {
                         L_.layers.data[L_._layersOrdered[i]].type === 'vector'
                     ) {
                         if (L_.layers.attachments[L_._layersOrdered[i]]) {
-                            for (let s in L_.layers.attachments[
+                            for (let sublayerName in L_.layers.attachments[
                                 L_._layersOrdered[i]
                             ]) {
                                 Map_.rmNotNull(
                                     L_.layers.attachments[L_._layersOrdered[i]][
-                                        s
+                                        sublayerName
                                     ].layer
                                 )
                             }
@@ -638,64 +639,78 @@ let Map_ = {
                         Map_.map.removeLayer(
                             L_.layers.layer[L_._layersOrdered[i]]
                         )
-                        hasIndex.push(i)
+                        vectorAndImageIndices.push(i)
                     } else if (
                         L_.layers.data[L_._layersOrdered[i]].type === 'tile' ||
                         L_.layers.data[L_._layersOrdered[i]].type === 'data'
                     ) {
-                        hasIndexRaster.push(i)
+                        rasterIndices.push(i)
                     } else if (
                         L_.layers.data[L_._layersOrdered[i]].type === 'image'
                     ) {
                         Map_.map.removeLayer(
                             L_.layers.layer[L_._layersOrdered[i]]
                         )
-                        hasIndex.push(i)
+                        vectorAndImageIndices.push(i)
                     }
                 }
             }
         }
 
         // First only vectors and images
-        for (let i = 0; i < hasIndex.length; i++) {
-            if (L_.layers.attachments[L_._layersOrdered[hasIndex[i]]]) {
-                for (let s in L_.layers.attachments[
-                    L_._layersOrdered[hasIndex[i]]
+        for (let i = 0; i < vectorAndImageIndices.length; i++) {
+            if (
+                L_.layers.attachments[
+                    L_._layersOrdered[vectorAndImageIndices[i]]
+                ]
+            ) {
+                for (let sublayerName in L_.layers.attachments[
+                    L_._layersOrdered[vectorAndImageIndices[i]]
                 ]) {
                     if (
-                        L_.layers.attachments[L_._layersOrdered[hasIndex[i]]][s]
-                            .on
+                        L_.layers.attachments[
+                            L_._layersOrdered[vectorAndImageIndices[i]]
+                        ][sublayerName].on
                     ) {
                         if (
                             L_.layers.attachments[
-                                L_._layersOrdered[hasIndex[i]]
-                            ][s].type !== 'model'
+                                L_._layersOrdered[vectorAndImageIndices[i]]
+                            ][sublayerName].type !== 'model'
                         ) {
                             Map_.map.addLayer(
                                 L_.layers.attachments[
-                                    L_._layersOrdered[hasIndex[i]]
-                                ][s].layer
+                                    L_._layersOrdered[vectorAndImageIndices[i]]
+                                ][sublayerName].layer
                             )
                         }
                     }
                 }
             }
 
-            Map_.map.addLayer(L_.layers.layer[L_._layersOrdered[hasIndex[i]]])
+            Map_.map.addLayer(
+                L_.layers.layer[L_._layersOrdered[vectorAndImageIndices[i]]]
+            )
 
             // If image layer, reorder the z index and redraw the layer
             if (
-                L_.layers.data[L_._layersOrdered[hasIndex[i]]].type === 'image'
+                L_.layers.data[L_._layersOrdered[vectorAndImageIndices[i]]]
+                    .type === 'image'
             ) {
-                L_.layers.layer[L_._layersOrdered[hasIndex[i]]].setZIndex(
+                L_.layers.layer[
+                    L_._layersOrdered[vectorAndImageIndices[i]]
+                ].setZIndex(
                     L_._layersOrdered.length +
                         1 -
                         L_._layersOrdered.indexOf(
-                            L_._layersOrdered[hasIndex[i]]
+                            L_._layersOrdered[vectorAndImageIndices[i]]
                         )
                 )
-                L_.layers.layer[L_._layersOrdered[hasIndex[i]]].clearCache()
-                L_.layers.layer[L_._layersOrdered[hasIndex[i]]].redraw()
+                L_.layers.layer[
+                    L_._layersOrdered[vectorAndImageIndices[i]]
+                ].clearCache()
+                L_.layers.layer[
+                    L_._layersOrdered[vectorAndImageIndices[i]]
+                ].redraw()
             }
         }
 
@@ -703,12 +718,12 @@ let Map_ = {
 
         // Now only rasters
         // They're separate because its better to only change the raster z-index
-        for (let i = 0; i < hasIndexRaster.length; i++) {
-            L_.layers.layer[L_._layersOrdered[hasIndexRaster[i]]].setZIndex(
+        for (let i = 0; i < rasterIndices.length; i++) {
+            L_.layers.layer[L_._layersOrdered[rasterIndices[i]]].setZIndex(
                 L_._layersOrdered.length +
                     1 -
                     L_._layersOrdered.indexOf(
-                        L_._layersOrdered[hasIndexRaster[i]]
+                        L_._layersOrdered[rasterIndices[i]]
                     )
             )
         }
@@ -870,9 +885,12 @@ let Map_ = {
     getScreenDiagonalInMeters() {
         if (this.engine && this.engine.engineType !== MAP_ENGINE.LEAFLET) return 0
 
-        let bb = document.getElementById('map').getBoundingClientRect()
+        let mapRect = document.getElementById('map').getBoundingClientRect()
         let nwLatLng = Map_.map.containerPointToLatLng([0, 0])
-        let seLatLng = Map_.map.containerPointToLatLng([bb.width, bb.height])
+        let seLatLng = Map_.map.containerPointToLatLng([
+            mapRect.width,
+            mapRect.height,
+        ])
         return F_.lngLatDistBetween(
             nwLatLng.lng,
             nwLatLng.lat,
@@ -1105,11 +1123,11 @@ function featureDefaultClick(feature, layer, e) {
 
         //update url
         if (layer != null && layer.hasOwnProperty('options')) {
-            var keyAsName
+            var featureNameValue
             if (layer.hasOwnProperty('useKeyAsName')) {
-                keyAsName = layer.feature.properties[layer.useKeyAsName]
+                featureNameValue = layer.feature.properties[layer.useKeyAsName]
             } else {
-                keyAsName = layer.feature.properties[0]
+                featureNameValue = layer.feature.properties[0]
             }
         }
 
@@ -1121,32 +1139,35 @@ function featureDefaultClick(feature, layer, e) {
         var searchfields = {}
         if (searchToolVars.hasOwnProperty('searchfields')) {
             for (var layerfield in searchToolVars.searchfields) {
-                var fieldString = searchToolVars.searchfields[layerfield]
-                fieldString = fieldString.split(')')
-                for (var i = 0; i < fieldString.length; i++) {
-                    fieldString[i] = fieldString[i].split('(')
-                    var li = fieldString[i][0].lastIndexOf(' ')
+                var fieldTokens = searchToolVars.searchfields[layerfield]
+                fieldTokens = fieldTokens.split(')')
+                for (var i = 0; i < fieldTokens.length; i++) {
+                    fieldTokens[i] = fieldTokens[i].split('(')
+                    var li = fieldTokens[i][0].lastIndexOf(' ')
                     if (li != -1) {
-                        fieldString[i][0] = fieldString[i][0].substring(li + 1)
+                        fieldTokens[i][0] = fieldTokens[i][0].substring(li + 1)
                     }
                 }
-                fieldString.pop()
+                fieldTokens.pop()
                 //0 is function, 1 is parameter
-                searchfields[layerfield] = fieldString
+                searchfields[layerfield] = fieldTokens
             }
         }
 
-        var str = ''
+        var searchFieldParamString = ''
         if (searchfields.hasOwnProperty(layer.options.layerName)) {
-            var sf = searchfields[layer.options.layerName] //sf for search field
-            for (var i = 0; i < sf.length; i++) {
-                str += sf[i][1]
-                str += ' '
+            var searchFieldPairs = searchfields[layer.options.layerName]
+            for (var i = 0; i < searchFieldPairs.length; i++) {
+                searchFieldParamString += searchFieldPairs[i][1]
+                searchFieldParamString += ' '
             }
         }
-        str = str.substring(0, str.length - 1)
+        searchFieldParamString = searchFieldParamString.substring(
+            0,
+            searchFieldParamString.length - 1
+        )
 
-        var searchFieldTokens = str.split(' ')
+        var searchFieldTokens = searchFieldParamString.split(' ')
         var searchStr
 
         if (searchFieldTokens.length == 2) {
@@ -1154,9 +1175,11 @@ function featureDefaultClick(feature, layer, e) {
                 searchFieldTokens[0].toLowerCase() ==
                 layer.useKeyAsName.toLowerCase()
             ) {
-                searchStr = keyAsName + ' ' + layer.feature.properties.Sol
+                searchStr =
+                    featureNameValue + ' ' + layer.feature.properties.Sol
             } else {
-                searchStr = layer.feature.properties.Sol + ' ' + keyAsName
+                searchStr =
+                    layer.feature.properties.Sol + ' ' + featureNameValue
             }
         }
 
@@ -1184,7 +1207,7 @@ function featureDefaultClick(feature, layer, e) {
  * @param {object|null} useEmptyGeoJSON - Seed with this GeoJSON instead of fetching.
  * @param {object|null} forceGeoJSON - Skip fetch and use this GeoJSON directly.
  * @param {boolean} isRefresh - Suppress side-effects that should only run on first load.
- * @param {object|null} mapContext - Override map/registry context; defaults to main map.
+ * @param {object|null} targetMapContext - Override map/registry context; defaults to main map.
  */
 async function makeVectorLayer(
     layerObj,
@@ -1192,57 +1215,57 @@ async function makeVectorLayer(
     useEmptyGeoJSON,
     forceGeoJSON,
     isRefresh = false,
-    mapContext = null
+    targetMapContext = null
 ) {
     // Default to main map context for backward compatibility
-    const ctx = mapContext || {
+    const mapContext = targetMapContext || {
         map: Map_.map,
         layerRegistry: L_.layers,
         default: true,
     }
 
     return new Promise((resolve, reject) => {
-        if (forceGeoJSON) add(forceGeoJSON)
+        if (forceGeoJSON) onGeoJSONFetched(forceGeoJSON)
         else
             captureVector(
                 layerObj,
                 { evenIfOff: evenIfOff, useEmptyGeoJSON: useEmptyGeoJSON },
-                add,
-                (f) => {
-                    Map_.engine.on('moveend', f)
+                onGeoJSONFetched,
+                (onExtentChange) => {
+                    Map_.engine.on('moveend', onExtentChange)
                     if (
                         layerObj.time?.enabled === true &&
                         layerObj.controlled !== true
                     )
                         L_.subscribeTimeChange(
                             `dynamicextent_${layerObj.name}`,
-                            f
+                            onExtentChange
                         )
                     L_.subscribeOnSpecificLayerToggle(
                         `dynamicextent_${layerObj.name}`,
                         layerObj.name,
-                        f
+                        onExtentChange
                     )
                 }
             )
 
         /**
          * Constructs and registers the map layer from fetched GeoJSON data.
-         * @param {object|string} data - GeoJSON feature collection, or 'off' to mark layer as disabled.
+         * @param {object|string} geojson - GeoJSON feature collection, or 'off' to mark layer as disabled.
          * @param {boolean} allowInvalid - Skip GeoJSON validation and render as-is.
          */
-        function add(data, allowInvalid) {
+        function onGeoJSONFetched(geojson, allowInvalid) {
             if (
                 Map_.engine &&
                 Map_.engine.engineType === MAP_ENGINE.DECKGL &&
                 layerObj.type === 'ScatterplotLayer'
             ) {
-                if (data == null || data === 'off') {
+                if (geojson == null || geojson === 'off') {
                     L_._layersLoaded[
                         L_._layersOrdered.indexOf(layerObj.name)
                     ] = true
-                    ctx.layerRegistry.layer[layerObj.name] =
-                        data == null ? null : false
+                    mapContext.layerRegistry.layer[layerObj.name] =
+                        geojson == null ? null : false
                     allLayersLoaded()
                     resolve()
                     return
@@ -1250,13 +1273,15 @@ async function makeVectorLayer(
 
                 layerObj.style = layerObj.style || {}
                 layerObj.style.opacity =
-                    ctx.layerRegistry.opacity[layerObj.name] || 1
-                ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
+                    mapContext.layerRegistry.opacity[layerObj.name] || 1
+                mapContext.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
                         type: layerObj.type,
-                        data,
-                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        data: geojson,
+                        opacity:
+                            mapContext.layerRegistry.opacity[layerObj.name] ||
+                            1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
                         interactive: true,
@@ -1270,9 +1295,9 @@ async function makeVectorLayer(
                 return
             }
 
-            data = F_.parseIntoGeoJSON(data)
+            geojson = F_.parseIntoGeoJSON(geojson)
 
-            let invalidGeoJSONTrace = gjv.valid(data, true)
+            let invalidGeoJSONTrace = gjv.valid(geojson, true)
             const allowableErrors = [`position must only contain numbers`]
 
             invalidGeoJSONTrace = invalidGeoJSONTrace.filter((t) => {
@@ -1284,12 +1309,12 @@ async function makeVectorLayer(
                 return true
             })
             if (
-                data == null ||
-                data === 'off' ||
+                geojson == null ||
+                geojson === 'off' ||
                 (invalidGeoJSONTrace.length > 0 && allowInvalid !== true)
             ) {
-                if (data != null && data != 'off') {
-                    data = null
+                if (geojson != null && geojson != 'off') {
+                    geojson = null
                     console.warn(
                         `ERROR: ${layerObj.display_name} has invalid GeoJSON!`
                     )
@@ -1297,15 +1322,18 @@ async function makeVectorLayer(
 
                 // For refresh operations, preserve the existing layer on failure
                 // to prevent temporary network issues from marking the layer as "layernotfound"
-                if (isRefresh && data === null) {
-                    const existingLayer = ctx.layerRegistry.layer[layerObj.name]
+                if (isRefresh && geojson === null) {
+                    const existingLayer =
+                        mapContext.layerRegistry.layer[layerObj.name]
                     if (existingLayer != null && existingLayer !== false) {
                         console.warn(
                             `[${new Date().toISOString()}] Refresh failed for ${layerObj.display_name}, ` +
                                 `keeping existing layer. Next refresh in ${layerObj.time?.refreshIntervalAmount || 60}s`
                         )
                         // Mark layer as having a failed refresh
-                        ctx.layerRegistry.refreshFailed[layerObj.name] = true
+                        mapContext.layerRegistry.refreshFailed[
+                            layerObj.name
+                        ] = true
                         // Dispatch event so LayersTool can update the UI
                         const event = new CustomEvent(
                             'layerRefreshStatusChanged',
@@ -1325,8 +1353,8 @@ async function makeVectorLayer(
                 // Only set to null for initial loads or if no existing layer
                 L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] =
                     true
-                ctx.layerRegistry.layer[layerObj.name] =
-                    data == null ? null : false
+                mapContext.layerRegistry.layer[layerObj.name] =
+                    geojson == null ? null : false
                 allLayersLoaded()
                 resolve()
                 return
@@ -1336,16 +1364,18 @@ async function makeVectorLayer(
             layerObj.style.layerName = layerObj.name
 
             layerObj.style.opacity =
-                ctx.layerRegistry.opacity[layerObj.name] || 1
-            //layerObj.style.fillOpacity = ctx.layerRegistry.opacity[layerObj.name]
+                mapContext.layerRegistry.opacity[layerObj.name] || 1
+            //layerObj.style.fillOpacity = mapContext.layerRegistry.opacity[layerObj.name]
 
             if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
-                ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
+                mapContext.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
                         type: layerObj.type || 'vector',
-                        geojson: data,
-                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        geojson: geojson,
+                        opacity:
+                            mapContext.layerRegistry.opacity[layerObj.name] ||
+                            1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
                         interactive: true,
@@ -1360,7 +1390,7 @@ async function makeVectorLayer(
             }
 
             const vl = constructVectorLayer(
-                data,
+                geojson,
                 layerObj,
                 onEachFeatureDefault,
                 Map_ // Keep passing Map_ - constructVectorLayer expects this
@@ -1370,32 +1400,34 @@ async function makeVectorLayer(
             let wasOnForRefresh = false
             if (
                 isRefresh &&
-                ctx.layerRegistry.on[layerObj.name] &&
-                ctx.layerRegistry.layer[layerObj.name] &&
-                ctx.map.hasLayer(ctx.layerRegistry.layer[layerObj.name])
+                mapContext.layerRegistry.on[layerObj.name] &&
+                mapContext.layerRegistry.layer[layerObj.name] &&
+                mapContext.map.hasLayer(
+                    mapContext.layerRegistry.layer[layerObj.name]
+                )
             ) {
                 wasOnForRefresh = true
                 L_.toggleLayer(
-                    ctx.layerRegistry.data[layerObj.name],
+                    mapContext.layerRegistry.data[layerObj.name],
                     true,
                     true
                 )
             }
 
-            ctx.layerRegistry.attachments[layerObj.name] = vl.sublayers
-            ctx.layerRegistry.layer[layerObj.name] = vl.layer
+            mapContext.layerRegistry.attachments[layerObj.name] = vl.sublayers
+            mapContext.layerRegistry.layer[layerObj.name] = vl.layer
 
             // Add to appropriate map
-            if (vl.layer && ctx.default != true) {
-                vl.layer.addTo(ctx.map)
+            if (vl.layer && mapContext.default != true) {
+                vl.layer.addTo(mapContext.map)
             }
 
             // Clear refresh failed status on successful load/refresh
             if (
-                ctx.layerRegistry.refreshFailed &&
-                ctx.layerRegistry.refreshFailed[layerObj.name]
+                mapContext.layerRegistry.refreshFailed &&
+                mapContext.layerRegistry.refreshFailed[layerObj.name]
             ) {
-                ctx.layerRegistry.refreshFailed[layerObj.name] = false
+                mapContext.layerRegistry.refreshFailed[layerObj.name] = false
                 // Dispatch event so LayersTool can update the UI
                 const event = new CustomEvent('layerRefreshStatusChanged', {
                     detail: { layerName: layerObj.name, failed: false },
@@ -1406,7 +1438,7 @@ async function makeVectorLayer(
             // For refresh operations, turn the new layer back on if the old one was on
             if (isRefresh && wasOnForRefresh) {
                 L_.toggleLayer(
-                    ctx.layerRegistry.data[layerObj.name],
+                    mapContext.layerRegistry.data[layerObj.name],
                     false,
                     true
                 )
@@ -1426,44 +1458,44 @@ async function makeVelocityLayer(
     evenIfOff,
     useEmptyGeoJSON,
     forceGeoJSON,
-    mapContext = null
+    targetMapContext = null
 ) {
     // Default to main map context for backward compatibility
-    const ctx = mapContext || {
+    const mapContext = targetMapContext || {
         map: Map_.map,
         layerRegistry: L_.layers,
     }
     return new Promise((resolve, reject) => {
-        if (forceGeoJSON) add(forceGeoJSON)
+        if (forceGeoJSON) onDataFetched(forceGeoJSON)
         else
             captureVector(
                 layerObj,
                 { evenIfOff: evenIfOff, useEmptyGeoJSON: useEmptyGeoJSON },
-                add,
-                (f) => {
-                    Map_.engine.on('moveend', f)
+                onDataFetched,
+                (onExtentChange) => {
+                    Map_.engine.on('moveend', onExtentChange)
                     if (
                         layerObj.time?.enabled === true &&
                         layerObj.controlled !== true
                     )
                         L_.subscribeTimeChange(
                             `dynamicgeodataset_${layerObj.name}`,
-                            f
+                            onExtentChange
                         )
                     L_.subscribeOnSpecificLayerToggle(
                         `dynamicgeodataset_${layerObj.name}`,
                         layerObj.name,
-                        f
+                        onExtentChange
                     )
                 }
             )
 
         /**
-         * Constructs and registers the map layer from fetched GeoJSON data.
-         * @param {object|string} data - GeoJSON feature collection, or 'off' to mark layer as disabled.
+         * Constructs and registers the map layer from the fetched layer data.
+         * @param {object|string} data - Velocity wind-grid JSON or GeoJSON feature collection, or 'off' to mark layer as disabled.
          * @param {boolean} allowInvalid - Skip GeoJSON validation and render as-is.
          */
-        function add(data, allowInvalid) {
+        function onDataFetched(data, allowInvalid) {
             if (layerObj.type == 'velocity') {
                 if (
                     layerObj.kind == 'streamlines' ||
@@ -1615,11 +1647,11 @@ async function makeVelocityLayer(
 /**
  * Builds a raster tile layer (TMS, WMTS, COG via TiTiler, STAC) and registers it with the active map engine.
  * @param {object} layerObj - Layer config from the mission JSON.
- * @param {object|null} mapContext - Override map/registry context; defaults to main map.
+ * @param {object|null} targetMapContext - Override map/registry context; defaults to main map.
  */
-async function makeTileLayer(layerObj, mapContext = null) {
+async function makeTileLayer(layerObj, targetMapContext = null) {
     // Default to main map context for backward compatibility
-    const ctx = mapContext || {
+    const mapContext = targetMapContext || {
         map: Map_.map,
         layerRegistry: L_.layers,
         default: true,
@@ -1628,19 +1660,19 @@ async function makeTileLayer(layerObj, mapContext = null) {
     // Shared with TimeControl.reloadLayer so creation and time-driven reloads
     // resolve the same source and tile format.
     const tileSource = resolveTileLayerSource(layerObj)
-    const { splitColonType, tileElevation, tileFormat } = tileSource
+    const { tileSourceType, tileElevation, tileFormat } = tileSource
     let layerUrl = tileSource.url
 
     syncTileFormatToConfig(layerObj, tileSource)
 
-    let bb = null
+    let configBounds = null
     if (layerObj.hasOwnProperty('boundingBox')) {
-        bb = L.latLngBounds(
+        configBounds = L.latLngBounds(
             L.latLng(layerObj.boundingBox[3], layerObj.boundingBox[2]),
             L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
         )
     }
-    layerUrl = await TimeControl.performTimeUrlReplacements(
+    layerUrl = await TimeControl.applyUrlReplacementsAndCacheBust(
         layerUrl,
         layerObj,
         null
@@ -1651,13 +1683,13 @@ async function makeTileLayer(layerObj, mapContext = null) {
         // would normally add per-tile in getTileUrl.
         layerUrl = compileTileUrl(
             layerUrl,
-            buildTileUrlOptions(layerObj, splitColonType, tileFormat)
+            buildTileUrlOptions(layerObj, tileSourceType, tileFormat)
         )
 
-        ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
+        mapContext.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'tile',
             url: layerUrl,
-            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            opacity: mapContext.layerRegistry.opacity[layerObj.name] || 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
@@ -1670,9 +1702,9 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     // Same builder the DeckGL path uses, so both engines see identical,
     // already-formatted time values from the moment the layer is created.
-    const tileOptions = buildTileUrlOptions(layerObj, splitColonType, tileFormat)
+    const tileOptions = buildTileUrlOptions(layerObj, tileSourceType, tileFormat)
 
-    ctx.layerRegistry.layer[layerObj.name] = L.tileLayer.colorFilter(layerUrl, {
+    mapContext.layerRegistry.layer[layerObj.name] = L.tileLayer.colorFilter(layerUrl, {
         // Tile-URL options, spread from the same builder TimeControl passes to
         // refresh() so a layer's creation and refresh options cannot diverge.
         // The Leaflet-only options follow, so they win on any name overlap.
@@ -1684,27 +1716,27 @@ async function makeTileLayer(layerObj, mapContext = null) {
         //noWrap: true,
         continuousWorld: true,
         reuseTiles: true,
-        bounds: bb,
+        bounds: configBounds,
         variables: layerObj.variables || {},
     })
 
     // Add to map
-    if (ctx.default != true) {
-        ctx.layerRegistry.layer[layerObj.name].addTo(ctx.map)
+    if (mapContext.default != true) {
+        mapContext.layerRegistry.layer[layerObj.name].addTo(mapContext.map)
     }
 
     L_.setLayerOpacity(
         layerObj.name,
-        ctx.layerRegistry.opacity[layerObj.name] || 1
+        mapContext.layerRegistry.opacity[layerObj.name] || 1
     )
 
     L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
-    ctx.layerRegistry.layer[layerObj.name].off('loading')
-    ctx.layerRegistry.layer[layerObj.name].on('loading', () => {
+    mapContext.layerRegistry.layer[layerObj.name].off('loading')
+    mapContext.layerRegistry.layer[layerObj.name].on('loading', () => {
         L_.setGlobalLoading(layerObj.name)
     })
-    ctx.layerRegistry.layer[layerObj.name].off('load')
-    ctx.layerRegistry.layer[layerObj.name].on('load', () => {
+    mapContext.layerRegistry.layer[layerObj.name].off('load')
+    mapContext.layerRegistry.layer[layerObj.name].on('load', () => {
         // Set default css filters for tile layer
         if (
             layerObj.style?.brightness != null &&
@@ -1748,28 +1780,28 @@ async function makeTileLayer(layerObj, mapContext = null) {
     allLayersLoaded()
 }
 
-function makeVectorTileLayer(layerObj, mapContext = null) {
+function makeVectorTileLayer(layerObj, targetMapContext = null) {
     // Default to main map context for backward compatibility
-    const ctx = mapContext || {
+    const mapContext = targetMapContext || {
         map: Map_.map,
         layerRegistry: L_.layers,
     }
     let layerUrl = L_.getUrl(layerObj.type, layerObj.url, layerObj)
 
-    let urlSplit = layerObj.url.split(':')
+    let urlParts = layerObj.url.split(':')
 
-    if (urlSplit[0].toLowerCase() === 'geodatasets' && urlSplit[1] != null) {
+    if (urlParts[0].toLowerCase() === 'geodatasets' && urlParts[1] != null) {
         layerUrl =
             `${window.mmgisglobal.ROOT_PATH || ''}/api/geodatasets/get?layer=${
-                urlSplit[1]
+                urlParts[1]
             }` + '&type=mvt&x={x}&y={y}&z={z}'
     }
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
-        ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
+        mapContext.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'vectortile',
             url: layerUrl,
-            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            opacity: mapContext.layerRegistry.opacity[layerObj.name] || 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
@@ -1799,22 +1831,22 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         return
     }
 
-    var bb = null
+    var configBounds = null
     if (layerObj.hasOwnProperty('boundingBox')) {
-        bb = L.latLngBounds(
+        configBounds = L.latLngBounds(
             L.latLng(layerObj.boundingBox[3], layerObj.boundingBox[2]),
             L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
         )
     }
 
     var clearHighlight = function () {
-        for (let l of Object.keys(L_.layers.data)) {
-            if (L_.layers.layer[l]) {
-                var highlight = L_.layers.layer[l].highlight
+        for (let layerName of Object.keys(L_.layers.data)) {
+            if (L_.layers.layer[layerName]) {
+                var highlight = L_.layers.layer[layerName].highlight
                 if (highlight) {
-                    L_.layers.layer[l].resetFeatureStyle(highlight)
+                    L_.layers.layer[layerName].resetFeatureStyle(highlight)
                 }
-                L_.layers.layer[l].highlight = null
+                L_.layers.layer[layerName].highlight = null
             }
         }
     }
@@ -1824,9 +1856,11 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         timedSelectTimeout = setTimeout(
             (function (layer, layerName, e) {
                 return function () {
-                    let ell = { latlng: null }
+                    let latlngEvent = { latlng: null }
                     if (e.latlng != null)
-                        ell.latlng = JSON.parse(JSON.stringify(e.latlng))
+                        latlngEvent.latlng = JSON.parse(
+                            JSON.stringify(e.latlng)
+                        )
                     MetadataCapturer.populateMetadata(layer, () => {
                         Kinds.use(
                             L_.layers.data[layerName].kind,
@@ -1835,7 +1869,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                             layer,
                             layerName,
                             null,
-                            ell
+                            latlngEvent
                         )
 
                         ToolController_.getTool('InfoTool').use(
@@ -1845,7 +1879,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                             null,
                             null,
                             null,
-                            ell
+                            latlngEvent
                         )
                         L_.layers.layer[layerName].activeFeatures = []
                     })
@@ -1907,19 +1941,19 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             Map_.activeLayer = e.layer
             if (Map_.activeLayer) L_.Map_._justSetActiveLayer = true
 
-            let p = e.sourceTarget._point
+            let clickPoint = e.sourceTarget._point
 
-            if (p) {
+            if (clickPoint) {
                 for (var i in e.layer._renderer._features) {
                     if (
                         e.layer._renderer._features[i].feature._pxBounds.min
-                            .x <= p.x &&
+                            .x <= clickPoint.x &&
                         e.layer._renderer._features[i].feature._pxBounds.max
-                            .x >= p.x &&
+                            .x >= clickPoint.x &&
                         e.layer._renderer._features[i].feature._pxBounds.min
-                            .y <= p.y &&
+                            .y <= clickPoint.y &&
                         e.layer._renderer._features[i].feature._pxBounds.max
-                            .y >= p.y &&
+                            .y >= clickPoint.y &&
                         e.layer._renderer._features[i].feature.properties[
                             vtId
                         ] != e.layer.properties[vtId]
@@ -1965,9 +1999,9 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
     allLayersLoaded()
 }
 
-function makeModelLayer(layerObj, mapContext = null) {
+function makeModelLayer(layerObj, targetMapContext = null) {
     // Default to main map context for backward compatibility
-    const ctx = mapContext || {
+    const mapContext = targetMapContext || {
         map: Map_.map,
         layerRegistry: L_.layers,
     }
@@ -1975,17 +2009,17 @@ function makeModelLayer(layerObj, mapContext = null) {
     allLayersLoaded()
 }
 
-function makeDataLayer(layerObj, mapContext = null) {
+function makeDataLayer(layerObj, targetMapContext = null) {
     // Default to main map context for backward compatibility
-    const ctx = mapContext || {
+    const mapContext = targetMapContext || {
         map: Map_.map,
         layerRegistry: L_.layers,
     }
     let layerUrl = L_.getUrl(layerObj.type, layerObj.demtileurl, layerObj)
 
-    let bb = null
+    let configBounds = null
     if (layerObj.hasOwnProperty('boundingBox')) {
-        bb = L.latLngBounds(
+        configBounds = L.latLngBounds(
             L.latLng(layerObj.boundingBox[3], layerObj.boundingBox[2]),
             L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
         )
@@ -2003,7 +2037,7 @@ function makeDataLayer(layerObj, mapContext = null) {
     L_.layers.layer[layerObj.name] = L.tileLayer.gl({
         options: {
             tms: true,
-            bounds: bb,
+            bounds: configBounds,
         },
         fragmentShader: DataShaders[shaderType].frag,
         tileUrls: [layerUrl],
@@ -2021,9 +2055,9 @@ function makeDataLayer(layerObj, mapContext = null) {
     allLayersLoaded()
 }
 
-function makeImageLayer(layerObj, mapContext = null) {
+function makeImageLayer(layerObj, targetMapContext = null) {
     // Default to main map context for backward compatibility
-    const ctx = mapContext || {
+    const mapContext = targetMapContext || {
         map: Map_.map,
         layerRegistry: L_.layers,
     }
@@ -2032,9 +2066,9 @@ function makeImageLayer(layerObj, mapContext = null) {
         layerUrl = `${ServiceUrls.getLocalBaseUrl()}/${layerUrl}`
     }
 
-    let bb = null
+    let configBounds = null
     if (layerObj.hasOwnProperty('boundingBox')) {
-        bb = L.latLngBounds(
+        configBounds = L.latLngBounds(
             L.latLng(layerObj.boundingBox[3], layerObj.boundingBox[2]),
             L.latLng(layerObj.boundingBox[1], layerObj.boundingBox[0])
         )
@@ -2043,7 +2077,7 @@ function makeImageLayer(layerObj, mapContext = null) {
     const cogColormap = F_.getIn(L_.layers.data[layerObj.name], 'cogColormap')
 
     parseGeoraster(layerUrl)
-        .then(async (georaster) => {
+        .then(async (parsedGeoraster) => {
             let pixelValuesToColorFn = null
             if (
                 F_.getIn(
@@ -2053,7 +2087,7 @@ function makeImageLayer(layerObj, mapContext = null) {
             ) {
                 pixelValuesToColorFn = (values) => {
                     // https://github.com/GeoTIFF/georaster-layer-for-leaflet/issues/16
-                    return values[0] === georaster.noDataValue
+                    return values[0] === parsedGeoraster.noDataValue
                         ? null
                         : `rgb(${values[0]},${values[1]},${values[2]})`
                 }
@@ -2069,11 +2103,11 @@ function makeImageLayer(layerObj, mapContext = null) {
                 'variables.hideNoDataValue'
             )
 
-            let min = null
-            let max = null
-            if (georaster.numberOfRasters === 1) {
-                min = layerObj.cogMin
-                max = layerObj.cogMax
+            let bandMin = null
+            let bandMax = null
+            if (parsedGeoraster.numberOfRasters === 1) {
+                bandMin = layerObj.cogMin
+                bandMax = layerObj.cogMax
 
                 if (
                     isNaN(parseFloat(layerObj.cogMin)) ||
@@ -2108,14 +2142,14 @@ function makeImageLayer(layerObj, mapContext = null) {
                                         if (
                                             isNaN(parseFloat(layerObj.cogMin))
                                         ) {
-                                            min = band.min
-                                            layerObj.cogMin = min
+                                            bandMin = band.min
+                                            layerObj.cogMin = bandMin
                                         }
                                         if (
                                             isNaN(parseFloat(layerObj.cogMax))
                                         ) {
-                                            max = band.max
-                                            layerObj.cogMax = max
+                                            bandMax = band.max
+                                            layerObj.cogMax = bandMax
                                         }
                                     }
                                 })
@@ -2149,12 +2183,12 @@ function makeImageLayer(layerObj, mapContext = null) {
                                     data[0].band === 1
                                 ) {
                                     if (isNaN(parseFloat(layerObj.cogMin))) {
-                                        min = data[0].min
-                                        layerObj.cogMin = min
+                                        bandMin = data[0].min
+                                        layerObj.cogMin = bandMin
                                     }
                                     if (isNaN(parseFloat(layerObj.cogMax))) {
-                                        max = data[0].max
-                                        layerObj.cogMax = max
+                                        bandMax = data[0].max
+                                        layerObj.cogMax = bandMax
                                     }
                                 }
                             },
@@ -2171,7 +2205,7 @@ function makeImageLayer(layerObj, mapContext = null) {
                 }
 
                 // FIXME A lot of this code is duplicated in LayersTool so find some way to consolidate them as functions
-                var range = max - min
+                var bandRange = bandMax - bandMin
                 let colormap = null
                 let reverse = false
                 if (
@@ -2202,8 +2236,8 @@ function makeImageLayer(layerObj, mapContext = null) {
                     var pixelValue = values[0] // single band
                     // don't return a color
                     if (
-                        georaster.noDataValue != null &&
-                        georaster.noDataValue === pixelValue
+                        parsedGeoraster.noDataValue != null &&
+                        parsedGeoraster.noDataValue === pixelValue
                     ) {
                         if (hideNoDataValue) {
                             return null
@@ -2214,7 +2248,7 @@ function makeImageLayer(layerObj, mapContext = null) {
                     }
 
                     // scale from 0 - 1
-                    var scaledPixelValue = (pixelValue - min) / range
+                    var scaledPixelValue = (pixelValue - bandMin) / bandRange
                     if (!(scaledPixelValue >= 0 && scaledPixelValue <= 1)) {
                         if (imageInfo && imageInfo.fillMinMax) {
                             if (scaledPixelValue <= 0) {
@@ -2236,7 +2270,7 @@ function makeImageLayer(layerObj, mapContext = null) {
             }
 
             L_.layers.layer[layerObj.name] = new GeoRasterLayer({
-                georaster: georaster,
+                georaster: parsedGeoraster,
                 resolution: 256,
                 opacity: 1.0,
                 pixelValuesToColorFn: pixelValuesToColorFn,
@@ -2264,9 +2298,9 @@ function makeImageLayer(layerObj, mapContext = null) {
         })
 }
 
-function makeVideoLayer(layerObj, mapContext = null) {
+function makeVideoLayer(layerObj, targetMapContext = null) {
     // Default to main map context for backward compatibility
-    const ctx = mapContext || {
+    const mapContext = targetMapContext || {
         map: Map_.map,
         layerRegistry: L_.layers,
     }
@@ -2490,9 +2524,9 @@ function clearOnMapClick(event) {
                 const layer = layers[k]
                 if (!layer) continue
                 if ('getLayers' in layer) {
-                    const _layer = layer.getLayers()
-                    for (let x in _layer) {
-                        found = checkBounds(_layer[x])
+                    const featureLayers = layer.getLayers()
+                    for (let x in featureLayers) {
+                        found = checkBounds(featureLayers[x])
                         // We should bubble down further for layers that have no fill, as it is possible
                         // for there to be layers with features under the transparent fill
                         if (found) {

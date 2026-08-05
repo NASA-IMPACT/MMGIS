@@ -77,7 +77,7 @@ var Publish = {
             )
         })
 
-        DrawTool.compileFile({ verbose: true }, function (d) {
+        DrawTool.compileFile({ verbose: true }, function (compileResponse) {
             $('#drawToolReviewContent ul *').remove()
             var liMarkup = [
                 '<li class="drawToolReviewTitle">',
@@ -87,42 +87,46 @@ var Publish = {
             $('#drawToolReviewContent ul').append(liMarkup)
 
             var noErrors = true
-            for (var i = 0; i < d.body.issues.length; i++) {
-                var s = d.body.issues[i]
-                if (s.severity === 'error') noErrors = false
-                var message = s.message
-                if (s.hasOwnProperty('antecedent')) {
+            for (var i = 0; i < compileResponse.body.issues.length; i++) {
+                var issue = compileResponse.body.issues[i]
+                if (issue.severity === 'error') noErrors = false
+                var message = issue.message
+                if (issue.hasOwnProperty('antecedent')) {
                     message = message.replace(
                         '{antecedent}',
                         "<span class='ante' shape_id='" +
-                            s.antecedent.id +
+                            issue.antecedent.id +
                             "'>" +
-                            (DrawTool.intentNameMapping[s.antecedent.intent] ||
-                                s.antecedent.intent.capitalizeFirstLetter()) +
+                            (DrawTool.intentNameMapping[
+                                issue.antecedent.intent
+                            ] ||
+                                issue.antecedent.intent.capitalizeFirstLetter()) +
                             '(' +
-                            s.antecedent.id +
+                            issue.antecedent.id +
                             ')' +
                             '</span>'
                     )
                 }
-                if (s.hasOwnProperty('consequent'))
+                if (issue.hasOwnProperty('consequent'))
                     message = message.replace(
                         '{consequent}',
                         "<span class='cons' shape_id='" +
-                            s.consequent.id +
+                            issue.consequent.id +
                             "'>" +
-                            (DrawTool.intentNameMapping[s.consequent.intent] ||
-                                s.consequent.intent.capitalizeFirstLetter()) +
+                            (DrawTool.intentNameMapping[
+                                issue.consequent.intent
+                            ] ||
+                                issue.consequent.intent.capitalizeFirstLetter()) +
                             '(' +
-                            s.consequent.id +
+                            issue.consequent.id +
                             ')' +
                             '</span>'
                     )
 
                 var liMarkup = [
                     '<li>',
-                    "<div class='" + s.severity + "'>",
-                    s.severity,
+                    "<div class='" + issue.severity + "'>",
+                    issue.severity,
                     '</div>',
                     message,
                     '</li>',
@@ -141,9 +145,9 @@ var Publish = {
                 $('#drawToolReviewContent ul').append(liMarkup)
 
                 //Changes
-                if (d.body.changes) {
+                if (compileResponse.body.changes) {
                     //Added
-                    var added = d.body.changes.added
+                    var added = compileResponse.body.changes.added
                     for (var i = 0; i < added.length; i++) {
                         var liMarkup = [
                             "<li class='changes'>",
@@ -161,7 +165,7 @@ var Publish = {
                     }
 
                     //Removed
-                    var removed = d.body.changes.removed
+                    var removed = compileResponse.body.changes.removed
                     for (var i = 0; i < removed.length; i++) {
                         var liMarkup = [
                             "<li class='changes'>",
@@ -177,7 +181,7 @@ var Publish = {
                     }
 
                     //Changed
-                    var changed = d.body.changes.changed
+                    var changed = compileResponse.body.changes.changed
                     for (var i = 0; i < changed.length; i++) {
                         var liMarkup = [
                             "<li class='changes'>",

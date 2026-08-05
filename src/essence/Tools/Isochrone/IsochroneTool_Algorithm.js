@@ -197,34 +197,50 @@ export default function generateIsochrone(
     heap.insert([startPx.y, startPx.x]);
 
     while (heap.contents.length > 0) {
-        const cPx = heap.remove(); //current pixel
-        const cCost = getPx(costArr, cPx);
-        const cLatLng = pxToLatLng(cPx, tileBounds, zoom);
+        const currentPixel = heap.remove();
+        const currentCost = getPx(costArr, currentPixel);
+        const currentLatLng = pxToLatLng(currentPixel, tileBounds, zoom);
 
         for (const m of moves) {
-            const tPx = [cPx[Y] + m[Y], cPx[X] + m[X]]; //target pixel
+            const neighborPixel = [
+                currentPixel[Y] + m[Y],
+                currentPixel[X] + m[X],
+            ];
 
-            //Check that target pixel is within bounds
-            if (tPx[Y] < 0 || tPx[X] < 0 || tPx[Y] >= size.y || tPx[X] >= size.x)
+            //Check that neighbor pixel is within bounds
+            if (
+                neighborPixel[Y] < 0 ||
+                neighborPixel[X] < 0 ||
+                neighborPixel[Y] >= size.y ||
+                neighborPixel[X] >= size.x
+            )
                 continue;
-            
-            //Check that target pixel hasn't already been visited
-            const tPxIndex = getPx(indexArr, tPx);
-            if (tPxIndex === -1) continue;
 
-            //Check that target pixel can be reached within cost budget
-            const tLatLng = pxToLatLng(tPx, tileBounds, zoom);
-            const cost = model.costFunction(cPx, tPx, cLatLng, tLatLng) + cCost;
+            //Check that neighbor pixel hasn't already been visited
+            const neighborHeapIndex = getPx(indexArr, neighborPixel);
+            if (neighborHeapIndex === -1) continue;
+
+            //Check that neighbor pixel can be reached within cost budget
+            const neighborLatLng = pxToLatLng(neighborPixel, tileBounds, zoom);
+            const cost =
+                model.costFunction(
+                    currentPixel,
+                    neighborPixel,
+                    currentLatLng,
+                    neighborLatLng
+                ) + currentCost;
             if (cost > maxCost || !isFinite(cost)) continue;
-            
-            if (tPxIndex === -2) { //tPx is unvisited
-                setPx(costArr, tPx, cost);
-                setPx(linkArr, tPx, moveToBacklink[m[Y] + 2][m[X] + 2]);
-                heap.insert(tPx);
-            } else if (cost < getPx(costArr, tPx)) { //tPx is visited but this path is better
-                setPx(costArr, tPx, cost);
-                setPx(linkArr, tPx, moveToBacklink[m[Y] + 2][m[X] + 2]);
-                heap.bubbleUp(tPxIndex); //Cost has decreased; pixel's heap position must be updated
+
+            if (neighborHeapIndex === -2) { //neighborPixel is unvisited
+                setPx(costArr, neighborPixel, cost);
+                setPx(linkArr, neighborPixel, moveToBacklink[m[Y] + 2][m[X] + 2]);
+                heap.insert(neighborPixel);
+            } else if (cost < getPx(costArr, neighborPixel)) {
+                //neighborPixel is visited but this path is better
+                setPx(costArr, neighborPixel, cost);
+                setPx(linkArr, neighborPixel, moveToBacklink[m[Y] + 2][m[X] + 2]);
+                //Cost has decreased; pixel's heap position must be updated
+                heap.bubbleUp(neighborHeapIndex);
             }
         }
     }
