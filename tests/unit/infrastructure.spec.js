@@ -416,4 +416,54 @@ test.describe('infrastructure/ JSON recipes', () => {
             'master_user_secret_kms_key_id'
         )
     })
+
+    test('the boundary caps every action the Express infrastructure role needs', () => {
+        // mmgis-<env>-express-infrastructure carries exactly one policy, the
+        // AWS managed AmazonECSInfrastructureRoleforExpressGatewayServices, and
+        // a boundary is an intersection: an action the cap omits fails service
+        // creation with an error naming the boundary, not the action. These are
+        // that policy's actions (v6). Each is capped either literally or by its
+        // service wildcard.
+        const REQUIRED = [
+            'iam:CreateServiceLinkedRole',
+            'elasticloadbalancing:CreateLoadBalancer',
+            'elasticloadbalancing:CreateTargetGroup',
+            'elasticloadbalancing:AddTags',
+            'elasticloadbalancing:DescribeLoadBalancers',
+            'ec2:CreateSecurityGroup',
+            'ec2:AuthorizeSecurityGroupIngress',
+            'ec2:RevokeSecurityGroupEgress',
+            'ec2:DeleteSecurityGroup',
+            'ec2:CreateTags',
+            'ec2:DescribeVpcs',
+            'acm:RequestCertificate',
+            'application-autoscaling:RegisterScalableTarget',
+            'cloudwatch:PutMetricAlarm',
+            'cloudwatch:DescribeAlarms',
+            'cloudwatch:DeleteAlarms',
+            'cloudwatch:TagResource',
+            'logs:CreateLogGroup',
+            'logs:DescribeLogGroups',
+            'logs:TagResource',
+        ]
+
+        const boundary = fs.readFileSync(
+            path.join(INFRA, 'terraform', 'bootstrap', 'boundary.tf'),
+            'utf8'
+        )
+        // Only the Allow statements count — the trailing Deny block names EC2
+        // actions too, and a match there would be the opposite of coverage.
+        const denyStart = boundary.indexOf('"DenyEc2BlastRadius"')
+        expect(denyStart, 'the EC2 deny block is still last').toBeGreaterThan(0)
+        const allows = boundary.slice(0, denyStart)
+
+        for (const action of REQUIRED) {
+            const service = action.split(':')[0]
+            expect(
+                allows.includes(`"${action}"`) ||
+                    allows.includes(`"${service}:*"`),
+                `boundary caps ${action}`
+            ).toBe(true)
+        }
+    })
 })

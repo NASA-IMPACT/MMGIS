@@ -86,8 +86,8 @@ resource "aws_iam_policy" "ci_role_boundary" {
         Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task-definition/mmgis-${each.key}*"
       },
       {
-        # The only iam action in the boundary. Without it the admin task's
-        # RunTask fails with an AccessDenied that never mentions PassRole.
+        # Without it the admin task's RunTask fails with an AccessDenied that
+        # never mentions PassRole.
         Sid      = "PassRuntimeRolesToEcs"
         Effect   = "Allow"
         Action   = ["iam:PassRole"]
@@ -193,6 +193,61 @@ resource "aws_iam_policy" "ci_role_boundary" {
           "application-autoscaling:*",
         ]
         Resource = "*"
+      },
+      {
+        # The Express infrastructure role also publishes the gateway's
+        # autoscaling alarms and creates its log group. ECS names both, as it
+        # does the security groups above, so the cap can pin only
+        # the account and region and enumerate actions (honesty table:
+        # docs/infrastructure/identity.md); the AmazonECSManaged tag conditions
+        # that hold the role to ECS-created alarms and log groups live in the
+        # managed policy. Enumerated rather than wildcarded like the statement
+        # above because logs:* would widen the cap to reading every log group in
+        # the account, undoing LogsWrite's scoping — the tradeoff is that an
+        # AWS-side extension in these two services needs a boundary edit.
+        Sid    = "ExpressInfrastructureAlarmsAndLogGroup"
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricAlarm",
+          "cloudwatch:DescribeAlarms",
+          "cloudwatch:DeleteAlarms",
+          "cloudwatch:TagResource",
+          "logs:CreateLogGroup",
+          "logs:TagResource",
+        ]
+        Resource = [
+          "arn:aws:cloudwatch:${local.region}:${local.account_id}:alarm:*",
+          "arn:aws:logs:${local.region}:${local.account_id}:log-group:*",
+        ]
+      },
+      {
+        # How the role finds the log group it just created. The managed policy
+        # carries this list call on "*" as well, so the cap matches it rather
+        # than gamble on which resource form a list call authorizes against.
+        # The reply is names and metadata, never log content.
+        Sid      = "ExpressInfrastructureLogGroupDiscovery"
+        Effect   = "Allow"
+        Action   = ["logs:DescribeLogGroups"]
+        Resource = "*"
+      },
+      {
+        # The Express service creates the load-balancing and ECS
+        # application-autoscaling service-linked roles on first use. The
+        # condition mirrors the managed policy's own
+        # ServiceLinkedRoleCreateOperations statement, so the cap can never
+        # authorize a service-linked role for any other AWS service.
+        Sid      = "CreateEcsGatewayServiceLinkedRoles"
+        Effect   = "Allow"
+        Action   = ["iam:CreateServiceLinkedRole"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "iam:AWSServiceName" = [
+              "ecs.application-autoscaling.amazonaws.com",
+              "elasticloadbalancing.amazonaws.com",
+            ]
+          }
+        }
       },
       {
         # Express Mode never touches instances, volumes, images, or VPC
