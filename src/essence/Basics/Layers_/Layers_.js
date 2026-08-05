@@ -1,4 +1,5 @@
 // Holds all layer data
+import { buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
@@ -196,6 +197,36 @@ const L_ = {
                 }),
                 window.mmgisAPI.provide('layers:refresh', ({ layerUUID, options }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
+                    const layerObj = L_.layers.data[uuid]
+                    // Deck.gl deckRaster COG branch: rebuild the layer with updated
+                    // current* values and re-register it so deck.gl diffs in place.
+                    if (
+                        L_.Map_ &&
+                        L_.Map_.engine &&
+                        L_.Map_.engine.engineType === 'deckgl' &&
+                        layerObj &&
+                        layerObj.cogRendererMode === 'deckRaster'
+                    ) {
+                        // Prefer reading the raw COG URL from the existing layer props
+                        // to avoid re-deriving it (Map_.js does prefix-stripping that
+                        // can produce a different result here). Fall back to getUrl only
+                        // if the existing instance or its props are unavailable.
+                        const existing = L_.layers.layer[uuid]
+                        const rawCogUrl =
+                            (existing && existing.props && existing.props.geotiff) ||
+                            L_.getUrl(layerObj.type, layerObj.url, layerObj)
+                        const rebuilt = buildDeckCOGLayer(uuid, {
+                            rawCogUrl,
+                            layerObj,
+                            opacity: L_.layers.opacity[uuid] || 1,
+                        })
+                        L_.layers.layer[uuid] = rebuilt
+                        // addLayer sets the layer by id in the adapter's registry
+                        // then calls _syncLayers() so deck.gl diffs and re-renders.
+                        L_.Map_.engine.addLayer(rebuilt)
+                        return true
+                    }
+                    // Leaflet fallback — unchanged existing path.
                     const tileLayer = L_.layers.layer[uuid]
                     if (tileLayer && typeof tileLayer.refresh === 'function') {
                         tileLayer.refresh(null, false, options || {})

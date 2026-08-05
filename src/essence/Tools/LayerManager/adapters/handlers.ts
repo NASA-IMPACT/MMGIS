@@ -7,6 +7,7 @@ type LayerConfig = {
     cogColormap?: string
     cogMin?: number
     cogMax?: number
+    cogRendererMode?: string
 }
 
 export const toggleVisibility = async (layerId: string): Promise<void> => {
@@ -25,7 +26,8 @@ export const setOpacity = async (layerId: string, opacity: number): Promise<void
 
 export const setColormap = async (layerId: string, colormap: string, refresh: Refresh): Promise<void> => {
     const cfg = await mmgisRequest<LayerConfig>('layers:getConfig', layerId)
-    if (!cfg || !cfg.cogTransform) return
+    const enabled = cfg && (cfg.cogTransform || cfg.cogRendererMode === 'deckRaster')
+    if (!enabled) return
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })
     await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { cogColormap: colormap } })
     mmgisEmit('layer:cogColormapChange', { layerName: layerId, colormap })
@@ -39,7 +41,8 @@ export const setRescale = async (
     refresh: Refresh,
 ): Promise<void> => {
     const cfg = await mmgisRequest<LayerConfig>('layers:getConfig', layerId)
-    if (!cfg || !cfg.cogTransform) return
+    const enabled = cfg && (cfg.cogTransform || cfg.cogRendererMode === 'deckRaster')
+    if (!enabled) return
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
     await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
     mmgisEmit('layer:cogRescaleChange', { layerName: layerId, min, max })

@@ -3,6 +3,7 @@ import {
     toggleVisibility,
     setOpacity,
     setColormap,
+    setRescale,
 } from '../../../src/essence/Tools/LayerManager/adapters/handlers.ts'
 
 const setupMock = (responses = {}, emitCalls = []) => {
@@ -39,7 +40,7 @@ test.describe('handlers', () => {
         })
     })
 
-    test('setColormap is a no-op when layer has no cogTransform', async () => {
+    test('setColormap is a no-op when layer has no cogTransform and is not deckRaster', async () => {
         const { emitCalls } = setupMock({ 'layers:getConfig': { cogTransform: false } })
         let refreshCalled = false
         await setColormap('layerA', 'plasma', () => { refreshCalled = true })
@@ -58,6 +59,59 @@ test.describe('handlers', () => {
         expect(emitCalls).toContainEqual({
             event: 'layer:cogColormapChange',
             payload: { layerName: 'layerA', colormap: 'plasma' },
+        })
+        expect(refreshCalled).toBe(true)
+    })
+
+    test('setColormap proceeds for deckRaster layer without cogTransform', async () => {
+        const { emitCalls } = setupMock({
+            'layers:getConfig': { cogTransform: false, cogRendererMode: 'deckRaster' },
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+        })
+        let refreshCalled = false
+        await setColormap('layerA', 'viridis', () => { refreshCalled = true })
+        expect(emitCalls).toContainEqual({
+            event: 'layer:cogColormapChange',
+            payload: { layerName: 'layerA', colormap: 'viridis' },
+        })
+        expect(refreshCalled).toBe(true)
+    })
+
+    test('setRescale is a no-op when layer has no cogTransform and is not deckRaster', async () => {
+        const { emitCalls } = setupMock({ 'layers:getConfig': { cogTransform: false } })
+        let refreshCalled = false
+        await setRescale('layerA', 0, 100, () => { refreshCalled = true })
+        expect(emitCalls).toHaveLength(0)
+        expect(refreshCalled).toBe(false)
+    })
+
+    test('setRescale calls refresh on success for cogTransform layer', async () => {
+        const { emitCalls } = setupMock({
+            'layers:getConfig': { cogTransform: true },
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+        })
+        let refreshCalled = false
+        await setRescale('layerA', 10, 200, () => { refreshCalled = true })
+        expect(emitCalls).toContainEqual({
+            event: 'layer:cogRescaleChange',
+            payload: { layerName: 'layerA', min: 10, max: 200 },
+        })
+        expect(refreshCalled).toBe(true)
+    })
+
+    test('setRescale proceeds for deckRaster layer without cogTransform', async () => {
+        const { emitCalls } = setupMock({
+            'layers:getConfig': { cogTransform: false, cogRendererMode: 'deckRaster' },
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+        })
+        let refreshCalled = false
+        await setRescale('layerA', 5, 50, () => { refreshCalled = true })
+        expect(emitCalls).toContainEqual({
+            event: 'layer:cogRescaleChange',
+            payload: { layerName: 'layerA', min: 5, max: 50 },
         })
         expect(refreshCalled).toBe(true)
     })

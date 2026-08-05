@@ -11,12 +11,14 @@ import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
  */
 
 const updateLayer = vi.fn()
+const addLayer = vi.fn()
 
 vi.mock('../../src/essence/Basics/Map_/Map_', () => ({
     default: {
         engine: {
             engineType: MAP_ENGINE.DECKGL,
             updateLayer: (...args) => updateLayer(...args),
+            addLayer: (...args) => addLayer(...args),
         },
         refreshLayer: vi.fn(async () => true),
     },
@@ -29,7 +31,9 @@ vi.mock('../../src/essence/Basics/Layers_/Layers_', () => ({
         FUTURES: {},
         layers: { data: {}, layer: {}, on: {}, opacity: {}, filters: {} },
         asLayerUUID: (name) => name,
-        getUrl: (type, url) => url,
+        // Mirrors the real getUrl's COG: prefix stripping (the resolved
+        // file URL a deckRaster layer reads directly).
+        getUrl: (type, url) => (url.startsWith('COG:') ? url.slice(4) : url),
         transformStacUrl: (url) => url,
         timeFilterVectorLayer: vi.fn(),
     },
@@ -124,6 +128,36 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         await TimeControl.reloadLayer(layer)
 
         expect(layer.url).toBe(originalUrl)
+    })
+
+    test('rebuilds a deckRaster COG layer from its time-substituted file URL', async () => {
+        const layer = {
+            name: 'CO2 COG',
+            type: 'tile',
+            url: 'COG:https://example.com/cogs/co2_{time}.tif',
+            cogRendererMode: 'deckRaster',
+            cogTransform: true,
+            minZoom: '2',
+            maxZoom: '10',
+            controlled: false,
+            time: { ...timeConfig },
+        }
+        registerDeckLayer(layer)
+
+        await TimeControl.reloadLayer(layer)
+
+        // The TiTiler tiles URL is meaningless to the client-side renderer —
+        // a clone({url}) is silently ignored by COGLayer (it reads `geotiff`).
+        expect(updateLayer).not.toHaveBeenCalled()
+        expect(addLayer).toHaveBeenCalledTimes(1)
+        const rebuilt = addLayer.mock.calls[0][0]
+        expect(rebuilt.id).toBe('CO2 COG')
+        expect(rebuilt.props.geotiff).toBe(
+            'https://example.com/cogs/co2_202206.tif'
+        )
+        expect(rebuilt.props.minZoom).toBe(2)
+        expect(rebuilt.props.maxZoom).toBe(10)
+        expect(L_.layers.layer['CO2 COG']).toBe(rebuilt)
     })
 
     test('a vector tile layer takes the refresh path, not the tile pipeline', async () => {
