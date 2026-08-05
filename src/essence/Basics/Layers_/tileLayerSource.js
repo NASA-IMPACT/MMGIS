@@ -14,7 +14,11 @@
 import F_ from '../Formulae_/Formulae_'
 import L_ from './Layers_'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { resolveTileFormat } from './tileUrlUtils'
+import {
+    resolveTileFormat,
+    compileTileUrl,
+    buildTileUrlOptions,
+} from './tileUrlUtils'
 
 /**
  * Returns the tile level a layer is currently displaying, or null when the
@@ -122,6 +126,31 @@ export function resolveTileLayerSource(layerObj) {
             : resolveTileFormat(layerObj)
 
     return { url, fileUrl, sourceUrl, splitColonType, tileElevation, tileFormat }
+}
+
+/**
+ * Resolves the raw COG file URL the client-side deck.gl renderer reads —
+ * the single place this derivation lives, shared by layer creation and every
+ * rebuild path (colormap/rescale refresh, time reload).
+ *
+ * Time placeholders ({time}/{starttime}/{endtime}/{customtime.N}) are
+ * substituted from the layer's time config; nothing else is applied — a file
+ * URL takes no COG/TMS/datetime query params (those belong to tile requests,
+ * and range-reading a .tif ignores them at best).
+ *
+ * @param {object} layerObj - Layer config from the mission JSON.
+ * @param {object} [tileSource] - Optional precomputed resolveTileLayerSource
+ *                                result, to avoid resolving twice.
+ * @returns {string} Bare, time-substituted .tif URL.
+ */
+export function resolveDeckCOGFileUrl(layerObj, tileSource) {
+    const source = tileSource ?? resolveTileLayerSource(layerObj)
+    return compileTileUrl(source.fileUrl, {
+        ...buildTileUrlOptions(layerObj, source.splitColonType, source.tileFormat),
+        // Placeholder substitution only — disable the param-injection steps.
+        splitColonType: undefined,
+        tileFormat: undefined,
+    })
 }
 
 /**
