@@ -38,13 +38,24 @@ Operator-provided prerequisites (VPC, subnets, boundary ARN, CA bundle) and wher
 
 ## Building an environment takes two phases
 
-ECS Express Mode does not export its internal ALB ARN or on.aws endpoint as Terraform attributes, and the CloudFront VPC origin needs both. So an environment is built (and updated) in two phases:
+Terraform builds everything in the topology above except one piece: the internal ALB. ECS creates that load balancer itself when Terraform creates the Express Mode service, and it does not report the ALB's details back through Terraform. That is a problem for CloudFront, because three of CloudFront's inputs are facts about that load balancer — facts that do not exist until the service is running:
 
-1. **Phase 1 — everything except CloudFront.** Cluster, service (which provisions its own internal ALB), task definitions, RDS, secret shells, ECR, asset bucket, IAM.
-2. **Discovery** — the ALB ARN, the on.aws endpoint, and the ECS-managed ALB's security-group id are read from the now-running service.
-3. **Phase 2 — the front door.** VPC origin, distribution, asset-bucket policy, and the one `:443`-from-VPC-CIDR ingress rule on the ECS-managed ALB security group.
+- **The ALB's ARN.** The VPC origin — CloudFront's way of reaching a private load balancer inside a VPC — targets the ALB by its ARN.
+- **The service's on.aws endpoint.** The origin `DomainName` must be exactly this host: it is the only name that satisfies the SNI and host-header rules of the certificate ECS put on the ALB. (The distribution's default behavior also attaches the AllViewerExceptHostHeader origin-request policy and the CachingDisabled cache policy — without those, login, sessions, and WebSocket connections do not survive the proxy.)
+- **The ALB's security-group id.** Terraform adds one ingress rule to that ECS-managed security group — allow `:443` from the VPC CIDR — because nothing else admits the VPC origin's traffic.
 
-The CI pipeline reads those values *before* phase 1, so in steady state phase 1 already has all three and everything applies in one pass; a separate phase-2 apply happens only on a brand-new environment or when the discovered values changed. By hand the discovery is two CLI calls documented in the [infrastructure README](../../infrastructure/README.md#apply-flow). Two CloudFront origin settings are required for the app to work at all: the origin `DomainName` must be the on.aws endpoint (it alone satisfies the ALB certificate's SNI and host-header rule), and the AllViewerExceptHostHeader origin-request policy plus the CachingDisabled cache policy are what let login, sessions, and WebSocket connections survive the proxy.
+The three values enter the module as input variables (`express_internal_alb_arn`, `express_onaws_endpoint`, `express_alb_security_group_id`). While they are empty the module skips every CloudFront resource; once they are set it builds them. Whoever runs Terraform is responsible for reading the values out of AWS and passing them in:
+
+- **In CI**, `iac-deploy.yml` reads them before every apply, with two AWS calls: `aws ecs describe-express-gateway-service` to find the service's newest revision, then `aws ecs describe-service-revisions` to read that revision's load-balancer details — the ALB ARN, the on.aws endpoint, and the security-group id.
+- **By hand**, the same reads are part of the apply recipe in the [infrastructure README](../../infrastructure/README.md#apply-flow).
+
+On an environment that already exists, this is one pass: the reads succeed, and a single `terraform apply` updates everything, CloudFront included. A brand-new environment is the case that takes two applies — there is no service to read from yet — and `iac-deploy.yml` runs both in the same run:
+
+1. **Phase 1 — everything except CloudFront.** With the three variables empty, the apply creates the cluster, the service (ECS provisions the internal ALB as part of it), the task definitions, RDS, the secret shells, ECR, the asset bucket, and the IAM roles.
+2. **Read again.** The workflow repeats the two AWS calls against the now-running service, waiting up to five minutes for the new ALB to appear.
+3. **Phase 2 — CloudFront.** A second apply, now with the variables set, adds the CloudFront distribution, its VPC origin, the asset-bucket policy, and the `:443` ingress rule.
+
+If the ALB has not appeared within the wait, the run ends without phase 2: the environment still answers on its on.aws endpoint, and the next infrastructure-touching run reads the values and builds the CloudFront pieces. The same phase-2 apply also covers the rare live-environment case where ECS replaced the ALB and the values changed.
 
 ## Images and task definitions
 
