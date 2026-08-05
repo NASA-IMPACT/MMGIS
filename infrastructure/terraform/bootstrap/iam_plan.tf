@@ -77,6 +77,16 @@ resource "aws_iam_role_policy" "terraform_plan" {
         Resource = data.aws_iam_openid_connect_provider.github.arn
       },
       {
+        # The environment module resolves the RDS master-secret key (kms.tf) by
+        # alias through a data source, so a plan of any environment root fails
+        # on the read without this. DescribeKey by alias authorizes against the
+        # key itself, which keeps the grant scoped to the one key.
+        Sid      = "ReadMasterSecretKey"
+        Effect   = "Allow"
+        Action   = ["kms:DescribeKey"]
+        Resource = aws_kms_key.master_secret.arn
+      },
+      {
         Sid      = "ReadEcrConfig"
         Effect   = "Allow"
         Action   = ["ecr:ListTagsForResource"]

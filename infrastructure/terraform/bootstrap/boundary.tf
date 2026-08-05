@@ -62,6 +62,23 @@ resource "aws_iam_policy" "ci_role_boundary" {
         }
       },
       {
+        # GetSecretValue on the managed master secret makes Secrets Manager
+        # decrypt with the caller's credentials, so the cap has to cover the
+        # key (kms.tf) or the execution roles' secrets[] injection fails at task
+        # start. One key serves both environments; the secret scoping above is
+        # what keeps them apart. The ViaService condition means a capped role can
+        # only ever use the key through Secrets Manager, never directly.
+        Sid      = "DecryptRdsMasterSecret"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = aws_kms_key.master_secret.arn
+        Condition = {
+          StringEquals = {
+            "kms:ViaService" = "secretsmanager.${local.region}.amazonaws.com"
+          }
+        }
+      },
+      {
         # The admin task launches the publish task by family name.
         Sid      = "RunPublishTask"
         Effect   = "Allow"

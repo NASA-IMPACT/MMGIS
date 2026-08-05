@@ -6,6 +6,10 @@
 locals {
   ecr_repo_arn = aws_ecr_repository.this.arn
 
+  # Both execution roles inject DB_PASS from the RDS-managed master secret, so
+  # both must be able to decrypt it with the bootstrap-owned key (rds.tf).
+  master_secret_key_arn = data.aws_kms_key.master_secret.arn
+
   # The RDS-managed master secret must be an ATTRIBUTE reference, never a
   # literal ARN: the secret does not exist until the DB does, so a literal
   # would break a greenfield apply.
@@ -74,6 +78,19 @@ resource "aws_iam_role_policy" "admin_exec" {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = local.admin_exec_secret_arns
+      },
+      {
+        # GetSecretValue on the master secret is not enough on its own — the
+        # value is encrypted with a customer-managed key, and Secrets Manager
+        # decrypts it with the caller's credentials. The ViaService condition
+        # confines that to the injection path: no direct use of the key.
+        Sid      = "DecryptRdsMasterSecret"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = local.master_secret_key_arn
+        Condition = {
+          StringEquals = { "kms:ViaService" = "secretsmanager.${local.region}.amazonaws.com" }
+        }
       },
     ]
   })
@@ -205,6 +222,17 @@ resource "aws_iam_role_policy" "publish_exec" {
         Effect   = "Allow"
         Action   = ["secretsmanager:GetSecretValue"]
         Resource = local.publish_exec_secret_arns
+      },
+      {
+        # Same as the admin execution role: the publish task's secrets[] also
+        # carries the encrypted master secret.
+        Sid      = "DecryptRdsMasterSecret"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = local.master_secret_key_arn
+        Condition = {
+          StringEquals = { "kms:ViaService" = "secretsmanager.${local.region}.amazonaws.com" }
+        }
       },
     ]
   })

@@ -408,4 +408,12 @@ test.describe('infrastructure/ JSON recipes', () => {
         const cloudfrontTf = readTfModuleFile('cloudfront.tf')
         expect(cloudfrontTf).toContain('prevent_destroy = true')
     })
+
+    test('the DB instance names an explicit key for its managed master secret', () => {
+        // The account's default aws/secretsmanager key cannot be granted on by
+        // the CI apply role, so CreateDBInstance fails without this.
+        expect(readTfModuleFile('rds.tf')).toContain(
+            'master_user_secret_kms_key_id'
+        )
+    })
 })

@@ -88,7 +88,7 @@ Terraform defines secret *existence*, never values — a value in the configurat
 | `mapbox-token` | A human, once per environment | `MAPBOX_TOKEN`, admin task — an external credential CI can never invent |
 | database admin password (`rds!db-...`) | RDS itself — it creates and rotates this secret; Terraform and CI never see it | `DB_PASS` via the `:password::` JSON-key selector; host/port/user/name ride as plain env values |
 
-The database password exists in exactly one place, so there is no second copy to drift or leak. The admin username must be `postgres` (a `scripts/init-db.js` startup constraint, enforced in the module — RDS calls this the "master" user, which is where the `rds_managed_master_secret_arn` output gets its name). Both environments set `secret_recovery_window_days = 0` so a destroy/re-apply cycle never collides with a ghost name.
+The database password exists in exactly one place, so there is no second copy to drift or leak. Its secret is encrypted with a key the bootstrap root creates (`alias/mmgis-master-secret`) rather than the account's default Secrets Manager key, because an AWS-managed key cannot be granted on by IAM — the CI apply role could not create the database at all against the default key. The admin username must be `postgres` (a `scripts/init-db.js` startup constraint, enforced in the module — RDS calls this the "master" user, which is where the `rds_managed_master_secret_arn` output gets its name). Both environments set `secret_recovery_window_days = 0` so a destroy/re-apply cycle never collides with a ghost name.
 
 ## Dashboard stacks: app-created, environment-namespaced
 
