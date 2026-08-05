@@ -57,6 +57,9 @@ var TimeControl = {
                             timeInputChange(startTime, endTime, currentTime)
                     }
                 ),
+                // Separates "time is off for this mission" from "on but not yet
+                // seeded"; the getters below return null for both.
+                window.mmgisAPI.provide('time:isEnabled', () => TimeControl.enabled === true),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),

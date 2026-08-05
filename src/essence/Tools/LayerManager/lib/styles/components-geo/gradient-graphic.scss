@@ -45,7 +45,7 @@
         transition: background-color 0.15s ease, color 0.15s ease;
 
         &:hover {
-            background: var(--theme-color-base-lighter, #dfe1e2);
+            background: var(--theme-color-primary-lightest, #e6f4f6);
             color: var(--theme-color-base-darker, #3d4551);
         }
 
