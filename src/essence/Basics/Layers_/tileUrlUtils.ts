@@ -94,6 +94,7 @@ export function buildTileUrlOptions(
         // COG/TiTiler fields read by applyCogFieldsToUrl
         cogTransform: layerObj.cogTransform,
         cogColormap: layerObj.cogColormap,
+        currentCogColormap: layerObj.currentCogColormap,
         cogExpression: layerObj.cogExpression,
         currentCogExpression: layerObj.currentCogExpression,
         cogMin: layerObj.cogMin,
@@ -144,8 +145,10 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
     }
 
     if (layerObj.cogTransform === true) {
-        if (layerObj.cogColormap && !params.has('colormap_name'))
-            params.set('colormap_name', layerObj.cogColormap as string)
+        const colormap = (layerObj.currentCogColormap ??
+            layerObj.cogColormap) as string | undefined
+        if (colormap && !params.has('colormap_name'))
+            params.set('colormap_name', colormap)
 
         const cogMin = layerObj.currentCogMin ?? layerObj.cogMin
         const cogMax = layerObj.currentCogMax ?? layerObj.cogMax
@@ -260,4 +263,38 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
     }
 
     return nextUrl
+}
+
+/**
+ * Returns true when the layer should be treated as a COG layer:
+ * - splitColonType is 'COG' or 'stac-collection', OR
+ * - layerObj.cogTransform === true
+ */
+export function isCogLayer(
+    splitColonType: string | undefined,
+    layerObj: Record<string, unknown>
+): boolean {
+    return (
+        splitColonType === 'COG' ||
+        splitColonType === 'stac-collection' ||
+        layerObj.cogTransform === true
+    )
+}
+
+/**
+ * Returns true when the deck.gl raster path should be used:
+ * engineType must be 'deckgl', the layer must be a COG layer,
+ * and cogRendererMode must be 'deckRaster'.
+ */
+export function shouldUseDeckRaster(
+    engineType: string,
+    splitColonType: string | undefined,
+    layerObj: Record<string, unknown>
+): boolean {
+    return (
+        engineType === 'deckgl' &&
+        isCogLayer(splitColonType, layerObj) &&
+        splitColonType !== 'stac-collection' &&
+        layerObj.cogRendererMode === 'deckRaster'
+    )
 }

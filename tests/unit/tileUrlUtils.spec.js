@@ -6,6 +6,8 @@ import {
     resolveTileFormat,
     formatLayerTime,
     buildTileUrlOptions,
+    isCogLayer,
+    shouldUseDeckRaster,
 } from '../../src/essence/Basics/Layers_/tileUrlUtils.ts'
 
 describe('tileUrlUtils', () => {
@@ -124,6 +126,51 @@ describe('tileUrlUtils', () => {
                 cogResampling: 'bilinear',
             })
             expect(result).toContain('resampling=bilinear')
+        })
+
+        test('prefers currentCogColormap over cogColormap', () => {
+            const url = applyCogFieldsToUrl('https://t/{z}/{x}/{y}.png', {
+                cogTransform: true,
+                cogColormap: 'viridis',
+                currentCogColormap: 'plasma',
+                cogMin: 0,
+                cogMax: 1,
+            })
+            expect(url).toContain('colormap_name=plasma')
+        })
+    })
+
+    describe('shouldUseDeckRaster', () => {
+        test('true only for deckgl + COG + deckRaster mode', () => {
+            const layer = { cogRendererMode: 'deckRaster' }
+            expect(shouldUseDeckRaster('deckgl', 'COG', layer)).toBe(true)
+        })
+        test('false in leaflet even when mode is deckRaster', () => {
+            expect(
+                shouldUseDeckRaster('leaflet', 'COG', {
+                    cogRendererMode: 'deckRaster',
+                })
+            ).toBe(false)
+        })
+        test('false when mode is titiler or unset', () => {
+            expect(shouldUseDeckRaster('deckgl', 'COG', {})).toBe(false)
+            expect(
+                shouldUseDeckRaster('deckgl', 'COG', {
+                    cogRendererMode: 'titiler',
+                })
+            ).toBe(false)
+        })
+        test('isCogLayer honors cogTransform and stac-collection', () => {
+            expect(isCogLayer('stac-collection', {})).toBe(true)
+            expect(isCogLayer(undefined, { cogTransform: true })).toBe(true)
+            expect(isCogLayer('url', {})).toBe(false)
+        })
+        test('false for stac-collection even with deckRaster mode', () => {
+            expect(
+                shouldUseDeckRaster('deckgl', 'stac-collection', {
+                    cogRendererMode: 'deckRaster',
+                })
+            ).toBe(false)
         })
     })
 
@@ -382,6 +429,7 @@ describe('tileUrlUtils', () => {
                 'cogResampling',
                 'cogTransform',
                 'compositeTile',
+                'currentCogColormap',
                 'currentCogExpression',
                 'currentCogMax',
                 'currentCogMin',

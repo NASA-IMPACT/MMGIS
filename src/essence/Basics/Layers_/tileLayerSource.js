@@ -64,14 +64,18 @@ export function getTileLevelElevation(level) {
  * syncTileFormatToConfig's job.
  *
  * @param {object} layerObj - Layer config from the mission JSON.
- * @returns {{url: string, sourceUrl: string, splitColonType: (string|undefined), tileElevation: (number|undefined), tileFormat: string}}
+ * @returns {{url: string, fileUrl: string, sourceUrl: string, splitColonType: (string|undefined), tileElevation: (number|undefined), tileFormat: string}}
  */
 export function resolveTileLayerSource(layerObj) {
     const tileLevel = getActiveTileLevel(layerObj)
     const sourceUrl = getTileLevelUrl(tileLevel) || layerObj.url
     const tileElevation = getTileLevelElevation(tileLevel)
 
-    let url = L_.getUrl(layerObj.type, sourceUrl, layerObj)
+    // For a COG: source this is the bare file URL (prefix stripped by
+    // L_.getUrl, no TiTiler wrapping) — the client-side deck.gl renderer
+    // reads the file directly from it.
+    const fileUrl = L_.getUrl(layerObj.type, sourceUrl, layerObj)
+    let url = fileUrl
     let splitColonType
 
     const splitColonLayerUrl = (sourceUrl || '').split(':')
@@ -117,7 +121,7 @@ export function resolveTileLayerSource(layerObj) {
             ? 'wmts'
             : resolveTileFormat(layerObj)
 
-    return { url, sourceUrl, splitColonType, tileElevation, tileFormat }
+    return { url, fileUrl, sourceUrl, splitColonType, tileElevation, tileFormat }
 }
 
 /**
