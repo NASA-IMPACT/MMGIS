@@ -5,6 +5,7 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Map_ from '../../Basics/Map_/Map_'
 import Dropy from '../../../external/Dropy/dropy'
 import TimeControl from '../../Basics/TimeControl_/TimeControl'
+import TimeUI from '../../Basics/TimeControl_/TimeUI'
 import calls from '../../../pre/calls'
 
 import * as moment from 'moment'
@@ -355,7 +356,9 @@ const DrawTool_Templater = {
                 L_.TimeControl_.setTime(newStartTime, currentEndTime)
             }
 
-            L_.TimeControl_.timeUI.fitWindowToTime()
+            // The TimeUI widget is only mounted in the legacy bottom-bar
+            // layout; the time state itself was already set above.
+            if (TimeUI.startTempus != null) TimeUI.fitWindowToTime()
         })
         $(`#drawToolTemplater_setTimeEnd`).on('click', () => {
             // Force UTC by adding 'Z' if not present
@@ -401,7 +404,9 @@ const DrawTool_Templater = {
                 L_.TimeControl_.setTime(currentStartTime, newEndTime)
             }
 
-            L_.TimeControl_.timeUI.fitWindowToTime()
+            // The TimeUI widget is only mounted in the legacy bottom-bar
+            // layout; the time state itself was already set above.
+            if (TimeUI.startTempus != null) TimeUI.fitWindowToTime()
         })
 
         return {

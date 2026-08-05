@@ -925,6 +925,40 @@ var mmgisAPI = {
      */
     toggleLayer: mmgisAPI_.toggleLayer,
 
+    /** setBasemap - switches the active basemap style by name.
+     * Style names come from msv.basemap.styles[] in the mission config,
+     * or the provider defaults if no styles are configured.
+     * @param {string} styleName - display name of the style (e.g. 'Streets', 'Liberty')
+     * @returns {Promise<boolean>} - true if found and applied, false if not found
+     */
+    setBasemap: (styleName) => mmgisAPI.request('map:setBasemap', styleName),
+
+    /** getBasemap - returns the currently active basemap style.
+     * @returns {Promise<{name: string, style: string} | null>}
+     */
+    getBasemap: () => mmgisAPI.request('map:getBasemap'),
+
+    /** getBasemapStyles - returns all available basemap style options.
+     * @returns {Promise<Array<{name: string, style: string}>>}
+     */
+    getBasemapStyles: () => mmgisAPI.request('map:getBasemapStyles'),
+
+    /** zoomIn - increments the map zoom by 1 level, clamped to the max zoom.
+     * @returns {Promise<boolean>} - true if zoom changed, false if already at max
+     */
+    zoomIn: () => mmgisAPI.request('map:zoomIn'),
+
+    /** zoomOut - decrements the map zoom by 1 level, clamped to the min zoom.
+     * @returns {Promise<boolean>} - true if zoom changed, false if already at min
+     */
+    zoomOut: () => mmgisAPI.request('map:zoomOut'),
+
+    /** latLngToContainerPoint - project a {lat, lng} to pixel coordinates
+     * relative to the map container. Useful for positioning DOM overlays.
+     * @param {{lat: number, lng: number}} latlng
+     * @returns {Promise<{x: number, y: number} | null>}
+     */
+    latLngToContainerPoint: (latlng) => mmgisAPI.request('map:latLngToContainerPoint', latlng),
     // ============ PLUGIN LIFECYCLE API (modern layout only) ============
 
     /**
@@ -1003,7 +1037,7 @@ var mmgisAPI = {
 
     /**
      * Subscribe to an event
-     * @param {string} event - Event name (e.g., 'layer:toggle', 'time:change', 'tool:change')
+     * @param {string} event - Event name (e.g., 'layer:toggle', 'time:changed', 'tool:change')
      * @param {function} callback - Handler function that receives event data
      * @returns {function} - Unsubscribe function to remove the listener
      * @example

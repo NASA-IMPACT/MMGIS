@@ -144,7 +144,7 @@ export function LayerLegend({
                             onClick={handleOpacityToggle}
                             title={isOpacityExpanded ? 'Hide opacity' : 'Adjust opacity'}
                         >
-                            <i className="mdi mdi-circle-half-full mdi-18px" />
+                            <span className="blocks-layer-legend__icon blocks-layer-legend__icon--opacity" />
                         </button>
                         {isOpacityExpanded && (
                             <div
@@ -171,13 +171,13 @@ export function LayerLegend({
                         onClick={handleInfoToggle}
                         title={isInfoExpanded ? 'Hide info' : 'Show info'}
                     >
-                        <i className="mdi mdi-information-outline mdi-18px" />
+                        <span className="blocks-layer-legend__icon blocks-layer-legend__icon--info" />
                     </button>
                     <button
                         className="blocks-layer-legend__action-btn"
                         title="More options"
                     >
-                        <i className="mdi mdi-dots-vertical mdi-18px" />
+                        <span className="blocks-layer-legend__icon blocks-layer-legend__icon--more-options" />
                     </button>
                 </div>
             </div>

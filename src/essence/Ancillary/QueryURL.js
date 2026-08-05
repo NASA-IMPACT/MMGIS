@@ -417,16 +417,16 @@ var QueryURL = {
         //time
         if (L_.configData.time && L_.configData.time.enabled === true) {
             // If the time UI is in the Range mode, then we have a start time
-            if (TimeControl.timeUI.modeIndex === 0)
+            if (TimeUI.modeIndex === 0)
                 if (TimeControl.startTime)
                     urlAppendage += '&startTime=' + TimeControl.startTime
             if (TimeControl.endTime)
                 urlAppendage += '&endTime=' + TimeControl.endTime
-            if (TimeControl.timeUI && typeof TimeControl.timeUI.now === 'boolean')
-                urlAppendage += '&live=' + (TimeControl.timeUI.now ? '1' : '0')
+            if (typeof TimeUI.now === 'boolean')
+                urlAppendage += '&live=' + (TimeUI.now ? '1' : '0')
             
             // Follow state
-            if (typeof TimeUI !== 'undefined' && TimeUI.followEnabled && TimeUI.followedFeature) {
+            if (TimeUI.followEnabled && TimeUI.followedFeature) {
                 urlAppendage += '&follow=1'
             }
         }
