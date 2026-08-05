@@ -465,3 +465,5 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             )
     }
 }
+
+export { buildDeckCOGLayer } from './DeckCOGLayer'

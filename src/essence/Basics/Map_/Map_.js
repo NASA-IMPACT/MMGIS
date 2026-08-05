@@ -16,7 +16,11 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
-import { compileTileUrl, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
+import {
+    compileTileUrl,
+    buildTileUrlOptions,
+    shouldUseDeckRaster,
+} from '../Layers_/tileUrlUtils'
 import {
     resolveTileLayerSource,
     syncTileFormatToConfig,
@@ -38,7 +42,7 @@ import {
     LeafletAdapter,
     DeckGLAdapter,
 } from '../MapEngines/index'
-import { buildDeckLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 
 let L = window.L
 
@@ -1647,6 +1651,21 @@ async function makeTileLayer(layerObj, mapContext = null) {
     )
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+        // Client-side COG rendering via ColormappedCOGLayer (bypasses TiTiler).
+        // tileSource.fileUrl is the bare .tif URL (no TiTiler host, no query
+        // params), resolved before the COG source was wrapped in a TiTiler
+        // tiles URL.
+        if (shouldUseDeckRaster(Map_.engine.engineType, splitColonType, layerObj)) {
+            ctx.layerRegistry.layer[layerObj.name] = buildDeckCOGLayer(layerObj.name, {
+                rawCogUrl: tileSource.fileUrl,
+                layerObj,
+                opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            })
+            L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+            allLayersLoaded()
+            return
+        }
+
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
         // would normally add per-tile in getTileUrl.
         layerUrl = compileTileUrl(
