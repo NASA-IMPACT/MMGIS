@@ -85,7 +85,7 @@ resource "aws_iam_role_policy" "terraform_apply" {
       },
       {
         # Refresh/plan reads: these APIs are unscopeable or address
-        # AWS-generated ids (honesty table: docs/infrastructure/README.md).
+        # AWS-generated ids (honesty table: docs/infrastructure/identity.md).
         # elasticloadbalancing:Describe* also serves the phase-2 Express-ALB
         # discovery the deploy engine performs under this role.
         Sid    = "ReadOnlyDiscovery"

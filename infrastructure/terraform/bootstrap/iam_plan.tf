@@ -52,7 +52,7 @@ resource "aws_iam_role_policy" "terraform_plan" {
       },
       {
         # Same as the apply role's discovery statement: unscopeable APIs or
-        # AWS-generated ids (honesty table: docs/infrastructure/README.md).
+        # AWS-generated ids (honesty table: docs/infrastructure/identity.md).
         Sid    = "ReadOnlyDiscovery"
         Effect = "Allow"
         Action = [

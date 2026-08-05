@@ -131,7 +131,7 @@ resource "aws_iam_policy" "ci_role_boundary" {
       {
         # Distribution and origin-access-control ids are CloudFront-generated,
         # so only the function name can be prefix-scoped (honesty table:
-        # docs/infrastructure/README.md). Function names carry the
+        # docs/infrastructure/identity.md). Function names carry the
         # per-environment mmgis-<env>-dashboard- prefix.
         Sid    = "DashboardCloudFront"
         Effect = "Allow"

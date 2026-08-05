@@ -3,11 +3,11 @@
 MMGIS's **lean** deployment (`MMGIS_DEPLOYMENT_MODE=lean`) runs on AWS: 
 - admin app as an ECS Express Mode service behind CloudFront
 - RDS PostgreSQL supporting the admin app
-- a short-lived publish task that turns missions into a standalone static dashboards 
+- a short-lived publish task that turns missions into standalone static dashboards 
 
 IAC is done via Terraform and applied by Github Actions CI on merge. One reusable module describes a complete environment, and a small per-environment root fills in each environment's settings. The **full** deployment (upstream docker-compose default) uses none of this.
 
-This file briefly explains the big picture and will link to more detailed docs on environments, pipelines, and identities. Operational how-tos (apply steps, verification commands) live with the code they operate — the [bootstrap README](../../infrastructure/terraform/bootstrap/README.md) and the [infrastructure README](../../infrastructure/README.md) — never here.
+This file briefly explains the big picture and links to the detailed docs on environments, pipelines, and identities. Operational how-tos (apply steps, verification commands) live with the code they operate — the [bootstrap README](../../infrastructure/terraform/bootstrap/README.md) and the [infrastructure README](../../infrastructure/README.md) — never here.
 
 ## The whole system
 

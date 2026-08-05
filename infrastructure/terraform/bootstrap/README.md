@@ -48,6 +48,8 @@ State loss and recovery posture are covered in [docs/infrastructure/identity.md]
 
 Run these right after the first apply, and before the real environment build is scheduled. Each one proves a specific design claim from [docs/infrastructure/identity.md](../../../docs/infrastructure/identity.md); a failure here is fixed in **this** root, not worked around downstream.
 
+Check **d** exercises the environment module, which arrives with later work in the same stack — run it from a checkout that contains the merged module, not from the tree as it stands when this root is first applied. The bootstrap apply itself touches no module code and is unaffected.
+
 ### a. The plan role is read-only (mutation denied)
 
 The plan role trusts only its OIDC subject, so the denial check runs from a workflow rather than a shell. Simplest documented form: run the PR plan-preview workflow (`iac-plan.yml`) on a PR, and in the same job, after the plan step, attempt a write:
@@ -91,9 +93,10 @@ aws iam update-assume-role-policy --role-name mmgis-development-github-deploy --
 This is the one that actually proves the apply-role policy against the module's real resource set, rather than against a reading of it.
 
 - Prerequisite: the environment module must thread the `permissions_boundary` variable through to every role it creates, otherwise the run correctly fails at the first `iam:CreateRole`.
-- Copy `infrastructure/terraform/environments/development/` to an **uncommitted** scratch directory and edit the module call: `environment = "development-scratch"`, `db_skip_final_snapshot = true`, `secret_recovery_window_days = 0`, and set `permissions_boundary` to this root's `permissions_boundary_arns["development"]` output.
+- Copy `infrastructure/terraform/environments/development/` to an **uncommitted** scratch directory and edit the module call: `environment = "development-scratch"`, `db_skip_final_snapshot = true`, `secret_recovery_window_days = 0`, `greenfield = true` (the scratch build is a first build with no image to discover — the module refuses the empty live facts without it; leave it set for the phase-2 apply too, since the scratch environment never receives a real image), and set `permissions_boundary` to this root's `permissions_boundary_arns["development"]` output.
 - Initialize against the dev state bucket under the scratch key: `terraform init -backend-config="bucket=mmgis-development-tfstate-<ACCOUNT_ID>" -backend-config="region=us-west-2" -backend-config="key=mmgis/development-scratch/terraform.tfstate"`.
-- Apply phase 1, then phase 2, per the module's README; then `terraform destroy`.
+- Apply once with the three `express_*` inputs empty (phase 1); read the trio off the now-running scratch service with the discovery commands in the infrastructure README's [Hand applies (break-glass)](../../README.md#hand-applies-break-glass) section; set the trio in the module call and apply again (phase 2); then `terraform destroy`.
+- The destroy stops on the CloudFront distribution's `prevent_destroy`. The scratch directory is a copy of the root only — its `source` path resolves to the TRACKED module in the worktree — so the intentional-teardown edit is made to the tracked `modules/mmgis-environment/cloudfront.tf`: set `prevent_destroy = false`, destroy, then revert the file (`git checkout -- infrastructure/terraform/modules/mmgis-environment/cloudfront.tf`). Never commit that edit.
 - All of it under the assumed dev apply role's credentials. A clean end-to-end run is the proof; any `AccessDenied` found here is a missing grant in this root.
 
 This run is also what proves the two grants that cannot be reasoned out offline: the ECS tagging surface (provider `default_tags` ride every create call, and ECS authorizes `ecs:TagResource` against the resource being created), and the `aws:rds:primaryDBInstanceArn` tag condition the boundary uses to scope the RDS-managed master secret. If the run reaches a healthy service and destroys cleanly, both hold.
