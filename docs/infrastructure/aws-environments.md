@@ -102,10 +102,7 @@ That prefix is built independently in three places, and all three must stay char
 
 Changing the prefix strands every dashboard published under the old one: the permissions stop matching, so the app can no longer update or delete those stacks.
 
-Two rules that follow:
-
-- **The environment name is capped at 11 characters.** CloudFormation names each dashboard's bucket `<stack-name>-dashboardbucket-<suffix>`, and S3 caps bucket names at 63 characters — a longer environment name would truncate exactly the part the IAM patterns match on. `development` (11) and `production` (10) fit. Both the module and the app validate the cap, so a bad name fails immediately with a clear message instead of as a confusing AccessDenied at publish time.
-- **An unset `MMGIS_ENVIRONMENT` falls back to the legacy shared prefix `mmgis-dashboard-`**, which the hand-built staging environment keeps.
+One rule follows: **the environment name is capped at 11 characters.** CloudFormation names each dashboard's bucket `<stack-name>-dashboardbucket-<suffix>`, and S3 caps bucket names at 63 characters — a longer environment name would truncate exactly the part the IAM patterns match on. `development` (11) and `production` (10) fit. Both the module and the app validate the cap, so a bad name fails immediately with a clear message instead of as a confusing AccessDenied at publish time.
 
 ## Keeping the demo mission in sync at boot
 

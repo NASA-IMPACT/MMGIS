@@ -135,7 +135,3 @@ The GitHub environment's deployment-branch policy is a security control, not tid
 - **When CI itself is broken**, an operator signs in to the apply role and runs the by-hand apply steps in the [infrastructure README](../../infrastructure/README.md#rollback-and-break-glass). Anything applied by hand counts as drift until a CI run applies the same committed change.
 
 On production, every one of these paths waits at the same approval gate.
-
-## Legacy: `deploy-lean.yml`
-
-The older pipeline from before this split still deploys the existing staging environment from hand-set repository variables (different names from the `IAC_*` GitHub environment values, so neither pipeline can drive the other's environment).
