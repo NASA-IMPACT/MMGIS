@@ -1,5 +1,5 @@
-# Only values that must NOT be committed (network ids, the two-phase CloudFront
-# inputs, the CA bundle) are variables. Everything safe to commit is set inline
+# Only values that must NOT be committed (network ids, the discovered live
+# facts, the CA bundle) are variables. Everything safe to commit is set inline
 # in the module call (main.tf). Supply these via an uncommitted terraform.tfvars
 # (see terraform.tfvars.example).
 
@@ -25,7 +25,7 @@ variable "rds_ca_bundle_base64" {
 }
 
 variable "deployed_image" {
-  description = "Supplied by the CI pipeline (TF_VAR_deployed_image). Leave unset for hand runs / first-ever apply."
+  description = "The image the environment is currently serving, supplied on every apply (CI: TF_VAR_deployed_image; hand runs: discover it per the README's break-glass recipe). Empty only under greenfield = true."
   type        = string
   default     = ""
 }
@@ -36,19 +36,25 @@ variable "permissions_boundary" {
 }
 
 variable "express_internal_alb_arn" {
-  description = "Phase 2 only. Internal ALB ARN from `aws ecs describe-express-gateway-service`. Leave empty for the first apply."
+  description = "Internal ALB ARN from the live service (README break-glass recipe). Empty only under greenfield = true."
   type        = string
   default     = ""
 }
 
 variable "express_onaws_endpoint" {
-  description = "Phase 2 only. The on.aws endpoint host from the Express service. Leave empty for the first apply."
+  description = "The on.aws endpoint host from the live service. Empty only under greenfield = true."
   type        = string
   default     = ""
 }
 
 variable "express_alb_security_group_id" {
-  description = "Phase 2. SG id of the ECS-managed ALB (same describe call as the ALB ARN). Empty in phase 1."
+  description = "SG id of the ECS-managed ALB (same describe as the ALB ARN). Empty only under greenfield = true — and never empty while the other two are set (that drops the :443 ingress rule)."
   type        = string
   default     = ""
+}
+
+variable "greenfield" {
+  description = "First build of a brand-new environment only. The sole way an apply may proceed with deployed_image or the express_* inputs empty. CI sets it (TF_VAR_greenfield) after verifying the environment has never been fully built; never set it by hand against a live environment."
+  type        = bool
+  default     = false
 }

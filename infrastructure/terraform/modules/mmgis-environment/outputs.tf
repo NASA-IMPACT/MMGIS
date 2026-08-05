@@ -20,7 +20,7 @@ output "express_service_arn" {
 }
 
 output "express_ingress_paths" {
-  description = "The service's ingress paths. Read the on.aws endpoint here (or via `aws ecs describe-express-gateway-service`) and pass it back as express_onaws_endpoint for the phase-2 CloudFront apply."
+  description = "The service's ingress paths. Read the on.aws endpoint here (it is also readable off the newest service revision via `aws ecs describe-service-revisions`) and pass it back as express_onaws_endpoint for the phase-2 CloudFront apply."
   value       = aws_ecs_express_gateway_service.admin.ingress_paths
 }
 

@@ -9,10 +9,9 @@ vpc_id             = "vpc-xxxxxxxxxxxxxxxxx"
 private_subnet_ids = ["subnet-xxxxxxxxxxxxxxxxx", "subnet-yyyyyyyyyyyyyyyyy"]
 
 # The image the tasks run. CI supplies it on every apply (TF_VAR_deployed_image).
-# For a hand apply, set it to the image currently deployed (an apply with it
-# unset re-registers the task defs against a nonexistent placeholder tag and
-# breaks Publish until the next deploy-lean.yml run). Leave unset only for the
-# first-ever apply of a brand-new environment.
+# For a hand apply, set it to the image the service is currently serving
+# (discovery recipe in the README's break-glass section) — the module refuses an
+# empty value unless `greenfield = true`.
 # deployed_image = "ACCOUNT.dkr.ecr.us-west-2.amazonaws.com/mmgis-development:COMMIT_SHA"
 
 # IAM permissions-boundary policy every module-created role carries (created by
@@ -23,11 +22,14 @@ permissions_boundary = "arn:aws:iam::ACCOUNT:policy/POLICY_NAME"
 #   curl -s https://truststore.pki.rds.amazonaws.com/us-west-2/us-west-2-bundle.pem | base64 | tr -d '\n'
 rds_ca_bundle_base64 = "PASTE_BASE64_HERE"
 
-# ── Phase 2 only (leave empty/omit for the first apply) ──
-# After phase 1, read these from `aws ecs describe-express-gateway-service`
-# (or `terraform output express_ingress_paths`) and re-apply to build CloudFront.
+# ── Express trio (empty only under greenfield = true) ──
+# Discovered from the live service before every hand apply — recipe in the
+# README's "Hand applies (break-glass)" section.
 # express_internal_alb_arn = "arn:aws:elasticloadbalancing:us-west-2:ACCOUNT:loadbalancer/app/ecs-express-gateway-alb-xxxx/xxxx"
 # express_onaws_endpoint   = "mm-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.ecs.us-west-2.on.aws"
-
-# Phase 2 (see README): SG id of the ECS-managed ALB
 # express_alb_security_group_id = "sg-xxxxxxxxxxxxxxxxx"
+
+# First build of a brand-new environment ONLY: makes the empty live facts
+# legal. First builds are CI's job; the hand path exists for the bootstrap
+# root's scratch verification.
+# greenfield = true

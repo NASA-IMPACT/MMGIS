@@ -11,7 +11,8 @@ module "mmgis" {
   # Every role the module creates carries the account's boundary policy.
   permissions_boundary = var.permissions_boundary
 
-  # The running image is CI's decision, handed in on every apply.
+  # The running image is CI's decision, handed in on every apply; empty only
+  # under greenfield.
   deployed_image = var.deployed_image
 
   # RDS — development is disposable, so allow a clean teardown.
@@ -29,7 +30,10 @@ module "mmgis" {
   # destroy/re-apply never collides with a name still held in recovery.
   secret_recovery_window_days = 0
 
-  # CloudFront two-phase inputs (empty on the first apply).
+  # Express trio + the greenfield flag. All four live facts (this trio and
+  # deployed_image above) are discovered per apply; empty values are only
+  # legal under greenfield.
+  greenfield                    = var.greenfield
   express_internal_alb_arn      = var.express_internal_alb_arn
   express_onaws_endpoint        = var.express_onaws_endpoint
   express_alb_security_group_id = var.express_alb_security_group_id

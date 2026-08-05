@@ -3,6 +3,8 @@ locals {
   # exists yet, this :latest tag never will (CI pushes commit-SHA tags), so tasks
   # crash-loop until the app deploy later in the same run supplies a real image.
   # Every subsequent apply receives the deployed image via var.deployed_image.
+  # Reaching this fallback requires the explicit greenfield flag — variables.tf
+  # refuses an empty deployed_image without it.
   effective_image = var.deployed_image != "" ? var.deployed_image : "${aws_ecr_repository.this.repository_url}:latest"
 
   # DB_PASS comes straight from the RDS-managed master secret ({username,password}

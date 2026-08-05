@@ -4,7 +4,7 @@ output "workflow_variables" {
 }
 
 output "express_ingress_paths" {
-  description = "Read the on.aws endpoint here for the phase-2 CloudFront apply."
+  description = "The on.aws endpoint host, readable here as an alternative to the break-glass discovery recipe."
   value       = module.mmgis.express_ingress_paths
 }
 

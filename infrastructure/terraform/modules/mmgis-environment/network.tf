@@ -5,7 +5,7 @@
 # VPC-origin ENIs can reach the ALB. The SG id is only knowable once the
 # service is up, so that rule is a PHASE-2 resource (bottom of this file),
 # driven by var.express_alb_security_group_id — read from the same
-# describe-express-gateway-service call as the ALB ARN. No hand-executed
+# describe-service-revisions call as the ALB ARN. No hand-executed
 # mutation remains.
 
 # Shared task security group — used by BOTH the admin service and the publish

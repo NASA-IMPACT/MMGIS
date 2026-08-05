@@ -1,8 +1,10 @@
 # CloudFront front door — PHASE 2. Created only once express_internal_alb_arn
-# and express_onaws_endpoint are supplied (see variables.tf / README). The
-# Express service does not expose its internal ALB ARN as a Terraform
-# attribute, so the VPC origin cannot be wired directly; the two values are
-# read from `aws ecs describe-express-gateway-service` after phase 1.
+# and express_onaws_endpoint are supplied (see variables.tf and the README's
+# Hand applies (break-glass) section). The Express service does not expose its
+# internal ALB ARN as a Terraform attribute, so the VPC origin cannot be wired
+# directly; the two values are read from
+# `aws ecs describe-service-revisions` on the newest service revision after
+# phase 1.
 
 resource "aws_cloudfront_vpc_origin" "admin" {
   count = local.enable_cloudfront ? 1 : 0
@@ -85,5 +87,20 @@ resource "aws_cloudfront_distribution" "admin" {
   # TLSv1 on the viewer side).
   viewer_certificate {
     cloudfront_default_certificate = true
+  }
+
+  lifecycle {
+    # A destroyed distribution is not recoverable in place: a recreate returns
+    # on a NEW cloudfront.net domain, changing the admin URL and every
+    # published dashboard's origin expectations. This blocks any plan that
+    # destroys it — including the count 1 -> 0 flip an empty ALB ARN or
+    # endpoint causes — independent of the greenfield flag. The VPC origin
+    # and the :443 ingress rule deliberately do NOT carry this: when ECS
+    # swaps the ALB they may be replaced or updated in place, and either way
+    # they must not be pinned. To intentionally destroy the environment,
+    # edit this line to false in a working copy (lifecycle arguments must be
+    # literals) and never commit that edit. The protection only holds while
+    # this resource block exists in configuration.
+    prevent_destroy = true
   }
 }

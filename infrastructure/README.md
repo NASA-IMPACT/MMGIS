@@ -109,7 +109,7 @@ aws s3api put-public-access-block \
     BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 ```
 
-Then record the bucket in `backend.hcl` (copy `backend.hcl.example`). Nothing
+Record the bucket name; init receives it via `-backend-config` flags. Nothing
 is shared between environments — applying one can never touch another's state.
 
 ## Apply flow
@@ -123,9 +123,8 @@ From `terraform/environments/development/` (production is analogous):
 
 ```sh
 cp terraform.tfvars.example terraform.tfvars   # vpc_id, subnets, boundary ARN, CA bundle
-cp backend.hcl.example backend.hcl             # fill in the state bucket
 
-terraform init -backend-config=backend.hcl
+terraform init -backend-config="bucket=<state-bucket>" -backend-config="region=<region>"
 ```
 
 ### Phase 1 — everything except CloudFront
@@ -177,10 +176,10 @@ it from the real login password (the full note lives in
 
 ### First image deploy — before CloudFront
 
-A from-scratch phase 1 runs with `deployed_image` unset, so the service points
-at a **placeholder image that does not exist in ECR** (CI pushes commit-SHA
-tags only) and the tasks crash-loop until a real image arrives. Push one
-through the pipeline now:
+A from-scratch phase 1 runs with `greenfield = true` and `deployed_image`
+empty, so the service points at a **placeholder image that does not exist in
+ECR** (CI pushes commit-SHA tags only) and the tasks crash-loop until a real
+image arrives. Push one through the pipeline now:
 
 1. Set the environment's GitHub Actions variables from
    `terraform output -json workflow_variables` — one call returns all six
@@ -196,8 +195,9 @@ Publish depends on the task families pointing at a real image.
 
 ### Phase 2 — CloudFront front door
 
-Read **three values** from the running service with one call —
-`aws ecs describe-express-gateway-service --service-arn "$(terraform output -raw express_service_arn)"`:
+Read **three values** off the service's newest revision —
+`aws ecs describe-service-revisions`, whose
+`serviceRevisions[0].ecsManagedResources.ingressPaths[]` carries all three:
 the internal ALB ARN, the on.aws endpoint host (also visible via
 `terraform output express_ingress_paths`), and the ECS-managed ALB's
 **security-group id**. Set them in `terraform.tfvars` and re-apply:
@@ -252,10 +252,10 @@ holds nothing that grants CI access to the account.
   stale placeholder. The nonexistent-`:latest` fallback exists for exactly one
   case: the first apply of a brand-new environment, where no image is in ECR
   yet (CI pushes commit-SHA tags only) and the tasks crash-loop until the app
-  deploy later in the same run supplies one. A hand-run `apply` with
-  `deployed_image` unset lands in that same fallback, so follow it with
-  `deploy-lean.yml` before Publish (`RunTask` on the family's latest revision)
-  is used.
+  deploy later in the same run supplies one. An apply with `deployed_image`
+  empty is refused unless `greenfield = true` — the placeholder fallback exists
+  only for the first build, where the app phase of the same CI run supplies the
+  real image.
 - **Express Mode is not task-definition driven.** The service runs from its own
   inline `primary_container`; the deploy workflow rolls it with
   `aws ecs update-express-gateway-service --primary-container`, not
