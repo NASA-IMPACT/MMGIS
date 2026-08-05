@@ -1,5 +1,7 @@
 # MMGIS Lean AWS Infrastructure
 
+**Conceptual reference:** [docs/infrastructure/README.md](../docs/infrastructure/README.md) is the canonical map of the whole infrastructure and CI/CD system — environments, pipelines, and the identity model. This README is the operational layer for this directory.
+
 Recipes for running MMGIS in the **lean** deployment shape (`MMGIS_DEPLOYMENT_MODE=lean`) on AWS: the admin app as a long-running ECS service, a short-lived ECS task that publishes a mission as a standalone static dashboard, the least-privilege IAM for both, the CloudFront distribution in front of the admin, the password-gate CloudFront Function reference, and the shared S3 asset bucket.
 
 **Dual-deployment posture:** the **full** deployment is the upstream MMGIS default (docker-compose, bundled sidecar services) and uses **none** of this directory. The **lean** deployment is this directory plus `.github/workflows/deploy-lean.yml`. The same image serves both; `MMGIS_DEPLOYMENT_MODE` is a runtime ECS environment variable, never a Docker build-arg (the `Dockerfile` is shared and unmodified).
