@@ -160,9 +160,12 @@ describe('tileUrlUtils', () => {
                 })
             ).toBe(false)
         })
-        test('isCogLayer honors cogTransform and stac-collection', () => {
-            expect(isCogLayer('stac-collection', {})).toBe(true)
+        test('isCogLayer: COG prefix or cogTransform, not stac-collection', () => {
+            expect(isCogLayer('COG', {})).toBe(true)
             expect(isCogLayer(undefined, { cogTransform: true })).toBe(true)
+            // A mosaic is COG-backed server-side, but nothing here treats it
+            // as a COG file — it stays on the tile-server path.
+            expect(isCogLayer('stac-collection', {})).toBe(false)
             expect(isCogLayer('url', {})).toBe(false)
         })
         test('false for stac-collection even with deckRaster mode', () => {
