@@ -422,30 +422,70 @@ test.describe('infrastructure/ JSON recipes', () => {
         // AWS managed AmazonECSInfrastructureRoleforExpressGatewayServices, and
         // a boundary is an intersection: an action the cap omits fails service
         // creation with an error naming the boundary, not the action. These are
-        // that policy's actions (v6). Each is capped either literally or by its
+        // that policy's actions (v6) — all 51 of them, so a coverage gap in any
+        // service shows up here. Each is capped either literally or by its
         // service wildcard.
         const REQUIRED = [
+            // iam (1)
             'iam:CreateServiceLinkedRole',
-            'elasticloadbalancing:CreateLoadBalancer',
-            'elasticloadbalancing:CreateTargetGroup',
+            // elasticloadbalancing (20)
+            'elasticloadbalancing:AddListenerCertificates',
             'elasticloadbalancing:AddTags',
+            'elasticloadbalancing:CreateListener',
+            'elasticloadbalancing:CreateLoadBalancer',
+            'elasticloadbalancing:CreateRule',
+            'elasticloadbalancing:CreateTargetGroup',
+            'elasticloadbalancing:DeleteListener',
+            'elasticloadbalancing:DeleteLoadBalancer',
+            'elasticloadbalancing:DeleteRule',
+            'elasticloadbalancing:DeleteTargetGroup',
+            'elasticloadbalancing:DeregisterTargets',
+            'elasticloadbalancing:DescribeListeners',
             'elasticloadbalancing:DescribeLoadBalancers',
-            'ec2:CreateSecurityGroup',
+            'elasticloadbalancing:DescribeRules',
+            'elasticloadbalancing:DescribeTargetGroups',
+            'elasticloadbalancing:DescribeTargetHealth',
+            'elasticloadbalancing:ModifyListener',
+            'elasticloadbalancing:ModifyRule',
+            'elasticloadbalancing:RegisterTargets',
+            'elasticloadbalancing:RemoveListenerCertificates',
+            // ec2 (11)
+            'ec2:AuthorizeSecurityGroupEgress',
             'ec2:AuthorizeSecurityGroupIngress',
-            'ec2:RevokeSecurityGroupEgress',
-            'ec2:DeleteSecurityGroup',
+            'ec2:CreateSecurityGroup',
             'ec2:CreateTags',
+            'ec2:DeleteSecurityGroup',
+            'ec2:DescribeRouteTables',
+            'ec2:DescribeSecurityGroups',
+            'ec2:DescribeSubnets',
             'ec2:DescribeVpcs',
+            'ec2:RevokeSecurityGroupEgress',
+            'ec2:RevokeSecurityGroupIngress',
+            // acm (4)
+            'acm:AddTagsToCertificate',
+            'acm:DeleteCertificate',
+            'acm:DescribeCertificate',
             'acm:RequestCertificate',
+            // application-autoscaling (8)
+            'application-autoscaling:DeleteScalingPolicy',
+            'application-autoscaling:DeregisterScalableTarget',
+            'application-autoscaling:DescribeScalableTargets',
+            'application-autoscaling:DescribeScalingActivities',
+            'application-autoscaling:DescribeScalingPolicies',
+            'application-autoscaling:PutScalingPolicy',
             'application-autoscaling:RegisterScalableTarget',
-            'cloudwatch:PutMetricAlarm',
-            'cloudwatch:DescribeAlarms',
+            'application-autoscaling:TagResource',
+            // cloudwatch (4)
             'cloudwatch:DeleteAlarms',
+            'cloudwatch:DescribeAlarms',
+            'cloudwatch:PutMetricAlarm',
             'cloudwatch:TagResource',
+            // logs (3)
             'logs:CreateLogGroup',
             'logs:DescribeLogGroups',
             'logs:TagResource',
         ]
+        expect(REQUIRED.length, 'the whole policy is listed').toBe(51)
 
         const boundary = fs.readFileSync(
             path.join(INFRA, 'terraform', 'bootstrap', 'boundary.tf'),
@@ -454,8 +494,10 @@ test.describe('infrastructure/ JSON recipes', () => {
         // Only the Allow statements count — the trailing Deny block names EC2
         // actions too, and a match there would be the opposite of coverage.
         const denyStart = boundary.indexOf('"DenyEc2BlastRadius"')
-        expect(denyStart, 'the EC2 deny block is still last').toBeGreaterThan(0)
+        expect(denyStart, 'the EC2 deny block is present').toBeGreaterThan(0)
         const allows = boundary.slice(0, denyStart)
+        // …and it is the only Deny, so everything before it really is Allow.
+        expect(allows).not.toContain('Effect = "Deny"')
 
         for (const action of REQUIRED) {
             const service = action.split(':')[0]
