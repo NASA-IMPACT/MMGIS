@@ -86,13 +86,10 @@ resource "aws_iam_role_policy" "terraform_apply" {
       {
         # Refresh/plan reads: these APIs are unscopeable or address
         # AWS-generated ids (honesty table: docs/infrastructure/identity.md).
-        # elasticloadbalancing:Describe* also serves the phase-2 Express-ALB
-        # discovery the deploy engine performs under this role.
         Sid    = "ReadOnlyDiscovery"
         Effect = "Allow"
         Action = [
           "ec2:Describe*",
-          "elasticloadbalancing:Describe*",
           "rds:Describe*",
           "ecs:Describe*",
           "ecs:List*",
@@ -202,7 +199,7 @@ resource "aws_iam_role_policy" "terraform_apply" {
       {
         # CreateDBInstance authorizes against BOTH the db and subnet-group
         # ARNs. Creating an instance with a managed master password additionally
-        # needs the secretsmanager and kms grants in the three statements below.
+        # needs the secretsmanager and kms grants in the four statements below.
         Sid    = "RdsLifecycle"
         Effect = "Allow"
         Action = [
@@ -263,6 +260,20 @@ resource "aws_iam_role_policy" "terraform_apply" {
         }
       },
       {
+        # CreateDBInstance with a managed master password also describes the
+        # account's default aws/secretsmanager key, so the caller needs
+        # DescribeKey on it as well — the customer-managed key grants above
+        # alone are refused with KMSKeyNotAccessibleFault. AWS states it in
+        # passing: "The kms:DescribeKey permission is required to access your
+        # customer-managed key for the MasterUserSecretKmsKeyId and to describe
+        # aws/secretsmanager." Its own statement because DescribeKey is all the
+        # default key needs — no encrypt, decrypt or grant reaches it.
+        Sid      = "DescribeDefaultSecretsManagerKey"
+        Effect   = "Allow"
+        Action   = ["kms:DescribeKey"]
+        Resource = data.aws_kms_key.secretsmanager_default.arn
+      },
+      {
         Sid    = "RdsSubnetGroupLifecycle"
         Effect = "Allow"
         Action = [
@@ -275,8 +286,9 @@ resource "aws_iam_role_policy" "terraform_apply" {
       {
         # Security group ids are EC2-generated and the VPC id is an uncommitted
         # per-account input, so no honest resource pattern exists — * plus this
-        # exact allowlist is the documented trade (docs/infrastructure/README.md). Includes the
-        # phase-2 ingress rule on the ECS-managed ALB security group.
+        # exact allowlist is the documented trade (docs/infrastructure/README.md). The
+        # Authorize/Revoke calls serve the module's own service and RDS security
+        # groups, whose inline ingress/egress blocks are written at create time.
         Sid    = "SecurityGroups"
         Effect = "Allow"
         Action = [

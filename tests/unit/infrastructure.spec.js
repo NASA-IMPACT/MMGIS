@@ -387,17 +387,16 @@ test.describe('infrastructure/ JSON recipes', () => {
     })
 
     test('module refuses empty live facts unless greenfield is set, and pins CloudFront', () => {
-        // The four live facts (serving image + express trio) default to the
-        // DESTRUCTIVE actions (placeholder image; CloudFront destruction), so
-        // empty is only legal under the explicit greenfield flag. Pin the
-        // validation conditions and the prevent_destroy backstop so a module
-        // edit cannot silently drop either fence.
+        // The three live facts (serving image + the two express inputs) default
+        // to the DESTRUCTIVE actions (placeholder image; CloudFront
+        // destruction), so empty is only legal under the explicit greenfield
+        // flag. Pin the validation conditions and the prevent_destroy backstop
+        // so a module edit cannot silently drop either fence.
         const variablesTf = readTfModuleFile('variables.tf')
         for (const guarded of [
             'var.deployed_image != ""',
             'var.express_internal_alb_arn != ""',
             'var.express_onaws_endpoint != ""',
-            'var.express_alb_security_group_id != ""',
         ]) {
             expect(
                 variablesTf,
@@ -415,5 +414,97 @@ test.describe('infrastructure/ JSON recipes', () => {
         expect(readTfModuleFile('rds.tf')).toContain(
             'master_user_secret_kms_key_id'
         )
+    })
+
+    test('the boundary caps every action the Express infrastructure role needs', () => {
+        // mmgis-<env>-express-infrastructure carries exactly one policy, the
+        // AWS managed AmazonECSInfrastructureRoleforExpressGatewayServices, and
+        // a boundary is an intersection: an action the cap omits fails service
+        // creation with an error naming the boundary, not the action. These are
+        // that policy's actions (v6) — all 51 of them, so a coverage gap in any
+        // service shows up here. Each is capped either literally or by its
+        // service wildcard.
+        const REQUIRED = [
+            // iam (1)
+            'iam:CreateServiceLinkedRole',
+            // elasticloadbalancing (20)
+            'elasticloadbalancing:AddListenerCertificates',
+            'elasticloadbalancing:AddTags',
+            'elasticloadbalancing:CreateListener',
+            'elasticloadbalancing:CreateLoadBalancer',
+            'elasticloadbalancing:CreateRule',
+            'elasticloadbalancing:CreateTargetGroup',
+            'elasticloadbalancing:DeleteListener',
+            'elasticloadbalancing:DeleteLoadBalancer',
+            'elasticloadbalancing:DeleteRule',
+            'elasticloadbalancing:DeleteTargetGroup',
+            'elasticloadbalancing:DeregisterTargets',
+            'elasticloadbalancing:DescribeListeners',
+            'elasticloadbalancing:DescribeLoadBalancers',
+            'elasticloadbalancing:DescribeRules',
+            'elasticloadbalancing:DescribeTargetGroups',
+            'elasticloadbalancing:DescribeTargetHealth',
+            'elasticloadbalancing:ModifyListener',
+            'elasticloadbalancing:ModifyRule',
+            'elasticloadbalancing:RegisterTargets',
+            'elasticloadbalancing:RemoveListenerCertificates',
+            // ec2 (11)
+            'ec2:AuthorizeSecurityGroupEgress',
+            'ec2:AuthorizeSecurityGroupIngress',
+            'ec2:CreateSecurityGroup',
+            'ec2:CreateTags',
+            'ec2:DeleteSecurityGroup',
+            'ec2:DescribeRouteTables',
+            'ec2:DescribeSecurityGroups',
+            'ec2:DescribeSubnets',
+            'ec2:DescribeVpcs',
+            'ec2:RevokeSecurityGroupEgress',
+            'ec2:RevokeSecurityGroupIngress',
+            // acm (4)
+            'acm:AddTagsToCertificate',
+            'acm:DeleteCertificate',
+            'acm:DescribeCertificate',
+            'acm:RequestCertificate',
+            // application-autoscaling (8)
+            'application-autoscaling:DeleteScalingPolicy',
+            'application-autoscaling:DeregisterScalableTarget',
+            'application-autoscaling:DescribeScalableTargets',
+            'application-autoscaling:DescribeScalingActivities',
+            'application-autoscaling:DescribeScalingPolicies',
+            'application-autoscaling:PutScalingPolicy',
+            'application-autoscaling:RegisterScalableTarget',
+            'application-autoscaling:TagResource',
+            // cloudwatch (4)
+            'cloudwatch:DeleteAlarms',
+            'cloudwatch:DescribeAlarms',
+            'cloudwatch:PutMetricAlarm',
+            'cloudwatch:TagResource',
+            // logs (3)
+            'logs:CreateLogGroup',
+            'logs:DescribeLogGroups',
+            'logs:TagResource',
+        ]
+        expect(REQUIRED.length, 'the whole policy is listed').toBe(51)
+
+        const boundary = fs.readFileSync(
+            path.join(INFRA, 'terraform', 'bootstrap', 'boundary.tf'),
+            'utf8'
+        )
+        // Only the Allow statements count — the trailing Deny block names EC2
+        // actions too, and a match there would be the opposite of coverage.
+        const denyStart = boundary.indexOf('"DenyEc2BlastRadius"')
+        expect(denyStart, 'the EC2 deny block is present').toBeGreaterThan(0)
+        const allows = boundary.slice(0, denyStart)
+        // …and it is the only Deny, so everything before it really is Allow.
+        expect(allows).not.toContain('Effect = "Deny"')
+
+        for (const action of REQUIRED) {
+            const service = action.split(':')[0]
+            expect(
+                allows.includes(`"${action}"`) ||
+                    allows.includes(`"${service}:*"`),
+                `boundary caps ${action}`
+            ).toBe(true)
+        }
     })
 })

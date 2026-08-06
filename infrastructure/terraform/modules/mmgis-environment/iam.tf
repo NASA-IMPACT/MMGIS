@@ -342,7 +342,9 @@ resource "aws_iam_role_policy" "publish_task" {
 
 # ── Express infrastructure role ──
 # REQUIRED by aws_ecs_express_gateway_service (infrastructure_role_arn). ECS
-# assumes it to provision the service's ALB, security groups, and certificates.
+# assumes it to provision the service's ALB, security groups, certificates,
+# autoscaling alarms, and log group — the boundary must cap all of those
+# (bootstrap/boundary.tf) or service creation fails partway through.
 # Trust-only plus the AWS managed policy — NO inline policy. Cannot be modified
 # after the service is created.
 resource "aws_iam_role" "express_infra" {

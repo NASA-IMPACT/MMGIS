@@ -30,11 +30,10 @@ module "mmgis" {
   # destroy/re-apply never collides with a name still held in recovery.
   secret_recovery_window_days = 0
 
-  # Express trio + the greenfield flag. All four live facts (this trio and
-  # deployed_image above) are discovered per apply; empty values are only
+  # The Express pair + the greenfield flag. All three live facts (this pair
+  # and deployed_image above) are discovered per apply; empty values are only
   # legal under greenfield.
-  greenfield                    = var.greenfield
-  express_internal_alb_arn      = var.express_internal_alb_arn
-  express_onaws_endpoint        = var.express_onaws_endpoint
-  express_alb_security_group_id = var.express_alb_security_group_id
+  greenfield               = var.greenfield
+  express_internal_alb_arn = var.express_internal_alb_arn
+  express_onaws_endpoint   = var.express_onaws_endpoint
 }
