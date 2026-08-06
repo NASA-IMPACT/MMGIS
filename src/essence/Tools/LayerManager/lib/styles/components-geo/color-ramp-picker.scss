@@ -1,0 +1,199 @@
+/* Color Ramp Picker Styles */
+
+/* Kept in step with RAMP_PICKER_WIDTH / RAMP_PICKER_MAX_HEIGHT in
+   LayerLegend.tsx, which anchors the portaled surface against these. */
+$ramp-picker-width: 244px;
+$ramp-picker-max-height: 380px;
+
+.blocks-color-ramp-picker {
+    display: flex;
+    flex-direction: column;
+    width: $ramp-picker-width;
+    max-height: $ramp-picker-max-height;
+    font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
+
+    &__range {
+        display: flex;
+        gap: var(--theme-spacing-1, 0.5rem);
+        padding: var(--theme-spacing-105, 0.75rem);
+        border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    &__bound {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    &__bound-label {
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        color: var(--theme-color-base-dark, #565c65);
+    }
+
+    &__bound-field {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    &__bound-input {
+        width: 100%;
+        min-width: 0;
+        height: 26px;
+        padding: 0 var(--theme-spacing-05, 0.25rem);
+        font-size: var(--theme-font-size-xs, 0.83rem);
+        color: var(--theme-color-ink, #1c1d1f);
+        background: var(--theme-color-white, #ffffff);
+        border: 1px solid var(--theme-color-base-light, #a9aeb1);
+        border-radius: 3px;
+        outline: none;
+
+        &:hover {
+            border-color: var(--theme-color-base-dark, #565c65);
+        }
+
+        &:focus {
+            border-color: var(--theme-color-primary, #0e7482);
+        }
+    }
+
+    &__bound-units {
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        color: var(--theme-color-base, #71767a);
+        white-space: nowrap;
+    }
+
+    &__heading-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--theme-spacing-1, 0.5rem);
+        padding: var(--theme-spacing-105, 0.75rem) var(--theme-spacing-105, 0.75rem)
+            var(--theme-spacing-05, 0.25rem);
+    }
+
+    &__heading {
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--theme-color-base-dark, #565c65);
+    }
+
+    &__reverse {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px var(--theme-spacing-05, 0.25rem);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        background: transparent;
+        /* Control boundaries need 3:1 against the surface to stay perceivable. */
+        border: 1px solid var(--theme-color-base-light, #a9aeb1);
+        border-radius: 3px;
+        color: var(--theme-color-base-dark, #565c65);
+        cursor: pointer;
+        transition: background-color 0.15s ease, color 0.15s ease,
+            border-color 0.15s ease;
+
+        &:hover {
+            border-color: var(--theme-color-base-dark, #565c65);
+            color: var(--theme-color-base-darker, #3d4551);
+        }
+
+        &--active {
+            background: var(--theme-color-primary, #0e7482);
+            border-color: var(--theme-color-primary, #0e7482);
+            color: var(--theme-color-white, #ffffff);
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #0e7482);
+            outline-offset: 1px;
+        }
+    }
+
+    &__list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0 var(--theme-spacing-05, 0.25rem) var(--theme-spacing-05, 0.25rem);
+
+        &::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        &::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        &::-webkit-scrollbar-thumb {
+            background: var(--theme-color-base-light, #a9aeb1);
+            border-radius: 3px;
+        }
+
+        &::-webkit-scrollbar-thumb:hover {
+            background: var(--theme-color-base-dark, #565c65);
+        }
+    }
+
+    &__ramp {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 0.5rem);
+        width: 100%;
+        padding: var(--theme-spacing-05, 0.25rem);
+        background: transparent;
+        border: none;
+        border-radius: 3px;
+        cursor: pointer;
+        text-align: left;
+
+        &:hover {
+            background: var(--theme-color-primary-lightest, #e6f4f6);
+        }
+
+        &--selected {
+            background: var(--theme-color-primary-lightest, #e6f4f6);
+
+            .blocks-color-ramp-picker__ramp-name {
+                font-weight: var(--theme-font-weight-semibold, 600);
+                color: var(--theme-color-primary, #0e7482);
+            }
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #0e7482);
+            outline-offset: -2px;
+        }
+    }
+
+    /* A swatch with no colors resolved yet holds its space as a neutral block
+       so the list doesn't reflow as ramps stream in. */
+    &__swatch {
+        display: block;
+        width: 96px;
+        height: 18px;
+        flex-shrink: 0;
+        border-radius: 2px;
+        background: var(--theme-color-base-lighter, #dfe1e2);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+    }
+
+    &__ramp-name {
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        color: var(--theme-color-ink, #1c1d1f);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    &__loading,
+    &__unavailable {
+        padding: var(--theme-spacing-105, 0.75rem);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        color: var(--theme-color-base-dark, #565c65);
+    }
+}

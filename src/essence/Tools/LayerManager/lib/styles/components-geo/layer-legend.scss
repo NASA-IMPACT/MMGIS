@@ -98,8 +98,11 @@ $legend-content-indent: 28px;
         transition: opacity 0.15s ease;
     }
 
+    /* An open popover lives in a portal, so focus leaving the row would
+       otherwise fade out the very button that opened it. */
     &:hover &__actions,
-    &:focus-within &__actions {
+    &:focus-within &__actions,
+    &--menu-open &__actions {
         opacity: 1;
     }
 
@@ -125,6 +128,11 @@ $legend-content-indent: 28px;
         &--active {
             color: var(--theme-color-primary, #0e7482);
         }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #0e7482);
+            outline-offset: -2px;
+        }
     }
 
     /* Icons are the exported SVGs used as masks, tinted by the button's color.
@@ -145,6 +153,11 @@ $legend-content-indent: 28px;
         &--opacity {
             -webkit-mask-image: url('../../geo/icons/opacity.svg');
             mask-image: url('../../geo/icons/opacity.svg');
+        }
+
+        &--color-ramp {
+            -webkit-mask-image: url('../../geo/icons/color-ramp.svg');
+            mask-image: url('../../geo/icons/color-ramp.svg');
         }
 
         &--info {
@@ -290,4 +303,15 @@ $legend-content-indent: 28px;
         min-width: 32px;
         text-align: right;
     }
+}
+
+/* Color Ramp Popover
+   Portaled to <body> to clear the layer list's clipped overflow, so it is
+   positioned against the viewport by LayerLegend rather than by a parent. */
+.blocks-layer-legend__ramp-popover {
+    position: fixed;
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    z-index: 1001;
 }

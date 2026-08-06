@@ -1,0 +1,64 @@
+// Process-wide cache for resolved ramp colors.
+//
+// A ramp picker lists ~100 ramps, each needing its own `/colorMaps/{name}`
+// lookup to draw a swatch, and the same ramps are re-requested every time a
+// dropdown reopens. Caching the in-flight promise (not just the result)
+// collapses concurrent requests for the same ramp into one, so scrolling the
+// list quickly or opening two layers' pickers costs a single fetch per ramp.
+
+import { colormapResponseToColors } from './colormaps'
+import { getTiTilerBaseUrl } from './titiler'
+
+const cache = new Map<string, Promise<string[] | null>>()
+
+/** Trailing-slash-normalized base, or null when no TiTiler is reachable. */
+export const resolveTiTilerBase = (titilerUrl?: string | null): string | null => {
+    if (titilerUrl) return titilerUrl.replace(/\/$/, '')
+    return getTiTilerBaseUrl()
+}
+
+/**
+ * Resolve one ramp's ordered colors. Names are cached per base URL so two
+ * TiTiler deployments serving different definitions of the same ramp name
+ * don't collide. Failures resolve to null rather than rejecting — a swatch
+ * that can't load should render blank, not tear down the list.
+ */
+export const fetchColormapColors = (
+    name: string,
+    titilerUrl?: string | null,
+): Promise<string[] | null> => {
+    const baseUrl = resolveTiTilerBase(titilerUrl)
+    if (baseUrl == null || !name) return Promise.resolve(null)
+
+    const key = `${baseUrl}|${name}`
+    const cached = cache.get(key)
+    if (cached) return cached
+
+    const pending = (async (): Promise<string[] | null> => {
+        try {
+            const response = await fetch(`${baseUrl}/colorMaps/${encodeURIComponent(name)}`)
+            if (!response.ok) {
+                throw new Error(`Failed to fetch colormap ${name}: ${response.status}`)
+            }
+            return colormapResponseToColors(await response.json())
+        } catch (err) {
+            console.warn('Failed to fetch colormap colors:', err)
+            return null
+        }
+    })()
+
+    cache.set(key, pending)
+    // Only a resolved ramp is worth remembering. Evicting afterwards — rather
+    // than from inside the failure path — covers a request that fails before
+    // it was ever cached, and leaves a later open free to retry. The identity
+    // check keeps a retry already in flight from being evicted.
+    void pending.then((colors) => {
+        if (colors == null && cache.get(key) === pending) cache.delete(key)
+    })
+    return pending
+}
+
+/** Test seam — clears memoized ramps so specs don't leak state across cases. */
+export const clearColormapCache = (): void => {
+    cache.clear()
+}

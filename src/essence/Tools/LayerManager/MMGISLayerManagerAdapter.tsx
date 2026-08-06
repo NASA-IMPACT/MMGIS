@@ -15,6 +15,12 @@ import {
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
 
+/** Surface a failing bus call in the console instead of as a bare rejection. */
+const report = (action: Promise<void>): Promise<void> =>
+    action.catch((err) => {
+        console.warn('Layer manager action failed:', err)
+    })
+
 export function MMGISLayerManagerAdapter() {
     const [layers, setLayers] = useState<Layer[]>([])
     const [loading, setLoading] = useState(true)
@@ -48,10 +54,10 @@ export function MMGISLayerManagerAdapter() {
         <LayerManagerPanel
             layers={layers}
             loading={loading}
-            onVisibilityChange={(id) => { void toggleVisibility(id) }}
-            onOpacityChange={(id, op) => { void setOpacity(id, op) }}
-            onColormapChange={(id, cm) => { void setColormap(id, cm, refresh) }}
-            onRescaleChange={(id, mn, mx) => { void setRescale(id, mn, mx, refresh) }}
+            onVisibilityChange={(id) => { void report(toggleVisibility(id)) }}
+            onOpacityChange={(id, op) => { void report(setOpacity(id, op)) }}
+            onColormapChange={(id, cm) => { void report(setColormap(id, cm, refresh)) }}
+            onRescaleChange={(id, mn, mx) => { void report(setRescale(id, mn, mx, refresh)) }}
         />
     )
 }

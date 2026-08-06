@@ -1,5 +1,3 @@
-export type Colormap = { name: string; preview?: string }
-
 export type LegendType = 'gradient' | 'categorical' | 'text' | 'none'
 
 export type CategoricalStop = { color: string; label: string }
