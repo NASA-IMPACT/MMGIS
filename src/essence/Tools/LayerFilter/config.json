@@ -1,4 +1,79 @@
 {
+    "defaults": {
+        "variables": {
+            "themeProperty": "theme",
+            "defaultThemeId": "need",
+            "themes": [
+                {
+                    "id": "need",
+                    "label": "Need",
+                    "icon": "satellite-variant",
+                    "title": "Need",
+                    "description": "Filter by sector to explore Earth-science datasets relevant to your operational needs.",
+                    "filters": [
+                        {
+                            "id": "sector",
+                            "label": "Sector",
+                            "property": "sector",
+                            "type": "select",
+                            "allLabel": "All Sectors"
+                        }
+                    ]
+                },
+                {
+                    "id": "hazard",
+                    "label": "Hazard",
+                    "icon": "flash-outline",
+                    "title": "Hazard",
+                    "description": "Explore datasets by hazard type to understand conditions, impacts, and response context.",
+                    "filters": [
+                        {
+                            "id": "hazard",
+                            "label": "Hazard",
+                            "property": "hazard",
+                            "type": "select",
+                            "allLabel": "All Hazards"
+                        }
+                    ]
+                },
+                {
+                    "id": "event",
+                    "label": "Event",
+                    "icon": "calendar-outline",
+                    "title": "Event",
+                    "description": "Filter the activation catalogue by hazard, location and year. The count below updates as you narrow the list.",
+                    "filters": [
+                        {
+                            "id": "hazardType",
+                            "label": "Hazard type",
+                            "property": "hazard",
+                            "type": "select",
+                            "allLabel": "All Hazards"
+                        },
+                        {
+                            "id": "location",
+                            "label": "Location",
+                            "property": "location",
+                            "type": "select",
+                            "allLabel": "All Locations"
+                        },
+                        {
+                            "id": "year",
+                            "label": "Year",
+                            "property": "year",
+                            "type": "select",
+                            "allLabel": "All Years",
+                            "optionsFrom": "time"
+                        }
+                    ]
+                }
+            ],
+            "catalog": {
+                "type": "FeatureCollection",
+                "features": []
+            }
+        }
+    },
     "name": "LayerFilter",
     "defaultIcon": "filter-outline",
     "description": "Two-step, configurable layer filter. Step 1 picks a theme; step 2 shows that theme's filters. Emits the matched layer set on the event bus (does not change layers itself).",
@@ -19,79 +94,6 @@
         "modernLayoutSupport": true,
         "width": 320,
         "height": 0
-    },
-    "variables": {
-        "themeProperty": "theme",
-        "defaultThemeId": "need",
-        "themes": [
-            {
-                "id": "need",
-                "label": "Need",
-                "icon": "satellite-variant",
-                "title": "Need",
-                "description": "Filter by sector to explore Earth-science datasets relevant to your operational needs.",
-                "filters": [
-                    {
-                        "id": "sector",
-                        "label": "Sector",
-                        "property": "sector",
-                        "type": "select",
-                        "allLabel": "All Sectors"
-                    }
-                ]
-            },
-            {
-                "id": "hazard",
-                "label": "Hazard",
-                "icon": "flash-outline",
-                "title": "Hazard",
-                "description": "Explore datasets by hazard type to understand conditions, impacts, and response context.",
-                "filters": [
-                    {
-                        "id": "hazard",
-                        "label": "Hazard",
-                        "property": "hazard",
-                        "type": "select",
-                        "allLabel": "All Hazards"
-                    }
-                ]
-            },
-            {
-                "id": "event",
-                "label": "Event",
-                "icon": "calendar-outline",
-                "title": "Event",
-                "description": "Filter the activation catalogue by hazard, location and year. The count below updates as you narrow the list.",
-                "filters": [
-                    {
-                        "id": "hazardType",
-                        "label": "Hazard type",
-                        "property": "hazard",
-                        "type": "select",
-                        "allLabel": "All Hazards"
-                    },
-                    {
-                        "id": "location",
-                        "label": "Location",
-                        "property": "location",
-                        "type": "select",
-                        "allLabel": "All Locations"
-                    },
-                    {
-                        "id": "year",
-                        "label": "Year",
-                        "property": "year",
-                        "type": "select",
-                        "allLabel": "All Years",
-                        "optionsFrom": "time"
-                    }
-                ]
-            }
-        ],
-        "catalog": {
-            "type": "FeatureCollection",
-            "features": []
-        }
     },
     "config": {
         "rows": [

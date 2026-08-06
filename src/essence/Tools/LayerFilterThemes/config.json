@@ -1,4 +1,7 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "name": "LayerFilterThemes",
     "defaultIcon": "view-dashboard-outline",
     "description": "Theme rail (step 1) for the LayerFilter plugin. Renders the high-level themes and emits the selected theme on the event bus. Pulls its theme list from the LayerFilter tool.",
@@ -10,7 +13,9 @@
     "metadata": {
         "icon": "view-dashboard-outline",
         "requiredOrientation": "vertical",
-        "compatiblePositions": ["left"],
+        "compatiblePositions": [
+            "left"
+        ],
         "preferredPosition": "left",
         "modernLayoutSupport": true,
         "width": 66,
