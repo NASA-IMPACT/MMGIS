@@ -6,8 +6,14 @@ export interface ThemesResult {
     defaultThemeId?: string
 }
 
-/** Pull the theme list from the LayerFilter tool over the bus. */
+/** Pull the theme list from the LayerFilter tool over the bus. Resolves to an
+ *  empty list when the panel plugin isn't placed/loaded (no provider) — an
+ *  unhandled rejection here would blank the rail permanently. */
 export async function getThemes(): Promise<ThemesResult> {
-    const result = await mmgisRequest<ThemesResult>('layerFilter:getThemes')
-    return result || { themes: [] }
+    try {
+        const result = await mmgisRequest<ThemesResult>('layerFilter:getThemes')
+        return result || { themes: [] }
+    } catch {
+        return { themes: [] }
+    }
 }
