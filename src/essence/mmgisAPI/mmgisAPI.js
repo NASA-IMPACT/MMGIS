@@ -1003,7 +1003,7 @@ var mmgisAPI = {
 
     /**
      * Subscribe to an event
-     * @param {string} event - Event name (e.g., 'layer:toggle', 'time:change', 'tool:change')
+     * @param {string} event - Event name (e.g., 'layer:toggle', 'time:changed', 'tool:change')
      * @param {function} callback - Handler function that receives event data
      * @returns {function} - Unsubscribe function to remove the listener
      * @example
