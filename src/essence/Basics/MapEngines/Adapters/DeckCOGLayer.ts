@@ -91,9 +91,12 @@ export function composeColormapPipeline(
 }
 
 /**
- * Resolves the nodata sentinel to filter: an explicitly configured value wins,
- * otherwise the COG's own GDAL_NODATA tag. Returns null for NaN — the shader's
- * `==` comparison can never match NaN — NaN is canonicalized at upload instead.
+ * Resolves the finite nodata sentinel to discard: an explicitly configured
+ * value wins, otherwise the COG's own GDAL_NODATA tag.
+ *
+ * Returns null for NaN. A NaN sentinel is not a value FilterNoDataVal can
+ * match (`==` is false for NaN by definition) and needs no configuration —
+ * FilterNaN discards those pixels regardless.
  */
 export function resolveNoDataValue(
     configNoData: number | null | undefined,
@@ -101,36 +104,6 @@ export function resolveNoDataValue(
 ): number | null {
     const value = configNoData ?? fileNoData
     return Number.isFinite(value as number) ? (value as number) : null
-}
-
-/**
- * The single canonical nodata value uploaded to the GPU: −FLT_MAX, exactly
- * representable in float32 and never plausible as real data.
- *
- * Nodata cannot be filtered in the shader by testing for NaN — fast-math
- * shader compilers may fold `x != x` to false (this regressed transparent
- * oceans) — but exact `==` against a canonical finite value is deterministic.
- */
-export const NODATA_SENTINEL = -3.4028234663852886e38
-
-/**
- * Replaces (in place) every NaN pixel — and every pixel matching the file's
- * declared nodata value, when one is given — with NODATA_SENTINEL, so the
- * render pipeline needs exactly one FilterNoDataVal(NODATA_SENTINEL) module.
- */
-export function canonicalizeNoData(
-    f32: Float32Array,
-    noData: number | null | undefined
-): Float32Array {
-    const hasNoData = noData != null
-    // The tag value is a double; pixels are float32 — round it the same way
-    // or a nodata like 1e20 would never compare equal.
-    const nd = hasNoData ? Math.fround(noData as number) : 0
-    for (let i = 0; i < f32.length; i++) {
-        const v = f32[i]
-        if (v !== v || (hasNoData && v === nd)) f32[i] = NODATA_SENTINEL
-    }
-    return f32
 }
 
 // ---------------------------------------------------------------------------
@@ -153,6 +126,11 @@ type TileData = (MinimalTileData & {
     width: number
     height: number
     byteLength: number
+    /**
+     * Finite nodata sentinel for this tile, or null when the file declares
+     * none (or declares NaN, which FilterNaN handles instead).
+     */
+    noDataValue?: number | null
 }) | null
 
 /**
@@ -160,8 +138,9 @@ type TileData = (MinimalTileData & {
  *
  *  - **Single-band** (the primary case): upload the band as a single-channel
  *    `r32float` texture so the RAW value lands in `color.r` for the downstream
- *    FilterNoDataVal + LinearRescale + Colormap modules. NaN and the file's
- *    declared nodata are canonicalized to NODATA_SENTINEL before upload.
+ *    FilterNaN + FilterNoDataVal + LinearRescale + Colormap modules. Pixels
+ *    are uploaded untouched; the file's declared nodata rides along on the
+ *    tile data for the GPU to discard.
  *    Nearest sampling (float linear filtering is not guaranteed in WebGL2).
  *  - **Multi-band uint (RGB/RGBA)**: upload as `rgba8unorm` and display the
  *    colour directly via CreateTexture (no colormap/rescale). This is the
@@ -195,10 +174,12 @@ async function cogGetTileData(
             array.layout === 'band-separate' ? array.bands[0] : array.data
         const f32 = src instanceof Float32Array ? src : Float32Array.from(src)
         // Overview.nodata delegates to the parent GeoTIFF, so this reads the
-        // file's GDAL_NODATA at any zoom level.
-        canonicalizeNoData(
-            f32,
-            resolveNoDataValue(options.noDataOverride, image?.nodata)
+        // file's GDAL_NODATA at any zoom level. Passed through to renderTile
+        // rather than applied here: the pixels are left untouched and the
+        // discard happens on the GPU.
+        const noDataValue = resolveNoDataValue(
+            options.noDataOverride,
+            image?.nodata
         )
         const texture = device.createTexture({
             data: f32,
@@ -208,7 +189,14 @@ async function cogGetTileData(
             mipLevels: 1,
             sampler: { minFilter: 'nearest', magFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' },
         })
-        return { texture, mode: 'single', width, height, byteLength: f32.byteLength }
+        return {
+            texture,
+            mode: 'single',
+            width,
+            height,
+            byteLength: f32.byteLength,
+            noDataValue,
+        }
     }
 
     // Multi-band: WebGL2 has no RGB-only format, so pad RGB → RGBA.
@@ -230,6 +218,24 @@ async function cogGetTileData(
         sampler: { minFilter: 'linear', magFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' },
     })
     return { texture, mode: 'rgb', width, height, byteLength: u8.byteLength }
+}
+
+/**
+ * GPU module that discards NaN pixels. Float COGs commonly encode nodata as
+ * NaN (`GDAL_NODATA=nan`), which the library's FilterNoDataVal cannot match —
+ * its `==` comparison is false for NaN by definition.
+ *
+ * Uses the GLSL `isnan()` intrinsic, matching deck.gl-raster's own ECMWF
+ * example. An earlier version tested self-inequality (`color.r != color.r`)
+ * and was folded away by the shader compiler, leaving nodata opaque.
+ */
+const FilterNaN = {
+    name: 'filter-nan',
+    inject: {
+        'fs:DECKGL_FILTER_COLOR': `
+      if (isnan(color.r)) { discard; }
+    `,
+    },
 }
 
 /**
@@ -293,10 +299,11 @@ function getColormapTexture(device: Device, colormapName: string): Texture {
 /**
  * Builds the `renderTile` prop: maps a loaded tile to its GPU render pipeline.
  *
- * Single-band COGs get `CreateTexture → FilterNoDataVal → LinearRescale →
- * Colormap`; the raw value arrives in `color.r` from the r32float upload, and
- * nodata (NaN or the file's GDAL_NODATA) was canonicalized to NODATA_SENTINEL
- * at upload, so one exact-equality filter catches every case.
+ * Single-band COGs get `CreateTexture → FilterNaN → [FilterNoDataVal] →
+ * LinearRescale → Colormap`; the raw value arrives in `color.r` from the
+ * r32float upload. NaN fills are discarded by FilterNaN, and a file that
+ * declares a finite GDAL_NODATA adds FilterNoDataVal for it — both before
+ * LinearRescale clamps the raw value.
  *
  * Multi-band COGs display their colour directly, with black nodata edges
  * discarded.
@@ -322,10 +329,13 @@ function makeRenderTile(opts: {
             }
         }
 
+        // Discard NaN fills first, then the file's finite sentinel if it
+        // declares one — both before LinearRescale clamps the raw value.
         return composeColormapPipeline(
             {
                 renderPipeline: [
                     { module: CreateTexture, props: { textureName: data.texture } },
+                    { module: FilterNaN },
                 ],
             },
             {
@@ -335,7 +345,7 @@ function makeRenderTile(opts: {
                     data.texture.device,
                     opts.colormapName
                 ),
-                nodata: NODATA_SENTINEL,
+                nodata: data.noDataValue ?? null,
             }
         )
     }
@@ -384,8 +394,7 @@ export function buildDeckCOGLayer(
         // Supplying getTileData + renderTile together makes COGLayer._parseGeoTIFF
         // skip its default inferRenderPipeline, which throws for float COGs
         // ('non-unsigned integers not yet supported').
-        // The config nodata (if any) overrides the file's GDAL_NODATA; both
-        // canonicalize to NODATA_SENTINEL at upload.
+        // The config nodata (if any) overrides the file's GDAL_NODATA.
         getTileData: (image, opts) =>
             cogGetTileData(image, { ...opts, noDataOverride: nodata }),
         renderTile: makeRenderTile({ colormapName, rescaleMin, rescaleMax }),
