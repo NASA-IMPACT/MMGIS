@@ -7,6 +7,8 @@ import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
+import { resolveTileLayerSource } from './tileLayerSource'
+import { buildTileUrlOptions, compileTileUrl } from './tileUrlUtils'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
@@ -40,6 +42,54 @@ function isEngineOwnedLayer(layer) {
         L_.Map_?.engine != null &&
         L_.Map_.engine.engineType !== MAP_ENGINE.LEAFLET
     )
+}
+
+/**
+ * Rebuilds an engine-owned raster tile layer around a freshly compiled URL.
+ *
+ * A Leaflet tile layer recompiles its URL per tile from `this.options`, so its
+ * `refresh()` only has to merge the caller's overrides into those options. An
+ * engine-owned layer is built around one static URL instead, so the overrides
+ * are compiled in here and the engine clones the layer onto the result.
+ *
+ * Resolution order — source, then time replacements, then tile-URL options —
+ * is the one layer creation and time-driven reloads use, so all three agree on
+ * the URL a layer ends up serving. The layer config is never written to, so a
+ * later refresh re-resolves from the same starting point.
+ *
+ * @param {string} uuid - Layer UUID, already resolved.
+ * @param {object} [updateOptions] - Tile-URL option overrides, the keys
+ * buildTileUrlOptions produces. These win over the layer config.
+ * @returns {Promise<boolean>} Whether the engine took a new URL.
+ */
+async function refreshEngineOwnedTileLayer(uuid, updateOptions) {
+    const layerObj = L_.layers.data[uuid]
+    // Only raster tiles carry a compiled tile URL. The other engine-owned
+    // types (vector, vectortile, pointcloud) reload through their own paths.
+    if (!isRasterTileLayerType(layerObj)) return false
+
+    const tileSource = resolveTileLayerSource(layerObj)
+    const sourceUrl = await L_.TimeControl_.performTimeUrlReplacements(
+        tileSource.url,
+        layerObj,
+        false
+    )
+    const tileOptions = {
+        ...buildTileUrlOptions(
+            layerObj,
+            tileSource.splitColonType,
+            tileSource.tileFormat
+        ),
+        ...(updateOptions || {}),
+    }
+
+    const updated = L_.Map_.engine.updateLayer(uuid, {
+        url: compileTileUrl(sourceUrl, tileOptions),
+    })
+    // deck.gl layers are immutable, so the registry adopts the replacement.
+    if (updated == null) return false
+    L_.layers.layer[uuid] = updated
+    return true
 }
 
 const L_ = {
@@ -224,13 +274,16 @@ const L_ = {
                     }
                     return false
                 }),
-                window.mmgisAPI.provide('layers:refresh', ({ layerUUID, options }) => {
+                window.mmgisAPI.provide('layers:refresh', async ({ layerUUID, options }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     const tileLayer = L_.layers.layer[uuid]
                     if (tileLayer && typeof tileLayer.refresh === 'function') {
                         tileLayer.refresh(null, false, options || {})
                         return true
                     }
+                    // An engine-owned layer has no Leaflet refresh() to call.
+                    if (isEngineOwnedLayer(tileLayer))
+                        return refreshEngineOwnedTileLayer(uuid, options)
                     return false
                 }),
                 window.mmgisAPI.provide('layers:updateConfig', ({ layerUUID, updates }) => {
