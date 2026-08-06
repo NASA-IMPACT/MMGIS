@@ -57,7 +57,6 @@ resource "aws_iam_role_policy" "terraform_plan" {
         Effect = "Allow"
         Action = [
           "ec2:Describe*",
-          "elasticloadbalancing:Describe*",
           "rds:Describe*",
           "ecs:Describe*",
           "ecs:List*",

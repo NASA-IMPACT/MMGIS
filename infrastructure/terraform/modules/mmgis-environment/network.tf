@@ -1,12 +1,9 @@
 # Three security groups govern this environment, but only two are ours to
-# create. The third — the admin service's ALB security group — is created and
-# owned by ECS Express Mode via the infrastructure role and CANNOT be created
-# here. It does need a :443 ingress rule from the VPC CIDR so CloudFront's
-# VPC-origin ENIs can reach the ALB. The SG id is only knowable once the
-# service is up, so that rule is a PHASE-2 resource (bottom of this file),
-# driven by var.express_alb_security_group_id — read from the same
-# describe-service-revisions call as the ALB ARN. No hand-executed
-# mutation remains.
+# create. The third — the admin service's ALB security group — is created,
+# owned, and populated by ECS Express Mode via the infrastructure role, and is
+# not this module's to touch at all: it already admits the traffic CloudFront's
+# VPC-origin ENIs send (bottom of this file). No hand-executed mutation
+# remains.
 
 # Shared task security group — used by BOTH the admin service and the publish
 # task (RunTask). The RDS ingress rule references this SG, so sharing it is what
@@ -53,8 +50,8 @@ resource "aws_security_group" "rds" {
 }
 
 # No ingress rule on the ECS-managed ALB security group: Express Mode
-# provisions that SG with :80/:443 already open (0.0.0.0/0 and the VPC CIDR —
-# the ALB is internal, so "anywhere" means in-VPC and peered networks), so
-# CloudFront's VPC-origin ENIs reach the ALB without any rule from this
-# module. Declaring the same rule here fails the apply with
+# provisions that SG with :80/:443 already open (0.0.0.0/0 and ::/0, plus the
+# VPC CIDR — the ALB is internal, so "anywhere" means in-VPC and peered
+# networks), so CloudFront's VPC-origin ENIs reach the ALB without any rule
+# from this module. Declaring the same rule here fails the apply with
 # InvalidPermission.Duplicate.

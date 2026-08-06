@@ -387,17 +387,16 @@ test.describe('infrastructure/ JSON recipes', () => {
     })
 
     test('module refuses empty live facts unless greenfield is set, and pins CloudFront', () => {
-        // The four live facts (serving image + express trio) default to the
-        // DESTRUCTIVE actions (placeholder image; CloudFront destruction), so
-        // empty is only legal under the explicit greenfield flag. Pin the
-        // validation conditions and the prevent_destroy backstop so a module
-        // edit cannot silently drop either fence.
+        // The three live facts (serving image + the two express inputs) default
+        // to the DESTRUCTIVE actions (placeholder image; CloudFront
+        // destruction), so empty is only legal under the explicit greenfield
+        // flag. Pin the validation conditions and the prevent_destroy backstop
+        // so a module edit cannot silently drop either fence.
         const variablesTf = readTfModuleFile('variables.tf')
         for (const guarded of [
             'var.deployed_image != ""',
             'var.express_internal_alb_arn != ""',
             'var.express_onaws_endpoint != ""',
-            'var.express_alb_security_group_id != ""',
         ]) {
             expect(
                 variablesTf,

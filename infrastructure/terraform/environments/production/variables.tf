@@ -45,12 +45,6 @@ variable "express_onaws_endpoint" {
   default     = ""
 }
 
-variable "express_alb_security_group_id" {
-  description = "SG id of the ECS-managed ALB (same describe as the ALB ARN). Empty only under greenfield = true — and never empty while the other two are set (that drops the :443 ingress rule)."
-  type        = string
-  default     = ""
-}
-
 variable "greenfield" {
   description = "First build of a brand-new environment only. The sole way an apply may proceed with deployed_image or the express_* inputs empty. CI sets it (TF_VAR_greenfield) after verifying the environment has never been fully built; never set it by hand against a live environment."
   type        = bool
