@@ -5,7 +5,8 @@ import type {
     FilterSelections,
     FilterOption,
 } from './lib/types'
-import { useMMGISToolVars, useMMGISEvent } from './adapters/hooks'
+import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
+import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { emitFilterChange } from './adapters/emitFilterChange'
 import { resolveOptions, type TimeConfigLike } from './lib/utils/resolveOptions'
 import type { LayerLike } from './lib/utils/matchLayers'

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { ThemeRail } from './lib'
 import type { ThemeSummary } from './lib/types'
 import { getThemes } from './adapters/getThemes'
-import { useMMGISEvent } from './adapters/hooks'
+import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { mmgisEmit } from '../_shared/adapters/mmgisAPI'
 
 const SELECTED_THEME_EVENT = 'layerFilter:selectedThemeChanged'
