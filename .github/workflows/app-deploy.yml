@@ -159,14 +159,15 @@ jobs:
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
+          cache: "npm"
 
       # The Dockerfile's `npm run build` does NOT run build:themes; the
       # generated public/ CSS + fonts must exist in the build context
       # (COPY . .) or themed missions/dashboards render unstyled.
       - name: Build theme assets
         run: |
-          npm install --force
+          npm ci
           npm run build:themes
 
       - name: Configure AWS credentials (OIDC)
