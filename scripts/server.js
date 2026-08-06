@@ -137,7 +137,10 @@ const pool = new Pool({
 // password out from under the cached value, drop the cache so the next
 // connection re-fetches it (see API/Backend/Utils/dbPassword.js).
 pool.on("error", (err) => {
-  if (isPasswordAuthError(err)) refreshDbPassword();
+  // Fire-and-forget, but never let the refetch reject unhandled: a Secrets
+  // Manager hiccup here would otherwise crash the process during the exact
+  // rotation this handler exists for. The interval refresh self-heals anyway.
+  if (isPasswordAuthError(err)) refreshDbPassword().catch(() => {});
 });
 app.use(
   session({
