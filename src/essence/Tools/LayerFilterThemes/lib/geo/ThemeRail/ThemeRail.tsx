@@ -5,17 +5,10 @@ export interface ThemeRailProps {
     themes: ThemeSummary[]
     selectedId: string
     onSelect: (id: string) => void
-    /** The chevron button at the top of the rail. */
-    onTopButtonClick?: () => void
 }
 
-/** Presentational green rail: a top chevron button + one entry per theme. */
-export function ThemeRail({
-    themes,
-    selectedId,
-    onSelect,
-    onTopButtonClick,
-}: ThemeRailProps) {
+/** Presentational green rail: one entry per theme. */
+export function ThemeRail({ themes, selectedId, onSelect }: ThemeRailProps) {
     return (
         <div
             className="blocks-theme-rail"
@@ -23,18 +16,6 @@ export function ThemeRail({
             aria-orientation="vertical"
             aria-label="Filter themes"
         >
-            <button
-                type="button"
-                className="blocks-theme-rail__top"
-                aria-label="Collapse panel"
-                onClick={() => onTopButtonClick?.()}
-            >
-                <i
-                    className="mdi mdi-chevron-right blocks-theme-rail__top-icon"
-                    aria-hidden="true"
-                />
-            </button>
-
             {themes.map((theme) => {
                 const active = theme.id === selectedId
                 return (

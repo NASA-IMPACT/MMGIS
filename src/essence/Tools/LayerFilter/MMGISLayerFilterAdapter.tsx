@@ -17,7 +17,9 @@ import type { LayerLike } from './lib/utils/matchLayers'
 import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 
-const SELECTED_THEME_EVENT = 'layerFilter:selectedThemeChanged'
+// Emitted by the rail plugin, so named after the rail — swap the panel out
+// and the rail's broadcasts keep their owner's name.
+const SELECTED_THEME_EVENT = 'plugin:layerfilterthemes:selectedThemeChanged'
 // Stable empty object so the emit effect doesn't fire every render.
 const EMPTY: FilterSelections = {}
 

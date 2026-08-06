@@ -13,10 +13,13 @@ import {
 } from '../lib/utils/matchLayers'
 import type { FilterSelections } from '../lib/types'
 
+/** Payload of `plugin:layerfilter:changed`. The matched entries are layer
+ *  UUIDs — `L_.layers.data` is keyed by UUID, and every other bus payload
+ *  calls that a layerUUID, so this contract does too. */
 export interface FilterChangePayload {
     themeId: string
     selections: FilterSelections
-    matchedLayerNames: string[]
+    matchedLayerUUIDs: string[]
 }
 
 export function emitFilterChange(
@@ -26,18 +29,18 @@ export function emitFilterChange(
     layerConfigs: Record<string, LayerLike> | null | undefined,
     applyToList: boolean,
 ): FilterChangePayload {
-    const matchedLayerNames = matchLayers(
+    const matchedLayerUUIDs = matchLayers(
         layerConfigs,
         themeProperty,
         themeId,
         selections,
     )
-    const payload: FilterChangePayload = { themeId, selections, matchedLayerNames }
-    mmgisEmit('layerFilter:changed', payload)
+    const payload: FilterChangePayload = { themeId, selections, matchedLayerUUIDs }
+    mmgisEmit('plugin:layerfilter:changed', payload)
     if (applyToList) {
         void mmgisRequest('layers:setListed', {
-            updates: buildListedUpdates(layerConfigs, matchedLayerNames),
-            source: 'layerFilter',
+            updates: buildListedUpdates(layerConfigs, matchedLayerUUIDs),
+            source: 'layerfilter',
         })
     }
     return payload

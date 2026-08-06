@@ -11,7 +11,9 @@ export interface ThemesResult {
  *  unhandled rejection here would blank the rail permanently. */
 export async function getThemes(): Promise<ThemesResult> {
     try {
-        const result = await mmgisRequest<ThemesResult>('layerFilter:getThemes')
+        const result = await mmgisRequest<ThemesResult>(
+            'plugin:layerfilter:getThemes',
+        )
         return result || { themes: [] }
     } catch {
         return { themes: [] }

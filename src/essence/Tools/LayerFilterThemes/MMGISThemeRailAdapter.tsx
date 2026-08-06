@@ -5,8 +5,9 @@ import { getThemes } from './adapters/getThemes'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { mmgisEmit } from '../_shared/adapters/mmgisAPI'
 
-const SELECTED_THEME_EVENT = 'layerFilter:selectedThemeChanged'
-const PANEL_CLOSE_EVENT = 'layerFilter:panelCloseClicked'
+// This plugin's own broadcast — named after the rail, not the panel, so a
+// replacement panel can subscribe without inheriting the old panel's name.
+const SELECTED_THEME_EVENT = 'plugin:layerfilterthemes:selectedThemeChanged'
 
 export function MMGISThemeRailAdapter() {
     const [themes, setThemes] = useState<ThemeSummary[]>([])
@@ -23,25 +24,17 @@ export function MMGISThemeRailAdapter() {
     }, [load])
 
     // The LayerFilter (panel) tool provides the themes; if the rail mounts
-    // first, re-pull once the panel announces it's ready.
-    useMMGISEvent('layerFilter:ready', () => {
+    // first, re-pull once the panel announces it's ready. Stable handler —
+    // an inline arrow would resubscribe every render.
+    const onPanelReady = useCallback(() => {
         void load()
-    })
+    }, [load])
+    useMMGISEvent('plugin:layerfilter:ready', onPanelReady)
 
     const onSelect = useCallback((id: string) => {
         setSelectedId(id)
         mmgisEmit(SELECTED_THEME_EVENT, { themeId: id })
     }, [])
 
-    return (
-        <ThemeRail
-            themes={themes}
-            selectedId={selectedId}
-            onSelect={onSelect}
-            onTopButtonClick={() => {
-                console.log('[LayerFilterThemes] emit', PANEL_CLOSE_EVENT)
-                mmgisEmit(PANEL_CLOSE_EVENT)
-            }}
-        />
-    )
+    return <ThemeRail themes={themes} selectedId={selectedId} onSelect={onSelect} />
 }

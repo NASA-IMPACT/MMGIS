@@ -76,7 +76,7 @@
     },
     "name": "LayerFilter",
     "defaultIcon": "filter-outline",
-    "description": "Two-step, configurable layer filter. Step 1 picks a theme; step 2 shows that theme's filters. Emits the matched layer set on the event bus (does not change layers itself).",
+    "description": "Two-step, configurable layer filter panel. Step 1 (a separate LayerFilterThemes rail) picks a theme; step 2 shows that theme's filters. Emits the matched layer set on the event bus. Events \u2014 provides: plugin:layerfilter:getThemes; emits: plugin:layerfilter:ready, plugin:layerfilter:changed { themeId, selections, matchedLayerUUIDs }; subscribes: plugin:layerfilterthemes:selectedThemeChanged.",
     "hasVars": true,
     "width": 320,
     "height": 0,

@@ -75,9 +75,9 @@ export function matchLayers(
  */
 export function buildListedUpdates(
     layerConfigs: Record<string, LayerLike> | null | undefined,
-    matchedLayerNames: string[],
+    matchedLayerUUIDs: string[],
 ): Record<string, boolean> {
-    const matched = new Set(matchedLayerNames)
+    const matched = new Set(matchedLayerUUIDs)
     const updates: Record<string, boolean> = {}
     for (const [name, cfg] of Object.entries(layerConfigs || {})) {
         if (cfg?.type === 'header') continue

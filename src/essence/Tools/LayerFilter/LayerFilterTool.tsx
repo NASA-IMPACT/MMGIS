@@ -1,3 +1,19 @@
+/**
+ * LayerFilter — the two-step filter's panel (step 2: the active theme's
+ * filters). The theme rail (LayerFilterThemes) is a separate, swappable tool.
+ *
+ * pluginId: 'layerfilter'
+ *
+ * Provides:
+ *   - plugin:layerfilter:getThemes → { themes: [{ id, label, icon }], defaultThemeId }
+ * Emits:
+ *   - plugin:layerfilter:ready    { timestamp } — after vars resolve; the rail re-pulls themes
+ *   - plugin:layerfilter:changed  { themeId, selections, matchedLayerUUIDs }
+ * Subscribes:
+ *   - plugin:layerfilterthemes:selectedThemeChanged  { themeId }
+ * Requests:
+ *   - tool:getVars, layers:getAllConfigs, time:getStart, time:getEnd, layers:setListed
+ */
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MMGISLayerFilterAdapter } from './MMGISLayerFilterAdapter'
@@ -76,7 +92,7 @@ const LayerFilterTool = {
         // Expose the theme list (id/label/icon) + default for the rail tool,
         // and announce readiness so the rail can (re-)request after we mount.
         this._cleanups.push(
-            mmgisProvide('layerFilter:getThemes', () => ({
+            mmgisProvide('plugin:layerfilter:getThemes', () => ({
                 themes: (this.vars.themes || []).map((t) => ({
                     id: t.id,
                     label: t.label,
@@ -90,7 +106,7 @@ const LayerFilterTool = {
         // onto an empty theme list with no second announcement coming.
         void (this._varsLoaded ?? Promise.resolve()).then(() => {
             if (this.made) {
-                mmgisEmit('layerFilter:ready', { timestamp: Date.now() })
+                mmgisEmit('plugin:layerfilter:ready', { timestamp: Date.now() })
             }
         })
     },
