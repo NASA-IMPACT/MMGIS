@@ -1,120 +1,25 @@
 name: Deploy production
 
-# The production environment's trigger. Like its development sibling it holds no
-# deployment logic of its own: it decides WHEN and in WHICH MODE the two shared
-# engines run, and wires the infrastructure engine's outputs into the app
-# engine. Every line of deploy logic lives in the engines, which are reused
-# byte-for-byte — production is not a second pipeline, it is the same pipeline
-# pointed at a second environment.
+# The production environment's trigger. Like its development sibling it holds
+# no deployment logic of its own: it decides WHEN and in WHICH MODE the two
+# shared engines run, and wires the infrastructure engine's outputs into the
+# app engine. Merging to `production` expresses intent; it does not deploy.
 #
 #   changes -> iac-deploy.yml (always) -> app-deploy.yml (every merge)
 #
-# ── The gate ─────────────────────────────────────────────────────────────────
-# Merging to `production` expresses intent; it does not deploy. Both engine jobs
-# bind `environment: production`, so a run reaches GitHub's native
-# required-reviewers gate on that Environment and PARKS
-# there with ZERO AWS activity behind it. The only job that runs ungated is
-# `changes` below — pure git and pure bash, no credentials, no `environment:`
-# key, nothing but a diff and a step summary. A run that is rejected, or simply
-# never approved, deploys nothing at all.
+# ── Invariants for anyone editing this file ──────────────────────────────────
+# - The approval gate lives in the ENGINES' `environment:` declarations, not in
+#   this file. Do not hoist a single unbound gate job in front of them, and do
+#   not weaken either engine's binding: that binding both mints the
+#   environment-form OIDC subject production's roles trust AND is what asks for
+#   approval. Having it in the engines is what makes the gate unbypassable.
+# - The operational rules — two approval clicks per run, approve the newest
+#   parked run only, image provenance — are generated into every run's summary
+#   by the `changes` job below, where the approver actually reads them.
+#   Maintain them THERE, not in a comment here.
 #
-# The gate lives IN the engines rather than here, which is what makes it
-# unbypassable: there is no path through this trigger that reaches AWS without
-# first binding the Environment, and binding the Environment is what asks for
-# approval.
-#
-# ── Two approval clicks per run — expected, not a bug ────────────────────────
-# Required-reviewer approval is per JOB, not per run. This run has two
-# Environment-bound jobs (infrastructure, then app), and the app job only
-# reaches the gate after the infrastructure job finishes — so a second approval
-# request appears mid-run, minutes after the first. Do not "fix" this by
-# weakening the environment binding or by hoisting a single un-bound gate job in
-# front of the engines: the binding is what makes GitHub mint the
-# environment-form OIDC subject (`repo:NASA-IMPACT/MMGIS:environment:production`)
-# that the production roles' trust policies accept, and what makes the
-# Environment-scoped `IAC_*` secrets and variables resolve. A click is cheaper
-# than either.
-#
-# ── Approve the newest run only ──────────────────────────────────────────────
-# Successive merges to `production` park successive runs, and approving an older
-# parked run deploys an OLDER commit over a newer one. Approve the newest parked
-# run and reject or cancel the stale ones. See the concurrency note below for
-# why auto-cancel cannot be relied on to tidy them up.
-#
-# ── Image provenance ─────────────────────────────────────────────────────────
-# This run builds production's image FROM this production-branch commit INTO
-# production's own ECR repository, tagged with the commit's short SHA. Images
-# built for development are never promoted across environments — not by this
-# workflow, not by hand. Every environment's registry holds only images built
-# from that environment's branch.
-#
-# ── Modes: why the infrastructure job always runs ────────────────────────────
-# Same rule as `deploy-development.yml`, whose header carries the long version.
-# In short: a skipped job emits no outputs on GitHub, so skipping the
-# infrastructure job on app-only merges would hand the app job six empty names
-# on exactly the merges that touch no infrastructure. Path-awareness therefore
-# gates the MODE, not the job:
-#
-#   apply — the push touched infrastructure/terraform/** or one of the three
-#           pipeline files; any dispatch that is not plan-only; any push whose
-#           diff is unknowable. Two-phase converge, then the app ships.
-#   read  — every other push. Init and read the state outputs; describe nothing,
-#           change nothing. The app still ships.
-#   plan  — plan-only dispatch. Publishes a plan to the run summary; the app job
-#           is skipped and nothing is applied.
-#
-# ── Concurrency ──────────────────────────────────────────────────────────────
-# One group for the whole composed run, queued rather than cancelled: an apply
-# interrupted halfway leaves state locked and infrastructure half-converged, and
-# a cancelled app job leaves a rollout mid-flight. Neither engine carries a
-# group of its own precisely so this one can span both.
-#
-# Honest about what GitHub actually guarantees: it keeps at most ONE pending run
-# per group and supersedes an older pending run when a newer one arrives. That
-# is safe here — a later push to `production` contains the earlier push's
-# commits, so the run that does execute deploys a superset.
-#
-# The gate adds a wrinkle. The group serialises the runs GitHub is executing or
-# has queued; a run parked at an approval gate counts as "waiting", not "in
-# progress", and so sits outside that machinery altogether. Two approvals
-# released in quick succession therefore lean on three things in order: the
-# group catching the second run once it starts executing, terraform's S3 state
-# lock as the infrastructure backstop, and — the real control — the human rule
-# above, approve the newest and reject the rest. Even `cancel-in-progress: true`
-# would not reliably clean parked runs up, which is precisely why that
-# discipline is a rule rather than a setting.
-#
-# ── Rollback and re-run ──────────────────────────────────────────────────────
-# All three paths are manual, and all three are gated identically, because the
-# gate is in the engines rather than in any one entry point:
-#
-#   * Re-run the last green run from the Actions UI. The app engine rebuilds
-#     that same commit (`--no-cache`) and re-pushes it under the same short-SHA
-#     tag — the same source, not what is already in ECR. Same source is not the
-#     same bits: a `--no-cache` rebuild re-resolves dependencies, which can
-#     drift within their declared ranges. It then re-registers both
-#     task-definition families against the rebuilt image and re-rolls the
-#     service onto it. Approval is requested again, twice, as for any run.
-#   * Merge a revert to `production` and let the resulting push run deploy it.
-#   * `workflow_dispatch` on the reverted or otherwise known-good `production`
-#     head.
-#
-# The `deployed_image` dispatch input is NOT the app rollback mechanism — see
-# its description below. It moves what the infrastructure converge feeds the
-# task-definition families; the app job still builds the dispatched commit.
-#
-# ── Dormant until the branch exists ──────────────────────────────────────────
-# The `production` branch, its GitHub Environment (required reviewers plus the
-# deployment-branch policy), and its configuration values are operator-created.
-# On a repository where they do not exist, this workflow simply never fires —
-# there is no `production` branch to push to and no Environment to dispatch
-# against. The first gated run is the one-time greenfield standup.
-#
-# ── Coexistence ──────────────────────────────────────────────────────────────
-# The development pipeline (`deploy-development.yml`) and the legacy
-# `deploy-lean.yml` are untouched by this file and unaffected by it. This
-# trigger reads only the `production` Environment's scoped configuration, so it
-# cannot drive another environment and another environment cannot drive it.
+# The gate in full:
+# docs/infrastructure/pipelines.md#production-every-deploy-needs-approval.
 
 on:
   push:
@@ -304,8 +209,9 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Always runs — see the header. `mode` decides how much work it does, not
-  # whether it runs at all. This is the job that first meets the approval gate,
+  # Always runs: `mode` decides how much work it does, not whether it runs at
+  # all — a skipped job emits no outputs, and the app job below needs the six
+  # names it produces. This is the job that first meets the approval gate,
   # because it is the first one to bind the `production` Environment.
   infra:
     needs: changes
