@@ -3,8 +3,11 @@
  *
  * Provides:
  *   - `composeColormapPipeline` — pure function, GPU-free, unit-testable.
- *   - `ColormappedCOGLayer` — deck.gl layer subclass; requires a GPU context at runtime.
  *   - `buildDeckCOGLayer` — factory used by Map_.js for the deckRaster code path.
+ *
+ * The layer is a plain `COGLayer`: the float + colormap behaviour rides on its
+ * `getTileData`/`renderTile` props, and colormap textures are cached per device
+ * outside the layer, so there is no subclass and no layer-owned GPU state.
  *
  * Module resolution note:
  *   tsconfig.json uses `moduleResolution: "node"` which does not read package
@@ -15,7 +18,7 @@
  *   remove the need for the ignore comment.
  */
 
-import type { Layer, UpdateParameters } from '@deck.gl/core'
+import type { Layer } from '@deck.gl/core'
 import { COGLayer, addAlphaChannel } from '@developmentseed/deck.gl-geotiff'
 import type { GetTileDataOptions } from '@developmentseed/deck.gl-geotiff'
 import type { GeoTIFF, Overview } from '@developmentseed/geotiff'
@@ -31,7 +34,7 @@ import type {
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import { Colormap, LinearRescale, FilterNoDataVal, CreateTexture, createColormapTexture } from '@developmentseed/deck.gl-raster/gpu-modules'
-import type { Texture } from '@luma.gl/core'
+import type { Device, Texture } from '@luma.gl/core'
 import { buildColormapLUT } from './colormapLUT'
 
 // ---------------------------------------------------------------------------
@@ -229,11 +232,6 @@ async function cogGetTileData(
     return { texture, mode: 'rgb', width, height, byteLength: u8.byteLength }
 }
 
-/** Truthy placeholder so COGLayer._parseGeoTIFF skips the (float-unsupported)
- *  default `inferRenderPipeline`. The real render pipeline is produced by the
- *  overridden `_renderTileCallback()` below, so this is never invoked. */
-const RENDER_TILE_PLACEHOLDER = (): null => null
-
 /**
  * GPU module for the multi-band RGB path: discards fully-black pixels. Satellite
  * true-colour COGs (e.g. Sentinel-2 TCI) encode nodata as exact black (0,0,0) —
@@ -251,118 +249,95 @@ const FilterBlack = {
 }
 
 // ---------------------------------------------------------------------------
-// ColormappedCOGLayer
+// Colormap textures (shared, outside the layer)
 // ---------------------------------------------------------------------------
 
 /**
- * A COGLayer subclass that appends LinearRescale + Colormap GPU modules to
- * the default render pipeline, enabling client-side colormap rendering of
- * single-band COGs without a TiTiler backend.
+ * Colormap LUT textures, cached per device and colormap name.
  *
- * Custom props (passed through layerObj):
- *   - colormapName: string  — matplotlib-compatible colormap name
- *   - rescaleMin: number    — data value → 0.0
- *   - rescaleMax: number    — data value → 1.0
+ * Deliberately outside the layer: a texture is a function of (device,
+ * colormap name) and nothing else, so caching it here lets layers stay plain
+ * `COGLayer` instances instead of a subclass that owns GPU state. Deck.gl
+ * layers are also replaced on every prop change, which would otherwise mean
+ * rebuilding an identical texture on each rebuild.
  *
- * Nodata (NaN or the file's GDAL_NODATA, optionally overridden by config) is
- * canonicalized to NODATA_SENTINEL at tile upload and discarded by a single
- * FilterNoDataVal in the pipeline.
- *
- * GPU state:
- *   - colormapTexture: Texture — Texture2DArray built from the LUT; stored in
- *     layer state via this.setState({ colormapTexture }).
- *
- * Re-render without tile refetch: pass
- *   updateTriggers: { renderTile: [colormapName, rescaleMin, rescaleMax] }
- * so deck.gl re-evaluates _renderTileCallback() when params change.
+ * Never evicted: a LUT is 256×1 RGBA (1 KB) and the palette set is finite
+ * (~107 colormaps → ~110 KB worst case). The WeakMap keys on the device, so
+ * a torn-down map drops its whole cache and the textures die with the device.
  */
-export class ColormappedCOGLayer extends COGLayer<any> {
-    static override layerName = 'ColormappedCOGLayer'
+const colormapTextures = new WeakMap<Device, Map<string, Texture>>()
 
-    override updateState(params: UpdateParameters<this>): void {
-        super.updateState(params)
-        const { props, oldProps, changeFlags } = params
-        const p = props as any
-        const op = oldProps as any
-        // Rebuild the colormap texture whenever the colormap name changes (or on
-        // first init where oldProps.colormapName is undefined).
-        if (
-            changeFlags.propsChanged &&
-            p.colormapName !== op.colormapName &&
-            (this.context as any)?.device
-        ) {
-            const lut = buildColormapLUT(p.colormapName ?? 'viridis')
-            const texture = createColormapTexture(
-                (this.context as any).device,
-                lutToImageData(lut)
-            )
-            const oldTexture = (this.state as any).colormapTexture
-            if (oldTexture && typeof oldTexture.destroy === 'function') {
-                oldTexture.destroy()
-            }
-            this.setState({ colormapTexture: texture })
-        }
+function getColormapTexture(device: Device, colormapName: string): Texture {
+    let byName = colormapTextures.get(device)
+    if (!byName) {
+        byName = new Map<string, Texture>()
+        colormapTextures.set(device, byName)
     }
-
-    override finalizeState(context: any): void {
-        const tex = (this.state as any).colormapTexture
-        if (tex && typeof tex.destroy === 'function') {
-            tex.destroy()
-        }
-        // deck.gl's Layer base class always defines finalizeState.
-        super.finalizeState(context)
+    // buildColormapLUT normalizes the name (case, `_r` reversal), so the raw
+    // configured string is a sound cache key.
+    let texture = byName.get(colormapName)
+    if (!texture) {
+        texture = createColormapTexture(
+            device,
+            lutToImageData(buildColormapLUT(colormapName))
+        )
+        byName.set(colormapName, texture)
     }
+    return texture
+}
 
-    // Return type is `any` to avoid TypeScript's return-type assignability
-    // check against the parent signature (which uses the full RenderTileResult
-    // union from @developmentseed/deck.gl-raster). The actual runtime type
-    // satisfies the union contract.
-    //
-    // The pipeline is built from scratch — CreateTexture samples our r32float
-    // tile texture into `color` (raw value in color.r), then composeColormapPipeline
-    // appends [FilterNoDataVal?, LinearRescale, Colormap]. We do NOT call
-    // super._renderTileCallback() because COGLayer's default renderTile pairs
-    // with its default getTileData (inferRenderPipeline), which throws for float.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    protected override _renderTileCallback(): any {
-        const p = this.props as any
-        const { rescaleMin, rescaleMax } = p
-        // Capture colormapTexture at callback-construction time; the updateTriggers
-        // on the layer force _renderTileCallback() to be re-called whenever
-        // colormapName/rescaleMin/rescaleMax change, so the closure stays fresh.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const colormapTexture = (this.state as any).colormapTexture as Texture | null
+// ---------------------------------------------------------------------------
+// renderTile
+// ---------------------------------------------------------------------------
 
-        return (data: any) => {
-            if (!data || !data.texture) return null
-            // Multi-band RGB: display the colour directly (no colormap/rescale);
-            // discard black nodata edges → transparent.
-            if (data.mode === 'rgb') {
-                return {
-                    renderPipeline: [
-                        { module: CreateTexture, props: { textureName: data.texture } },
-                        { module: FilterBlack },
-                    ],
-                }
+/**
+ * Builds the `renderTile` prop: maps a loaded tile to its GPU render pipeline.
+ *
+ * Single-band COGs get `CreateTexture → FilterNoDataVal → LinearRescale →
+ * Colormap`; the raw value arrives in `color.r` from the r32float upload, and
+ * nodata (NaN or the file's GDAL_NODATA) was canonicalized to NODATA_SENTINEL
+ * at upload, so one exact-equality filter catches every case.
+ *
+ * Multi-band COGs display their colour directly, with black nodata edges
+ * discarded.
+ *
+ * The colormap texture is resolved per tile from the tile texture's own
+ * device, so a cached tile stays valid when the colormap changes — only this
+ * closure is replaced (see `updateTriggers.renderTile`), never the tile data.
+ */
+function makeRenderTile(opts: {
+    colormapName: string
+    rescaleMin: number
+    rescaleMax: number
+}): (data: TileData) => RenderTileResult | null {
+    return (data: TileData): RenderTileResult | null => {
+        if (!data || !data.texture) return null
+
+        if (data.mode === 'rgb') {
+            return {
+                renderPipeline: [
+                    { module: CreateTexture, props: { textureName: data.texture } },
+                    { module: FilterBlack },
+                ],
             }
-            // Single-band: raw value in color.r → discard nodata → rescale →
-            // colormap. NaN and the file's declared nodata were canonicalized
-            // to NODATA_SENTINEL at upload, so one exact-equality filter
-            // catches everything.
-            return composeColormapPipeline(
-                {
-                    renderPipeline: [
-                        { module: CreateTexture, props: { textureName: data.texture } },
-                    ],
-                },
-                {
-                    rescaleMin,
-                    rescaleMax,
-                    colormapTexture,
-                    nodata: NODATA_SENTINEL,
-                }
-            )
         }
+
+        return composeColormapPipeline(
+            {
+                renderPipeline: [
+                    { module: CreateTexture, props: { textureName: data.texture } },
+                ],
+            },
+            {
+                rescaleMin: opts.rescaleMin,
+                rescaleMax: opts.rescaleMax,
+                colormapTexture: getColormapTexture(
+                    data.texture.device,
+                    opts.colormapName
+                ),
+                nodata: NODATA_SENTINEL,
+            }
+        )
     }
 }
 
@@ -371,7 +346,11 @@ export class ColormappedCOGLayer extends COGLayer<any> {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a ColormappedCOGLayer for use in the deck.gl engine's makeTileLayer path.
+ * Build the client-side COG layer for the deck.gl engine's makeTileLayer path.
+ *
+ * A plain `COGLayer` — the colormap/rescale behaviour rides on the
+ * `getTileData` and `renderTile` props rather than a subclass, so there is no
+ * layer-owned GPU state to keep in sync (see `colormapTextures`).
  *
  * @param id        - Layer id (layer name from layerObj).
  * @param options   - Raw COG file URL + layer config. `rawCogUrl` is the bare
@@ -396,32 +375,25 @@ export function buildDeckCOGLayer(
     const minZoom = parseInt(l.minZoom)
     const maxZoom = parseInt(l.maxZoom)
 
-    return new ColormappedCOGLayer({
+    return new COGLayer<TileData>({
         id,
         geotiff: options.rawCogUrl,
         opacity: options.opacity ?? 1,
         ...(Number.isFinite(minZoom) ? { minZoom } : {}),
         ...(Number.isFinite(maxZoom) ? { maxZoom } : {}),
-        // Supplying getTileData + renderTile makes COGLayer._parseGeoTIFF skip
-        // its default inferRenderPipeline (which throws for float COGs).
-        // getTileData uploads the band as r32float; renderTile is overridden by
-        // the subclass (this placeholder only satisfies the parse-time guard).
-        // The config nodata (if any) is bound in as an override of the file's
-        // GDAL_NODATA; both canonicalize to NODATA_SENTINEL at upload.
-        getTileData: (image: any, opts: any) =>
+        // Supplying getTileData + renderTile together makes COGLayer._parseGeoTIFF
+        // skip its default inferRenderPipeline, which throws for float COGs
+        // ('non-unsigned integers not yet supported').
+        // The config nodata (if any) overrides the file's GDAL_NODATA; both
+        // canonicalize to NODATA_SENTINEL at upload.
+        getTileData: (image, opts) =>
             cogGetTileData(image, { ...opts, noDataOverride: nodata }),
-        renderTile: RENDER_TILE_PLACEHOLDER,
-        // Custom props consumed in updateState and _renderTileCallback:
-        colormapName,
-        rescaleMin,
-        rescaleMax,
+        renderTile: makeRenderTile({ colormapName, rescaleMin, rescaleMax }),
         updateTriggers: {
-            // Forces _renderTileCallback() to be re-evaluated (tiles re-rendered
-            // without re-fetching) when the colormap or rescale range changes.
-            // Nodata needs no trigger: it comes from the file's GDAL_NODATA tag,
-            // which is fixed for the lifetime of a URL, and a config override
-            // would arrive as a new layer anyway.
+            // Re-runs renderTile for already-loaded tiles (no refetch) when the
+            // colormap or rescale range changes. Nodata needs no trigger: it
+            // comes from the file's GDAL_NODATA tag, fixed for a given URL.
             renderTile: [colormapName, rescaleMin, rescaleMax],
         },
-    } as any) as unknown as Layer
+    }) as unknown as Layer
 }
