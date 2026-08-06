@@ -17,6 +17,13 @@
 
 import type { Layer, UpdateParameters } from '@deck.gl/core'
 import { COGLayer, addAlphaChannel } from '@developmentseed/deck.gl-geotiff'
+import type { GetTileDataOptions } from '@developmentseed/deck.gl-geotiff'
+import type { GeoTIFF, Overview } from '@developmentseed/geotiff'
+import type {
+    MinimalTileData,
+    RasterModule,
+    RenderTileResult,
+} from '@developmentseed/deck.gl-raster'
 // `moduleResolution: "node"` in tsconfig.json does not read package exports
 // maps, so tsc cannot resolve the `./gpu-modules` subpath export.  The import
 // below works correctly at runtime (Node.js, Playwright, Webpack all honour
@@ -35,19 +42,9 @@ type ColormapOpts = {
     rescaleMin: number
     rescaleMax: number
     /** Colormap GPU texture (Texture2DArray). May be null before first updateState. */
-    colormapTexture: Texture | { id: string } | null
+    colormapTexture: Texture | null
     /** Sentinel no-data value (raw pixel units). null/undefined = no filtering. */
     nodata?: number | null
-}
-
-type PipelineEntry = {
-    module: { name: string }
-    props?: Record<string, unknown>
-}
-
-type PipelineResult = {
-    image?: unknown
-    renderPipeline: PipelineEntry[]
 }
 
 // ---------------------------------------------------------------------------
@@ -63,10 +60,10 @@ type PipelineResult = {
  *   [base modules…] → [FilterNoDataVal?] → LinearRescale → Colormap
  */
 export function composeColormapPipeline(
-    baseResult: { image?: unknown; renderPipeline?: PipelineEntry[] },
+    baseResult: RenderTileResult,
     opts: ColormapOpts
-): PipelineResult {
-    const extra: PipelineEntry[] = []
+): RenderTileResult {
+    const extra: RasterModule[] = []
 
     if (opts.nodata != null) {
         extra.push({ module: FilterNoDataVal, props: { value: opts.nodata } })
@@ -78,10 +75,10 @@ export function composeColormapPipeline(
     extra.push({
         module: Colormap,
         props: {
-            colormapTexture: opts.colormapTexture as unknown,
+            colormapTexture: opts.colormapTexture,
             colormapIndex: 0,
             reversed: false,
-        } as Record<string, unknown>,
+        },
     })
 
     return {
@@ -142,14 +139,18 @@ function lutToImageData(lut: Uint8ClampedArray): ImageData {
     return new ImageData(lut, 256, 1)
 }
 
-type TileData = {
-    texture: any
+/**
+ * What cogGetTileData hands to renderTile. Extends the library's
+ * MinimalTileData (width/height/byteLength) with our own two fields.
+ */
+type TileData = (MinimalTileData & {
+    texture: Texture
     /** 'single' → float value in color.r (colormap path); 'rgb' → RGBA displayed directly. */
     mode: 'single' | 'rgb'
     width: number
     height: number
     byteLength: number
-} | null
+}) | null
 
 /**
  * Custom tile loader for COGs. Two paths, chosen by band count:
@@ -175,30 +176,20 @@ type TileData = {
  *                plus `noDataOverride` bound in by buildDeckCOGLayer.
  */
 async function cogGetTileData(
-    image: any,
-    options: {
-        device: any
-        x: number
-        y: number
-        signal?: AbortSignal
-        pool?: any
-        noDataOverride?: number | null
-    }
+    image: GeoTIFF | Overview,
+    options: GetTileDataOptions & { noDataOverride?: number | null }
 ): Promise<TileData> {
     const { device, x, y, signal, pool } = options
     let array = (await image.fetchTile(x, y, { boundless: false, pool, signal }))?.array
     if (!array) return null
-    const width = array.width
-    const height = array.height
-    const samples =
-        (array.bands && array.bands.length) ||
-        Math.max(1, Math.round(array.data.length / (width * height)))
+    const { width, height, count: samples } = array
 
     if (samples === 1) {
+        // RasterArray is a union discriminated on `layout`: band-separate
+        // carries `bands`, pixel-interleaved carries `data`. With one band
+        // both hold the same samples.
         const src =
-            array.layout === 'band-separate' && array.bands && array.bands.length
-                ? array.bands[0]
-                : array.data
+            array.layout === 'band-separate' ? array.bands[0] : array.data
         const f32 = src instanceof Float32Array ? src : Float32Array.from(src)
         // Overview.nodata delegates to the parent GeoTIFF, so this reads the
         // file's GDAL_NODATA at any zoom level.
@@ -211,7 +202,7 @@ async function cogGetTileData(
             format: 'r32float',
             width,
             height,
-            mipmaps: false,
+            mipLevels: 1,
             sampler: { minFilter: 'nearest', magFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' },
         })
         return { texture, mode: 'single', width, height, byteLength: f32.byteLength }
@@ -219,13 +210,20 @@ async function cogGetTileData(
 
     // Multi-band: WebGL2 has no RGB-only format, so pad RGB → RGBA.
     if (samples === 3) array = addAlphaChannel(array)
+    if (array.layout === 'band-separate') {
+        // addAlphaChannel throws for this layout too; fail with a message that
+        // names the cause instead of a downstream undefined-array crash.
+        throw new Error(
+            'Band-separate multi-band COGs are not supported by the client-side renderer.'
+        )
+    }
     const u8 = array.data instanceof Uint8Array ? array.data : Uint8Array.from(array.data)
     const texture = device.createTexture({
         data: u8,
         format: 'rgba8unorm',
         width,
         height,
-        mipmaps: false,
+        mipLevels: 1,
         sampler: { minFilter: 'linear', magFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' },
     })
     return { texture, mode: 'rgb', width, height, byteLength: u8.byteLength }
@@ -420,10 +418,10 @@ export function buildDeckCOGLayer(
         updateTriggers: {
             // Forces _renderTileCallback() to be re-evaluated (tiles re-rendered
             // without re-fetching) when the colormap or rescale range changes.
+            // Nodata needs no trigger: it comes from the file's GDAL_NODATA tag,
+            // which is fixed for the lifetime of a URL, and a config override
+            // would arrive as a new layer anyway.
             renderTile: [colormapName, rescaleMin, rescaleMax],
-            // Nodata is baked into tile data at upload, so changing it needs a
-            // re-fetch, not just a re-render.
-            getTileData: [nodata],
         },
     } as any) as unknown as Layer
 }
