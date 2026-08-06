@@ -52,16 +52,9 @@ resource "aws_security_group" "rds" {
   tags = { Name = "${local.name_prefix}-rds-sg" }
 }
 
-# Phase 2: allow CloudFront's VPC-origin ENIs (in-VPC) to reach the
-# ECS-managed ALB on :443. The ALB SG is Express-Mode-owned, but adding a rule
-# to it is fair game — only creation/deletion of the SG belongs to ECS.
-resource "aws_vpc_security_group_ingress_rule" "express_alb_https" {
-  count = var.express_alb_security_group_id != "" ? 1 : 0
-
-  security_group_id = var.express_alb_security_group_id
-  description       = "HTTPS from in-VPC CloudFront VPC-origin ENIs (MMGIS ${var.environment})."
-  ip_protocol       = "tcp"
-  from_port         = 443
-  to_port           = 443
-  cidr_ipv4         = data.aws_vpc.this.cidr_block
-}
+# No ingress rule on the ECS-managed ALB security group: Express Mode
+# provisions that SG with :80/:443 already open (0.0.0.0/0 and the VPC CIDR —
+# the ALB is internal, so "anywhere" means in-VPC and peered networks), so
+# CloudFront's VPC-origin ENIs reach the ALB without any rule from this
+# module. Declaring the same rule here fails the apply with
+# InvalidPermission.Duplicate.
