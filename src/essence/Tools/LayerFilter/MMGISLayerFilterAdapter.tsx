@@ -9,6 +9,10 @@ import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { emitFilterChange } from './adapters/emitFilterChange'
 import { resolveOptions, type TimeConfigLike } from './lib/utils/resolveOptions'
+import {
+    normalizeThemesConfig,
+    resolveDefaultThemeId,
+} from './lib/normalizeConfig'
 import type { LayerLike } from './lib/utils/matchLayers'
 import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -21,7 +25,9 @@ export function MMGISLayerFilterAdapter() {
     const vars = useMMGISToolVars<LayerFilterConfig & Record<string, unknown>>(
         'layerfilter',
     )
-    const themes = vars.themes ?? []
+    // Hand-authored JSON: normalize (with loud warnings) before anything
+    // indexes into it — a config typo must never unmount the panel.
+    const themes = useMemo(() => normalizeThemesConfig(vars.themes), [vars.themes])
     const themeProperty = vars.themeProperty || 'theme'
 
     const [selectedThemeId, setSelectedThemeId] = useState('')
@@ -58,10 +64,13 @@ export function MMGISLayerFilterAdapter() {
     useMMGISHandlerReady('layers:getAllConfigs', loadLayerConfigs)
     useMMGISHandlerReady('time:getConfig', loadTimeConfig)
 
-    // Pick the default theme once the config loads.
+    // Pick the default theme once the config loads. A defaultThemeId that
+    // matches no theme falls back to the first theme (with a warning) —
+    // selecting it verbatim would leave activeTheme null and the panel blank.
     useEffect(() => {
         if (!selectedThemeId && themes.length) {
-            setSelectedThemeId(vars.defaultThemeId || themes[0].id)
+            const id = resolveDefaultThemeId(themes, vars.defaultThemeId)
+            if (id) setSelectedThemeId(id)
         }
     }, [themes, vars.defaultThemeId, selectedThemeId])
 
@@ -96,6 +105,10 @@ export function MMGISLayerFilterAdapter() {
     // user has engaged the filter.
     useEffect(() => {
         if (!selectedThemeId) return
+        // Don't announce until layer configs exist: an early emit carries an
+        // empty match set and any listening consumer would blank the layer
+        // list at boot.
+        if (!layerConfigs) return
         emitFilterChange(
             themeProperty,
             selectedThemeId,
