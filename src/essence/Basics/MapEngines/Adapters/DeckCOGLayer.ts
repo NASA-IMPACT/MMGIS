@@ -19,7 +19,11 @@
  */
 
 import type { Layer } from '@deck.gl/core'
-import { COGLayer, addAlphaChannel } from '@developmentseed/deck.gl-geotiff'
+import {
+    COGLayer,
+    addAlphaChannel,
+    texture as textureUtils,
+} from '@developmentseed/deck.gl-geotiff'
 import type { GetTileDataOptions } from '@developmentseed/deck.gl-geotiff'
 import type { GeoTIFF, Overview } from '@developmentseed/geotiff'
 import type {
@@ -34,7 +38,8 @@ import type {
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
 import { Colormap, LinearRescale, FilterNoDataVal, CreateTexture, createColormapTexture } from '@developmentseed/deck.gl-raster/gpu-modules'
-import type { Device, Texture } from '@luma.gl/core'
+import type { Device, Texture, TextureFormat } from '@luma.gl/core'
+import type { SampleFormat } from '@cogeotiff/core'
 import { buildColormapLUT } from './colormapLUT'
 
 // ---------------------------------------------------------------------------
@@ -88,6 +93,28 @@ export function composeColormapPipeline(
         ...baseResult,
         renderPipeline: [...(baseResult.renderPipeline ?? []), ...extra],
     }
+}
+
+/**
+ * Picks the GPU texture format for a multi-band tile from the COG's own tags.
+ *
+ * The channel count comes from the (possibly alpha-padded) array rather than
+ * the file's SamplesPerPixel tag: addAlphaChannel turns 3-band data into 4
+ * channels without rewriting the tag, and a 3-channel format would then
+ * mis-read the padded buffer.
+ *
+ * Unsigned samples map to `unorm` formats, which sample as normalized floats —
+ * what the unorm CreateTexture module in the render pipeline expects.
+ */
+export function resolveRgbTextureFormat(
+    array: { count: number },
+    tags: { bitsPerSample: Uint16Array; sampleFormat: SampleFormat[] }
+): TextureFormat {
+    return textureUtils.inferTextureFormat(
+        array.count,
+        tags.bitsPerSample,
+        tags.sampleFormat
+    )
 }
 
 /**
@@ -145,7 +172,8 @@ type TileData = (MinimalTileData & {
  *  - **Multi-band uint (RGB/RGBA)**: upload as `rgba8unorm` and display the
  *    colour directly via CreateTexture (no colormap/rescale). This is the
  *    multi-band case #158 defers — supported here as a passthrough so true-colour
- *    COGs (e.g. Sentinel-2 TCI) render client-side. Assumes 8-bit samples.
+ *    COGs (e.g. Sentinel-2 TCI) render client-side. The texture format comes
+ *    from the file's tags, so 8- and 16-bit samples both work.
  *
  * Supplying this `getTileData` (+ a `renderTile`) makes `COGLayer._parseGeoTIFF`
  * skip its default `inferRenderPipeline`, whose auto-inference throws for float
@@ -208,16 +236,29 @@ async function cogGetTileData(
             'Band-separate multi-band COGs are not supported by the client-side renderer.'
         )
     }
-    const u8 = array.data instanceof Uint8Array ? array.data : Uint8Array.from(array.data)
+    // Format comes from the file's own tags, so 16-bit imagery uploads as
+    // 16-bit instead of being truncated into an 8-bit buffer.
+    const format = resolveRgbTextureFormat(array, image.cachedTags)
+    if (!device.isTextureFormatSupported(format)) {
+        throw new Error(
+            `This GPU cannot sample ${format}, required by a ${array.count}-band COG.`
+        )
+    }
     const texture = device.createTexture({
-        data: u8,
-        format: 'rgba8unorm',
+        data: array.data,
+        format,
         width,
         height,
         mipLevels: 1,
         sampler: { minFilter: 'linear', magFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' },
     })
-    return { texture, mode: 'rgb', width, height, byteLength: u8.byteLength }
+    return {
+        texture,
+        mode: 'rgb',
+        width,
+        height,
+        byteLength: array.data.byteLength,
+    }
 }
 
 /**
