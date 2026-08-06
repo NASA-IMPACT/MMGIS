@@ -2,7 +2,10 @@ import { test, expect, describe } from 'vitest'
 import {
     buildDeckCOGLayer,
     resolveNoDataValue,
+    resolveRgbTextureFormat,
 } from '../../src/essence/Basics/MapEngines/Adapters/DeckCOGLayer.ts'
+
+const SAMPLE_FORMAT_UINT = 1
 
 describe('buildDeckCOGLayer', () => {
     test('derives zoom limits from the layer config so refresh rebuilds keep them', () => {
@@ -88,5 +91,33 @@ describe('resolveNoDataValue', () => {
     test('returns null for NaN — FilterNaN discards those pixels, == cannot match them', () => {
         expect(resolveNoDataValue(null, NaN)).toBe(null)
         expect(resolveNoDataValue(NaN, -9999)).toBe(null)
+    })
+})
+
+describe('resolveRgbTextureFormat', () => {
+    const tags = (bits) => ({
+        bitsPerSample: Uint16Array.from([bits, bits, bits]),
+        sampleFormat: [SAMPLE_FORMAT_UINT, SAMPLE_FORMAT_UINT, SAMPLE_FORMAT_UINT],
+    })
+
+    test('8-bit RGBA keeps the format the RGB path always assumed', () => {
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(8))).toBe('rgba8unorm')
+    })
+
+    test('16-bit samples get a 16-bit format instead of being truncated to 8', () => {
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(16))).toBe('rgba16unorm')
+    })
+
+    test('uses the alpha-padded channel count, not the file tag', () => {
+        // addAlphaChannel sets count: 4 while SamplesPerPixel still reads 3.
+        // Passing the tag would pick a 3-channel format and mis-read RGBA data.
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(16))).not.toBe(
+            'rgb16unorm-webgl'
+        )
+    })
+
+    test('uint maps to unorm so the existing unorm sampler reads it correctly', () => {
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(8))).toContain('unorm')
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(16))).toContain('unorm')
     })
 })
