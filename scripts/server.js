@@ -59,6 +59,11 @@ const createDevServerConfig = require("../configuration/webpackDevServer.config"
 const middleware = require("./middleware").middleware;
 
 const { isFull } = require("../API/Backend/Utils/deploymentMode");
+const {
+  getDbPassword,
+  refreshDbPassword,
+  isPasswordAuthError,
+} = require("../API/Backend/Utils/dbPassword");
 
 const isDevEnv = process.env.NODE_ENV === "development";
 
@@ -108,7 +113,7 @@ const pool = new Pool({
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
   database: process.env.DB_NAME,
-  password: process.env.DB_PASS,
+  password: getDbPassword,
   port: process.env.DB_PORT || "5432",
   ssl:
     process.env.DB_SSL === "true"
@@ -127,6 +132,12 @@ const pool = new Pool({
               : false,
         }
       : false,
+});
+// If a new pooled connection fails password auth because RDS rotated the master
+// password out from under the cached value, drop the cache so the next
+// connection re-fetches it (see API/Backend/Utils/dbPassword.js).
+pool.on("error", (err) => {
+  if (isPasswordAuthError(err)) refreshDbPassword();
 });
 app.use(
   session({
