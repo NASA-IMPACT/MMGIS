@@ -68,6 +68,19 @@ describe('LayerFilter matchLayers', () => {
         expect(matchLayers(multi, 'theme', 'other', {})).toEqual([])
     })
 
+    test('matching is case-insensitive: authored casing never forks a tag', () => {
+        const cased = {
+            upper: { properties: { theme: 'Hazard', hazard: 'Flood' } },
+            arr: { properties: { theme: ['HAZARD'], hazard: ['flood'] } },
+        }
+        expect(matchLayers(cased, 'theme', 'hazard', { hazard: 'flood' }).sort()).toEqual(
+            ['arr', 'upper'],
+        )
+        expect(matchLayers(cased, 'theme', 'Hazard', { hazard: 'FLOOD' }).sort()).toEqual(
+            ['arr', 'upper'],
+        )
+    })
+
     test('array-valued selection property: matches if it contains the value', () => {
         const multi = {
             both: { properties: { theme: ['hazard'], hazard: ['fire', 'flood'] } },

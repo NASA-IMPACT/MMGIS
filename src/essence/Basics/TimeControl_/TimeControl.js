@@ -74,9 +74,6 @@ var TimeControl = {
                 // Expose the mission's configured time settings (incl.
                 // initialstart/initialend) so plugins can read the overall range
                 // even when the live time window isn't set (time.enabled: false).
-                window.mmgisAPI.provide('time:getConfig', () =>
-                    L_.configData && L_.configData.time ? L_.configData.time : null
-                ),
             ]
         }
 

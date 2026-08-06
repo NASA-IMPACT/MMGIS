@@ -14,16 +14,26 @@ export interface LayerLike {
     properties?: Record<string, unknown>
 }
 
+/** Case-insensitive comparison key: tags are hand-authored display strings,
+ *  so "Water"/"water" must merge instead of silently never matching. */
+function fold(value: unknown): string {
+    return String(value ?? '')
+        .trim()
+        .toLowerCase()
+}
+
 /**
  * A layer property matches a target value when it equals it (scalar) or
- * contains it (array). Array support lets a layer belong to several themes /
- * carry several hazards, e.g. `properties.theme = ['need','hazard','event']`.
+ * contains it (array), compared case-insensitively. Array support lets a
+ * layer belong to several themes / carry several hazards, e.g.
+ * `properties.theme = ['need','hazard','event']`.
  */
 function valueMatches(propValue: unknown, target: string): boolean {
+    const key = fold(target)
     if (Array.isArray(propValue)) {
-        return propValue.map((v) => String(v)).includes(target)
+        return propValue.some((v) => fold(v) === key)
     }
-    return String(propValue ?? '') === target
+    return fold(propValue) === key
 }
 
 export function matchLayers(

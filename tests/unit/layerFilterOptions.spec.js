@@ -21,18 +21,34 @@ describe('LayerFilter resolveOptions', () => {
         expect(distinctValues(null, 'sector')).toEqual([])
     })
 
+    test('distinctValues: case variants merge, first-seen casing displayed', () => {
+        const cased = {
+            a: { properties: { sector: 'Water' } },
+            b: { properties: { sector: 'water' } },
+            c: { properties: { sector: ['WATER', 'Energy'] } },
+        }
+        expect(distinctValues(cased, 'sector')).toEqual(['Energy', 'Water'])
+    })
+
     test('yearsFromTimeConfig: newest-first across the range', () => {
         expect(
             yearsFromTimeConfig({
-                initialstart: '2023-03-13T00:00:00Z',
-                initialend: '2026-01-29T00:00:00Z',
+                start: '2023-03-13T00:00:00Z',
+                end: '2026-01-29T00:00:00Z',
             }),
         ).toEqual(['2026', '2025', '2024', '2023'])
         expect(yearsFromTimeConfig({})).toEqual([])
         expect(yearsFromTimeConfig(null)).toEqual([])
-        expect(
-            yearsFromTimeConfig({ initialstart: 'x', initialend: 'y' }),
-        ).toEqual([])
+        expect(yearsFromTimeConfig({ start: 'x', end: 'y' })).toEqual([])
+    })
+
+    test('yearsFromTimeConfig: absurd spans are capped, not rendered', () => {
+        const years = yearsFromTimeConfig({
+            start: '0001-01-01T00:00:00Z',
+            end: '2026-01-01T00:00:00Z',
+        })
+        expect(years.length).toBe(151)
+        expect(years[0]).toBe('2026')
     })
 
     test('resolveOptions: explicit config options win', () => {
@@ -56,7 +72,7 @@ describe('LayerFilter resolveOptions', () => {
         ])
     })
 
-    test('resolveOptions: optionsFrom "time" uses the mission time range', () => {
+    test('resolveOptions: optionsFrom "time" uses the resolved time range', () => {
         const filter = {
             id: 'year',
             label: 'Year',
@@ -64,9 +80,26 @@ describe('LayerFilter resolveOptions', () => {
             type: 'select',
             optionsFrom: 'time',
         }
-        const time = { initialstart: '2024-01-01T00:00:00Z', initialend: '2025-06-01T00:00:00Z' }
+        const time = { start: '2024-01-01T00:00:00Z', end: '2025-06-01T00:00:00Z' }
         expect(resolveOptions(filter, layers, time)).toEqual([
             { value: '2025', label: '2025' },
+            { value: '2024', label: '2024' },
+        ])
+    })
+
+    test('resolveOptions: empty/unusable time range falls back to the data', () => {
+        const filter = {
+            id: 'year',
+            label: 'Year',
+            property: 'year',
+            type: 'select',
+            optionsFrom: 'time',
+        }
+        const yearLayers = { a: { properties: { year: '2024' } } }
+        expect(resolveOptions(filter, yearLayers, null)).toEqual([
+            { value: '2024', label: '2024' },
+        ])
+        expect(resolveOptions(filter, yearLayers, { start: 'now', end: '' })).toEqual([
             { value: '2024', label: '2024' },
         ])
     })

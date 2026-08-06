@@ -8,7 +8,7 @@ import type {
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { emitFilterChange } from './adapters/emitFilterChange'
-import { resolveOptions, type TimeConfigLike } from './lib/utils/resolveOptions'
+import { resolveOptions, type TimeRangeLike } from './lib/utils/resolveOptions'
 import {
     normalizeThemesConfig,
     resolveDefaultThemeId,
@@ -45,7 +45,7 @@ export function MMGISLayerFilterAdapter() {
         string,
         LayerLike
     > | null>(null)
-    const [timeConfig, setTimeConfig] = useState<TimeConfigLike | null>(null)
+    const [timeRange, setTimeRange] = useState<TimeRangeLike | null>(null)
 
     const loadLayerConfigs = useCallback(() => {
         void mmgisRequest<Record<string, LayerLike>>('layers:getAllConfigs').then(
@@ -54,15 +54,21 @@ export function MMGISLayerFilterAdapter() {
             },
         )
     }, [])
-    const loadTimeConfig = useCallback(() => {
-        void mmgisRequest<TimeConfigLike>('time:getConfig').then((r) => {
-            if (r) setTimeConfig(r)
+    // The narrow accessors return the RESOLVED range — TimeControl has
+    // already handled relative config forms ("now", "now - 1 day") that raw
+    // config values would feed to Date.parse as garbage.
+    const loadTimeRange = useCallback(() => {
+        void Promise.all([
+            mmgisRequest<string>('time:getStart'),
+            mmgisRequest<string>('time:getEnd'),
+        ]).then(([start, end]) => {
+            setTimeRange({ start: start ?? undefined, end: end ?? undefined })
         })
     }, [])
     // These handlers register during mission load; wait until they exist so we
     // don't fetch too early and silently get null (then never retry).
     useMMGISHandlerReady('layers:getAllConfigs', loadLayerConfigs)
-    useMMGISHandlerReady('time:getConfig', loadTimeConfig)
+    useMMGISHandlerReady('time:getStart', loadTimeRange)
 
     // Pick the default theme once the config loads. A defaultThemeId that
     // matches no theme falls back to the first theme (with a warning) —
@@ -94,11 +100,11 @@ export function MMGISLayerFilterAdapter() {
         const map: Record<string, FilterOption[]> = {}
         if (activeTheme) {
             for (const f of activeTheme.filters) {
-                map[f.id] = resolveOptions(f, layerConfigs, timeConfig)
+                map[f.id] = resolveOptions(f, layerConfigs, timeRange)
             }
         }
         return map
-    }, [activeTheme, layerConfigs, timeConfig])
+    }, [activeTheme, layerConfigs, timeRange])
 
     // Recompute + emit matches whenever the theme, its selections, or the
     // loaded layer configs change; apply to the layers list only after the
