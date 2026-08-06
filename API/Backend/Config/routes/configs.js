@@ -46,6 +46,7 @@ const websocket = require("../../../websocket.js");
 const WebSocket = require("isomorphic-ws");
 
 const fs = require("fs");
+const { isLean } = require("../../Utils/deploymentMode");
 const deepmerge = require("deepmerge");
 const mergeConfigWithTemplate = require("../mergeConfigWithTemplate");
 
@@ -293,7 +294,12 @@ function add(req, res, next, cb) {
       if (!mission) {
         Config.create(newConfig)
           .then((created) => {
-            if (req.body.makedir === true || req.body.makedir === "true") {
+            // In lean mode mission assets are served from object storage, not
+            // a local Missions/ filesystem, so skip creating the directory tree.
+            if (
+              (req.body.makedir === true || req.body.makedir === "true") &&
+              !isLean()
+            ) {
               let dir = "./Missions/" + created.mission;
               if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir);
