@@ -58,4 +58,39 @@ test.describe('buildLayerLegendData', () => {
         expect(result.type).toBe('gradient')
         expect(result.stops).toBeNull()
     })
+
+    test('produces COG metadata for a deck.gl TileLayer config', () => {
+        const cfg = {
+            type: 'TileLayer',
+            cogTransform: true,
+            cogColormap: 'rdbu_r',
+            cogMin: -0.1,
+            cogMax: 0.2,
+            titilerUrl: 'https://example.com/titiler',
+        }
+        const result = buildLayerLegendData('layer5', cfg, null, true)
+        expect(result.cog).not.toBeNull()
+        expect(result.cog?.colormap).toBe('rdbu_r')
+        expect(result.type).toBe('gradient')
+    })
+
+    test('produces COG metadata for a deck.gl BitmapLayer config', () => {
+        const cfg = {
+            type: 'BitmapLayer',
+            cogTransform: true,
+            cogColormap: 'viridis',
+            cogMin: 0,
+            cogMax: 1,
+        }
+        const result = buildLayerLegendData('layer6', cfg, null, true)
+        expect(result.cog).not.toBeNull()
+        expect(result.type).toBe('gradient')
+    })
+
+    test('leaves a deck.gl vector layer without COG metadata', () => {
+        const cfg = { type: 'GeoJsonLayer', cogTransform: true }
+        const result = buildLayerLegendData('layer7', cfg, null, true)
+        expect(result.cog).toBeNull()
+        expect(result.type).toBe('none')
+    })
 })

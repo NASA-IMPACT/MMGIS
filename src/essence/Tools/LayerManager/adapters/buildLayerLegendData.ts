@@ -1,3 +1,4 @@
+import { toCanonicalLayerType } from '../../../Basics/MapEngines/types/engine'
 import type { Layer, LegendType, CategoricalStop, CogData } from '../lib/types'
 
 type MMGISLegendEntry = {
@@ -24,6 +25,8 @@ type MMGISLayerConfig = {
     titilerUrl?: string | null
 }
 
+// Canonical MMGIS types, so a deck.gl mission's `TileLayer`/`BitmapLayer`
+// must be normalised through toCanonicalLayerType before it is checked here.
 const SUPPORTED_COG_TYPES = ['tile', 'image']
 
 const detectLegendType = (legend: MMGISLegendEntry[] | undefined): LegendType => {
@@ -71,7 +74,7 @@ export const buildLayerLegendData = (
     visible: boolean,
 ): Layer => {
     const opacity = opacities?.[layerName] ?? 1
-    const layerType = layerConfig.type
+    const layerType = toCanonicalLayerType(layerConfig.type)
     const hasColormapSupport =
         layerType !== undefined &&
         SUPPORTED_COG_TYPES.includes(layerType) &&
