@@ -69,7 +69,14 @@ const LayerFilterTool = {
             }
             this.vars =
                 (await mmgisRequest<ToolVars>('tool:getVars', 'layerfilter')) || {}
-            if (this.vars.width) this.width = this.vars.width
+            // Hand-authored config: only accept a sane numeric width.
+            if (
+                typeof this.vars.width === 'number' &&
+                Number.isFinite(this.vars.width) &&
+                this.vars.width > 0
+            ) {
+                this.width = this.vars.width
+            }
         } catch (err) {
             console.warn(
                 '[LayerFilterTool] tool:getVars failed:',

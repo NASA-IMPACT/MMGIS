@@ -1,6 +1,12 @@
 import React from 'react'
 import type { ThemeSummary } from '../../types'
 
+/** Icon names come from hand-authored config; strip anything that isn't a
+ *  plain MDI name so a stray space can't inject extra classes. */
+function iconClass(icon: string): string {
+    return icon.toLowerCase().replace(/[^a-z0-9-]/g, '')
+}
+
 export interface ThemeRailProps {
     themes: ThemeSummary[]
     selectedId: string
@@ -31,7 +37,7 @@ export function ThemeRail({ themes, selectedId, onSelect }: ThemeRailProps) {
                     >
                         {theme.icon && (
                             <i
-                                className={`mdi mdi-${theme.icon} blocks-theme-rail__icon`}
+                                className={`mdi mdi-${iconClass(theme.icon)} blocks-theme-rail__icon`}
                                 aria-hidden="true"
                             />
                         )}

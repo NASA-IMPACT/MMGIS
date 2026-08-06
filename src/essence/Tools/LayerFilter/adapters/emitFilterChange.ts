@@ -13,19 +13,42 @@ import {
 } from '../lib/utils/matchLayers'
 import type { FilterSelections } from '../lib/types'
 
-/** Payload of `plugin:layerfilter:changed`. The matched entries are layer
- *  UUIDs — `L_.layers.data` is keyed by UUID, and every other bus payload
- *  calls that a layerUUID, so this contract does too. */
+/** Payload of `plugin:layerfilter:changed`. `selections` is keyed by filter
+ *  id (the authoring view); the matched entries are layer UUIDs —
+ *  `L_.layers.data` is keyed by UUID, and every other bus payload calls that
+ *  a layerUUID, so this contract does too. */
 export interface FilterChangePayload {
     themeId: string
     selections: FilterSelections
     matchedLayerUUIDs: string[]
 }
 
+/** The subset of a filter definition needed to translate id-keyed selections
+ *  into the property-keyed map the matcher consumes. */
+export interface FilterKeyMap {
+    id: string
+    property: string
+}
+
+/** Selections are stored by filter id (so two filters sharing a property
+ *  don't share state); matching happens by layer-property name. */
+function selectionsByProperty(
+    selections: FilterSelections,
+    filters: FilterKeyMap[],
+): FilterSelections {
+    const byProperty: FilterSelections = {}
+    for (const f of filters) {
+        const value = selections[f.id]
+        if (value != null && value !== '') byProperty[f.property] = value
+    }
+    return byProperty
+}
+
 export function emitFilterChange(
     themeProperty: string,
     themeId: string,
     selections: FilterSelections,
+    filters: FilterKeyMap[],
     layerConfigs: Record<string, LayerLike> | null | undefined,
     applyToList: boolean,
 ): FilterChangePayload {
@@ -33,7 +56,7 @@ export function emitFilterChange(
         layerConfigs,
         themeProperty,
         themeId,
-        selections,
+        selectionsByProperty(selections, filters),
     )
     const payload: FilterChangePayload = { themeId, selections, matchedLayerUUIDs }
     mmgisEmit('plugin:layerfilter:changed', payload)

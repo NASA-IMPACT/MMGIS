@@ -55,7 +55,7 @@
 
         // Hover: only lightens the background; text stays white, no indicator.
         &:hover {
-            background: var(--theme-color-primary-vivid, #00687d);
+            background: var(--theme-color-primary-dark, #1a4480);
         }
 
         &--active {
@@ -86,7 +86,7 @@
         color: inherit;
         font-family: var(--theme-font-mono, 'DM Mono', monospace);
         font-size: 10px;
-        font-weight: var(--theme-font-weight-medium, 500);
+        font-weight: var(--theme-font-weight-semibold, 600);
         line-height: 1.6;
         text-align: center;
         text-transform: uppercase;

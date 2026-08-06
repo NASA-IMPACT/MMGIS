@@ -69,8 +69,13 @@ export function MMGISLayerFilterAdapter() {
     }, [])
     // These handlers register during mission load; wait until they exist so we
     // don't fetch too early and silently get null (then never retry).
-    useMMGISHandlerReady('layers:getAllConfigs', loadLayerConfigs)
-    useMMGISHandlerReady('time:getStart', loadTimeRange)
+    // Generous timeouts: these register only after ALL mission layers finish
+    // loading — a slow mission blowing the default 10 s would leave the
+    // filter permanently data-less.
+    useMMGISHandlerReady('layers:getAllConfigs', loadLayerConfigs, {
+        timeoutMs: 60000,
+    })
+    useMMGISHandlerReady('time:getStart', loadTimeRange, { timeoutMs: 60000 })
 
     // Pick the default theme once the config loads. A defaultThemeId that
     // matches no theme falls back to the first theme (with a warning) —
@@ -121,19 +126,27 @@ export function MMGISLayerFilterAdapter() {
             themeProperty,
             selectedThemeId,
             selections,
+            activeTheme?.filters ?? [],
             layerConfigs,
             hasInteracted,
         )
-    }, [selectedThemeId, selections, themeProperty, layerConfigs, hasInteracted])
+    }, [
+        selectedThemeId,
+        selections,
+        themeProperty,
+        activeTheme,
+        layerConfigs,
+        hasInteracted,
+    ])
 
     const handleChange = useCallback(
-        (property: string, value: string) => {
+        (filterId: string, value: string) => {
             setHasInteracted(true)
             setSelectionsByTheme((prev) => ({
                 ...prev,
                 [selectedThemeId]: {
                     ...(prev[selectedThemeId] || {}),
-                    [property]: value,
+                    [filterId]: value,
                 },
             }))
         },

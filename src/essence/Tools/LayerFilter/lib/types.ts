@@ -47,5 +47,6 @@ export interface LayerFilterConfig {
     themes: ThemeDef[]
 }
 
-/** Active step-2 choices: `layer.properties` key → selected value ("" = all). */
+/** Active step-2 choices, keyed by filter id — two filters may share a
+ *  `property` without sharing selection state. */
 export type FilterSelections = Record<string, string>
