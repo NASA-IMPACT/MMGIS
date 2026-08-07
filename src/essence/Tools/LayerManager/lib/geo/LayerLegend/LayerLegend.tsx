@@ -57,8 +57,10 @@ export function LayerLegend({
     const rampBtnRef = useRef<HTMLButtonElement | null>(null)
     const rampPopoverId = useId()
 
-    // Only raster layers carry rescale/ramp settings to expose.
-    const hasColorRamp = cog?.isCog === true
+    // Only raster layers carry rescale/ramp settings to expose, and only those
+    // whose colormap can actually be changed. A layer painting from a COG
+    // colormap baked in at construction shows the ramp but offers no controls.
+    const hasColorRamp = cog?.editable === true
 
     useEffect(() => {
         setIsVisible(visible)

@@ -17,14 +17,23 @@ const setupMock = (responses = {}, emitCalls = []) => {
             }
             return null
         },
+        hasHandler: (name) => responses[name] !== undefined,
         on: () => () => {},
         emit: (event, payload) => { emitCalls.push({ event, payload }) },
     }
     return { emitCalls, requests }
 }
 
+const EDITABLE = { hasColormap: true, canChangeColormap: true }
+// What an image layer reports: a ramp to show, but nothing to change.
+const READ_ONLY = { hasColormap: true, canChangeColormap: false }
+
+// Core answers the capability handler per layer, resolving the identifier it
+// is given; unknown layers get null.
+const capabilities = (byLayer) => (layerId) => byLayer[layerId] ?? null
+
 const COG_LAYER = {
-    'layers:getConfig': { cogTransform: true },
+    'layers:getCogCapabilities': capabilities({ layerA: EDITABLE }),
     'layers:updateConfig': true,
     'layers:refresh': true,
 }
@@ -48,12 +57,38 @@ test.describe('handlers', () => {
         })
     })
 
-    test('setColormap is a no-op when layer has no cogTransform', async () => {
-        const { emitCalls } = setupMock({ 'layers:getConfig': { cogTransform: false } })
+    test('setColormap is a no-op when core reports the layer unchangeable', async () => {
+        const { emitCalls } = setupMock({
+            'layers:getCogCapabilities': capabilities({ layerA: READ_ONLY }),
+        })
         let refreshCalled = false
         await setColormap('layerA', 'plasma', () => { refreshCalled = true })
         expect(emitCalls).toHaveLength(0)
         expect(refreshCalled).toBe(false)
+    })
+
+    // Core resolves the identifier, so the handler asks about one layer rather
+    // than indexing a UUID-keyed map with whatever id the panel holds.
+    test('setColormap asks core about the layer it is changing', async () => {
+        const { requests } = setupMock(COG_LAYER)
+        await setColormap('layerA', 'plasma', () => {})
+
+        expect(requests[0]).toEqual({
+            name: 'layers:getCogCapabilities',
+            params: 'layerA',
+        })
+    })
+
+    // Without the handler there is no way to know core can repaint the layer,
+    // so the write is withheld rather than sent and silently dropped.
+    test('setColormap is a no-op against a core without the capability handler', async () => {
+        const { emitCalls, requests } = setupMock({
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+        })
+        await setColormap('layerA', 'plasma', () => {})
+        expect(emitCalls).toHaveLength(0)
+        expect(requests).toHaveLength(0)
     })
 
     test('setColormap calls refresh on success', async () => {
@@ -105,14 +140,37 @@ test.describe('handlers', () => {
         })
     })
 
-    test('setRescale is a no-op when layer has no cogTransform', async () => {
+    test('setRescale is a no-op when core reports the layer unchangeable', async () => {
         const { emitCalls, requests } = setupMock({
-            'layers:getConfig': { cogTransform: false },
+            'layers:getCogCapabilities': capabilities({ layerA: READ_ONLY }),
         })
         let refreshCalled = false
         await setRescale('layerA', 0, 5, () => { refreshCalled = true })
         expect(emitCalls).toHaveLength(0)
         expect(refreshCalled).toBe(false)
-        expect(requests.map((r) => r.name)).toEqual(['layers:getConfig'])
+        expect(requests.map((r) => r.name)).toEqual(['layers:getCogCapabilities'])
+    })
+
+    test('setRescale is a no-op against a core without the capability handler', async () => {
+        const { emitCalls, requests } = setupMock({
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+        })
+        await setRescale('layerA', 0, 5, () => {})
+        expect(emitCalls).toHaveLength(0)
+        expect(requests).toHaveLength(0)
+    })
+
+    // A layer core has never heard of answers null, which must read as
+    // "cannot change" rather than throw.
+    test('setColormap is a no-op for a layer core does not know', async () => {
+        const { emitCalls, requests } = setupMock({
+            'layers:getCogCapabilities': capabilities({ layerA: EDITABLE }),
+            'layers:updateConfig': true,
+            'layers:refresh': true,
+        })
+        await setColormap('layerB', 'plasma', () => {})
+        expect(emitCalls).toHaveLength(0)
+        expect(requests.map((r) => r.name)).toEqual(['layers:getCogCapabilities'])
     })
 })

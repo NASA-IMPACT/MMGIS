@@ -7,12 +7,45 @@ import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
-import { resolveTileLayerSource } from './tileLayerSource'
-import { buildTileUrlOptions, compileTileUrl } from './tileUrlUtils'
+import {
+    getActiveTileLevel,
+    getTileLevelUrl,
+    resolveTileLayerSource,
+} from './tileLayerSource'
+import {
+    buildTileUrlOptions,
+    compileTileUrl,
+    hasCogColormap,
+    supportsCogTransform,
+} from './tileUrlUtils'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
+
+/**
+ * What a layer's COG colormap supports: whether it has one to draw a legend
+ * ramp from, and whether that ramp can be changed at runtime.
+ *
+ * The two answers differ — an `image` layer colours its pixels from a COG
+ * colormap but bakes it in at construction — so they are reported separately
+ * rather than collapsed into one verdict.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {{hasColormap: boolean, canChangeColormap: boolean}}
+ */
+function cogCapabilitiesFor(uuid) {
+    const layerObj = L_.layers.data[uuid]
+    // The source before URL resolution, matching resolveTileLayerSource's
+    // pick. Resolving in full would build TiTiler and STAC URLs this verdict
+    // never reads.
+    const sourceUrl =
+        getTileLevelUrl(getActiveTileLevel(layerObj || {})) || layerObj?.url
+    return {
+        hasColormap: hasCogColormap(layerObj),
+        canChangeColormap: supportsCogTransform(layerObj, sourceUrl),
+    }
+}
 
 /**
  * True when a registry entry is owned by the active non-Leaflet engine.
@@ -309,6 +342,21 @@ const L_ = {
                 }),
                 window.mmgisAPI.provide('layers:getAllConfigs', () => L_.layers.data),
                 window.mmgisAPI.provide('layers:getAllOpacities', () => L_.layers.opacity),
+                // What each layer's COG colormap supports. Called with a layer
+                // identifier it answers for that one layer, resolving a name
+                // the way every other layer-keyed provider does; called with
+                // none it returns the whole map, keyed by UUID.
+                window.mmgisAPI.provide('layers:getCogCapabilities', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : cogCapabilitiesFor(uuid)
+                    }
+                    const capabilities = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        capabilities[uuid] = cogCapabilitiesFor(uuid)
+                    })
+                    return capabilities
+                }),
                 window.mmgisAPI.provide('layers:isVisible', (layerUUID) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true
