@@ -99,13 +99,18 @@ $ramp-picker-max-height: 380px;
             border-color 0.15s ease;
 
         &:hover {
-            border-color: var(--theme-color-base-dark, #565c65);
-            color: var(--theme-color-base-darker, #3d4551);
+            border-color: var(--theme-color-primary-lightest, #0e7482);
+            color: var(--theme-color-base-primary-lightest, #0e7482);
         }
 
         &--active {
             background: var(--theme-color-primary, #0e7482);
             border-color: var(--theme-color-primary, #0e7482);
+            color: var(--theme-color-white, #ffffff);
+        }
+
+        &--active:hover {
+            background: var(--theme-color-primary-light, #ffffff);
             color: var(--theme-color-white, #ffffff);
         }
 
