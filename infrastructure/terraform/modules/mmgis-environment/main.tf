@@ -4,6 +4,17 @@ data "aws_vpc" "this" {
   id = var.vpc_id
 }
 
+# The key that encrypts this environment's RDS-managed master password secret,
+# created by the bootstrap root. Looked up by ALIAS so no key id has to be
+# committed or threaded in as a variable; the alias name is the contract
+# between the two roots. Deliberately the key data source rather than the alias
+# one: this resolves through kms:DescribeKey, which authorizes against the key
+# itself, where the alias data source would need the account-wide
+# kms:ListAliases on every plan and apply role.
+data "aws_kms_key" "master_secret" {
+  key_id = "alias/mmgis-master-secret"
+}
+
 locals {
   account_id  = data.aws_caller_identity.current.account_id
   region      = var.region

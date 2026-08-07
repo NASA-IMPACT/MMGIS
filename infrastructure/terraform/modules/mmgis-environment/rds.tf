@@ -26,6 +26,12 @@ resource "aws_db_instance" "this" {
   # both task defs reference its `password` JSON key in their secrets[].
   manage_master_user_password = true
 
+  # A customer-managed key is mandatory here: the account's default
+  # aws/secretsmanager key accepts no identity-based grant, so CreateDBInstance
+  # under the CI apply role fails against it with KMSKeyNotAccessibleFault. The
+  # bootstrap root owns this key and grants both apply roles on it.
+  master_user_secret_kms_key_id = data.aws_kms_key.master_secret.arn
+
   # db_name intentionally unset: the app's init defaults the maintenance DB to
   # the username (`postgres`), which already exists on a fresh instance.
 

@@ -16,7 +16,7 @@ name: Terraform plan preview
 #   - `terraform plan -lock=false` — a PR preview never takes or contends for
 #     the S3 state lock, so a preview can never block or corrupt a real apply.
 #   - Before planning, the workflow discovers the live environment's serving
-#     image and Express trio with the same read-only describes the deploy
+#     image and both Express values with the same read-only describes the deploy
 #     engine uses (the plan role's ReadOnlyDiscovery statement covers them),
 #     and passes `greenfield=true` only when discovery verifies the environment
 #     has never been fully built — so the preview shows exactly what the next
@@ -310,8 +310,8 @@ jobs:
           fi
 
           # ── Discover the live environment ───────────────────────────────────
-          # An honest preview needs the same four live facts the apply gets:
-          # the serving image and the Express trio. The module refuses empty
+          # An honest preview needs the same three live facts the apply gets:
+          # the serving image and both Express values. The module refuses empty
           # values without `greenfield`, and the CloudFront distribution
           # carries prevent_destroy, so a preview that guessed would either
           # error or lie. This probe is an adapted copy of iac-deploy.yml's
@@ -336,7 +336,6 @@ jobs:
           IMAGE=""
           ALB_ARN=""
           ENDPOINT=""
-          ALB_SG=""
           HAVE_SERVICE="false"
           CF_IN_STATE=""
 
@@ -344,7 +343,6 @@ jobs:
             IMAGE=""
             ALB_ARN=""
             ENDPOINT=""
-            ALB_SG=""
             HAVE_SERVICE="false"
             CF_IN_STATE=""
 
@@ -422,9 +420,9 @@ jobs:
               return 0
             fi
 
-            # The ALB ARN and its security groups are only on the service
-            # revision. Pick the ingress path that actually carries a load
-            # balancer; the public/other paths have none.
+            # The ALB ARN is only on the service revision. Pick the ingress
+            # path that actually carries a load balancer; the public/other
+            # paths have none.
             local rev_json lb_path
             rev_json=$(aws ecs describe-service-revisions \
               --service-revision-arns "$rev_arn" \
@@ -436,34 +434,19 @@ jobs:
 
             ALB_ARN=$(printf '%s' "$lb_path" | jq -r '.loadBalancer.arn // ""')
             ENDPOINT=$(printf '%s' "$lb_path" | jq -r '.endpoint // ""')
-            # Prefer .loadBalancer.securityGroupIds — the sibling
-            # .loadBalancerSecurityGroups[] entries carry only an .arn.
-            ALB_SG=$(printf '%s' "$lb_path" | jq -r '(.loadBalancer.securityGroupIds // [])[0] // ""')
 
             # The module wants a bare host for the CloudFront origin.
             ENDPOINT="${ENDPOINT#https://}"
             ENDPOINT="${ENDPOINT#http://}"
             ENDPOINT="${ENDPOINT%/}"
 
-            # Fallback for CLI versions that omit securityGroupIds from the
-            # revision; the plan role carries elasticloadbalancing:Describe*
-            # for exactly this.
-            if [ -n "$ALB_ARN" ] && [ -z "$ALB_SG" ]; then
-              ALB_SG=$(aws elbv2 describe-load-balancers \
-                --load-balancer-arns "$ALB_ARN" \
-                --query 'LoadBalancers[0].SecurityGroups[0]' \
-                --output text 2>/dev/null) || ALB_SG=""
-              [ "$ALB_SG" = "None" ] && ALB_SG=""
-            fi
-
-            # The trio is all-or-nothing: applying a partial trio would build
-            # the distribution without the :443 ingress rule (front door 504).
-            # Blank all three so a partial read means "no CloudFront this run",
-            # which a later run completes — never a half-built front door.
-            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+            # The pair is all-or-nothing: the module builds CloudFront only
+            # when both are set. Blank both so a partial read means "no
+            # CloudFront this run", which a later run completes — never a
+            # half-built front door.
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; then
               ALB_ARN=""
               ENDPOINT=""
-              ALB_SG=""
             fi
 
             return 0
@@ -480,29 +463,28 @@ jobs:
             discovery_failed "A live service exists but its serving image could not be resolved; a preview against guessed facts would be dishonest."
           fi
 
-          # State says CloudFront exists but the trio is incomplete: the plan
-          # would show the distribution being destroyed (or error on its
+          # State says CloudFront exists but an Express value is missing: the
+          # plan would show the distribution being destroyed (or error on its
           # prevent_destroy). Either way that is a discovery problem, not a
           # real proposal.
-          if [ -n "$CF_IN_STATE" ] && { [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; }; then
-            discovery_failed "State says CloudFront exists but the Express trio could not be resolved; the plan would show its destruction, which is a discovery problem, not a real proposal."
+          if [ -n "$CF_IN_STATE" ] && { [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; }; then
+            discovery_failed "State says CloudFront exists but the live load-balancer facts could not be resolved; the plan would show its destruction, which is a discovery problem, not a real proposal."
           fi
 
           # Greenfield, decided AFTER the guards: an emptiness that survives
           # them is verified-absent. The flag is what makes the empties legal
-          # to the module (var.greenfield); with all four facts present it is
+          # to the module (var.greenfield); with all three facts present it is
           # false and relaxes nothing.
           GREENFIELD="false"
-          if [ -z "$IMAGE" ] || [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+          if [ -z "$IMAGE" ] || [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; then
             GREENFIELD="true"
           fi
           export TF_VAR_deployed_image="$IMAGE"
           export TF_VAR_express_internal_alb_arn="$ALB_ARN"
           export TF_VAR_express_onaws_endpoint="$ENDPOINT"
-          export TF_VAR_express_alb_security_group_id="$ALB_SG"
           export TF_VAR_greenfield="$GREENFIELD"
 
-          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE' greenfield='$GREENFIELD'"
+          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' cloudfront='$CF_IN_STATE' greenfield='$GREENFIELD'"
 
           # -lock=false: a preview must never take or wait on the state lock.
           # -detailed-exitcode: 0 = no changes, 2 = changes, anything else = error.
@@ -644,7 +626,7 @@ jobs:
             discovery-failed)
               HEADLINE="Live-environment discovery failed."
               {
-                echo "**$HEADLINE** The preview reads the live environment's serving image and Express trio before planning; without them an honest plan is impossible. The full output is in the [run log]($RUN_URL)."
+                echo "**$HEADLINE** The preview reads the live environment's serving image, internal ALB ARN, and on.aws endpoint before planning; without them an honest plan is impossible. The full output is in the [run log]($RUN_URL)."
                 echo ""
                 echo "<details>"
                 echo "<summary>Last 100 lines of output</summary>"

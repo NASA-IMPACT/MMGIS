@@ -94,13 +94,13 @@ applies both phases, and deploys the app in one run. Run Terraform by hand only
 when the pipeline itself is broken — and treat everything applied by hand as
 drift until the same change merges and a CI run converges on it.
 
-The environment module refuses to apply without four facts about the live
-environment: the serving image (`deployed_image`) and the Express trio
-(`express_internal_alb_arn`, `express_onaws_endpoint`,
-`express_alb_security_group_id`). Their empty defaults are only legal under
-`greenfield = true`, which is CI's mechanism for first builds — never set it by
-hand against a live environment. The CloudFront distribution additionally
-carries `prevent_destroy`, so a plan that would destroy it fails instead;
+The environment module refuses to apply without three facts about the live
+environment: the serving image (`deployed_image`) and the two Express values
+(`express_internal_alb_arn`, `express_onaws_endpoint`). Their empty defaults
+are only legal under `greenfield = true`, which is CI's mechanism for first
+builds — never set it by hand against a live environment. The CloudFront
+distribution additionally carries `prevent_destroy`, so a plan that would
+destroy it fails instead;
 intentional teardown means editing that flag off in a working copy of the
 module's `cloudfront.tf` (never committed).
 
@@ -128,9 +128,9 @@ From `terraform/environments/<environment>/`:
    terraform init -backend-config="bucket=<IAC_TFSTATE_BUCKET>" -backend-config="region=<IAC_AWS_REGION>"
    ```
 
-4. **Discover the four live facts** (needs the initialized backend — the first
+4. **Discover the three live facts** (needs the initialized backend — the first
    command reads a terraform output). Re-run this before every hand apply —
-   the trio goes stale whenever ECS replaces the service's ALB, and the
+   the Express values go stale whenever ECS replaces the service's ALB, and the
    serving image moves on every deploy:
 
    ```sh
@@ -147,22 +147,19 @@ From `terraform/environments/<environment>/`:
    REV_ARN=$(printf '%s' "$EGS_JSON" \
      | jq -r '[.service.activeConfigurations[]] | sort_by(.createdAt) | last.serviceRevisionArn')
 
-   # 2. That revision's ECS-managed ingress paths -> the endpoint, the ALB ARN,
-   #    and the ALB's security groups. Pick the path that actually carries a
-   #    load balancer; the others have none.
+   # 2. That revision's ECS-managed ingress paths -> the endpoint and the ALB
+   #    ARN. Pick the path that actually carries a load balancer; the others
+   #    have none.
    aws ecs describe-service-revisions --service-revision-arns "$REV_ARN" --output json \
      | jq -r '.serviceRevisions[0].ecsManagedResources.ingressPaths[]
               | select(.loadBalancer.arn != null)
-              | {endpoint, alb: .loadBalancer.arn, sg: .loadBalancer.securityGroupIds[0]}'
+              | {endpoint, alb: .loadBalancer.arn}'
    ```
 
    The endpoint host is also visible via
-   `terraform output express_ingress_paths`. Prefer
-   `.loadBalancer.securityGroupIds` over the sibling
-   `.loadBalancerSecurityGroups[]`, whose entries carry only an `.arn`; if a
-   CLI version omits it, `aws elbv2 describe-load-balancers
-   --load-balancer-arns` has the same id. Strip any scheme from the endpoint —
-   the module wants a bare host. Set all four live facts in `terraform.tfvars`.
+   `terraform output express_ingress_paths`. Strip any scheme from the
+   endpoint — the module wants a bare host. Set all three live facts in
+   `terraform.tfvars`.
 5. **Plan, then apply:**
 
    ```sh
@@ -170,12 +167,12 @@ From `terraform/environments/<environment>/`:
    terraform apply
    ```
 
-Read the plan before approving it: with the four facts current, a hand apply
+Read the plan before approving it: with the three facts current, a hand apply
 should propose only the change you came to make.
 
 The ALB security group itself is created and owned by ECS Express Mode — the
-module only adds the one ingress rule to it, so no hand-executed mutation
-remains anywhere in the flow.
+module adds nothing to it, so no hand-executed mutation remains anywhere in
+the flow.
 
 VPC origins **cannot be updated while status=Deploying** and deploy cycles run
 ~6–10 minutes — be patient between changes.
@@ -462,8 +459,8 @@ builds the new image and rolls the service exactly once. Infra never moves the
 image forward; it only avoids moving it backwards. If a live service exists but
 no image can be resolved for it, the engine **refuses to apply** rather than
 silently pin the families to the nonexistent placeholder. It refuses on the
-same grounds when state says CloudFront already exists but the Express trio
-(ALB ARN, on.aws endpoint, ALB security group) could not be discovered:
+same grounds when state says CloudFront already exists but the two Express
+values (ALB ARN, on.aws endpoint) could not be discovered:
 applying then would tear the distribution and its VPC origin down, and a
 recreate comes back on a new `cloudfront.net` domain.
 
@@ -527,7 +524,7 @@ manual dispatch — parks at the same approval gate as any other run.
 assumes `mmgis-terraform-apply-<env>` with short-lived credentials (the role
 carries an operator-assume statement for exactly this) and runs the hand-apply
 flow above. On a live, CI-built environment there is no local `terraform.tfvars`
-to start from — set `deployed_image` **and the three `express_*` phase-2
+to start from — set `deployed_image` **and both `express_*` phase-2
 values** in tfvars before applying (discover them the same way the engine
 does — the recipe is in [Hand applies
 (break-glass)](#hand-applies-break-glass)); the module refuses to plan without
