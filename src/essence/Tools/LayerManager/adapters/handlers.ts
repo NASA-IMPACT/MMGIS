@@ -1,19 +1,19 @@
 import {
     mmgisRequest,
     mmgisEmit,
-    mmgisGetColormapCapable,
+    mmgisGetLayerCogCapabilities,
 } from '../../_shared/adapters/mmgisAPI'
 
 type Refresh = () => Promise<void> | void
 
 /**
- * Whether core will repaint this layer for a colormap or rescale change. The
- * same verdict gates the controls in the legend, so a write can only reach
- * core for a layer core can actually redraw.
+ * Whether core accepts a colormap or rescale change for this layer, by its
+ * config shape and tile source. The same verdict makes the controls editable
+ * in the legend, so a write is only sent for a layer core can recompile.
  */
-const isColormapCapable = async (layerId: string): Promise<boolean> => {
-    const capable = await mmgisGetColormapCapable()
-    return capable?.[layerId] === true
+const canChangeColormap = async (layerId: string): Promise<boolean> => {
+    const capabilities = await mmgisGetLayerCogCapabilities(layerId)
+    return capabilities?.canChangeColormap === true
 }
 
 export const toggleVisibility = async (layerId: string): Promise<void> => {
@@ -31,7 +31,7 @@ export const setOpacity = async (layerId: string, opacity: number): Promise<void
 }
 
 export const setColormap = async (layerId: string, colormap: string, refresh: Refresh): Promise<void> => {
-    if (!(await isColormapCapable(layerId))) return
+    if (!(await canChangeColormap(layerId))) return
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })
     // applyCogFieldsToUrl prefers `currentCogColormap` over the mission-configured
     // `cogColormap`, so the override key has to match the config write above.
@@ -46,7 +46,7 @@ export const setRescale = async (
     max: number,
     refresh: Refresh,
 ): Promise<void> => {
-    if (!(await isColormapCapable(layerId))) return
+    if (!(await canChangeColormap(layerId))) return
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
     await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
     mmgisEmit('layer:cogRescaleChange', { layerName: layerId, min, max })

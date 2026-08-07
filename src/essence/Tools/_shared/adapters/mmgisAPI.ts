@@ -124,19 +124,45 @@ export const mmgisGetVisibleLayers = (): Promise<Record<
 }
 
 /**
- * Per-layer flag for whether the layer's colormap and rescale can be changed
- * (via `layers:updateConfig` + `layers:refresh`), keyed by layer UUID.
+ * What a layer's COG colormap supports: `hasColormap` for whether there is a
+ * ramp to draw a legend from, `canChangeColormap` for whether that ramp can be
+ * changed (via `layers:updateConfig` + `layers:refresh`). An `image` layer
+ * has the first without the second.
+ */
+export type CogCapabilities = {
+    hasColormap: boolean
+    canChangeColormap: boolean
+}
+
+/**
+ * COG capabilities for every layer, keyed by layer UUID.
  *
  * Registered as late as mmgisGetLayerConfigs; the same readiness caveat
  * applies. Null against a core that does not register the handler, in which
  * case callers leave the colormap controls out.
  */
-export const mmgisGetColormapCapable = (): Promise<Record<
+export const mmgisGetCogCapabilities = (): Promise<Record<
     string,
-    boolean
+    CogCapabilities
 > | null> => {
-    return mmgisRequestIfProvided<Record<string, boolean>>(
-        'layers:getColormapCapable',
+    return mmgisRequestIfProvided<Record<string, CogCapabilities>>(
+        'layers:getCogCapabilities',
+    )
+}
+
+/**
+ * COG capabilities for one layer. Core resolves a display name to its UUID,
+ * so callers holding either identifier get the same answer — unlike indexing
+ * the bulk map, which is UUID-keyed.
+ *
+ * Null when the layer is unknown, or against a core without the handler.
+ */
+export const mmgisGetLayerCogCapabilities = (
+    layerUUID: string,
+): Promise<CogCapabilities | null> => {
+    return mmgisRequestIfProvided<CogCapabilities>(
+        'layers:getCogCapabilities',
+        layerUUID,
     )
 }
 

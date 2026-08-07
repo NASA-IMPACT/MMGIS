@@ -1,3 +1,4 @@
+import type { CogCapabilities } from '../../_shared/adapters/mmgisAPI'
 import type { Layer, LegendType, CategoricalStop, CogData } from '../lib/types'
 
 type MMGISLegendEntry = {
@@ -63,21 +64,24 @@ const buildCategoricalFields = (legend: MMGISLegendEntry[]): CategoricalStop[] =
 /**
  * Shapes one layer's config into the legend model the UI renders.
  *
- * `colormapCapable` comes from core over the request bus; the COG block, and
- * so the colormap controls, are built only for a capable layer.
+ * `cogCapabilities` comes from core over the request bus and carries two
+ * separate answers: `hasColormap` builds the COG block, so the legend draws
+ * the ramp and its bounds, while `canChangeColormap` decides whether that
+ * block is editable. A layer can have the first without the second.
  */
 export const buildLayerLegendData = (
     layerName: string,
     layerConfig: MMGISLayerConfig,
     opacities: Record<string, number> | null | undefined,
     visible: boolean,
-    colormapCapable: boolean,
+    cogCapabilities: CogCapabilities | null | undefined,
 ): Layer => {
     const opacity = opacities?.[layerName] ?? 1
 
-    const cog: CogData | null = colormapCapable
+    const cog: CogData | null = cogCapabilities?.hasColormap
         ? {
               isCog: true,
+              editable: cogCapabilities.canChangeColormap === true,
               colormap: layerConfig.currentCogColormap || layerConfig.cogColormap || 'viridis',
               min: layerConfig.currentCogMin ?? layerConfig.cogMin ?? 0,
               max: layerConfig.currentCogMax ?? layerConfig.cogMax ?? 255,
