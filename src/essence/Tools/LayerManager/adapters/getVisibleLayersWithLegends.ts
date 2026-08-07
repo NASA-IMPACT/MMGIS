@@ -1,4 +1,4 @@
-import { mmgisRequest } from '../../_shared/adapters/mmgisAPI'
+import { mmgisRequest, mmgisGetColormapCapable } from '../../_shared/adapters/mmgisAPI'
 import { buildLayerLegendData } from './buildLayerLegendData'
 import type { Layer } from '../lib/types'
 
@@ -10,6 +10,7 @@ export const getVisibleLayersWithLegends = async ({
     const layerConfigs = await mmgisRequest<Record<string, Record<string, unknown>>>('layers:getAllConfigs')
     const visibleLayers = await mmgisRequest<Record<string, boolean>>('layers:getVisible')
     const opacities = await mmgisRequest<Record<string, number>>('layers:getAllOpacities')
+    const colormapCapable = await mmgisGetColormapCapable()
     if (!layerConfigs) return []
 
     const result: Layer[] = []
@@ -25,6 +26,7 @@ export const getVisibleLayersWithLegends = async ({
                 cfg as Parameters<typeof buildLayerLegendData>[1],
                 opacities ?? null,
                 isVisible,
+                colormapCapable?.[layerName] === true,
             ),
         )
     }

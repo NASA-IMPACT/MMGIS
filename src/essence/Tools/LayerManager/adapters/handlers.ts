@@ -1,12 +1,19 @@
-import { mmgisRequest, mmgisEmit } from '../../_shared/adapters/mmgisAPI'
+import {
+    mmgisRequest,
+    mmgisEmit,
+    mmgisGetColormapCapable,
+} from '../../_shared/adapters/mmgisAPI'
 
 type Refresh = () => Promise<void> | void
 
-type LayerConfig = {
-    cogTransform?: boolean
-    cogColormap?: string
-    cogMin?: number
-    cogMax?: number
+/**
+ * Whether core will repaint this layer for a colormap or rescale change. The
+ * same verdict gates the controls in the legend, so a write can only reach
+ * core for a layer core can actually redraw.
+ */
+const isColormapCapable = async (layerId: string): Promise<boolean> => {
+    const capable = await mmgisGetColormapCapable()
+    return capable?.[layerId] === true
 }
 
 export const toggleVisibility = async (layerId: string): Promise<void> => {
@@ -24,8 +31,7 @@ export const setOpacity = async (layerId: string, opacity: number): Promise<void
 }
 
 export const setColormap = async (layerId: string, colormap: string, refresh: Refresh): Promise<void> => {
-    const cfg = await mmgisRequest<LayerConfig>('layers:getConfig', layerId)
-    if (!cfg || !cfg.cogTransform) return
+    if (!(await isColormapCapable(layerId))) return
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })
     // applyCogFieldsToUrl prefers `currentCogColormap` over the mission-configured
     // `cogColormap`, so the override key has to match the config write above.
@@ -40,8 +46,7 @@ export const setRescale = async (
     max: number,
     refresh: Refresh,
 ): Promise<void> => {
-    const cfg = await mmgisRequest<LayerConfig>('layers:getConfig', layerId)
-    if (!cfg || !cfg.cogTransform) return
+    if (!(await isColormapCapable(layerId))) return
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogMin: min, currentCogMax: max } })
     await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogMin: min, currentCogMax: max } })
     mmgisEmit('layer:cogRescaleChange', { layerName: layerId, min, max })

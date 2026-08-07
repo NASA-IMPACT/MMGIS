@@ -6,8 +6,27 @@
  */
 
 import { utcFormat } from 'd3-time-format'
+import { isRasterTileLayerType } from '../MapEngines/types/engine'
 
 const DEFAULT_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
+/**
+ * True when a layer's colormap and rescale can be changed at runtime by
+ * recompiling its tile URL — that is, a COG-transformed raster tile layer,
+ * on either engine.
+ *
+ * `image` layers also honour `cogTransform`, but they colour their pixels
+ * client-side rather than through the tile URL, and no refresh path repaints
+ * them, so they are not included.
+ *
+ * Takes a loose shape because callers pass raw mission-config objects parsed
+ * from JSON.
+ */
+export function supportsCogTransform(
+    layerObj: { type?: string; cogTransform?: boolean } | null | undefined
+): boolean {
+    return layerObj?.cogTransform === true && isRasterTileLayerType(layerObj)
+}
 
 /**
  * Resolves a layer's tile format, honouring the legacy `tms` boolean.

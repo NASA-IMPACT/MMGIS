@@ -8,7 +8,11 @@ import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
 import { resolveTileLayerSource } from './tileLayerSource'
-import { buildTileUrlOptions, compileTileUrl } from './tileUrlUtils'
+import {
+    buildTileUrlOptions,
+    compileTileUrl,
+    supportsCogTransform,
+} from './tileUrlUtils'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
@@ -309,6 +313,14 @@ const L_ = {
                 }),
                 window.mmgisAPI.provide('layers:getAllConfigs', () => L_.layers.data),
                 window.mmgisAPI.provide('layers:getAllOpacities', () => L_.layers.opacity),
+                // Which layers accept a colormap/rescale change, keyed by UUID.
+                window.mmgisAPI.provide('layers:getColormapCapable', () => {
+                    const capable = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        capable[uuid] = supportsCogTransform(L_.layers.data[uuid])
+                    })
+                    return capable
+                }),
                 window.mmgisAPI.provide('layers:isVisible', (layerUUID) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true

@@ -3,7 +3,7 @@ import { buildLayerLegendData } from '../../../src/essence/Tools/LayerManager/ad
 
 test.describe('buildLayerLegendData', () => {
     test('returns text type for layer with no legend and no COG', () => {
-        const result = buildLayerLegendData('layer1', { type: 'vector', display_name: 'L1' }, null, true)
+        const result = buildLayerLegendData('layer1', { display_name: 'L1' }, null, true, false)
         expect(result.id).toBe('layer1')
         expect(result.title).toBe('L1')
         expect(result.type).toBe('none')
@@ -16,7 +16,7 @@ test.describe('buildLayerLegendData', () => {
             { shape: 'continuous', color: '#000000', value: '0 m' },
             { shape: 'continuous', color: '#ffffff', value: '100 m' },
         ]
-        const result = buildLayerLegendData('layer2', { type: 'tile', _legend: legend }, { layer2: 0.5 }, true)
+        const result = buildLayerLegendData('layer2', { _legend: legend }, { layer2: 0.5 }, true, false)
         expect(result.type).toBe('gradient')
         expect(result.stops).toEqual(['#000000', '#ffffff'])
         expect(result.min).toBe(0)
@@ -31,7 +31,7 @@ test.describe('buildLayerLegendData', () => {
             { color: '#00ff00', value: 'land', hideFromLegend: true },
             { color: '#0000ff', value: 'sky' },
         ]
-        const result = buildLayerLegendData('layer3', { type: 'vector', _legend: legend }, null, true)
+        const result = buildLayerLegendData('layer3', { _legend: legend }, null, true, false)
         expect(result.type).toBe('categorical')
         expect(result.categoricalStops).toEqual([
             { color: '#ff0000', label: 'water' },
@@ -39,17 +39,15 @@ test.describe('buildLayerLegendData', () => {
         ])
     })
 
-    test('produces COG metadata for tile layer with cogTransform', () => {
+    test('produces COG metadata for a colormap-capable layer', () => {
         const cfg = {
-            type: 'tile',
-            cogTransform: true,
             cogColormap: 'plasma',
             cogMin: 0,
             cogMax: 1000,
             cogUnits: 'm',
             titilerUrl: 'https://example.com/titiler',
         }
-        const result = buildLayerLegendData('layer4', cfg, null, true)
+        const result = buildLayerLegendData('layer4', cfg, null, true, true)
         expect(result.cog).not.toBeNull()
         expect(result.cog?.titilerUrl).toBe('https://example.com/titiler')
         expect(result.cog?.colormap).toBe('plasma')
@@ -59,37 +57,40 @@ test.describe('buildLayerLegendData', () => {
         expect(result.stops).toBeNull()
     })
 
-    test('produces COG metadata for a deck.gl TileLayer config', () => {
+    test('prefers the current colormap and rescale over the configured ones', () => {
         const cfg = {
-            type: 'TileLayer',
-            cogTransform: true,
-            cogColormap: 'rdbu_r',
-            cogMin: -0.1,
-            cogMax: 0.2,
-            titilerUrl: 'https://example.com/titiler',
-        }
-        const result = buildLayerLegendData('layer5', cfg, null, true)
-        expect(result.cog).not.toBeNull()
-        expect(result.cog?.colormap).toBe('rdbu_r')
-        expect(result.type).toBe('gradient')
-    })
-
-    test('produces COG metadata for a deck.gl BitmapLayer config', () => {
-        const cfg = {
-            type: 'BitmapLayer',
-            cogTransform: true,
             cogColormap: 'viridis',
             cogMin: 0,
             cogMax: 1,
+            currentCogColormap: 'rdbu_r',
+            currentCogMin: -0.1,
+            currentCogMax: 0.2,
         }
-        const result = buildLayerLegendData('layer6', cfg, null, true)
-        expect(result.cog).not.toBeNull()
-        expect(result.type).toBe('gradient')
+        const result = buildLayerLegendData('layer5', cfg, null, true, true)
+        expect(result.cog?.colormap).toBe('rdbu_r')
+        expect(result.cog?.min).toBe(-0.1)
+        expect(result.cog?.max).toBe(0.2)
+        // The defaults stay pinned to the mission config so the control can
+        // offer a reset.
+        expect(result.cog?.defaultColormap).toBe('viridis')
+        expect(result.cog?.defaultMin).toBe(0)
+        expect(result.cog?.defaultMax).toBe(1)
     })
 
-    test('leaves a deck.gl vector layer without COG metadata', () => {
-        const cfg = { type: 'GeoJsonLayer', cogTransform: true }
-        const result = buildLayerLegendData('layer7', cfg, null, true)
+    test('keeps a legend gradient when the layer is not colormap-capable', () => {
+        const legend = [
+            { shape: 'continuous', color: '#000000', value: '0' },
+            { shape: 'continuous', color: '#ffffff', value: '10' },
+        ]
+        const cfg = { _legend: legend, cogColormap: 'viridis' }
+        const result = buildLayerLegendData('layer6', cfg, null, true, false)
+        expect(result.type).toBe('gradient')
+        expect(result.cog).toBeNull()
+    })
+
+    test('leaves a layer without COG metadata when core reports it incapable', () => {
+        const cfg = { cogColormap: 'viridis', cogMin: 0, cogMax: 1 }
+        const result = buildLayerLegendData('layer7', cfg, null, true, false)
         expect(result.cog).toBeNull()
         expect(result.type).toBe('none')
     })

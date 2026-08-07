@@ -123,6 +123,23 @@ export const mmgisGetVisibleLayers = (): Promise<Record<
     return mmgisRequestIfProvided<Record<string, boolean>>('layers:getVisible')
 }
 
+/**
+ * Per-layer flag for whether the layer's colormap and rescale can be changed
+ * (via `layers:updateConfig` + `layers:refresh`), keyed by layer UUID.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat
+ * applies. Null against a core that does not register the handler, in which
+ * case callers leave the colormap controls out.
+ */
+export const mmgisGetColormapCapable = (): Promise<Record<
+    string,
+    boolean
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, boolean>>(
+        'layers:getColormapCapable',
+    )
+}
+
 /** Whether the mission has time enabled at all. */
 export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')

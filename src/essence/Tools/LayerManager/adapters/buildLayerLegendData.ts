@@ -1,4 +1,3 @@
-import { toCanonicalLayerType } from '../../../Basics/MapEngines/types/engine'
 import type { Layer, LegendType, CategoricalStop, CogData } from '../lib/types'
 
 type MMGISLegendEntry = {
@@ -10,11 +9,9 @@ type MMGISLegendEntry = {
 }
 
 type MMGISLayerConfig = {
-    type?: string
     display_name?: string
     description?: string
     _legend?: MMGISLegendEntry[]
-    cogTransform?: boolean
     currentCogColormap?: string
     cogColormap?: string
     currentCogMin?: number
@@ -24,8 +21,6 @@ type MMGISLayerConfig = {
     cogUnits?: string | null
     titilerUrl?: string | null
 }
-
-const SUPPORTED_COG_TYPES = ['tile', 'image']
 
 const detectLegendType = (legend: MMGISLegendEntry[] | undefined): LegendType => {
     if (!Array.isArray(legend) || legend.length === 0) return 'text'
@@ -65,20 +60,22 @@ const buildCategoricalFields = (legend: MMGISLegendEntry[]): CategoricalStop[] =
             label: String(entry.value || entry.label || ''),
         }))
 
+/**
+ * Shapes one layer's config into the legend model the UI renders.
+ *
+ * `colormapCapable` comes from core over the request bus; the COG block, and
+ * so the colormap controls, are built only for a capable layer.
+ */
 export const buildLayerLegendData = (
     layerName: string,
     layerConfig: MMGISLayerConfig,
     opacities: Record<string, number> | null | undefined,
     visible: boolean,
+    colormapCapable: boolean,
 ): Layer => {
     const opacity = opacities?.[layerName] ?? 1
-    const layerType = toCanonicalLayerType(layerConfig.type)
-    const hasColormapSupport =
-        layerType !== undefined &&
-        SUPPORTED_COG_TYPES.includes(layerType) &&
-        layerConfig.cogTransform === true
 
-    const cog: CogData | null = hasColormapSupport
+    const cog: CogData | null = colormapCapable
         ? {
               isCog: true,
               colormap: layerConfig.currentCogColormap || layerConfig.cogColormap || 'viridis',
@@ -104,7 +101,7 @@ export const buildLayerLegendData = (
 
     const legend = layerConfig._legend
     if (!legend || (Array.isArray(legend) && legend.length === 0)) {
-        if (hasColormapSupport && cog) {
+        if (cog) {
             return {
                 ...base,
                 type: 'gradient',
