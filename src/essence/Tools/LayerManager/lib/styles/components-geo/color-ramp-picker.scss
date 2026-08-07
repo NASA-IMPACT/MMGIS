@@ -90,22 +90,19 @@ $ramp-picker-max-height: 380px;
         padding: 2px var(--theme-spacing-05, 0.25rem);
         font-size: var(--theme-font-size-3xs, 0.75rem);
         background: transparent;
+        border: none;
         /* Control boundaries need 3:1 against the surface to stay perceivable. */
-        border: 1px solid var(--theme-color-base-light, #a9aeb1);
-        border-radius: 3px;
         color: var(--theme-color-base-dark, #565c65);
         cursor: pointer;
-        transition: background-color 0.15s ease, color 0.15s ease,
-            border-color 0.15s ease;
+        transition: background-color 0.15s ease, color 0.15s ease;
 
         &:hover {
-            border-color: var(--theme-color-primary-lightest, #0e7482);
-            color: var(--theme-color-base-primary-lightest, #0e7482);
+            background-color: var(--theme-color-primary-lightest, #0e7482);
+            color: var(--theme-color-base-primary, #0e7482);
         }
 
         &--active {
             background: var(--theme-color-primary, #0e7482);
-            border-color: var(--theme-color-primary, #0e7482);
             color: var(--theme-color-white, #ffffff);
         }
 
