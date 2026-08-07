@@ -214,7 +214,6 @@ async function cogGetTileData(
             format: 'r32float',
             width,
             height,
-            mipLevels: 1,
             sampler: { minFilter: 'nearest', magFilter: 'nearest', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' },
         })
         return {
@@ -249,7 +248,6 @@ async function cogGetTileData(
         format,
         width,
         height,
-        mipLevels: 1,
         sampler: { minFilter: 'linear', magFilter: 'linear', addressModeU: 'clamp-to-edge', addressModeV: 'clamp-to-edge' },
     })
     return {
