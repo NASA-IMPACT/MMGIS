@@ -12,7 +12,6 @@ import { GradientGraphic } from '../GradientGraphic/GradientGraphic'
 import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
 import { FloatingPopover } from '../../FloatingPopover'
-import { useClickOutside } from '../../hooks/useClickOutside'
 import type { Layer } from '../../types'
 
 export type LayerLegendProps = {
@@ -53,8 +52,9 @@ export function LayerLegend({
     const [isRampPickerOpen, setIsRampPickerOpen] = useState(false)
     const [localOpacity, setLocalOpacity] = useState(opacity ?? 1)
     const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
-    const opacityPopoverRef = useRef<HTMLDivElement | null>(null)
     const rampBtnRef = useRef<HTMLButtonElement | null>(null)
+    const opacityPopoverId = useId()
+    const opacityHeadingId = useId()
     const rampPopoverId = useId()
 
     // Only raster layers carry rescale/ramp settings to expose, and only those
@@ -70,16 +70,11 @@ export function LayerLegend({
         setLocalOpacity(opacity ?? 1)
     }, [opacity])
 
-    useClickOutside(
-        [opacityPopoverRef, opacityBtnRef],
-        useCallback(() => setIsOpacityExpanded(false), []),
-        isOpacityExpanded,
-    )
-
-    // The picker rides along with its row as the layer list scrolls, and stays
-    // open once the row leaves the viewport. Dismissing it there would hand
-    // focus back to an off-screen trigger, scrolling the list back to it.
+    // The popovers ride along with their row as the layer list scrolls, and
+    // stay open once the row leaves the viewport. Dismissing them there would
+    // hand focus back to an off-screen trigger, scrolling the list back to it.
     const closeRampPicker = useCallback(() => setIsRampPickerOpen(false), [])
+    const closeOpacityPopover = useCallback(() => setIsOpacityExpanded(false), [])
 
     const handleVisibilityToggle = () => {
         const newState = !isVisible
@@ -135,7 +130,7 @@ export function LayerLegend({
 
     return (
         <div
-            className={`blocks-layer-legend ${isRampPickerOpen ? 'blocks-layer-legend--menu-open' : ''}`}
+            className={`blocks-layer-legend ${isRampPickerOpen || isOpacityExpanded ? 'blocks-layer-legend--menu-open' : ''}`}
             data-legend-id={id}
         >
             <div className="blocks-layer-legend__header">
@@ -153,35 +148,18 @@ export function LayerLegend({
                     </span>
                 </div>
                 <div className="blocks-layer-legend__actions">
-                    <div className="blocks-layer-legend__opacity-wrapper">
-                        <button
-                            ref={opacityBtnRef}
-                            className={`blocks-layer-legend__action-btn ${isOpacityExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}
-                            onClick={handleOpacityToggle}
-                            title={isOpacityExpanded ? 'Hide opacity' : 'Adjust opacity'}
-                        >
-                            <span className="blocks-layer-legend__icon blocks-layer-legend__icon--opacity" />
-                        </button>
-                        {isOpacityExpanded && (
-                            <div
-                                ref={opacityPopoverRef}
-                                className="blocks-layer-legend__opacity-popover"
-                            >
-                                <input
-                                    type="range"
-                                    className="blocks-layer-legend__opacity-slider"
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    value={localOpacity}
-                                    onChange={handleOpacityChange}
-                                />
-                                <span className="blocks-layer-legend__opacity-value">
-                                    {Math.round(localOpacity * 100)}%
-                                </span>
-                            </div>
-                        )}
-                    </div>
+                    <button
+                        ref={opacityBtnRef}
+                        type="button"
+                        className={`blocks-layer-legend__action-btn ${isOpacityExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}
+                        onClick={handleOpacityToggle}
+                        aria-haspopup="dialog"
+                        aria-expanded={isOpacityExpanded}
+                        aria-controls={isOpacityExpanded ? opacityPopoverId : undefined}
+                        title={isOpacityExpanded ? 'Hide opacity' : 'Adjust opacity'}
+                    >
+                        <span className="blocks-layer-legend__icon blocks-layer-legend__icon--opacity" />
+                    </button>
                     {hasColorRamp && (
                         <button
                             ref={rampBtnRef}
@@ -232,6 +210,39 @@ export function LayerLegend({
                 overflow and would otherwise cut the dropdown off at the panel
                 edge. Focus moves into the surface on open, since tab order
                 follows the document and the portal sits at its end. */}
+            <FloatingPopover
+                id={opacityPopoverId}
+                anchorRef={opacityBtnRef}
+                isOpen={isOpacityExpanded}
+                onClose={closeOpacityPopover}
+                placement="bottom"
+                offset={6}
+                className="blocks-layer-legend__opacity-popover"
+                label={`Opacity for ${title}`}
+                autoFocus
+            >
+                <div
+                    className="blocks-layer-legend__opacity-heading"
+                    id={opacityHeadingId}
+                >
+                    Opacity
+                </div>
+                <div className="blocks-layer-legend__opacity-control">
+                    <input
+                        type="range"
+                        className="blocks-layer-legend__opacity-slider"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={localOpacity}
+                        onChange={handleOpacityChange}
+                        aria-labelledby={opacityHeadingId}
+                    />
+                    <span className="blocks-layer-legend__opacity-value">
+                        {Math.round(localOpacity * 100)}%
+                    </span>
+                </div>
+            </FloatingPopover>
             {hasColorRamp && cog && (
                 <FloatingPopover
                     id={rampPopoverId}

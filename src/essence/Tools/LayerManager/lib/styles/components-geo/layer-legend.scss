@@ -230,37 +230,19 @@ $legend-content-indent: 28px;
     }
 
     /* Opacity Popover Styles */
-    &__opacity-wrapper {
-        position: relative;
+    &__opacity-heading {
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--theme-color-base-dark, #565c65);
     }
 
-    &__opacity-popover {
-        position: absolute;
-        top: 100%;
-        right: 0;
-        margin-top: 4px;
+    &__opacity-control {
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 0.5rem);
-        padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
-        background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-        box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
-        z-index: 1000;
-        white-space: nowrap;
-
-        &::before {
-            content: '';
-            position: absolute;
-            top: -6px;
-            right: 10px;
-            width: 10px;
-            height: 10px;
-            background: var(--theme-color-white, #ffffff);
-            border-left: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-            border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-            transform: rotate(45deg);
-        }
+        margin-top: var(--theme-spacing-05, 0.25rem);
     }
 
     &__opacity-slider {
@@ -306,11 +288,18 @@ $legend-content-indent: 28px;
     }
 }
 
-/* Color Ramp Popover
+/* Popover surfaces
    Portaled to <body> to clear the layer list's clipped overflow. FloatingPopover
    owns the placement and stacking, so only the surface chrome belongs here. */
-.blocks-layer-legend__ramp-popover {
+.blocks-layer-legend__ramp-popover,
+.blocks-layer-legend__opacity-popover {
     background: var(--theme-color-white, #ffffff);
     border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+}
+
+.blocks-layer-legend__opacity-popover {
+    padding: var(--theme-spacing-105, 0.75rem);
+    white-space: nowrap;
+    font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
 }
