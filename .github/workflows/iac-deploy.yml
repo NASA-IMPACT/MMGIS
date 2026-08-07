@@ -92,7 +92,7 @@ name: Infrastructure deploy engine
 # `express_onaws_endpoint` are known, and those values only exist after the
 # Express service does — hence phase 1 (create/converge) then phase 2 (feed the
 # discovered values back). Because discovery runs BEFORE phase 1, a steady-state
-# run already knows all three phase-2 values and converges fully in phase 1;
+# run already knows both phase-2 values and converges fully in phase 1;
 # phase 2 is the greenfield/values-changed path only. Passing them on every
 # apply is mandatory, not optional: applying with them empty against a live
 # environment would DESTROY CloudFront — which the module refuses outright
@@ -343,8 +343,8 @@ jobs:
       #     the serving image and its serviceRevisionArn (the response carries
       #     no load-balancer information at all);
       #   describe-service-revisions      -> that revision's
-      #     ecsManagedResources.ingressPaths[] gives the on.aws endpoint, the
-      #     ECS-managed internal ALB ARN, and its security group ids.
+      #     ecsManagedResources.ingressPaths[] gives the on.aws endpoint and
+      #     the ECS-managed internal ALB ARN.
       - name: Discover the live environment
         id: discover
         if: inputs.mode != 'read'
@@ -364,7 +364,6 @@ jobs:
           IMAGE=""
           ALB_ARN=""
           ENDPOINT=""
-          ALB_SG=""
           HAVE_SERVICE="false"
           CF_IN_STATE=""
 
@@ -372,7 +371,6 @@ jobs:
             IMAGE=""
             ALB_ARN=""
             ENDPOINT=""
-            ALB_SG=""
             HAVE_SERVICE="false"
             CF_IN_STATE=""
 
@@ -465,9 +463,9 @@ jobs:
               return 0
             fi
 
-            # The ALB ARN and its security groups are only on the service
-            # revision. Pick the ingress path that actually carries a load
-            # balancer; the public/other paths have none.
+            # The ALB ARN is only on the service revision. Pick the ingress
+            # path that actually carries a load balancer; the public/other
+            # paths have none.
             local rev_json lb_path
             rev_json=$(aws ecs describe-service-revisions \
               --service-revision-arns "$rev_arn" \
@@ -478,34 +476,19 @@ jobs:
 
             ALB_ARN=$(printf '%s' "$lb_path" | jq -r '.loadBalancer.arn // ""')
             ENDPOINT=$(printf '%s' "$lb_path" | jq -r '.endpoint // ""')
-            # Prefer .loadBalancer.securityGroupIds — the sibling
-            # .loadBalancerSecurityGroups[] entries carry only an .arn.
-            ALB_SG=$(printf '%s' "$lb_path" | jq -r '(.loadBalancer.securityGroupIds // [])[0] // ""')
 
             # The module wants a bare host for the CloudFront origin.
             ENDPOINT="${ENDPOINT#https://}"
             ENDPOINT="${ENDPOINT#http://}"
             ENDPOINT="${ENDPOINT%/}"
 
-            # Fallback for CLI versions that omit securityGroupIds from the
-            # revision; the apply role carries elasticloadbalancing:Describe*
-            # for exactly this.
-            if [ -n "$ALB_ARN" ] && [ -z "$ALB_SG" ]; then
-              ALB_SG=$(aws elbv2 describe-load-balancers \
-                --load-balancer-arns "$ALB_ARN" \
-                --query 'LoadBalancers[0].SecurityGroups[0]' \
-                --output text 2>/dev/null) || ALB_SG=""
-              [ "$ALB_SG" = "None" ] && ALB_SG=""
-            fi
-
-            # The trio is all-or-nothing: applying a partial trio would build
-            # the distribution without the :443 ingress rule (front door 504).
-            # Blank all three so a partial read means "no CloudFront this run",
-            # which a later run completes — never a half-built front door.
-            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+            # The pair is all-or-nothing: the module builds CloudFront only
+            # when both are set. Blank both so a partial read means "no
+            # CloudFront this run", which a later run completes — never a
+            # half-built front door.
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; then
               ALB_ARN=""
               ENDPOINT=""
-              ALB_SG=""
             fi
 
             return 0
@@ -544,22 +527,19 @@ jobs:
 
           # The same trap on the CloudFront side. Empty phase-2 values are
           # greenfield's normal shape, but a distribution id in state says this
-          # environment's front door already exists — and applying with the trio
-          # incomplete flips `enable_cloudfront` off, DESTROYING the
+          # environment's front door already exists — and applying with either
+          # value missing flips `enable_cloudfront` off, DESTROYING the
           # distribution and its VPC origin. That is not recoverable by
           # re-running: a recreated distribution comes back on a NEW
           # cloudfront.net domain, so every bookmark and every published
-          # dashboard URL changes. A missing security group alone is only
-          # slightly kinder — it drops the :443 ingress rule and the front door
-          # starts answering 504. Refuse instead of guessing.
-          if [ -n "$CF_IN_STATE" ] && { [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; }; then
+          # dashboard URL changes. Refuse instead of guessing.
+          if [ -n "$CF_IN_STATE" ] && { [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; }; then
             {
               echo "State says this environment's CloudFront distribution exists"
-              echo "($CF_IN_STATE), but discovery could not resolve the full Express"
-              echo "trio: alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG'."
+              echo "($CF_IN_STATE), but discovery could not resolve both Express"
+              echo "values: alb='$ALB_ARN' endpoint='$ENDPOINT'."
               echo "Refusing to apply: it would destroy the distribution and its VPC"
-              echo "origin (a recreate later returns on a NEW CloudFront domain), or"
-              echo "drop the ALB ingress rule the front door depends on."
+              echo "origin (a recreate later returns on a NEW CloudFront domain)."
               echo "Investigate the service's newest active configuration and its"
               echo "service revision, then re-run."
             } >&2
@@ -567,18 +547,17 @@ jobs:
           fi
 
           # Greenfield, decided AFTER the guards. The guards verify the image
-          # whenever a live service exists and the trio whenever state holds a
-          # CloudFront distribution, so an emptiness that survives them is
-          # verified-absent in exactly those cases; the one unguarded shape —
-          # service live, no CloudFront in state, trio not readable off the
+          # whenever a live service exists and the Express pair whenever state
+          # holds a CloudFront distribution, so an emptiness that survives them
+          # is verified-absent in exactly those cases; the one unguarded shape —
+          # service live, no CloudFront in state, the pair not readable off the
           # revision yet — is blessed greenfield. Its worst case: CloudFront
-          # stays unbuilt this run until a later run re-discovers the complete
-          # trio.
+          # stays unbuilt this run until a later run re-discovers both values.
           # The flag is what makes the empties legal to the module
-          # (var.greenfield); with all four facts present it is false and
+          # (var.greenfield); with all three facts present it is false and
           # relaxes nothing.
           GREENFIELD="false"
-          if [ -z "$IMAGE" ] || [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+          if [ -z "$IMAGE" ] || [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; then
             GREENFIELD="true"
           fi
 
@@ -586,12 +565,11 @@ jobs:
             echo "image=$IMAGE"
             echo "alb_arn=$ALB_ARN"
             echo "endpoint=$ENDPOINT"
-            echo "alb_sg=$ALB_SG"
             echo "have_service=$HAVE_SERVICE"
             echo "greenfield=$GREENFIELD"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE' greenfield='$GREENFIELD'"
+          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' cloudfront='$CF_IN_STATE' greenfield='$GREENFIELD'"
 
       # Plan mode changes nothing. It is how an environment gets reviewed before
       # its first real apply, and how a human previews a converge from the
@@ -601,12 +579,11 @@ jobs:
         if: inputs.mode == 'plan'
         env:
           # Every apply and every plan passes the FULL known set. A plan that
-          # omitted the phase-2 trio would show CloudFront being destroyed and
+          # omitted the phase-2 values would show CloudFront being destroyed and
           # panic the reviewer over nothing.
           TF_VAR_deployed_image: ${{ steps.discover.outputs.image }}
           TF_VAR_express_internal_alb_arn: ${{ steps.discover.outputs.alb_arn }}
           TF_VAR_express_onaws_endpoint: ${{ steps.discover.outputs.endpoint }}
-          TF_VAR_express_alb_security_group_id: ${{ steps.discover.outputs.alb_sg }}
           TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
@@ -667,7 +644,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # Phase 1. In steady state this is the ONLY apply: discovery already
-      # supplied the phase-2 trio, so the configuration converges completely
+      # supplied the phase-2 values, so the configuration converges completely
       # here and the phase-2 step below finds nothing left to do. Phase 2 earns
       # its keep on greenfield, and on the rare run where the ECS-managed ALB
       # actually changed.
@@ -684,7 +661,6 @@ jobs:
           TF_VAR_deployed_image: ${{ steps.discover.outputs.image }}
           TF_VAR_express_internal_alb_arn: ${{ steps.discover.outputs.alb_arn }}
           TF_VAR_express_onaws_endpoint: ${{ steps.discover.outputs.endpoint }}
-          TF_VAR_express_alb_security_group_id: ${{ steps.discover.outputs.alb_sg }}
           TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
         run: |
           set -o pipefail
@@ -966,7 +942,6 @@ jobs:
           IMAGE=""
           ALB_ARN=""
           ENDPOINT=""
-          ALB_SG=""
           HAVE_SERVICE="false"
           CF_IN_STATE=""
 
@@ -974,7 +949,6 @@ jobs:
             IMAGE=""
             ALB_ARN=""
             ENDPOINT=""
-            ALB_SG=""
             HAVE_SERVICE="false"
             CF_IN_STATE=""
 
@@ -1051,24 +1025,14 @@ jobs:
 
             ALB_ARN=$(printf '%s' "$lb_path" | jq -r '.loadBalancer.arn // ""')
             ENDPOINT=$(printf '%s' "$lb_path" | jq -r '.endpoint // ""')
-            ALB_SG=$(printf '%s' "$lb_path" | jq -r '(.loadBalancer.securityGroupIds // [])[0] // ""')
 
             ENDPOINT="${ENDPOINT#https://}"
             ENDPOINT="${ENDPOINT#http://}"
             ENDPOINT="${ENDPOINT%/}"
 
-            if [ -n "$ALB_ARN" ] && [ -z "$ALB_SG" ]; then
-              ALB_SG=$(aws elbv2 describe-load-balancers \
-                --load-balancer-arns "$ALB_ARN" \
-                --query 'LoadBalancers[0].SecurityGroups[0]' \
-                --output text 2>/dev/null) || ALB_SG=""
-              [ "$ALB_SG" = "None" ] && ALB_SG=""
-            fi
-
-            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ] || [ -z "$ALB_SG" ]; then
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; then
               ALB_ARN=""
               ENDPOINT=""
-              ALB_SG=""
             fi
 
             return 0
@@ -1101,33 +1065,29 @@ jobs:
             echo "image=$IMAGE"
             echo "alb_arn=$ALB_ARN"
             echo "endpoint=$ENDPOINT"
-            echo "alb_sg=$ALB_SG"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Re-discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' sg='$ALB_SG' cloudfront='$CF_IN_STATE'"
+          echo "Re-discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' cloudfront='$CF_IN_STATE'"
 
       # Phase 2 runs only when re-discovery actually learned something phase 1
-      # did not have, and only when it learned the COMPLETE trio — endpoint,
-      # ALB ARN, and the ALB's security group. A phase-2 apply with an empty
-      # security-group id is never worth doing: on greenfield it would build
-      # CloudFront without the :443 ingress rule, so the front door would only
-      # 504 (better to leave it unbuilt and let a later run finish the job), and
-      # against a live environment it would destroy the rule that already
-      # exists. In steady state the condition is false and this step is visibly
-      # skipped, which is the honest reading: nothing changed. When the values
-      # are still unavailable (service provisioning, greenfield ALB not yet
-      # surfaced) it is skipped too — see the re-discovery step's comment for
-      # why that is not a failure.
+      # did not have, and only when it learned BOTH values — endpoint and ALB
+      # ARN. A phase-2 apply with either one empty is never worth doing: the
+      # module builds CloudFront only when both are set, so on greenfield it
+      # would leave the front door unbuilt anyway (better to let a later run
+      # finish the job), and against a live environment it would propose
+      # destroying the distribution. In steady state the condition is false and
+      # this step is visibly skipped, which is the honest reading: nothing
+      # changed. When the values are still unavailable (service provisioning,
+      # greenfield ALB not yet surfaced) it is skipped too — see the
+      # re-discovery step's comment for why that is not a failure.
       - name: Terraform apply (phase 2 — CloudFront over the discovered ALB)
         id: apply2
         if: >-
           ${{ inputs.mode == 'apply'
           && steps.rediscover.outputs.endpoint != ''
           && steps.rediscover.outputs.alb_arn != ''
-          && steps.rediscover.outputs.alb_sg != ''
           && (steps.rediscover.outputs.endpoint != steps.discover.outputs.endpoint
-          || steps.rediscover.outputs.alb_arn != steps.discover.outputs.alb_arn
-          || steps.rediscover.outputs.alb_sg != steps.discover.outputs.alb_sg) }}
+          || steps.rediscover.outputs.alb_arn != steps.discover.outputs.alb_arn) }}
         env:
           # The image comes from the PRE-apply discovery, deliberately: on
           # greenfield the post-apply probe now sees the crash-looping
@@ -1137,10 +1097,9 @@ jobs:
           TF_VAR_deployed_image: ${{ steps.discover.outputs.image }}
           TF_VAR_express_internal_alb_arn: ${{ steps.rediscover.outputs.alb_arn }}
           TF_VAR_express_onaws_endpoint: ${{ steps.rediscover.outputs.endpoint }}
-          TF_VAR_express_alb_security_group_id: ${{ steps.rediscover.outputs.alb_sg }}
           # Same vintage as the image: the PRE-apply verdict. On greenfield it
           # stays true, keeping the deliberately-empty image legal while the
-          # re-discovered trio is applied.
+          # re-discovered values are applied.
           TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
         run: |
           set -o pipefail

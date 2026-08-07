@@ -19,12 +19,11 @@ permissions_boundary = "arn:aws:iam::ACCOUNT:policy/POLICY_NAME"
 #   curl -s https://truststore.pki.rds.amazonaws.com/us-west-2/us-west-2-bundle.pem | base64 | tr -d '\n'
 rds_ca_bundle_base64 = "PASTE_BASE64_HERE"
 
-# ── Express trio (empty only under greenfield = true) ──
+# ── Express inputs (empty only under greenfield = true) ──
 # Discovered from the live service before every hand apply — recipe in the
 # README's "Hand applies (break-glass)" section.
 # express_internal_alb_arn = "arn:aws:elasticloadbalancing:us-west-2:ACCOUNT:loadbalancer/app/ecs-express-gateway-alb-xxxx/xxxx"
 # express_onaws_endpoint   = "mm-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.ecs.us-west-2.on.aws"
-# express_alb_security_group_id = "sg-xxxxxxxxxxxxxxxxx"
 
 # First build of a brand-new environment ONLY: makes the empty live facts
 # legal. First builds are CI's job; the hand path exists for the bootstrap

@@ -27,7 +27,9 @@ export const setColormap = async (layerId: string, colormap: string, refresh: Re
     const cfg = await mmgisRequest<LayerConfig>('layers:getConfig', layerId)
     if (!cfg || !cfg.cogTransform) return
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })
-    await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { cogColormap: colormap } })
+    // applyCogFieldsToUrl prefers `currentCogColormap` over the mission-configured
+    // `cogColormap`, so the override key has to match the config write above.
+    await mmgisRequest('layers:refresh', { layerUUID: layerId, options: { currentCogColormap: colormap } })
     mmgisEmit('layer:cogColormapChange', { layerName: layerId, colormap })
     await refresh()
 }

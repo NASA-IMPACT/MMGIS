@@ -15,11 +15,14 @@ import {
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
 
-/** Surface a failing bus call in the console instead of as a bare rejection. */
-const report = (action: Promise<void>): Promise<void> =>
-    action.catch((err) => {
-        console.warn('Layer manager action failed:', err)
+// Panel controls are event callbacks and cannot await the requests they fire,
+// so a rejected one would surface only as an unhandled rejection. Log it
+// against the action that produced it instead.
+const report = (action: string, result: Promise<void>): void => {
+    result.catch((err) => {
+        console.error(`LayerManager: ${action} failed`, err)
     })
+}
 
 export function MMGISLayerManagerAdapter() {
     const [layers, setLayers] = useState<Layer[]>([])
@@ -54,10 +57,10 @@ export function MMGISLayerManagerAdapter() {
         <LayerManagerPanel
             layers={layers}
             loading={loading}
-            onVisibilityChange={(id) => { void report(toggleVisibility(id)) }}
-            onOpacityChange={(id, op) => { void report(setOpacity(id, op)) }}
-            onColormapChange={(id, cm) => { void report(setColormap(id, cm, refresh)) }}
-            onRescaleChange={(id, mn, mx) => { void report(setRescale(id, mn, mx, refresh)) }}
+            onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}
+            onOpacityChange={(id, op) => { report('setOpacity', setOpacity(id, op)) }}
+            onColormapChange={(id, cm) => { report('setColormap', setColormap(id, cm, refresh)) }}
+            onRescaleChange={(id, mn, mx) => { report('setRescale', setRescale(id, mn, mx, refresh)) }}
         />
     )
 }

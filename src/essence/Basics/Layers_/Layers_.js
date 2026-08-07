@@ -50,12 +50,15 @@ function isEngineOwnedLayer(layer) {
  * A Leaflet tile layer recompiles its URL per tile from `this.options`, so its
  * `refresh()` only has to merge the caller's overrides into those options. An
  * engine-owned layer is built around one static URL instead, so the overrides
- * are compiled in here and the engine clones the layer onto the result.
+ * are compiled in here.
  *
  * Resolution order — source, then time replacements, then tile-URL options —
  * is the one layer creation and time-driven reloads use, so all three agree on
- * the URL a layer ends up serving. The layer config is never written to, so a
- * later refresh re-resolves from the same starting point.
+ * the URL a layer ends up serving.
+ *
+ * Failures are reported as `false` rather than thrown: the caller is a UI
+ * control on the request bus, and a rejection there escapes as an unhandled
+ * promise with nothing to show for it.
  *
  * @param {string} uuid - Layer UUID, already resolved.
  * @param {object} [updateOptions] - Tile-URL option overrides, the keys
@@ -68,28 +71,37 @@ async function refreshEngineOwnedTileLayer(uuid, updateOptions) {
     // types (vector, vectortile, pointcloud) reload through their own paths.
     if (!isRasterTileLayerType(layerObj)) return false
 
-    const tileSource = resolveTileLayerSource(layerObj)
-    const sourceUrl = await L_.TimeControl_.performTimeUrlReplacements(
-        tileSource.url,
-        layerObj,
-        false
-    )
-    const tileOptions = {
-        ...buildTileUrlOptions(
+    try {
+        const tileSource = resolveTileLayerSource(layerObj)
+        const sourceUrl = await L_.TimeControl_.performTimeUrlReplacements(
+            tileSource.url,
             layerObj,
-            tileSource.splitColonType,
-            tileSource.tileFormat
-        ),
-        ...(updateOptions || {}),
-    }
+            false
+        )
+        const tileOptions = {
+            ...buildTileUrlOptions(
+                layerObj,
+                tileSource.splitColonType,
+                tileSource.tileFormat
+            ),
+            ...(updateOptions || {}),
+        }
 
-    const updated = L_.Map_.engine.updateLayer(uuid, {
-        url: compileTileUrl(sourceUrl, tileOptions),
-    })
-    // deck.gl layers are immutable, so the registry adopts the replacement.
-    if (updated == null) return false
-    L_.layers.layer[uuid] = updated
-    return true
+        // A layer with no resolvable service URL compiles to nothing. Handing
+        // that to the engine would blank it, so leave the existing one alone.
+        const nextUrl = compileTileUrl(sourceUrl, tileOptions)
+        if (!nextUrl) return false
+
+        const updated = L_.Map_.engine.updateLayer(uuid, { url: nextUrl })
+        // deck.gl layers are immutable, so the registry adopts the replacement.
+        // The engine returns nothing for a layer it does not hold.
+        if (updated == null) return false
+        L_.layers.layer[uuid] = updated
+        return true
+    } catch (err) {
+        console.error(`layers:refresh failed for "${uuid}"`, err)
+        return false
+    }
 }
 
 const L_ = {

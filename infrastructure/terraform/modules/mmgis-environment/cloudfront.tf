@@ -95,12 +95,12 @@ resource "aws_cloudfront_distribution" "admin" {
     # published dashboard's origin expectations. This blocks any plan that
     # destroys it — including the count 1 -> 0 flip an empty ALB ARN or
     # endpoint causes — independent of the greenfield flag. The VPC origin
-    # and the :443 ingress rule deliberately do NOT carry this: when ECS
-    # swaps the ALB they may be replaced or updated in place, and either way
-    # they must not be pinned. To intentionally destroy the environment,
-    # edit this line to false in a working copy (lifecycle arguments must be
-    # literals) and never commit that edit. The protection only holds while
-    # this resource block exists in configuration.
+    # deliberately does NOT carry this: when ECS swaps the ALB it may be
+    # replaced or updated in place, and either way it must not be pinned. To
+    # intentionally destroy the environment, edit this line to false in a
+    # working copy (lifecycle arguments must be literals) and never commit that
+    # edit. The protection only holds while this resource block exists in
+    # configuration.
     prevent_destroy = true
   }
 }

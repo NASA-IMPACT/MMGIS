@@ -25,8 +25,6 @@ type MMGISLayerConfig = {
     titilerUrl?: string | null
 }
 
-// Canonical MMGIS types, so a deck.gl mission's `TileLayer`/`BitmapLayer`
-// must be normalised through toCanonicalLayerType before it is checked here.
 const SUPPORTED_COG_TYPES = ['tile', 'image']
 
 const detectLegendType = (legend: MMGISLegendEntry[] | undefined): LegendType => {

@@ -150,18 +150,18 @@ variable "permissions_boundary" {
   }
 }
 
-# ── Express trio (discovered per apply) + the greenfield flag ──
+# ── Express inputs (discovered per apply) + the greenfield flag ──
 # The Express service's internal ALB ARN and on.aws endpoint are NOT exposed
 # as Terraform attributes of aws_ecs_express_gateway_service (only service_arn
 # and ingress_paths are). The CloudFront VPC origin needs the ALB ARN and the
 # distribution's admin origin needs the on.aws host name, so the CloudFront
 # front door is created in a SECOND apply: phase 1 creates the service; CI
-# reads these three values on every run; by hand they come from the README's
+# reads both values on every run; by hand they come from the README's
 # Hand applies (break-glass) recipe. The second apply builds the VPC origin +
 # distribution.
 
 variable "greenfield" {
-  description = "Set true ONLY for the first build of a brand-new environment (or a re-run continuing one). It is the sole way an apply may proceed with deployed_image or the three express_* inputs empty, and it accepts the documented consequences: task-definition families registered onto a placeholder tag until the first image deploy, and no CloudFront until the phase-2 apply. The CI pipeline sets it mechanically after verifying against live AWS that the missing facts genuinely do not exist yet. Never set it by hand against a live environment — and note the flag makes missing facts LEGAL, not SAFE: greenfield with a partial trio (ALB ARN and endpoint set, security-group id empty) keeps the distribution but drops the :443 ingress rule, and a live front door starts answering 504. Pass the trio complete or not at all."
+  description = "Set true ONLY for the first build of a brand-new environment (or a re-run continuing one). It is the sole way an apply may proceed with deployed_image or the two express_* inputs empty, and it accepts the documented consequences: task-definition families registered onto a placeholder tag until the first image deploy, and no CloudFront until the phase-2 apply. The CI pipeline sets it mechanically after verifying against live AWS that the missing facts genuinely do not exist yet. Never set it by hand against a live environment — and note the flag makes missing facts LEGAL, not SAFE: CloudFront is built only when BOTH express_* values are present, so a greenfield apply carrying just one of them builds no front door at all (against a live environment the plan then stops on the distribution's prevent_destroy instead). Pass the pair complete or not at all."
   type        = bool
   default     = false
 }
@@ -173,7 +173,7 @@ variable "express_internal_alb_arn" {
 
   validation {
     condition     = var.greenfield || var.express_internal_alb_arn != ""
-    error_message = "express_internal_alb_arn is empty and greenfield is not set. Against an environment whose CloudFront exists, applying without the full express trio destroys the distribution (it returns later on a NEW cloudfront.net domain). Discover the trio from the live service (recipe: infrastructure/README.md, \"Hand applies (break-glass)\"), or set greenfield = true only if this environment has never been fully built."
+    error_message = "express_internal_alb_arn is empty and greenfield is not set. Against an environment whose CloudFront exists, applying without both express_* values destroys the distribution (it returns later on a NEW cloudfront.net domain). Discover them from the live service (recipe: infrastructure/README.md, \"Hand applies (break-glass)\"), or set greenfield = true only if this environment has never been fully built."
   }
 }
 
@@ -184,18 +184,7 @@ variable "express_onaws_endpoint" {
 
   validation {
     condition     = var.greenfield || var.express_onaws_endpoint != ""
-    error_message = "express_onaws_endpoint is empty and greenfield is not set. Against an environment whose CloudFront exists, applying without the full express trio destroys the distribution (it returns later on a NEW cloudfront.net domain). Discover the trio from the live service (recipe: infrastructure/README.md, \"Hand applies (break-glass)\"), or set greenfield = true only if this environment has never been fully built."
-  }
-}
-
-variable "express_alb_security_group_id" {
-  description = "Security-group id of the ECS-managed ALB fronting the admin service (from the same `aws ecs describe-service-revisions` call as the ALB ARN). Drives the :443-from-VPC-CIDR ingress rule. Empty only under greenfield = true (phase 1 of a first build)."
-  type        = string
-  default     = ""
-
-  validation {
-    condition     = var.greenfield || var.express_alb_security_group_id != ""
-    error_message = "express_alb_security_group_id is empty and greenfield is not set. Applying without it drops the :443 ingress rule on the ECS-managed ALB security group and the CloudFront front door answers 504. Discover it from the live service (recipe: infrastructure/README.md, \"Hand applies (break-glass)\"), or set greenfield = true only if this environment has never been fully built."
+    error_message = "express_onaws_endpoint is empty and greenfield is not set. Against an environment whose CloudFront exists, applying without both express_* values destroys the distribution (it returns later on a NEW cloudfront.net domain). Discover them from the live service (recipe: infrastructure/README.md, \"Hand applies (break-glass)\"), or set greenfield = true only if this environment has never been fully built."
   }
 }
 
