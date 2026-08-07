@@ -57,6 +57,11 @@ function isEngineOwnedLayer(layer) {
  * the URL a layer ends up serving. The layer config is never written to, so a
  * later refresh re-resolves from the same starting point.
  *
+ * Resolving a source can reach the network (a layer whose `urlReplacements`
+ * fire on time change) and can fail, so failures are reported as `false`
+ * rather than thrown: the caller is a UI control on the request bus, and a
+ * rejection there escapes as an unhandled promise with nothing to show for it.
+ *
  * @param {string} uuid - Layer UUID, already resolved.
  * @param {object} [updateOptions] - Tile-URL option overrides, the keys
  * buildTileUrlOptions produces. These win over the layer config.
@@ -68,28 +73,39 @@ async function refreshEngineOwnedTileLayer(uuid, updateOptions) {
     // types (vector, vectortile, pointcloud) reload through their own paths.
     if (!isRasterTileLayerType(layerObj)) return false
 
-    const tileSource = resolveTileLayerSource(layerObj)
-    const sourceUrl = await L_.TimeControl_.performTimeUrlReplacements(
-        tileSource.url,
-        layerObj,
-        false
-    )
-    const tileOptions = {
-        ...buildTileUrlOptions(
+    try {
+        const tileSource = resolveTileLayerSource(layerObj)
+        const sourceUrl = await L_.TimeControl_.performTimeUrlReplacements(
+            tileSource.url,
             layerObj,
-            tileSource.splitColonType,
-            tileSource.tileFormat
-        ),
-        ...(updateOptions || {}),
-    }
+            false
+        )
+        const tileOptions = {
+            ...buildTileUrlOptions(
+                layerObj,
+                tileSource.splitColonType,
+                tileSource.tileFormat
+            ),
+            ...(updateOptions || {}),
+        }
 
-    const updated = L_.Map_.engine.updateLayer(uuid, {
-        url: compileTileUrl(sourceUrl, tileOptions),
-    })
-    // deck.gl layers are immutable, so the registry adopts the replacement.
-    if (updated == null) return false
-    L_.layers.layer[uuid] = updated
-    return true
+        // A layer with no resolvable service URL compiles to nothing. Handing
+        // that to the engine would blank a layer that is already broken at
+        // creation, so leave the existing one alone.
+        const nextUrl = compileTileUrl(sourceUrl, tileOptions)
+        if (!nextUrl) return false
+
+        const updated = L_.Map_.engine.updateLayer(uuid, { url: nextUrl })
+        // deck.gl layers are immutable, so the registry adopts the replacement.
+        // The engine returns nothing for a layer it does not hold — a layer
+        // toggled off, say — and the registry must keep the instance it has.
+        if (updated == null) return false
+        L_.layers.layer[uuid] = updated
+        return true
+    } catch (err) {
+        console.error(`layers:refresh failed for "${uuid}"`, err)
+        return false
+    }
 }
 
 const L_ = {

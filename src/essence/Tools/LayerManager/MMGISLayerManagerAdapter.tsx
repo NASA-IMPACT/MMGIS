@@ -15,6 +15,16 @@ import {
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
 
+// Every panel control drives a request over the mmgisAPI bus, and a handler
+// that throws rejects the promise it returns. Nothing here can await these —
+// they are event callbacks — so an uncaught one surfaces only as an unhandled
+// rejection. Log it against the action that produced it instead.
+const report = (action: string, result: Promise<void>): void => {
+    result.catch((err) => {
+        console.error(`LayerManager: ${action} failed`, err)
+    })
+}
+
 export function MMGISLayerManagerAdapter() {
     const [layers, setLayers] = useState<Layer[]>([])
     const [loading, setLoading] = useState(true)
@@ -48,10 +58,10 @@ export function MMGISLayerManagerAdapter() {
         <LayerManagerPanel
             layers={layers}
             loading={loading}
-            onVisibilityChange={(id) => { void toggleVisibility(id) }}
-            onOpacityChange={(id, op) => { void setOpacity(id, op) }}
-            onColormapChange={(id, cm) => { void setColormap(id, cm, refresh) }}
-            onRescaleChange={(id, mn, mx) => { void setRescale(id, mn, mx, refresh) }}
+            onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}
+            onOpacityChange={(id, op) => { report('setOpacity', setOpacity(id, op)) }}
+            onColormapChange={(id, cm) => { report('setColormap', setColormap(id, cm, refresh)) }}
+            onRescaleChange={(id, mn, mx) => { report('setRescale', setRescale(id, mn, mx, refresh)) }}
         />
     )
 }
