@@ -4,23 +4,16 @@ import {
     useRef,
     useEffect,
     useCallback,
+    useId,
     type ReactNode,
     type ChangeEvent,
 } from 'react'
-import { createPortal } from 'react-dom'
 import { GradientGraphic } from '../GradientGraphic/GradientGraphic'
 import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
-import { useAnchoredPosition } from '../../hooks/useAnchoredPosition'
+import { FloatingPopover } from '../../FloatingPopover'
 import { useClickOutside } from '../../hooks/useClickOutside'
-import { useEscapeKey } from '../../hooks/useEscapeKey'
 import type { Layer } from '../../types'
-
-// The picker renders in a portal, so its box has no layout parent to size it.
-// These must stay in step with the width/max-height in color-ramp-picker.scss,
-// which is what the anchoring math assumes it is placing.
-const RAMP_PICKER_WIDTH = 244
-const RAMP_PICKER_MAX_HEIGHT = 380
 
 export type LayerLegendProps = {
     layer: Layer
@@ -62,7 +55,7 @@ export function LayerLegend({
     const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
     const opacityPopoverRef = useRef<HTMLDivElement | null>(null)
     const rampBtnRef = useRef<HTMLButtonElement | null>(null)
-    const rampPopoverRef = useRef<HTMLDivElement | null>(null)
+    const rampPopoverId = useId()
 
     // Only raster layers carry rescale/ramp settings to expose.
     const hasColorRamp = cog?.isCog === true
@@ -75,37 +68,16 @@ export function LayerLegend({
         setLocalOpacity(opacity ?? 1)
     }, [opacity])
 
-    // Tab order follows the document, and the popover is portaled to its end,
-    // so opening moves focus into the surface for it to be reachable at all.
-    useEffect(() => {
-        if (isRampPickerOpen) rampPopoverRef.current?.focus()
-    }, [isRampPickerOpen])
-
     useClickOutside(
         [opacityPopoverRef, opacityBtnRef],
         useCallback(() => setIsOpacityExpanded(false), []),
         isOpacityExpanded,
     )
 
-    // Dismissing returns focus to the trigger: the popover is portaled to the
-    // end of the document, so focus left inside it would otherwise resume
-    // tabbing from there rather than from the row it belongs to.
-    const closeRampPicker = useCallback(() => {
-        setIsRampPickerOpen((wasOpen) => {
-            if (wasOpen && rampPopoverRef.current?.contains(document.activeElement)) {
-                rampBtnRef.current?.focus()
-            }
-            return false
-        })
-    }, [])
-    useClickOutside([rampPopoverRef, rampBtnRef], closeRampPicker, isRampPickerOpen)
-    useEscapeKey(closeRampPicker, isRampPickerOpen)
-
-    const rampPickerPosition = useAnchoredPosition(rampBtnRef, isRampPickerOpen, {
-        width: RAMP_PICKER_WIDTH,
-        maxHeight: RAMP_PICKER_MAX_HEIGHT,
-        onAnchorLost: closeRampPicker,
-    })
+    // The picker rides along with its row as the layer list scrolls, and stays
+    // open once the row leaves the viewport. Dismissing it there would hand
+    // focus back to an off-screen trigger, scrolling the list back to it.
+    const closeRampPicker = useCallback(() => setIsRampPickerOpen(false), [])
 
     const handleVisibilityToggle = () => {
         const newState = !isVisible
@@ -220,6 +192,7 @@ export function LayerLegend({
                             }
                             aria-haspopup="dialog"
                             aria-expanded={isRampPickerOpen}
+                            aria-controls={isRampPickerOpen ? rampPopoverId : undefined}
                             title={isRampPickerOpen ? 'Hide color ramp' : 'Change color ramp'}
                         >
                             <span className="blocks-layer-legend__icon blocks-layer-legend__icon--color-ramp" />
@@ -253,38 +226,34 @@ export function LayerLegend({
                     {renderLegendGraphic()}
                 </div>
             )}
-            {/* Portaled out of the layer list, which clips its overflow and
-                would otherwise cut the dropdown off at the panel edge. */}
-            {isRampPickerOpen &&
-                hasColorRamp &&
-                cog &&
-                rampPickerPosition &&
-                createPortal(
-                    <div
-                        ref={rampPopoverRef}
-                        role="dialog"
-                        aria-label={`Color ramp settings for ${title}`}
-                        tabIndex={-1}
-                        className="blocks-layer-legend__ramp-popover"
-                        style={{
-                            top: rampPickerPosition.top,
-                            bottom: rampPickerPosition.bottom,
-                            left: rampPickerPosition.left,
-                        }}
-                    >
-                        <ColorRampPicker
-                            layerId={id}
-                            colormap={cog.colormap}
-                            min={cog.min}
-                            max={cog.max}
-                            units={cog.units}
-                            titilerUrl={cog.titilerUrl}
-                            onColormapChange={onColormapChange}
-                            onRescaleChange={onRescaleChange}
-                        />
-                    </div>,
-                    document.body,
-                )}
+            {/* Rendered in a portal, out of the layer list, which clips its
+                overflow and would otherwise cut the dropdown off at the panel
+                edge. Focus moves into the surface on open, since tab order
+                follows the document and the portal sits at its end. */}
+            {hasColorRamp && cog && (
+                <FloatingPopover
+                    id={rampPopoverId}
+                    anchorRef={rampBtnRef}
+                    isOpen={isRampPickerOpen}
+                    onClose={closeRampPicker}
+                    placement="bottom"
+                    offset={6}
+                    className="blocks-layer-legend__ramp-popover"
+                    label={`Color ramp settings for ${title}`}
+                    autoFocus
+                >
+                    <ColorRampPicker
+                        layerId={id}
+                        colormap={cog.colormap}
+                        min={cog.min}
+                        max={cog.max}
+                        units={cog.units}
+                        titilerUrl={cog.titilerUrl}
+                        onColormapChange={onColormapChange}
+                        onRescaleChange={onRescaleChange}
+                    />
+                </FloatingPopover>
+            )}
         </div>
     )
 }

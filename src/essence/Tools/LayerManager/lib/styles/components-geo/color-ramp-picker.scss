@@ -1,7 +1,7 @@
 /* Color Ramp Picker Styles */
 
-/* Kept in step with RAMP_PICKER_WIDTH / RAMP_PICKER_MAX_HEIGHT in
-   LayerLegend.tsx, which anchors the portaled surface against these. */
+/* The picker sits in a portal with no layout parent to size it, so its own box
+   is what the anchoring math measures. */
 $ramp-picker-width: 244px;
 $ramp-picker-max-height: 380px;
 

@@ -307,12 +307,10 @@ $legend-content-indent: 28px;
 }
 
 /* Color Ramp Popover
-   Portaled to <body> to clear the layer list's clipped overflow, so it is
-   positioned against the viewport by LayerLegend rather than by a parent. */
+   Portaled to <body> to clear the layer list's clipped overflow. FloatingPopover
+   owns the placement and stacking, so only the surface chrome belongs here. */
 .blocks-layer-legend__ramp-popover {
-    position: fixed;
     background: var(--theme-color-white, #ffffff);
     border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
-    z-index: 1001;
 }

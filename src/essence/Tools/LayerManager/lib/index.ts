@@ -4,6 +4,7 @@ export { LayerLegend, type LayerLegendProps } from './geo/LayerLegend/LayerLegen
 export { GradientGraphic, type GradientGraphicProps } from './geo/GradientGraphic/GradientGraphic'
 export { CategoricalGraphic, type CategoricalGraphicProps } from './geo/CategoricalGraphic/CategoricalGraphic'
 export { ColorRampPicker, type ColorRampPickerProps } from './geo/ColorRampPicker/ColorRampPicker'
+export { FloatingPopover, type FloatingPopoverProps } from './FloatingPopover'
 
 export type { Layer, LegendType, CategoricalStop, CogData } from './types'
 
