@@ -15,10 +15,9 @@ import {
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
 
-// Every panel control drives a request over the mmgisAPI bus, and a handler
-// that throws rejects the promise it returns. Nothing here can await these —
-// they are event callbacks — so an uncaught one surfaces only as an unhandled
-// rejection. Log it against the action that produced it instead.
+// Panel controls are event callbacks and cannot await the requests they fire,
+// so a rejected one would surface only as an unhandled rejection. Log it
+// against the action that produced it instead.
 const report = (action: string, result: Promise<void>): void => {
     result.catch((err) => {
         console.error(`LayerManager: ${action} failed`, err)

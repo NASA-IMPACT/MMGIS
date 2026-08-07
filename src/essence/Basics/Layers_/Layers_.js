@@ -50,17 +50,15 @@ function isEngineOwnedLayer(layer) {
  * A Leaflet tile layer recompiles its URL per tile from `this.options`, so its
  * `refresh()` only has to merge the caller's overrides into those options. An
  * engine-owned layer is built around one static URL instead, so the overrides
- * are compiled in here and the engine clones the layer onto the result.
+ * are compiled in here.
  *
  * Resolution order — source, then time replacements, then tile-URL options —
  * is the one layer creation and time-driven reloads use, so all three agree on
- * the URL a layer ends up serving. The layer config is never written to, so a
- * later refresh re-resolves from the same starting point.
+ * the URL a layer ends up serving.
  *
- * Resolving a source can reach the network (a layer whose `urlReplacements`
- * fire on time change) and can fail, so failures are reported as `false`
- * rather than thrown: the caller is a UI control on the request bus, and a
- * rejection there escapes as an unhandled promise with nothing to show for it.
+ * Failures are reported as `false` rather than thrown: the caller is a UI
+ * control on the request bus, and a rejection there escapes as an unhandled
+ * promise with nothing to show for it.
  *
  * @param {string} uuid - Layer UUID, already resolved.
  * @param {object} [updateOptions] - Tile-URL option overrides, the keys
@@ -90,15 +88,13 @@ async function refreshEngineOwnedTileLayer(uuid, updateOptions) {
         }
 
         // A layer with no resolvable service URL compiles to nothing. Handing
-        // that to the engine would blank a layer that is already broken at
-        // creation, so leave the existing one alone.
+        // that to the engine would blank it, so leave the existing one alone.
         const nextUrl = compileTileUrl(sourceUrl, tileOptions)
         if (!nextUrl) return false
 
         const updated = L_.Map_.engine.updateLayer(uuid, { url: nextUrl })
         // deck.gl layers are immutable, so the registry adopts the replacement.
-        // The engine returns nothing for a layer it does not hold — a layer
-        // toggled off, say — and the registry must keep the instance it has.
+        // The engine returns nothing for a layer it does not hold.
         if (updated == null) return false
         L_.layers.layer[uuid] = updated
         return true

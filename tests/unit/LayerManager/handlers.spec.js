@@ -67,10 +67,8 @@ test.describe('handlers', () => {
         expect(refreshCalled).toBe(true)
     })
 
-    // The config write and the refresh override have to name the same field.
     // applyCogFieldsToUrl prefers `currentCogColormap`, so a `cogColormap`
-    // override would lose to the value written a line earlier and the layer
-    // would keep rendering the previous colormap.
+    // override would lose to the value the config write puts there.
     test('setColormap writes and refreshes on the same currentCogColormap field', async () => {
         const { requests } = setupMock(COG_LAYER)
         await setColormap('layerA', 'plasma', () => {})

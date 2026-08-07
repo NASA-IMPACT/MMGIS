@@ -116,10 +116,9 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         }
     )
 
-    // A colormap picked in the Layer Manager lives on the layer config as
+    // A colormap picked in the Layer Manager lives on the config as
     // `currentCogColormap`. A time change recompiles the URL from the config
-    // alone, so the pick has to survive that recompile rather than falling back
-    // to the mission-configured `cogColormap`.
+    // alone, so the pick has to survive that recompile.
     test('keeps a user-picked colormap when the time changes', async () => {
         const layer = {
             name: 'CO2 Concentration',

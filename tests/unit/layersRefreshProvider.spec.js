@@ -13,13 +13,8 @@ const { default: L_ } = await import(
 
 /**
  * The `layers:refresh` provider re-renders a raster tile layer after a COG
- * setting changes (LayerManager's colormap and rescale controls).
- *
- * The two engines reach that end differently. A Leaflet tile layer recompiles
- * its URL per tile from `this.options`, so merging the overrides into those
- * options is the whole job. A deck.gl layer is built around one static URL, so
- * the same overrides have to be compiled into a new URL and the layer rebuilt
- * around the result.
+ * setting changes (LayerManager's colormap and rescale controls), down either
+ * the Leaflet or the engine-owned path.
  */
 
 const TITILER_URL =
@@ -40,9 +35,7 @@ const makeDeckLayer = (id, url) => ({ id, props: { data: url } })
 
 let providers
 let updateLayer
-// The ids the engine holds, mirroring DeckGLAdapter's own layer map. A deck
-// layer only enters it when the layer is added to the map, so an id missing
-// here is the ordinary state of a layer that is toggled off.
+// The ids the engine holds, mirroring DeckGLAdapter's own layer map.
 let engineLayerIds
 let timeUrlReplacements
 
@@ -172,9 +165,8 @@ describe('layers:refresh provider', () => {
         expect(layer.url).toBe(TITILER_URL)
     })
 
-    // The Leaflet layer merges the overrides into its own options and
-    // recompiles per tile, so the provider hands them over untouched — the same
-    // `currentCogColormap` key the engine-owned branch compiles itself.
+    // The provider hands the overrides to Leaflet's refresh() untouched — the
+    // same `currentCogColormap` key the engine-owned branch compiles itself.
     test('a Leaflet tile layer still takes its own refresh()', async () => {
         const layer = makeCogLayer('tile')
         const refresh = vi.fn()
@@ -206,8 +198,7 @@ describe('layers:refresh provider', () => {
     })
 
     // A layer the engine does not hold — one toggled off, say — has nothing to
-    // clone, so the registry has to keep the instance it already has. Writing
-    // the engine's empty answer there would destroy the entry.
+    // clone, so the registry has to keep the instance it already has.
     test('keeps the registry entry when the engine holds no such layer', async () => {
         const layer = makeCogLayer('TileLayer')
         const stale = makeDeckLayer(layer.name, 'stale')
@@ -235,8 +226,7 @@ describe('layers:refresh provider', () => {
     })
 
     // A `COG:` layer needs a TiTiler service to build a tile URL against, and
-    // resolves to nothing without one. Handing that to the engine would blank a
-    // layer that already failed at creation.
+    // resolves to nothing without one.
     test('leaves the layer alone when the source resolves to no URL', async () => {
         const layer = {
             name: 'Displacement',
