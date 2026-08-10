@@ -1,0 +1,28 @@
+{
+    "defaults": {
+        "variables": {}
+    },
+    "description": "Background plugin that fetches a clicked vector feature's time series (URL templated from the layer's variables.timeseries config) and publishes it as chart-series events for the SeriesChart plugin. No UI panel.",
+    "descriptionFull": {
+        "title": "Listens to feature:click. When the clicked feature's layer carries a variables.timeseries block, builds the fetch URL from the feature ({id}, {properties.<key>}, {lon}, {lat} placeholders), fetches it, and emits plugin:fetch-timeseries:seriesLoading/seriesReady/seriesError/seriesCleared. Layers without the block are ignored. Layer config example shown below.",
+        "example": {
+            "variables": {
+                "timeseries": {
+                    "url": "https://dev.openveda.cloud/api/features/collections/public.aqs_sites_gases/items?station_code={properties.station_code}&limit=1000",
+                    "titleProp": "local_site_name",
+                    "groupBy": "properties.parameter",
+                    "unitKey": "properties.units_of_measure"
+                }
+            }
+        }
+    },
+    "hasVars": false,
+    "name": "FetchTimeseries",
+    "separatedTool": false,
+    "paths": {
+        "FetchTimeseriesTool": "essence/Tools/FetchTimeseries/FetchTimeseriesTool"
+    },
+    "config": {
+        "rows": []
+    }
+}
