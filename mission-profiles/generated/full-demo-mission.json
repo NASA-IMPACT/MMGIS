@@ -301,6 +301,12 @@
       "js": "FetchStatsTool",
       "on": true,
       "variables": {}
+    },
+    {
+      "name": "FetchTimeseries",
+      "js": "FetchTimeseriesTool",
+      "on": false,
+      "variables": {}
     }
   ],
   "layers": [
