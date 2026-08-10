@@ -1,4 +1,10 @@
 {
+    "defaults": {
+        "variables": {
+            "displayOnStart": false,
+            "showOnlyVisible": false
+        }
+    },
     "defaultIcon": "layers-triple-outline",
     "description": "Manage layer visibility, opacity, colormaps, and rescaling with event bus architecture.",
     "descriptionFull": {

@@ -1,0 +1,343 @@
+name: Deploy production
+
+# The production environment's trigger. Like its development sibling it holds no
+# deployment logic of its own: it decides WHEN and in WHICH MODE the two shared
+# engines run, and wires the infrastructure engine's outputs into the app
+# engine. Every line of deploy logic lives in the engines, which are reused
+# byte-for-byte — production is not a second pipeline, it is the same pipeline
+# pointed at a second environment.
+#
+#   changes -> iac-deploy.yml (always) -> app-deploy.yml (every merge)
+#
+# ── The gate ─────────────────────────────────────────────────────────────────
+# Merging to `production` expresses intent; it does not deploy. Both engine jobs
+# bind `environment: production`, so a run reaches GitHub's native
+# required-reviewers gate on that Environment and PARKS
+# there with ZERO AWS activity behind it. The only job that runs ungated is
+# `changes` below — pure git and pure bash, no credentials, no `environment:`
+# key, nothing but a diff and a step summary. A run that is rejected, or simply
+# never approved, deploys nothing at all.
+#
+# The gate lives IN the engines rather than here, which is what makes it
+# unbypassable: there is no path through this trigger that reaches AWS without
+# first binding the Environment, and binding the Environment is what asks for
+# approval.
+#
+# ── Two approval clicks per run — expected, not a bug ────────────────────────
+# Required-reviewer approval is per JOB, not per run. This run has two
+# Environment-bound jobs (infrastructure, then app), and the app job only
+# reaches the gate after the infrastructure job finishes — so a second approval
+# request appears mid-run, minutes after the first. Do not "fix" this by
+# weakening the environment binding or by hoisting a single un-bound gate job in
+# front of the engines: the binding is what makes GitHub mint the
+# environment-form OIDC subject (`repo:NASA-IMPACT/MMGIS:environment:production`)
+# that the production roles' trust policies accept, and what makes the
+# Environment-scoped `IAC_*` secrets and variables resolve. A click is cheaper
+# than either.
+#
+# ── Approve the newest run only ──────────────────────────────────────────────
+# Successive merges to `production` park successive runs, and approving an older
+# parked run deploys an OLDER commit over a newer one. Approve the newest parked
+# run and reject or cancel the stale ones. See the concurrency note below for
+# why auto-cancel cannot be relied on to tidy them up.
+#
+# ── Image provenance ─────────────────────────────────────────────────────────
+# This run builds production's image FROM this production-branch commit INTO
+# production's own ECR repository, tagged with the commit's short SHA. Images
+# built for development are never promoted across environments — not by this
+# workflow, not by hand. Every environment's registry holds only images built
+# from that environment's branch.
+#
+# ── Modes: why the infrastructure job always runs ────────────────────────────
+# Same rule as `deploy-development.yml`, whose header carries the long version.
+# In short: a skipped job emits no outputs on GitHub, so skipping the
+# infrastructure job on app-only merges would hand the app job six empty names
+# on exactly the merges that touch no infrastructure. Path-awareness therefore
+# gates the MODE, not the job:
+#
+#   apply — the push touched infrastructure/terraform/** or one of the three
+#           pipeline files; any dispatch that is not plan-only; any push whose
+#           diff is unknowable. Two-phase converge, then the app ships.
+#   read  — every other push. Init and read the state outputs; describe nothing,
+#           change nothing. The app still ships.
+#   plan  — plan-only dispatch. Publishes a plan to the run summary; the app job
+#           is skipped and nothing is applied.
+#
+# ── Concurrency ──────────────────────────────────────────────────────────────
+# One group for the whole composed run, queued rather than cancelled: an apply
+# interrupted halfway leaves state locked and infrastructure half-converged, and
+# a cancelled app job leaves a rollout mid-flight. Neither engine carries a
+# group of its own precisely so this one can span both.
+#
+# Honest about what GitHub actually guarantees: it keeps at most ONE pending run
+# per group and supersedes an older pending run when a newer one arrives. That
+# is safe here — a later push to `production` contains the earlier push's
+# commits, so the run that does execute deploys a superset.
+#
+# The gate adds a wrinkle. The group serialises the runs GitHub is executing or
+# has queued; a run parked at an approval gate counts as "waiting", not "in
+# progress", and so sits outside that machinery altogether. Two approvals
+# released in quick succession therefore lean on three things in order: the
+# group catching the second run once it starts executing, terraform's S3 state
+# lock as the infrastructure backstop, and — the real control — the human rule
+# above, approve the newest and reject the rest. Even `cancel-in-progress: true`
+# would not reliably clean parked runs up, which is precisely why that
+# discipline is a rule rather than a setting.
+#
+# ── Rollback and re-run ──────────────────────────────────────────────────────
+# All three paths are manual, and all three are gated identically, because the
+# gate is in the engines rather than in any one entry point:
+#
+#   * Re-run the last green run from the Actions UI. The app engine rebuilds
+#     that same commit (`--no-cache`) and re-pushes it under the same short-SHA
+#     tag — the same source, not what is already in ECR. Same source is not the
+#     same bits: a `--no-cache` rebuild re-resolves dependencies, which can
+#     drift within their declared ranges. It then re-registers both
+#     task-definition families against the rebuilt image and re-rolls the
+#     service onto it. Approval is requested again, twice, as for any run.
+#   * Merge a revert to `production` and let the resulting push run deploy it.
+#   * `workflow_dispatch` on the reverted or otherwise known-good `production`
+#     head.
+#
+# The `deployed_image` dispatch input is NOT the app rollback mechanism — see
+# its description below. It moves what the infrastructure converge feeds the
+# task-definition families; the app job still builds the dispatched commit.
+#
+# ── Dormant until the branch exists ──────────────────────────────────────────
+# The `production` branch, its GitHub Environment (required reviewers plus the
+# deployment-branch policy), and its configuration values are operator-created.
+# On a repository where they do not exist, this workflow simply never fires —
+# there is no `production` branch to push to and no Environment to dispatch
+# against. The first gated run is the one-time greenfield standup.
+#
+# ── Coexistence ──────────────────────────────────────────────────────────────
+# The development pipeline (`deploy-development.yml`) and the legacy
+# `deploy-lean.yml` are untouched by this file and unaffected by it. This
+# trigger reads only the `production` Environment's scoped configuration, so it
+# cannot drive another environment and another environment cannot drive it.
+
+on:
+  push:
+    branches: [production]
+  workflow_dispatch:
+    inputs:
+      plan_only:
+        description: "Preview the infrastructure changes without applying or deploying anything"
+        type: boolean
+        default: false
+      deployed_image:
+        description: >-
+          Optional. Overrides the image the infrastructure converge feeds the
+          two task-definition families — the escape hatch for the engine's
+          refusal guard, for when a live service exists but the image it is
+          serving cannot be discovered. It pins nothing durably: on any run that
+          is not plan-only, the app job builds THIS commit and re-registers both
+          families against that fresh image minutes later, and a plan-only run
+          applies nothing at all. The URI must reference an image in THIS
+          environment's own ECR registry; supplying another environment's image
+          is cross-environment promotion, which the provenance rule above
+          forbids.
+        type: string
+        default: ""
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # What kind of run is this? Pure git and pure bash — no credentials, no AWS,
+  # and deliberately no `environment:` key, so this job runs immediately while
+  # the rest of the run waits at the gate. Its step summary is what the approver
+  # reads before clicking.
+  changes:
+    name: Decide the mode
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The push range is diffed below and the default shallow fetch has
+          # only the tip commit, which would make every diff fail.
+          fetch-depth: 0
+
+      - name: Decide the mode
+        id: mode
+        env:
+          # Mapped into the environment rather than interpolated into the script
+          # body: a ref or SHA is attacker-influenceable text, and `${{ }}`
+          # inside a run block is textual substitution.
+          EVENT_NAME: ${{ github.event_name }}
+          PLAN_ONLY: ${{ inputs.plan_only }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -o pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # A human at the dispatch button is asking for one of exactly two
+            # things: show me what would change, or make it so.
+            if [ "$PLAN_ONLY" = "true" ]; then
+              MODE="plan"
+            else
+              MODE="apply"
+            fi
+            echo "Manual dispatch — mode '$MODE'."
+          else
+            # `github.event.before` is all-zeros when the branch was just
+            # created, and points at a commit that no longer exists after a
+            # force push or once the base has been garbage-collected. In all
+            # three cases the diff is unknowable, so take the full path:
+            # converging is idempotent, and a needless apply is much cheaper
+            # than a missed one.
+            UNKNOWN_BASE=""
+            if [ -z "$BEFORE" ]; then
+              UNKNOWN_BASE="no before-SHA on the event"
+            elif ! printf '%s' "$BEFORE" | grep -qE '[^0]'; then
+              UNKNOWN_BASE="all-zeros before-SHA (new branch)"
+            elif ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              UNKNOWN_BASE="before-SHA $BEFORE is not in this repository (force push or GC)"
+            fi
+
+            if [ -n "$UNKNOWN_BASE" ]; then
+              echo "Cannot diff the push range: $UNKNOWN_BASE. Defaulting to apply."
+              MODE="apply"
+            else
+              # Written to a file rather than piped into grep: with pipefail on,
+              # `grep -q` exiting early can leave the writer killed by SIGPIPE
+              # and turn a match into a nonzero pipeline.
+              git diff --name-only "$BEFORE" "$AFTER" > /tmp/changed-files.txt
+
+              echo "::group::Changed files"
+              cat /tmp/changed-files.txt
+              echo "::endgroup::"
+
+              # Anything that can change what terraform would build: the
+              # environment roots and the shared module beneath them, plus the
+              # engines and this trigger themselves — a change to the pipeline
+              # should be exercised on the run that introduces it, not on the
+              # next unrelated merge.
+              if grep -qE '^(infrastructure/terraform/|\.github/workflows/(iac-deploy|app-deploy|deploy-production)\.yml$)' /tmp/changed-files.txt; then
+                echo "Infrastructure-relevant paths changed — mode 'apply'."
+                MODE="apply"
+              else
+                echo "No infrastructure-relevant paths changed — mode 'read'."
+                MODE="read"
+              fi
+            fi
+          fi
+
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+
+      # This job binds no Environment, so it finishes while the run is still
+      # parked at the approval gate — which makes its summary visible on the run
+      # page at exactly the moment the approver is deciding. That is the point.
+      - name: Write the approver's notes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          MODE: ${{ steps.mode.outputs.mode }}
+        run: |
+          set -o pipefail
+
+          # Not `git rev-parse --short`: the abbreviation length it picks depends
+          # on the clone, so this fetch-depth-0 checkout can produce a longer
+          # prefix than the app engine's shallow one. Seven characters, always.
+          SHORT_SHA=$(printf '%s' "$SHA" | cut -c1-7)
+
+          case "$EVENT_NAME" in
+            push) TRIGGERED_BY="a push to \`production\`" ;;
+            workflow_dispatch) TRIGGERED_BY="a manual dispatch" ;;
+            *) TRIGGERED_BY="\`$EVENT_NAME\`" ;;
+          esac
+
+          {
+            echo "## Before you approve — production"
+            echo ""
+            if [ "$MODE" = "plan" ]; then
+              echo "**This is a plan-only run** for commit \`$SHA\`: it previews the"
+              echo "infrastructure changes and deploys nothing. Started by"
+              echo "$TRIGGERED_BY."
+            else
+              echo "**This run deploys commit \`$SHA\`**, started by $TRIGGERED_BY."
+              echo "Expected image tag \`$SHORT_SHA\` — the commit's short SHA; the"
+              echo "exact tag is recorded in the app job's deploy summary once"
+              echo "built."
+            fi
+            echo ""
+            echo "Mode: \`$MODE\`."
+            echo ""
+            echo "**Approve the newest run only.** Successive merges to"
+            echo "\`production\` park successive runs, and approving an older parked"
+            echo "run deploys an older commit over a newer one. Auto-cancel does not"
+            echo "reliably clean parked runs up — a run waiting at an approval gate is"
+            echo "\"waiting\", not \"in progress\" — so stale parked runs accumulate."
+            echo "Approve the newest, reject or cancel the rest."
+            echo ""
+            if [ "$MODE" = "plan" ]; then
+              echo "**Expect one approval prompt for this run.** The required-reviewers"
+              echo "gate is per job, not per run, and a plan-only run has exactly one"
+              echo "environment-bound job: the infrastructure engine, in plan mode. The"
+              echo "app job is skipped, so no image is built and nothing is deployed."
+              echo "Approving publishes a plan to the run summary and applies nothing."
+            else
+              echo "**Expect two approval prompts for this run.** The required-reviewers"
+              echo "gate is per job, not per run, and this run has two"
+              echo "environment-bound jobs: infrastructure, then app. The app job only"
+              echo "reaches the gate once the infrastructure job has finished, so a"
+              echo "second request appears mid-run. That is expected — the environment"
+              echo "binding on each engine job is what scopes the OIDC credentials and"
+              echo "enforces this gate, and it is deliberately not weakened to save a"
+              echo "click."
+              echo ""
+              echo "**Image provenance.** This run builds production's image from this"
+              echo "production-branch commit into production's own ECR repository."
+              echo "Images built for development are never promoted across"
+              echo "environments."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Always runs — see the header. `mode` decides how much work it does, not
+  # whether it runs at all. This is the job that first meets the approval gate,
+  # because it is the first one to bind the `production` Environment.
+  infra:
+    needs: changes
+    uses: ./.github/workflows/iac-deploy.yml
+    with:
+      environment: production
+      mode: ${{ needs.changes.outputs.mode }}
+      # Empty in the normal case, so the engine uses whatever the live service
+      # is serving. Non-empty only when a dispatcher supplied an override.
+      deployed_image: ${{ inputs.deployed_image || '' }}
+    # Environment-scoped secrets resolve against the environment the CALLED job
+    # binds, so `inherit` is how IAC_APPLY_ROLE_ARN reaches the engine without
+    # this file naming it.
+    secrets: inherit
+
+  # Every merge ships the app; only a plan-only dispatch skips it. The six names
+  # come from state, read at run time by the job above — nothing here is
+  # hand-set, and none of it is stored in repository settings.
+  #
+  # `needs` does the rest: a failed infra job skips this one, so the app is
+  # never shipped on top of a failed converge. This job binds the Environment
+  # too, which is why approval is requested a second time here.
+  app:
+    needs: [changes, infra]
+    if: ${{ needs.changes.outputs.mode != 'plan' }}
+    uses: ./.github/workflows/app-deploy.yml
+    with:
+      environment: production
+      aws_region: ${{ needs.infra.outputs.aws_region }}
+      ecr_repository: ${{ needs.infra.outputs.ecr_repository }}
+      ecs_cluster: ${{ needs.infra.outputs.ecs_cluster }}
+      ecs_service: ${{ needs.infra.outputs.ecs_service }}
+      admin_task_family: ${{ needs.infra.outputs.admin_task_family }}
+      publish_task_family: ${{ needs.infra.outputs.publish_task_family }}
+    secrets: inherit

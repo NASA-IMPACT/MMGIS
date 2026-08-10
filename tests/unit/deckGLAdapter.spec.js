@@ -1,6 +1,9 @@
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
-import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/index.ts'
+// Import MAP_ENGINE from the lightweight types module rather than MapEngines/index.ts.
+// index.ts transitively imports LeafletAdapter -> leaflet, which references a global
+// `window` at module-eval time and fails in this Node test context.
+import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
 
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
     const adapter = new DeckGLAdapter()
@@ -172,6 +175,51 @@ test.describe('DeckGLAdapter', () => {
             const adapter = makeAdapter()
             expect(adapter.updateLayer('nonexistent', { visible: false })).toBeUndefined()
         })
+
+        test('setLayerOpacity sets opacity on the stored layer', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('opacity-layer'))
+            adapter.setLayerOpacity('opacity-layer', 0.4)
+            const stored = adapter.getLayers().find((l) => l.id === 'opacity-layer')
+            expect(stored.opacity).toBe(0.4)
+        })
+
+        test('setLayerOpacity returns the instance carrying the new opacity', () => {
+            const adapter = makeAdapter()
+            const original = makeLayer('opacity-layer')
+            adapter.addLayer(original)
+            const updated = adapter.setLayerOpacity(original, 0.25)
+            expect(updated.opacity).toBe(0.25)
+            expect(updated).not.toBe(original)
+            expect(original.opacity).toBeUndefined()
+        })
+
+        test('setLayerOpacity accepts 0 rather than treating it as unset', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('opacity-layer'))
+            adapter.setLayerOpacity('opacity-layer', 0)
+            const stored = adapter.getLayers().find((l) => l.id === 'opacity-layer')
+            expect(stored.opacity).toBe(0)
+        })
+
+        test('setLayerOpacity clones an unmounted layer without adding it to the map', () => {
+            const adapter = makeAdapter()
+            const offMap = makeLayer('hidden-layer')
+            const updated = adapter.setLayerOpacity(offMap, 0.6)
+            expect(updated.opacity).toBe(0.6)
+            expect(adapter.hasLayer('hidden-layer')).toBe(false)
+        })
+
+        test('setLayerOpacity on an unknown id returns undefined without throwing', () => {
+            const adapter = makeAdapter()
+            expect(adapter.setLayerOpacity('nonexistent', 0.5)).toBeUndefined()
+        })
+
+        test('setLayerOpacity on a value with nothing to clone returns undefined without throwing', () => {
+            const adapter = makeAdapter()
+            expect(() => adapter.setLayerOpacity(false, 0.5)).not.toThrow()
+            expect(adapter.setLayerOpacity(false, 0.5)).toBeUndefined()
+        })
     })
 
     test.describe('event system', () => {
@@ -212,6 +260,136 @@ test.describe('DeckGLAdapter', () => {
             adapter.emit('ping')
             adapter.emit('ping')
             expect(count).toBe(1)
+        })
+    })
+
+    test.describe('captureScreenshot', () => {
+        test('overlay mode reads the canvas inside the render event after triggerRepaint', async () => {
+            const adapter = makeAdapter()
+            let inRenderFrame = false
+            let renderHandler = null
+            const blob = new Blob(['deckgl'], { type: 'image/png' })
+            const canvas = {
+                width: 256,
+                height: 128,
+                toBlob: (callback, type) => {
+                    expect(type).toBe('image/png')
+                    // Only valid during the render event, before the browser
+                    // presents (and clears) the drawing buffer.
+                    callback(inRenderFrame ? blob : null)
+                },
+            }
+            adapter._isOverlayMode = true
+            adapter._basemap = {
+                once: (type, handler) => {
+                    expect(type).toBe('render')
+                    renderHandler = handler
+                },
+                triggerRepaint: () => {
+                    // Simulate the frame the repaint schedules: the map draws,
+                    // fires 'render' while the buffer still holds pixels, then
+                    // the buffer is cleared on present.
+                    inRenderFrame = true
+                    renderHandler()
+                    inRenderFrame = false
+                },
+                getCanvas: () => canvas,
+            }
+
+            const result = await adapter.captureScreenshot()
+            expect(result).toEqual({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: 256,
+                height: 128,
+            })
+        })
+
+        test('overlay mode rejects when toBlob returns null during the render event', async () => {
+            const adapter = makeAdapter()
+            let renderHandler = null
+            adapter._isOverlayMode = true
+            adapter._basemap = {
+                once: (_type, handler) => { renderHandler = handler },
+                triggerRepaint: () => renderHandler(),
+                getCanvas: () => ({
+                    width: 256,
+                    height: 128,
+                    toBlob: (callback) => callback(null),
+                }),
+            }
+
+            await expect(adapter.captureScreenshot()).rejects.toThrow(/toBlob returned null/)
+        })
+
+        test('overlay mode rejects after the timeout if the render event never fires', async () => {
+            vi.useFakeTimers()
+            try {
+                const adapter = makeAdapter()
+                let repainted = false
+                let armedHandler = null
+                const removed = []
+                adapter._isOverlayMode = true
+                adapter._basemap = {
+                    once: (type, handler) => { armedHandler = handler },
+                    off: (type, handler) => { removed.push({ type, handler }) },
+                    triggerRepaint: () => { repainted = true },
+                    getCanvas: () => ({
+                        width: 256,
+                        height: 128,
+                        toBlob: () => {},
+                    }),
+                }
+
+                const capture = adapter.captureScreenshot()
+                const assertion = expect(capture).rejects.toThrow(/timed out/)
+                vi.advanceTimersByTime(3000)
+                await assertion
+                expect(repainted).toBe(true)
+                // The timeout must unhook the pending render listener, or a
+                // timed-out capture leaves it armed to fire on a later render.
+                expect(removed).toEqual([
+                    { type: 'render', handler: armedHandler },
+                ])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        test('standalone mode redraws deck and reads its canvas', async () => {
+            const adapter = makeAdapter()
+            let redrawArg = null
+            const blob = new Blob(['standalone'], { type: 'image/png' })
+            adapter._isOverlayMode = false
+            adapter._deck = {
+                redraw: (reason) => { redrawArg = reason },
+                getCanvas: () => ({
+                    width: 300,
+                    height: 200,
+                    toBlob: (callback, type) => {
+                        expect(type).toBe('image/png')
+                        callback(blob)
+                    },
+                }),
+            }
+
+            const result = await adapter.captureScreenshot()
+            expect(redrawArg).toBe('screenshot')
+            expect(result).toEqual({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: 300,
+                height: 200,
+            })
+        })
+
+        test('rejects when there is no active map to capture', async () => {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = false
+            adapter._deck = null
+            await expect(adapter.captureScreenshot()).rejects.toThrow(/no active map/)
         })
     })
 

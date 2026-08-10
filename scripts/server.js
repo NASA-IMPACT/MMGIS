@@ -11,7 +11,7 @@ var bodyParser = require("body-parser");
 const cookieParser = require("cookie-parser");
 const express = require("express");
 var swaggerUi = require("swagger-ui-express");
-var swaggerDocumentMain = require("../docs/mmgis-openapi.json");
+var swaggerDocumentMain = require("../API/mmgis-openapi.json");
 
 const createError = require("http-errors");
 const cors = require("cors");
@@ -480,8 +480,8 @@ function ensureUser() {
 }
 
 var swaggerOptions = {
-  customCssUrl: "/docs/swagger/swaggerCSS.css",
-  customJs: "/docs/swagger/swaggerJS.js",
+  customCssUrl: "/public/swagger/swaggerCSS.css",
+  customJs: "/public/swagger/swaggerJS.js",
 };
 
 const useSwaggerSchema =
@@ -620,15 +620,6 @@ setups.getBackendSetups(function (setups) {
     `${ROOT_PATH}/build`,
     ensureUser(),
     express.static(path.join(rootDir, "/build"))
-  );
-  app.use(
-    `${ROOT_PATH}/docs`,
-    ensureUser(),
-    express.static(path.join(rootDir, "/docs"))
-  );
-  app.use(
-    `${ROOT_PATH}/README.md`,
-    express.static(path.join(rootDir, "/README.md"))
   );
   app.use(
     `${ROOT_PATH}/configure/build`,

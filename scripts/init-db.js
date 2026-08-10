@@ -9,6 +9,7 @@ const {
   isRetryableConnectionError,
   authenticateWithRetry,
 } = require("./init-db-retry");
+const { convergeDemoMission } = require("./demo-mission-converge");
 
 const isDocker = utils.isDocker();
 
@@ -415,6 +416,23 @@ async function initializeDatabase() {
             );
             reject(err);
             return;
+          }
+
+          // Optionally converge the demo mission to its committed blueprint
+          // (dev only; no-op unless OVERWRITE_DEMO_MISSION=true). It handles
+          // and logs its own failures — boot must never fail because of it.
+          try {
+            await convergeDemoMission();
+          } catch (err) {
+            // convergeDemoMission never throws; this guard is belt-and-braces
+            // so a broken contract still can't fail boot.
+            logger(
+              "error",
+              "Demo-mission convergence threw unexpectedly.",
+              "demo_convergence_error",
+              null,
+              err
+            );
           }
 
           resolve();

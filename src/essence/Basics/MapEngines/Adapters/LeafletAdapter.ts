@@ -7,7 +7,7 @@
  * 
  */
 
-import { IMapEngine } from '../IMapEngine'
+import { IMapEngine, MapScreenshotResult } from '../IMapEngine'
 import {
     LatLng,
     LatLngLike,
@@ -22,6 +22,7 @@ import {
     FitBoundsOptions,
     MapInitOptions,
     ProjectionOptions,
+    BasemapOptions,
 } from '../types/view'
 import {
     LayerOptions,
@@ -46,6 +47,7 @@ import {
 } from 'terra-draw'
 import { TerraDrawLeafletAdapter } from 'terra-draw-leaflet-adapter'
 import { extractVerticesFromGeometry } from './DrawingHelpers'
+import { getMapScreenshot } from './LeafletScreenshot'
 import {
     MapEventHandler,
     MapEventOptions,
@@ -100,6 +102,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Stored initialization options
      */
     private _initOptions: MapInitOptions | null = null
+
+    private _basemapLayer: any = null
+    private _basemapAccessToken: string | undefined
 
     /**
      * Wrapped map listeners installed by onFeatureClick / onFeatureHover.
@@ -189,6 +194,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         const attributionControl = this._container.querySelector('.leaflet-control-attribution')
         if (attributionControl) {
             attributionControl.remove()
+        }
+
+        if (options.basemap && options.basemap.provider && options.basemap.provider !== 'none') {
+            this._initBasemapTileLayer(options.basemap)
         }
     }
 
@@ -283,6 +292,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     destroy(): void {
         if (!this._map) return
 
+        this._removeBasemapLayer()
+
         this._eventHandlers.forEach((handler, eventName) => {
             this._map.off(eventName, handler)
         })
@@ -324,11 +335,28 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return this._map
     }
 
+    getBasemap(): any {
+        return this._basemapLayer
+    }
+
     /**
      * Get the container element
      */
     getContainer(): HTMLElement {
         return this._container!
+    }
+
+    /**
+     * Capture the current Leaflet view as a PNG Blob result.
+     *
+     * Delegates to the shared {@link getMapScreenshot} helper, which performs
+     * the html2canvas rasterization plus the Leaflet-specific DOM prep
+     * (pane z-index normalization, SVG re-parenting, UI-chrome hide/restore).
+     * That logic is correct for Leaflet's DOM/SVG/tile rendering and is left
+     * unchanged here.
+     */
+    captureScreenshot(): Promise<MapScreenshotResult> {
+        return getMapScreenshot()
     }
 
     // ========================================
@@ -629,6 +657,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     createLayer(options: LayerOptions): any {
         if (!options.id) {
             throw new Error('createLayer: options.id is required')
+        }
+
+        // Re-creating an id replaces the prior layer; without this the old
+        // layer stays on the map with no registry entry left to remove it by.
+        if (this._layers.has(options.id)) {
+            this.removeLayer(options.id)
         }
 
         const leafletLayer = buildLeafletLayer(options.id, options)
@@ -1253,5 +1287,93 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
         return null
     }
-}
 
+    // ========================================
+    // BASEMAP TILE LAYER METHODS
+    // ========================================
+
+    private _initBasemapTileLayer(basemap: BasemapOptions): void {
+        this._basemapAccessToken = basemap.accessToken
+        const spec = this._resolveBasemapTileSpec(basemap)
+        if (!spec) return
+        this._basemapLayer = L.tileLayer(spec.url, spec.options)
+        this._basemapLayer.addTo(this._map)
+        this._basemapLayer.bringToBack()
+
+        const specMinZoom = (spec.options as { minZoom?: number }).minZoom
+        if (typeof specMinZoom === 'number' && specMinZoom > this._map.getMinZoom()) {
+            this._map.setMinZoom(specMinZoom)
+        }
+    }
+
+    setBasemapStyle(styleUrl: string): boolean {
+        if (!this._map) return false
+        const spec = this._resolveBasemapTileSpec({
+            provider: this._inferProvider(styleUrl),
+            style: styleUrl,
+            accessToken: this._basemapAccessToken,
+        })
+        if (!spec) return false
+        this._removeBasemapLayer()
+        this._basemapLayer = L.tileLayer(spec.url, spec.options)
+        this._basemapLayer.addTo(this._map)
+        this._basemapLayer.bringToBack()
+        return true
+    }
+
+    private _removeBasemapLayer(): void {
+        if (this._basemapLayer && this._map) {
+            this._map.removeLayer(this._basemapLayer)
+        }
+        this._basemapLayer = null
+    }
+
+    /**
+     * Resolve a basemap config into a Leaflet tile-layer spec, or null when
+     * the style cannot be rendered by this engine: a mapbox:// style with no
+     * access token (every tile would 401), or a GL style.json URL (Leaflet
+     * consumes raster XYZ templates only). Returning null skips the basemap
+     * rather than silently rendering the wrong one.
+     */
+    private _resolveBasemapTileSpec(basemap: BasemapOptions): {
+        url: string
+        options: Record<string, unknown>
+    } | null {
+        const style = basemap.style || ''
+
+        const mapboxMatch = style.match(/^mapbox:\/\/styles\/([^/]+)\/(.+)$/)
+        if (mapboxMatch) {
+            const [, user, styleId] = mapboxMatch
+            const token = basemap.accessToken || this._basemapAccessToken || ''
+            if (!token) {
+                console.warn(
+                    `[LeafletAdapter] Skipping basemap "${style}": mapbox styles require an accessToken`
+                )
+                return null
+            }
+            return {
+                url: `https://api.mapbox.com/styles/v1/${user}/${styleId}/tiles/{z}/{x}/{y}?access_token=${token}`,
+                options: {
+                    tileSize: 512,
+                    zoomOffset: -1,
+                    minZoom: 1,
+                    attribution: '© Mapbox © OpenStreetMap',
+                },
+            }
+        }
+
+        if (style.includes('{z}') && style.includes('{x}') && style.includes('{y}')) {
+            return { url: style, options: {} }
+        }
+
+        console.warn(
+            `[LeafletAdapter] Skipping basemap "${style}": the Leaflet engine renders raster {z}/{x}/{y} templates or mapbox:// styles, not GL style URLs`
+        )
+        return null
+    }
+
+    private _inferProvider(styleUrl: string): BasemapOptions['provider'] {
+        if (styleUrl.startsWith('mapbox://')) return 'mapbox'
+        return 'maplibre'
+    }
+}

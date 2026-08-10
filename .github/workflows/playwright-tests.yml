@@ -29,6 +29,43 @@ jobs:
       - name: Run Unit Tests
         run: npx vitest run
 
+  # Committed mission configs are generated from tool `defaults` blocks + profiles,
+  # never hand-edited. Regenerate every profile and fail if the committed artifact
+  # is stale — the regenerated diff is the review artifact (see ADR
+  # docs/adr/20260716-generated-mission-configs.md).
+  config-generation:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Regenerate mission configs
+        run: |
+          node scripts/generate-mission-config.js full-demo
+          node scripts/generate-mission-config.js minimal
+
+      - name: Fail if committed configs are stale
+        run: |
+          if ! git diff --exit-code -- \
+            mission-profiles/generated/full-demo-mission.json \
+            API/templates/config_template.json; then
+            echo "::error::Committed mission configs are out of date. Regenerate with:"
+            echo "::error::  node scripts/generate-mission-config.js full-demo"
+            echo "::error::  node scripts/generate-mission-config.js minimal"
+            echo "::error::then commit mission-profiles/generated/full-demo-mission.json and API/templates/config_template.json"
+            exit 1
+          fi
+
   # E2e tests boot the real app. Mode is fixed at process start, so we boot once
   # per mode via the matrix. MMGIS_DEPLOYMENT_MODE is written into .env below.
   test:
@@ -118,11 +155,12 @@ jobs:
         env:
           CI: false
 
-      # Legacy smoke / event-bus tests, kept non-gating (continue-on-error) so a
-      # flaky old assertion doesn't redden the job. Real gate is the step below.
-      - name: Run legacy E2E Tests (non-gating)
+      # Legacy smoke / event-bus specs. Gating (no continue-on-error), matching
+      # their pre-matrix behavior on development — a real regression here fails
+      # the leg. They boot the same app per mode, so they also confirm smoke +
+      # event bus pass under lean, not just full.
+      - name: Run legacy E2E Tests
         run: npx playwright test tests/e2e/smoke.spec.js tests/e2e/eventbus-integration.spec.js --project=chromium
-        continue-on-error: true
 
       # Gating check: each feature's route must be mounted (non-404) in its mode
       # and absent (404) otherwise. Checks mount vs. 404 only, not behavior. No

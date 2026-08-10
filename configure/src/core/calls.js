@@ -1,8 +1,6 @@
-let domain =
-  window.mmgisglobal.NODE_ENV === "development"
-    ? "http://localhost:8888/"
-    : window.mmgisglobal.ROOT_PATH || "";
-if (domain.length > 0 && !domain.endsWith("/")) domain += "/";
+import { getApiBase } from "./urls";
+
+const domain = getApiBase();
 
 const c = {
   missionPath: "Missions/",

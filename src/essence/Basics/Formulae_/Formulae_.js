@@ -1803,18 +1803,18 @@ var Formulae_ = {
         downloadAnchorNode.click()
         downloadAnchorNode.remove()
     },
-    downloadCanvas(canvasId, name, callback) {
-        var link = document.createElement('a')
-        name = name ? name + '.png' : 'mmgis.png'
-        link.setAttribute('download', name)
-        document.getElementById(canvasId).toBlob(function (blob) {
-            var objUrl = URL.createObjectURL(blob)
-            link.setAttribute('href', objUrl)
-            document.body.appendChild(link)
-            link.click()
-            link.remove()
-            if (typeof callback === 'function') callback()
-        })
+    // Downloads a Blob as a file via a transient object URL. Don't convert
+    // via fetch(dataUrl): the shipped CSP's connect-src blocks the data: scheme.
+    downloadBlob(blob, filename) {
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.setAttribute('download', filename)
+        link.setAttribute('href', url)
+        document.body.appendChild(link) // required for firefox
+        link.click()
+        link.remove()
+        // Deferred: an immediate revoke can abort the download.
+        setTimeout(() => URL.revokeObjectURL(url), 10000)
     },
     getMinMaxOfArray(arrayOfNumbers) {
         return {
@@ -2043,28 +2043,49 @@ var Formulae_ = {
         return arr1.filter((e) => arr2.indexOf(e) !== -1)
     },
     /**
-     * Copies input to user's clipboard
+     * Copies text to the user's clipboard. Resolves true on success, false on
+     * failure — never rejects. Tries the async Clipboard API first, falling
+     * back to a hidden textarea + execCommand('copy') when it is absent
+     * (insecure origins) OR when it rejects (e.g. an embedding iframe without
+     * allow="clipboard-write", or a call outside the user-gesture window).
      * @param {string} text - text to copy to clipboard
-     * @credit https://hackernoon.com/copying-text-to-clipboard-with-javascript-df4d4988697f
+     * @returns {Promise<boolean>}
      */
-    copyToClipboard(text) {
-        const el = document.createElement('textarea') // Create a <textarea> element
-        el.value = text // Set its value to the string that you want copied
-        el.setAttribute('readonly', '') // Make it readonly to be tamper-proof
+    async copyToClipboard(text) {
+        if (navigator.clipboard?.writeText) {
+            try {
+                await navigator.clipboard.writeText(text)
+                return true
+            } catch (err) {
+                // Fall through to the legacy path.
+            }
+        }
+        const el = document.createElement('textarea')
+        el.value = text
+        el.setAttribute('readonly', '')
         el.style.position = 'absolute'
-        el.style.left = '-9999px' // Move outside the screen to make it invisible
-        document.body.appendChild(el) // Append the <textarea> element to the HTML document
-        const selected =
-            document.getSelection().rangeCount > 0 // Check if there is any content selected previously
-                ? document.getSelection().getRangeAt(0) // Store selection if found
-                : false // Mark as false to know no selection existed before
-        el.select() // Select the <textarea> content
-        document.execCommand('copy') // Copy - only works as a result of a user action (e.g. click events)
-        document.body.removeChild(el) // Remove the <textarea> element
-        if (selected) {
-            // If a selection existed before copying
-            document.getSelection().removeAllRanges() // Unselect everything on the HTML document
-            document.getSelection().addRange(selected) // Restore the original selection
+        el.style.left = '-9999px'
+        // select() destroys the user's page selection; save and restore it.
+        const selection = document.getSelection()
+        const savedRange =
+            selection && selection.rangeCount > 0
+                ? selection.getRangeAt(0)
+                : null
+        document.body.appendChild(el)
+        try {
+            el.select()
+            const ok = document.execCommand('copy')
+            if (!ok) console.warn('copyToClipboard: copy command rejected')
+            return ok
+        } catch (err) {
+            console.warn('copyToClipboard failed:', err)
+            return false
+        } finally {
+            document.body.removeChild(el)
+            if (selection && savedRange) {
+                selection.removeAllRanges()
+                selection.addRange(savedRange)
+            }
         }
     },
     speedToMetersPerSeconds(speed, fromUnit) {

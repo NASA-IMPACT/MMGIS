@@ -5,6 +5,7 @@ import QueryURL from '../Ancillary/QueryURL'
 import TimeControl from '../Basics/TimeControl_/TimeControl'
 import Login from '../Ancillary/Login/Login'
 import LegendTool from '../Tools/Legend/LegendTool.js'
+import { PANEL_STATE } from '../Basics/PanelManager_/types/layout'
 import mitt from 'mitt'
 
 import $ from 'jquery'
@@ -22,6 +23,11 @@ var mmgisAPI_ = {
     // Internal event bus access for core modules
     _events: events,
     _handlers: handlers,
+
+    // Set by UserInterfaceModern_ on init; null when modern layout is not active
+    _pluginController: null,
+    // Set by UserInterfaceModern_ on init; null when modern layout is not active
+    _panelManager: null,
 
     // Exposes Leaflet map object
     map: null,
@@ -438,7 +444,47 @@ var mmgisAPI_ = {
         return validEvents.includes(eventName)
     },
     writeCoordinateURL: function () {
-        return QueryURL.writeCoordinateURL(false)
+        // The URL builder dereferences objects that only exist after mission
+        // finalization; return null (the "no link yet" signal) until then.
+        if (mmgisAPI_.map == null) return null
+        return QueryURL.writeCoordinateURL()
+    },
+    copyText: function (text) {
+        return F_.copyToClipboard(text)
+    },
+    getViewState: function () {
+        // View metadata for plugins; fields are null until loaded.
+        const map = L_.Map_ && L_.Map_.map
+        const center =
+            map && typeof map.getCenter === 'function' ? map.getCenter() : null
+        return {
+            // L_.mission is the canonical identity (the ?mission= URL value);
+            // msv.mission is a display field that can be stale.
+            missionName: L_.mission || L_.configData?.msv?.mission || null,
+            time: L_.TimeControl_?.currentTime ?? null,
+            center: center ? { lat: center.lat, lng: center.lng } : null,
+            zoom:
+                map && typeof map.getZoom === 'function'
+                    ? map.getZoom()
+                    : null,
+        }
+    },
+    getMapScreenshot: function () {
+        // Capture is engine-specific (Leaflet DOM rasterization vs deck.gl
+        // canvas readback); delegate to the active IMapEngine adapter. A
+        // missing engine means no map is loaded yet.
+        const engine = L_.Map_ && L_.Map_.engine
+        if (engine && typeof engine.captureScreenshot === 'function') {
+            // Convert a sync engine throw into a rejection.
+            try {
+                return Promise.resolve(engine.captureScreenshot())
+            } catch (err) {
+                return Promise.reject(err)
+            }
+        }
+        return Promise.reject(
+            new Error('getMapScreenshot: no active map engine to capture')
+        )
     },
     onLoadCallback: null,
     onLoaded: function (onLoadCallback) {
@@ -451,6 +497,104 @@ var mmgisAPI_ = {
     // Convert {x: , y: } to lng, lat
     unproject: function (xy) {
         return window.mmgisglobal.customCRS.unproject(xy)
+    },
+    showPlugin: function (pluginId) {
+        if (!mmgisAPI_._pluginController) {
+            console.warn('[mmgisAPI] showPlugin: modern layout not active')
+            return false
+        }
+        return mmgisAPI_._pluginController.showPlugin(pluginId)
+    },
+    hidePlugin: function (pluginId) {
+        if (!mmgisAPI_._pluginController) {
+            console.warn('[mmgisAPI] hidePlugin: modern layout not active')
+            return false
+        }
+        return mmgisAPI_._pluginController.hidePlugin(pluginId)
+    },
+    loadPlugin: function (pluginId) {
+        if (!mmgisAPI_._pluginController) {
+            console.warn('[mmgisAPI] loadPlugin: modern layout not active')
+            return false
+        }
+        return mmgisAPI_._pluginController.loadPlugin(pluginId)
+    },
+    unloadPlugin: function (pluginId) {
+        if (!mmgisAPI_._pluginController) {
+            console.warn('[mmgisAPI] unloadPlugin: modern layout not active')
+            return false
+        }
+        return mmgisAPI_._pluginController.unloadPlugin(pluginId)
+    },
+    isPluginLoaded: function (pluginId) {
+        return mmgisAPI_._pluginController?.isPluginLoaded(pluginId) ?? false
+    },
+    isPluginHidden: function (pluginId) {
+        return mmgisAPI_._pluginController?.isPluginHidden(pluginId) ?? false
+    },
+    showPanel: function (panelId) {
+        if (!mmgisAPI_._panelManager) {
+            console.warn('[mmgisAPI] showPanel: modern layout not active')
+            return false
+        }
+        try {
+            const panel = mmgisAPI_._panelManager.getPanelState(panelId)
+            if (!panel) {
+                console.warn(`[mmgisAPI] showPanel: panel "${panelId}" not found`)
+                return false
+            }
+            if (panel.state !== PANEL_STATE.COLLAPSED) return true
+            mmgisAPI_._panelManager.togglePanelCollapsed(panelId)
+            return true
+        } catch (e) {
+            console.warn('[mmgisAPI] showPanel failed:', e)
+            return false
+        }
+    },
+    hidePanel: function (panelId) {
+        if (!mmgisAPI_._panelManager) {
+            console.warn('[mmgisAPI] hidePanel: modern layout not active')
+            return false
+        }
+        try {
+            const panel = mmgisAPI_._panelManager.getPanelState(panelId)
+            if (!panel) {
+                console.warn(`[mmgisAPI] hidePanel: panel "${panelId}" not found`)
+                return false
+            }
+            if (panel.state === PANEL_STATE.COLLAPSED) return true
+            mmgisAPI_._panelManager.setPanelState(panelId, PANEL_STATE.COLLAPSED)
+            return true
+        } catch (e) {
+            console.warn('[mmgisAPI] hidePanel failed:', e)
+            return false
+        }
+    },
+    togglePanel: function (panelId) {
+        if (!mmgisAPI_._panelManager) {
+            console.warn('[mmgisAPI] togglePanel: modern layout not active')
+            return false
+        }
+        try {
+            mmgisAPI_._panelManager.togglePanelCollapsed(panelId)
+            return true
+        } catch (e) {
+            console.warn('[mmgisAPI] togglePanel failed:', e)
+            return false
+        }
+    },
+    _initCoreCommandDispatcher: function () {
+        const handlers = {
+            'core:showPlugin':   ({ pluginId }) => mmgisAPI_.showPlugin(pluginId),
+            'core:hidePlugin':   ({ pluginId }) => mmgisAPI_.hidePlugin(pluginId),
+            'core:loadPlugin':   ({ pluginId }) => mmgisAPI_.loadPlugin(pluginId),
+            'core:unloadPlugin': ({ pluginId }) => mmgisAPI_.unloadPlugin(pluginId),
+            'core:showPanel':    ({ panelId })  => mmgisAPI_.showPanel(panelId),
+            'core:hidePanel':    ({ panelId })  => mmgisAPI_.hidePanel(panelId),
+            'core:togglePanel':  ({ panelId })  => mmgisAPI_.togglePanel(panelId),
+        }
+        Object.entries(handlers).forEach(([ev, fn]) => events.on(ev, fn))
+        return () => Object.entries(handlers).forEach(([ev, fn]) => events.off(ev, fn))
     },
     toggleLayer: async function (layerName, on) {
         if (layerName in L_.layers.data) {
@@ -719,9 +863,40 @@ var mmgisAPI = {
 
     /** writeCoordinateURL - writes out the current view as a url. This returns the long form of
      * the 'Copy Link' feature and does not save a short url to the database.
-     * @returns {string} - a string containing the current view as a url
+     * @returns {string|null} - a string containing the current view as a url, or null if the mission has not finished loading yet
+     * Plugins should prefer `mmgisAPI.request('map:writeCoordinateURL')`.
      */
     writeCoordinateURL: mmgisAPI_.writeCoordinateURL,
+
+    /** getViewState - returns metadata about the current view (for example to
+     * build provenance-rich export filenames). Fields are null until the
+     * mission has loaded far enough to answer them.
+     * @returns {object} {missionName: string|null, time: string|null, center: {lat, lng}|null, zoom: number|null}
+     * Plugins should prefer `mmgisAPI.request('map:getViewState')`.
+     */
+    getViewState: mmgisAPI_.getViewState,
+
+    /** copyText - copies text to the user's clipboard. Uses the async
+     * Clipboard API with a legacy fallback for insecure origins. Note: pages
+     * embedding MMGIS in an iframe (FRAME_ANCESTORS) must set
+     * allow="clipboard-write" for the modern path.
+     * @param {string} text - text to copy
+     * @returns {Promise<boolean>} true on success, false on failure — never rejects
+     * Plugins should prefer `mmgisAPI.request('app:copyText', text)`.
+     */
+    copyText: mmgisAPI_.copyText,
+
+    /** getMapScreenshot - captures a PNG screenshot of the current map view.
+     * Delegates to the active map engine, so the capture strategy is
+     * engine-specific: the Leaflet engine rasterizes its DOM (hiding UI chrome
+     * for the shot), while the deck.gl/GL engine reads its WebGL canvas. Note
+     * that the deck.gl capture is limited to the GL canvas and does not include
+     * HTML overlays/markers layered on top. Asynchronous; requires no backend
+     * call. Rejects if no map engine is active.
+     * @returns {Promise<{blob: Blob, mimeType: 'image/png', extension: 'png', width: number, height: number}>} - resolves to a PNG Blob plus image metadata.
+     * Plugins should prefer `mmgisAPI.request('map:getScreenshot')`.
+     */
+    getMapScreenshot: mmgisAPI_.getMapScreenshot,
 
     /** onLoaded - calls onLoadCallback as a function once MMGIS has finished loading.
      * @param {function} - onLoadCallback - function reference to function that is called when MMGIS is finished loading
@@ -750,6 +925,109 @@ var mmgisAPI = {
      */
     toggleLayer: mmgisAPI_.toggleLayer,
 
+    /** setBasemap - switches the active basemap style by name.
+     * Style names come from msv.basemap.styles[] in the mission config,
+     * or the provider defaults if no styles are configured.
+     * @param {string} styleName - display name of the style (e.g. 'Streets', 'Liberty')
+     * @returns {Promise<boolean>} - true if found and applied, false if not found
+     */
+    setBasemap: (styleName) => mmgisAPI.request('map:setBasemap', styleName),
+
+    /** getBasemap - returns the currently active basemap style.
+     * @returns {Promise<{name: string, style: string} | null>}
+     */
+    getBasemap: () => mmgisAPI.request('map:getBasemap'),
+
+    /** getBasemapStyles - returns all available basemap style options.
+     * @returns {Promise<Array<{name: string, style: string}>>}
+     */
+    getBasemapStyles: () => mmgisAPI.request('map:getBasemapStyles'),
+
+    /** zoomIn - increments the map zoom by 1 level, clamped to the max zoom.
+     * @returns {Promise<boolean>} - true if zoom changed, false if already at max
+     */
+    zoomIn: () => mmgisAPI.request('map:zoomIn'),
+
+    /** zoomOut - decrements the map zoom by 1 level, clamped to the min zoom.
+     * @returns {Promise<boolean>} - true if zoom changed, false if already at min
+     */
+    zoomOut: () => mmgisAPI.request('map:zoomOut'),
+
+    /** latLngToContainerPoint - project a {lat, lng} to pixel coordinates
+     * relative to the map container. Useful for positioning DOM overlays.
+     * @param {{lat: number, lng: number}} latlng
+     * @returns {Promise<{x: number, y: number} | null>}
+     */
+    latLngToContainerPoint: (latlng) => mmgisAPI.request('map:latLngToContainerPoint', latlng),
+    // ============ PLUGIN LIFECYCLE API (modern layout only) ============
+
+    /**
+     * Show a hidden plugin. The plugin must be loaded; its internal state is preserved.
+     * @param {string} pluginId - Tool ID (e.g., 'TitleTool')
+     * @returns {boolean} True if shown, false if plugin not found or layout not active
+     */
+    showPlugin: mmgisAPI_.showPlugin,
+
+    /**
+     * Hide a plugin without destroying it. State is preserved; showPlugin restores it.
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean} True if hidden, false if plugin not found or layout not active
+     */
+    hidePlugin: mmgisAPI_.hidePlugin,
+
+    /**
+     * Load a plugin that is currently deferred (startUnloaded at init, or previously unloaded).
+     * Calls make() on the existing DOM container. The plugin starts visible.
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean} True if loaded, false if not found or load failed
+     */
+    loadPlugin: mmgisAPI_.loadPlugin,
+
+    /**
+     * Fully unload a plugin, calling destroy() and releasing all resources.
+     * The DOM container remains so loadPlugin can recreate it later.
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean} True if unloaded, false if not found or layout not active
+     */
+    unloadPlugin: mmgisAPI_.unloadPlugin,
+
+    /**
+     * Check whether a plugin is currently loaded (make() has been called and not destroyed).
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean}
+     */
+    isPluginLoaded: mmgisAPI_.isPluginLoaded,
+
+    /**
+     * Check whether a plugin is not currently visible — either explicitly hidden
+     * via hidePlugin/startHidden while loaded, or deferred/unloaded (startUnloaded,
+     * or unloadPlugin). Use isPluginLoaded alongside this to tell the two apart.
+     * @param {string} pluginId - Tool ID
+     * @returns {boolean}
+     */
+    isPluginHidden: mmgisAPI_.isPluginHidden,
+
+    /**
+     * Show a collapsed panel, restoring its last visible state.
+     * @param {string} panelId - Panel ID
+     * @returns {boolean} True if shown, false if not found or layout not active
+     */
+    showPanel: mmgisAPI_.showPanel,
+
+    /**
+     * Collapse a panel without destroying its contents.
+     * @param {string} panelId - Panel ID
+     * @returns {boolean} True if hidden, false if not found or layout not active
+     */
+    hidePanel: mmgisAPI_.hidePanel,
+
+    /**
+     * Toggle a panel between collapsed and its last visible state.
+     * @param {string} panelId - Panel ID
+     * @returns {boolean} True if toggled, false if not found or layout not active
+     */
+    togglePanel: mmgisAPI_.togglePanel,
+
     /** overwriteLegends - overwrite the contents displayed in the LegendTool; useful when used with `toggleSeparatedTool` event listener in mmgisAPI
      * @param {array} - legends - an array of objects, where each object must contain the following keys: legend, layerUUID, display_name, opacity. The value for the legend key should be in the same format as what is stored in the layers data under the `_legend` key (i.e. `L_.layers.data[layerName]._legend`). layerUUID and display_name should be strings and opacity should be a number between 0 and 1.
      */
@@ -759,7 +1037,7 @@ var mmgisAPI = {
 
     /**
      * Subscribe to an event
-     * @param {string} event - Event name (e.g., 'layer:toggle', 'time:change', 'tool:change')
+     * @param {string} event - Event name (e.g., 'layer:toggle', 'time:changed', 'tool:change')
      * @param {function} callback - Handler function that receives event data
      * @returns {function} - Unsubscribe function to remove the listener
      * @example
@@ -886,5 +1164,22 @@ var mmgisAPI = {
 }
 
 window.mmgisAPI = mmgisAPI
+
+// The share capabilities are also registered on the request/provide bus —
+// the channel plugins are expected to use (string-named requests survive a
+// postMessage sandbox boundary; direct method calls don't). The direct
+// methods above remain for pages embedding MMGIS. Registered at module
+// scope so hasHandler() is true from page load; each implementation guards
+// its own readiness (null / rejection until the mission and engine exist).
+mmgisAPI.provide('map:writeCoordinateURL', () =>
+    mmgisAPI_.writeCoordinateURL()
+)
+mmgisAPI.provide('map:getViewState', () => mmgisAPI_.getViewState())
+mmgisAPI.provide('map:getScreenshot', () => mmgisAPI_.getMapScreenshot())
+mmgisAPI.provide('app:copyText', (text) =>
+    // Bus payloads arrive from arbitrary plugins; refuse non-strings rather
+    // than clobber the user's clipboard with a coerced 'undefined'.
+    typeof text === 'string' ? mmgisAPI_.copyText(text) : Promise.resolve(false)
+)
 
 export { mmgisAPI_, mmgisAPI }

@@ -16,7 +16,11 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
-import { applyCogFieldsToUrl } from '../Layers_/cogUrlUtils'
+import { compileTileUrl, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
+import {
+    resolveTileLayerSource,
+    syncTileFormatToConfig,
+} from '../Layers_/tileLayerSource'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -51,6 +55,44 @@ const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
+
+let _basemapStyles = []
+let _basemapActiveIndex = 0
+
+function _resolveBasemapStyles(basemapConfig, engineType) {
+    const isLeaflet = engineType === MAP_ENGINE.LEAFLET
+
+    const MAPBOX_DEFAULTS = [
+        { name: 'Streets', style: 'mapbox://styles/mapbox/streets-v12' },
+        { name: 'Satellite', style: 'mapbox://styles/mapbox/satellite-streets-v12' },
+        { name: 'Outdoors', style: 'mapbox://styles/mapbox/outdoors-v12' },
+        { name: 'Light', style: 'mapbox://styles/mapbox/light-v11' },
+        { name: 'Dark', style: 'mapbox://styles/mapbox/dark-v11' },
+    ]
+
+    const MAPLIBRE_DEFAULTS_DECKGL = [
+        { name: 'Streets', style: 'https://tiles.openfreemap.org/styles/liberty' },
+        { name: 'Light', style: 'https://tiles.openfreemap.org/styles/positron' },
+        { name: 'Dark', style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json' },
+    ]
+    const MAPLIBRE_DEFAULTS_LEAFLET = [
+        { name: 'Streets', style: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' },
+        { name: 'Light', style: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png' },
+        { name: 'Dark', style: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png' },
+        { name: 'Terrain', style: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png' },
+    ]
+
+    const maplibreDefaults = isLeaflet ? MAPLIBRE_DEFAULTS_LEAFLET : MAPLIBRE_DEFAULTS_DECKGL
+
+    const styles =
+        basemapConfig.styles && basemapConfig.styles.length > 0
+            ? [...basemapConfig.styles]
+            : basemapConfig.provider === 'mapbox'
+                ? [...MAPBOX_DEFAULTS]
+                : [...maplibreDefaults]
+
+    return styles
+}
 
 let Map_ = {
     /** The native map object (L.Map for Leaflet, Deck for deck.gl). Kept for backward compatibility with existing callers. */
@@ -278,6 +320,61 @@ let Map_ = {
                     engine.removeOverlay(id)
                     return true
                 }),
+                window.mmgisAPI.provide('map:setBasemap', (styleName) => {
+                    const index = _basemapStyles.findIndex((s) => s.name === styleName)
+                    if (index === -1) {
+                        console.warn(`[map:setBasemap] No basemap style found with name: "${styleName}"`)
+                        return false
+                    }
+                    const selectedStyle = _basemapStyles[index]
+                    if (!Map_.engine || typeof Map_.engine.setBasemapStyle !== 'function') {
+                        console.warn('[map:setBasemap] The active engine does not support basemap switching')
+                        return false
+                    }
+                    if (Map_.engine.setBasemapStyle(selectedStyle.style) === false) {
+                        console.warn(`[map:setBasemap] Engine could not apply style: "${styleName}"`)
+                        return false
+                    }
+                    _basemapActiveIndex = index
+                    return true
+                }),
+                window.mmgisAPI.provide('map:getBasemap', () => {
+                    if (_basemapStyles.length === 0) return null
+                    return { ..._basemapStyles[_basemapActiveIndex] }
+                }),
+                window.mmgisAPI.provide('map:getBasemapStyles', () => {
+                    return [..._basemapStyles]
+                }),
+                window.mmgisAPI.provide('map:zoomIn', () => {
+                    if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
+                    const current = Map_.engine.getZoom()
+                    const max = typeof Map_.engine.getMaxZoom === 'function'
+                        ? Map_.engine.getMaxZoom()
+                        : Infinity
+                    const next = Math.min(current + 1, max)
+                    if (next === current) return false
+                    Map_.engine.setZoom(next)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:zoomOut', () => {
+                    if (!Map_.engine || typeof Map_.engine.getZoom !== 'function') return false
+                    const current = Map_.engine.getZoom()
+                    const min = typeof Map_.engine.getMinZoom === 'function'
+                        ? Map_.engine.getMinZoom()
+                        : -Infinity
+                    const next = Math.max(current - 1, min)
+                    if (next === current) return false
+                    Map_.engine.setZoom(next)
+                    return true
+                }),
+                window.mmgisAPI.provide('map:latLngToContainerPoint', (latlng) => {
+                    if (!Map_.engine || typeof Map_.engine.latLngToContainerPoint !== 'function') {
+                        return null
+                    }
+                    if (!latlng || latlng.lat == null || latlng.lng == null) return null
+                    const p = Map_.engine.latLngToContainerPoint(latlng)
+                    return p ? { x: p.x, y: p.y } : null
+                }),
             ]
 
             // Engine event re-emits — translate adapter events onto the bus
@@ -292,6 +389,9 @@ let Map_ = {
             reEmit('drawcancel', 'map:drawcancel')
             reEmit('move', 'map:move')
             reEmit('moveend', 'map:moveend')
+            // Pointer streams consumed by plugins (e.g. measure tools, overlays).
+            reEmit('click', 'map:click')
+            reEmit('mousemove', 'map:mousemove')
 
             // Feature click → bus. Plugins (e.g. AOI Inspect) consume
             // `map:featureClick` to react to clicks on layers created via
@@ -365,6 +465,24 @@ let Map_ = {
 
         buildToolBar()
 
+        const basemapConfig = L_.configData?.msv?.basemap
+        if (basemapConfig && basemapConfig.provider && basemapConfig.provider !== 'none') {
+            _basemapStyles = _resolveBasemapStyles(basemapConfig, engineType)
+            let activeIndex = _basemapStyles.findIndex(
+                (s) => s.style === basemapConfig.style
+            )
+            // A configured style outside the resolved list must still be
+            // reported (and switchable) as the active basemap.
+            if (activeIndex === -1 && basemapConfig.style) {
+                _basemapStyles.unshift({
+                    name: 'Default',
+                    style: basemapConfig.style,
+                })
+                activeIndex = 0
+            }
+            _basemapActiveIndex = Math.max(activeIndex, 0)
+        }
+
         TimeControl.updateLayersTime()
     },
     /**
@@ -431,7 +549,9 @@ let Map_ = {
         if (isNaN(lat)) lat = 0
         var lon = parseFloat(latlonzoom[1])
         if (isNaN(lon)) lon = 0
-        var zoom = parseInt(latlonzoom[2])
+        // parseFloat: the modern map zooms fractionally; truncating here
+        // visibly changes restored views (Leaflet snaps integers itself).
+        var zoom = parseFloat(latlonzoom[2])
         if (zoom == null || isNaN(zoom))
             zoom =
                 this.engine.getZoom() ||
@@ -1129,14 +1249,15 @@ async function makeVectorLayer(
                 }
 
                 layerObj.style = layerObj.style || {}
-                layerObj.style.opacity =
-                    ctx.layerRegistry.opacity[layerObj.name] || 1
+                // Layer opacity rides the deck.gl `opacity` prop alone — the
+                // one prop setLayerOpacity updates. style.opacity is the
+                // configured stroke alpha; deck multiplies the two.
                 ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
                         type: layerObj.type,
                         data,
-                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
                         interactive: true,
@@ -1215,17 +1336,16 @@ async function makeVectorLayer(
             layerObj.style = layerObj.style || {}
             layerObj.style.layerName = layerObj.name
 
-            layerObj.style.opacity =
-                ctx.layerRegistry.opacity[layerObj.name] || 1
-            //layerObj.style.fillOpacity = ctx.layerRegistry.opacity[layerObj.name]
-
             if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+                // Layer opacity rides the deck.gl `opacity` prop alone — the
+                // one prop setLayerOpacity updates. style.opacity is the
+                // configured stroke alpha; deck multiplies the two.
                 ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(
                     layerObj.name,
                     {
                         type: layerObj.type || 'vector',
                         geojson: data,
-                        opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+                        opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
                         interactive: true,
@@ -1238,6 +1358,10 @@ async function makeVectorLayer(
                 resolve()
                 return
             }
+
+            // Leaflet carries layer opacity in the style itself
+            layerObj.style.opacity =
+                ctx.layerRegistry.opacity[layerObj.name] ?? 1
 
             const vl = constructVectorLayer(
                 data,
@@ -1262,6 +1386,10 @@ async function makeVectorLayer(
                 )
             }
 
+            // Only Leaflet vector layers reach here — the deck.gl branch above
+            // returns first. Attachments are therefore Leaflet-only, which is
+            // why L_.setLayerOpacity skips its sublayer pass for engine-owned
+            // layers.
             ctx.layerRegistry.attachments[layerObj.name] = vl.sublayers
             ctx.layerRegistry.layer[layerObj.name] = vl.layer
 
@@ -1505,70 +1633,13 @@ async function makeTileLayer(layerObj, mapContext = null) {
         default: true,
     }
 
-    const tileLevel = getActiveTileLevel(layerObj)
-    const tileLevelUrl = getTileLevelUrl(tileLevel)
-    const tileElevation = getTileLevelElevation(tileLevel)
-    const sourceUrl = tileLevelUrl || layerObj.url
-    let layerUrl = L_.getUrl(layerObj.type, sourceUrl, layerObj)
+    // Shared with TimeControl.reloadLayer so creation and time-driven reloads
+    // resolve the same source and tile format.
+    const tileSource = resolveTileLayerSource(layerObj)
+    const { splitColonType, tileElevation, tileFormat } = tileSource
+    let layerUrl = tileSource.url
 
-    let splitColonType
-    const splitColonLayerUrl = sourceUrl.split(':')
-    if (splitColonLayerUrl[1] != null) {
-        let bandsParam = ''
-        let b
-        let resamplingParam = ''
-
-        switch (splitColonLayerUrl[0]) {
-            case 'stac-collection':
-                splitColonType = splitColonLayerUrl[0]
-                // Use shared transformation function
-                layerUrl = L_.transformStacUrl(layerObj.url, layerObj, 'tile')
-                layerObj.tileformat = 'wmts'
-                break
-            case 'COG':
-                splitColonType = splitColonLayerUrl[0]
-
-                // Bands parameter (expression will be added dynamically in getTileUrl)
-                bandsParam = ''
-
-                // Only add bands if no expression exists (expression takes precedence)
-                if (
-                    !layerObj.cogExpression ||
-                    layerObj.cogExpression.trim() === ''
-                ) {
-                    b = layerObj.cogBands
-                    if (b != null) {
-                        b.forEach((band) => {
-                            if (band != null) bandsParam += `&bidx=${band}`
-                        })
-                    }
-                }
-
-                resamplingParam = ''
-                if (layerObj.cogResampling) {
-                    resamplingParam = `&resampling=${layerObj.cogResampling}`
-                }
-
-                layerUrl = ServiceUrls.buildTiTilerCogTilesUrl(layerUrl, layerObj, {
-                    tileMatrixSet: layerObj.tileMatrixSet,
-                    bands: (!layerObj.cogExpression || layerObj.cogExpression.trim() === '') ? layerObj.cogBands : null,
-                    resampling: layerObj.cogResampling
-                })
-                break
-            case 'titiler-url':
-                // Pre-existing TiTiler endpoint URL - just strip the prefix and use as-is
-                // COG parameters will be appended dynamically in getTileUrl middleware
-                splitColonType = splitColonLayerUrl[0]
-                layerUrl = splitColonLayerUrl.slice(1).join(':')
-                // Make URL absolute if needed
-                if (!F_.isUrlAbsolute(layerUrl)) {
-                    layerUrl = L_.missionPath + layerUrl
-                }
-                break
-            default:
-                break
-        }
-    }
+    syncTileFormatToConfig(layerObj, tileSource)
 
     let bb = null
     if (layerObj.hasOwnProperty('boundingBox')) {
@@ -1583,24 +1654,18 @@ async function makeTileLayer(layerObj, mapContext = null) {
         null
     )
 
-    let tileFormat = 'tms'
-    // For backward compatibility with the .tms option
-    if (typeof layerObj.tileformat === 'undefined') {
-        tileFormat = typeof layerObj.tms === 'undefined' ? true : layerObj.tms
-        tileFormat = tileFormat ? 'tms' : 'wmts'
-    } else tileFormat = layerObj.tileformat
-
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
         // would normally add per-tile in getTileUrl.
-        if (splitColonType === 'COG' || splitColonType === 'stac-collection' || layerObj.cogTransform === true) {
-            layerUrl = applyCogFieldsToUrl(layerUrl, layerObj)
-        }
+        layerUrl = compileTileUrl(
+            layerUrl,
+            buildTileUrlOptions(layerObj, splitColonType, tileFormat)
+        )
 
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'tile',
             url: layerUrl,
-            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
@@ -1611,38 +1676,23 @@ async function makeTileLayer(layerObj, mapContext = null) {
         return
     }
 
+    // Same builder the DeckGL path uses, so both engines see identical,
+    // already-formatted time values from the moment the layer is created.
+    const tileOptions = buildTileUrlOptions(layerObj, splitColonType, tileFormat)
+
     ctx.layerRegistry.layer[layerObj.name] = L.tileLayer.colorFilter(layerUrl, {
+        // Tile-URL options, spread from the same builder TimeControl passes to
+        // refresh() so a layer's creation and refresh options cannot diverge.
+        // The Leaflet-only options follow, so they win on any name overlap.
+        ...tileOptions,
         minZoom: parseInt(layerObj.minZoom),
         maxZoom: parseInt(layerObj.maxZoom),
         maxNativeZoom: parseInt(layerObj.maxNativeZoom),
-        tileFormat: tileFormat,
         tms: tileFormat === 'tms',
-        splitColonType: splitColonType,
         //noWrap: true,
         continuousWorld: true,
         reuseTiles: true,
         bounds: bb,
-        timeEnabled: layerObj.time != null && layerObj.time.enabled === true,
-        time: typeof layerObj.time === 'undefined' ? '' : layerObj.time.end,
-        compositeTile:
-            typeof layerObj.time === 'undefined'
-                ? false
-                : layerObj.time.compositeTile || false,
-        starttime:
-            typeof layerObj.time === 'undefined' ? '' : layerObj.time.start,
-        endtime: typeof layerObj.time === 'undefined' ? '' : layerObj.time.end,
-        customTimes:
-            typeof layerObj.time === 'undefined'
-                ? null
-                : layerObj.time.customTimes,
-        cogTransform: layerObj.cogTransform,
-        cogMin: layerObj.cogMin,
-        currentCogMin: layerObj.currentCogMin,
-        cogMax: layerObj.cogMax,
-        currentCogMax: layerObj.currentCogMax,
-        cogColormap: layerObj.cogColormap,
-        cogExpression: layerObj.cogExpression,
-        currentCogExpression: layerObj.currentCogExpression,
         variables: layerObj.variables || {},
     })
 
@@ -1653,7 +1703,7 @@ async function makeTileLayer(layerObj, mapContext = null) {
 
     L_.setLayerOpacity(
         layerObj.name,
-        ctx.layerRegistry.opacity[layerObj.name] || 1
+        ctx.layerRegistry.opacity[layerObj.name] ?? 1
     )
 
     L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
@@ -1706,39 +1756,6 @@ async function makeTileLayer(layerObj, mapContext = null) {
     allLayersLoaded()
 }
 
-function getActiveTileLevel(layerObj) {
-    const levels = layerObj.variables?.tileLevels
-    if (!Array.isArray(levels) || levels.length === 0) return null
-
-    const selected =
-        layerObj.currentTileLevel ??
-        layerObj.variables?.defaultTileLevel ??
-        getTileLevelKey(levels[0], 0)
-
-    return (
-        levels.find((level, index) => getTileLevelKey(level, index) == selected) ||
-        levels[0]
-    )
-}
-
-function getTileLevelKey(level, index) {
-    if (level == null || typeof level !== 'object') return String(level ?? index)
-    return String(level.value ?? level.id ?? level.name ?? level.label ?? index)
-}
-
-function getTileLevelUrl(level) {
-    if (level == null || typeof level !== 'object') return null
-    return typeof level.url === 'string' && level.url.length > 0
-        ? level.url
-        : null
-}
-
-function getTileLevelElevation(level) {
-    if (level == null || typeof level !== 'object') return undefined
-    const elevation = Number(level.height ?? level.elevation ?? level.z)
-    return Number.isFinite(elevation) ? elevation : undefined
-}
-
 function makeVectorTileLayer(layerObj, mapContext = null) {
     // Default to main map context for backward compatibility
     const ctx = mapContext || {
@@ -1760,7 +1777,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'vectortile',
             url: layerUrl,
-            opacity: ctx.layerRegistry.opacity[layerObj.name] || 1,
+            opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),

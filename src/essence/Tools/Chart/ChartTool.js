@@ -21,8 +21,6 @@ import { createRoot } from 'react-dom/client'
 
 import ChartComponent from './ChartComponent'
 
-const TOOLBAR_BUTTON_ID = 'toolButtonChart'
-
 // ── Module-level state ────────────────────────────────────────────────────────
 // MMGIS tools are mutually exclusive, so when FetchStats emits `analysisReady`,
 // Chart's `make()` hasn't run yet. The bus listeners have to live at module
@@ -34,26 +32,16 @@ let _subscribed = false
 
 function _onAnalysisReady(payload) {
     _latestAnalysisData = payload?.analysisData ?? null
-    if (_instance && _instance._root) {
+    if (_instance && _instance._reactRoot) {
         _instance._render()
         return
     }
-    // Auto-open the Chart panel by clicking its toolbar button. MMGIS doesn't
-    // currently expose a programmatic "activate tool" primitive, so we use the
-    // convention every separated tool follows. If the button is missing —
-    // toolbar still booting, markup change, or Chart not registered in the
-    // mission — surface it loudly instead of silently dropping the open.
-    if (typeof document === 'undefined') return
-    const btn = document.getElementById(TOOLBAR_BUTTON_ID)
-    if (btn) {
-        btn.click()
-    } else {
-        console.warn(
-            `[Chart] #${TOOLBAR_BUTTON_ID} not found; analysisReady payload ` +
-                `is stashed but the panel could not auto-open. ` +
-                `Is the Chart tool enabled in the mission config?`
-        )
-    }
+    // Auto-open the Chart panel via the core plugin loader. Chart is
+    // registered `startUnloaded: true`, so make() hasn't run yet — this
+    // mounts it in its existing container. No-ops (with a warning) if Chart
+    // is already loaded, and warns if the modern layout / plugin isn't active.
+    if (typeof window === 'undefined' || !window.mmgisAPI?.emit) return
+    window.mmgisAPI.emit('core:loadPlugin', { pluginId: 'ChartTool' })
 }
 
 function _onAnalysisStart() {
@@ -61,7 +49,7 @@ function _onAnalysisStart() {
     // briefly see stale results in the gap before FetchStats's analysisReady
     // arrives. Re-renders the panel if it's already open.
     _latestAnalysisData = null
-    if (_instance && _instance._root) _instance._render()
+    if (_instance && _instance._reactRoot) _instance._render()
 }
 
 function _subscribeBus() {
@@ -96,12 +84,17 @@ const ChartTool = {
     // Collapse the docked side rail; the panel is `separatedTool: true`.
     height: 0,
     width: 0,
-    MMGISInterface: null,
-    _root: null,
+    targetId: null,
     _reactRoot: null,
 
     make(targetId) {
-        this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
+        this.targetId = typeof targetId === 'string' ? targetId : 'toolPanel'
+        const container = document.getElementById(this.targetId)
+        if (!container) {
+            console.error(`ChartTool: container ${this.targetId} not found`)
+            return
+        }
+        this._reactRoot = createRoot(container)
         _instance = this
         this._render()
     },
@@ -111,11 +104,7 @@ const ChartTool = {
             this._reactRoot.unmount()
             this._reactRoot = null
         }
-        this._root = null
-        if (this.MMGISInterface) {
-            this.MMGISInterface.separateFromMMGIS()
-            this.MMGISInterface = null
-        }
+        this.targetId = null
         if (_instance === this) _instance = null
     },
 
@@ -134,31 +123,11 @@ const ChartTool = {
     },
 
     _onClose() {
-        // Same toolbar-button convention as _onAnalysisReady, same caveat.
-        const btn = document.getElementById(TOOLBAR_BUTTON_ID)
-        if (btn) {
-            btn.click()
-        } else {
-            console.warn(
-                `[Chart] #${TOOLBAR_BUTTON_ID} not found; cannot close ` +
-                    `panel via the toolbar.`
-            )
-        }
+        // Fully unload (not just hide) so a later analysisReady re-mounts a
+        // fresh instance via _onAnalysisReady's core:loadPlugin call.
+        if (typeof window === 'undefined' || !window.mmgisAPI?.unloadPlugin) return
+        window.mmgisAPI.unloadPlugin('ChartTool')
     },
-}
-
-function interfaceWithMMGIS(tool) {
-    const root = document.createElement('div')
-    root.className = 'chart-tool-host'
-    document.body.appendChild(root)
-    tool._root = root
-    tool._reactRoot = createRoot(root)
-
-    this.separateFromMMGIS = function () {
-        if (tool._root && tool._root.parentNode) {
-            tool._root.parentNode.removeChild(tool._root)
-        }
-    }
 }
 
 export default ChartTool

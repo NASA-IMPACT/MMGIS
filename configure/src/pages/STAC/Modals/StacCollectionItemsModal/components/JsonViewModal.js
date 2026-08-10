@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { getApiBase } from "../../../../../core/urls";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
@@ -191,8 +192,7 @@ export default function JsonViewModal({ classes, open, onClose, item }) {
     try {
       const leaflet = window.L || L;
       if (!leaflet) return;
-      let domain = window.mmgisglobal.NODE_ENV === "development" ? "http://localhost:8888/" : window.mmgisglobal.ROOT_PATH || "";
-      if (domain.length > 0 && !domain.endsWith("/")) domain += "/";
+      const domain = getApiBase();
       let titilerUrl = `${domain}titiler/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?url=${encodeURIComponent(cogUrl)}`;
       if (cogAsset && cogAsset['raster:bands'] && cogAsset['raster:bands'][0]) {
         const firstBand = cogAsset['raster:bands'][0];

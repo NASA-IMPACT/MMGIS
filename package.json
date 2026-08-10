@@ -1,6 +1,6 @@
 {
   "name": "mmgis",
-  "version": "4.2.13-20260701",
+  "version": "4.2.21-20260729",
   "description": "A web-based mapping and localization solution for science operation on planetary missions.",
   "homepage": "build",
   "repository": {
@@ -36,10 +36,10 @@
     "cesium"
   ],
   "scripts": {
-    "db:start": "docker-compose -f docker-compose.db.yml up -d",
-    "db:stop": "docker-compose -f docker-compose.db.yml down",
-    "db:logs": "docker-compose -f docker-compose.db.yml logs -f",
-    "prestart": "docker-compose -f docker-compose.db.yml up -d --wait",
+    "db:start": "docker compose -f docker-compose.db.yml up -d",
+    "db:stop": "docker compose -f docker-compose.db.yml down",
+    "db:logs": "docker compose -f docker-compose.db.yml logs -f",
+    "prestart": "docker compose -f docker-compose.db.yml up -d --wait",
     "start": "node scripts/init-db.js && node scripts/server.js",
     "start:no-docker": "node scripts/init-db.js && node scripts/server.js",
     "start:prod": "node scripts/init-db.js && cross-env NODE_ENV=production node scripts/server.js",
@@ -136,6 +136,7 @@
     "http-proxy-middleware": "^3.0.2",
     "isomorphic-ws": "5.0.0",
     "jquery": "^3.5.1",
+    "jspdf": "^4.2.1",
     "lithosphere": "^1.5.5",
     "mapbox-gl": "^3.20.0",
     "maplibre-gl": "^5.21.0",
