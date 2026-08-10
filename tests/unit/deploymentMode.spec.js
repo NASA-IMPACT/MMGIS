@@ -29,25 +29,19 @@ test.describe('deploymentMode', () => {
     })
 
     test('defaults to full when MMGIS_DEPLOYMENT_MODE is unset', () => {
-        const { isFull, isLean, MODE } = freshRequire()
-        expect(isFull()).toBe(true)
-        expect(isLean()).toBe(false)
+        const { MODE } = freshRequire()
         expect(MODE).toBe('full')
     })
 
     test('resolves full when MMGIS_DEPLOYMENT_MODE=full', () => {
         process.env.MMGIS_DEPLOYMENT_MODE = 'full'
-        const { isFull, isLean, MODE } = freshRequire()
-        expect(isFull()).toBe(true)
-        expect(isLean()).toBe(false)
+        const { MODE } = freshRequire()
         expect(MODE).toBe('full')
     })
 
     test('resolves lean when MMGIS_DEPLOYMENT_MODE=lean', () => {
         process.env.MMGIS_DEPLOYMENT_MODE = 'lean'
-        const { isFull, isLean, MODE } = freshRequire()
-        expect(isLean()).toBe(true)
-        expect(isFull()).toBe(false)
+        const { MODE } = freshRequire()
         expect(MODE).toBe('lean')
     })
 
@@ -60,9 +54,7 @@ test.describe('deploymentMode', () => {
 
     test('treats an empty string as unset and defaults to full', () => {
         process.env.MMGIS_DEPLOYMENT_MODE = ''
-        const { isFull, isLean, MODE } = freshRequire()
-        expect(isFull()).toBe(true)
-        expect(isLean()).toBe(false)
+        const { MODE } = freshRequire()
         expect(MODE).toBe('full')
     })
 
@@ -78,7 +70,5 @@ test.describe('deploymentMode', () => {
         const helper = freshRequire()
         process.env.MMGIS_DEPLOYMENT_MODE = 'full'
         expect(helper.MODE).toBe('lean')
-        expect(helper.isLean()).toBe(true)
-        expect(helper.isFull()).toBe(false)
     })
 })

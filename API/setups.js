@@ -2,6 +2,22 @@ const fs = require("fs");
 const path = require("path");
 
 const logger = require("./logger");
+const { enabled } = require("./Backend/Utils/capabilities");
+
+// A setup with no `capability` is always wired (Users, Accounts, Config, …).
+// A setup declaring `capability: "<name>"` is wired only when that capability
+// is enabled in the current deployment mode. This is the single seam where the
+// per-module on/off decision lives — module bodies stay mode-agnostic.
+// INVARIANT: this gates the feature-presence hooks (onceInit, onceStarted)
+// ONLY. onceSynced (model sync) runs unconditionally — models register at
+// require-time and sync on every boot regardless of mode, so a gated-off
+// feature's tables are created but sit unused in the mode that gates it. That's
+// deliberate minimal-divergence gating (ADR D2: keep, env-gated); gating model
+// registration per-mode would re-spread mode logic into every module for no
+// benefit. Because the gate lives here, a gated setup's onceInit assumes it
+// is enabled — only this discovery seam may call it.
+const isSetupEnabled = (setup) =>
+  setup == null || setup.capability == null || enabled(setup.capability);
 
 let getBackendSetups = (cb) => {
   let setups = {};
@@ -170,15 +186,26 @@ let getBackendSetups = (cb) => {
         cb({
           init: (s) => {
             for (let f in setups) {
+              // A module declaring `capability` is wired only when that
+              // capability is enabled in the current mode. onceInit is
+              // feature-presence (route mounts) — gate it.
+              if (!isSetupEnabled(setups[f])) continue;
               if (typeof setups[f].onceInit === "function") setups[f].onceInit(s);
             }
           },
           started: (s) => {
-            for (let f in setups)
+            for (let f in setups) {
+              // onceStarted is feature-presence too — same gate as onceInit.
+              if (!isSetupEnabled(setups[f])) continue;
               if (typeof setups[f].onceStarted === "function")
                 setups[f].onceStarted(s);
+            }
           },
           synced: (s) => {
+            // UNCONDITIONAL by design: models register at require-time and sync
+            // in every mode (ADR D2: keep, env-gated). A gated-off feature's
+            // tables are created and left unused, not absent — gating
+            // registration per-mode would scatter mode logic for no benefit.
             for (let f in setups)
               if (typeof setups[f].onceSynced === "function")
                 setups[f].onceSynced(s);

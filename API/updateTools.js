@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const logger = require("./logger");
-const { isLean } = require("./Backend/Utils/deploymentMode");
+const { enabled } = require("./Backend/Utils/capabilities");
 
 function updateTools() {
   let tools = {};
@@ -39,15 +39,18 @@ function updateTools() {
       return;
     }
 
-    // Lean deployments exclude the Draw tool entirely
-    if (isLean() && items[i].name === "Draw") continue;
-
     if (isDir && items[i].name[0] != "_" && items[i].name[0] != ".") {
       try {
         const contents = fs.readFileSync(
           toolsPath + "/" + items[i].name + "/config.json"
         );
         const jsonContent = JSON.parse(contents);
+        // A tool may declare the capability it needs in its config.json; it is
+        // excluded from the registry when that capability is off in this mode
+        // (e.g. Draw declares "capability": "draw", gated out of lean). This
+        // replaces the former hardcoded name check.
+        if (jsonContent.capability != null && !enabled(jsonContent.capability))
+          continue;
         tools[items[i].name] = jsonContent;
       } catch (err) {
         logger(

@@ -14,7 +14,7 @@ import {
   setSnackBarText,
 } from "../../core/ConfigureStore";
 import { calls } from "../../core/calls";
-import { isLeanMode } from "../../core/capabilities";
+import { isCapabilityEnabled } from "../../core/capabilities";
 
 import NewMissionModal from "./Modals/NewMissionModal/NewMissionModal";
 
@@ -317,7 +317,7 @@ export default function Panel() {
           </ul>
         </div>
         <div className={c.pages}>
-          {!isLeanMode() ? (
+          {isCapabilityEnabled("geodatasets") ? (
             <Button
               className={c.pageButton}
               variant="contained"
@@ -331,7 +331,7 @@ export default function Panel() {
               GeoDatasets
             </Button>
           ) : null}
-          {!isLeanMode() ? (
+          {isCapabilityEnabled("datasets") ? (
             <Button
               className={c.pageButton}
               variant="contained"
@@ -346,7 +346,7 @@ export default function Panel() {
             </Button>
           ) : null}
 
-          {isLeanMode() ? (
+          {isCapabilityEnabled("deployments") ? (
             <Button
               className={c.pageButton}
               variant="contained"

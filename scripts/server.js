@@ -58,7 +58,7 @@ const createDevServerConfig = require("../configuration/webpackDevServer.config"
 
 const middleware = require("./middleware").middleware;
 
-const { isFull } = require("../API/Backend/Utils/deploymentMode");
+const { enabled } = require("../API/Backend/Utils/capabilities");
 
 const isDevEnv = process.env.NODE_ENV === "development";
 
@@ -490,8 +490,12 @@ const useSwaggerSchema =
     swaggerUi.setup(schema, swaggerOptions)(...args);
 
 ///
-adjacentServers();
-initAdjacentServersProxy(app, isDocker, ensureAdmin);
+// The bundled sidecar cluster (spawner + proxy mounts) is gated as one
+// capability; the modules themselves are mode-agnostic now.
+if (enabled("localSidecars")) {
+  adjacentServers();
+  initAdjacentServersProxy(app, isDocker, ensureAdmin);
+}
 //
 
 let s = {
@@ -634,7 +638,7 @@ setups.getBackendSetups(function (setups) {
       express.static(path.join(rootDir, "/examples"))
     );
   app.use(`${ROOT_PATH}/public`, express.static(path.join(rootDir, "/public")));
-  if (isFull()) {
+  if (enabled("localMissions")) {
     app.use(
       `${ROOT_PATH}/Missions`,
       ensureUser(),

@@ -54,14 +54,19 @@ const FEATURES = [
         name: 'server-side raster utilities',
         mode: 'full',
         method: 'post',
-        // /api/utils mounts in both modes, but its raster endpoints are isFull()-only.
+        // /api/utils is mounted in both modes, but the raster endpoints inside
+        // it (getbands/getprofile/...) are registered only when the
+        // localMissions capability is enabled (full).
         path: '/api/utils/getbands',
     },
     {
         name: 'bundled sidecar services / proxy (titiler)',
         mode: 'full',
         method: 'get',
-        // /titiler proxy needs isFull() AND WITH_TITILER=true; lean has neither.
+        // The /titiler proxy is mounted only when the localSidecars capability
+        // is enabled (full) AND WITH_TITILER=true (the full CI leg keeps the
+        // sample.env sidecar flags on). The lean leg turns the WITH_* flags off
+        // and the proxy is also localSidecars-gated, so it is absent there.
         path: '/titiler/healthz',
     },
 
@@ -70,7 +75,8 @@ const FEATURES = [
         name: 'dashboard publish flow (deployments)',
         mode: 'lean',
         method: 'get',
-        // Mounted only when isLean(); ensureAdmin rejects with 200 (not 404).
+        // Mounted only when the deployments capability is enabled (lean);
+        // ensureAdmin rejects with a 200 JSON body (not 404) when present.
         path: '/api/deployments',
     },
 ]

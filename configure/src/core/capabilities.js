@@ -7,22 +7,33 @@
 
 const currentMode = () => (window.mmgisglobal || {}).DEPLOYMENT_MODE || "full";
 
-// The one mode predicate — consumers ask this instead of comparing strings.
-export const isLeanMode = () => currentMode() === "lean";
-
-const CAPABILITY_RULES = {
-  // Anything served by the local sidecar proxies (/titiler, /stac, …) or the
-  // on-disk Missions/ tree — both absent in lean deployments.
-  localSidecars: (mode) => mode !== "lean",
+// Capability -> the deployment mode(s) that enable it. This is the Configure-SPA
+// twin of the backend definition in API/Backend/Utils/capabilities.js — kept
+// separate by design (Configure reads DEPLOYMENT_MODE off mmgisglobal; the
+// backend reads the env directly), and using the same "capability -> enabling
+// mode(s)" list shape so the two twins read identically and a shared capability
+// is easy to keep in agreement.
+const CAPABILITIES = {
+  // Local sidecar proxies (/titiler, /stac, …) and the on-disk Missions/ tree —
+  // absent in lean.
+  localSidecars: ["full"],
+  // Geodata management pages — gated off in lean.
+  datasets: ["full"],
+  geodatasets: ["full"],
+  // Dashboard publish flow (Deployments page + Publish button) — lean only.
+  deployments: ["lean"],
 };
 
+// Contract: an unknown capability warns and hides the component (fails safe at
+// render time), unlike the backend twin which throws at boot so a typo is a
+// deploy error.
 export const isCapabilityEnabled = (capability) => {
-  const rule = CAPABILITY_RULES[capability];
-  if (rule == null) {
+  const modes = CAPABILITIES[capability];
+  if (modes == null) {
     console.warn(
       `Unknown capability "${capability}" — hiding the component that requires it.`
     );
     return false;
   }
-  return rule(currentMode());
+  return modes.includes(currentMode());
 };

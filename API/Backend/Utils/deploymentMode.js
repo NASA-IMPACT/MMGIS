@@ -4,6 +4,12 @@
  *  - "full" (default): the complete MMGIS application as shipped today.
  *  - "lean": a gated-down deployment shape.
  * Any other value is a configuration error and throws at startup.
+ *
+ * This module is the one env read and exposes only the resolved MODE string.
+ * It deliberately exports no isFull()/isLean() predicates: what each mode
+ * actually turns on or off is the job of capabilities.js, which reads MODE here
+ * and is the single place that interprets it. Ask `enabled("<capability>")`
+ * instead of comparing MODE.
  */
 
 const VALID_MODES = ["full", "lean"];
@@ -18,12 +24,4 @@ if (!VALID_MODES.includes(mode)) {
   );
 }
 
-function isLean() {
-  return mode === "lean";
-}
-
-function isFull() {
-  return mode === "full";
-}
-
-module.exports = { MODE: mode, isLean, isFull };
+module.exports = { MODE: mode };

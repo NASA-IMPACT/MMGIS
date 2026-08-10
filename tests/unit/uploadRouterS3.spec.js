@@ -10,10 +10,11 @@ import path from 'path'
 // root-relative /assets/… path; in full mode it keeps writing to Missions/
 // on disk and never touches S3.
 //
-// The router resolves the deployment mode through
-// API/Backend/Utils/deploymentMode.js, which reads the env once at load — so
-// each test clears the require cache and re-requires the router under a fresh
-// environment (same pattern as deploymentMode.spec.js). The HTTP harness
+// The router asks capabilities.js (enabled('s3AssetUploads')), which resolves
+// the deployment mode through API/Backend/Utils/deploymentMode.js once at load
+// — so each test clears the require cache for the router AND both mode modules
+// and re-requires under a fresh environment (same pattern as
+// deploymentMode.spec.js). The HTTP harness
 // mirrors Card/uploadRouting.spec.js — a real express server on an ephemeral
 // port — but drives it with http.request and a hand-built multipart body
 // rather than global fetch: Card/uploadImage.spec.js replaces global.fetch
@@ -22,6 +23,7 @@ import path from 'path'
 
 const ROUTER_PATH = '../../API/Backend/Upload/uploadRouter.js'
 const MODE_PATH = '../../API/Backend/Utils/deploymentMode.js'
+const CAPS_PATH = '../../API/Backend/Utils/capabilities.js'
 const MISSIONS_DIR = path.join(__dirname, '../../Missions')
 
 const ENV_KEYS = ['MMGIS_DEPLOYMENT_MODE', 'MMGIS_SHARED_ASSET_BUCKET']
@@ -32,6 +34,7 @@ function freshRouterModule(env) {
         else process.env[key] = env[key]
     })
     delete require.cache[require.resolve(MODE_PATH)]
+    delete require.cache[require.resolve(CAPS_PATH)]
     delete require.cache[require.resolve(ROUTER_PATH)]
     return require(ROUTER_PATH)
 }
@@ -122,6 +125,7 @@ test.describe('upload router lean-mode S3 storage', () => {
             else process.env[key] = savedEnv[key]
         })
         delete require.cache[require.resolve(MODE_PATH)]
+        delete require.cache[require.resolve(CAPS_PATH)]
         delete require.cache[require.resolve(ROUTER_PATH)]
     })
 
