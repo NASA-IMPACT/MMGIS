@@ -398,9 +398,14 @@ let Map_ = {
             // `map:createLayer`. The whole pick result is forwarded so
             // consumers can filter by layerId or react to empty-space clicks.
             if (typeof engine.onFeatureClick === 'function') {
-                const off = engine.onFeatureClick((info) =>
+                const off = engine.onFeatureClick((info) => {
                     window.mmgisAPI.emit('map:featureClick', info)
-                )
+                    if (info?.feature != null)
+                        emitFeatureClick(info.feature, info.layerId, {
+                            latlng: info.latlng,
+                            containerPoint: info.pixel,
+                        })
+                })
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
         }
@@ -1085,6 +1090,18 @@ function onEachFeatureDefault(feature, layer) {
     }
 }
 
+function emitFeatureClick(feature, layerName, e) {
+    if (!window.mmgisAPI) return
+    window.mmgisAPI.emit('feature:click', {
+        feature: feature ?? null,
+        layerName: layerName ?? null,
+        latlng: e?.latlng ? { lat: e.latlng.lat, lng: e.latlng.lng } : null,
+        pixel: e?.containerPoint
+            ? { x: e.containerPoint.x, y: e.containerPoint.y }
+            : null,
+    })
+}
+
 Map_.featureDefaultClick = featureDefaultClick
 function featureDefaultClick(feature, layer, e) {
     if (
@@ -1092,6 +1109,7 @@ function featureDefaultClick(feature, layer, e) {
         ToolController_.activeTool.disableLayerInteractions === true
     )
         return
+    emitFeatureClick(feature, layer?.options?.layerName, e)
     MetadataCapturer.populateMetadata(layer, () => {
         Kinds.use(
             L_.layers.data[layer.options.layerName].kind,
@@ -1835,6 +1853,11 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                     let ell = { latlng: null }
                     if (e.latlng != null)
                         ell.latlng = JSON.parse(JSON.stringify(e.latlng))
+                    emitFeatureClick(
+                        L_.layers.layer[layerName]?.activeFeatures?.[0],
+                        layerName,
+                        ell
+                    )
                     MetadataCapturer.populateMetadata(layer, () => {
                         Kinds.use(
                             L_.layers.data[layerName].kind,

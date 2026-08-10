@@ -288,6 +288,7 @@ window.mmgisAPI.on('tool:change', ({ toolName }) => {
 | Event | Payload | Description |
 |-------|---------|-------------|
 | `feature:active` | `{ layerName, feature, layer }` | Fired when a feature becomes active/selected |
+| `feature:click` | `{ feature, layerName, latlng, pixel }` | Fired on every click on a vector feature, on any layer type and engine. Carries no selection semantics; `layerName` is the layer's uuid |
 
 ```javascript
 window.mmgisAPI.on('feature:active', ({ layerName, feature }) => {
