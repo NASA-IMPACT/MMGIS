@@ -7,6 +7,7 @@ import { applyTheme } from './lib/engine'
 import { toEngineTheme } from './lib/utils/toEngineTheme'
 import { parseCatalog } from './lib/catalog/parseCatalog'
 import { buildRows, type LayerInput } from './lib/catalog/buildRows'
+import { stacBboxToPolygon } from './lib/utils/geo'
 import { buildEntryDisplays } from './lib/utils/entryDisplay'
 import type { LayerLike } from './lib/utils/listedUpdates'
 import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
@@ -58,7 +59,12 @@ export function MMGISLayerFilterAdapter() {
         const layers: LayerInput[] = []
         for (const [uuid, cfg] of Object.entries(layerConfigs ?? {})) {
             if (!cfg || cfg.type === 'header') continue
-            layers.push({ layerKey: uuid, layerProps: cfg.properties ?? {} })
+            const props = cfg.properties ?? {}
+            layers.push({
+                layerKey: uuid,
+                layerProps: props,
+                layerGeometry: stacBboxToPolygon(props.bbox) ?? undefined,
+            })
         }
         const built = buildRows(layers, catalog)
         for (const warning of [...catalog.warnings, ...built.warnings]) {

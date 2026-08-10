@@ -11,6 +11,8 @@ export interface LayerInput {
     layerKey: string
     /** The layer's tag properties; its stable key lives here too. */
     layerProps: Record<string, unknown>
+    /** The layer's own extent, when its properties carry a bbox. */
+    layerGeometry?: unknown
 }
 
 export interface BuiltRows {
@@ -55,6 +57,7 @@ export function buildRows(
             rows.push({
                 layerKey: layer.layerKey,
                 layerProps: layer.layerProps,
+                layerGeometry: layer.layerGeometry,
                 entry,
                 edge: edge.attrs,
             })
@@ -67,6 +70,7 @@ export function buildRows(
             rows.push({
                 layerKey: layer.layerKey,
                 layerProps: layer.layerProps,
+                layerGeometry: layer.layerGeometry,
                 entry: null,
                 edge: null,
             })

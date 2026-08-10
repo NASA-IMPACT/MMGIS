@@ -5,6 +5,7 @@
 import { mmgisRequest } from '../../_shared/adapters/mmgisAPI'
 import { parseCatalog } from '../lib/catalog/parseCatalog'
 import { buildRows, type LayerInput } from '../lib/catalog/buildRows'
+import { stacBboxToPolygon } from '../lib/utils/geo'
 import type { Row } from '../lib/engine/types'
 
 export async function loadCatalogRows(catalogInput: unknown): Promise<Row[]> {
@@ -15,7 +16,12 @@ export async function loadCatalogRows(catalogInput: unknown): Promise<Row[]> {
     const layers: LayerInput[] = []
     for (const [uuid, cfg] of Object.entries(layerConfigs ?? {})) {
         if (!cfg || cfg.type === 'header') continue
-        layers.push({ layerKey: uuid, layerProps: cfg.properties ?? {} })
+        const props = cfg.properties ?? {}
+        layers.push({
+            layerKey: uuid,
+            layerProps: props,
+            layerGeometry: stacBboxToPolygon(props.bbox) ?? undefined,
+        })
     }
 
     const catalog = parseCatalog(catalogInput)

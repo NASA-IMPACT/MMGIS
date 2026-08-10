@@ -22,6 +22,31 @@ export function bboxToPolygon(
 }
 
 /**
+ * STAC-order bbox tag ([west, south, east, north], `layer.properties.bbox`)
+ * → GeoJSON Polygon; null for anything that isn't 4 finite numbers.
+ * Antimeridian-crossing boxes are not handled.
+ */
+export function stacBboxToPolygon(value: unknown): Record<string, unknown> | null {
+    if (!Array.isArray(value) || value.length !== 4) return null
+    if (!value.every((n) => typeof n === 'number' && Number.isFinite(n))) {
+        return null
+    }
+    const [west, south, east, north] = value as [number, number, number, number]
+    return {
+        type: 'Polygon',
+        coordinates: [
+            [
+                [west, south],
+                [east, south],
+                [east, north],
+                [west, north],
+                [west, south],
+            ],
+        ],
+    }
+}
+
+/**
  * True when two GeoJSON geometries touch/overlap/contain in any combination
  * (point-in-polygon included). False on missing or invalid geometry — a
  * geometry-less catalogue entry simply never matches a place filter.

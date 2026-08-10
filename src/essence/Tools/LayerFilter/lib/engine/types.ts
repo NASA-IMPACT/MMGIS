@@ -18,6 +18,8 @@ export interface CatalogEntry {
 export interface Row {
     layerKey: string
     layerProps: Record<string, unknown>
+    /** The layer's own extent (opaque; predicate facets may test it). */
+    layerGeometry?: unknown
     entry: CatalogEntry | null
     /** Per-pairing attributes (opaque; carried through for consumers). */
     edge: Record<string, unknown> | null
