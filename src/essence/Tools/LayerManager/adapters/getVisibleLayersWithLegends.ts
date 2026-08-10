@@ -1,6 +1,7 @@
 import {
     mmgisRequest,
     mmgisGetCogCapabilities,
+    mmgisGetListedLayers,
     type CogCapabilities,
 } from '../../_shared/adapters/mmgisAPI'
 import { buildLayerLegendData } from './buildLayerLegendData'
@@ -12,16 +13,12 @@ export const getVisibleLayersWithLegends = async ({
     showOnlyVisible = false,
 }: FetchOptions = {}): Promise<Layer[]> => {
     const layerConfigs = await mmgisRequest<Record<string, Record<string, unknown>>>('layers:getAllConfigs')
-    const visibleLayers = await mmgisRequest<Record<string, boolean>>('layers:getVisible')
-    const opacities = await mmgisRequest<Record<string, number>>('layers:getAllOpacities')
-    // Runtime "shown in layer lists" flags; absent = listed, false = hidden
-    // (e.g. filtered out by the LayerFilter plugin, though we don't know who).
-    const listed = await mmgisRequest<Record<string, boolean>>('layers:getListed')
     if (!layerConfigs) return []
 
-    const [visibleLayers, opacities, cogCapabilities] = await Promise.all([
+    const [visibleLayers, opacities, listed, cogCapabilities] = await Promise.all([
         mmgisRequest<Record<string, boolean>>('layers:getVisible'),
         mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
+        mmgisGetListedLayers(),
         mmgisGetCogCapabilities(),
     ])
 
