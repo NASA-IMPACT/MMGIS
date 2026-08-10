@@ -6,8 +6,78 @@
  */
 
 import { utcFormat } from 'd3-time-format'
+import {
+    isRasterTileLayerType,
+    toCanonicalLayerType,
+} from '../MapEngines/types/engine'
 
 const DEFAULT_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
+/**
+ * The service prefixes whose tile URLs carry TiTiler query params. These are
+ * the only sources compileTileUrl runs applyCogFieldsToUrl over, so they are
+ * also the only ones a colormap change can reach.
+ */
+const COG_SOURCE_PREFIXES = ['stac-collection', 'COG', 'titiler-url']
+
+/**
+ * The COG service prefix a source URL declares (`stac-collection:`, `COG:`,
+ * `titiler-url:`), or undefined for a plain tile template.
+ *
+ * A bare prefix with nothing after the colon is not a source — it matches how
+ * resolveTileLayerSource requires a non-null second segment before treating
+ * the first as a service name.
+ */
+export function cogSourceType(
+    sourceUrl: string | null | undefined
+): string | undefined {
+    const segments = (sourceUrl || '').split(':')
+    if (segments[1] == null) return undefined
+    return COG_SOURCE_PREFIXES.includes(segments[0]) ? segments[0] : undefined
+}
+
+/**
+ * True when a layer paints its pixels through a COG colormap, so a legend can
+ * draw the ramp and its bounds. Covers `image` layers, which colour pixels
+ * client-side from the same `cog*` config fields as a tile layer.
+ *
+ * Says nothing about whether that colormap can be *changed* — see
+ * supportsCogTransform.
+ *
+ * Takes a loose shape because callers pass raw mission-config objects parsed
+ * from JSON.
+ */
+export function hasCogColormap(
+    layerObj: { type?: string; cogTransform?: boolean } | null | undefined
+): boolean {
+    if (layerObj?.cogTransform !== true) return false
+    const type = toCanonicalLayerType(layerObj.type)
+    return type === 'tile' || type === 'image'
+}
+
+/**
+ * True when a layer's colormap and rescale can be changed at runtime by
+ * recompiling its tile URL. That needs both a raster tile layer — on either
+ * engine — and a source whose URL the COG params are injected into.
+ *
+ * `image` layers are excluded: they colour their pixels client-side at
+ * construction, and no refresh path repaints one. A raster tile layer served
+ * from a plain tile template is excluded too: applyCogFieldsToUrl never runs
+ * for it, so a change would recompile a byte-identical URL.
+ *
+ * `sourceUrl` is the layer's configured source before URL resolution — the
+ * active tile level's url, falling back to the layer's own.
+ */
+export function supportsCogTransform(
+    layerObj: { type?: string; cogTransform?: boolean } | null | undefined,
+    sourceUrl: string | null | undefined
+): boolean {
+    return (
+        hasCogColormap(layerObj) &&
+        isRasterTileLayerType(layerObj) &&
+        cogSourceType(sourceUrl) !== undefined
+    )
+}
 
 /**
  * Resolves a layer's tile format, honouring the legacy `tms` boolean.
@@ -94,6 +164,7 @@ export function buildTileUrlOptions(
         // COG/TiTiler fields read by applyCogFieldsToUrl
         cogTransform: layerObj.cogTransform,
         cogColormap: layerObj.cogColormap,
+        currentCogColormap: layerObj.currentCogColormap,
         cogExpression: layerObj.cogExpression,
         currentCogExpression: layerObj.currentCogExpression,
         cogMin: layerObj.cogMin,
@@ -144,8 +215,11 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
     }
 
     if (layerObj.cogTransform === true) {
-        if (layerObj.cogColormap && !params.has('colormap_name'))
-            params.set('colormap_name', layerObj.cogColormap as string)
+        const colormap = (layerObj.currentCogColormap ?? layerObj.cogColormap) as
+            | string
+            | undefined
+        if (colormap && !params.has('colormap_name'))
+            params.set('colormap_name', colormap)
 
         const cogMin = layerObj.currentCogMin ?? layerObj.cogMin
         const cogMax = layerObj.currentCogMax ?? layerObj.cogMax
