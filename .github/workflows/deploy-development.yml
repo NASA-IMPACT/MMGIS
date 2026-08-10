@@ -6,38 +6,8 @@ name: Deploy development
 #
 #   changes -> iac-deploy.yml (always) -> app-deploy.yml (every merge)
 #
-# ── Why the infrastructure job always runs ───────────────────────────────────
-# The obvious design — "skip the infrastructure job when no terraform files
-# changed" — does not work. A skipped job emits no outputs on GitHub, so the app
-# job would receive six empty names and fail on the very merges that touch no
-# infrastructure, which is most of them. Path-awareness therefore gates the
-# MODE, not the job: an app-only merge still runs the engine in `read` mode
-# (init, read the state outputs, describe nothing, change nothing), and a merge
-# that touches infrastructure runs it in `apply` mode. The app job's inputs are
-# never empty because the job producing them never skips.
-#
-# ── Concurrency ──────────────────────────────────────────────────────────────
-# One group for the whole composed run, queued rather than cancelled: an apply
-# interrupted halfway leaves state locked and infrastructure half-converged, and
-# a cancelled app job leaves a rollout mid-flight. Neither engine carries a
-# group of its own precisely so this one can span both.
-#
-# Honest about what GitHub actually guarantees: it keeps at most ONE pending run
-# per group and supersedes an older pending run when a newer one arrives. So
-# with three merges in quick succession the middle one can be dropped. That is
-# safe here — a later push to `development` contains the earlier push's commits,
-# so the run that does execute deploys a superset. What can never happen, which
-# is the property that matters, is two runs converging the same environment at
-# the same time.
-#
-# ── Coexistence with the legacy pipeline ─────────────────────────────────────
-# `deploy-lean.yml` still deploys the existing staging environment and is
-# deliberately untouched. The two read disjoint configuration — deploy-lean uses
-# repository-level `AWS_REGION`/`ECR_REPOSITORY`/… variables and the
-# `AWS_DEPLOY_ROLE_ARN` secret, this pipeline uses Environment-scoped `IAC_*`
-# values — so neither can accidentally drive the other's environment. Retiring
-# deploy-lean is an explicit later step of the rebuild, never a side effect of
-# this file.
+# Modes, concurrency, and why the infrastructure job always runs:
+# docs/infrastructure/pipelines.md#a-deploy-run-step-by-step.
 
 on:
   push:
@@ -59,6 +29,10 @@ permissions:
 
 jobs:
   # What kind of run is this? Pure git and pure bash — no credentials, no AWS.
+  # This job gates the infra job's MODE, never whether it runs: do not add an
+  # `if:` to the infra job. A skipped job emits no outputs on GitHub, so the app
+  # job would receive six empty names on exactly the merges that touch no
+  # infrastructure — which is most of them.
   changes:
     name: Decide the mode
     runs-on: ubuntu-latest

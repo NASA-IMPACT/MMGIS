@@ -14,7 +14,7 @@ A push to `development` triggers `deploy-development.yml`; a push to `production
 
 1. **Decide the mode** — not a separate file: a small job written inside the environment's own workflow, a bash script that runs `git diff` on the push and picks how much work the next job should do. Pure git, no AWS credentials.
 2. **Infrastructure** (`iac-deploy.yml`) — brings the AWS environment up to date with the Terraform code, when that's needed. Whatever else it does, it always ends the same way: it reads six names out of Terraform state — region, ECR repository, cluster, service name, and the two task-definition families — the "where does this environment live" facts the next job needs.
-3. **App** (`app-deploy.yml`) — takes those six names, builds the image from this commit, pushes it to ECR, and rolls the service onto it.
+3. **App** (`app-deploy.yml`) — takes those six names, builds the image from this commit, pushes it to ECR, and rolls the service onto it. This is the repository's only container build: every push to a deployed branch builds the Dockerfile here, so a broken container build fails here and nowhere else.
 
 ### The three modes
 
@@ -125,7 +125,7 @@ The GitHub environment's deployment-branch policy is a security control, not tid
 
 ## Rolling back
 
-- **To roll back the app**, re-run the last green run from the Actions page. The app workflow rebuilds that commit from source, re-pushes the image under the same tag, and re-deploys. Same source is not the same bits: the rebuild re-resolves dependencies within their declared version ranges. (A run that decided `read` mode re-runs in `read` mode and changes no infrastructure.)
+- **To roll back the app**, re-run the last green run from the Actions page. The app workflow rebuilds that commit from source (an uncached `--no-cache` build, not a pull of what is already in ECR), re-pushes the image under the same tag, and re-deploys. Same source is not the same bits: the rebuild re-resolves dependencies within their declared version ranges. (A run that decided `read` mode re-runs in `read` mode and changes no infrastructure.)
 - **To roll back infrastructure**, merge a revert commit to the environment's branch and let the pipeline apply it. Hand-editing Terraform state is not a rollback — it is losing track of what exists.
 - **When CI itself is broken**, an operator signs in to the apply role and runs the by-hand apply steps in the [infrastructure README](../../infrastructure/README.md#hand-applies-break-glass). Anything applied by hand counts as drift until a CI run applies the same committed change.
 
