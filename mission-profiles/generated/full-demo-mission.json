@@ -285,7 +285,6 @@
       "js": "LayerFilterTool",
       "on": false,
       "variables": {
-        "themeProperty": "theme",
         "defaultThemeId": "need",
         "themes": [
           {
@@ -299,7 +298,7 @@
                 "id": "sector",
                 "label": "Sector",
                 "property": "sector",
-                "type": "select",
+                "multi": true,
                 "allLabel": "All Sectors"
               }
             ]
@@ -315,7 +314,6 @@
                 "id": "hazard",
                 "label": "Hazard",
                 "property": "hazard",
-                "type": "select",
                 "allLabel": "All Hazards"
               }
             ]
@@ -325,29 +323,37 @@
             "label": "Event",
             "icon": "calendar-outline",
             "title": "Event",
-            "description": "Filter the activation catalogue by hazard, location and year. The count below updates as you narrow the list.",
+            "description": "Filter the activation catalogue by hazard, location and year.",
+            "catalog": "activations",
             "filters": [
               {
                 "id": "hazardType",
-                "label": "Hazard type",
-                "property": "hazard",
-                "type": "select",
+                "label": "Hazard Type",
+                "property": "hazards",
+                "from": "catalog",
                 "allLabel": "All Hazards"
               },
               {
                 "id": "location",
                 "label": "Location",
-                "property": "location",
-                "type": "select",
-                "allLabel": "All Locations"
+                "from": "catalog",
+                "type": "geocode",
+                "allLabel": "Search places…"
               },
               {
                 "id": "year",
                 "label": "Year",
-                "property": "year",
-                "type": "select",
-                "allLabel": "All Years",
-                "optionsFrom": "time"
+                "from": "catalog",
+                "derived": "datetimes",
+                "allLabel": "All Years"
+              },
+              {
+                "id": "activation",
+                "label": "Activation",
+                "from": "catalog",
+                "isEntry": true,
+                "allLabel": "Select an activation",
+                "countLabel": "activations"
               }
             ]
           }
@@ -355,6 +361,9 @@
         "catalog": {
           "type": "FeatureCollection",
           "features": []
+        },
+        "geocoder": {
+          "url": ""
         }
       },
       "metadata": {
