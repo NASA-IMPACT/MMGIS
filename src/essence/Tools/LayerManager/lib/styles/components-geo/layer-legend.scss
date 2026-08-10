@@ -130,6 +130,19 @@ $legend-content-indent: 28px;
             color: var(--theme-color-primary, #1c67e3);
         }
 
+        /* Nothing to open. The button stays in place and focusable so the row's
+           controls don't reflow and its title can explain the absence, but it
+           reads as inert and drops the hover affordance. */
+        &--disabled {
+            color: var(--theme-color-base-light, #a9aeb1);
+            cursor: default;
+
+            &:hover {
+                background: transparent;
+                color: var(--theme-color-base-light, #a9aeb1);
+            }
+        }
+
         &:focus-visible {
             outline: 2px solid var(--theme-color-primary, #1c67e3);
             outline-offset: -2px;
@@ -172,37 +185,6 @@ $legend-content-indent: 28px;
         }
     }
 
-    /* Legend Body (expandable description) */
-    &__body {
-        padding-left: $legend-content-indent;
-        color: var(--theme-color-base-dark, #565c65);
-        font-size: var(--theme-font-size-3xs, 0.75rem);
-        line-height: 1.6;
-        max-height: 120px;
-        overflow-y: auto;
-
-        p {
-            margin: 0;
-        }
-
-        &::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        &::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        &::-webkit-scrollbar-thumb {
-            background: var(--theme-color-base-light, #a9aeb1);
-            border-radius: 3px;
-        }
-
-        &::-webkit-scrollbar-thumb:hover {
-            background: var(--theme-color-base-dark, #565c65);
-        }
-    }
-
     /* Unit label shown above the legend graphic */
     &__unit-label {
         padding-left: $legend-content-indent;
@@ -227,6 +209,11 @@ $legend-content-indent: 28px;
         font-size: var(--theme-font-size-3xs, 0.75rem);
         line-height: 1.6;
         color: var(--theme-color-base-dark, #565c65);
+
+        /* Markdown can carry a table or a long code span wider than the panel.
+           The list clips horizontal overflow, so this scrolls it in place instead
+           of putting it out of reach. */
+        overflow-x: auto;
     }
 
     /* Opacity Popover Styles */
@@ -313,4 +300,61 @@ $legend-content-indent: 28px;
     background: var(--theme-color-white, #ffffff);
     border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+}
+
+/* Layer Info Popover
+   Same portaled surface as the ramp picker. Wide enough for a two-column table
+   and capped in height, since a description can run to several paragraphs. */
+.blocks-layer-legend__info-popover {
+    width: max-content;
+    max-width: 360px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
+    font-size: var(--theme-font-size-3xs, 0.75rem);
+    line-height: 1.6;
+    color: var(--theme-color-base-dark, #565c65);
+
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: var(--theme-color-base-light, #a9aeb1);
+        border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: var(--theme-color-base-dark, #565c65);
+    }
+}
+
+/* Rendered markdown from a layer description, wherever the panel shows it.
+   Core styles the content from theme tokens; this adds only what the panel's
+   narrow surfaces need. */
+.blocks-layer-legend__markdown {
+    /* Long URLs and unbroken identifiers wrap instead of widening the surface. */
+    overflow-wrap: anywhere;
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-size: var(--theme-font-size-2xs);
+    }
+
+    a:focus-visible {
+        outline: 2px solid var(--theme-color-primary);
+        outline-offset: 2px;
+    }
 }

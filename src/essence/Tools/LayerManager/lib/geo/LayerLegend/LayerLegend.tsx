@@ -13,6 +13,10 @@ import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
 import { FloatingPopover } from '../../FloatingPopover'
 import { useClickOutside } from '../../hooks/useClickOutside'
+import {
+    Markdown,
+    hasMarkdownContent,
+} from '../../../../_shared/content/markdown'
 import type { Layer } from '../../types'
 
 export type LayerLegendProps = {
@@ -48,19 +52,27 @@ export function LayerLegend({
     } = layer
 
     const [isVisible, setIsVisible] = useState(visible)
-    const [isInfoExpanded, setIsInfoExpanded] = useState(defaultInfoExpanded)
+    const [isInfoOpen, setIsInfoOpen] = useState(defaultInfoExpanded)
     const [isOpacityExpanded, setIsOpacityExpanded] = useState(false)
     const [isRampPickerOpen, setIsRampPickerOpen] = useState(false)
     const [localOpacity, setLocalOpacity] = useState(opacity ?? 1)
     const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
     const opacityPopoverRef = useRef<HTMLDivElement | null>(null)
     const rampBtnRef = useRef<HTMLButtonElement | null>(null)
+    const infoBtnRef = useRef<HTMLButtonElement | null>(null)
     const rampPopoverId = useId()
+    const infoPopoverId = useId()
 
     // Only raster layers carry rescale/ramp settings to expose, and only those
     // whose colormap can actually be changed. A layer painting from a COG
     // colormap baked in at construction shows the ramp but offers no controls.
     const hasColorRamp = cog?.editable === true
+
+    // Descriptions are authored as markdown in mission configuration and
+    // rendered by core. A description of only whitespace counts as absent, so
+    // this tracks whether there is anything to show rather than whether the
+    // field is set.
+    const hasDescription = hasMarkdownContent(description)
 
     useEffect(() => {
         setIsVisible(visible)
@@ -81,6 +93,8 @@ export function LayerLegend({
     // focus back to an off-screen trigger, scrolling the list back to it.
     const closeRampPicker = useCallback(() => setIsRampPickerOpen(false), [])
 
+    const closeInfo = useCallback(() => setIsInfoOpen(false), [])
+
     const handleVisibilityToggle = () => {
         const newState = !isVisible
         setIsVisible(newState)
@@ -88,8 +102,8 @@ export function LayerLegend({
     }
 
     const handleInfoToggle = () => {
-        const newState = !isInfoExpanded
-        setIsInfoExpanded(newState)
+        if (!hasDescription) return
+        setIsInfoOpen((open) => !open)
     }
 
     const handleOpacityToggle = () => setIsOpacityExpanded(!isOpacityExpanded)
@@ -120,9 +134,18 @@ export function LayerLegend({
                     />
                 ) : null
             case 'text':
+                // Rendered through the same component as the info popover, so a
+                // description reads consistently wherever it appears.
                 return (
                     <div className="blocks-layer-legend__text">
-                        {description || 'No legend information available'}
+                        {hasDescription ? (
+                            <Markdown
+                                source={description}
+                                className="blocks-layer-legend__markdown"
+                            />
+                        ) : (
+                            'No legend information available'
+                        )}
                     </div>
                 )
             case 'none':
@@ -135,7 +158,7 @@ export function LayerLegend({
 
     return (
         <div
-            className={`blocks-layer-legend ${isRampPickerOpen ? 'blocks-layer-legend--menu-open' : ''}`}
+            className={`blocks-layer-legend ${isRampPickerOpen || isInfoOpen ? 'blocks-layer-legend--menu-open' : ''}`}
             data-legend-id={id}
         >
             <div className="blocks-layer-legend__header">
@@ -200,10 +223,36 @@ export function LayerLegend({
                             <span className="blocks-layer-legend__icon blocks-layer-legend__icon--color-ramp" />
                         </button>
                     )}
+                    {/* Marked disabled through aria rather than the disabled
+                        attribute: a disabled button takes no pointer events, so
+                        the browser never shows the title explaining why it is
+                        inert. The click handler is what actually holds it shut. */}
                     <button
-                        className={`blocks-layer-legend__action-btn ${isInfoExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}
+                        ref={infoBtnRef}
+                        type="button"
+                        className={[
+                            'blocks-layer-legend__action-btn',
+                            !hasDescription
+                                ? 'blocks-layer-legend__action-btn--disabled'
+                                : '',
+                            isInfoOpen
+                                ? 'blocks-layer-legend__action-btn--active'
+                                : '',
+                        ]
+                            .filter(Boolean)
+                            .join(' ')}
                         onClick={handleInfoToggle}
-                        title={isInfoExpanded ? 'Hide info' : 'Show info'}
+                        aria-disabled={!hasDescription}
+                        aria-haspopup={hasDescription ? 'dialog' : undefined}
+                        aria-expanded={hasDescription ? isInfoOpen : undefined}
+                        aria-controls={isInfoOpen ? infoPopoverId : undefined}
+                        title={
+                            hasDescription
+                                ? isInfoOpen
+                                    ? 'Hide info'
+                                    : 'Show info'
+                                : 'No description available'
+                        }
                     >
                         <span className="blocks-layer-legend__icon blocks-layer-legend__icon--info" />
                     </button>
@@ -215,11 +264,6 @@ export function LayerLegend({
                     </button>
                 </div>
             </div>
-            {isInfoExpanded && description && (
-                <div className="blocks-layer-legend__body">
-                    <p>{description}</p>
-                </div>
-            )}
             {unit?.label && (
                 <div className="blocks-layer-legend__unit-label">{unit.label}</div>
             )}
@@ -253,6 +297,27 @@ export function LayerLegend({
                         titilerUrl={cog.titilerUrl}
                         onColormapChange={onColormapChange}
                         onRescaleChange={onRescaleChange}
+                    />
+                </FloatingPopover>
+            )}
+            {/* Layer information reads as an overlay rather than an expanding
+                row, so opening it doesn't push the rest of the list down. Focus
+                stays on the trigger — the content is informational, and there
+                is nothing inside to operate. */}
+            {hasDescription && (
+                <FloatingPopover
+                    id={infoPopoverId}
+                    anchorRef={infoBtnRef}
+                    isOpen={isInfoOpen}
+                    onClose={closeInfo}
+                    placement="bottom"
+                    offset={6}
+                    className="blocks-layer-legend__info-popover"
+                    label={`Information for ${title}`}
+                >
+                    <Markdown
+                        source={description}
+                        className="blocks-layer-legend__markdown"
                     />
                 </FloatingPopover>
             )}
