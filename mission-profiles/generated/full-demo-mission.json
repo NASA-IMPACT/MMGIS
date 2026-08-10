@@ -274,6 +274,29 @@
       "variables": {}
     },
     {
+      "name": "SeriesChart",
+      "icon": "chart-line",
+      "js": "SeriesChartTool",
+      "on": false,
+      "variables": {
+        "sources": [
+          "fetch-timeseries"
+        ]
+      },
+      "metadata": {
+        "icon": "chart-line",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+          "left",
+          "right"
+        ],
+        "preferredPosition": "right",
+        "modernLayoutSupport": true,
+        "width": 400,
+        "height": 0
+      }
+    },
+    {
       "name": "FetchStats",
       "js": "FetchStatsTool",
       "on": true,
