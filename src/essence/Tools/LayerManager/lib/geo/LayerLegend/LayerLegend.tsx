@@ -4,18 +4,12 @@ import {
     useRef,
     useEffect,
     useCallback,
-    useId,
     type ReactNode,
     type ChangeEvent,
 } from 'react'
 import { GradientGraphic } from '../GradientGraphic/GradientGraphic'
 import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
-import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
-import { FloatingPopover } from '../../FloatingPopover'
-import {
-    Markdown,
-    hasMarkdownContent,
-} from '../../../../_shared/content/markdown'
+import { useClickOutside } from '../../hooks/useClickOutside'
 import type { Layer } from '../../types'
 
 export type LayerLegendProps = {
@@ -51,28 +45,11 @@ export function LayerLegend({
     } = layer
 
     const [isVisible, setIsVisible] = useState(visible)
-    const [isInfoOpen, setIsInfoOpen] = useState(defaultInfoExpanded)
+    const [isInfoExpanded, setIsInfoExpanded] = useState(defaultInfoExpanded)
     const [isOpacityExpanded, setIsOpacityExpanded] = useState(false)
-    const [isRampPickerOpen, setIsRampPickerOpen] = useState(false)
     const [localOpacity, setLocalOpacity] = useState(opacity ?? 1)
     const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
-    const rampBtnRef = useRef<HTMLButtonElement | null>(null)
-    const infoBtnRef = useRef<HTMLButtonElement | null>(null)
-    const opacityPopoverId = useId()
-    const opacityHeadingId = useId()
-    const rampPopoverId = useId()
-    const infoPopoverId = useId()
-
-    // Only raster layers carry rescale/ramp settings to expose, and only those
-    // whose colormap can actually be changed. A layer painting from a COG
-    // colormap baked in at construction shows the ramp but offers no controls.
-    const hasColorRamp = cog?.editable === true
-
-    // Descriptions are authored as markdown in mission configuration and
-    // rendered by core. A description of only whitespace counts as absent, so
-    // this tracks whether there is anything to show rather than whether the
-    // field is set.
-    const hasDescription = hasMarkdownContent(description)
+    const opacityPopoverRef = useRef<HTMLDivElement | null>(null)
 
     useEffect(() => {
         setIsVisible(visible)
@@ -82,14 +59,11 @@ export function LayerLegend({
         setLocalOpacity(opacity ?? 1)
     }, [opacity])
 
-    const closeOpacity = useCallback(() => setIsOpacityExpanded(false), [])
-
-    // The picker rides along with its row as the layer list scrolls, and stays
-    // open once the row leaves the viewport. Dismissing it there would hand
-    // focus back to an off-screen trigger, scrolling the list back to it.
-    const closeRampPicker = useCallback(() => setIsRampPickerOpen(false), [])
-
-    const closeInfo = useCallback(() => setIsInfoOpen(false), [])
+    useClickOutside(
+        [opacityPopoverRef, opacityBtnRef],
+        useCallback(() => setIsOpacityExpanded(false), []),
+        isOpacityExpanded,
+    )
 
     const handleVisibilityToggle = () => {
         const newState = !isVisible
@@ -98,8 +72,8 @@ export function LayerLegend({
     }
 
     const handleInfoToggle = () => {
-        if (!hasDescription) return
-        setIsInfoOpen((open) => !open)
+        const newState = !isInfoExpanded
+        setIsInfoExpanded(newState)
     }
 
     const handleOpacityToggle = () => setIsOpacityExpanded(!isOpacityExpanded)
@@ -120,6 +94,9 @@ export function LayerLegend({
                         max={max ?? 0}
                         unit={unit}
                         cog={cog}
+                        layerId={id}
+                        onColormapChange={onColormapChange}
+                        onRescaleChange={onRescaleChange}
                     />
                 )
             case 'categorical':
@@ -130,18 +107,9 @@ export function LayerLegend({
                     />
                 ) : null
             case 'text':
-                // Rendered through the same component as the info popover, so a
-                // description reads consistently wherever it appears.
                 return (
                     <div className="blocks-layer-legend__text">
-                        {hasDescription ? (
-                            <Markdown
-                                source={description}
-                                className="blocks-layer-legend__markdown"
-                            />
-                        ) : (
-                            'No legend information available'
-                        )}
+                        {description || 'No legend information available'}
                     </div>
                 )
             case 'none':
@@ -153,10 +121,7 @@ export function LayerLegend({
     const hasLegendContent = type && type !== 'none'
 
     return (
-        <div
-            className={`blocks-layer-legend ${isOpacityExpanded || isRampPickerOpen || isInfoOpen ? 'blocks-layer-legend--menu-open' : ''}`}
-            data-legend-id={id}
-        >
+        <div className="blocks-layer-legend" data-legend-id={id}>
             <div className="blocks-layer-legend__header">
                 <div className="blocks-layer-legend__checkbox-wrapper">
                     <input
@@ -172,68 +137,39 @@ export function LayerLegend({
                     </span>
                 </div>
                 <div className="blocks-layer-legend__actions">
-                    <button
-                        ref={opacityBtnRef}
-                        type="button"
-                        className={`blocks-layer-legend__action-btn ${isOpacityExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}
-                        onClick={handleOpacityToggle}
-                        aria-haspopup="dialog"
-                        aria-expanded={isOpacityExpanded}
-                        aria-controls={
-                            isOpacityExpanded ? opacityPopoverId : undefined
-                        }
-                        title={isOpacityExpanded ? 'Hide opacity' : 'Adjust opacity'}
-                    >
-                        <span className="blocks-layer-legend__icon blocks-layer-legend__icon--opacity" />
-                    </button>
-                    {hasColorRamp && (
+                    <div className="blocks-layer-legend__opacity-wrapper">
                         <button
-                            ref={rampBtnRef}
-                            type="button"
-                            className={`blocks-layer-legend__action-btn ${isRampPickerOpen ? 'blocks-layer-legend__action-btn--active' : ''}`}
-                            onClick={() =>
-                                isRampPickerOpen
-                                    ? closeRampPicker()
-                                    : setIsRampPickerOpen(true)
-                            }
-                            aria-haspopup="dialog"
-                            aria-expanded={isRampPickerOpen}
-                            aria-controls={isRampPickerOpen ? rampPopoverId : undefined}
-                            title={isRampPickerOpen ? 'Hide color ramp' : 'Change color ramp'}
+                            ref={opacityBtnRef}
+                            className={`blocks-layer-legend__action-btn ${isOpacityExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}
+                            onClick={handleOpacityToggle}
+                            title={isOpacityExpanded ? 'Hide opacity' : 'Adjust opacity'}
                         >
-                            <span className="blocks-layer-legend__icon blocks-layer-legend__icon--color-ramp" />
+                            <span className="blocks-layer-legend__icon blocks-layer-legend__icon--opacity" />
                         </button>
-                    )}
-                    {/* Marked disabled through aria rather than the disabled
-                        attribute: a disabled button takes no pointer events, so
-                        the browser never shows the title explaining why it is
-                        inert. The click handler is what actually holds it shut. */}
+                        {isOpacityExpanded && (
+                            <div
+                                ref={opacityPopoverRef}
+                                className="blocks-layer-legend__opacity-popover"
+                            >
+                                <input
+                                    type="range"
+                                    className="blocks-layer-legend__opacity-slider"
+                                    min={0}
+                                    max={1}
+                                    step={0.01}
+                                    value={localOpacity}
+                                    onChange={handleOpacityChange}
+                                />
+                                <span className="blocks-layer-legend__opacity-value">
+                                    {Math.round(localOpacity * 100)}%
+                                </span>
+                            </div>
+                        )}
+                    </div>
                     <button
-                        ref={infoBtnRef}
-                        type="button"
-                        className={[
-                            'blocks-layer-legend__action-btn',
-                            !hasDescription
-                                ? 'blocks-layer-legend__action-btn--disabled'
-                                : '',
-                            isInfoOpen
-                                ? 'blocks-layer-legend__action-btn--active'
-                                : '',
-                        ]
-                            .filter(Boolean)
-                            .join(' ')}
+                        className={`blocks-layer-legend__action-btn ${isInfoExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}
                         onClick={handleInfoToggle}
-                        aria-disabled={!hasDescription}
-                        aria-haspopup={hasDescription ? 'dialog' : undefined}
-                        aria-expanded={hasDescription ? isInfoOpen : undefined}
-                        aria-controls={isInfoOpen ? infoPopoverId : undefined}
-                        title={
-                            hasDescription
-                                ? isInfoOpen
-                                    ? 'Hide info'
-                                    : 'Show info'
-                                : 'No description available'
-                        }
+                        title={isInfoExpanded ? 'Hide info' : 'Show info'}
                     >
                         <span className="blocks-layer-legend__icon blocks-layer-legend__icon--info" />
                     </button>
@@ -245,6 +181,11 @@ export function LayerLegend({
                     </button>
                 </div>
             </div>
+            {isInfoExpanded && description && (
+                <div className="blocks-layer-legend__body">
+                    <p>{description}</p>
+                </div>
+            )}
             {unit?.label && (
                 <div className="blocks-layer-legend__unit-label">{unit.label}</div>
             )}
@@ -252,92 +193,6 @@ export function LayerLegend({
                 <div className="blocks-layer-legend__content">
                     {renderLegendGraphic()}
                 </div>
-            )}
-            {/* Portaled alongside the other row popovers so the slider clears
-                the layer list's clipped overflow. Focus moves onto the slider,
-                which then takes arrow keys directly. */}
-            <FloatingPopover
-                id={opacityPopoverId}
-                anchorRef={opacityBtnRef}
-                isOpen={isOpacityExpanded}
-                onClose={closeOpacity}
-                placement="bottom"
-                offset={6}
-                className="blocks-layer-legend__opacity-popover"
-                label={`Opacity for ${title}`}
-                autoFocus
-            >
-                <div
-                    className="blocks-layer-legend__opacity-heading"
-                    id={opacityHeadingId}
-                >
-                    Opacity
-                </div>
-                <div className="blocks-layer-legend__opacity-row">
-                    <input
-                        type="range"
-                        className="blocks-layer-legend__opacity-slider"
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={localOpacity}
-                        onChange={handleOpacityChange}
-                        aria-labelledby={opacityHeadingId}
-                        aria-valuetext={`${Math.round(localOpacity * 100)}%`}
-                    />
-                    <span className="blocks-layer-legend__opacity-value">
-                        {Math.round(localOpacity * 100)}%
-                    </span>
-                </div>
-            </FloatingPopover>
-            {/* Rendered in a portal, out of the layer list, which clips its
-                overflow and would otherwise cut the dropdown off at the panel
-                edge. Focus moves into the surface on open, since tab order
-                follows the document and the portal sits at its end. */}
-            {hasColorRamp && cog && (
-                <FloatingPopover
-                    id={rampPopoverId}
-                    anchorRef={rampBtnRef}
-                    isOpen={isRampPickerOpen}
-                    onClose={closeRampPicker}
-                    placement="bottom"
-                    offset={6}
-                    className="blocks-layer-legend__ramp-popover"
-                    label={`Color ramp settings for ${title}`}
-                    autoFocus
-                >
-                    <ColorRampPicker
-                        layerId={id}
-                        colormap={cog.colormap}
-                        min={cog.min}
-                        max={cog.max}
-                        units={cog.units}
-                        titilerUrl={cog.titilerUrl}
-                        onColormapChange={onColormapChange}
-                        onRescaleChange={onRescaleChange}
-                    />
-                </FloatingPopover>
-            )}
-            {/* Layer information reads as an overlay rather than an expanding
-                row, so opening it doesn't push the rest of the list down. Focus
-                stays on the trigger — the content is informational, and there
-                is nothing inside to operate. */}
-            {hasDescription && (
-                <FloatingPopover
-                    id={infoPopoverId}
-                    anchorRef={infoBtnRef}
-                    isOpen={isInfoOpen}
-                    onClose={closeInfo}
-                    placement="bottom"
-                    offset={6}
-                    className="blocks-layer-legend__info-popover"
-                    label={`Information for ${title}`}
-                >
-                    <Markdown
-                        source={description}
-                        className="blocks-layer-legend__markdown"
-                    />
-                </FloatingPopover>
             )}
         </div>
     )
