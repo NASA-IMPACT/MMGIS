@@ -16,15 +16,16 @@ Bus-only — no core imports, no rendering.
   `seriesError` with a human-readable message (HTTP failure, bad URL
   template, unusable response shape).
 - A new click aborts any in-flight fetch and replaces the chart (single
-  `chartId: 'vector-timeseries'`). Deselecting emits `seriesCleared`.
+  `chartId: 'vector-timeseries'`); charts persist until replaced.
 
 Events (all under `plugin:fetch-timeseries:`): `seriesLoading`,
-`seriesReady`, `seriesError`, `seriesCleared`.
+`seriesReady`, `seriesError`.
 
 ## Layer configuration (`layer.variables.timeseries`)
 
 | Field | Required | Meaning |
 | --- | --- | --- |
+| `enabled` | no | Set `false` to turn the block off without deleting it (default `true`). |
 | `url` | yes | Fetch URL template. Placeholders: `{id}`, `{properties.<key>}`, `{lon}`/`{lat}` (Point features). Values are URL-encoded; a missing value surfaces as a visible error. |
 | `titleProp` | no | Feature property used as the chart title (default: `name` → `title` → feature id → layer name). |
 | `label` | no | Series label for ungrouped responses (default: layer display name). |
@@ -32,7 +33,7 @@ Events (all under `plugin:fetch-timeseries:`): `seriesLoading`,
 | `seriesPath` | no | Dot-path to the point array (default: the response itself if an array, else the first array under `data`/`values`/`timeseries`/`items`/`results`/`features`). |
 | `xKey` / `yKey` | no | Dot-paths to a point's time/value (default: `datetime`/`date`/`time`/… and `value`/`y`/`mean`/…, probed at the top level and under `properties.` — GeoJSON observation features work with zero config). |
 | `groupBy` | no | Dot-path whose distinct values split the response into one series each (e.g. one line per measured parameter). |
-| `unitKey` | no | Dot-path to a point's unit, carried onto its series; two distinct units render on dual y-axes. |
+| `unitKey` | no | Dot-path to a point's unit, carried onto its series; the chart names the y-axis with the selected variable's unit. |
 
 Parallel-array responses (`{ times: [...], vals: [...] }`) are supported by
 pointing `xKey`/`yKey` at the two arrays.

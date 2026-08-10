@@ -11,7 +11,6 @@
  *   - plugin:fetch-timeseries:seriesLoading  { chartId, title }
  *   - plugin:fetch-timeseries:seriesReady    { payload: ChartSeriesPayload }
  *   - plugin:fetch-timeseries:seriesError    { chartId, message }
- *   - plugin:fetch-timeseries:seriesCleared  { chartId }
  *
  * A layer opts in via `variables.timeseries` (see lib/timeseries.ts). Clicks
  * on features of layers without that block do nothing chart-wise; a new click
