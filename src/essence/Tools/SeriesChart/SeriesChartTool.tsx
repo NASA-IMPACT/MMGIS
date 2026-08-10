@@ -17,6 +17,10 @@ const SeriesChartTool = {
             console.error(`SeriesChartTool: container ${this.targetId} not found`)
             return
         }
+        if (_root) {
+            _root.unmount()
+            _root = null
+        }
         _root = createRoot(container)
         _root.render(<MMGISSeriesChartAdapter />)
         this.made = true
