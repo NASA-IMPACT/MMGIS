@@ -1,7 +1,10 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "name": "LayerFilterThemes",
     "defaultIcon": "view-dashboard-outline",
-    "description": "Theme rail (step 1) for the LayerFilter plugin. Renders the high-level themes and emits the selected theme on the event bus. Pulls its theme list from the LayerFilter tool.",
+    "description": "Theme rail for the two-step layer filter (step 1). Requires a panel plugin that serves the theme contract (LayerFilter, or a swap-in). Events \u2014 emits: plugin:layerfilterthemes:selectedThemeChanged { themeId }; requests: plugin:layerfilter:getThemes; subscribes: plugin:layerfilter:ready.",
     "width": 66,
     "height": 0,
     "paths": {
@@ -10,7 +13,9 @@
     "metadata": {
         "icon": "view-dashboard-outline",
         "requiredOrientation": "vertical",
-        "compatiblePositions": ["left"],
+        "compatiblePositions": [
+            "left"
+        ],
         "preferredPosition": "left",
         "modernLayoutSupport": true,
         "width": 66,

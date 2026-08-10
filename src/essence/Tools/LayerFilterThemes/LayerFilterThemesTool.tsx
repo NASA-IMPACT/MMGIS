@@ -1,3 +1,18 @@
+/**
+ * LayerFilterThemes — the two-step filter's theme rail (step 1). Not
+ * functional without a panel plugin providing the themes (LayerFilter, or a
+ * swap-in honoring the same contract).
+ *
+ * pluginId: 'layerfilterthemes'
+ *
+ * Emits:
+ *   - plugin:layerfilterthemes:selectedThemeChanged  { themeId }  (user clicks only)
+ * Requests:
+ *   - plugin:layerfilter:getThemes → { themes: [{ id, label, icon }], defaultThemeId }
+ * Subscribes:
+ *   - plugin:layerfilter:ready — re-pulls the theme list after the panel's
+ *     config resolves
+ */
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MMGISThemeRailAdapter } from './MMGISThemeRailAdapter'

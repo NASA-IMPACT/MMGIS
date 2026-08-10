@@ -1,21 +1,20 @@
 import React from 'react'
 import type { ThemeSummary } from '../../types'
 
+/** Icon names come from hand-authored config; strip anything that isn't a
+ *  plain MDI name so a stray space can't inject extra classes. */
+function iconClass(icon: string): string {
+    return icon.toLowerCase().replace(/[^a-z0-9-]/g, '')
+}
+
 export interface ThemeRailProps {
     themes: ThemeSummary[]
     selectedId: string
     onSelect: (id: string) => void
-    /** The chevron button at the top of the rail. */
-    onTopButtonClick?: () => void
 }
 
-/** Presentational green rail: a top chevron button + one entry per theme. */
-export function ThemeRail({
-    themes,
-    selectedId,
-    onSelect,
-    onTopButtonClick,
-}: ThemeRailProps) {
+/** Presentational green rail: one entry per theme. */
+export function ThemeRail({ themes, selectedId, onSelect }: ThemeRailProps) {
     return (
         <div
             className="blocks-theme-rail"
@@ -23,18 +22,6 @@ export function ThemeRail({
             aria-orientation="vertical"
             aria-label="Filter themes"
         >
-            <button
-                type="button"
-                className="blocks-theme-rail__top"
-                aria-label="Collapse panel"
-                onClick={() => onTopButtonClick?.()}
-            >
-                <i
-                    className="mdi mdi-chevron-right blocks-theme-rail__top-icon"
-                    aria-hidden="true"
-                />
-            </button>
-
             {themes.map((theme) => {
                 const active = theme.id === selectedId
                 return (
@@ -50,7 +37,7 @@ export function ThemeRail({
                     >
                         {theme.icon && (
                             <i
-                                className={`mdi mdi-${theme.icon} blocks-theme-rail__icon`}
+                                className={`mdi mdi-${iconClass(theme.icon)} blocks-theme-rail__icon`}
                                 aria-hidden="true"
                             />
                         )}

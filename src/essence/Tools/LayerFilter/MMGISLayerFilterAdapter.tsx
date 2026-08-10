@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { FilterPanel } from './lib'
-import type { LayerFilterConfig, FilterSelections } from './lib/types'
-import { useMMGISToolVars, useMMGISEvent } from './adapters/hooks'
+import type {
+    LayerFilterConfig,
+    FilterSelections,
+    GeocodeSelection,
+} from './lib/types'
+import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
+import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { emitFilterChange } from './adapters/emitFilterChange'
 import { applyTheme } from './lib/engine'
 import { toEngineTheme } from './lib/utils/toEngineTheme'
@@ -9,11 +14,17 @@ import { parseCatalog } from './lib/catalog/parseCatalog'
 import { buildRows, type LayerInput } from './lib/catalog/buildRows'
 import { stacBboxToPolygon } from './lib/utils/geo'
 import { buildEntryDisplays } from './lib/utils/entryDisplay'
+import {
+    normalizeThemesConfig,
+    resolveDefaultThemeId,
+} from './lib/normalizeConfig'
 import type { LayerLike } from './lib/utils/listedUpdates'
 import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 
-const SELECTED_THEME_EVENT = 'layerFilter:selectedThemeChanged'
+// Emitted by the rail plugin, so named after the rail — swap the panel out
+// and the rail's broadcasts keep their owner's name.
+const SELECTED_THEME_EVENT = 'plugin:layerfilterthemes:selectedThemeChanged'
 // Stable empty object so effects don't fire every render.
 const EMPTY: FilterSelections = {}
 
@@ -21,7 +32,9 @@ export function MMGISLayerFilterAdapter() {
     const vars = useMMGISToolVars<LayerFilterConfig & Record<string, unknown>>(
         'layerfilter',
     )
-    const themes = vars.themes ?? []
+    // Hand-authored JSON: normalize (with loud warnings) before anything
+    // indexes into it — a config typo must never unmount the panel.
+    const themes = useMemo(() => normalizeThemesConfig(vars.themes), [vars.themes])
 
     const [selectedThemeId, setSelectedThemeId] = useState('')
     const [selectionsByTheme, setSelectionsByTheme] = useState<
@@ -48,8 +61,13 @@ export function MMGISLayerFilterAdapter() {
         )
     }, [])
     // Registers during mission load; wait until it exists so we don't fetch
-    // too early and silently get null (then never retry).
-    useMMGISHandlerReady('layers:getAllConfigs', loadLayerConfigs)
+    // too early and silently get null (then never retry). Generous timeout:
+    // it registers only after ALL mission layers finish loading — a slow
+    // mission blowing the default 10 s would leave the filter permanently
+    // data-less.
+    useMMGISHandlerReady('layers:getAllConfigs', loadLayerConfigs, {
+        timeoutMs: 60000,
+    })
 
     const catalog = useMemo(() => parseCatalog(vars.catalog), [vars.catalog])
 
@@ -80,10 +98,13 @@ export function MMGISLayerFilterAdapter() {
         [catalog],
     )
 
-    // Pick the default theme once the config loads.
+    // Pick the default theme once the config loads. A defaultThemeId that
+    // matches no theme falls back to the first theme (with a warning) —
+    // selecting it verbatim would leave activeTheme null and the panel blank.
     useEffect(() => {
         if (!selectedThemeId && themes.length) {
-            setSelectedThemeId(vars.defaultThemeId || themes[0].id)
+            const id = resolveDefaultThemeId(themes, vars.defaultThemeId)
+            if (id) setSelectedThemeId(id)
         }
     }, [themes, vars.defaultThemeId, selectedThemeId])
 
@@ -126,6 +147,10 @@ export function MMGISLayerFilterAdapter() {
     // Announce + apply whenever the outcome changes.
     useEffect(() => {
         if (!selectedThemeId || !result) return
+        // Don't announce until layer configs exist: an early emit carries an
+        // empty match set and any listening consumer would blank the layer
+        // list at boot.
+        if (!layerConfigs) return
         emitFilterChange(
             selectedThemeId,
             selections,
@@ -136,7 +161,7 @@ export function MMGISLayerFilterAdapter() {
     }, [selectedThemeId, result, selections, layerConfigs, hasInteracted])
 
     const handleChange = useCallback(
-        (filterId: string, value: FilterSelections[string]) => {
+        (filterId: string, value: string | string[] | GeocodeSelection | null) => {
             setHasInteracted(true)
             changedFacetRef.current[selectedThemeId] = filterId
             setSelectionsByTheme((prev) => ({

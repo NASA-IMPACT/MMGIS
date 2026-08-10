@@ -64,7 +64,8 @@ export interface GeocodeSelection {
 }
 
 /**
- * Active step-2 choices, keyed by filter id. Single-select filters hold a
+ * Active step-2 choices, keyed by filter id — two filters may share a
+ * `property` without sharing selection state. Single-select filters hold a
  * string; multi-select hold string[]; geocode filters hold a
  * GeocodeSelection. "" / [] / null / absent all mean "all".
  */

@@ -10,6 +10,8 @@
 
     &__content {
         flex: 1;
+        /* Inset so hovered legend cards don't butt against the panel edges */
+        padding: var(--theme-spacing-1, 0.5rem);
         overflow-y: auto;
         overflow-x: hidden;
     }

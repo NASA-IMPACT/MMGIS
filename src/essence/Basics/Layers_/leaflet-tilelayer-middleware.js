@@ -12,7 +12,40 @@
 */
 
 import F_ from '../../Basics/Formulae_/Formulae_'
-import { applyCogFieldsToUrl } from './cogUrlUtils'
+import { compileTileUrl } from './tileUrlUtils'
+
+/**
+ * `{t}` is a documented shorthand time placeholder, but Leaflet's L.Util.template
+ * throws on any `{token}` it cannot resolve from the layer's options, so it is
+ * rewritten to an inert form before Leaflet ever sees the URL. Every path that
+ * assigns `_url` — creation and refresh alike — goes through here, otherwise a
+ * refreshed URL reintroduces the raw token and every subsequent tile request
+ * throws inside the refresh loop.
+ * @param {string} url
+ * @returns {string}
+ */
+function normalizeTileUrlTemplate(url) {
+    return typeof url === 'string' ? url.replace(/{t}/g, '_time_') : url
+}
+
+/**
+ * Splits a WMS URL into the base address and its query params, uppercased into
+ * WMS parameter form. A WMS layer keeps only the base address in `_url`; the
+ * params live in `wmsParams` and are re-appended on every tile request.
+ * @param {string} url
+ * @returns {{baseUrl: string, wmsOptions: object}}
+ */
+function splitWmsUrl(url) {
+    const urlSplit = url.split('?')
+    const wmsOptions = {}
+    const urlParams = new URLSearchParams(urlSplit[1])
+
+    for (const entry of urlParams.entries()) {
+        wmsOptions[entry[0].toUpperCase()] = entry[1]
+    }
+
+    return { baseUrl: urlSplit[0], wmsOptions }
+}
 
 var colorFilterExtension = {
     intialize: function (url, options) {
@@ -20,89 +53,7 @@ var colorFilterExtension = {
     },
     getTileUrl: function (coords) {
         let url = L.TileLayer.prototype.getTileUrl.call(this, coords)
-
-        if (
-            this.options.splitColonType === 'stac-collection' ||
-            this.options.splitColonType === 'COG' ||
-            this.options.splitColonType === 'titiler-url'
-        ) {
-            let datetime
-            if (this.options.endtime != null) {
-                if (this.options.starttime != null) {
-                    datetime = `${this.options.starttime}/${this.options.endtime}`
-                } else {
-                    datetime = `../${this.options.endtime}`
-                }
-            }
-            if (datetime != null)
-                url += `${
-                    url.indexOf('?') === -1 ? '?' : '&'
-                }datetime=${datetime}`
-
-            if (this.options.splitColonType === 'stac-collection') {
-                url += `${
-                    url.indexOf('?') === -1 ? '?' : '&'
-                }exitwhenfull=false&skipcovered=false`
-            }
-
-            url = applyCogFieldsToUrl(url, this.options)
-
-            if (mmgisglobal.options?.stac?.mosaicItemLimit != null) {
-                url += `${url.indexOf('?') === -1 ? '?' : '&'}items_limit=${
-                    mmgisglobal.options.stac.mosaicItemLimit
-                }`
-            }
-            if (mmgisglobal.options?.stac?.mosaicScanLimit != null) {
-                url += `${url.indexOf('?') === -1 ? '?' : '&'}scan_limit=${
-                    mmgisglobal.options.stac.mosaicScanLimit
-                }`
-            }
-            if (mmgisglobal.options?.stac?.mosaicTimeLimit != null) {
-                url += `${url.indexOf('?') === -1 ? '?' : '&'}time_limit=${
-                    mmgisglobal.options.stac.mosaicTimeLimit
-                }`
-            }
-        }
-
-        url = url
-            .replace(/{time}/g, this.options.time)
-            .replace(/{starttime}/g, this.options.starttime)
-            .replace(/{endtime}/g, this.options.endtime)
-
-        if (
-            this.options.customTimes?.times &&
-            this.options.customTimes?.times.length > 0
-        ) {
-            for (let i = 0; i < this.options.customTimes.times.length; i++) {
-                url = url.replace(
-                    new RegExp(`{customtime.${i}}`, 'g'),
-                    this.options.customTimes.times[i]
-                )
-            }
-        }
-
-        if (this.options.time && this.options.tileFormat === 'tms') {
-            let paramDelimiter = '?'
-            let urlParams = false
-            if (url.indexOf('?') !== -1) {
-                urlParams = new URLSearchParams(url.split('?')[1])
-                paramDelimiter = '&'
-            }
-
-            if (urlParams == false || !urlParams.has('starttime')) {
-                url += `${paramDelimiter}starttime=${this.options.starttime}`
-                paramDelimiter = '&'
-            }
-            if (urlParams == false || !urlParams.has('time')) {
-                url += `${paramDelimiter}time=${this.options.endtime}`
-                paramDelimiter = '&'
-            }
-            if (urlParams == false || !urlParams.has('composite')) {
-                if (this.options.compositeTile === true)
-                    url += `${paramDelimiter}composite=true`
-            }
-        }
-        return url
+        return compileTileUrl(url, this.options)
     },
     colorFilter: function () {
         let VALIDFILTERS = [
@@ -192,7 +143,7 @@ var colorFilterExtension = {
             })
         }
 
-        if (newUrl) this._url = newUrl
+        if (newUrl) this._url = normalizeTileUrlTemplate(newUrl)
         if (this._map == null) return
         for (let key in this._tiles) {
             const tile = this._tiles[key]
@@ -341,6 +292,30 @@ var wmsExtension = {
         )
     },
 
+    refresh: function (newUrl, force, updateOptions) {
+        if (newUrl) {
+            // `_url` holds only the base address for a WMS layer — getTileUrl
+            // appends the whole of `wmsParams` to it per tile. Assigning a
+            // full URL here would send every param twice, once in each casing.
+            const { baseUrl, wmsOptions } = splitWmsUrl(newUrl)
+            // tileSize is fixed at creation; changing it now would not resize
+            // the tiles already on the map.
+            delete wmsOptions.TILESIZE
+            // Merge-only: params in the incoming URL are added or overwritten,
+            // but a param the URL no longer carries is NOT removed from
+            // wmsParams and keeps being sent on every tile request.
+            L.extend(this.wmsParams, wmsOptions)
+            newUrl = baseUrl
+        }
+
+        return colorFilterExtension.refresh.call(
+            this,
+            newUrl,
+            force,
+            updateOptions
+        )
+    },
+
     // @method setParams(params: Object, noRedraw?: Boolean): this
     // Merges an object with the new parameters and re-requests tiles on the current screen (unless `noRedraw` was set to true).
     setParams: function (params, noRedraw) {
@@ -362,23 +337,17 @@ var wmsExtension = {
 
 L.TileLayer.ColorFilter = L.TileLayer.extend(colorFilterExtension)
 
-// We can't extend an already extended so we'll merge by hand
+// We can't extend an already extended so we'll merge by hand.
+// The merge goes into a fresh object: `colorFilterExtension` stays the plain
+// color-filter behaviour, which wmsExtension.refresh delegates back to.
 L.TileLayer.WMSColorFilter = L.TileLayer.extend(
-    Object.assign(colorFilterExtension, wmsExtension)
+    Object.assign({}, colorFilterExtension, wmsExtension)
 )
 
 L.tileLayer.colorFilter = function (url, options) {
     if (options.tileFormat && options.tileFormat == 'wms') {
-        const urlSplit = url.split('?')
-        const urlBaseString = urlSplit[0]
-        const urlParamString = urlSplit[1]
-        const wmsOptions = {}
-        const urlParams = new URLSearchParams(urlParamString)
-        const entries = urlParams.entries()
+        const { baseUrl: urlBaseString, wmsOptions } = splitWmsUrl(url)
 
-        for (const entry of entries) {
-            wmsOptions[entry[0].toUpperCase()] = entry[1]
-        }
         if (wmsOptions.TILESIZE != null) {
             wmsOptions.tileSize = parseInt(wmsOptions.TILESIZE)
             delete wmsOptions.TILESIZE
@@ -396,8 +365,10 @@ L.tileLayer.colorFilter = function (url, options) {
         )
     }
 
-    url = url.replace(/{t}/g, '_time_')
-    const tileLayer = new L.TileLayer.ColorFilter(url, options)
+    const tileLayer = new L.TileLayer.ColorFilter(
+        normalizeTileUrlTemplate(url),
+        options
+    )
 
     return tileLayer
 }

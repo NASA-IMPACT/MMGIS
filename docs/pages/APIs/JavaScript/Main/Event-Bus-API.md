@@ -299,12 +299,21 @@ window.mmgisAPI.on('feature:active', ({ layerName, feature }) => {
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `time:change` | `{ startTime, currentTime, endTime }` | Fired when time range changes |
+| `time:changed` | `{ startTime, currentTime, endTime }` | Fired after a time change is committed, carrying the new committed state. Pairs with `time:changeRequested` |
+| `time:changeRequested` | `{ startTime, currentTime, endTime }` | Emitted by a plugin to ask core to commit a new time window. ISO 8601 strings. Ignored while time is disabled for the mission |
 | `time:toggleUI` | `{ active }` | Fired when time UI is shown/hidden |
 
 ```javascript
-window.mmgisAPI.on('time:change', ({ startTime, currentTime, endTime }) => {
+window.mmgisAPI.on('time:changed', ({ startTime, currentTime, endTime }) => {
     console.log(`Time range: ${startTime} - ${endTime}`)
+})
+
+// Ask core to move the current time. Core commits it and broadcasts the
+// result on 'time:changed' — including back to the plugin that asked.
+window.mmgisAPI.emit('time:changeRequested', {
+    startTime: '2024-01-01T00:00:00.000Z',
+    endTime: '2024-12-31T23:59:59.000Z',
+    currentTime: '2024-06-15T12:00:00.000Z'
 })
 ```
 
@@ -384,6 +393,7 @@ const newState = await window.mmgisAPI.request('layers:toggle', 'myLayerName')
 
 | Provider | Params | Returns | Description |
 |----------|--------|---------|-------------|
+| `time:isEnabled` | none | `boolean` | Whether the mission has time enabled. The getters below return `null` both when time is off and when it is on but not yet seeded |
 | `time:getCurrent` | none | `string` | Get current time |
 | `time:getStart` | none | `string` | Get start time |
 | `time:getEnd` | none | `string` | Get end time |
@@ -391,6 +401,7 @@ const newState = await window.mmgisAPI.request('layers:toggle', 'myLayerName')
 
 ```javascript
 // Get time state
+const timeEnabled = await window.mmgisAPI.request('time:isEnabled')
 const current = await window.mmgisAPI.request('time:getCurrent')
 const start = await window.mmgisAPI.request('time:getStart')
 const end = await window.mmgisAPI.request('time:getEnd')
@@ -469,7 +480,7 @@ const MyPlugin = {
     init() {
         this._unsubscribers.push(
             window.mmgisAPI.on('layer:visibilityChange', this.handleLayerChange),
-            window.mmgisAPI.on('time:change', this.handleTimeChange)
+            window.mmgisAPI.on('time:changed', this.handleTimeChange)
         )
     },
 
