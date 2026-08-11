@@ -264,13 +264,31 @@ function lngDelta(d: number): number {
 }
 
 /**
- * Width of a view in degrees of longitude. An engine may report a view that
- * straddles the antimeridian wrapped (`sw.lng` 170, `ne.lng` -170) or unwrapped
- * after panning (190..210); both describe the same 20° window.
+ * Width of a view in degrees of longitude, measured east from its west edge. An
+ * engine may report a view that straddles the antimeridian wrapped (`sw.lng`
+ * 170, `ne.lng` -170) or unwrapped after panning (190..210); both describe the
+ * same 20° window. Corner longitudes are never reordered: `sw.lng > ne.lng` is
+ * how a wrapped view is spelled, so a swap carries meaning here.
  */
-function viewLngSpan(view: ViewBounds): number {
+function viewLngExtent(view: ViewBounds): number {
     const raw = view.northEast.lng - view.southWest.lng
-    return raw > 0 ? Math.min(raw, 360) : lngDelta(raw)
+    return raw > 0 ? raw : lngDelta(raw)
+}
+
+/** As `viewLngExtent`, capped at a full turn. */
+function viewLngSpan(view: ViewBounds): number {
+    return Math.min(viewLngExtent(view), 360)
+}
+
+/**
+ * View latitudes ordered south-to-north. Latitude does not wrap, so a view
+ * reported with its corners swapped — as a rotated camera near bearing 180°
+ * does — is normalized rather than read as a different window.
+ */
+function viewLatRange(view: ViewBounds): [number, number] {
+    const a = view.southWest.lat
+    const b = view.northEast.lat
+    return a <= b ? [a, b] : [b, a]
 }
 
 /** How many degrees east of the view's west edge a longitude sits, in [0, 360). */
@@ -297,8 +315,9 @@ export function selectionFitBounds(
     const [w, s, e, n] = bbox
     if (e - w <= 0 || n - s <= 0 || e - w >= 180) return null
     if (view) {
+        const [viewS, viewN] = viewLatRange(view)
         const inLng = lngOffset(w, view) + (e - w) <= viewLngSpan(view)
-        const inLat = s >= view.southWest.lat && n <= view.northEast.lat
+        const inLat = s >= viewS && n <= viewN
         if (inLng && inLat) return null
     }
     return {
@@ -324,14 +343,17 @@ export function selectionTooltipAnchor(
     view?: ViewBounds | null
 ): { lat: number; lng: number } {
     if (!view) return centroid
+    const [viewS, viewN] = viewLatRange(view)
     const inView =
         lngOffset(centroid.lng, view) <= viewLngSpan(view) &&
-        centroid.lat >= view.southWest.lat &&
-        centroid.lat <= view.northEast.lat
+        centroid.lat >= viewS &&
+        centroid.lat <= viewN
     if (inView) return centroid
     return {
-        lat: (view.southWest.lat + view.northEast.lat) / 2,
-        lng: view.southWest.lng + viewLngSpan(view) / 2,
+        lat: (viewS + viewN) / 2,
+        // The uncapped extent: a view reported wider than a full turn still
+        // centres on its own middle rather than on its west edge plus 180°.
+        lng: view.southWest.lng + viewLngExtent(view) / 2,
     }
 }
 

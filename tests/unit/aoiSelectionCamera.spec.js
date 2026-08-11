@@ -85,6 +85,15 @@ test.describe('selectionFitBounds', () => {
         expect(selectionFitBounds([160, 32, 165, 38], wrapped)).not.toBeNull()
     })
 
+    test('normalizes a view whose lat corners arrive swapped (rotated camera)', () => {
+        const swapped = {
+            southWest: { lat: 40, lng: -100 },
+            northEast: { lat: 30, lng: -90 },
+        }
+        expect(selectionFitBounds([-98, 32, -92, 38], swapped)).toBeNull()
+        expect(selectionFitBounds([-98, 20, -92, 45], swapped)).not.toBeNull()
+    })
+
     test('treats an unwrapped panned view as contiguous', () => {
         const unwrapped = {
             southWest: { lat: 30, lng: 190 },
@@ -118,6 +127,32 @@ test.describe('selectionTooltipAnchor', () => {
         expect(selectionTooltipAnchor({ lat: 5, lng: -95 }, view)).toEqual({
             lat: 35,
             lng: -95,
+        })
+    })
+
+    test('normalizes a view whose lat corners arrive swapped (rotated camera)', () => {
+        const swapped = {
+            southWest: { lat: 40, lng: -100 },
+            northEast: { lat: 30, lng: -90 },
+        }
+        // Off the view's centre, so a kept centroid cannot be mistaken for the
+        // fallback.
+        const offCentre = { lat: 38, lng: -97 }
+        expect(selectionTooltipAnchor(offCentre, swapped)).toEqual(offCentre)
+        expect(selectionTooltipAnchor({ lat: 5, lng: -95 }, swapped)).toEqual({
+            lat: 35,
+            lng: -95,
+        })
+    })
+
+    test('centres a view reported wider than a full turn on its middle', () => {
+        const overwide = {
+            southWest: { lat: 30, lng: 0 },
+            northEast: { lat: 40, lng: 400 },
+        }
+        expect(selectionTooltipAnchor({ lat: 80, lng: 5 }, overwide)).toEqual({
+            lat: 35,
+            lng: 200,
         })
     })
 
@@ -168,7 +203,10 @@ test.describe('AOITool._applySelection camera behavior', () => {
         AOITool._applySelection(squareFeature(-98, 32, -92, 38), 'draw', 'In view')
         await flush()
         expect(names(calls)).not.toContain('map:fitBounds')
-        expect(names(calls)).toContain('map:addOverlay')
+        const overlay = calls.find((c) => c.name === 'map:addOverlay')
+        // Anchored at the selection's own centroid — the view never moved, but
+        // the centroid was already on-screen.
+        expect(overlay?.payload.latlng).toEqual({ lat: 35, lng: -95 })
         expect(window.mmgisAPI.on).not.toHaveBeenCalledWith(
             'map:moveend',
             expect.anything()
@@ -176,7 +214,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
     })
 
     test('forwards the selection extent to map:fitBounds when it overflows the view', async () => {
-        mockApi(view)
+        const calls = mockApi(view)
         AOITool._applySelection(
             squareFeature(-98, 32, -80, 38),
             'search',
@@ -192,6 +230,33 @@ test.describe('AOITool._applySelection camera behavior', () => {
                 ],
             })
         )
+        // The tooltip waits for the camera; this mock never fires moveend, so
+        // the fallback timer mounts it — at the centroid, now framed.
+        expect(names(calls)).not.toContain('map:addOverlay')
+        vi.advanceTimersByTime(1600)
+        await flush()
+        const overlay = calls.find((c) => c.name === 'map:addOverlay')
+        expect(overlay?.payload.latlng).toEqual({ lat: 35, lng: -89 })
+    })
+
+    test('anchors the tooltip inside the view when fitBounds is rejected', async () => {
+        const calls = mockApi(view)
+        const request = window.mmgisAPI.request
+        window.mmgisAPI.request = vi.fn((name, payload) =>
+            name === 'map:fitBounds'
+                ? (calls.push({ name, payload }), Promise.reject(new Error('nope')))
+                : request(name, payload)
+        )
+        AOITool._applySelection(
+            squareFeature(-98, 32, -80, 38),
+            'search',
+            'Beyond view'
+        )
+        await flush()
+        // The camera never moved, so the off-screen centroid (-89) would strand
+        // the tooltip; it falls back to the centre of the unchanged view.
+        const overlay = calls.find((c) => c.name === 'map:addOverlay')
+        expect(overlay?.payload.latlng).toEqual({ lat: 35, lng: -95 })
     })
 
     test('anchors the tooltip inside the view for an unframeable selection (Alaska)', async () => {

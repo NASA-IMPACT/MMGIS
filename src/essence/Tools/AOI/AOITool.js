@@ -590,11 +590,15 @@ const AOITool = {
                     // mounts at the final centroid pixel instead of flickering through
                     // intermediate positions during the camera move.
                     let fallback
-                    const oneShot = () => {
+                    // Takes a view only when the camera never moved; once
+                    // fitBounds has framed the selection its centroid is
+                    // on-screen and needs no anchor fallback.
+                    const settle = (unmovedView) => {
                         api.off('map:moveend', oneShot)
                         clearTimeout(fallback)
-                        showTooltip()
+                        showTooltip(unmovedView)
                     }
+                    const oneShot = () => settle()
                     api.on('map:moveend', oneShot)
                     // Belt-and-braces: if no moveend fires (e.g. an engine that
                     // skips the event on a programmatic fit), show the tooltip
@@ -603,13 +607,12 @@ const AOITool = {
 
                     api.request('map:fitBounds', fit).catch((err) => {
                         console.warn('[AOI] fitBounds failed', err)
-                        oneShot()
+                        settle(view)
                     })
                 })
-                .catch((err) => {
+                .catch((err) =>
                     console.warn('[AOI] selection camera step failed', err)
-                    showTooltip()
-                })
+                )
         } else {
             showTooltip()
         }
