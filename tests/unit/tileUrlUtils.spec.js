@@ -106,6 +106,16 @@ describe('tileUrlUtils', () => {
             expect(result).toContain('rescale=20%2C80')
         })
 
+        test('prefers currentCogColormap over cogColormap', () => {
+            const result = applyCogFieldsToUrl('https://example.com/tiles/{z}/{x}/{y}', {
+                cogTransform: true,
+                cogColormap: 'viridis',
+                currentCogColormap: 'magma',
+            })
+            expect(result).toContain('colormap_name=magma')
+            expect(result).not.toContain('viridis')
+        })
+
         test('expression takes precedence: removes bidx and sets expression', () => {
             const url = 'https://example.com/tiles/{z}/{x}/{y}?bidx=1'
             const result = applyCogFieldsToUrl(url, { cogExpression: 'b1/b2' })
@@ -408,6 +418,7 @@ describe('tileUrlUtils', () => {
                 variables: { a: 1 },
                 cogTransform: true,
                 cogColormap: 'viridis',
+                currentCogColormap: 'magma',
                 cogResampling: 'bilinear',
                 time: { enabled: true, end: '2024-03-04T00:00:00Z' },
             },
@@ -420,6 +431,7 @@ describe('tileUrlUtils', () => {
             expect(opts.tileFormat).toBe('tms')
             expect(opts.cogTransform).toBe(true)
             expect(opts.cogColormap).toBe('viridis')
+            expect(opts.currentCogColormap).toBe('magma')
             expect(opts.cogResampling).toBe('bilinear')
         })
 

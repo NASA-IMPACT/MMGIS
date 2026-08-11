@@ -52,7 +52,6 @@ nul
 
 sessions
 .terraform/
-.terraform.lock.hcl
 
 
 .mcp.json

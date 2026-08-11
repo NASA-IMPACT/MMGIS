@@ -116,6 +116,31 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         }
     )
 
+    // A colormap picked in the Layer Manager lives on the config as
+    // `currentCogColormap`. A time change recompiles the URL from the config
+    // alone, so the pick has to survive that recompile.
+    test('keeps a user-picked colormap when the time changes', async () => {
+        const layer = {
+            name: 'CO2 Concentration',
+            type: 'TileLayer',
+            url: 'titiler-url:https://example.com/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png',
+            tileformat: 'wmts',
+            controlled: false,
+            cogTransform: true,
+            cogColormap: 'viridis',
+            currentCogColormap: 'magma',
+            time: { ...timeConfig },
+        }
+        registerDeckLayer(layer)
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(updateLayer).toHaveBeenCalledTimes(1)
+        const [, options] = updateLayer.mock.calls[0]
+        expect(options.url).toContain('colormap_name=magma')
+        expect(options.url).not.toContain('viridis')
+    })
+
     test('leaves the layer config URL unmutated so the next reload re-substitutes', async () => {
         const layer = makeNO2Layer('TileLayer')
         const originalUrl = layer.url
