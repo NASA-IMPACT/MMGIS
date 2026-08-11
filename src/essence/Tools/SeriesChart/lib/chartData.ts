@@ -126,31 +126,35 @@ function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
         itemStyle: { color },
         lineStyle: { width: 2 },
         symbolSize: 5,
+        showSymbol: false,
         connectNulls: false,
     }
 }
 
-function sliderZoom(theme: ChartTheme, xAxisIndex: number | number[]) {
+/** The preview zoom strip both layouts share: the series ghosted inside the
+ *  slider in its own color, light default filler over it, dark end handles. */
+function previewSlider(
+    theme: ChartTheme,
+    color: string,
+    tickFormat: ((ms: number) => string) | null,
+) {
     return {
         type: 'slider' as const,
-        xAxisIndex,
-        // Slim range-input look: grey track, solid primary fill,
-        // round handles, no border, no data preview, no move grip.
-        height: 8,
+        height: 30,
         bottom: 10,
-        showDataShadow: false,
+        showDataShadow: true,
         brushSelect: false,
-        borderColor: 'transparent',
-        backgroundColor: theme.gridColor,
-        fillerColor: theme.palette[0],
-        handleIcon: 'circle',
-        handleSize: 14,
-        handleStyle: {
-            color: theme.palette[0],
-            borderColor: theme.surface,
-            borderWidth: 1,
-        },
+        borderColor: theme.gridColor,
+        handleSize: '80%',
+        handleStyle: { color: theme.textColor },
         moveHandleSize: 0,
+        dataBackground: {
+            lineStyle: { color, opacity: 0.6, width: 1 },
+            areaStyle: { color, opacity: 0.08 },
+        },
+        ...(tickFormat
+            ? { labelFormatter: (v: number) => tickFormat(v) }
+            : {}),
     }
 }
 
@@ -176,8 +180,10 @@ function timeTooltipFormatter(params: TooltipParam[] | TooltipParam): string {
  * by rendering it.
  *
  * One variable is visible at a time (`visibleLabel`, default: the first
- * series); the single-select legend is the picker and the y-axis is named
- * for the visible variable's unit.
+ * series) and the single-select legend is the picker. Same visual grammar
+ * as the stacked variable card — clean line, sparse unnamed y-axis, preview
+ * zoom strip in the visible variable's color; the card footer, not the
+ * chart, names the variable and unit.
  */
 export function buildChartOption(
     payload: ChartSeriesPayload,
@@ -188,19 +194,22 @@ export function buildChartOption(
     const selected: Record<string, boolean> = {}
     for (const s of payload.series) selected[s.label] = s.label === visible
 
-    const activeSeries = payload.series.find((s) => s.label === visible)
-    const yTitle = payload.yLabel ?? activeSeries?.unit ?? null
+    const activeIndex = Math.max(
+        payload.series.findIndex((s) => s.label === visible),
+        0,
+    )
+    const activeSeries = payload.series[activeIndex]
+    const activeColor =
+        activeSeries?.color ||
+        theme.palette[activeIndex % theme.palette.length]
 
     const yAxis = [
         {
             type: 'value' as const,
             scale: true,
-            name: yTitle ?? undefined,
-            nameLocation: 'middle' as const,
-            nameGap: 42,
-            nameTextStyle: { color: theme.textColor },
+            splitNumber: 2,
             axisLabel: { color: theme.textColor },
-            splitLine: { lineStyle: { color: theme.gridColor } },
+            splitLine: { show: false },
         },
     ]
 
@@ -215,10 +224,11 @@ export function buildChartOption(
             textStyle: { color: theme.textColor },
             selected,
         },
-        grid: { left: 56, right: 16, top: 32, bottom: 44 },
+        // Bottom band holds the x labels and the preview strip.
+        grid: { left: 48, right: 12, top: 32, bottom: 84 },
         dataZoom: [
             { type: 'inside' as const, xAxisIndex: 0 },
-            sliderZoom(theme, 0),
+            previewSlider(theme, activeColor, null),
         ],
         yAxis,
     }
@@ -352,32 +362,12 @@ export function buildVariableCardOption(
         series: [
             {
                 ...seriesBase(s, index, theme),
-                showSymbol: false,
                 data,
             },
         ],
         dataZoom: [
             { type: 'inside' as const },
-            {
-                type: 'slider' as const,
-                // Preview strip: the series ghosted inside the slider, light
-                // default filler over it, dark end handles.
-                height: 30,
-                bottom: 10,
-                showDataShadow: true,
-                brushSelect: false,
-                borderColor: theme.gridColor,
-                handleSize: '80%',
-                handleStyle: { color: theme.textColor },
-                moveHandleSize: 0,
-                dataBackground: {
-                    lineStyle: { color, opacity: 0.6, width: 1 },
-                    areaStyle: { color, opacity: 0.08 },
-                },
-                ...(tickFormat
-                    ? { labelFormatter: (v: number) => tickFormat(v) }
-                    : {}),
-            },
+            previewSlider(theme, color, tickFormat),
         ],
     }
 }

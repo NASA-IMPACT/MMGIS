@@ -147,16 +147,25 @@ describe('seriesChart chartData', () => {
             expect(opt.dataZoom.map((z) => z.type)).toEqual(['inside', 'slider'])
         })
 
-        test('the zoom scrubber is a slim primary-filled range slider', () => {
-            const opt = buildChartOption(payloadWith([series()]), THEME)
+        test('the zoom strip previews the visible variable in its color', () => {
+            const opt = buildChartOption(
+                payloadWith([series(), series({ id: 's2', label: 'S2' })]),
+                THEME,
+            )
             const slider = opt.dataZoom.find((z) => z.type === 'slider')
-            expect(slider.fillerColor).toBe('#111111')
-            expect(slider.handleStyle.color).toBe('#111111')
-            expect(slider.handleStyle.borderColor).toBe('#eeeeee')
-            expect(slider.backgroundColor).toBe('#dddddd')
-            expect(slider.handleIcon).toBe('circle')
-            expect(slider.showDataShadow).toBe(false)
+            expect(slider.showDataShadow).toBe(true)
+            expect(slider.dataBackground.lineStyle.color).toBe(THEME.palette[0])
             expect(slider.moveHandleSize).toBe(0)
+
+            const picked = buildChartOption(
+                payloadWith([series(), series({ id: 's2', label: 'S2' })]),
+                THEME,
+                'S2',
+            )
+            const pickedSlider = picked.dataZoom.find((z) => z.type === 'slider')
+            expect(pickedSlider.dataBackground.lineStyle.color).toBe(
+                THEME.palette[1],
+            )
         })
 
         test('cycles the theme palette and honors explicit series color', () => {
@@ -228,10 +237,9 @@ describe('seriesChart chartData', () => {
             expect(opt.legend.selectedMode).toBe('single')
             expect(opt.legend.selected).toEqual({ S1: true, S2: false, S3: false })
             expect(opt.yAxis).toHaveLength(1)
-            expect(opt.yAxis[0].name).toBe('µg/m³')
         })
 
-        test('the y-axis renames to the picked variable unit', () => {
+        test('picking a variable moves the selection', () => {
             const opt = buildChartOption(
                 payloadWith([
                     series({ unit: 'µg/m³' }),
@@ -241,7 +249,6 @@ describe('seriesChart chartData', () => {
                 'S2',
             )
             expect(opt.legend.selected).toEqual({ S1: false, S2: true })
-            expect(opt.yAxis[0].name).toBe('Knots')
         })
 
         test('no in-canvas toolbox: reset zoom lives in the card header', () => {
@@ -249,24 +256,15 @@ describe('seriesChart chartData', () => {
             expect(opt.toolbox).toBeUndefined()
         })
 
-        test('a single unit becomes the y-axis name', () => {
-            const one = buildChartOption(
-                payloadWith([series({ unit: 'ppm' })]),
+        test('identity lives in the footer: unnamed sparse clean y-axis', () => {
+            const opt = buildChartOption(
+                { ...payloadWith([series({ unit: 'ppm' })]), yLabel: 'NO₂' },
                 THEME,
             )
-            expect(one.yAxis[0].name).toBe('ppm')
-            expect(one.yAxis).toHaveLength(1)
-            expect(one.legend.selected).toEqual({ S1: true })
-        })
-
-        test('yLabel wins as the y-axis name', () => {
-            const withLabel = buildChartOption(
-                { ...payloadWith([series()]), yLabel: 'NO₂' },
-                THEME,
-            )
-            const without = buildChartOption(payloadWith([series()]), THEME)
-            expect(withLabel.yAxis[0].name).toBe('NO₂')
-            expect(without.yAxis[0].name).toBeUndefined()
+            expect(opt.yAxis[0].name).toBeUndefined()
+            expect(opt.yAxis[0].splitNumber).toBe(2)
+            expect(opt.yAxis[0].splitLine.show).toBe(false)
+            expect(opt.series[0].showSymbol).toBe(false)
         })
     })
 

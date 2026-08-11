@@ -101,23 +101,39 @@ function ReadyCard({
     layout: ChartLayout
 }) {
     const chartRef = useRef<echarts.ECharts | null>(null)
+    const [activeLabel, setActiveLabel] = React.useState(
+        payload.series[0]?.label,
+    )
+    useEffect(() => {
+        setActiveLabel(payload.series[0]?.label)
+    }, [payload])
+
     if (layout === 'stacked') {
         // One sub-card per variable, each with its own preview-strip zoom —
-        // no shared reset button; dragging a card's strip is its reset.
+        // no shared reset button; dragging a card's strip is its reset. The
+        // list is capped so a many-variable payload scrolls inside its card
+        // instead of swallowing the panel.
         return (
             <>
                 <CardHeader title={payload.title} />
-                {payload.series.map((s, i) => (
-                    <VariableCard
-                        key={s.id}
-                        series={s}
-                        payload={payload}
-                        index={i}
-                    />
-                ))}
+                <div className="series-chart__variable-list">
+                    {payload.series.map((s, i) => (
+                        <VariableCard
+                            key={s.id}
+                            series={s}
+                            payload={payload}
+                            index={i}
+                        />
+                    ))}
+                </div>
             </>
         )
     }
+
+    const activeIndex = Math.max(
+        payload.series.findIndex((s) => s.label === activeLabel),
+        0,
+    )
     return (
         <>
             <CardHeader
@@ -130,7 +146,17 @@ function ReadyCard({
                     })
                 }
             />
-            <SeriesCanvas payload={payload} chartRef={chartRef} />
+            <SeriesCanvas
+                payload={payload}
+                chartRef={chartRef}
+                onVisibleChange={setActiveLabel}
+            />
+            {payload.series[activeIndex] && (
+                <CardFooter
+                    series={payload.series[activeIndex]}
+                    index={activeIndex}
+                />
+            )}
         </>
     )
 }
@@ -157,9 +183,13 @@ function themeFromCss(el: HTMLElement): ChartTheme {
 function SeriesCanvas({
     payload,
     chartRef,
+    onVisibleChange,
 }: {
     payload: ChartSeriesPayload
     chartRef?: React.MutableRefObject<echarts.ECharts | null>
+    /** Fires with the picked variable's label so the card footer follows.
+     *  Must be identity-stable (e.g. a setState) — it's an effect dep. */
+    onVisibleChange?: (label: string) => void
 }) {
     const hostRef = useRef<HTMLDivElement>(null)
 
@@ -172,8 +202,8 @@ function SeriesCanvas({
         let visible = payload.series[0]?.label
         chart.setOption(buildChartOption(payload, theme, visible) as never)
 
-        // Single-select legend is the variable picker; rebuild so the y-axis
-        // renames to the picked variable's unit, keeping the zoom range.
+        // Single-select legend is the variable picker; rebuild so the preview
+        // strip recolors to the picked variable, keeping the zoom range.
         // Re-clicking the active chip would empty the chart — keep it on.
         chart.on('legendselectchanged', (e) => {
             const event = e as {
@@ -181,6 +211,7 @@ function SeriesCanvas({
                 selected: Record<string, boolean>
             }
             visible = event.selected[event.name] ? event.name : visible
+            if (visible) onVisibleChange?.(visible)
             const zoom = (
                 chart.getOption() as { dataZoom?: Array<{ start?: number; end?: number }> }
             ).dataZoom?.[0]
@@ -202,18 +233,19 @@ function SeriesCanvas({
             if (chartRef?.current === chart) chartRef.current = null
             chart.dispose()
         }
-    }, [payload, chartRef])
+    }, [payload, chartRef, onVisibleChange])
 
     return <div className="series-chart__canvas-wrap" ref={hostRef} />
 }
 
-/** CSS vars in the order themeFromCss builds its palette, so a variable's
- *  footer dot and its chart line resolve to the same theme color. */
+/** CSS vars (with the same fallbacks) in the order themeFromCss builds its
+ *  palette, so a variable's footer dot and its chart line resolve to the
+ *  same theme color even when a theme omits a token. */
 const PALETTE_VARS = [
-    '--theme-color-primary',
-    '--theme-color-accent-cool',
-    '--theme-color-accent-warm',
-    '--theme-color-secondary',
+    'var(--theme-color-primary, #005ea2)',
+    'var(--theme-color-accent-cool, #00bde3)',
+    'var(--theme-color-accent-warm, #fa9441)',
+    'var(--theme-color-secondary, #d83933)',
 ]
 
 function downloadCsv(s: ChartSeries) {
@@ -224,6 +256,44 @@ function downloadCsv(s: ChartSeries) {
     a.download = `${s.label.replace(/[^\w.-]+/g, '_') || 'series'}.csv`
     a.click()
     URL.revokeObjectURL(url)
+}
+
+/** The footer both layouts share: colored dot naming the variable (with
+ *  unit), the interaction hint, and that variable's CSV download. */
+function CardFooter({ series, index }: { series: ChartSeries; index: number }) {
+    return (
+        <footer className="series-chart__variable-footer">
+            <div>
+                <span className="series-chart__variable-chip">
+                    <span
+                        className="series-chart__variable-dot"
+                        style={{
+                            background:
+                                series.color ||
+                                PALETTE_VARS[index % PALETTE_VARS.length],
+                        }}
+                        aria-hidden="true"
+                    />
+                    {series.label}
+                    {series.unit && (
+                        <span className="series-chart__variable-unit">
+                            {series.unit}
+                        </span>
+                    )}
+                </span>
+                <p className="series-chart__variable-hint">
+                    Hover to inspect · drag the strip to zoom
+                </p>
+            </div>
+            <button
+                type="button"
+                className="series-chart__csv-link"
+                onClick={() => downloadCsv(series)}
+            >
+                Download CSV
+            </button>
+        </footer>
+    )
 }
 
 function VariableCard({
@@ -256,37 +326,7 @@ function VariableCard({
     return (
         <section className="series-chart__variable-card">
             <div className="series-chart__variable-canvas" ref={hostRef} />
-            <footer className="series-chart__variable-footer">
-                <div>
-                    <span className="series-chart__variable-chip">
-                        <span
-                            className="series-chart__variable-dot"
-                            style={{
-                                background:
-                                    series.color ||
-                                    `var(${PALETTE_VARS[index % PALETTE_VARS.length]})`,
-                            }}
-                            aria-hidden="true"
-                        />
-                        {series.label}
-                        {series.unit && (
-                            <span className="series-chart__variable-unit">
-                                {series.unit}
-                            </span>
-                        )}
-                    </span>
-                    <p className="series-chart__variable-hint">
-                        Hover to inspect · drag the strip to zoom
-                    </p>
-                </div>
-                <button
-                    type="button"
-                    className="series-chart__csv-link"
-                    onClick={() => downloadCsv(series)}
-                >
-                    Download CSV
-                </button>
-            </footer>
+            <CardFooter series={series} index={index} />
         </section>
     )
 }

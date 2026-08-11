@@ -98,6 +98,13 @@
     height: 280px;
 }
 
+.series-chart__variable-list {
+    // ~1.5 variable cards tall, then scroll within the station card instead
+    // of the payload swallowing the whole panel.
+    max-height: 440px;
+    overflow-y: auto;
+}
+
 .series-chart__variable-card {
     margin-top: var(--theme-spacing-1, 0.5rem);
     background: var(--theme-color-white, #ffffff);

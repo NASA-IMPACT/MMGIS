@@ -37,13 +37,14 @@ config entry, not a code change:
 { "sources": ["fetch-timeseries", "fetch-raster-timeseries"] }
 ```
 
-`variables.layout` — `"single"` (default) or `"stacked"`. Single renders all
-of a card's variables in one chart with a single-select legend as the
-variable picker. Stacked renders one card per variable: a clean single-series
-chart over a preview zoom strip (the series ghosted inside the slider), with
-a footer chip naming the variable and unit, a hover hint, and a Download CSV
-link exporting that variable's points. Each card zooms independently, which
-keeps mixed-unit variables comparable without a dual axis.
+`variables.layout` — `"single"` (default) or `"stacked"`. Both share one
+design: a clean symbol-less line, sparse unnamed y-axis, a preview zoom strip
+(the series ghosted inside the slider), and a footer chip naming the variable
+and unit with a hover hint and a Download CSV link. Single renders all of a
+card's variables in one chart — the single-select legend picks the visible
+one, and the strip, footer, and CSV follow the pick. Stacked renders one such
+card per variable (each zooming independently, mixed units without a dual
+axis), capped at ~1.5 cards tall with the rest scrolling inside the card.
 
 ## Smoke test (devtools console)
 
