@@ -1,11 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import MapPopup_ from '../../src/essence/Basics/MapPopup_/MapPopup_'
-import type { MapPopupRequest } from '../../src/essence/Basics/MapPopup_/types'
+import type {
+    MapPopupRequest,
+    MapPopupResult,
+} from '../../src/essence/Basics/MapPopup_/types'
 
 /**
- * Records what the service broadcasts and lets a spec fire bus events back.
- * Handlers are snapshotted before dispatch, exactly as mitt does, so a
- * listener unsubscribed mid-emit still receives that emit.
+ * Records anything the service broadcasts — it should never broadcast — and
+ * lets a spec fire bus events back. Handlers are snapshotted before dispatch,
+ * exactly as mitt does, so a listener unsubscribed mid-emit still receives
+ * that emit.
  */
 function makeBus() {
     const listeners = new Map<string, Set<(payload?: unknown) => void>>()
@@ -81,22 +85,39 @@ function request(overrides: Partial<MapPopupRequest> = {}): MapPopupRequest {
     return {
         latlng: { lat: 45, lng: -120 },
         html: '<p>Crater A</p>',
-        dismissEvent: 'plugin:test:dismissed',
         ...overrides,
     }
+}
+
+/**
+ * Watch a request promise and record every way it settles: a resolution as its
+ * action, a rejection as `rejected: <message>`. Specs assert the recorded list
+ * whole, so an outcome that never arrives or arrives twice fails the test.
+ */
+function track(promise: Promise<MapPopupResult>): string[] {
+    const settlements: string[] = []
+    promise.then(
+        (result) => settlements.push(result.action),
+        (error) => settlements.push(`rejected: ${error.message}`)
+    )
+    return settlements
 }
 
 function show(
     bus: ReturnType<typeof makeBus>,
     engine: ReturnType<typeof makeEngine>,
     overrides: Partial<MapPopupRequest> = {}
-): boolean {
+): string[] {
     window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
-    return MapPopup_.show(request(overrides), engine.engine as never)
+    return track(MapPopup_.show(request(overrides), engine.engine as never))
 }
+
+const INVALID_REQUEST =
+    'rejected: [MapPopup] Invalid request: html must be a string and latlng must hold finite lat/lng numbers.'
 
 const popups = () => document.querySelectorAll('.mmgis-map-popup')
 const card = () => document.querySelector<HTMLElement>('.mmgis-map-popup')!
+const buttons = () => document.querySelectorAll('.mmgis-map-popup__button')
 /** Give the card a real size; jsdom reports every element as 0x0. */
 const sizeCard = (width: number, height: number) => {
     card().getBoundingClientRect = () => ({ width, height }) as DOMRect
@@ -118,94 +139,116 @@ describe('MapPopup_', () => {
         delete window.mmgisAPI
     })
 
-    it('mounts a single popup on the body and sanitizes the html', () => {
-        expect(
-            show(bus, engine, {
-                html: '<p>Crater A</p><script>window.pwned = true</script>',
-            })
-        ).toBe(true)
+    it('mounts a single popup on the body and sanitizes the html', async () => {
+        const outcome = show(bus, engine, {
+            html: '<p>Crater A</p><script>window.pwned = true</script>',
+        })
 
         expect(popups()).toHaveLength(1)
         const content = document.querySelector('.mmgis-map-popup__content')!
         expect(content.innerHTML).toContain('Crater A')
         expect(content.innerHTML).not.toContain('script')
+
+        // The request is answered only once the popup closes.
+        await nextTick()
+        expect(outcome).toEqual([])
     })
 
-    it('renders both actions and broadcasts the primary event on click', () => {
-        show(bus, engine, {
-            secondaryAction: { label: 'Cancel', event: 'plugin:test:cancel' },
-            primaryAction: { label: 'Analyze', event: 'plugin:test:analyze' },
+    it('renders both actions and resolves with the primary on its click', async () => {
+        const outcome = show(bus, engine, {
+            secondaryAction: { label: 'Cancel' },
+            primaryAction: { label: 'Analyze' },
         })
 
-        const buttons = document.querySelectorAll('.mmgis-map-popup__button')
         expect(
-            Array.from(buttons).map((button) => button.textContent)
+            Array.from(buttons()).map((button) => button.textContent)
         ).toEqual(['Cancel', 'Analyze'])
 
-        buttons[1].dispatchEvent(new MouseEvent('click'))
-        expect(bus.emitted).toEqual(['plugin:test:analyze'])
+        buttons()[1].dispatchEvent(new MouseEvent('click'))
+        await nextTick()
+
+        expect(outcome).toEqual(['primary'])
         expect(popups()).toHaveLength(0)
+        expect(bus.emitted).toEqual([])
     })
 
-    it('drops an action whose label or event is unusable', () => {
-        show(bus, engine, {
-            primaryAction: { label: 'Analyze' } as never,
-            secondaryAction: { label: '', event: 'plugin:test:cancel' },
+    it('resolves with the secondary action on its click', async () => {
+        const outcome = show(bus, engine, {
+            secondaryAction: { label: 'Cancel' },
+            primaryAction: { label: 'Analyze' },
         })
 
-        expect(
-            document.querySelectorAll('.mmgis-map-popup__button')
-        ).toHaveLength(0)
+        buttons()[0].dispatchEvent(new MouseEvent('click'))
+        await nextTick()
+
+        expect(outcome).toEqual(['secondary'])
+        expect(popups()).toHaveLength(0)
+        expect(bus.emitted).toEqual([])
     })
 
-    it('fires the dismiss event and closes when the X is pressed', () => {
-        show(bus, engine)
+    it('drops an action whose label is unusable', () => {
+        show(bus, engine, {
+            primaryAction: {} as never,
+            secondaryAction: { label: '' },
+        })
+
+        expect(buttons()).toHaveLength(0)
+    })
+
+    it('resolves dismiss and closes when the X is pressed', async () => {
+        const outcome = show(bus, engine)
 
         document
             .querySelector('.mmgis-map-popup__close')!
             .dispatchEvent(new MouseEvent('click'))
+        await nextTick()
 
-        expect(bus.emitted).toEqual(['plugin:test:dismissed'])
+        expect(outcome).toEqual(['dismiss'])
         expect(popups()).toHaveLength(0)
+        expect(bus.emitted).toEqual([])
     })
 
     it('dismisses on a map click once the opening gesture has passed', async () => {
-        show(bus, engine)
+        const outcome = show(bus, engine)
         await nextTick()
 
         bus.fire('map:click')
         expect(popups()).toHaveLength(1)
 
         await nextTick()
-        expect(bus.emitted).toEqual(['plugin:test:dismissed'])
+        expect(outcome).toEqual(['dismiss'])
         expect(popups()).toHaveLength(0)
+        expect(bus.emitted).toEqual([])
     })
 
     it('ignores the map click that deck.gl emits after the feature click that opened the popup', async () => {
         // deck.gl calls its feature-click handler and then emits the click, so
         // a popup opened from a feature click would otherwise be dismissed by
         // the very click that opened it.
-        show(bus, engine)
+        const outcome = show(bus, engine)
         bus.fire('map:click')
 
         await nextTick()
         expect(popups()).toHaveLength(1)
-        expect(bus.emitted).toEqual([])
+        expect(outcome).toEqual([])
     })
 
     it('keeps a popup opened later in the same gesture as the dismissing click', async () => {
         // Leaflet emits map:click before map:featureClick, so a plugin's
         // replacement popup is shown after the dismissal was scheduled.
-        show(bus, engine, { html: '<p>First</p>' })
+        const first = show(bus, engine, { html: '<p>First</p>' })
         await nextTick()
 
         bus.fire('map:click')
-        show(bus, engine, { html: '<p>Second</p>' })
+        const second = show(bus, engine, { html: '<p>Second</p>' })
 
         await nextTick()
         expect(popups()).toHaveLength(1)
         expect(card().textContent).toContain('Second')
-        expect(bus.emitted).toEqual([])
+        // The replacement closed the first popup, so the pending dismissal
+        // finds it already gone.
+        expect(first).toEqual(['closed'])
+        expect(second).toEqual([])
     })
 
     it('never lets a replaced popup dismiss its replacement', async () => {
@@ -213,13 +256,16 @@ describe('MapPopup_', () => {
         // open popup is, so its replacement is mounted while the bus is still
         // dispatching to the replaced popup's own listener.
         window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
+        let second: string[] = []
         bus.api.on('map:click', () => {
-            MapPopup_.show(
-                request({ html: '<p>Second</p>' }),
-                engine.engine as never
+            second = track(
+                MapPopup_.show(
+                    request({ html: '<p>Second</p>' }),
+                    engine.engine as never
+                )
             )
         })
-        show(bus, engine, { html: '<p>First</p>' })
+        const first = show(bus, engine, { html: '<p>First</p>' })
         await nextTick()
 
         bus.fire('map:click')
@@ -227,38 +273,57 @@ describe('MapPopup_', () => {
         await nextTick()
         expect(popups()).toHaveLength(1)
         expect(card().textContent).toContain('Second')
-        expect(bus.emitted).toEqual([])
+        expect(first).toEqual(['closed'])
+        expect(second).toEqual([])
     })
 
-    it('replaces the current popup without firing its dismiss event', () => {
-        show(bus, engine, { html: '<p>First</p>' })
-        show(bus, engine, { html: '<p>Second</p>' })
+    it('replaces the current popup and resolves the replaced request with closed', async () => {
+        const first = show(bus, engine, { html: '<p>First</p>' })
+        const second = show(bus, engine, { html: '<p>Second</p>' })
 
+        await nextTick()
         expect(popups()).toHaveLength(1)
         expect(card().textContent).toContain('Second')
+        expect(first).toEqual(['closed'])
+        expect(second).toEqual([])
         expect(bus.emitted).toEqual([])
     })
 
-    it('retracts the popup for map:hidePopup without firing its dismiss event', () => {
-        show(bus, engine)
+    it('retracts the popup for map:hidePopup, resolving its request with closed', async () => {
+        const outcome = show(bus, engine)
 
         // What the map:hidePopup provider calls.
         MapPopup_.hide()
+        await nextTick()
 
         expect(popups()).toHaveLength(0)
-        expect(bus.emitted).toEqual([])
+        expect(outcome).toEqual(['closed'])
 
         // Asking again with nothing open changes nothing.
         MapPopup_.hide()
+        await nextTick()
 
         expect(popups()).toHaveLength(0)
-        expect(bus.emitted).toEqual([])
+        expect(outcome).toEqual(['closed'])
+    })
+
+    it('settles a request once however often its popup is closed', async () => {
+        const outcome = show(bus, engine)
+        await nextTick()
+
+        // The user clicks away, and the map is torn down shortly after.
+        bus.fire('map:click')
+        await nextTick()
+        MapPopup_.hide()
+        await nextTick()
+
+        expect(outcome).toEqual(['dismiss'])
     })
 
     it('is a no-op when hiding with no popup open', () => {
         window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
 
-        MapPopup_.hide({ fireDismiss: true })
+        MapPopup_.hide({ action: 'dismiss' })
 
         expect(bus.emitted).toEqual([])
         expect(popups()).toHaveLength(0)
@@ -346,7 +411,7 @@ describe('MapPopup_', () => {
 
     it('unsubscribes from the engine, the window and the bus when hidden', async () => {
         const removeListener = vi.spyOn(window, 'removeEventListener')
-        show(bus, engine)
+        const outcome = show(bus, engine)
         await nextTick()
         expect(engine.listenerCount('move')).toBe(1)
         expect(engine.listenerCount('zoomstart')).toBe(1)
@@ -354,25 +419,31 @@ describe('MapPopup_', () => {
         expect(bus.listenerCount('map:click')).toBe(1)
 
         MapPopup_.hide()
+        await nextTick()
 
         expect(engine.listenerCount('move')).toBe(0)
         expect(engine.listenerCount('zoomstart')).toBe(0)
         expect(engine.listenerCount('zoomend')).toBe(0)
         expect(bus.listenerCount('map:click')).toBe(0)
-        expect(removeListener).toHaveBeenCalledWith('resize', expect.any(Function))
+        expect(removeListener).toHaveBeenCalledWith(
+            'resize',
+            expect.any(Function)
+        )
+        expect(outcome).toEqual(['closed'])
         removeListener.mockRestore()
     })
 
     it('never subscribes to the bus when hidden before the opening task ends', async () => {
-        show(bus, engine)
+        const outcome = show(bus, engine)
         MapPopup_.hide()
 
         await nextTick()
 
         expect(bus.listenerCount('map:click')).toBe(0)
+        expect(outcome).toEqual(['closed'])
     })
 
-    it('leaves nothing subscribed or mounted when wiring the popup fails', () => {
+    it('rejects and leaves nothing mounted when wiring the popup fails', async () => {
         window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
         const subscribe = engine.engine.on
         engine.engine.on = (event: string, handler: () => void) => {
@@ -380,40 +451,71 @@ describe('MapPopup_', () => {
             subscribe(event, handler)
         }
 
-        expect(MapPopup_.show(request(), engine.engine as never)).toBe(false)
+        const outcome = track(MapPopup_.show(request(), engine.engine as never))
+        await nextTick()
 
+        // The failure is the answer: unwinding the half-built popup does not
+        // resolve the request on top of it.
+        expect(outcome).toEqual([
+            'rejected: [MapPopup] Could not show the popup: Error: engine destroyed',
+        ])
         expect(popups()).toHaveLength(0)
         expect(engine.listenerCount('move')).toBe(0)
         expect(engine.listenerCount('zoomstart')).toBe(0)
         expect(bus.listenerCount('map:click')).toBe(0)
     })
 
-    it('still tears down when the engine has already been destroyed', () => {
+    it('still tears down when the engine has already been destroyed', async () => {
         engine = makeEngine({ offThrows: true })
-        show(bus, engine)
+        const outcome = show(bus, engine)
 
         MapPopup_.hide()
+        await nextTick()
 
         expect(popups()).toHaveLength(0)
         expect(bus.listenerCount('map:click')).toBe(0)
+        expect(outcome).toEqual(['closed'])
     })
 
-    it('rejects a request without a valid latlng or html', () => {
+    it('rejects a request without a valid latlng or html', async () => {
         window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
 
-        expect(
+        const noAnchor = track(
             MapPopup_.show(
                 { html: '<p>No anchor</p>' } as MapPopupRequest,
                 engine.engine as never
             )
-        ).toBe(false)
-        expect(
+        )
+        const badHtml = track(
             MapPopup_.show(
-                { latlng: { lat: 1, lng: 2 }, html: 42 } as unknown as MapPopupRequest,
+                {
+                    latlng: { lat: 1, lng: 2 },
+                    html: 42,
+                } as unknown as MapPopupRequest,
                 engine.engine as never
             )
-        ).toBe(false)
+        )
+        await nextTick()
 
+        expect(noAnchor).toEqual([INVALID_REQUEST])
+        expect(badHtml).toEqual([INVALID_REQUEST])
         expect(popups()).toHaveLength(0)
+    })
+
+    it('leaves an open popup alone when a later request is invalid', async () => {
+        const outcome = show(bus, engine, { html: '<p>Crater A</p>' })
+
+        const invalid = track(
+            MapPopup_.show(
+                { html: '<p>No anchor</p>' } as MapPopupRequest,
+                engine.engine as never
+            )
+        )
+        await nextTick()
+
+        expect(invalid).toEqual([INVALID_REQUEST])
+        expect(popups()).toHaveLength(1)
+        expect(card().textContent).toContain('Crater A')
+        expect(outcome).toEqual([])
     })
 })
