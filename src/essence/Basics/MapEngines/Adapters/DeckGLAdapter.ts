@@ -158,10 +158,11 @@ const TERRA_DRAW_PREFIX = 'td'
 const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
 
 /**
- * Sort rank for layers that never received an explicit z-index. Only the
- * configured mission layer stack calls {@link DeckGLAdapter.setLayerZIndex};
- * everything else (plugin overlays such as a selection highlight) is added on
- * top of that stack, so it ranks above every assigned index.
+ * Sort rank for layers that never received an explicit z-index. Every layer of
+ * the configured mission stack is ranked through
+ * {@link DeckGLAdapter.setLayerZIndex} as it is added; everything else (plugin
+ * overlays such as a selection highlight) is added on top of that stack, so it
+ * ranks above every assigned index.
  */
 const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
 
@@ -924,6 +925,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the end of the layers array so deck.gl renders it on top.
+     * The move only holds until the next z-index re-sort, which re-ranks the
+     * layer by its assigned index — or to the top if it has none.
      */
     bringToFront(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -936,6 +939,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the start of the layers array so deck.gl renders it below all others.
+     * The move only holds until the next z-index re-sort, which re-ranks the
+     * layer by its assigned index — or to the top if it has none.
      */
     bringToBack(layer: Layer | string): void {
         const id = resolveLayerId(layer)

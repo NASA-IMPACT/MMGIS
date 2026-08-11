@@ -241,6 +241,37 @@ test.describe('DeckGLAdapter', () => {
             adapter.setLayerZIndex('bottom', 1)
             expect(adapter.getLayers().map((l) => l.id)).toEqual(['bottom', 'top'])
         })
+
+        test('a re-sort of a startup-ranked stack keeps the ranks ascending and the overlay on top', () => {
+            const adapter = makeAdapter()
+            // Startup ranks every mission layer as it is added.
+            adapter.addLayer(makeLayer('above'))
+            adapter.setLayerZIndex('above', 2)
+            adapter.addLayer(makeLayer('below'))
+            adapter.setLayerZIndex('below', 1)
+            adapter.addLayer(makeLayer('aoi:selection'))
+            // Unhiding a mission layer re-applies its z-index, re-sorting the registry.
+            adapter.setLayerZIndex('above', 2)
+            expect(adapter.getLayers().map((l) => l.id)).toEqual([
+                'below',
+                'above',
+                'aoi:selection',
+            ])
+        })
+
+        test('a re-sort keeps two layers with no z-index in the order they were added', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('mission'))
+            adapter.setLayerZIndex('mission', 1)
+            adapter.addLayer(makeLayer('aoi:selection'))
+            adapter.addLayer(makeLayer('draw:preview'))
+            adapter.setLayerZIndex('mission', 1)
+            expect(adapter.getLayers().map((l) => l.id)).toEqual([
+                'mission',
+                'aoi:selection',
+                'draw:preview',
+            ])
+        })
     })
 
     test.describe('event system', () => {
