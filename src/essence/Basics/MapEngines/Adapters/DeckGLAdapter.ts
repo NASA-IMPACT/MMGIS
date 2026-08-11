@@ -285,28 +285,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _overlays = new Map<string, () => void>()
 
     /**
-     * Bound handler kept as a class field so it can be removed cleanly in {@link destroy}.
-     * Syncs `_viewState` from the basemap and emits the engine-level `'moveend'` event.
+     * Copy the basemap's camera into `_viewState` and re-emit it under
+     * `eventName`, so that {@link projectCoordinates} and
+     * {@link unprojectCoordinates} stay accurate mid-animation and anchored
+     * consumers can track the camera frame by frame.
      */
-    private _onBasemapMoveEnd = (): void => {
-        const center = this._basemap!.getCenter()
-        this._viewState = {
-            ...this._viewState,
-            longitude: center.lng,
-            latitude: center.lat,
-            zoom: this._basemap!.getZoom(),
-        }
-        this._emitEvent('moveend', this._viewState)
-    }
-
-    /**
-     * Bound handler kept as a class field for clean removal.
-     * Keeps `_viewState` in sync during camera movement so that
-     * {@link projectCoordinates} and {@link unprojectCoordinates} stay
-     * accurate mid-animation, and emits the engine-level `'move'` event so
-     * anchored consumers can track the camera frame by frame.
-     */
-    private _onBasemapMove = (): void => {
+    private _syncViewState = (eventName: 'move' | 'moveend'): void => {
         const center = this._basemap!.getCenter()
         this._viewState = {
             ...this._viewState,
@@ -316,8 +300,14 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             bearing: this._basemap!.getBearing(),
             pitch: this._basemap!.getPitch(),
         }
-        this._emitEvent('move', this._viewState)
+        this._emitEvent(eventName, this._viewState)
     }
+
+    /** Bound handler kept as a class field so it can be removed cleanly in {@link destroy}. */
+    private _onBasemapMoveEnd = (): void => this._syncViewState('moveend')
+
+    /** Bound handler kept as a class field for clean removal. */
+    private _onBasemapMove = (): void => this._syncViewState('move')
 
     /**
      * Re-push layers once the basemap style has loaded.
