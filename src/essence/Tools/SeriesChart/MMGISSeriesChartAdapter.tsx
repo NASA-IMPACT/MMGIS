@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { SeriesChartPanel } from './lib'
-import type { CardState } from './lib/types'
+import type { CardState, ChartLayout } from './lib/types'
 import { mmgisOn, mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
@@ -30,20 +30,23 @@ function chartIdOf(payload: unknown): string | null {
  */
 export function MMGISSeriesChartAdapter() {
     const [sources, setSources] = useState<string[]>(DEFAULT_SOURCES)
+    const [layout, setLayout] = useState<ChartLayout>('single')
     const [cards, setCards] = useState<Record<string, CardState>>({})
 
     const refresh = useCallback(async () => {
         try {
-            const vars = await mmgisRequest<{ sources?: unknown }>(
-                'tool:getVars',
-                PLUGIN_ID,
-            )
+            const vars = await mmgisRequest<{
+                sources?: unknown
+                layout?: unknown
+            }>('tool:getVars', PLUGIN_ID)
             const list = Array.isArray(vars?.sources)
                 ? (vars?.sources ?? []).filter(
                       (s): s is string => typeof s === 'string' && s !== '',
                   )
                 : []
             if (list.length > 0) setSources(list)
+            if (vars?.layout === 'single' || vars?.layout === 'stacked')
+                setLayout(vars.layout)
         } catch (err) {
             console.warn('[SeriesChart] tool:getVars unavailable:', err)
         }
@@ -120,7 +123,7 @@ export function MMGISSeriesChartAdapter() {
         chartId,
         state,
     }))
-    return <SeriesChartPanel cards={cardList} />
+    return <SeriesChartPanel cards={cardList} layout={layout} />
 }
 
 function titleOf(state: CardState | undefined): string | undefined {

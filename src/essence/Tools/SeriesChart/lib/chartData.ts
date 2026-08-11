@@ -117,6 +117,16 @@ export function formatTooltipTime(ms: number): string {
     return TOOLTIP_FMT.format(new Date(ms))
 }
 
+/** Vertical space one stacked row occupies (title band + plot). */
+const STACKED_ROW = 150
+/** Below the last row: its x-axis labels plus the shared zoom slider. */
+const STACKED_EXTRA = 48
+
+/** Canvas height for a stacked option of `n` variables. */
+export function stackedChartHeight(n: number): number {
+    return Math.max(n, 1) * STACKED_ROW + STACKED_EXTRA
+}
+
 function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
     const color = s.color || theme.palette[i % theme.palette.length]
     return {
@@ -128,6 +138,46 @@ function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
         symbolSize: 5,
         connectNulls: false,
     }
+}
+
+function sliderZoom(theme: ChartTheme, xAxisIndex: number | number[]) {
+    return {
+        type: 'slider' as const,
+        xAxisIndex,
+        // Slim range-input look: grey track, solid primary fill,
+        // round handles, no border, no data preview, no move grip.
+        height: 8,
+        bottom: 10,
+        showDataShadow: false,
+        brushSelect: false,
+        borderColor: 'transparent',
+        backgroundColor: theme.gridColor,
+        fillerColor: theme.palette[0],
+        handleIcon: 'circle',
+        handleSize: 14,
+        handleStyle: {
+            color: theme.palette[0],
+            borderColor: theme.surface,
+            borderWidth: 1,
+        },
+        moveHandleSize: 0,
+    }
+}
+
+type TooltipParam = {
+    marker: string
+    seriesName: string
+    value: [number, number | null]
+}
+
+/** Axis tooltip whose title is the hovered UTC datetime, not raw epoch ms. */
+function timeTooltipFormatter(params: TooltipParam[] | TooltipParam): string {
+    const list = Array.isArray(params) ? params : [params]
+    if (list.length === 0) return ''
+    const rows = list.map(
+        (p) => `${p.marker}${p.seriesName}: ${p.value[1] ?? '—'}`,
+    )
+    return [formatTooltipTime(list[0].value[0]), ...rows].join('<br/>')
 }
 
 /**
@@ -178,27 +228,7 @@ export function buildChartOption(
         grid: { left: 56, right: 16, top: 32, bottom: 44 },
         dataZoom: [
             { type: 'inside' as const, xAxisIndex: 0 },
-            {
-                type: 'slider' as const,
-                xAxisIndex: 0,
-                // Slim range-input look: grey track, solid primary fill,
-                // round handles, no border, no data preview, no move grip.
-                height: 8,
-                bottom: 10,
-                showDataShadow: false,
-                brushSelect: false,
-                borderColor: 'transparent',
-                backgroundColor: theme.gridColor,
-                fillerColor: theme.palette[0],
-                handleIcon: 'circle',
-                handleSize: 14,
-                handleStyle: {
-                    color: theme.palette[0],
-                    borderColor: theme.surface,
-                    borderWidth: 1,
-                },
-                moveHandleSize: 0,
-            },
+            sliderZoom(theme, 0),
         ],
         yAxis,
     }
@@ -245,33 +275,7 @@ export function buildChartOption(
         tooltip: {
             trigger: 'axis' as const,
             axisPointer: { type: 'cross' as const, label: { show: false } },
-            ...(isTime
-                ? {
-                      formatter: (
-                          params:
-                              | Array<{
-                                    marker: string
-                                    seriesName: string
-                                    value: [number, number | null]
-                                }>
-                              | {
-                                    marker: string
-                                    seriesName: string
-                                    value: [number, number | null]
-                                },
-                      ) => {
-                          const list = Array.isArray(params) ? params : [params]
-                          if (list.length === 0) return ''
-                          const rows = list.map(
-                              (p) =>
-                                  `${p.marker}${p.seriesName}: ${p.value[1] ?? '—'}`,
-                          )
-                          return [formatTooltipTime(list[0].value[0]), ...rows].join(
-                              '<br/>',
-                          )
-                      },
-                  }
-                : {}),
+            ...(isTime ? { formatter: timeTooltipFormatter } : {}),
         },
         xAxis: {
             type: 'value' as const,
@@ -287,5 +291,128 @@ export function buildChartOption(
             splitLine: { show: false },
         },
         series,
+    }
+}
+
+/**
+ * Stacked small-multiples option: one grid row per variable with its own
+ * unit-named y-axis. The x-axes are linked (`axisPointer.link`) and one
+ * zoom pair drives them all, so hovering or zooming any row moves every
+ * row together. No legend — each variable is always visible in its row,
+ * titled by the series label. The canvas must be `stackedChartHeight(n)`
+ * tall for the pixel-positioned grids to land inside it.
+ */
+export function buildStackedChartOption(
+    payload: ChartSeriesPayload,
+    theme: ChartTheme,
+): Record<string, any> {
+    const n = payload.series.length
+    const allX = payload.series.map((_, i) => i)
+    const isTime = payload.xType === 'time'
+    const isCategory = payload.xType === 'category'
+
+    const category = isCategory ? toCategoryData(payload.series) : null
+    const data: Array<Array<[number, number | null]> | Array<number | null>> =
+        category
+            ? category.rows
+            : payload.series.map((s) =>
+                  (isTime ? toTimePoints(s.points) : toLinearPoints(s.points)).map(
+                      (p) => [p.x, p.y] as [number, number | null],
+                  ),
+              )
+    const xs = category
+        ? []
+        : (data as Array<Array<[number, number | null]>>).flatMap((d) =>
+              d.map((p) => p[0]),
+          )
+    const tickFormat =
+        isTime && xs.length > 0
+            ? makeTimeTickFormat(Math.min(...xs), Math.max(...xs))
+            : null
+
+    const title: Array<Record<string, any>> = []
+    const grid: Array<Record<string, any>> = []
+    const xAxis: Array<Record<string, any>> = []
+    const yAxis: Array<Record<string, any>> = []
+    const series: Array<Record<string, any>> = []
+
+    payload.series.forEach((s, i) => {
+        const rowTop = i * STACKED_ROW
+        // Only the bottom row prints x labels — the rows above share its axis
+        // via the link, and repeating the labels n times just eats plot height.
+        const isBottom = i === n - 1
+        title.push({
+            text: s.label,
+            top: rowTop + 2,
+            left: 8,
+            textStyle: {
+                fontSize: 12,
+                fontWeight: 600,
+                color: theme.textColor,
+            },
+        })
+        grid.push({
+            left: 56,
+            right: 16,
+            top: rowTop + 28,
+            height: STACKED_ROW - 40,
+        })
+        xAxis.push({
+            gridIndex: i,
+            ...(category
+                ? { type: 'category' as const, data: category.labels }
+                : {
+                      type: 'value' as const,
+                      min: 'dataMin' as const,
+                      max: 'dataMax' as const,
+                      splitLine: { show: false },
+                  }),
+            axisLabel: {
+                show: isBottom,
+                color: theme.textColor,
+                hideOverlap: true,
+                ...(tickFormat
+                    ? { formatter: (v: number) => tickFormat(v) }
+                    : {}),
+            },
+        })
+        yAxis.push({
+            gridIndex: i,
+            type: 'value' as const,
+            scale: true,
+            name: s.unit ?? payload.yLabel ?? undefined,
+            nameLocation: 'middle' as const,
+            nameGap: 42,
+            nameTextStyle: { color: theme.textColor },
+            axisLabel: { color: theme.textColor },
+            splitLine: { lineStyle: { color: theme.gridColor } },
+        })
+        series.push({
+            ...seriesBase(s, i, theme),
+            xAxisIndex: i,
+            yAxisIndex: i,
+            data: data[i],
+        })
+    })
+
+    const slider = sliderZoom(theme, allX)
+    return {
+        axisPointer: { link: [{ xAxisIndex: 'all' }] },
+        tooltip: {
+            trigger: 'axis' as const,
+            axisPointer: { type: 'cross' as const, label: { show: false } },
+            ...(isTime ? { formatter: timeTooltipFormatter } : {}),
+        },
+        title,
+        grid,
+        xAxis,
+        yAxis,
+        series,
+        dataZoom: [
+            { type: 'inside' as const, xAxisIndex: allX },
+            tickFormat
+                ? { ...slider, labelFormatter: (v: number) => tickFormat(v) }
+                : slider,
+        ],
     }
 }

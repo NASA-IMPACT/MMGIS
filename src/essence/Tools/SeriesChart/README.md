@@ -37,6 +37,12 @@ config entry, not a code change:
 { "sources": ["fetch-timeseries", "fetch-raster-timeseries"] }
 ```
 
+`variables.layout` — `"single"` (default) or `"stacked"`. Single renders all
+of a card's variables in one chart with a single-select legend as the
+variable picker. Stacked renders one chart row per variable — each with its
+own unit-named y-axis — with hover and zoom linked across rows, so mixed-unit
+variables can be compared over the same x-range.
+
 ## Smoke test (devtools console)
 
 ```js

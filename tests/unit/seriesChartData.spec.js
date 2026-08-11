@@ -6,6 +6,8 @@ import {
     makeTimeTickFormat,
     formatTooltipTime,
     buildChartOption,
+    buildStackedChartOption,
+    stackedChartHeight,
 } from '../../src/essence/Tools/SeriesChart/lib/chartData.ts'
 
 const THEME = {
@@ -265,6 +267,115 @@ describe('seriesChart chartData', () => {
             const without = buildChartOption(payloadWith([series()]), THEME)
             expect(withLabel.yAxis[0].name).toBe('NO₂')
             expect(without.yAxis[0].name).toBeUndefined()
+        })
+    })
+
+    describe('buildStackedChartOption', () => {
+        const series = (over = {}) => ({
+            id: over.id ?? 's1',
+            label: over.label ?? 'S1',
+            points: [
+                { x: '2026-01-01T00:00:00Z', y: 1 },
+                { x: '2026-01-02T00:00:00Z', y: 2 },
+            ],
+            ...over,
+        })
+        const three = [
+            series({ id: 'a', label: 'A', unit: 'ppm' }),
+            series({ id: 'b', label: 'B', unit: 'K' }),
+            series({ id: 'c', label: 'C' }),
+        ]
+
+        test('one grid, axis pair, row title, and series per variable', () => {
+            const opt = buildStackedChartOption(payloadWith(three), THEME)
+            expect(opt.grid).toHaveLength(3)
+            expect(opt.xAxis).toHaveLength(3)
+            expect(opt.yAxis).toHaveLength(3)
+            expect(opt.series).toHaveLength(3)
+            expect(opt.title.map((t) => t.text)).toEqual(['A', 'B', 'C'])
+            opt.series.forEach((s, i) => {
+                expect(s.xAxisIndex).toBe(i)
+                expect(s.yAxisIndex).toBe(i)
+            })
+            expect(opt.xAxis.map((x) => x.gridIndex)).toEqual([0, 1, 2])
+            expect(opt.yAxis.map((y) => y.gridIndex)).toEqual([0, 1, 2])
+        })
+
+        test('rows stack downward and the canvas height covers them', () => {
+            const opt = buildStackedChartOption(payloadWith(three), THEME)
+            const tops = opt.grid.map((g) => g.top)
+            expect([...tops].sort((a, b) => a - b)).toEqual(tops)
+            const lastBottom = tops[2] + opt.grid[2].height
+            expect(stackedChartHeight(3)).toBeGreaterThan(lastBottom)
+            expect(stackedChartHeight(3)).toBeGreaterThan(stackedChartHeight(1))
+        })
+
+        test('only the bottom row prints x labels', () => {
+            const opt = buildStackedChartOption(payloadWith(three), THEME)
+            expect(opt.xAxis.map((x) => x.axisLabel.show)).toEqual([
+                false,
+                false,
+                true,
+            ])
+        })
+
+        test('hover and zoom act on every row: linked pointer, all-axes zoom', () => {
+            const opt = buildStackedChartOption(payloadWith(three), THEME)
+            expect(opt.axisPointer.link).toEqual([{ xAxisIndex: 'all' }])
+            expect(opt.dataZoom.map((z) => z.type)).toEqual(['inside', 'slider'])
+            for (const z of opt.dataZoom) {
+                expect(z.xAxisIndex).toEqual([0, 1, 2])
+            }
+        })
+
+        test('no legend: every variable is always visible in its own row', () => {
+            const opt = buildStackedChartOption(payloadWith(three), THEME)
+            expect(opt.legend).toBeUndefined()
+        })
+
+        test('each y-axis is named by its variable unit, yLabel as fallback', () => {
+            const opt = buildStackedChartOption(
+                { ...payloadWith(three), yLabel: 'fallback' },
+                THEME,
+            )
+            expect(opt.yAxis.map((y) => y.name)).toEqual([
+                'ppm',
+                'K',
+                'fallback',
+            ])
+        })
+
+        test('time rows share UTC tick formatting on axis and slider', () => {
+            const opt = buildStackedChartOption(payloadWith(three), THEME)
+            const bottom = opt.xAxis[2]
+            expect(bottom.type).toBe('value')
+            expect(typeof bottom.axisLabel.formatter).toBe('function')
+            const slider = opt.dataZoom.find((z) => z.type === 'slider')
+            expect(typeof slider.labelFormatter).toBe('function')
+            expect(opt.series[0].data[0]).toEqual([
+                Date.parse('2026-01-01T00:00:00Z'),
+                1,
+            ])
+        })
+
+        test('category rows align every row to the shared label union', () => {
+            const cat = [
+                series({ id: 'a', label: 'A', points: [{ x: 'x1', y: 1 }] }),
+                series({
+                    id: 'b',
+                    label: 'B',
+                    points: [
+                        { x: 'x2', y: 2 },
+                        { x: 'x1', y: 3 },
+                    ],
+                }),
+            ]
+            const opt = buildStackedChartOption(payloadWith(cat, 'category'), THEME)
+            expect(opt.xAxis[0].type).toBe('category')
+            expect(opt.xAxis[0].data).toEqual(['x1', 'x2'])
+            expect(opt.xAxis[1].data).toEqual(['x1', 'x2'])
+            expect(opt.series[0].data).toEqual([1, null])
+            expect(opt.series[1].data).toEqual([3, 2])
         })
     })
 

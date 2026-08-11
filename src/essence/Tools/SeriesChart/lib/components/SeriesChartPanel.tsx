@@ -1,15 +1,23 @@
 import React, { useEffect, useRef } from 'react'
 import * as echarts from 'echarts'
 import type { ChartSeriesPayload } from '../../../_shared/types/chartSeries'
-import type { ChartCard, ChartTheme } from '../types'
-import { buildChartOption } from '../chartData'
+import type { ChartCard, ChartLayout, ChartTheme } from '../types'
+import {
+    buildChartOption,
+    buildStackedChartOption,
+    stackedChartHeight,
+} from '../chartData'
 
 export interface SeriesChartPanelProps {
     cards: ChartCard[]
+    layout?: ChartLayout
 }
 
 /** Presentational panel: one card per chartId; placeholder when idle. */
-export function SeriesChartPanel({ cards }: SeriesChartPanelProps) {
+export function SeriesChartPanel({
+    cards,
+    layout = 'single',
+}: SeriesChartPanelProps) {
     return (
         <div className="series-chart" role="region" aria-label="Charts">
             {cards.length === 0 && (
@@ -36,7 +44,9 @@ export function SeriesChartPanel({ cards }: SeriesChartPanelProps) {
                             </p>
                         </>
                     )}
-                    {state.status === 'ready' && <ReadyCard payload={state.payload} />}
+                    {state.status === 'ready' && (
+                        <ReadyCard payload={state.payload} layout={layout} />
+                    )}
                 </article>
             ))}
         </div>
@@ -80,7 +90,13 @@ function CardHeader({
     )
 }
 
-function ReadyCard({ payload }: { payload: ChartSeriesPayload }) {
+function ReadyCard({
+    payload,
+    layout,
+}: {
+    payload: ChartSeriesPayload
+    layout: ChartLayout
+}) {
     const chartRef = useRef<echarts.ECharts | null>(null)
     return (
         <>
@@ -94,7 +110,7 @@ function ReadyCard({ payload }: { payload: ChartSeriesPayload }) {
                     })
                 }
             />
-            <SeriesCanvas payload={payload} chartRef={chartRef} />
+            <SeriesCanvas payload={payload} layout={layout} chartRef={chartRef} />
         </>
     )
 }
@@ -120,12 +136,15 @@ function themeFromCss(el: HTMLElement): ChartTheme {
 
 function SeriesCanvas({
     payload,
+    layout,
     chartRef,
 }: {
     payload: ChartSeriesPayload
+    layout: ChartLayout
     chartRef?: React.MutableRefObject<echarts.ECharts | null>
 }) {
     const hostRef = useRef<HTMLDivElement>(null)
+    const stacked = layout === 'stacked'
 
     useEffect(() => {
         const host = hostRef.current
@@ -133,31 +152,36 @@ function SeriesCanvas({
         const chart = echarts.init(host)
         if (chartRef) chartRef.current = chart
         const theme = themeFromCss(host)
-        let visible = payload.series[0]?.label
-        chart.setOption(buildChartOption(payload, theme, visible) as never)
 
-        // Single-select legend is the variable picker; rebuild so the y-axis
-        // renames to the picked variable's unit, keeping the zoom range.
-        // Re-clicking the active chip would empty the chart — keep it on.
-        chart.on('legendselectchanged', (e) => {
-            const event = e as {
-                name: string
-                selected: Record<string, boolean>
-            }
-            visible = event.selected[event.name] ? event.name : visible
-            const zoom = (
-                chart.getOption() as { dataZoom?: Array<{ start?: number; end?: number }> }
-            ).dataZoom?.[0]
-            const option = buildChartOption(payload, theme, visible)
-            if (zoom && Array.isArray(option.dataZoom)) {
-                option.dataZoom = option.dataZoom.map((z: Record<string, unknown>) => ({
-                    ...z,
-                    start: zoom.start,
-                    end: zoom.end,
-                }))
-            }
-            chart.setOption(option as never, { notMerge: true })
-        })
+        if (stacked) {
+            chart.setOption(buildStackedChartOption(payload, theme) as never)
+        } else {
+            let visible = payload.series[0]?.label
+            chart.setOption(buildChartOption(payload, theme, visible) as never)
+
+            // Single-select legend is the variable picker; rebuild so the y-axis
+            // renames to the picked variable's unit, keeping the zoom range.
+            // Re-clicking the active chip would empty the chart — keep it on.
+            chart.on('legendselectchanged', (e) => {
+                const event = e as {
+                    name: string
+                    selected: Record<string, boolean>
+                }
+                visible = event.selected[event.name] ? event.name : visible
+                const zoom = (
+                    chart.getOption() as { dataZoom?: Array<{ start?: number; end?: number }> }
+                ).dataZoom?.[0]
+                const option = buildChartOption(payload, theme, visible)
+                if (zoom && Array.isArray(option.dataZoom)) {
+                    option.dataZoom = option.dataZoom.map((z: Record<string, unknown>) => ({
+                        ...z,
+                        start: zoom.start,
+                        end: zoom.end,
+                    }))
+                }
+                chart.setOption(option as never, { notMerge: true })
+            })
+        }
 
         const observer = new ResizeObserver(() => chart.resize())
         observer.observe(host)
@@ -166,9 +190,21 @@ function SeriesCanvas({
             if (chartRef?.current === chart) chartRef.current = null
             chart.dispose()
         }
-    }, [payload, chartRef])
+    }, [payload, stacked, chartRef])
 
-    return <div className="series-chart__canvas-wrap" ref={hostRef} />
+    return (
+        <div
+            className="series-chart__canvas-wrap"
+            ref={hostRef}
+            // Stacked grids are pixel-positioned per row, so the canvas must
+            // grow with the variable count; the default height suits one grid.
+            style={
+                stacked
+                    ? { height: stackedChartHeight(payload.series.length) }
+                    : undefined
+            }
+        />
+    )
 }
 
 export default SeriesChartPanel

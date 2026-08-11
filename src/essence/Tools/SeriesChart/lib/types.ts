@@ -3,6 +3,10 @@
 
 import type { ChartSeriesPayload } from '../../_shared/types/chartSeries'
 
+/** How a card renders its variables: one chart with a legend picker, or
+ *  stacked small-multiple rows (one per variable) with linked x-axes. */
+export type ChartLayout = 'single' | 'stacked'
+
 export type CardState =
     | { status: 'loading'; title?: string }
     | { status: 'ready'; payload: ChartSeriesPayload }
