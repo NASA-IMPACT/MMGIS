@@ -18,6 +18,7 @@ import {
     hasCogColormap,
     supportsCogTransform,
 } from './tileUrlUtils'
+import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
@@ -75,6 +76,85 @@ function isEngineOwnedLayer(layer) {
         L_.Map_?.engine != null &&
         L_.Map_.engine.engineType !== MAP_ENGINE.LEAFLET
     )
+}
+
+/**
+ * A layer's geographic extent as `[[south, west], [north, east]]` — the
+ * `[LatLngLike, LatLngLike]` pair both map engines normalise — or null when no
+ * extent can be worked out.
+ *
+ * Where an extent comes from depends on how the layer is drawn, so the sources
+ * are tried in order of fidelity: a Leaflet layer measures the geometry it has
+ * actually rendered, a deck.gl layer has to be measured from the GeoJSON it was
+ * handed, and a raster layer has no geometry at all — only the footprint
+ * declared in mission configuration.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {[[number, number], [number, number]] | null}
+ */
+function layerBoundsFor(uuid) {
+    const layer = L_.layers.layer[uuid]
+
+    // Leaflet measures its own rendered geometry. A vector layer whose features
+    // have not arrived yet reports empty bounds, and getBounds() throws outright
+    // on layer types that only look like they have one, so neither case counts
+    // as an extent — both fall through to the sources below.
+    if (layer && typeof layer.getBounds === 'function') {
+        try {
+            const bounds = layer.getBounds()
+            if (bounds && bounds.isValid && bounds.isValid()) {
+                const sw = bounds.getSouthWest()
+                const ne = bounds.getNorthEast()
+                return [
+                    [sw.lat, sw.lng],
+                    [ne.lat, ne.lng],
+                ]
+            }
+        } catch (err) {
+            // Not measurable through Leaflet; try the remaining sources.
+        }
+    }
+
+    // A deck.gl layer keeps its features on `props.data` and exposes no
+    // measurement method. Only inline GeoJSON can be measured here — when
+    // `data` is a URL the features live inside deck's loaders, out of reach.
+    if (isEngineOwnedLayer(layer)) {
+        const data = layer.props?.data ?? layer._deckLayer?.props?.data
+        if (data != null && typeof data === 'object') {
+            // deck accepts a bare array of features as readily as a GeoJSON
+            // object; turf measures only the latter.
+            const geojson = Array.isArray(data)
+                ? { type: 'FeatureCollection', features: data }
+                : data
+            try {
+                const [west, south, east, north] = bbox(geojson)
+                // An empty FeatureCollection measures to infinities.
+                if ([west, south, east, north].every(Number.isFinite)) {
+                    return [
+                        [south, west],
+                        [north, east],
+                    ]
+                }
+            } catch (err) {
+                // Unmeasurable GeoJSON; try the configured footprint.
+            }
+        }
+    }
+
+    // Raster layers carry no geometry of their own. Mission configuration
+    // declares their footprint as [west, south, east, north].
+    const boundingBox = L_.layers.data[uuid]?.boundingBox
+    if (Array.isArray(boundingBox) && boundingBox.length === 4) {
+        const [west, south, east, north] = boundingBox.map((n) => parseFloat(n))
+        if ([west, south, east, north].every(Number.isFinite)) {
+            return [
+                [south, west],
+                [north, east],
+            ]
+        }
+    }
+
+    return null
 }
 
 /**
@@ -356,6 +436,27 @@ const L_ = {
                         capabilities[uuid] = cogCapabilitiesFor(uuid)
                     })
                     return capabilities
+                }),
+                // Where each layer sits, for moving the map to it. Called with
+                // a layer identifier it answers for that one layer, resolving a
+                // name the way every other layer-keyed provider does; called
+                // with none it returns the whole map, keyed by UUID.
+                //
+                // An extent is measured on demand, not looked up: every deck.gl
+                // layer answered for is walked feature by feature. That is
+                // nothing for one layer and a blocking sweep of the mission's
+                // whole geometry for all of them, so ask by identifier wherever
+                // a single layer will do.
+                window.mmgisAPI.provide('layers:getBounds', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : layerBoundsFor(uuid)
+                    }
+                    const bounds = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        bounds[uuid] = layerBoundsFor(uuid)
+                    })
+                    return bounds
                 }),
                 window.mmgisAPI.provide('layers:isVisible', (layerUUID) => {
                     const uuid = L_.asLayerUUID(layerUUID)

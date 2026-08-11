@@ -166,6 +166,44 @@ export const mmgisGetLayerCogCapabilities = (
     )
 }
 
+/** A geographic extent as `[[south, west], [north, east]]`. */
+export type LayerBounds = [[number, number], [number, number]]
+
+/**
+ * Where a layer sits on the map.
+ *
+ * Null when the layer has no extent core can work out — a vector layer whose
+ * features have not loaded, a raster layer with no configured footprint — and
+ * null against a core that does not register the handler, in which case callers
+ * leave the controls that depend on an extent inert.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat applies.
+ */
+export const mmgisGetLayerBounds = (
+    layerUUID: string,
+): Promise<LayerBounds | null> => {
+    return mmgisRequestIfProvided<LayerBounds>('layers:getBounds', layerUUID)
+}
+
+/**
+ * Moves the map so the given extent fills the view. True when core accepted it;
+ * false against a core without the handler.
+ *
+ * `padding` is in screen pixels. `maxZoom` caps how far in the fit may go,
+ * which matters for a zero-area extent — a single point otherwise resolves to
+ * maximum zoom.
+ */
+export const mmgisFitBounds = async (
+    bounds: LayerBounds,
+    options?: { padding?: number; maxZoom?: number },
+): Promise<boolean> => {
+    const fitted = await mmgisRequestIfProvided<boolean>('map:fitBounds', {
+        bounds,
+        options,
+    })
+    return fitted === true
+}
+
 /** Whether the mission has time enabled at all. */
 export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')
