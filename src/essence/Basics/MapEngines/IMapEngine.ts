@@ -332,7 +332,8 @@ export interface IMapEngine<
      * When the current vertices form a valid shape, emits `drawcomplete`, ends
      * the session and returns true. When they do not (e.g. polygon with fewer
      * than 3 vertices), the drawing is left in progress and it returns false —
-     * finishing early must not discard the user's work.
+     * finishing early must not discard the user's work. With no session active
+     * it is a no-op that also returns false.
      */
     finishDrawing(): boolean
 

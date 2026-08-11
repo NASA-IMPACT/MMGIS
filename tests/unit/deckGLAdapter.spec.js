@@ -4,6 +4,7 @@ import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/Deck
 // index.ts transitively imports LeafletAdapter -> leaflet, which references a global
 // `window` at module-eval time and fails in this Node test context.
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
+import { drawModeKeyEvents } from '../../src/essence/Basics/MapEngines/Adapters/DrawingHelpers.ts'
 
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
     const adapter = new DeckGLAdapter()
@@ -563,13 +564,18 @@ test.describe('DeckGLAdapter', () => {
         // enableDrawing needs a real terra-draw session against a MapLibre map,
         // so drive the finish path with the two things it touches: the session
         // flag and the canvas terra-draw listens on.
-        function makeDrawingAdapter({ finishes }) {
+        function makeSessionAdapter(shape) {
             const adapter = makeAdapter()
             const canvas = document.createElement('canvas')
             adapter._isOverlayMode = true
             adapter._basemap = { getCanvas: () => canvas }
             adapter._terraDraw = {}
-            adapter._drawingShape = 'polygon'
+            adapter._drawingShape = shape
+            return { adapter, canvas }
+        }
+
+        function makeDrawingAdapter({ finishes }) {
+            const { adapter, canvas } = makeSessionAdapter('polygon')
             const keys = []
             canvas.addEventListener('keyup', (e) => {
                 keys.push(e.key)
@@ -577,6 +583,17 @@ test.describe('DeckGLAdapter', () => {
                 if (finishes) adapter._drawingShape = null
             })
             return { adapter, keys }
+        }
+
+        // A terra-draw mode acts on a keyup only when the key matches its
+        // configured keyEvents, so let the real bindings decide the commit.
+        function makeKeyBoundAdapter(shape) {
+            const { adapter, canvas } = makeSessionAdapter(shape)
+            const keyEvents = drawModeKeyEvents(shape, true)
+            canvas.addEventListener('keyup', (e) => {
+                if (e.key === keyEvents.finish) adapter._drawingShape = null
+            })
+            return adapter
         }
 
         test('finishDrawing commits through the element terra-draw listens on', () => {
@@ -596,6 +613,23 @@ test.describe('DeckGLAdapter', () => {
 
         test('finishDrawing is a no-op with no session', () => {
             expect(makeAdapter().finishDrawing()).toBe(false)
+        })
+
+        // With one click placed, a rectangle spans no area and a circle has
+        // the mode's minimum radius, and neither shape has a finish key to
+        // commit that with.
+        test('Enter cannot finish a one-click rectangle or circle', () => {
+            for (const shape of ['rectangle', 'circle']) {
+                const adapter = makeKeyBoundAdapter(shape)
+                expect(adapter.finishDrawing()).toBe(false)
+                expect(adapter.isDrawing()).toBe(true)
+            }
+        })
+
+        test('Enter still finishes the click-per-vertex shapes', () => {
+            for (const shape of ['polygon', 'linestring']) {
+                expect(makeKeyBoundAdapter(shape).finishDrawing()).toBe(true)
+            }
         })
 
         test('disableDrawing emits drawcancel once', () => {

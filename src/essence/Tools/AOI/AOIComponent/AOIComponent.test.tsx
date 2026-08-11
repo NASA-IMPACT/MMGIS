@@ -89,7 +89,7 @@ describe('AOIComponent drawing panel', () => {
         for (const shape of ['rectangle', 'circle'] as const) {
             for (const count of [0, 1]) {
                 const text = hint(shape, count)
-                expect(text).not.toContain('Press Enter')
+                expect(text).not.toContain('Enter')
                 expect(text).not.toContain('double-click')
                 expect(text).toContain('Esc to cancel')
             }

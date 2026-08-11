@@ -73,11 +73,12 @@ import {
 } from 'terra-draw'
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
 import {
+    committedVerticesFromChange,
     createDrawKeyBridge,
-    extractCommittedVertices,
+    drawModeKeyEvents,
     validateDrawnLineString,
-    DrawKeyBridge,
 } from './DrawingHelpers'
+import type { DrawKeyBridge } from './DrawingHelpers'
 
 /**
  * Minimal API surface that is identical between mapbox-gl and maplibre-gl `Map` instances.
@@ -1012,8 +1013,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (this._terraDraw) return this._terraDraw
         if (!this._isOverlayMode || !this._basemap) return null
 
-        const finishKey = 'Enter'
-        const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
+        const keyEvents = (shape: DrawShape) =>
+            drawModeKeyEvents(shape, options.cancelOnEscape !== false)
 
         const td = new TerraDraw({
             adapter: new TerraDrawMapLibreGLAdapter({
@@ -1023,12 +1024,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             modes: [
                 new TerraDrawPointMode(),
                 new TerraDrawLineStringMode({
-                    keyEvents: { finish: finishKey, cancel: cancelKey },
+                    keyEvents: keyEvents('linestring'),
                     validation: validateDrawnLineString,
                 }),
-                new TerraDrawPolygonMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawRectangleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawCircleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawPolygonMode({ keyEvents: keyEvents('polygon') }),
+                new TerraDrawRectangleMode({ keyEvents: keyEvents('rectangle') }),
+                new TerraDrawCircleMode({ keyEvents: keyEvents('circle') }),
             ],
         })
 
@@ -1049,17 +1050,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             if (type !== 'create' && type !== 'update') return
             const shape = this._drawingShape
             if (!shape) return
-            // Guidance features (closing, snapping and coordinate points) change
-            // alongside the shape and are usually last, so take the last id that
-            // is the shape's own geometry.
-            for (let i = ids.length - 1; i >= 0; i--) {
-                const snap = td.getSnapshotFeature(ids[i])
-                const vertices = snap && extractCommittedVertices(shape, snap)
-                if (vertices) {
-                    this._emitEvent('drawvertex', { shape, vertices })
-                    return
-                }
-            }
+            const vertices = committedVerticesFromChange(shape, ids, (id) =>
+                td.getSnapshotFeature(id)
+            )
+            if (vertices) this._emitEvent('drawvertex', { shape, vertices })
         }
 
         td.on('finish', onFinish)
@@ -1148,7 +1142,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * keyup on the map canvas — the element terra-draw listens on. The mode
      * emits `finish` if the geometry is valid, which ends the session; if it
      * isn't (e.g. polygon with <3 vertices), the dispatch is a no-op and the
-     * session is left untouched.
+     * session is left untouched. Rectangle and circle bind no finish key at
+     * all (see {@link drawModeKeyEvents}), so they only ever finish on their
+     * second click.
      */
     finishDrawing(): boolean {
         if (!this._drawingShape || !this._terraDraw) return false

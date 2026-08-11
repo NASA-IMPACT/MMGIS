@@ -72,6 +72,44 @@ export function extractCommittedVertices(
 }
 
 /**
+ * The committed vertices behind a terra-draw `change`, or null when the change
+ * only touched guidance features. Guidance features (closing, snapping and
+ * coordinate points) change alongside the shape and are usually last, so take
+ * the last id that is the shape's own geometry.
+ */
+export function committedVerticesFromChange(
+    shape: DrawShape,
+    ids: any[],
+    getSnapshot: (id: any) => DrawSnapshotFeature | undefined
+): LatLng[] | null {
+    for (let i = ids.length - 1; i >= 0; i--) {
+        const snap = getSnapshot(ids[i])
+        const vertices = snap && extractCommittedVertices(shape, snap)
+        if (vertices) return vertices
+    }
+    return null
+}
+
+/**
+ * The keys a mode finishes and cancels on.
+ *
+ * Rectangle and circle commit on their second click, so there is no state in
+ * which Enter has a sensible shape to commit: it would finish a zero-area
+ * rectangle from one corner, or a circle of the mode's minimum radius from its
+ * center. `null` is how terra-draw is told a key is unbound, so Enter stays
+ * with the click-per-vertex modes the panel hints advertise it for.
+ */
+export function drawModeKeyEvents(
+    shape: DrawShape,
+    cancelOnEscape: boolean
+): { finish: string | null; cancel: string | null } {
+    return {
+        finish: shape === 'linestring' || shape === 'polygon' ? 'Enter' : null,
+        cancel: cancelOnEscape ? 'Escape' : null,
+    }
+}
+
+/**
  * Elements that own Enter and Escape themselves: text entry commits on Enter
  * and clears on Escape, and dialogs, menus and listboxes close on Escape. A
  * key pressed inside one of them belongs to it, not to the drawing session.
@@ -149,6 +187,9 @@ export function createDrawKeyBridge(options: DrawKeyBridgeOptions): DrawKeyBridg
  * terra-draw's linestring mode finishes on Enter without checking how many
  * coordinates were committed, which yields a one-coordinate LineString. Modes
  * reject a finish whose validation fails, so require a real segment.
+ *
+ * terra-draw deletes the coordinate that follows the pointer before it runs
+ * finish validation, so the coordinates counted here are the committed ones.
  */
 export function validateDrawnLineString(
     feature: { geometry: GeoJSON.Geometry },

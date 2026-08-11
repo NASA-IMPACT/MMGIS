@@ -1,15 +1,18 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
+    committedVerticesFromChange,
     createDrawKeyBridge,
+    drawModeKeyEvents,
     extractCommittedVertices,
     validateDrawnLineString,
 } from '../../src/essence/Basics/MapEngines/Adapters/DrawingHelpers.ts'
 
 // Snapshots as terra-draw writes them mid-draw. Polygon publishes its own
 // committedCoordinateCount; the other modes carry a trailing coordinate that
-// follows the pointer.
+// follows the pointer. Rectangles and circles are stored as Polygons too, so
+// this fixture serves them as well.
 const polygon = (ring, committedCoordinateCount) => ({
-    properties: { mode: 'polygon', committedCoordinateCount },
+    properties: { committedCoordinateCount },
     geometry: { type: 'Polygon', coordinates: [ring] },
 })
 const guidancePoint = (property) => ({
@@ -107,11 +110,69 @@ test.describe('validateDrawnLineString', () => {
         expect(result.valid).toBe(true)
     })
 
+    // terra-draw deletes the coordinate that follows the pointer before it
+    // validates a finish, so a one-coordinate line here is one real click.
     test('never blocks the updates made while drawing', () => {
-        const result = validateDrawnLineString(lineString([[0, 0]]), {
-            updateType: 'commit',
-        })
-        expect(result.valid).toBe(true)
+        for (const updateType of ['commit', 'provisional']) {
+            const result = validateDrawnLineString(lineString([[0, 0]]), {
+                updateType,
+            })
+            expect(result.valid).toBe(true)
+        }
+    })
+})
+
+test.describe('committedVerticesFromChange', () => {
+    test('reads past the guidance features a change ends with', () => {
+        const snapshots = {
+            shape: polygon([[0, 0], [1, 1], [2, 2], [0, 0]], 3),
+            closing: guidancePoint('closingPoint'),
+        }
+        const vertices = committedVerticesFromChange(
+            'polygon',
+            ['shape', 'closing'],
+            (id) => snapshots[id]
+        )
+        expect(vertices).toHaveLength(3)
+    })
+
+    test('returns null when nothing changed is the shape itself', () => {
+        const vertices = committedVerticesFromChange(
+            'polygon',
+            ['snapping'],
+            () => guidancePoint('snappingPoint')
+        )
+        expect(vertices).toBeNull()
+    })
+
+    test('tolerates ids the store no longer has a snapshot for', () => {
+        const vertices = committedVerticesFromChange(
+            'polygon',
+            ['deleted'],
+            () => undefined
+        )
+        expect(vertices).toBeNull()
+    })
+})
+
+test.describe('drawModeKeyEvents', () => {
+    test('binds Enter for the modes that finish on a key', () => {
+        for (const shape of ['linestring', 'polygon']) {
+            expect(drawModeKeyEvents(shape, true).finish).toBe('Enter')
+        }
+    })
+
+    // Enter on a two-click shape would commit a zero-area rectangle or a
+    // minimum-radius circle, so terra-draw must have no finish key to match.
+    test('leaves Enter unbound for the two-click shapes', () => {
+        for (const shape of ['rectangle', 'circle']) {
+            expect(drawModeKeyEvents(shape, true).finish).toBeNull()
+        }
+    })
+
+    test('binds Escape to cancel unless cancelOnEscape is off', () => {
+        expect(drawModeKeyEvents('polygon', true).cancel).toBe('Escape')
+        expect(drawModeKeyEvents('polygon', false).cancel).toBeNull()
     })
 })
 
@@ -146,7 +207,7 @@ test.describe('createDrawKeyBridge', () => {
     })
 
     afterEach(() => {
-        bridge?.remove()
+        if (bridge) bridge.remove()
         document.body.innerHTML = ''
     })
 
