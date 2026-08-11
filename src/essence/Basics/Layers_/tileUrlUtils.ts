@@ -335,3 +335,41 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 
     return nextUrl
 }
+
+/**
+ * True when the layer's source is a single COG file the client-side renderer
+ * can read directly: an explicit `COG:` prefix, or a plain `.tif` URL with the
+ * single-band transformation enabled.
+ *
+ * Distinct from hasCogColormap/supportsCogTransform above, which ask whether a
+ * layer *paints through* a COG colormap and whether that colormap can be
+ * changed by recompiling a tile URL. This one asks whether there is one
+ * readable `.tif` behind the layer.
+ */
+export function isCogLayer(
+    splitColonType: string | undefined,
+    layerObj: Record<string, unknown>
+): boolean {
+    return splitColonType === 'COG' || layerObj.cogTransform === true
+}
+
+/**
+ * Returns true when the deck.gl raster path should be used:
+ * engineType must be 'deckgl', the layer must be a COG file,
+ * and cogRendererMode must be 'deckRaster'.
+ */
+export function shouldUseDeckRaster(
+    engineType: string,
+    splitColonType: string | undefined,
+    layerObj: Record<string, unknown>
+): boolean {
+    return (
+        engineType === 'deckgl' &&
+        isCogLayer(splitColonType, layerObj) &&
+        // A STAC mosaic is COG-backed but server-side — many items composed
+        // per tile. The client-side renderer reads exactly one .tif, so a
+        // mosaic (even with cogTransform set) stays on the tile-server path.
+        splitColonType !== 'stac-collection' &&
+        layerObj.cogRendererMode === 'deckRaster'
+    )
+}
