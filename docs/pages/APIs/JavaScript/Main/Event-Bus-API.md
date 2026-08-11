@@ -349,6 +349,9 @@ window.mmgisAPI.on('legend:made', ({ layerName, legendData }) => {
 | `map:setView` | `{ center, zoom }` | `true` | Set map view |
 | `map:fitBounds` | `bounds` | `true` | Fit map to bounds |
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
+| `map:addOverlay` | `{ id, latlng, mount }` | `true` | Attach a caller-rendered HTML overlay anchored to a point |
+| `map:removeOverlay` | `{ id }` | `true` | Remove an overlay by id |
+| `map:showPopup` | `MapPopupRequest` | `boolean` | Show a map-anchored popup at a lat/lng, replacing any current popup |
 
 ```javascript
 // Get current map state
@@ -369,6 +372,49 @@ await window.mmgisAPI.request('map:fitBounds', [
 
 await window.mmgisAPI.request('map:panTo', { lat: 45, lng: -120 })
 ```
+
+#### `map:showPopup`
+
+A map-anchored popup rendered and styled by the core. The request holds only
+serializable data, so it survives a sandbox boundary — the plugin sends
+content and event names, and core owns the DOM, the theme, and the lifecycle.
+
+```javascript
+await window.mmgisAPI.request('map:showPopup', {
+    // Where the popup is anchored. It tracks this point as the map moves.
+    latlng: { lat: 45, lng: -120 },
+    // Popup body. Sanitized by the core before it is rendered.
+    html: '<strong>Crater A</strong><p>Diameter: 12 km</p>',
+    // Up to two buttons. Each broadcasts its event, with no payload, on click.
+    secondaryAction: { label: 'Cancel', event: 'plugin:myPlugin:cancel' },
+    primaryAction: { label: 'Analyze', event: 'plugin:myPlugin:analyze' },
+    // Broadcast when the user dismisses the popup.
+    dismissEvent: 'plugin:myPlugin:popupDismissed'
+})
+
+window.mmgisAPI.on('plugin:myPlugin:analyze', () => {
+    // The plugin attaches its own context; the popup's events carry no payload.
+})
+```
+
+Returns `true` when the popup was shown, or `false` when the request is
+invalid (`html` must be a string and `latlng` must hold finite numbers).
+
+There is a single popup at a time — a request from any plugin replaces the
+current one. Core closes it; there is no `map:hidePopup` and no popup id.
+
+| Trigger | Closes the popup | Fires `dismissEvent` |
+|---------|------------------|----------------------|
+| Another `map:showPopup` request | Yes | No |
+| Button click (after its own event) | Yes | No |
+| The X control | Yes | Yes |
+| A click elsewhere on the map | Yes | Yes |
+| `Escape` | Yes | Yes |
+| Mission switch | Yes | No |
+
+`dismissEvent` marks a user dismissal only, so a plugin can clear its
+selection on dismiss without that teardown firing when its own next popup
+replaces the current one.
 
 ### Layer Providers
 
@@ -464,6 +510,10 @@ Examples:
 - `layer:visibilityChange` - Core layer event
 - `plugin:draw:getActiveFeature` - DrawTool plugin provider
 - `custom:analytics:trackEvent` - Custom event for external integration
+
+Event names a plugin hands to core — such as the action and dismiss events of
+`map:showPopup` — are broadcast verbatim on the global bus, so namespace them
+with `plugin:pluginName:` to keep them from colliding with another plugin's.
 
 ---
 
