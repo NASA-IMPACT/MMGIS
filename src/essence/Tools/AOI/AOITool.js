@@ -46,6 +46,7 @@ import {
     featureCentroid,
     featureBounds,
     selectionFitBounds,
+    selectionTooltipAnchor,
 } from './aoiHelpers'
 import { loadBoundaries } from './aoiBoundaryLoader'
 
@@ -561,11 +562,13 @@ const AOITool = {
         this._api?.emit('areaDrawn', { feature, source })
 
         const c = featureCentroid(feature)
-        const showTooltip = () => {
+        // `view` keeps the tooltip on-screen when the camera does not move; omit
+        // it once the camera has been fitted to the selection.
+        const showTooltip = (view) => {
             if (c) {
                 this._showTooltip({
                     label,
-                    latlng: { lat: c[1], lng: c[0] },
+                    latlng: selectionTooltipAnchor({ lat: c[1], lng: c[0] }, view),
                     analyzeEnabled: true,
                 })
             }
@@ -580,7 +583,7 @@ const AOITool = {
                 .then((view) => {
                     const fit = selectionFitBounds(bbox, view)
                     if (!fit) {
-                        showTooltip()
+                        showTooltip(view)
                         return
                     }
                     // Defer the tooltip until the fitBounds animation settles so it
@@ -593,14 +596,19 @@ const AOITool = {
                         showTooltip()
                     }
                     api.on('map:moveend', oneShot)
-                    // Belt-and-braces: if no moveend fires (e.g. already at target view),
-                    // show the tooltip after a short timeout anyway.
+                    // Belt-and-braces: if no moveend fires (e.g. an engine that
+                    // skips the event on a programmatic fit), show the tooltip
+                    // after a short timeout anyway.
                     fallback = setTimeout(oneShot, 1500)
 
                     api.request('map:fitBounds', fit).catch((err) => {
                         console.warn('[AOI] fitBounds failed', err)
                         oneShot()
                     })
+                })
+                .catch((err) => {
+                    console.warn('[AOI] selection camera step failed', err)
+                    showTooltip()
                 })
         } else {
             showTooltip()

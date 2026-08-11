@@ -258,6 +258,26 @@ export interface ViewBounds {
     northEast: { lat: number; lng: number }
 }
 
+/** Folds a longitude difference into [0, 360). */
+function lngDelta(d: number): number {
+    return ((d % 360) + 360) % 360
+}
+
+/**
+ * Width of a view in degrees of longitude. An engine may report a view that
+ * straddles the antimeridian wrapped (`sw.lng` 170, `ne.lng` -170) or unwrapped
+ * after panning (190..210); both describe the same 20° window.
+ */
+function viewLngSpan(view: ViewBounds): number {
+    const raw = view.northEast.lng - view.southWest.lng
+    return raw > 0 ? Math.min(raw, 360) : lngDelta(raw)
+}
+
+/** How many degrees east of the view's west edge a longitude sits, in [0, 360). */
+function lngOffset(lng: number, view: ViewBounds): number {
+    return lngDelta(lng - view.southWest.lng)
+}
+
 /**
  * Decide whether committing a selection needs a camera move. Returns null —
  * leave the camera alone — when the selection's bbox already fits in the
@@ -276,14 +296,10 @@ export function selectionFitBounds(
 } | null {
     const [w, s, e, n] = bbox
     if (e - w <= 0 || n - s <= 0 || e - w >= 180) return null
-    if (
-        view &&
-        w >= view.southWest.lng &&
-        e <= view.northEast.lng &&
-        s >= view.southWest.lat &&
-        n <= view.northEast.lat
-    ) {
-        return null
+    if (view) {
+        const inLng = lngOffset(w, view) + (e - w) <= viewLngSpan(view)
+        const inLat = s >= view.southWest.lat && n <= view.northEast.lat
+        if (inLng && inLat) return null
     }
     return {
         bounds: [
@@ -291,6 +307,31 @@ export function selectionFitBounds(
             { lat: n, lng: e },
         ],
         options: { padding: 40, maxZoom: 18 },
+    }
+}
+
+/**
+ * Where to anchor the selection tooltip. It carries the only Analyze/Cancel
+ * affordance, so when the camera stays put — a selection already in view, or
+ * one whose extent is unframeable (a zero-area polygon, or Alaska's ~360°
+ * naive sweep, whose vertex-mean centroid lands near -140°) — a centroid
+ * outside the current view would mount it off-screen and strand the selection.
+ * Fall back to the centre of the view in that case. Pass no view once the
+ * camera has been fitted to the selection: the centroid is then on-screen.
+ */
+export function selectionTooltipAnchor(
+    centroid: { lat: number; lng: number },
+    view?: ViewBounds | null
+): { lat: number; lng: number } {
+    if (!view) return centroid
+    const inView =
+        lngOffset(centroid.lng, view) <= viewLngSpan(view) &&
+        centroid.lat >= view.southWest.lat &&
+        centroid.lat <= view.northEast.lat
+    if (inView) return centroid
+    return {
+        lat: (view.southWest.lat + view.northEast.lat) / 2,
+        lng: view.southWest.lng + viewLngSpan(view) / 2,
     }
 }
 
