@@ -670,6 +670,8 @@ class SandboxBridge {
 }
 ```
 
+**Note:** The 5s default suits providers that answer promptly, but some requests stay pending by design. `map:showPopup` answers only once the popup closes, which can be minutes of the user reading it. Long-lived requests like it must be exempt from the default timeout — an unbounded class in the bridge, or a caller-supplied `timeout` — otherwise the bridge rejects a request whose popup is still on screen and the plugin handles a failure that never happened.
+
 **Note:** Sandboxed plugins can `provide()` data, but only within a namespaced scope (see [Plugin-to-Plugin Communication](#plugin-to-plugin-communication)). They cannot override core data providers.
 
 ### Performance Considerations for Sandbox Bridge

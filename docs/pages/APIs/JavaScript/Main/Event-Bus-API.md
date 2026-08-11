@@ -385,7 +385,9 @@ and an outcome reaches only the plugin that asked for it. A plugin that wants
 to announce what happened emits its own namespaced event afterwards.
 
 ```javascript
-const { action } = await window.mmgisAPI.request('map:showPopup', {
+// The request stays pending while the popup is open, so hold onto it
+// rather than blocking the rest of the plugin on it.
+const outcome = window.mmgisAPI.request('map:showPopup', {
     // Where the popup is anchored. It tracks this point as the map moves.
     latlng: { lat: 45, lng: -120 },
     // Popup body. Sanitized by the core before it is rendered.
@@ -395,14 +397,20 @@ const { action } = await window.mmgisAPI.request('map:showPopup', {
     primaryAction: { label: 'Analyze' }
 })
 
-if (action === 'primary') analyze()
-// Cancel and a user dismissal mean the same thing to this plugin.
-else if (action === 'secondary' || action === 'dismiss') clearSelection()
-// 'closed' means the popup was replaced or retracted, so there is nothing
-// for this plugin to undo.
+outcome.then(({ action }) => {
+    if (action === 'primary') analyze()
+    // Cancel and a user dismissal mean the same thing to this plugin.
+    else if (action === 'secondary' || action === 'dismiss') clearSelection()
+    // 'closed' means the popup was replaced or retracted, so there is
+    // nothing for this plugin to undo.
+}, showError)
 
-// On unload, so the popup never outlives the plugin that opened it.
-await window.mmgisAPI.request('map:hidePopup')
+// Elsewhere in the plugin: retract the popup as the plugin tears itself
+// down, so a popup never outlives the plugin that opened it. The request
+// above then answers with 'closed'.
+function destroy() {
+    window.mmgisAPI.request('map:hidePopup')
+}
 ```
 
 The result is `{ action }`:
@@ -416,7 +424,7 @@ The result is `{ action }`:
 
 The request rejects — showing nothing — when it is invalid (`html` must be a
 string and `latlng` must hold finite numbers) or when the popup could not be
-mounted, so wrap the `await` in a `try` if a failure matters to the plugin. An
+mounted, so handle the rejection if a failure matters to the plugin. An
 action is rendered only when its `label` is a non-empty string.
 
 There is a single popup at a time — a request from any plugin replaces the
