@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, afterAll, vi } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import {
     cogSourceType,
     hasCogColormap,
@@ -193,6 +193,49 @@ describe('layers:getCogCapabilities provider', () => {
 
         expect(providers['layers:getCogCapabilities'](DISPLACEMENT)).toEqual(expected)
         expect(providers['layers:getCogCapabilities']('Displacement')).toEqual(expected)
+    })
+
+    // A deckRaster layer renders client-side: its colormap changes by
+    // rebuilding the layer, not by recompiling a tile URL, so a plain .tif
+    // source (no COG:/stac prefix) must still report as changeable. The
+    // verdict is engine-dependent — the same config in a Leaflet mission
+    // renders through TiTiler and needs a recompilable URL.
+    describe('a deckRaster layer with a plain .tif source', () => {
+        const uuid = 'Cmip_a1b2c3d4e5f60718'
+        const priorMap = L_.Map_
+
+        const setEngine = (engineType) => {
+            L_.Map_ = { engine: { engineType } }
+            L_.layers.data = {
+                [uuid]: {
+                    type: 'tile',
+                    cogTransform: true,
+                    cogColormap: 'viridis',
+                    cogRendererMode: 'deckRaster',
+                    url: 'https://example.com/data/tasmax.tif',
+                },
+            }
+        }
+
+        afterEach(() => {
+            L_.Map_ = priorMap
+        })
+
+        test('is changeable in a deck.gl mission', () => {
+            setEngine('deckgl')
+            expect(providers['layers:getCogCapabilities'](uuid)).toEqual({
+                hasColormap: true,
+                canChangeColormap: true,
+            })
+        })
+
+        test('is not changeable in a leaflet mission', () => {
+            setEngine('leaflet')
+            expect(providers['layers:getCogCapabilities'](uuid)).toEqual({
+                hasColormap: true,
+                canChangeColormap: false,
+            })
+        })
     })
 
     test('answers null for a layer it has never heard of', () => {

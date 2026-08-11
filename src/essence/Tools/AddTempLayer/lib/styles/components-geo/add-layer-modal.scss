@@ -1,0 +1,157 @@
+// "Add layer from URL" form card — rendered in place inside the floating
+// panel the layout assigns; the panel system owns placement.
+
+.blocks-add-layer-modal {
+    &__dialog {
+        display: flex;
+        flex-direction: column;
+        width: 372px;
+        max-width: 100%;
+        overflow: hidden;
+        background: var(--theme-color-white, #ffffff);
+        border-radius: var(--theme-radius-lg, 6px);
+        box-shadow: 0 8px 32px var(--theme-color-shadow, rgba(0, 0, 0, 0.18));
+        font-family: var(--theme-font-ui);
+    }
+
+    &__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--theme-spacing-2, 16px);
+        border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    &__title {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 8px);
+        color: var(--theme-color-ink, #1b1b1b);
+        font-size: var(--theme-font-size-sm, 16px);
+        font-weight: var(--theme-font-weight-semibold, 600);
+    }
+
+    &__close {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--theme-spacing-05, 4px);
+        background: transparent;
+        border: none;
+        border-radius: var(--theme-radius-md, 4px);
+        color: var(--theme-color-base, #71767a);
+        cursor: pointer;
+
+        &:hover {
+            background: var(--theme-color-base-lightest, #f6f7f8);
+            color: var(--theme-color-ink, #1b1b1b);
+        }
+    }
+
+    &__body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-2, 16px);
+        padding: var(--theme-spacing-2, 16px);
+    }
+
+    &__help {
+        margin: 0;
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: var(--theme-font-size-2xs, 14px);
+    }
+
+    &__field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-05, 4px);
+    }
+
+    &__label {
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: var(--theme-font-size-3xs, 13px);
+        font-weight: var(--theme-font-weight-semibold, 600);
+    }
+
+    &__input {
+        box-sizing: border-box;
+        width: 100%;
+        padding: var(--theme-spacing-1, 8px);
+        background: var(--theme-color-white, #ffffff);
+        border: 1px solid var(--theme-color-base-light, #a9aeb1);
+        border-radius: var(--theme-radius-md, 4px);
+        color: var(--theme-color-ink, #1b1b1b);
+        font-family: var(--theme-font-ui);
+        font-size: var(--theme-font-size-2xs, 14px);
+        outline: none;
+
+        &:focus {
+            border-color: var(--theme-color-primary, #137480);
+            box-shadow: 0 0 0 2px var(--theme-color-primary-light, #97d4ea);
+        }
+
+        &--error {
+            border-color: var(--theme-color-secondary, #b50909);
+
+            &:focus {
+                border-color: var(--theme-color-secondary, #b50909);
+                box-shadow: 0 0 0 2px var(--theme-color-secondary-light, #f8dfe2);
+            }
+        }
+    }
+
+    &__error {
+        margin-top: var(--theme-spacing-05, 4px);
+        color: var(--theme-color-secondary, #b50909);
+        font-size: var(--theme-font-size-3xs, 13px);
+        // The message can include a long example URL — wrap it instead of
+        // overflowing the dialog.
+        overflow-wrap: anywhere;
+    }
+
+    &__behaviour {
+        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-2, 16px);
+        background: var(--theme-color-base-lightest, #f6f7f8);
+        border-radius: var(--theme-radius-md, 4px);
+    }
+
+    &__behaviour-list {
+        margin: 0;
+        padding-left: var(--theme-spacing-2, 16px);
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: var(--theme-font-size-3xs, 13px);
+
+        li {
+            margin: var(--theme-spacing-05, 4px) 0;
+        }
+    }
+
+    &__footer {
+        display: flex;
+        justify-content: flex-end;
+        padding: var(--theme-spacing-2, 16px);
+        border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    &__submit {
+        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-3, 24px);
+        background: var(--theme-color-primary, #137480);
+        border: none;
+        border-radius: var(--theme-radius-md, 4px);
+        color: var(--theme-color-white, #ffffff);
+        font-family: var(--theme-font-ui);
+        font-size: var(--theme-font-size-2xs, 14px);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        cursor: pointer;
+        transition: background 0.12s ease;
+
+        &:hover {
+            background: var(--theme-color-primary-dark, #0b4c54);
+        }
+
+        &:disabled {
+            opacity: 0.6;
+            cursor: default;
+        }
+    }
+}

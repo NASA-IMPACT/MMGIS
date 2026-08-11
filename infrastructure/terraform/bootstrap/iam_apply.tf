@@ -233,9 +233,10 @@ resource "aws_iam_role_policy" "terraform_apply" {
         # CreateDBInstance with a managed master password authorizes against
         # the key that encrypts the secret, and RDS takes a grant on it to
         # rotate. The key is bootstrap-owned (kms.tf) precisely so these
-        # actions can be granted: the account's default aws/secretsmanager key
-        # accepts no identity-based grant, and CreateDBInstance against it
-        # fails with KMSKeyNotAccessibleFault.
+        # actions can be granted: an AWS-managed key policy delegates only
+        # metadata actions to IAM, so these are unauthorizable on the account's
+        # default aws/secretsmanager key and CreateDBInstance against it fails
+        # with KMSKeyNotAccessibleFault.
         Sid    = "RdsMasterSecretKey"
         Effect = "Allow"
         Action = [

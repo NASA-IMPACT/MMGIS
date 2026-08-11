@@ -129,6 +129,8 @@ interface BasemapInstance {
     resize(): void
     /** Switch the map to a different style URL at runtime. */
     setStyle(styleUrl: string): unknown
+    /** Return the style layer with the given id, or `undefined` if it is not in the style. */
+    getLayer(id: string): unknown
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
@@ -141,6 +143,28 @@ interface BasemapInstance {
  * short enough that a dead map fails fast.
  */
 const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
+
+/**
+ * Prefix for the MapLibre layers terra-draw renders the in-progress drawing
+ * into. Passed to `TerraDrawMapLibreGLAdapter` explicitly so the ids are
+ * owned here rather than inherited from the library default.
+ */
+const TERRA_DRAW_PREFIX = 'td'
+
+/**
+ * Bottom of the terra-draw stack: its MapLibre adapter registers the polygon
+ * fill layer first.
+ */
+const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
+
+/**
+ * Sort rank for layers that never received an explicit z-index. Every layer of
+ * the configured mission stack is ranked through
+ * {@link DeckGLAdapter.setLayerZIndex} as it is added; everything else (plugin
+ * overlays such as a selection highlight) is added on top of that stack, so it
+ * ranks above every assigned index.
+ */
+const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
 
 function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
     return new Promise((resolve, reject) => {
@@ -412,8 +436,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return this._basemap
     }
 
+    /**
+     * Switch the basemap to a different style URL.
+     *
+     * The new style replaces every layer on the map, including the ones
+     * terra-draw registered, and terra-draw does not re-register them. Any
+     * live drawing session is therefore ended first (emitting `drawcancel`)
+     * so consumers see the session end and {@link _syncLayers} drops the
+     * terra-draw anchor before the layers it points at disappear.
+     */
     setBasemapStyle(styleUrl: string): boolean {
         if (!this._basemap) return false
+        this.disableDrawing()
         this._basemap.setStyle(styleUrl)
         return true
     }
@@ -891,6 +925,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the end of the layers array so deck.gl renders it on top.
+     * The move only holds until the next z-index re-sort, which re-ranks the
+     * layer by its assigned index — or to the top if it has none.
      */
     bringToFront(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -903,6 +939,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the start of the layers array so deck.gl renders it below all others.
+     * The move only holds until the next z-index re-sort, which re-ranks the
+     * layer by its assigned index — or to the top if it has none.
      */
     bringToBack(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -971,7 +1009,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
 
         const td = new TerraDraw({
-            adapter: new TerraDrawMapLibreGLAdapter({ map: this._basemap as any }),
+            adapter: new TerraDrawMapLibreGLAdapter({
+                map: this._basemap as any,
+                prefixId: TERRA_DRAW_PREFIX,
+            }),
             modes: [
                 new TerraDrawPointMode(),
                 new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
@@ -1033,6 +1074,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
+        this._syncLayers()
         this._emitEvent('drawstart', { shape })
     }
 
@@ -1051,6 +1093,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
+        this._syncLayers()
         return shape
     }
 
@@ -1333,20 +1376,41 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // picks up additions, removals, and drawing-order changes.
         const layers = [...this._layers.values()]
         if (this._isOverlayMode) {
-            this._overlay?.setProps({ layers })
+            this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })
         } else {
             this._deckSetProps({ layers })
         }
     }
 
     /**
+     * While a terra-draw session is active, clone every deck layer with a
+     * `beforeId` anchored on terra-draw's bottom-most MapLibre layer so the
+     * whole drawing renders on top. Without a beforeId, the interleaved
+     * overlay's resolveLayers() re-hoists deck layers to the top of the style
+     * on every styledata event, burying the in-progress drawing.
+     *
+     * resolveLayers() hands the anchor straight to `map.addLayer`, which
+     * refuses to insert before a layer that is not in the style, so the anchor
+     * is only stamped while terra-draw's layers are actually registered.
+     */
+    private _anchorBelowDrawing(layers: Layer[]): Layer[] {
+        if (!this._drawingShape) return layers
+        if (!this._basemap?.getLayer(TERRA_DRAW_BOTTOM_LAYER_ID)) return layers
+        return layers.map((layer) => layer.clone({ beforeId: TERRA_DRAW_BOTTOM_LAYER_ID } as any))
+    }
+
+    /**
      * Re-order the layer Map by ascending z-index so `_syncLayers` sends them in the
      * correct draw order (lower z-index = rendered first = behind).
+     *
+     * Layers with no assigned z-index rank {@link UNRANKED_Z_INDEX}, keeping
+     * them above the mission layer stack; the sort is stable, so they also keep
+     * their order relative to each other.
      */
     private _sortLayersByZIndex(): void {
+        const rank = (id: string) => this._layerZIndices.get(id) ?? UNRANKED_Z_INDEX
         const entries = [...this._layers.entries()].sort(
-            ([aId], [bId]) =>
-                (this._layerZIndices.get(aId) ?? 0) - (this._layerZIndices.get(bId) ?? 0)
+            ([aId], [bId]) => rank(aId) - rank(bId)
         )
         this._layers = new Map(entries)
     }

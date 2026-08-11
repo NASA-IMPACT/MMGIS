@@ -436,6 +436,36 @@ Environment configuration's half of this contract.
 Missing configuration fails the run **red**, listing every missing name at
 once. A deploy that cannot configure itself is broken, not pending.
 
+### Plan-preview configuration (repo-level)
+
+The PR plan preview (`iac-plan.yml`) reads a second, separate set of values,
+held at the **repository** level rather than on any Environment. That is forced
+by the workflow's own design: the plan job deliberately declares no GitHub
+Environment — that is what gives it the `pull_request` OIDC subject the
+read-only plan role trusts — and an Environment-unbound job cannot read
+Environment-scoped values. Hence the `_DEVELOPMENT` / `_PRODUCTION` suffixes
+here, which environment scoping makes unnecessary everywhere else.
+
+| Name | Kind | Where it comes from |
+|---|---|---|
+| `IAC_PLAN_ROLE_ARN` | secret | bootstrap root — the read-only `mmgis-terraform-plan` role |
+| `IAC_AWS_REGION` | variable | account fact; the backend region, the credential default, and the root's `region` |
+| `IAC_TFSTATE_BUCKET_DEVELOPMENT` / `IAC_TFSTATE_BUCKET_PRODUCTION` | variables | each environment's own state bucket |
+| `IAC_TFVARS_DEVELOPMENT` / `IAC_TFVARS_PRODUCTION` | variables | each root's required no-default inputs as one JSON object, same keys as `IAC_TFVARS` |
+
+The write-capable role ARNs never exist at this scope. `IAC_AWS_REGION` is
+deliberately the same name in both places: for a job bound to an Environment
+the Environment-scoped value shadows the repo-level one, so the engines get the
+environment's region and the unbound plan job gets the repo-level one.
+
+Each `IAC_TFVARS_*` object is written verbatim to `ci.auto.tfvars.json` inside
+the root before planning, and an `*.auto.tfvars.json` file **outranks** the
+`TF_VAR_*` values the workflow computes per run. So it carries exactly the
+root's required inputs (plus an optional `region` override) and nothing else: a
+`greenfield` or live-fact key smuggled in there would override discovery and
+disable the module's guards. An object carrying keys outside that contract
+fails the preview red rather than degrading green.
+
 ### Nothing is written back into GitHub
 
 No workflow in this pipeline writes a GitHub variable or secret. The six
