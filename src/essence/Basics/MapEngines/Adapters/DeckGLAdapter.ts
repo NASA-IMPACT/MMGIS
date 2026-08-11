@@ -1383,6 +1383,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      *
      * When `options.animate` is absent or false, transition props are cleared so the
      * camera jumps immediately.
+     *
+     * A jump is reported here as `move` then `moveend`, matching what overlay
+     * mode gets from the basemap, so anchored consumers follow a programmatic
+     * `setView` / `setZoom` / `fitBounds`. A transition is left to deck's
+     * transition manager, which reports every frame — including the last —
+     * through `onViewStateChange`.
      */
     private _applyViewState(state: DeckViewState, options?: ViewOptions): void {
         const nextState: DeckViewState = {
@@ -1395,6 +1401,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
         this._viewState = nextState
         this._deckSetProps({ viewState: nextState })
+        if (!nextState.transitionDuration) {
+            this._emitEvent('move', nextState)
+            this._emitEvent('moveend', nextState)
+        }
     }
 
     /**

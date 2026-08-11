@@ -740,6 +740,34 @@ test.describe('DeckGLAdapter', () => {
             expect(adapter._viewState).toEqual(fullViewState)
             expect(moveEnds).toEqual([fullViewState])
         })
+
+        test('a programmatic camera jump in standalone mode emits move then moveend', () => {
+            const adapter = makeAdapter()
+            const events = []
+            adapter.on('move', (state) => events.push(['move', { ...state }]))
+            adapter.on('moveend', (state) => events.push(['moveend', { ...state }]))
+
+            adapter.setView({ lat: 20, lng: 10 }, 6)
+
+            expect(events.map(([name]) => name)).toEqual(['move', 'moveend'])
+            expect(events.map(([, state]) => state)).toEqual([
+                { ...adapter._viewState },
+                { ...adapter._viewState },
+            ])
+            expect(adapter.getCenter()).toEqual({ lat: 20, lng: 10 })
+            expect(adapter.getZoom()).toBe(6)
+        })
+
+        test('an animated camera move leaves the frames to deck, emitting nothing up front', () => {
+            const adapter = makeAdapter()
+            const events = []
+            adapter.on('move', () => events.push('move'))
+            adapter.on('moveend', () => events.push('moveend'))
+
+            adapter.panTo({ lat: 20, lng: 10 }, { duration: 400 })
+
+            expect(events).toEqual([])
+        })
     })
 
     test.describe('destroy', () => {
