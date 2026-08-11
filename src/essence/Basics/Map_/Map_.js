@@ -329,6 +329,12 @@ let Map_ = {
                 window.mmgisAPI.provide('map:showPopup', (request) =>
                     MapPopup_.show(request, engine)
                 ),
+                // Retracting a popup is programmatic, so it stays silent: the
+                // plugin asking for it already knows the popup is gone.
+                window.mmgisAPI.provide('map:hidePopup', () => {
+                    MapPopup_.hide()
+                    return true
+                }),
                 window.mmgisAPI.provide('map:setBasemap', (styleName) => {
                     const index = _basemapStyles.findIndex((s) => s.name === styleName)
                     if (index === -1) {
