@@ -288,37 +288,40 @@ function DrawShapePickerPanel(props: AOIComponentProps) {
     )
 }
 
-const MIN_VERTICES_BY_SHAPE: Record<AOIShape, number> = {
-    point: 1,
-    linestring: 2,
-    polygon: 3,
-    rectangle: 2,
-    circle: 2,
+// The finish gestures of polygon and line are inert until the shape has enough
+// vertices to close, so name them only from that vertex on.
+function vertexHint(count: number, min: number, finish: string): string {
+    return (
+        `Click on the map to add vertices. ${count} placed (need ${min}+). ` +
+        (count >= min ? `${finish} ` : '') +
+        'Esc to cancel.'
+    )
 }
 
 // Two-click shapes (rectangle, circle) finish on their final click, so their
 // hints must not advertise Enter/double-click — only gestures that work.
-const HINT_BY_SHAPE: Record<AOIShape, (count: number, min: number) => string> = {
+const HINT_BY_SHAPE: Record<AOIShape, (count: number) => string> = {
     point: () => 'Click on the map to place the point. Esc to cancel.',
-    linestring: (count, min) =>
-        `Click to add vertices. ${count} placed (need ${min}+). ` +
-        'Press Enter or double-click to finish. Esc to cancel.',
-    polygon: (count, min) =>
-        `Click on the map to add vertices. ${count} placed (need ${min}+). ` +
-        'Press Enter, double-click, or click the first vertex to finish. ' +
-        'Esc to cancel.',
-    rectangle: () =>
-        'Click two corners to define the rectangle. Esc to cancel.',
-    circle: () =>
-        'Click the centre, then click the edge to define the circle. Esc to cancel.',
+    linestring: (count) =>
+        vertexHint(count, 2, 'Press Enter or double-click to finish.'),
+    polygon: (count) =>
+        vertexHint(
+            count,
+            3,
+            'Press Enter, double-click, or click the first vertex to finish.'
+        ),
+    rectangle: (count) =>
+        count < 1
+            ? 'Click the first corner of the rectangle. Esc to cancel.'
+            : 'Click the opposite corner to finish. Esc to cancel.',
+    circle: (count) =>
+        count < 1
+            ? 'Click the center of the circle. Esc to cancel.'
+            : 'Click the edge to set the radius and finish. Esc to cancel.',
 }
 
 function DrawInProgressPanel(props: AOIComponentProps) {
-    const shape = props.drawShape!
-    const hint = HINT_BY_SHAPE[shape](
-        props.drawVerticesCount,
-        MIN_VERTICES_BY_SHAPE[shape]
-    )
+    const hint = HINT_BY_SHAPE[props.drawShape!](props.drawVerticesCount)
 
     return (
         <div className="aoi-panel aoi-panel--draw">
