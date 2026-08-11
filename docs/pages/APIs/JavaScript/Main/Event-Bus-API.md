@@ -349,9 +349,8 @@ window.mmgisAPI.on('legend:made', ({ layerName, legendData }) => {
 | `map:setView` | `{ center, zoom }` | `true` | Set map view |
 | `map:fitBounds` | `bounds` | `true` | Fit map to bounds |
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
-| `map:addOverlay` | `{ id, latlng, mount }` | `true` | Attach a caller-rendered HTML overlay anchored to a point |
-| `map:removeOverlay` | `{ id }` | `true` | Remove an overlay by id |
 | `map:showPopup` | `MapPopupRequest` | `boolean` | Show a map-anchored popup at a lat/lng, replacing any current popup |
+| `map:hidePopup` | none | `true` | Close the current popup without firing its dismiss event |
 
 ```javascript
 // Get current map state
@@ -395,26 +394,41 @@ await window.mmgisAPI.request('map:showPopup', {
 window.mmgisAPI.on('plugin:myPlugin:analyze', () => {
     // The plugin attaches its own context; the popup's events carry no payload.
 })
+
+// On unload, so the popup never outlives the plugin that opened it.
+await window.mmgisAPI.request('map:hidePopup')
 ```
 
 Returns `true` when the popup was shown, or `false` when the request is
-invalid (`html` must be a string and `latlng` must hold finite numbers).
+invalid (`html` must be a string and `latlng` must hold finite numbers). An
+action is rendered only when both its `label` and its `event` are non-empty
+strings.
 
 There is a single popup at a time — a request from any plugin replaces the
-current one. Core closes it; there is no `map:hidePopup` and no popup id.
+current one, and there is no popup id. The user closes it with the X or a
+click elsewhere on the map; `map:hidePopup` retracts it programmatically, for
+a plugin tearing itself down.
 
 | Trigger | Closes the popup | Fires `dismissEvent` |
 |---------|------------------|----------------------|
 | Another `map:showPopup` request | Yes | No |
-| Button click (after its own event) | Yes | No |
+| Button click (the popup closes, then its event is broadcast) | Yes | No |
 | The X control | Yes | Yes |
 | A click elsewhere on the map | Yes | Yes |
-| `Escape` | Yes | Yes |
+| `map:hidePopup` | Yes | No |
 | Mission switch | Yes | No |
 
 `dismissEvent` marks a user dismissal only, so a plugin can clear its
 selection on dismiss without that teardown firing when its own next popup
 replaces the current one.
+
+A click elsewhere on the map dismisses immediately. A plugin that both clears
+state on `dismissEvent` and opens a replacement popup later in the same
+gesture — after waiting for `map:moveend`, say — therefore sees the dismissal
+first, and must not treat it as a reason to discard the selection its own
+pending request describes. Showing the replacement in the same task as the
+click (or retracting with `map:hidePopup` before the wait) avoids the
+ordering entirely.
 
 ### Layer Providers
 
