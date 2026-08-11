@@ -129,6 +129,8 @@ interface BasemapInstance {
     resize(): void
     /** Switch the map to a different style URL at runtime. */
     setStyle(styleUrl: string): unknown
+    /** Return the style layer with the given id, or `undefined` if it is not in the style. */
+    getLayer(id: string): unknown
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
@@ -145,12 +147,14 @@ const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
 /**
  * Prefix for the MapLibre layers terra-draw renders the in-progress drawing
  * into. Passed to `TerraDrawMapLibreGLAdapter` explicitly so the ids are
- * owned here rather than inherited from the library default. The polygon
- * fill layer is registered first, making it the bottom of the terra-draw
- * stack — deck layers anchored on it via `beforeId` render below the whole
- * drawing.
+ * owned here rather than inherited from the library default.
  */
 const TERRA_DRAW_PREFIX = 'td'
+
+/**
+ * Bottom of the terra-draw stack: its MapLibre adapter registers the polygon
+ * fill layer first.
+ */
 const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
 
 function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
@@ -423,8 +427,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return this._basemap
     }
 
+    /**
+     * Switch the basemap to a different style URL.
+     *
+     * The new style replaces every layer on the map, including the ones
+     * terra-draw registered, and terra-draw does not re-register them. Any
+     * live drawing session is therefore ended first (emitting `drawcancel`)
+     * so consumers see the session end and {@link _syncLayers} drops the
+     * terra-draw anchor before the layers it points at disappear.
+     */
     setBasemapStyle(styleUrl: string): boolean {
         if (!this._basemap) return false
+        this.disableDrawing()
         this._basemap.setStyle(styleUrl)
         return true
     }
@@ -1347,24 +1361,29 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // Since we manage layers imperatively, we hand it a fresh copy of the
         // layers *array* (the layer instances themselves are reused) so the diff
         // picks up additions, removals, and drawing-order changes.
-        let layers = [...this._layers.values()]
-        // While a terra-draw session is active, anchor every deck layer below
-        // terra-draw's bottom-most MapLibre layer. Without a beforeId, the
-        // interleaved overlay's resolveLayers() re-hoists deck layers to the
-        // top of the style on every styledata event, burying the in-progress
-        // drawing. An anchor id absent from the style is ignored by
-        // resolveLayers(), so this degrades to normal stacking until
-        // terra-draw registers its layers.
-        if (this._drawingShape) {
-            layers = layers.map((layer) =>
-                layer.clone({ beforeId: TERRA_DRAW_BOTTOM_LAYER_ID } as any)
-            )
-        }
+        const layers = [...this._layers.values()]
         if (this._isOverlayMode) {
-            this._overlay?.setProps({ layers })
+            this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })
         } else {
             this._deckSetProps({ layers })
         }
+    }
+
+    /**
+     * While a terra-draw session is active, clone every deck layer with a
+     * `beforeId` anchored on terra-draw's bottom-most MapLibre layer so the
+     * whole drawing renders on top. Without a beforeId, the interleaved
+     * overlay's resolveLayers() re-hoists deck layers to the top of the style
+     * on every styledata event, burying the in-progress drawing.
+     *
+     * resolveLayers() hands the anchor straight to `map.addLayer`, which
+     * refuses to insert before a layer that is not in the style, so the anchor
+     * is only stamped while terra-draw's layers are actually registered.
+     */
+    private _anchorBelowDrawing(layers: Layer[]): Layer[] {
+        if (!this._drawingShape) return layers
+        if (!this._basemap?.getLayer(TERRA_DRAW_BOTTOM_LAYER_ID)) return layers
+        return layers.map((layer) => layer.clone({ beforeId: TERRA_DRAW_BOTTOM_LAYER_ID } as any))
     }
 
     /**

@@ -264,11 +264,15 @@ test.describe('DeckGLAdapter', () => {
     })
 
     test.describe('drawing overlay stacking', () => {
+        const ANCHOR_ID = 'td-polygon'
+
         // Enough of the maplibre Map surface for TerraDrawMapLibreGLAdapter to
-        // construct, register its layers, and tear them down.
+        // construct, register its layers, and tear them down. Registered ids are
+        // tracked so getLayer() answers like a real style does.
         function makeDrawingBasemap() {
             const canvas = document.createElement('canvas')
             const container = document.createElement('div')
+            const styleLayers = new Set()
             return {
                 getContainer: () => container,
                 getCanvas: () => canvas,
@@ -276,12 +280,12 @@ test.describe('DeckGLAdapter', () => {
                 dragPan: { isEnabled: () => true, enable: () => {}, disable: () => {} },
                 doubleClickZoom: { enable: () => {}, disable: () => {} },
                 addSource: vi.fn(),
-                addLayer: vi.fn(),
-                removeLayer: vi.fn(),
+                addLayer: vi.fn((layer) => styleLayers.add(layer.id)),
+                removeLayer: vi.fn((id) => styleLayers.delete(id)),
                 removeSource: vi.fn(),
+                getLayer: (id) => (styleLayers.has(id) ? { id } : undefined),
                 getSource: () => ({ setData: () => {} }),
-                project: () => ({ x: 0, y: 0 }),
-                unproject: () => ({ lng: 0, lat: 0 }),
+                setStyle: vi.fn(() => styleLayers.clear()),
                 version: '5.8.0',
             }
         }
@@ -305,8 +309,8 @@ test.describe('DeckGLAdapter', () => {
             adapter.addLayer(makeLayer('vector'))
             adapter.enableDrawing('polygon')
             expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([
-                'td-polygon',
-                'td-polygon',
+                ANCHOR_ID,
+                ANCHOR_ID,
             ])
         })
 
@@ -320,19 +324,48 @@ test.describe('DeckGLAdapter', () => {
             const adapter = makeDrawingAdapter()
             adapter.enableDrawing('rectangle')
             adapter.addLayer(makeLayer('added-mid-draw'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([ANCHOR_ID])
+        })
+
+        test('no anchor is stamped while the terra-draw layers are out of the style', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.addLayer(makeLayer('raster'))
+            adapter.enableDrawing('polygon')
+            adapter._basemap.getLayer = () => undefined
+            adapter.addLayer(makeLayer('added-after-wipe'))
             expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([
-                'td-polygon',
+                undefined,
+                undefined,
             ])
         })
 
-        test('disableDrawing drops the anchor and restores normal stacking', () => {
+        test('setBasemapStyle drops the anchor before the swap wipes the terra-draw layers', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.addLayer(makeLayer('raster'))
+            adapter.enableDrawing('polygon')
+            adapter.setBasemapStyle('https://example.com/style.json')
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([undefined])
+            expect(adapter._overlay.setProps.mock.invocationCallOrder.at(-1)).toBeLessThan(
+                adapter._basemap.setStyle.mock.invocationCallOrder[0]
+            )
+        })
+
+        test('setBasemapStyle cancels the live drawing session', () => {
+            const adapter = makeDrawingAdapter()
+            const cancels = []
+            adapter.on('drawcancel', (e) => cancels.push(e))
+            adapter.enableDrawing('polygon')
+            adapter.setBasemapStyle('https://example.com/style.json')
+            expect(adapter.isDrawing()).toBe(false)
+            expect(cancels).toEqual([{ shape: 'polygon' }])
+        })
+
+        test('disableDrawing drops the anchor', () => {
             const adapter = makeDrawingAdapter()
             adapter.addLayer(makeLayer('raster'))
             adapter.enableDrawing('polygon')
             adapter.disableDrawing()
-            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([
-                undefined,
-            ])
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([undefined])
         })
 
         test('the layer registry keeps the original un-anchored instances', () => {
