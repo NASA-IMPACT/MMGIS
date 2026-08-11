@@ -127,6 +127,8 @@ interface BasemapInstance {
     off(type: string, handler: (...args: unknown[]) => void): unknown
     /** Recalculate the map size from its container element. */
     resize(): void
+    /** Switch the map to a different style URL at runtime. */
+    setStyle(styleUrl: string): unknown
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
@@ -408,6 +410,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     getBasemap(): BasemapInstance | null {
         return this._basemap
+    }
+
+    setBasemapStyle(styleUrl: string): boolean {
+        if (!this._basemap) return false
+        this._basemap.setStyle(styleUrl)
+        return true
     }
 
     getContainer(): HTMLElement {
@@ -863,6 +871,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const updated = existing.clone({
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
+            ...(options.url !== undefined ? { data: options.url } : {}),
         }) as Layer
         this._layers.set(id, updated)
         this._syncLayers()
@@ -904,8 +913,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._syncLayers()
     }
 
-    setLayerOpacity(layer: Layer | string, opacity: number): void {
-        this.updateLayer(layer, { opacity })
+    /**
+     * Set a layer's opacity and return the instance carrying it. deck.gl layers
+     * are immutable, so the caller must replace its reference with the result.
+     *
+     * A layer on the map goes through {@link updateLayer}, which re-syncs the
+     * render list. One that is off the map is cloned instead, so it comes back
+     * at the requested opacity when it is added. A reference that is neither
+     * on the map nor a clonable layer instance (an unknown id, or a registry
+     * value that never became a layer) yields no replacement.
+     */
+    setLayerOpacity(layer: Layer | string, opacity: number): Layer | undefined {
+        const id = resolveLayerId(layer)
+        if (this._layers.has(id)) return this.updateLayer(id, { opacity })
+        if (typeof (layer as Layer)?.clone !== 'function') return undefined
+        return (layer as Layer).clone({ opacity }) as Layer
     }
 
     /**
@@ -1170,10 +1192,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             onClick: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureClickHandler?.(pickInfoToResult(info))
+                this._emitClick(info)
             },
             onHover: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureHoverHandler?.(pickInfoToResult(info))
+                this._emitMouseMove(info)
             },
         } as any)
     }
@@ -1242,10 +1266,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             onClick: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureClickHandler?.(pickInfoToResult(info))
+                this._emitClick(info)
             },
             onHover: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureHoverHandler?.(pickInfoToResult(info))
+                this._emitMouseMove(info)
             },
         })
 
@@ -1301,6 +1327,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * - Standalone mode: `_deck.setProps({ layers })` — direct deck.gl update.
      */
     private _syncLayers(): void {
+        // DeckGL diffs by array identity to detect changes and re-ordering.
+        // Since we manage layers imperatively, we hand it a fresh copy of the
+        // layers *array* (the layer instances themselves are reused) so the diff
+        // picks up additions, removals, and drawing-order changes.
         const layers = [...this._layers.values()]
         if (this._isOverlayMode) {
             this._overlay?.setProps({ layers })
@@ -1341,6 +1371,34 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _emitEvent(name: string, data?: unknown): void {
         this._eventListeners.get(name)?.forEach((h) => h(data as PickingInfo))
+    }
+
+    private _emitClick(info: PickingInfo): void {
+        if (!info?.coordinate) return
+        this._eventListeners.get('click')?.forEach(
+            (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
+        )
+    }
+
+    private _emitMouseMove(info: PickingInfo): void {
+        if (!info?.coordinate) return
+        this._eventListeners.get('mousemove')?.forEach(
+            (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
+        )
+    }
+
+    private _buildNormalizedPointerEvent(info: PickingInfo): Record<string, unknown> {
+        const lat = info.coordinate![1]
+        const lng = info.coordinate![0]
+        return {
+            lat,
+            lng,
+            latlng: { lat, lng },
+            containerPoint:
+                info.x != null && info.y != null
+                    ? { x: info.x, y: info.y }
+                    : undefined,
+        }
     }
 }
 

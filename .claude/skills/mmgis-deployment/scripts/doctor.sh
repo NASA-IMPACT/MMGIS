@@ -19,7 +19,7 @@ port="$(mw_env_get "$dir/.env" PORT)"
 db="$(mw_env_get "$dir/.env" DB_NAME)"
 [ -n "$port" ] && ok "PORT=$port" || bad "PORT not set in .env"
 [ -n "$db" ] && ok "DB_NAME=$db" || bad "DB_NAME not set in .env"
-[ -d "$dir/node_modules" ] && ok "node_modules present" || bad "node_modules missing — npm install --force"
+[ -d "$dir/node_modules" ] && ok "node_modules present" || bad "node_modules missing — npm ci"
 
 if [ -n "${MW_DB_CONTAINER:-}" ]; then
   if mw_psql postgres "SELECT 1" >/dev/null 2>&1; then ok "db reachable"; else bad "cannot connect to postgres in container"; fi
