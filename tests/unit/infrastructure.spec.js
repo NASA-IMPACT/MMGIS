@@ -34,6 +34,10 @@ function readJson(relative) {
     return JSON.parse(fs.readFileSync(path.join(INFRA, relative), 'utf8'))
 }
 
+const TF_MODULE = path.join(INFRA, 'terraform', 'modules', 'mmgis-environment')
+const readTfModuleFile = (relative) =>
+    fs.readFileSync(path.join(TF_MODULE, relative), 'utf8')
+
 // Every "Resource" value (string or array) in a parsed IAM document.
 function collectResources(node, found = []) {
     if (Array.isArray(node)) {
@@ -109,9 +113,14 @@ test.describe('infrastructure/ JSON recipes', () => {
 
     test('dashboard-facing grants are pinned to the mmgis-dashboard-* prefix', () => {
         // The prefix the IAM is pinned to must be the one the code creates
-        // stacks under.
-        const { STACK_NAME_PREFIX } = require('../../scripts/lib/cfn-template')
-        expect(STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
+        // stacks under. These JSON docs describe the hand-built environment,
+        // which never sets MMGIS_ENVIRONMENT, so they pin the DEFAULT prefix;
+        // the per-environment patterns live in the Terraform module
+        // (infrastructure/terraform/modules/mmgis-environment/iam.tf).
+        const {
+            DEFAULT_STACK_NAME_PREFIX,
+        } = require('../../scripts/lib/cfn-template')
+        expect(DEFAULT_STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
 
         const adminRole = readJson('iam/admin-task-role.json')
         const publishRole = readJson('iam/publish-task-role.json')
@@ -136,6 +145,45 @@ test.describe('infrastructure/ JSON recipes', () => {
                 )
             }
         }
+    })
+
+    test('terraform module stays in lockstep with the app dashboard prefix', () => {
+        // Pins the module to the exact strings the app composes from
+        // MMGIS_ENVIRONMENT (scripts/lib/cfn-template.js), so silent drift on
+        // either side fails CI instead of at publish time as an AccessDenied.
+        const MODULE = path.join(
+            INFRA,
+            'terraform',
+            'modules',
+            'mmgis-environment'
+        )
+        const read = (f) => fs.readFileSync(path.join(MODULE, f), 'utf8')
+
+        // main.tf composes mmgis-<env>-dashboard- exactly like stackNamePrefix()
+        const mainTf = read('main.tf')
+        expect(mainTf).toContain('name_prefix = "mmgis-${var.environment}"')
+        expect(mainTf).toContain(
+            'dashboard_prefix = "${local.name_prefix}-dashboard-"'
+        )
+
+        // Both task environments inject the variable the app reads
+        const ecsTf = read('ecs.tf')
+        const injections = ecsTf.match(
+            /\{ name = "MMGIS_ENVIRONMENT", value = var\.environment \}/g
+        )
+        expect(injections).toHaveLength(2)
+
+        // The module validation matches the app-side guard (regex + length cap)
+        const variablesTf = read('variables.tf')
+        expect(variablesTf).toContain('regex("^[a-z][a-z0-9-]*$", var.environment)')
+        expect(variablesTf).toContain('length(var.environment) <= 11')
+
+        // Every dashboard-facing IAM pattern uses the shared local, never a literal
+        const iamTf = read('iam.tf')
+        expect(iamTf).not.toContain('mmgis-dashboard-')
+        expect(
+            iamTf.match(/\$\{local\.dashboard_prefix\}\*/g).length
+        ).toBeGreaterThanOrEqual(9)
     })
 
     test('admin task role can complete inline DeleteStack teardown', () => {
@@ -198,6 +246,12 @@ test.describe('infrastructure/ JSON recipes', () => {
         // container overrides (see infrastructure/README.md).
         const RUN_TASK_OVERRIDES = ['MMGIS_DEPLOYMENT_ID', 'MMGIS_DEPLOYMENT_ACTION']
 
+        // MMGIS_ENVIRONMENT is OPTIONAL by design: the Terraform module injects
+        // it to namespace dashboards per environment; the legacy hand-built
+        // environment deliberately omits it to keep the original
+        // mmgis-dashboard-* names.
+        const OPTIONAL_VARS = ['MMGIS_ENVIRONMENT']
+
         // Vars only the publish-side code (scripts/publish-static.js and the
         // template renderer it calls) reads. They ride the PUBLISH task
         // definition; the admin task deliberately does not carry them.
@@ -213,7 +267,8 @@ test.describe('infrastructure/ JSON recipes', () => {
                 const name = match[1] || match[2]
                 if (
                     (name.startsWith('MMGIS_') || name === 'AWS_REGION') &&
-                    !RUN_TASK_OVERRIDES.includes(name)
+                    !RUN_TASK_OVERRIDES.includes(name) &&
+                    !OPTIONAL_VARS.includes(name)
                 )
                     wanted.add(name)
             }
@@ -329,5 +384,127 @@ test.describe('infrastructure/ JSON recipes', () => {
             (o) => o.Id === assetBehavior.TargetOriginId
         )
         expect(assetOrigin.DomainName).toContain('<ASSET_BUCKET_NAME>')
+    })
+
+    test('module refuses empty live facts unless greenfield is set, and pins CloudFront', () => {
+        // The three live facts (serving image + the two express inputs) default
+        // to the DESTRUCTIVE actions (placeholder image; CloudFront
+        // destruction), so empty is only legal under the explicit greenfield
+        // flag. Pin the validation conditions and the prevent_destroy backstop
+        // so a module edit cannot silently drop either fence.
+        const variablesTf = readTfModuleFile('variables.tf')
+        for (const guarded of [
+            'var.deployed_image != ""',
+            'var.express_internal_alb_arn != ""',
+            'var.express_onaws_endpoint != ""',
+        ]) {
+            expect(
+                variablesTf,
+                `validation gates ${guarded} behind var.greenfield`
+            ).toContain(`var.greenfield || ${guarded}`)
+        }
+
+        const cloudfrontTf = readTfModuleFile('cloudfront.tf')
+        expect(cloudfrontTf).toContain('prevent_destroy = true')
+    })
+
+    test('the DB instance names an explicit key for its managed master secret', () => {
+        // The account's default aws/secretsmanager key cannot be granted on by
+        // the CI apply role, so CreateDBInstance fails without this.
+        expect(readTfModuleFile('rds.tf')).toContain(
+            'master_user_secret_kms_key_id'
+        )
+    })
+
+    test('the boundary caps every action the Express infrastructure role needs', () => {
+        // mmgis-<env>-express-infrastructure carries exactly one policy, the
+        // AWS managed AmazonECSInfrastructureRoleforExpressGatewayServices, and
+        // a boundary is an intersection: an action the cap omits fails service
+        // creation with an error naming the boundary, not the action. These are
+        // that policy's actions (v6) — all 51 of them, so a coverage gap in any
+        // service shows up here. Each is capped either literally or by its
+        // service wildcard.
+        const REQUIRED = [
+            // iam (1)
+            'iam:CreateServiceLinkedRole',
+            // elasticloadbalancing (20)
+            'elasticloadbalancing:AddListenerCertificates',
+            'elasticloadbalancing:AddTags',
+            'elasticloadbalancing:CreateListener',
+            'elasticloadbalancing:CreateLoadBalancer',
+            'elasticloadbalancing:CreateRule',
+            'elasticloadbalancing:CreateTargetGroup',
+            'elasticloadbalancing:DeleteListener',
+            'elasticloadbalancing:DeleteLoadBalancer',
+            'elasticloadbalancing:DeleteRule',
+            'elasticloadbalancing:DeleteTargetGroup',
+            'elasticloadbalancing:DeregisterTargets',
+            'elasticloadbalancing:DescribeListeners',
+            'elasticloadbalancing:DescribeLoadBalancers',
+            'elasticloadbalancing:DescribeRules',
+            'elasticloadbalancing:DescribeTargetGroups',
+            'elasticloadbalancing:DescribeTargetHealth',
+            'elasticloadbalancing:ModifyListener',
+            'elasticloadbalancing:ModifyRule',
+            'elasticloadbalancing:RegisterTargets',
+            'elasticloadbalancing:RemoveListenerCertificates',
+            // ec2 (11)
+            'ec2:AuthorizeSecurityGroupEgress',
+            'ec2:AuthorizeSecurityGroupIngress',
+            'ec2:CreateSecurityGroup',
+            'ec2:CreateTags',
+            'ec2:DeleteSecurityGroup',
+            'ec2:DescribeRouteTables',
+            'ec2:DescribeSecurityGroups',
+            'ec2:DescribeSubnets',
+            'ec2:DescribeVpcs',
+            'ec2:RevokeSecurityGroupEgress',
+            'ec2:RevokeSecurityGroupIngress',
+            // acm (4)
+            'acm:AddTagsToCertificate',
+            'acm:DeleteCertificate',
+            'acm:DescribeCertificate',
+            'acm:RequestCertificate',
+            // application-autoscaling (8)
+            'application-autoscaling:DeleteScalingPolicy',
+            'application-autoscaling:DeregisterScalableTarget',
+            'application-autoscaling:DescribeScalableTargets',
+            'application-autoscaling:DescribeScalingActivities',
+            'application-autoscaling:DescribeScalingPolicies',
+            'application-autoscaling:PutScalingPolicy',
+            'application-autoscaling:RegisterScalableTarget',
+            'application-autoscaling:TagResource',
+            // cloudwatch (4)
+            'cloudwatch:DeleteAlarms',
+            'cloudwatch:DescribeAlarms',
+            'cloudwatch:PutMetricAlarm',
+            'cloudwatch:TagResource',
+            // logs (3)
+            'logs:CreateLogGroup',
+            'logs:DescribeLogGroups',
+            'logs:TagResource',
+        ]
+        expect(REQUIRED.length, 'the whole policy is listed').toBe(51)
+
+        const boundary = fs.readFileSync(
+            path.join(INFRA, 'terraform', 'bootstrap', 'boundary.tf'),
+            'utf8'
+        )
+        // Only the Allow statements count — the trailing Deny block names EC2
+        // actions too, and a match there would be the opposite of coverage.
+        const denyStart = boundary.indexOf('"DenyEc2BlastRadius"')
+        expect(denyStart, 'the EC2 deny block is present').toBeGreaterThan(0)
+        const allows = boundary.slice(0, denyStart)
+        // …and it is the only Deny, so everything before it really is Allow.
+        expect(allows).not.toContain('Effect = "Deny"')
+
+        for (const action of REQUIRED) {
+            const service = action.split(':')[0]
+            expect(
+                allows.includes(`"${action}"`) ||
+                    allows.includes(`"${service}:*"`),
+                `boundary caps ${action}`
+            ).toBe(true)
+        }
     })
 })

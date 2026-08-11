@@ -1,0 +1,222 @@
+// Horizon USWDS theme configuration
+@use "uswds-core" with (
+  // GENERAL SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#general-settings-2
+  $theme-show-notifications: false,
+  $theme-show-compile-warnings: false,
+  $theme-image-path: "./img",
+  $theme-focus-color: "gray-60",
+  $theme-focus-offset: 2px,
+  $theme-focus-style: dashed,
+  $theme-focus-width: 1px,
+
+  // COLOR SETTINGS
+  // https: //designsystem.digital.gov/documentation/settings/#color-settings-2
+  $theme-color-base-family: "gray-cool",
+  $theme-color-base-lightest: #f6f6f6,
+  $theme-color-base-lighter: #e3e3e3,
+  $theme-color-base-light: #b9b9bb,
+  $theme-color-base: #77777a,
+  $theme-color-base-dark: #58585b,
+  $theme-color-base-darker: #444447,
+  $theme-color-base-darkest: #2e2e32,
+  $theme-color-base-ink: #17171b,
+
+  $theme-color-primary-family: "blue",
+  $theme-color-primary-lightest: #eaf0fd,
+  $theme-color-primary-lighter: #c4dbfa,
+  $theme-color-primary-light: #288bff,
+  $theme-color-primary: #1c67e3,
+  $theme-color-primary-vivid: #1c67e3,
+  $theme-color-primary-dark: #0b3d91,
+  $theme-color-primary-darker: #082c6b,
+  $theme-color-primary-darkest: #041c44,
+
+  $theme-color-secondary-family: "red-warm",
+  $theme-color-secondary-lightest: #fef0ee,
+  $theme-color-secondary-lighter: #fcc7c5,
+  $theme-color-secondary-light: #ff5c52,
+  $theme-color-secondary: #f64137,
+  $theme-color-secondary-vivid: #f64137,
+  $theme-color-secondary-dark: #b60109,
+  $theme-color-secondary-darker: #820107,
+  $theme-color-secondary-darkest: #4e0004,
+
+  $theme-color-accent-cool-family: "blue",
+  $theme-color-accent-cool-lightest: #eaf0fd,
+  $theme-color-accent-cool-lighter: #c4dbfa,
+  $theme-color-accent-cool-light: #288bff,
+  $theme-color-accent-cool: #1c67e3,
+  $theme-color-accent-cool-dark: #0b3d91,
+  $theme-color-accent-cool-darker: #082c6b,
+  $theme-color-accent-cool-darkest: #041c44,
+
+  $theme-color-accent-warm-family: "orange",
+  $theme-color-accent-warm-lightest: #fef4ef,
+  $theme-color-accent-warm-lighter: #fcdcbf,
+  $theme-color-accent-warm-light: #f4a96b,
+  $theme-color-accent-warm: #ea6f24,
+  $theme-color-accent-warm-dark: #b2541b,
+  $theme-color-accent-warm-darker: #763812,
+  $theme-color-accent-warm-darkest: #3b1c09,
+
+  // State tokens cannot be unique hexes
+  // so these have been updated to match hds-core
+  // https://github.com/nasa/hds-core/blob/main/src/scss/_hds-uswds-theme.scss
+  $theme-color-info-family: "cyan",
+  $theme-color-info-lighter: "cyan-5",
+  $theme-color-info-light: "cyan-20",
+  $theme-color-info: "cyan-30v",
+  $theme-color-info-dark: "cyan-40v",
+  $theme-color-info-darker: "blue-cool-60",
+
+  $theme-color-error-family: "red-warm",
+  $theme-color-error-lighter: "red-warm-10",
+  $theme-color-error-light: "red-warm-30v",
+  $theme-color-error: "red-warm-50v",
+  $theme-color-error-dark: "red-60v",
+  $theme-color-error-darker: "red-70",
+
+  $theme-color-warning-family: "gold",
+  $theme-color-warning-lighter: "yellow-5",
+  $theme-color-warning-light: "yellow-10v",
+  $theme-color-warning: "gold-20v",
+  $theme-color-warning-dark: "gold-30v",
+  $theme-color-warning-darker: "gold-50v",
+
+  $theme-color-success-family: "green-cool",
+  $theme-color-success-lighter: "green-cool-5v",
+  $theme-color-success-light: "green-cool-10v",
+  $theme-color-success: "green-cool-30v",
+  $theme-color-success-dark: "green-cool-40v",
+  $theme-color-success-darker: "green-cool-60v",
+
+  $theme-color-emergency: "red-warm-60v",
+  $theme-color-emergency-dark: "red-warm-80",
+
+  $theme-color-disabled-family: "gray",
+  $theme-color-disabled-lighter: "gray-20",
+  $theme-color-disabled-light: "gray-40",
+  $theme-color-disabled: "gray-50",
+  $theme-color-disabled-dark: "gray-70",
+  $theme-color-disabled-darker: "gray-90",
+
+  $theme-link-color: "ink",
+  $theme-link-visited-color: "ink",
+  $theme-link-hover-color: "ink",
+  $theme-link-active-color: "ink",
+  $theme-link-reverse-color: "base-lightest",
+  $theme-link-reverse-hover-color: "base-lightest",
+  $theme-link-reverse-active-color: "base-lightest",
+
+  $theme-body-background-color: "white",
+  $theme-text-color: "ink",
+  $theme-text-reverse-color: "white",
+
+  // COMPONENT SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#component-settings-2
+  $theme-accordion-button-background-color: "white",
+  $theme-accordion-border-width: 1px,
+
+  $theme-banner-max-width: "widescreen",
+
+  $theme-button-border-radius: 0,
+  $theme-button-font-family: "heading",
+
+  $theme-card-border-radius: 0,
+  $theme-card-font-family: "heading",
+
+  $theme-checkbox-border-radius: 0,
+
+  $theme-footer-max-width: "widescreen",
+
+  $theme-header-font-family: "heading",
+  $theme-header-max-width: "widescreen",
+
+  $theme-in-page-nav-top: 10,
+
+  $theme-navigation-font-family: "heading",
+
+  $theme-card-padding-y: 1.5,
+  $theme-card-padding-perimeter: 2.5,
+
+  // SPACING SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#spacing-settings-2
+  $theme-grid-container-max-width: "widescreen",
+  $theme-site-margins-breakpoint: "widescreen",
+  $theme-site-margins-width: 7,
+  $theme-site-margins-mobile-width: 2,
+
+  // TYPE SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#typography-settings-2
+  // https://designsystem.digital.gov/design-tokens/typesetting/font-family/
+  $theme-typeface-tokens: (
+      "inter": (
+        "display-name": "Inter Variable",
+        "cap-height": 364px,
+        "stack": "'Helvetica Neue', Helvetica, Arial, sans-serif",
+      ),
+      "dm-mono": (
+        "display-name": "DM Mono",
+        "cap-height": 364px,
+        "stack": "'Consolas', 'Courier', monospace",
+      )
+    ),
+  $theme-font-path: "./fonts",
+  $theme-font-type-mono: "dm-mono",
+  $theme-font-type-sans: "public-sans",
+  $theme-font-type-serif: "inter",
+
+  $theme-font-role-ui: "serif",
+  $theme-font-role-heading: "serif",
+  $theme-font-role-body: "sans",
+  $theme-font-role-code: "mono",
+  $theme-font-role-alt: "mono",
+
+  $theme-type-scale-3xs: 1,
+  $theme-type-scale-2xs: 3,
+  $theme-type-scale-xs: 4,
+  $theme-type-scale-sm: 5,
+  $theme-type-scale-md: 7,
+  $theme-type-scale-lg: 9,
+  $theme-type-scale-xl: 12,
+  $theme-type-scale-2xl: 14,
+  $theme-type-scale-3xl: 15,
+
+  $theme-font-weight-thin: false,
+  $theme-font-weight-light: 300,
+  $theme-font-weight-normal: 400,
+  $theme-font-weight-medium: false,
+  $theme-font-weight-semibold: 600,
+  $theme-font-weight-bold: 700,
+  $theme-font-weight-heavy: 900,
+
+  // UTILITY SETTINGS
+  // https://designsystem.digital.gov/documentation/settings/#utilities-settings-2
+  $utilities-use-important: true,
+  $theme-utility-breakpoints: (
+    "card": false,
+    "card-lg": false,
+    "mobile": true,
+    "mobile-lg": false,
+    "tablet": true,
+    "tablet-lg": false,
+    "desktop": true,
+    "desktop-lg": true,
+    "widescreen": true
+  ),
+
+  $overflow-settings: (responsive: true),
+  $position-settings: (responsive: true),
+  $top-settings: (responsive: true),
+  $right-settings: (responsive: true),
+  $left-settings: (responsive: true),
+  $bottom-settings: (responsive: true),
+  $z-index-settings: (responsive: true),
+  $background-color-settings: (responsive: true),
+  $font-style-settings: (responsive: true),
+  $color-settings: (responsive: true, hover: true),
+  $flex-direction-settings: (responsive: true),
+  $flex-settings: (responsive: true),
+  $order-settings: (responsive: true)
+);

@@ -6,8 +6,78 @@
  */
 
 import { utcFormat } from 'd3-time-format'
+import {
+    isRasterTileLayerType,
+    toCanonicalLayerType,
+} from '../MapEngines/types/engine'
 
 const DEFAULT_TIME_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+
+/**
+ * The service prefixes whose tile URLs carry TiTiler query params. These are
+ * the only sources compileTileUrl runs applyCogFieldsToUrl over, so they are
+ * also the only ones a colormap change can reach.
+ */
+const COG_SOURCE_PREFIXES = ['stac-collection', 'COG', 'titiler-url']
+
+/**
+ * The COG service prefix a source URL declares (`stac-collection:`, `COG:`,
+ * `titiler-url:`), or undefined for a plain tile template.
+ *
+ * A bare prefix with nothing after the colon is not a source — it matches how
+ * resolveTileLayerSource requires a non-null second segment before treating
+ * the first as a service name.
+ */
+export function cogSourceType(
+    sourceUrl: string | null | undefined
+): string | undefined {
+    const segments = (sourceUrl || '').split(':')
+    if (segments[1] == null) return undefined
+    return COG_SOURCE_PREFIXES.includes(segments[0]) ? segments[0] : undefined
+}
+
+/**
+ * True when a layer paints its pixels through a COG colormap, so a legend can
+ * draw the ramp and its bounds. Covers `image` layers, which colour pixels
+ * client-side from the same `cog*` config fields as a tile layer.
+ *
+ * Says nothing about whether that colormap can be *changed* — see
+ * supportsCogTransform.
+ *
+ * Takes a loose shape because callers pass raw mission-config objects parsed
+ * from JSON.
+ */
+export function hasCogColormap(
+    layerObj: { type?: string; cogTransform?: boolean } | null | undefined
+): boolean {
+    if (layerObj?.cogTransform !== true) return false
+    const type = toCanonicalLayerType(layerObj.type)
+    return type === 'tile' || type === 'image'
+}
+
+/**
+ * True when a layer's colormap and rescale can be changed at runtime by
+ * recompiling its tile URL. That needs both a raster tile layer — on either
+ * engine — and a source whose URL the COG params are injected into.
+ *
+ * `image` layers are excluded: they colour their pixels client-side at
+ * construction, and no refresh path repaints one. A raster tile layer served
+ * from a plain tile template is excluded too: applyCogFieldsToUrl never runs
+ * for it, so a change would recompile a byte-identical URL.
+ *
+ * `sourceUrl` is the layer's configured source before URL resolution — the
+ * active tile level's url, falling back to the layer's own.
+ */
+export function supportsCogTransform(
+    layerObj: { type?: string; cogTransform?: boolean } | null | undefined,
+    sourceUrl: string | null | undefined
+): boolean {
+    return (
+        hasCogColormap(layerObj) &&
+        isRasterTileLayerType(layerObj) &&
+        cogSourceType(sourceUrl) !== undefined
+    )
+}
 
 /**
  * Resolves a layer's tile format, honouring the legacy `tms` boolean.
@@ -145,8 +215,9 @@ export function applyCogFieldsToUrl(url: string, layerObj: Record<string, unknow
     }
 
     if (layerObj.cogTransform === true) {
-        const colormap = (layerObj.currentCogColormap ??
-            layerObj.cogColormap) as string | undefined
+        const colormap = (layerObj.currentCogColormap ?? layerObj.cogColormap) as
+            | string
+            | undefined
         if (colormap && !params.has('colormap_name'))
             params.set('colormap_name', colormap)
 
@@ -266,10 +337,14 @@ export function compileTileUrl(url: string, options: Record<string, any>): strin
 }
 
 /**
- * Returns true when the layer is a COG file:
- * - splitColonType is 'COG' (explicit URL prefix), OR
- * - layerObj.cogTransform === true (a plain .tif URL with the single-band
- *   transformation enabled)
+ * True when the layer's source is a single COG file the client-side renderer
+ * can read directly: an explicit `COG:` prefix, or a plain `.tif` URL with the
+ * single-band transformation enabled.
+ *
+ * Distinct from hasCogColormap/supportsCogTransform above, which ask whether a
+ * layer *paints through* a COG colormap and whether that colormap can be
+ * changed by recompiling a tile URL. This one asks whether there is one
+ * readable `.tif` behind the layer.
  */
 export function isCogLayer(
     splitColonType: string | undefined,

@@ -7,11 +7,147 @@ import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { isRasterTileLayerType } from '../MapEngines/types/engine'
+import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
+import {
+    getActiveTileLevel,
+    getTileLevelUrl,
+    resolveTileLayerSource,
+} from './tileLayerSource'
+import {
+    buildTileUrlOptions,
+    compileTileUrl,
+    cogSourceType,
+    hasCogColormap,
+    shouldUseDeckRaster,
+    supportsCogTransform,
+} from './tileUrlUtils'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
+
+/**
+ * What a layer's COG colormap supports: whether it has one to draw a legend
+ * ramp from, and whether that ramp can be changed at runtime.
+ *
+ * The two answers differ — an `image` layer colours its pixels from a COG
+ * colormap but bakes it in at construction — so they are reported separately
+ * rather than collapsed into one verdict.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {{hasColormap: boolean, canChangeColormap: boolean}}
+ */
+function cogCapabilitiesFor(uuid) {
+    const layerObj = L_.layers.data[uuid]
+    // The source before URL resolution, matching resolveTileLayerSource's
+    // pick. Resolving in full would build TiTiler and STAC URLs this verdict
+    // never reads.
+    const sourceUrl =
+        getTileLevelUrl(getActiveTileLevel(layerObj || {})) || layerObj?.url
+    // A deckRaster layer changes its colormap by rebuilding the layer rather
+    // than recompiling a tile URL, so it qualifies without a service-prefixed
+    // source — which is what supportsCogTransform requires.
+    const deckRaster = shouldUseDeckRaster(
+        L_.Map_?.engine?.engineType,
+        cogSourceType(sourceUrl),
+        layerObj || {}
+    )
+    return {
+        hasColormap: hasCogColormap(layerObj),
+        canChangeColormap:
+            supportsCogTransform(layerObj, sourceUrl) || deckRaster,
+    }
+}
+
+/**
+ * True when a registry entry is owned by the active non-Leaflet engine.
+ * Engine-owned layers must go through the IMapEngine facade rather than
+ * Leaflet's methods — they have no Leaflet API to call, and under deck.gl a
+ * mutation returns a replacement instance for the registry to adopt.
+ *
+ * Which types are engine-owned is per-engine, not universal — see
+ * ENGINE_LAYER_SUPPORT. Types the active engine has no builder for (velocity,
+ * model, data, image and video under deck.gl) stay Leaflet-built, so the
+ * registry always holds a mix.
+ *
+ * Ownership is identified positively by shape: a deck.gl layer carries deck's
+ * `props` (or arrives as a `_deckLayer` wrapper, which `Map_.nativeLayer`
+ * unwraps) and never Leaflet's `options`. Anything else in the registry —
+ * Leaflet layers, aggregate arrays of them, and the load-failure sentinel
+ * (`false`) — takes the Leaflet path.
+ *
+ * @param {object} layer - A registry entry from `L_.layers.layer`.
+ * @returns {boolean}
+ */
+function isEngineOwnedLayer(layer) {
+    return (
+        layer != null &&
+        layer.options == null &&
+        (layer.props != null || layer._deckLayer != null) &&
+        L_.Map_?.engine != null &&
+        L_.Map_.engine.engineType !== MAP_ENGINE.LEAFLET
+    )
+}
+
+/**
+ * Rebuilds an engine-owned raster tile layer around a freshly compiled URL.
+ *
+ * A Leaflet tile layer recompiles its URL per tile from `this.options`, so its
+ * `refresh()` only has to merge the caller's overrides into those options. An
+ * engine-owned layer is built around one static URL instead, so the overrides
+ * are compiled in here.
+ *
+ * Resolution order — source, then time replacements, then tile-URL options —
+ * is the one layer creation and time-driven reloads use, so all three agree on
+ * the URL a layer ends up serving.
+ *
+ * Failures are reported as `false` rather than thrown: the caller is a UI
+ * control on the request bus, and a rejection there escapes as an unhandled
+ * promise with nothing to show for it.
+ *
+ * @param {string} uuid - Layer UUID, already resolved.
+ * @param {object} [updateOptions] - Tile-URL option overrides, the keys
+ * buildTileUrlOptions produces. These win over the layer config.
+ * @returns {Promise<boolean>} Whether the engine took a new URL.
+ */
+async function refreshEngineOwnedTileLayer(uuid, updateOptions) {
+    const layerObj = L_.layers.data[uuid]
+    // Only raster tiles carry a compiled tile URL. The other engine-owned
+    // types (vector, vectortile, pointcloud) reload through their own paths.
+    if (!isRasterTileLayerType(layerObj)) return false
+
+    try {
+        const tileSource = resolveTileLayerSource(layerObj)
+        const sourceUrl = await L_.TimeControl_.performTimeUrlReplacements(
+            tileSource.url,
+            layerObj,
+            false
+        )
+        const tileOptions = {
+            ...buildTileUrlOptions(
+                layerObj,
+                tileSource.splitColonType,
+                tileSource.tileFormat
+            ),
+            ...(updateOptions || {}),
+        }
+
+        // A layer with no resolvable service URL compiles to nothing. Handing
+        // that to the engine would blank it, so leave the existing one alone.
+        const nextUrl = compileTileUrl(sourceUrl, tileOptions)
+        if (!nextUrl) return false
+
+        const updated = L_.Map_.engine.updateLayer(uuid, { url: nextUrl })
+        // deck.gl layers are immutable, so the registry adopts the replacement.
+        // The engine returns nothing for a layer it does not hold.
+        if (updated == null) return false
+        L_.layers.layer[uuid] = updated
+        return true
+    } catch (err) {
+        console.error(`layers:refresh failed for "${uuid}"`, err)
+        return false
+    }
+}
 
 const L_ = {
     url: window.location.href,
@@ -195,7 +331,7 @@ const L_ = {
                     }
                     return false
                 }),
-                window.mmgisAPI.provide('layers:refresh', ({ layerUUID, options }) => {
+                window.mmgisAPI.provide('layers:refresh', async ({ layerUUID, options }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     const layerObj = L_.layers.data[uuid]
                     // Deck.gl deckRaster COG branch: rebuild the layer with updated
@@ -223,6 +359,9 @@ const L_ = {
                         tileLayer.refresh(null, false, options || {})
                         return true
                     }
+                    // An engine-owned layer has no Leaflet refresh() to call.
+                    if (isEngineOwnedLayer(tileLayer))
+                        return refreshEngineOwnedTileLayer(uuid, options)
                     return false
                 }),
                 window.mmgisAPI.provide('layers:updateConfig', ({ layerUUID, updates }) => {
@@ -236,6 +375,21 @@ const L_ = {
                 }),
                 window.mmgisAPI.provide('layers:getAllConfigs', () => L_.layers.data),
                 window.mmgisAPI.provide('layers:getAllOpacities', () => L_.layers.opacity),
+                // What each layer's COG colormap supports. Called with a layer
+                // identifier it answers for that one layer, resolving a name
+                // the way every other layer-keyed provider does; called with
+                // none it returns the whole map, keyed by UUID.
+                window.mmgisAPI.provide('layers:getCogCapabilities', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : cogCapabilitiesFor(uuid)
+                    }
+                    const capabilities = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        capabilities[uuid] = cogCapabilitiesFor(uuid)
+                    })
+                    return capabilities
+                }),
                 window.mmgisAPI.provide('layers:isVisible', (layerUUID) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true
@@ -1946,7 +2100,22 @@ const L_ = {
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
         let l = L_.layers.layer[name]
 
-        if (l) {
+        // Engine-owned layers go through the IMapEngine facade, which may return
+        // a replacement instance for the registry to hold (deck.gl layers are
+        // immutable). They have no attachments and no Leaflet marker elements,
+        // so the sublayer and CSS passes below do not apply to them.
+        if (isEngineOwnedLayer(l)) {
+            const updated = L_.Map_.engine.setLayerOpacity(
+                L_.Map_.nativeLayer(l),
+                newOpacity
+            )
+            if (updated) L_.layers.layer[name] = updated
+        } else if (l && l.options) {
+            // Leaflet layers only. A registry entry that is neither
+            // engine-owned nor a Leaflet layer — the load failure sentinel
+            // (`false`) or an aggregate array — falls through to the registry
+            // write below, which is the value the engine reads when it builds
+            // or re-adds the layer.
             if (l.options.initialFillOpacity == null)
                 l.options.initialFillOpacity =
                     L_.layers.data[name]?.style?.fillOpacity != null
@@ -2023,6 +2192,10 @@ const L_ = {
         var l = L_.layers.layer[name]
 
         if (l == null) return 0
+
+        // Engine-owned layer objects carry no Leaflet `options`; the registry is
+        // the authority on their opacity.
+        if (isEngineOwnedLayer(l)) return L_.layers.opacity[name] ?? 1
 
         var opacity
         try {
@@ -4214,9 +4387,16 @@ async function parseConfig(configData, urlOnLayers) {
             if (d[i].type === 'header') L_.layers.on[d[i].name] = true
 
             //Create parsed opacity array
-            let io = d[i].initialOpacity
+            // A configured initialOpacity must be a usable number in [0, 1];
+            // anything else (unset, a cleared configure field, out of range)
+            // renders fully opaque.
+            const initialOpacity = parseFloat(d[i].initialOpacity)
             L_.layers.opacity[d[i].name] =
-                io == null || io < 0 || io > 1 ? 1 : io
+                Number.isFinite(initialOpacity) &&
+                initialOpacity >= 0 &&
+                initialOpacity <= 1
+                    ? initialOpacity
+                    : 1
 
             //Set visibility if we have all the on layers listed in the url
             if (urlOnLayers) {
@@ -4228,8 +4408,17 @@ async function parseConfig(configData, urlOnLayers) {
                     standardId = d[i].display_name
                 if (standardId != null) {
                     L_.layers.on[d[i].name] = true
+                    // `on=<layer>` with no `$opacity` suffix parses to NaN, and
+                    // out-of-range values are meaningless; both fall back to 1.
+                    // A url-given 0 is a real request for a hidden layer.
+                    const urlOpacity =
+                        urlOnLayers.onLayers[standardId].opacity
                     L_.layers.opacity[d[i].name] =
-                        urlOnLayers.onLayers[standardId].opacity || 1
+                        Number.isFinite(urlOpacity) &&
+                        urlOpacity >= 0 &&
+                        urlOpacity <= 1
+                            ? urlOpacity
+                            : 1
                 } else if (urlOnLayers.method == 'replace') {
                     L_.layers.on[d[i].name] = false
                 }
