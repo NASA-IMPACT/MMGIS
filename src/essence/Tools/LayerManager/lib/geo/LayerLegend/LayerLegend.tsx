@@ -12,6 +12,7 @@ import { GradientGraphic } from '../GradientGraphic/GradientGraphic'
 import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
 import { FloatingPopover } from '../../FloatingPopover'
+import { PopoverMenu, type PopoverMenuItem } from '../PopoverMenu'
 import {
     Markdown,
     hasMarkdownContent,
@@ -25,6 +26,8 @@ export type LayerLegendProps = {
     onOpacityChange?: (layerId: string, opacity: number) => void
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
+    onZoomToLayer?: (layerId: string) => void
+    canZoomToLayer?: (layerId: string) => Promise<boolean>
 }
 
 export function LayerLegend({
@@ -34,6 +37,8 @@ export function LayerLegend({
     onOpacityChange,
     onColormapChange,
     onRescaleChange,
+    onZoomToLayer,
+    canZoomToLayer,
 }: LayerLegendProps) {
     const {
         id,
@@ -54,14 +59,20 @@ export function LayerLegend({
     const [isInfoOpen, setIsInfoOpen] = useState(defaultInfoExpanded)
     const [isOpacityExpanded, setIsOpacityExpanded] = useState(false)
     const [isRampPickerOpen, setIsRampPickerOpen] = useState(false)
+    const [isMenuOpen, setIsMenuOpen] = useState(false)
+    // Null while the answer is outstanding, which keeps the action inert until
+    // it is known to lead somewhere.
+    const [canZoom, setCanZoom] = useState<boolean | null>(null)
     const [localOpacity, setLocalOpacity] = useState(opacity ?? 1)
     const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
     const rampBtnRef = useRef<HTMLButtonElement | null>(null)
     const infoBtnRef = useRef<HTMLButtonElement | null>(null)
+    const menuBtnRef = useRef<HTMLButtonElement | null>(null)
     const opacityPopoverId = useId()
     const opacityHeadingId = useId()
     const rampPopoverId = useId()
     const infoPopoverId = useId()
+    const menuPopoverId = useId()
 
     // Only raster layers carry rescale/ramp settings to expose, and only those
     // whose colormap can actually be changed. A layer painting from a COG
@@ -90,6 +101,55 @@ export function LayerLegend({
     const closeRampPicker = useCallback(() => setIsRampPickerOpen(false), [])
 
     const closeInfo = useCallback(() => setIsInfoOpen(false), [])
+
+    const closeMenu = useCallback(() => setIsMenuOpen(false), [])
+
+    // Read through a ref so that opening the menu and changing layer are the
+    // only things that ask again. Callers commonly pass a fresh closure on
+    // every render, and depending on its identity would restart the check —
+    // blanking the item back to inert — on unrelated panel updates.
+    const canZoomToLayerRef = useRef(canZoomToLayer)
+    useEffect(() => {
+        canZoomToLayerRef.current = canZoomToLayer
+    })
+
+    // Asked on open, and again on every reopen: a vector layer that had no
+    // measurable geometry a moment ago may have finished loading since.
+    useEffect(() => {
+        if (!isMenuOpen) return
+        const canZoomTo = canZoomToLayerRef.current
+        if (!canZoomTo) {
+            setCanZoom(true)
+            return
+        }
+        let cancelled = false
+        setCanZoom(null)
+        canZoomTo(id).then(
+            (can) => {
+                if (!cancelled) setCanZoom(can)
+            },
+            () => {
+                if (!cancelled) setCanZoom(false)
+            },
+        )
+        return () => {
+            cancelled = true
+        }
+    }, [isMenuOpen, id])
+
+    const menuItems: PopoverMenuItem[] = [
+        {
+            id: 'zoom-to-layer',
+            label: 'Zoom to layer',
+            icon: 'zoom-to-layer',
+            disabled: canZoom !== true,
+            title:
+                canZoom === false
+                    ? 'This layer has no extent to zoom to'
+                    : undefined,
+            onSelect: () => onZoomToLayer?.(id),
+        },
+    ]
 
     const handleVisibilityToggle = () => {
         const newState = !isVisible
@@ -154,7 +214,7 @@ export function LayerLegend({
 
     return (
         <div
-            className={`blocks-layer-legend ${isOpacityExpanded || isRampPickerOpen || isInfoOpen ? 'blocks-layer-legend--menu-open' : ''}`}
+            className={`blocks-layer-legend ${isOpacityExpanded || isRampPickerOpen || isInfoOpen || isMenuOpen ? 'blocks-layer-legend--menu-open' : ''}`}
             data-legend-id={id}
         >
             <div className="blocks-layer-legend__header">
@@ -238,7 +298,15 @@ export function LayerLegend({
                         <span className="blocks-layer-legend__icon blocks-layer-legend__icon--info" />
                     </button>
                     <button
-                        className="blocks-layer-legend__action-btn"
+                        ref={menuBtnRef}
+                        type="button"
+                        className={`blocks-layer-legend__action-btn ${isMenuOpen ? 'blocks-layer-legend__action-btn--active' : ''}`}
+                        onClick={() =>
+                            isMenuOpen ? closeMenu() : setIsMenuOpen(true)
+                        }
+                        aria-haspopup="menu"
+                        aria-expanded={isMenuOpen}
+                        aria-controls={isMenuOpen ? menuPopoverId : undefined}
                         title="More options"
                     >
                         <span className="blocks-layer-legend__icon blocks-layer-legend__icon--more-options" />
@@ -339,6 +407,20 @@ export function LayerLegend({
                     />
                 </FloatingPopover>
             )}
+            {/* Portaled like the other row popovers. Focus moves into the list
+                on open, so the menu takes arrow keys straight away. */}
+            <FloatingPopover
+                id={menuPopoverId}
+                anchorRef={menuBtnRef}
+                isOpen={isMenuOpen}
+                onClose={closeMenu}
+                placement="bottom"
+                offset={6}
+                label={`More options for ${title}`}
+                autoFocus
+            >
+                <PopoverMenu items={menuItems} onSelect={closeMenu} />
+            </FloatingPopover>
         </div>
     )
 }

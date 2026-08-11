@@ -9,6 +9,8 @@ export type LayerLegendListProps = {
     onOpacityChange?: LayerLegendProps['onOpacityChange']
     onColormapChange?: LayerLegendProps['onColormapChange']
     onRescaleChange?: LayerLegendProps['onRescaleChange']
+    onZoomToLayer?: LayerLegendProps['onZoomToLayer']
+    canZoomToLayer?: LayerLegendProps['canZoomToLayer']
 }
 
 export function LayerLegendList({
@@ -18,6 +20,8 @@ export function LayerLegendList({
     onOpacityChange,
     onColormapChange,
     onRescaleChange,
+    onZoomToLayer,
+    canZoomToLayer,
 }: LayerLegendListProps) {
     if (!layers || layers.length === 0) {
         return (
@@ -36,6 +40,8 @@ export function LayerLegendList({
                     onOpacityChange={onOpacityChange}
                     onColormapChange={onColormapChange}
                     onRescaleChange={onRescaleChange}
+                    onZoomToLayer={onZoomToLayer}
+                    canZoomToLayer={canZoomToLayer}
                 />
             ))}
         </div>

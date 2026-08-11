@@ -1,6 +1,9 @@
 import React from 'react'
 import type { Layer } from '../../types'
-import { LayerLegendList } from '../LayerLegendList/LayerLegendList'
+import {
+    LayerLegendList,
+    type LayerLegendListProps,
+} from '../LayerLegendList/LayerLegendList'
 
 export type LayerManagerPanelProps = {
     layers: Layer[]
@@ -10,6 +13,8 @@ export type LayerManagerPanelProps = {
     onOpacityChange?: (layerId: string, opacity: number) => void
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
+    onZoomToLayer?: LayerLegendListProps['onZoomToLayer']
+    canZoomToLayer?: LayerLegendListProps['canZoomToLayer']
 }
 
 export function LayerManagerPanel({
@@ -20,6 +25,8 @@ export function LayerManagerPanel({
     onOpacityChange,
     onColormapChange,
     onRescaleChange,
+    onZoomToLayer,
+    canZoomToLayer,
 }: LayerManagerPanelProps) {
     return (
         <div className="blocks-layer-manager">
@@ -36,6 +43,8 @@ export function LayerManagerPanel({
                         onOpacityChange={onOpacityChange}
                         onColormapChange={onColormapChange}
                         onRescaleChange={onRescaleChange}
+                        onZoomToLayer={onZoomToLayer}
+                        canZoomToLayer={canZoomToLayer}
                     />
                 )}
             </div>
