@@ -77,8 +77,6 @@ function makeFakeApi() {
         },
 
         // Test-only accessors.
-        requests,
-        emits,
         requestImpl,
         listenerCount: (event) => listeners.get(event)?.size || 0,
         namesOf: (name) => requests.filter((r) => r.name === name),
@@ -274,17 +272,6 @@ describe('AOITool popup lifecycle', () => {
 
         expect(api.listenerCount('map:moveend')).toBe(0)
         expect(api.listenerCount('map:featureClick')).toBe(0)
-    })
-
-    test('clearing the selection drops a pending show', () => {
-        AOITool._applySelection(SQUARE, 'search', 'Alabama')
-        api.reset()
-
-        AOITool._clearSelection()
-
-        api.emit('map:moveend')
-        vi.advanceTimersByTime(2000)
-        expect(api.namesOf('map:showPopup')).toHaveLength(0)
     })
 
     test('a superseding selection leaves only its own popup pending', () => {

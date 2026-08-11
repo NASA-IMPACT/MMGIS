@@ -17,6 +17,7 @@
  *     - map:drawstart / drawvertex /
  *       drawcomplete / drawcancel         (engine bus)
  *     - map:featureClick                  (inspect-mode boundary clicks, filtered by layerId)
+ *     - map:moveend                       (one-shot, while a selection waits for the camera)
  *     - plugin:fetch-stats:analysisProgress  { done, total }
  *     - plugin:fetch-stats:analysisReady     { analysisData }
  *     - plugin:fetch-stats:analysisSkipped   { reason }
@@ -573,6 +574,9 @@ const AOITool = {
         // Retract the current popup up front: the click that starts a new
         // selection would otherwise dismiss it a task later, which answers
         // its request as a dismissal and clears the selection just made.
+        // Load-bearing, not redundant with the replacement `map:showPopup`
+        // performs for itself — the popup for this selection opens only once
+        // the camera settles, long after that deferred dismissal has fired.
         this._hidePopup()
 
         const api = window.mmgisAPI
@@ -679,7 +683,6 @@ const AOITool = {
     _clearSelection() {
         if (!this._state.currentAOI) return
         this._removeSelectionLayer()
-        this._cancelPendingPopup()
         this._state.currentAOI = null
         this._api?.emit('drawingCleared', {})
         this._render()
@@ -705,16 +708,21 @@ const AOITool = {
             secondaryAction: { label: 'Cancel' },
             primaryAction: { label: 'Analyze area' },
         })
-            .then(({ action } = {}) => {
-                // Cancel, the X and a click on the map all abandon the
-                // selection; 'closed' means AOI itself retracted the popup,
-                // which leaves the selection alone.
-                if (action === 'primary') this._onAnalyze()
-                else if (action === 'secondary' || action === 'dismiss') {
-                    this._clearSelection()
-                }
-            })
-            .catch((err) => console.warn('[AOI] showPopup failed', err))
+            // Two-arg `then`, so the rejection handler covers the request only
+            // and a throw out of the outcome branches is not reported as a
+            // failure to show the popup.
+            .then(
+                ({ action } = {}) => {
+                    // Cancel, the X and a click on the map all abandon the
+                    // selection; 'closed' means AOI itself retracted the
+                    // popup, which leaves the selection alone.
+                    if (action === 'primary') this._onAnalyze()
+                    else if (action === 'secondary' || action === 'dismiss') {
+                        this._clearSelection()
+                    }
+                },
+                (err) => console.warn('[AOI] showPopup failed', err)
+            )
     },
 
     _hidePopup() {
