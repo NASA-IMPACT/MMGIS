@@ -301,10 +301,9 @@ let Map_ = {
                     engine.disableDrawing()
                     return true
                 }),
-                window.mmgisAPI.provide('map:finishDrawing', () => {
+                window.mmgisAPI.provide('map:finishDrawing', () =>
                     engine.finishDrawing()
-                    return true
-                }),
+                ),
                 window.mmgisAPI.provide('map:isDrawing', () => engine.isDrawing()),
                 // Layer management — engine-agnostic CRUD on vector layers
                 window.mmgisAPI.provide('map:createLayer', (spec) => {

@@ -559,6 +559,55 @@ test.describe('DeckGLAdapter', () => {
         })
     })
 
+    test.describe('drawing', () => {
+        // enableDrawing needs a real terra-draw session against a MapLibre map,
+        // so drive the finish path with the two things it touches: the session
+        // flag and the canvas terra-draw listens on.
+        function makeDrawingAdapter({ finishes }) {
+            const adapter = makeAdapter()
+            const canvas = document.createElement('canvas')
+            adapter._isOverlayMode = true
+            adapter._basemap = { getCanvas: () => canvas }
+            adapter._terraDraw = {}
+            adapter._drawingShape = 'polygon'
+            const keys = []
+            canvas.addEventListener('keyup', (e) => {
+                keys.push(e.key)
+                // terra-draw ends the session synchronously when it commits.
+                if (finishes) adapter._drawingShape = null
+            })
+            return { adapter, keys }
+        }
+
+        test('finishDrawing commits through the element terra-draw listens on', () => {
+            const { adapter, keys } = makeDrawingAdapter({ finishes: true })
+            expect(adapter.finishDrawing()).toBe(true)
+            expect(keys).toEqual(['Enter'])
+        })
+
+        test('finishDrawing leaves an unfinishable drawing in progress', () => {
+            const { adapter } = makeDrawingAdapter({ finishes: false })
+            let cancelled = false
+            adapter.on('drawcancel', () => { cancelled = true })
+            expect(adapter.finishDrawing()).toBe(false)
+            expect(cancelled).toBe(false)
+            expect(adapter.isDrawing()).toBe(true)
+        })
+
+        test('finishDrawing is a no-op with no session', () => {
+            expect(makeAdapter().finishDrawing()).toBe(false)
+        })
+
+        test('disableDrawing emits drawcancel once', () => {
+            const { adapter } = makeDrawingAdapter({ finishes: false })
+            const shapes = []
+            adapter.on('drawcancel', (e) => shapes.push(e.shape))
+            adapter.disableDrawing()
+            adapter.disableDrawing()
+            expect(shapes).toEqual(['polygon'])
+        })
+    })
+
     test.describe('destroy', () => {
         test('clears all layers', () => {
             const adapter = makeAdapter()

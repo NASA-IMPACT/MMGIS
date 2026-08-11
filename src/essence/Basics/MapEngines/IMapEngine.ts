@@ -329,15 +329,12 @@ export interface IMapEngine<
     /**
      * Commit the current in-progress drawing as a Feature.
      *
-     * Emits `drawcomplete` when the current vertices form a valid shape and
-     * `drawcancel` when they do not (e.g. polygon with fewer than 3 vertices).
-     * Either way the session ends; isDrawing() returns false afterward.
-     *
-     * This is what plugin "Confirm" buttons should call. Adapters that auto-
-     * finish on a built-in interaction (e.g. polygon double-click) call this
-     * internally too — there is one finalisation path.
+     * When the current vertices form a valid shape, emits `drawcomplete`, ends
+     * the session and returns true. When they do not (e.g. polygon with fewer
+     * than 3 vertices), the drawing is left in progress and it returns false —
+     * finishing early must not discard the user's work.
      */
-    finishDrawing(): void
+    finishDrawing(): boolean
 
     /**
      * Whether a drawing session is currently active.

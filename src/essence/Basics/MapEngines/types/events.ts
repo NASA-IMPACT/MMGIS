@@ -75,9 +75,9 @@ export interface DrawStartEvent {
 
 /**
  * Payload for the `drawvertex` engine event. Fires for committed vertices only
- * (not mouse-move preview). For rectangle and circle, vertices is a 2-tuple of
- * the click points; consumers wanting the final geometry should use
- * `drawcomplete`.
+ * (not mouse-move preview). Rectangle and circle finish on their second click,
+ * so they report a single vertex — the placed corner or center. Consumers
+ * wanting the final geometry should use `drawcomplete`.
  */
 export interface DrawVertexEvent {
     shape: DrawShape
