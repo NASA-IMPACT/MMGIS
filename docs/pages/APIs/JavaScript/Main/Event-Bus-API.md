@@ -409,6 +409,11 @@ current one, and there is no popup id. The user closes it with the X or a
 click elsewhere on the map; `map:hidePopup` retracts it programmatically, for
 a plugin tearing itself down.
 
+The popup follows its anchor frame by frame while the map pans. A zoom on the
+2D engine is a CSS animation that reports no intermediate position, so the
+card is hidden for the length of the animation and placed again once the zoom
+settles.
+
 | Trigger | Closes the popup | Fires `dismissEvent` |
 |---------|------------------|----------------------|
 | Another `map:showPopup` request | Yes | No |
@@ -422,13 +427,11 @@ a plugin tearing itself down.
 selection on dismiss without that teardown firing when its own next popup
 replaces the current one.
 
-A click elsewhere on the map dismisses immediately. A plugin that both clears
-state on `dismissEvent` and opens a replacement popup later in the same
-gesture — after waiting for `map:moveend`, say — therefore sees the dismissal
-first, and must not treat it as a reason to discard the selection its own
-pending request describes. Showing the replacement in the same task as the
-click (or retracting with `map:hidePopup` before the wait) avoids the
-ordering entirely.
+A click elsewhere on the map dismisses the popup at the end of that click's
+own task, so a replacement shown in the same task replaces it silently and no
+`dismissEvent` is fired. A replacement shown later — after waiting for
+`map:moveend`, say — arrives after the dismissal instead; retracting with
+`map:hidePopup` before the wait removes the ordering.
 
 ### Layer Providers
 

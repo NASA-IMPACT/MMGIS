@@ -392,8 +392,8 @@ let Map_ = {
                 }),
             ]
 
-            // A mission switch re-runs these cleanups, so a popup opened
-            // against the previous mission's map never outlives it.
+            // Re-initialising the map runs these cleanups first, so a popup
+            // opened against a previous mission's map never outlives it.
             _providerCleanups.push(() => MapPopup_.hide())
 
             // Engine event re-emits — translate adapter events onto the bus
