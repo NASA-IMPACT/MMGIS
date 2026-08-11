@@ -65,7 +65,7 @@ else
   mw_info "wrote .env: port=$port db=$dbname"
 fi
 
-# --- database (clone the frozen template DB; before npm install so a missing template DB fails fast) ---
+# --- database (clone the frozen template DB; before npm ci so a missing template DB fails fast) ---
 if mw_db_exists "$dbname"; then
   mw_info "database $dbname already exists (skipping clone)"
 else
@@ -76,10 +76,10 @@ fi
 
 # --- node_modules ---
 if [ -d "$dir/node_modules" ]; then
-  mw_info "node_modules present (skipping npm install)"
+  mw_info "node_modules present (skipping npm ci)"
 else
-  mw_info "running npm install --force (takes a few minutes)..."
-  (cd "$dir" && npm install --force)
+  mw_info "running npm ci (takes a few minutes)..."
+  (cd "$dir" && npm ci)
 fi
 
 # --- configure CMS bundle ---

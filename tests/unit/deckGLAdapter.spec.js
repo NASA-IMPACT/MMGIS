@@ -175,6 +175,51 @@ test.describe('DeckGLAdapter', () => {
             const adapter = makeAdapter()
             expect(adapter.updateLayer('nonexistent', { visible: false })).toBeUndefined()
         })
+
+        test('setLayerOpacity sets opacity on the stored layer', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('opacity-layer'))
+            adapter.setLayerOpacity('opacity-layer', 0.4)
+            const stored = adapter.getLayers().find((l) => l.id === 'opacity-layer')
+            expect(stored.opacity).toBe(0.4)
+        })
+
+        test('setLayerOpacity returns the instance carrying the new opacity', () => {
+            const adapter = makeAdapter()
+            const original = makeLayer('opacity-layer')
+            adapter.addLayer(original)
+            const updated = adapter.setLayerOpacity(original, 0.25)
+            expect(updated.opacity).toBe(0.25)
+            expect(updated).not.toBe(original)
+            expect(original.opacity).toBeUndefined()
+        })
+
+        test('setLayerOpacity accepts 0 rather than treating it as unset', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('opacity-layer'))
+            adapter.setLayerOpacity('opacity-layer', 0)
+            const stored = adapter.getLayers().find((l) => l.id === 'opacity-layer')
+            expect(stored.opacity).toBe(0)
+        })
+
+        test('setLayerOpacity clones an unmounted layer without adding it to the map', () => {
+            const adapter = makeAdapter()
+            const offMap = makeLayer('hidden-layer')
+            const updated = adapter.setLayerOpacity(offMap, 0.6)
+            expect(updated.opacity).toBe(0.6)
+            expect(adapter.hasLayer('hidden-layer')).toBe(false)
+        })
+
+        test('setLayerOpacity on an unknown id returns undefined without throwing', () => {
+            const adapter = makeAdapter()
+            expect(adapter.setLayerOpacity('nonexistent', 0.5)).toBeUndefined()
+        })
+
+        test('setLayerOpacity on a value with nothing to clone returns undefined without throwing', () => {
+            const adapter = makeAdapter()
+            expect(() => adapter.setLayerOpacity(false, 0.5)).not.toThrow()
+            expect(adapter.setLayerOpacity(false, 0.5)).toBeUndefined()
+        })
     })
 
     test.describe('event system', () => {

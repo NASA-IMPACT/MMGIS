@@ -14,7 +14,7 @@
 import F_ from '../Formulae_/Formulae_'
 import L_ from './Layers_'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { resolveTileFormat } from './tileUrlUtils'
+import { cogSourceType, resolveTileFormat } from './tileUrlUtils'
 
 /**
  * Returns the tile level a layer is currently displaying, or null when the
@@ -72,42 +72,36 @@ export function resolveTileLayerSource(layerObj) {
     const tileElevation = getTileLevelElevation(tileLevel)
 
     let url = L_.getUrl(layerObj.type, sourceUrl, layerObj)
-    let splitColonType
+    const splitColonType = cogSourceType(sourceUrl)
 
-    const splitColonLayerUrl = (sourceUrl || '').split(':')
-    if (splitColonLayerUrl[1] != null) {
-        switch (splitColonLayerUrl[0]) {
-            case 'stac-collection':
-                splitColonType = splitColonLayerUrl[0]
-                url = L_.transformStacUrl(sourceUrl, layerObj, 'tile')
-                break
-            case 'COG':
-                splitColonType = splitColonLayerUrl[0]
-                // L_.getUrl resolved the COG file's URL; TiTiler wraps it.
-                // An expression takes precedence over bands, so bands are only
-                // passed along when no expression is configured.
-                url = ServiceUrls.buildTiTilerCogTilesUrl(url, layerObj, {
-                    tileMatrixSet: layerObj.tileMatrixSet,
-                    bands:
-                        !layerObj.cogExpression ||
-                        layerObj.cogExpression.trim() === ''
-                            ? layerObj.cogBands
-                            : null,
-                    resampling: layerObj.cogResampling,
-                })
-                break
-            case 'titiler-url':
-                // A pre-existing TiTiler endpoint: strip the prefix and use as
-                // is. Deliberately not routed through L_.getUrl — that would
-                // wrap cross-origin URLs in the dev corsproxy, which tile
-                // <img> requests neither need nor work through.
-                splitColonType = splitColonLayerUrl[0]
-                url = splitColonLayerUrl.slice(1).join(':')
-                if (!F_.isUrlAbsolute(url)) url = L_.missionPath + url
-                break
-            default:
-                break
-        }
+    switch (splitColonType) {
+        case 'stac-collection':
+            url = L_.transformStacUrl(sourceUrl, layerObj, 'tile')
+            break
+        case 'COG':
+            // L_.getUrl resolved the COG file's URL; TiTiler wraps it.
+            // An expression takes precedence over bands, so bands are only
+            // passed along when no expression is configured.
+            url = ServiceUrls.buildTiTilerCogTilesUrl(url, layerObj, {
+                tileMatrixSet: layerObj.tileMatrixSet,
+                bands:
+                    !layerObj.cogExpression ||
+                    layerObj.cogExpression.trim() === ''
+                        ? layerObj.cogBands
+                        : null,
+                resampling: layerObj.cogResampling,
+            })
+            break
+        case 'titiler-url':
+            // A pre-existing TiTiler endpoint: strip the prefix and use as
+            // is. Deliberately not routed through L_.getUrl — that would
+            // wrap cross-origin URLs in the dev corsproxy, which tile
+            // <img> requests neither need nor work through.
+            url = (sourceUrl || '').split(':').slice(1).join(':')
+            if (!F_.isUrlAbsolute(url)) url = L_.missionPath + url
+            break
+        default:
+            break
     }
 
     // A STAC mosaic is only served as wmts tiles; everything else keeps the
