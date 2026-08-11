@@ -25,7 +25,7 @@
  *
  *   Requests:
  *     - map:createLayer / map:removeLayer
- *     - map:fitBounds
+ *     - map:getBounds / map:fitBounds
  *     - map:enableDrawing / map:disableDrawing / map:finishDrawing
  *     - map:addOverlay / map:removeOverlay
 
@@ -45,6 +45,7 @@ import {
     parseShapefileBuffer,
     featureCentroid,
     featureBounds,
+    selectionFitBounds,
 } from './aoiHelpers'
 import { loadBoundaries } from './aoiBoundaryLoader'
 
@@ -571,31 +572,36 @@ const AOITool = {
         }
 
         const bbox = featureBounds(feature)
-        if (bbox && api?.on && api?.off) {
-            // Defer the tooltip until the fitBounds animation settles so it
-            // mounts at the final centroid pixel instead of flickering through
-            // intermediate positions during the camera move.
-            let fallback
-            const oneShot = () => {
-                api.off('map:moveend', oneShot)
-                clearTimeout(fallback)
-                showTooltip()
-            }
-            api.on('map:moveend', oneShot)
-            // Belt-and-braces: if no moveend fires (e.g. already at target view),
-            // show the tooltip after a short timeout anyway.
-            fallback = setTimeout(oneShot, 1500)
+        if (bbox && api?.request && api?.on && api?.off) {
+            // Leave the camera alone unless the selection extends beyond the
+            // current view; then fit its extent minimally (selectionFitBounds).
+            api.request('map:getBounds')
+                .catch(() => null)
+                .then((view) => {
+                    const fit = selectionFitBounds(bbox, view)
+                    if (!fit) {
+                        showTooltip()
+                        return
+                    }
+                    // Defer the tooltip until the fitBounds animation settles so it
+                    // mounts at the final centroid pixel instead of flickering through
+                    // intermediate positions during the camera move.
+                    let fallback
+                    const oneShot = () => {
+                        api.off('map:moveend', oneShot)
+                        clearTimeout(fallback)
+                        showTooltip()
+                    }
+                    api.on('map:moveend', oneShot)
+                    // Belt-and-braces: if no moveend fires (e.g. already at target view),
+                    // show the tooltip after a short timeout anyway.
+                    fallback = setTimeout(oneShot, 1500)
 
-            api.request('map:fitBounds', {
-                bounds: [
-                    { lat: bbox[1], lng: bbox[0] },
-                    { lat: bbox[3], lng: bbox[2] },
-                ],
-                options: { padding: 120, maxZoom: 5 },
-            }).catch((err) => {
-                console.warn('[AOI] fitBounds failed', err)
-                oneShot()
-            })
+                    api.request('map:fitBounds', fit).catch((err) => {
+                        console.warn('[AOI] fitBounds failed', err)
+                        oneShot()
+                    })
+                })
         } else {
             showTooltip()
         }

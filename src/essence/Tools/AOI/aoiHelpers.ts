@@ -253,6 +253,47 @@ export function featureBounds(f: Feature): [number, number, number, number] | nu
     return Number.isFinite(w) ? [w, s, e, n] : null
 }
 
+export interface ViewBounds {
+    southWest: { lat: number; lng: number }
+    northEast: { lat: number; lng: number }
+}
+
+/**
+ * Decide whether committing a selection needs a camera move. Returns null —
+ * leave the camera alone — when the selection's bbox already fits in the
+ * current view, or when its extent is unframeable: zero-area, or a naive
+ * antimeridian sweep (e.g. Alaska's MultiPolygon spans ~360°) where doing
+ * nothing beats jumping to a near-world view. Otherwise returns a
+ * `map:fitBounds` payload that fits the selection minimally: small padding,
+ * and a maxZoom ceiling high enough to never bind on ordinary selections.
+ */
+export function selectionFitBounds(
+    bbox: [number, number, number, number],
+    view: ViewBounds | null | undefined
+): {
+    bounds: [{ lat: number; lng: number }, { lat: number; lng: number }]
+    options: { padding: number; maxZoom: number }
+} | null {
+    const [w, s, e, n] = bbox
+    if (e - w <= 0 || n - s <= 0 || e - w >= 180) return null
+    if (
+        view &&
+        w >= view.southWest.lng &&
+        e <= view.northEast.lng &&
+        s >= view.southWest.lat &&
+        n <= view.northEast.lat
+    ) {
+        return null
+    }
+    return {
+        bounds: [
+            { lat: s, lng: w },
+            { lat: n, lng: e },
+        ],
+        options: { padding: 40, maxZoom: 18 },
+    }
+}
+
 function isPolygonal(f: Feature | undefined | null): f is Feature {
     return (
         !!f &&
