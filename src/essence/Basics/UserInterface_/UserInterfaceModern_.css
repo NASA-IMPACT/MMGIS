@@ -128,6 +128,20 @@
     background-color: var(--theme-color-white, #ffffff);
 }
 
+/* Cards fill the panel where they stack vertically. Top/bottom regions lay
+   them out in a row, so there they keep their intrinsic width. */
+.ui-region-left .ui-tool-card,
+.ui-region-right .ui-tool-card,
+.ui-panel-body-tabbed .ui-tool-card {
+    width: 100%;
+}
+
+/* A lone tool in a horizontal region still fills it. */
+.ui-region-top .ui-panel-body > .ui-tool-card:only-child,
+.ui-region-bottom .ui-panel-body > .ui-tool-card:only-child {
+    width: 100%;
+}
+
 /* Stacked Tool Cards (default clickable cards in panel body) */
 .ui-tool-card-stacked {
     display: flex;
