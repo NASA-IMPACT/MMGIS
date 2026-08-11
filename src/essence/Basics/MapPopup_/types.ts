@@ -1,15 +1,15 @@
 /**
  * Payload types for the `map:showPopup` event bus provider.
  *
- * Every field is JSON-serializable so a request survives a `postMessage`
- * boundary unchanged — no functions, no DOM nodes, no component code.
+ * Every field of both the request and its result is JSON-serializable, so they
+ * survive a `postMessage` boundary unchanged — no functions, no DOM nodes, no
+ * component code. The popup's outcome travels back on the request's own
+ * promise, so nothing about a popup is broadcast on the bus.
  */
 
 export interface MapPopupAction {
     /** Button text. Rendered as text, never HTML. */
     label: string
-    /** Bus event name broadcast (with no payload) when the button is clicked. */
-    event: string
 }
 
 export interface MapPopupRequest {
@@ -21,6 +21,15 @@ export interface MapPopupRequest {
     primaryAction?: MapPopupAction
     /** Outlined button, rendered first in the actions row. */
     secondaryAction?: MapPopupAction
-    /** Bus event broadcast when the user dismisses via the X or a click away. */
-    dismissEvent?: string
+}
+
+export interface MapPopupResult {
+    /**
+     * How the popup closed:
+     * - `primary` / `secondary` — the matching button was pressed.
+     * - `dismiss` — the user dismissed it with the X or a click on the map.
+     * - `closed` — it went away without the user acting on it: a later request
+     *   replaced it, `map:hidePopup` retracted it, or the map was torn down.
+     */
+    action: 'primary' | 'secondary' | 'dismiss' | 'closed'
 }

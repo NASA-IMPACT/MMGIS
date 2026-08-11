@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify'
 
-import { MapPopupAction, MapPopupRequest } from './types'
+import { MapPopupAction, MapPopupRequest, MapPopupResult } from './types'
 import type { IMapEngine } from '../MapEngines/IMapEngine'
 
 import './MapPopup.css'
@@ -16,7 +16,8 @@ interface OpenPopup {
     card: HTMLElement
     engine: IMapEngine
     latlng: { lat: number; lng: number }
-    dismissEvent?: string
+    /** Settles this popup's request promise with how the popup closed. */
+    settle: (result: MapPopupResult) => void
     offMapClick: () => void
     /** Pending subscription to `map:click`, see `show`. */
     subscribeTimer: ReturnType<typeof setTimeout> | null
@@ -29,8 +30,8 @@ interface PopupCardOptions {
     html: string
     primaryAction?: MapPopupAction
     secondaryAction?: MapPopupAction
-    /** Called with the clicked action's event name. */
-    onAction: (event: string) => void
+    /** Called with the slot of the clicked action button. */
+    onAction: (action: 'primary' | 'secondary') => void
     /** Called when the close control is pressed. */
     onClose: () => void
 }
@@ -44,20 +45,18 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 /**
- * Accept an action only when both of its strings are usable, so a malformed
- * request cannot render a blank button that broadcasts `undefined`.
+ * Accept an action only when its label is usable, so a malformed request
+ * cannot render a blank button.
  */
 function normalizeAction(
     action: MapPopupAction | undefined,
     field: string
 ): MapPopupAction | undefined {
     if (action == null) return undefined
-    const { label, event } = action
-    if (isNonEmptyString(label) && isNonEmptyString(event)) {
-        return { label, event }
-    }
+    const { label } = action
+    if (isNonEmptyString(label)) return { label }
     console.warn(
-        `[MapPopup] Ignoring ${field}: label and event must be non-empty strings.`
+        `[MapPopup] Ignoring ${field}: label must be a non-empty string.`
     )
     return undefined
 }
@@ -65,13 +64,13 @@ function normalizeAction(
 function buildActionButton(
     action: MapPopupAction,
     variant: 'primary' | 'secondary',
-    onAction: (event: string) => void
+    onAction: (action: 'primary' | 'secondary') => void
 ): HTMLButtonElement {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = `mmgis-map-popup__button mmgis-map-popup__button--${variant}`
     button.textContent = action.label
-    button.addEventListener('click', () => onAction(action.event))
+    button.addEventListener('click', () => onAction(variant))
     return button
 }
 
@@ -145,9 +144,14 @@ const MapPopup_ = {
      *
      * @param request Serializable popup description from the event bus.
      * @param engine The active map engine, used to project the anchor.
-     * @returns `true` when the popup was shown, `false` on an invalid request.
+     * @returns A promise that stays pending for as long as the popup is open
+     * and resolves with how it closed. It rejects when the request is invalid
+     * or the popup could not be mounted, in which case nothing is shown.
      */
-    show(request: MapPopupRequest, engine: IMapEngine): boolean {
+    show(
+        request: MapPopupRequest,
+        engine: IMapEngine
+    ): Promise<MapPopupResult> {
         if (
             !request ||
             typeof request.html !== 'string' ||
@@ -155,13 +159,21 @@ const MapPopup_ = {
             !isFiniteNumber(request.latlng.lat) ||
             !isFiniteNumber(request.latlng.lng)
         ) {
-            console.warn(
-                '[MapPopup] Ignoring request: html must be a string and latlng must hold finite lat/lng numbers.'
+            return Promise.reject(
+                new Error(
+                    '[MapPopup] Invalid request: html must be a string and latlng must hold finite lat/lng numbers.'
+                )
             )
-            return false
         }
 
         this.hide()
+
+        let settle: (result: MapPopupResult) => void
+        let fail: (error: Error) => void
+        const outcome = new Promise<MapPopupResult>((resolve, reject) => {
+            settle = resolve
+            fail = reject
+        })
 
         const popup: OpenPopup = {
             card: buildPopupCard({
@@ -174,19 +186,15 @@ const MapPopup_ = {
                     request.secondaryAction,
                     'secondaryAction'
                 ),
-                onAction: (event: string) => {
-                    // Close first so a handler that opens its own popup in
-                    // response keeps it. A button press never dismisses.
-                    this.hide()
-                    window.mmgisAPI.emit(event)
-                },
-                onClose: () => this.hide({ fireDismiss: true }),
+                // The popup closes before its request is answered, so a caller
+                // that opens its own popup in response keeps it. A button
+                // press never counts as a dismissal.
+                onAction: (action) => this.hide({ action }),
+                onClose: () => this.hide({ action: 'dismiss' }),
             }),
             engine,
             latlng: { lat: request.latlng.lat, lng: request.latlng.lng },
-            dismissEvent: isNonEmptyString(request.dismissEvent)
-                ? request.dismissEvent
-                : undefined,
+            settle,
             offMapClick: () => {},
             subscribeTimer: null,
             cardResize: null,
@@ -216,29 +224,35 @@ const MapPopup_ = {
                     // fires only while this popup is still the open one.
                     setTimeout(() => {
                         if (this._open === popup) {
-                            this.hide({ fireDismiss: true })
+                            this.hide({ action: 'dismiss' })
                         }
                     }, 0)
                 })
             }, 0)
         } catch (err) {
-            console.warn('[MapPopup] Could not show the popup:', err)
+            // Reject before unwinding, so the request is answered with the
+            // failure rather than with the `closed` of its own teardown.
+            fail(new Error(`[MapPopup] Could not show the popup: ${err}`))
             this.hide()
-            return false
+            return outcome
         }
 
         this._reposition()
-        return true
+        return outcome
     },
 
     /**
-     * Close the current popup, if any.
+     * Close the current popup, if any, and answer the request that opened it.
      *
-     * @param fireDismiss Broadcast the request's `dismissEvent`. Set for user
-     * dismissals (the X and a click elsewhere on the map) and left off for
-     * replacement, button presses, and teardown.
+     * @param action How the popup closed. Pass `'dismiss'` for a user
+     * dismissal (the X and a click elsewhere on the map) and `'primary'` or
+     * `'secondary'` for a button press; the default `'closed'` covers
+     * replacement, `map:hidePopup`, and teardown, where the popup goes away
+     * without the user acting on it.
      */
-    hide({ fireDismiss = false }: { fireDismiss?: boolean } = {}): void {
+    hide({
+        action = 'closed',
+    }: { action?: MapPopupResult['action'] } = {}): void {
         const open = this._open
         if (!open) return
         this._open = null
@@ -258,9 +272,7 @@ const MapPopup_ = {
         window.removeEventListener('resize', reposition)
         open.offMapClick()
 
-        if (fireDismiss && open.dismissEvent) {
-            window.mmgisAPI.emit(open.dismissEvent)
-        }
+        open.settle({ action })
     },
 
     /**

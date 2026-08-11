@@ -325,12 +325,14 @@ let Map_ = {
                     engine.removeOverlay(id)
                     return true
                 }),
-                // Map-anchored popup — a single, core-owned slot
+                // Map-anchored popup — a single, core-owned slot. The handler's
+                // promise is the request's, so it stays pending while the popup
+                // is open and answers the caller with how it closed.
                 window.mmgisAPI.provide('map:showPopup', (request) =>
                     MapPopup_.show(request, engine)
                 ),
-                // Retracting a popup is programmatic, so it stays silent: the
-                // plugin asking for it already knows the popup is gone.
+                // Retracting a popup resolves its own request with
+                // `{ action: 'closed' }`, so whoever opened it learns it is gone.
                 window.mmgisAPI.provide('map:hidePopup', () => {
                     MapPopup_.hide()
                     return true
