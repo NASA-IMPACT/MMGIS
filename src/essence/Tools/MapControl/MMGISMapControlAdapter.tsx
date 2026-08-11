@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { MapControlBar } from './lib'
 import type { BasemapStyle } from './lib'
-// ShareExport's portable share control — reused verbatim so the button looks
+// The shared share-menu control (_shared/share) — same look
 // and behaves identically wherever it's hosted. Importing the lib barrel also
 // loads its (host-class-scoped) styles.
-import { ShareMenu } from '../ShareExport/lib'
+import { ShareMenu } from '../_shared/share'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
