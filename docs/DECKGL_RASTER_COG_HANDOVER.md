@@ -44,7 +44,8 @@ To run locally (see `.claude/skills/mmgis-deployment`): `bash .claude/skills/mmg
 
 ## Commit sequence (plan for the cleanup PR)
 
-### 1. `Render colormap legend swatch from js-colormaps (drop TiTiler /colorMaps fetch)`
+### 1. `Render colormap legend swatch from js-colormaps (drop TiTiler /colorMaps fetch)` — now tracked in #296
+> Filed as **#296** on 2026-08-11 with a second, related defect found in the same smoke test: a true-colour (multi-band) layer advertises a colormap ramp and editable colormap/min-max controls that its render path ignores entirely. Both are "the legend misrepresents what a client-side COG layer does"; fix them together there rather than here.
 - `src/essence/Tools/LayerManager/lib/hooks/useColormapGradient.ts:46` fetches `${baseUrl}/colorMaps/${name}` from TiTiler; `useAvailableColormaps.ts:46` fetches the list. Swatch URL built in `src/essence/Basics/ServiceUrls/ServiceUrls.js:226`.
 - Generate the gradient locally with `buildColormapLUT` (`src/essence/Basics/MapEngines/Adapters/colormapLUT.ts`) / `evaluate_cmap`; `configure/src/core/Maker.js` already draws colormap previews from `colormapData`, reuse that approach.
 - **Verify:** TBD — load a `deckRaster` mission, DevTools Network filtered to the TiTiler host shows **zero** requests (no `/colorMaps`); legend swatch still matches the render.
