@@ -65,7 +65,8 @@ var mmgisAPI_ = {
                 L_.layers.data[layerObj.uuid || layerObj.name] != null
             ) {
                 reject(
-                    `Layer uuid/name already in use: '${layerObj.uuid || layerObj.name
+                    `Layer uuid/name already in use: '${
+                        layerObj.uuid || layerObj.name
                     }'`
                 )
             }
@@ -584,13 +585,13 @@ var mmgisAPI_ = {
     },
     _initCoreCommandDispatcher: function () {
         const handlers = {
-            'core:showPlugin': ({ pluginId }) => mmgisAPI_.showPlugin(pluginId),
-            'core:hidePlugin': ({ pluginId }) => mmgisAPI_.hidePlugin(pluginId),
-            'core:loadPlugin': ({ pluginId }) => mmgisAPI_.loadPlugin(pluginId),
+            'core:showPlugin':   ({ pluginId }) => mmgisAPI_.showPlugin(pluginId),
+            'core:hidePlugin':   ({ pluginId }) => mmgisAPI_.hidePlugin(pluginId),
+            'core:loadPlugin':   ({ pluginId }) => mmgisAPI_.loadPlugin(pluginId),
             'core:unloadPlugin': ({ pluginId }) => mmgisAPI_.unloadPlugin(pluginId),
-            'core:showPanel': ({ panelId }) => mmgisAPI_.showPanel(panelId),
-            'core:hidePanel': ({ panelId }) => mmgisAPI_.hidePanel(panelId),
-            'core:togglePanel': ({ panelId }) => mmgisAPI_.togglePanel(panelId),
+            'core:showPanel':    ({ panelId })  => mmgisAPI_.showPanel(panelId),
+            'core:hidePanel':    ({ panelId })  => mmgisAPI_.hidePanel(panelId),
+            'core:togglePanel':  ({ panelId })  => mmgisAPI_.togglePanel(panelId),
         }
         Object.entries(handlers).forEach(([ev, fn]) => events.on(ev, fn))
         return () => Object.entries(handlers).forEach(([ev, fn]) => events.off(ev, fn))

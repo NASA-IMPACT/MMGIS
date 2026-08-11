@@ -1222,7 +1222,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         } catch {
             throw new Error(
                 'DeckGLAdapter: mapbox-gl is not installed. ' +
-                "Run `npm install mapbox-gl` or use provider: 'maplibre' instead."
+                    "Run `npm install mapbox-gl` or use provider: 'maplibre' instead."
             )
         }
 
