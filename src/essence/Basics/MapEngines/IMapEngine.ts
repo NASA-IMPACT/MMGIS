@@ -359,12 +359,17 @@ export interface IMapEngine<
      *
      * Calling `addOverlay` with an `id` that already exists removes the
      * prior overlay first.
+     *
+     * @deprecated Superseded by the `map:showPopup` provider, whose request is
+     * serializable and whose card paints above the panel layer.
      */
     addOverlay(options: OverlayOptions): void
 
     /**
      * Remove an overlay by id. Runs the cleanup returned by `mount` and
      * removes the DOM node from the container. No-op if the id is unknown.
+     *
+     * @deprecated Superseded by the `map:hidePopup` provider.
      */
     removeOverlay(id: string): void
 }

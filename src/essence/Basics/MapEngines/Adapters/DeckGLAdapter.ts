@@ -532,6 +532,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Anchored HTML overlay. deck.gl renders to canvas and has no native
      * overlay system, so we own the DOM node directly: append to the
      * container, project lat/lng -> pixel on every view change, reposition.
+     *
+     * @deprecated Superseded by the `map:showPopup` provider.
      */
     addOverlay(options: OverlayOptions): void {
         if (!options?.id) {

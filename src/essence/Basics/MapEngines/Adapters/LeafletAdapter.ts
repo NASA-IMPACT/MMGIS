@@ -1158,6 +1158,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * lat/lng -> pixel on every view change, reposition. Avoids
      * L.marker + L.divIcon quirks (0×0 hit box, interactive-flag CSS
      * surprises) that diverged from the deck.gl behaviour.
+     *
+     * @deprecated Superseded by the `map:showPopup` provider.
      */
     addOverlay(options: OverlayOptions): void {
         if (!options?.id) {
