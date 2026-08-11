@@ -14,7 +14,7 @@ const { default: L_ } = await import(
 /**
  * The `layers:refresh` provider re-renders a raster tile layer after a COG
  * setting changes (LayerManager's colormap and rescale controls), down either
- * the Leaflet or the engine-owned path.
+ * the Leaflet or the facade-managed path.
  */
 
 const TITILER_URL =
@@ -86,7 +86,7 @@ describe('layers:refresh provider', () => {
     })
 
     // All three canonicalize to `tile`. What routes a layer down the
-    // engine-owned branch is the shape of its registry entry, not this type.
+    // facade-managed branch is the shape of its registry entry, not this type.
     test.each([['TileLayer'], ['BitmapLayer'], ['tile']])(
         'compiles a colormap override into a new URL for a %s layer',
         async (type) => {
@@ -166,7 +166,7 @@ describe('layers:refresh provider', () => {
     })
 
     // The provider hands the overrides to Leaflet's refresh() untouched — the
-    // same `currentCogColormap` key the engine-owned branch compiles itself.
+    // same `currentCogColormap` key the facade-managed branch compiles itself.
     test('a Leaflet tile layer still takes its own refresh()', async () => {
         const layer = makeCogLayer('tile')
         const refresh = vi.fn()
@@ -184,7 +184,7 @@ describe('layers:refresh provider', () => {
         expect(updateLayer).not.toHaveBeenCalled()
     })
 
-    test('reports failure for an engine-owned layer that is not a raster tile', async () => {
+    test('reports failure for a facade-managed layer that is not a raster tile', async () => {
         const layer = { name: 'Roads', type: 'MVTLayer', url: 'x/{z}/{x}/{y}.mvt' }
         register(layer, makeDeckLayer(layer.name, 'stale'))
 
