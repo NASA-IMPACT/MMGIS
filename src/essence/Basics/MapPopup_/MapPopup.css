@@ -19,35 +19,44 @@
     width: max-content;
     min-width: 220px;
     max-width: 320px;
-    padding: var(--theme-spacing-2, 16px);
+    padding: var(--theme-spacing-2, 1rem);
     border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     border-radius: var(--theme-radius-0, 0);
     background: var(--theme-color-white, #ffffff);
     color: var(--theme-color-ink, #1b1b1b);
-    font-family: var(--theme-font-ui, sans-serif);
-    font-size: var(--theme-font-size-sm, 14px);
+    font-family: var(
+        --theme-font-ui,
+        'Public Sans',
+        system-ui,
+        -apple-system,
+        sans-serif
+    );
+    font-size: var(--theme-font-size-sm, 0.875rem);
     box-shadow: 0 25px 50px -12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
 }
 
 .mmgis-map-popup__content {
-    padding-right: var(--theme-spacing-3, 24px);
+    padding-right: var(--theme-spacing-3, 1.5rem);
+    /* A single unbreakable token (a URL, a long feature id) would otherwise
+       paint outside the card's border. */
+    overflow-wrap: anywhere;
 }
 
 .mmgis-map-popup__close {
     position: absolute;
-    top: var(--theme-spacing-1, 8px);
-    right: var(--theme-spacing-1, 8px);
+    top: var(--theme-spacing-1, 0.5rem);
+    right: var(--theme-spacing-1, 0.5rem);
     display: flex;
     align-items: center;
     justify-content: center;
     width: 24px;
     height: 24px;
-    padding: var(--theme-spacing-05, 4px);
+    padding: var(--theme-spacing-05, 0.25rem);
     border: 0;
     background: none;
     color: var(--theme-color-base, #71767a);
     font-family: inherit;
-    font-size: var(--theme-font-size-md, 16px);
+    font-size: var(--theme-font-size-md, 1rem);
     line-height: 1;
     cursor: pointer;
 }
@@ -60,17 +69,19 @@
 .mmgis-map-popup__actions {
     display: flex;
     justify-content: flex-end;
-    gap: var(--theme-spacing-1, 8px);
-    margin-top: var(--theme-spacing-105, 12px);
+    gap: var(--theme-spacing-1, 0.5rem);
+    margin-top: var(--theme-spacing-105, 0.75rem);
 }
 
+/* Basis 0 so two buttons come out equal width rather than sized by their own
+   labels. */
 .mmgis-map-popup__button {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     height: 32px;
-    padding: 0 var(--theme-spacing-105, 12px);
+    padding: 0 var(--theme-spacing-105, 0.75rem);
     border-radius: var(--theme-radius-0, 0);
     font-family: inherit;
-    font-size: var(--theme-font-size-sm, 14px);
+    font-size: var(--theme-font-size-sm, 0.875rem);
     font-weight: var(--theme-font-weight-normal, 400);
     cursor: pointer;
     transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
@@ -83,7 +94,6 @@
 
 .mmgis-map-popup__button:focus-visible {
     outline: 3px solid var(--theme-color-primary-light, #73b3e7);
-    outline-offset: 0;
 }
 
 .mmgis-map-popup__button--primary {
