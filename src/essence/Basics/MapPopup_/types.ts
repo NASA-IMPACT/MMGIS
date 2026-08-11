@@ -21,6 +21,6 @@ export interface MapPopupRequest {
     primaryAction?: MapPopupAction
     /** Outlined button, rendered first in the actions row. */
     secondaryAction?: MapPopupAction
-    /** Bus event broadcast when the user dismisses via X, click-away, or Escape. */
+    /** Bus event broadcast when the user dismisses via the X or a click away. */
     dismissEvent?: string
 }

@@ -2,20 +2,26 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import MapPopup_ from '../../src/essence/Basics/MapPopup_/MapPopup_'
 import type { MapPopupRequest } from '../../src/essence/Basics/MapPopup_/types'
 
-/** Records what the service broadcasts and lets a spec fire bus events back. */
+/**
+ * Records what the service broadcasts and lets a spec fire bus events back.
+ * Handlers are snapshotted before dispatch, exactly as mitt does, so a
+ * listener unsubscribed mid-emit still receives that emit.
+ */
 function makeBus() {
     const listeners = new Map<string, Set<(payload?: unknown) => void>>()
     const emitted: string[] = []
+    const dispatch = (event: string) => {
+        const handlers = listeners.get(event)
+        if (handlers) Array.from(handlers).forEach((handler) => handler())
+    }
     return {
         emitted,
         listenerCount: (event: string) => listeners.get(event)?.size ?? 0,
-        fire: (event: string) => {
-            listeners.get(event)?.forEach((handler) => handler())
-        },
+        fire: dispatch,
         api: {
             emit: (event: string) => {
                 emitted.push(event)
-                listeners.get(event)?.forEach((handler) => handler())
+                dispatch(event)
             },
             on: (event: string, handler: (payload?: unknown) => void) => {
                 if (!listeners.has(event)) listeners.set(event, new Set())
@@ -27,19 +33,26 @@ function makeBus() {
 }
 
 /**
- * Stand-in for the active map engine. jsdom gives every element a zero rect,
- * so the container rect is stubbed to a known position.
+ * Stand-in for the active map engine. jsdom lays nothing out, so the container
+ * rect is stubbed to a known position and size.
  */
 function makeEngine({
     point = { x: 300, y: 200 },
     containerTop = 50,
     containerLeft = 100,
+    containerWidth = 800,
+    containerHeight = 600,
     offThrows = false,
 } = {}) {
     const listeners = new Map<string, Set<() => void>>()
     const container = document.createElement('div')
     container.getBoundingClientRect = () =>
-        ({ top: containerTop, left: containerLeft }) as DOMRect
+        ({
+            top: containerTop,
+            left: containerLeft,
+            width: containerWidth,
+            height: containerHeight,
+        }) as DOMRect
     let projected = point
     return {
         listenerCount: (event: string) => listeners.get(event)?.size ?? 0,
@@ -83,6 +96,11 @@ function show(
 }
 
 const popups = () => document.querySelectorAll('.mmgis-map-popup')
+const card = () => document.querySelector<HTMLElement>('.mmgis-map-popup')!
+/** Give the card a real size; jsdom reports every element as 0x0. */
+const sizeCard = (width: number, height: number) => {
+    card().getBoundingClientRect = () => ({ width, height }) as DOMRect
+}
 const nextTick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('MapPopup_', () => {
@@ -129,16 +147,15 @@ describe('MapPopup_', () => {
         expect(popups()).toHaveLength(0)
     })
 
-    it('does not fire the dismiss event when a button closes the popup', () => {
+    it('drops an action whose label or event is unusable', () => {
         show(bus, engine, {
-            primaryAction: { label: 'Analyze', event: 'plugin:test:analyze' },
+            primaryAction: { label: 'Analyze' } as never,
+            secondaryAction: { label: '', event: 'plugin:test:cancel' },
         })
 
-        document
-            .querySelector('.mmgis-map-popup__button')!
-            .dispatchEvent(new MouseEvent('click'))
-
-        expect(bus.emitted).not.toContain('plugin:test:dismissed')
+        expect(
+            document.querySelectorAll('.mmgis-map-popup__button')
+        ).toHaveLength(0)
     })
 
     it('fires the dismiss event and closes when the X is pressed', () => {
@@ -152,17 +169,9 @@ describe('MapPopup_', () => {
         expect(popups()).toHaveLength(0)
     })
 
-    it('fires the dismiss event and closes on Escape', () => {
+    it('dismisses on a map click once the opening gesture has passed', async () => {
         show(bus, engine)
-
-        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-
-        expect(bus.emitted).toEqual(['plugin:test:dismissed'])
-        expect(popups()).toHaveLength(0)
-    })
-
-    it('dismisses on a map click once the opening click has passed', async () => {
-        show(bus, engine)
+        await nextTick()
 
         bus.fire('map:click')
         expect(popups()).toHaveLength(1)
@@ -172,13 +181,51 @@ describe('MapPopup_', () => {
         expect(popups()).toHaveLength(0)
     })
 
-    it('keeps a popup opened by the same map click that would dismiss it', async () => {
+    it('ignores the map click that deck.gl emits after the feature click that opened the popup', async () => {
+        // deck.gl calls its feature-click handler and then emits the click, so
+        // the popup is already listening when its own opening click arrives.
         show(bus, engine)
         bus.fire('map:click')
-        show(bus, engine)
 
         await nextTick()
         expect(popups()).toHaveLength(1)
+        expect(bus.emitted).toEqual([])
+    })
+
+    it('keeps a popup opened later in the same gesture as the dismissing click', async () => {
+        // Leaflet emits map:click before map:featureClick, so a plugin's
+        // replacement popup is shown after the dismissal was scheduled.
+        show(bus, engine, { html: '<p>First</p>' })
+        await nextTick()
+
+        bus.fire('map:click')
+        show(bus, engine, { html: '<p>Second</p>' })
+
+        await nextTick()
+        expect(popups()).toHaveLength(1)
+        expect(card().textContent).toContain('Second')
+        expect(bus.emitted).toEqual([])
+    })
+
+    it('never lets a replaced popup dismiss its replacement', async () => {
+        // A plugin that opens popups from map:click is subscribed before the
+        // open popup is, so its replacement is mounted while the bus is still
+        // dispatching to the replaced popup's own listener.
+        window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
+        bus.api.on('map:click', () => {
+            MapPopup_.show(
+                request({ html: '<p>Second</p>' }),
+                engine.engine as never
+            )
+        })
+        show(bus, engine, { html: '<p>First</p>' })
+        await nextTick()
+
+        bus.fire('map:click')
+
+        await nextTick()
+        expect(popups()).toHaveLength(1)
+        expect(card().textContent).toContain('Second')
         expect(bus.emitted).toEqual([])
     })
 
@@ -187,9 +234,16 @@ describe('MapPopup_', () => {
         show(bus, engine, { html: '<p>Second</p>' })
 
         expect(popups()).toHaveLength(1)
-        expect(document.querySelector('.mmgis-map-popup')!.textContent).toContain(
-            'Second'
-        )
+        expect(card().textContent).toContain('Second')
+        expect(bus.emitted).toEqual([])
+    })
+
+    it('closes without firing the dismiss event when hidden programmatically', () => {
+        show(bus, engine)
+
+        MapPopup_.hide()
+
+        expect(popups()).toHaveLength(0)
         expect(bus.emitted).toEqual([])
     })
 
@@ -202,15 +256,56 @@ describe('MapPopup_', () => {
         expect(popups()).toHaveLength(0)
     })
 
-    it('repositions the host on every engine move', () => {
+    it('repositions the card on every engine move', () => {
         show(bus, engine)
-        const host = document.querySelector<HTMLElement>('.mmgis-map-popup-host')!
-        expect(host.style.transform).toBe('translate(400px, 250px)')
+        sizeCard(200, 100)
+        engine.fire('move')
+        expect(card().style.transform).toBe('translate(300px, 138px)')
 
-        engine.setPoint({ x: 10, y: 20 })
+        engine.setPoint({ x: 10, y: 220 })
         engine.fire('move')
 
-        expect(host.style.transform).toBe('translate(110px, 70px)')
+        expect(card().style.transform).toBe('translate(10px, 158px)')
+    })
+
+    it('flips below the anchor when the card would clip the viewport top', () => {
+        engine = makeEngine({ point: { x: 300, y: 50 }, containerTop: 0 })
+        show(bus, engine)
+        sizeCard(200, 100)
+
+        engine.fire('move')
+
+        // 50 - 100 - 12 clips the top, so the card sits 12px below the anchor.
+        expect(card().style.transform).toBe('translate(300px, 62px)')
+    })
+
+    it('clamps the card to the viewport when its anchor sits near an edge', () => {
+        engine = makeEngine({ point: { x: 5, y: 200 }, containerLeft: 0 })
+        show(bus, engine)
+        sizeCard(200, 100)
+
+        engine.fire('move')
+
+        // Centering on x=5 would push the card off screen, so it stops at the
+        // 8px margin.
+        expect(card().style.transform).toBe('translate(8px, 138px)')
+    })
+
+    it('hides the card while its anchor is outside the map container', () => {
+        show(bus, engine)
+        expect(card().style.visibility).toBe('visible')
+
+        engine.setPoint({ x: -60, y: 200 })
+        engine.fire('move')
+        expect(card().style.visibility).toBe('hidden')
+
+        engine.setPoint({ x: 300, y: 900 })
+        engine.fire('move')
+        expect(card().style.visibility).toBe('hidden')
+
+        engine.setPoint({ x: 300, y: 200 })
+        engine.fire('move')
+        expect(card().style.visibility).toBe('visible')
     })
 
     it('stays hidden until the anchor can be projected', () => {
@@ -218,33 +313,22 @@ describe('MapPopup_', () => {
             throw new Error('the engine has no view yet')
         }
         show(bus, engine)
-        const host = document.querySelector<HTMLElement>('.mmgis-map-popup-host')!
-        expect(host.style.visibility).toBe('hidden')
+        expect(card().style.visibility).toBe('hidden')
 
         engine.engine.latLngToContainerPoint = () => ({ x: 300, y: 200 })
         engine.fire('move')
 
-        expect(host.style.visibility).toBe('visible')
-    })
-
-    it('flips below the anchor when the card would clip the viewport top', () => {
-        engine = makeEngine({ point: { x: 300, y: 5 }, containerTop: 0 })
-        show(bus, engine)
-
-        const host = document.querySelector('.mmgis-map-popup-host')!
-        expect(host.classList.contains('mmgis-map-popup-host--below')).toBe(true)
+        expect(card().style.visibility).toBe('visible')
     })
 
     it('unsubscribes from the engine and the bus when hidden', () => {
         show(bus, engine)
         expect(engine.listenerCount('move')).toBe(1)
-        expect(engine.listenerCount('moveend')).toBe(1)
         expect(bus.listenerCount('map:click')).toBe(1)
 
         MapPopup_.hide()
 
         expect(engine.listenerCount('move')).toBe(0)
-        expect(engine.listenerCount('moveend')).toBe(0)
         expect(bus.listenerCount('map:click')).toBe(0)
     })
 
