@@ -700,6 +700,31 @@ test.describe('DeckGLAdapter', () => {
         })
     })
 
+    test.describe('camera events', () => {
+        test('basemap movement syncs the full view state and emits move', () => {
+            const adapter = makeAdapter()
+            adapter._basemap = {
+                getCenter: () => ({ lat: 12, lng: 34 }),
+                getZoom: () => 8,
+                getBearing: () => 45,
+                getPitch: () => 30,
+            }
+            const moves = []
+            adapter.on('move', (state) => moves.push(state))
+
+            adapter._onBasemapMove()
+
+            expect(adapter._viewState).toEqual({
+                longitude: 34,
+                latitude: 12,
+                zoom: 8,
+                bearing: 45,
+                pitch: 30,
+            })
+            expect(moves).toEqual([adapter._viewState])
+        })
+    })
+
     test.describe('destroy', () => {
         test('clears all layers', () => {
             const adapter = makeAdapter()

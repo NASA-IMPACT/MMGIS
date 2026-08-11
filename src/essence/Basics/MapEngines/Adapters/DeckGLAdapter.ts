@@ -97,6 +97,10 @@ interface BasemapInstance {
     getCenter(): { lat: number; lng: number }
     /** Return the current zoom level. */
     getZoom(): number
+    /** Return the current camera rotation in degrees. */
+    getBearing(): number
+    /** Return the current camera tilt in degrees. */
+    getPitch(): number
     /** Return the current visible bounds. */
     getBounds(): {
         getSouthWest(): { lat: number; lng: number }
@@ -297,9 +301,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Bound handler kept as a class field for clean removal.
-     * Silently keeps `_viewState` in sync during animations so that
-     * {@link projectCoordinates} and {@link unprojectCoordinates} remain
-     * accurate while the camera is moving.
+     * Keeps `_viewState` in sync during camera movement so that
+     * {@link projectCoordinates} and {@link unprojectCoordinates} stay
+     * accurate mid-animation, and emits the engine-level `'move'` event so
+     * anchored consumers can track the camera frame by frame.
      */
     private _onBasemapMove = (): void => {
         const center = this._basemap!.getCenter()
@@ -308,7 +313,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             longitude: center.lng,
             latitude: center.lat,
             zoom: this._basemap!.getZoom(),
+            bearing: this._basemap!.getBearing(),
+            pitch: this._basemap!.getPitch(),
         }
+        this._emitEvent('move', this._viewState)
     }
 
     /**
@@ -1279,6 +1287,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 const clamped = this._clampToMaxBounds(viewState)
                 this._viewState = clamped
                 this._deckSetProps({ viewState: clamped })
+                this._emitEvent('move', clamped)
                 this._emitEvent('moveend', clamped)
             },
             onClick: (info: PickingInfo) => {
