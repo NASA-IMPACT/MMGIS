@@ -85,15 +85,6 @@ test.describe('selectionFitBounds', () => {
         expect(selectionFitBounds([160, 32, 165, 38], wrapped)).not.toBeNull()
     })
 
-    test('normalizes a view whose lat corners arrive swapped (rotated camera)', () => {
-        const swapped = {
-            southWest: { lat: 40, lng: -100 },
-            northEast: { lat: 30, lng: -90 },
-        }
-        expect(selectionFitBounds([-98, 32, -92, 38], swapped)).toBeNull()
-        expect(selectionFitBounds([-98, 20, -92, 45], swapped)).not.toBeNull()
-    })
-
     test('treats an unwrapped panned view as contiguous', () => {
         const unwrapped = {
             southWest: { lat: 30, lng: 190 },
@@ -125,21 +116,6 @@ test.describe('selectionTooltipAnchor', () => {
 
     test('falls back for a centroid off-screen in latitude only', () => {
         expect(selectionTooltipAnchor({ lat: 5, lng: -95 }, view)).toEqual({
-            lat: 35,
-            lng: -95,
-        })
-    })
-
-    test('normalizes a view whose lat corners arrive swapped (rotated camera)', () => {
-        const swapped = {
-            southWest: { lat: 40, lng: -100 },
-            northEast: { lat: 30, lng: -90 },
-        }
-        // Off the view's centre, so a kept centroid cannot be mistaken for the
-        // fallback.
-        const offCentre = { lat: 38, lng: -97 }
-        expect(selectionTooltipAnchor(offCentre, swapped)).toEqual(offCentre)
-        expect(selectionTooltipAnchor({ lat: 5, lng: -95 }, swapped)).toEqual({
             lat: 35,
             lng: -95,
         })
@@ -237,6 +213,34 @@ test.describe('AOITool._applySelection camera behavior', () => {
         await flush()
         const overlay = calls.find((c) => c.name === 'map:addOverlay')
         expect(overlay?.payload.latlng).toEqual({ lat: 35, lng: -89 })
+    })
+
+    test('mounts the tooltip on moveend and unhooks the handler', async () => {
+        const calls = mockApi(view)
+        AOITool._applySelection(
+            squareFeature(-98, 32, -80, 38),
+            'search',
+            'Beyond view'
+        )
+        await flush()
+        const [event, onMoveend] = window.mmgisAPI.on.mock.calls[0]
+        expect(event).toBe('map:moveend')
+        expect(names(calls)).not.toContain('map:addOverlay')
+
+        onMoveend()
+        // At the centroid: the camera has framed the selection, so no anchor
+        // fallback applies.
+        expect(
+            calls.find((c) => c.name === 'map:addOverlay')?.payload.latlng
+        ).toEqual({ lat: 35, lng: -89 })
+        expect(window.mmgisAPI.off).toHaveBeenCalledWith(
+            'map:moveend',
+            onMoveend
+        )
+        // The fallback timer is disarmed, so it cannot mount a second tooltip.
+        vi.advanceTimersByTime(1600)
+        await flush()
+        expect(calls.filter((c) => c.name === 'map:addOverlay')).toHaveLength(1)
     })
 
     test('anchors the tooltip inside the view when fitBounds is rejected', async () => {

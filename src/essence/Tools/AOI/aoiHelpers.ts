@@ -253,13 +253,18 @@ export function featureBounds(f: Feature): [number, number, number, number] | nu
     return Number.isFinite(w) ? [w, s, e, n] : null
 }
 
+/**
+ * A view as the map engines report it through `map:getBounds`: latitudes
+ * ordered south-to-north, longitudes in west-to-east reading order — which for
+ * a view straddling the antimeridian means `southWest.lng > northEast.lng`.
+ */
 export interface ViewBounds {
     southWest: { lat: number; lng: number }
     northEast: { lat: number; lng: number }
 }
 
 /** Folds a longitude difference into [0, 360). */
-function lngDelta(d: number): number {
+function wrap360(d: number): number {
     return ((d % 360) + 360) % 360
 }
 
@@ -272,7 +277,7 @@ function lngDelta(d: number): number {
  */
 function viewLngExtent(view: ViewBounds): number {
     const raw = view.northEast.lng - view.southWest.lng
-    return raw > 0 ? raw : lngDelta(raw)
+    return raw > 0 ? raw : wrap360(raw)
 }
 
 /** As `viewLngExtent`, capped at a full turn. */
@@ -280,28 +285,19 @@ function viewLngSpan(view: ViewBounds): number {
     return Math.min(viewLngExtent(view), 360)
 }
 
-/**
- * View latitudes ordered south-to-north. Latitude does not wrap, so a view
- * reported with its corners swapped — as a rotated camera near bearing 180°
- * does — is normalized rather than read as a different window.
- */
-function viewLatRange(view: ViewBounds): [number, number] {
-    const a = view.southWest.lat
-    const b = view.northEast.lat
-    return a <= b ? [a, b] : [b, a]
-}
-
 /** How many degrees east of the view's west edge a longitude sits, in [0, 360). */
 function lngOffset(lng: number, view: ViewBounds): number {
-    return lngDelta(lng - view.southWest.lng)
+    return wrap360(lng - view.southWest.lng)
 }
 
 /**
  * Decide whether committing a selection needs a camera move. Returns null —
  * leave the camera alone — when the selection's bbox already fits in the
- * current view, or when its extent is unframeable: zero-area, or a naive
- * antimeridian sweep (e.g. Alaska's MultiPolygon spans ~360°) where doing
- * nothing beats jumping to a near-world view. Otherwise returns a
+ * current view, or when its extent is unframeable: zero-area, or 180° or more
+ * of longitude wide. That width rule is deliberately blunt — it drops any
+ * hemisphere-spanning selection, not only the naive antimeridian sweeps that
+ * motivate it (Alaska's MultiPolygon reads ~359° wide) — because for both,
+ * doing nothing beats jumping to a near-world view. Otherwise returns a
  * `map:fitBounds` payload that fits the selection minimally: small padding,
  * and a maxZoom ceiling high enough to never bind on ordinary selections.
  */
@@ -315,9 +311,8 @@ export function selectionFitBounds(
     const [w, s, e, n] = bbox
     if (e - w <= 0 || n - s <= 0 || e - w >= 180) return null
     if (view) {
-        const [viewS, viewN] = viewLatRange(view)
         const inLng = lngOffset(w, view) + (e - w) <= viewLngSpan(view)
-        const inLat = s >= viewS && n <= viewN
+        const inLat = s >= view.southWest.lat && n <= view.northEast.lat
         if (inLng && inLat) return null
     }
     return {
@@ -343,14 +338,13 @@ export function selectionTooltipAnchor(
     view?: ViewBounds | null
 ): { lat: number; lng: number } {
     if (!view) return centroid
-    const [viewS, viewN] = viewLatRange(view)
     const inView =
         lngOffset(centroid.lng, view) <= viewLngSpan(view) &&
-        centroid.lat >= viewS &&
-        centroid.lat <= viewN
+        centroid.lat >= view.southWest.lat &&
+        centroid.lat <= view.northEast.lat
     if (inView) return centroid
     return {
-        lat: (viewS + viewN) / 2,
+        lat: (view.southWest.lat + view.northEast.lat) / 2,
         // The uncapped extent: a view reported wider than a full turn still
         // centres on its own middle rather than on its west edge plus 180°.
         lng: view.southWest.lng + viewLngExtent(view) / 2,

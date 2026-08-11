@@ -656,7 +656,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Returns the current visible geographic bounds.
      *
      * - Overlay mode: delegated directly to the basemap's `getBounds()`.
-     * - Standalone mode: derived by unprojecting the container corners via `WebMercatorViewport`.
+     * - Standalone mode: the axis-aligned envelope of all four container
+     *   corners unprojected through `WebMercatorViewport`. The view state
+     *   carries bearing and pitch — drag-rotate is enabled — so a screen corner
+     *   is not a compass corner: past 90° of bearing the bottom-left pixel
+     *   unprojects north-east of the top-right one. Taking the min and max over
+     *   every corner keeps south below north and west below east at any angle,
+     *   and covers the whole rotated quad rather than its diagonal.
      */
     getBounds(): BoundsLike {
         if (this._isOverlayMode) {
@@ -670,11 +676,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
         const vp = makeViewport(this._viewState, this._container)
         const { offsetWidth: w, offsetHeight: h } = this._container
-        const [west, south] = vp.unproject([0, h]) as [number, number]
-        const [east, north] = vp.unproject([w, 0]) as [number, number]
+        const corners: [number, number][] = [
+            [0, 0],
+            [w, 0],
+            [w, h],
+            [0, h],
+        ]
+        const unprojected = corners.map((c) => vp.unproject(c) as [number, number])
+        const lngs = unprojected.map(([lng]) => lng)
+        const lats = unprojected.map(([, lat]) => lat)
         return {
-            southWest: { lat: south, lng: west },
-            northEast: { lat: north, lng: east },
+            southWest: { lat: Math.min(...lats), lng: Math.min(...lngs) },
+            northEast: { lat: Math.max(...lats), lng: Math.max(...lngs) },
         }
     }
 
