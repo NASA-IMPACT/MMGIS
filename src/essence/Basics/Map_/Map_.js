@@ -44,6 +44,7 @@ import {
     DeckGLAdapter,
 } from '../MapEngines/index'
 import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import MapPopup_ from '../MapPopup_/MapPopup_'
 
 let L = window.L
 
@@ -324,6 +325,10 @@ let Map_ = {
                     engine.removeOverlay(id)
                     return true
                 }),
+                // Map-anchored popup — a single, core-owned slot
+                window.mmgisAPI.provide('map:showPopup', (request) =>
+                    MapPopup_.show(request, engine)
+                ),
                 window.mmgisAPI.provide('map:setBasemap', (styleName) => {
                     const index = _basemapStyles.findIndex((s) => s.name === styleName)
                     if (index === -1) {
@@ -380,6 +385,10 @@ let Map_ = {
                     return p ? { x: p.x, y: p.y } : null
                 }),
             ]
+
+            // A mission switch re-runs these cleanups, so a popup opened
+            // against the previous mission's map never outlives it.
+            _providerCleanups.push(() => MapPopup_.hide())
 
             // Engine event re-emits — translate adapter events onto the bus
             const reEmit = (engineEvent, busEvent) => {

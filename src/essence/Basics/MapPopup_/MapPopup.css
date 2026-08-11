@@ -1,0 +1,124 @@
+/*
+ * Map-anchored popup.
+ *
+ * The host is a zero-size, fixed-position anchor placed at the projected
+ * screen point of the popup's lat/lng; the card positions itself relative to
+ * that point. Colors and type come from the theme tokens emitted by
+ * src/styles/_theme-export.scss. The fallbacks only apply in the classic UI,
+ * which does not load a theme stylesheet.
+ */
+
+.mmgis-map-popup-host {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 999999;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+}
+
+.mmgis-map-popup {
+    position: absolute;
+    transform: translate(-50%, calc(-100% - var(--theme-spacing-105, 12px)));
+    box-sizing: border-box;
+    min-width: 220px;
+    max-width: 320px;
+    padding: var(--theme-spacing-2, 16px);
+    border: 1px solid var(--theme-color-base-lighter, #e6e6e6);
+    border-radius: var(--theme-radius-0, 0);
+    background: var(--theme-color-white, #fff);
+    color: var(--theme-color-ink, #1b1b1b);
+    font-family: var(--theme-font-ui, sans-serif);
+    font-size: var(--theme-font-size-sm, 14px);
+    box-shadow: 0 25px 50px -12px var(--theme-color-shadow, rgba(0, 0, 0, 0.25));
+    pointer-events: auto;
+}
+
+/* Flipped below the anchor when the card would clip the top of the viewport. */
+.mmgis-map-popup-host--below .mmgis-map-popup {
+    transform: translate(-50%, var(--theme-spacing-105, 12px));
+}
+
+.mmgis-map-popup__content {
+    padding-right: var(--theme-spacing-3, 24px);
+}
+
+.mmgis-map-popup__close {
+    position: absolute;
+    top: var(--theme-spacing-1, 8px);
+    right: var(--theme-spacing-1, 8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: var(--theme-spacing-05, 4px);
+    border: 0;
+    background: none;
+    color: var(--theme-color-base, #71767a);
+    font-family: inherit;
+    font-size: var(--theme-font-size-md, 16px);
+    line-height: 1;
+    cursor: pointer;
+}
+
+.mmgis-map-popup__close:hover {
+    background: var(--theme-color-base-lightest, #f0f0f0);
+    color: var(--theme-color-ink, #1b1b1b);
+}
+
+.mmgis-map-popup__actions {
+    display: flex;
+    gap: var(--theme-spacing-1, 8px);
+    margin-top: var(--theme-spacing-105, 12px);
+}
+
+.mmgis-map-popup__actions--single {
+    justify-content: flex-end;
+}
+
+.mmgis-map-popup__button {
+    flex: 1 1 auto;
+    height: 32px;
+    padding: 0 var(--theme-spacing-105, 12px);
+    border-radius: var(--theme-radius-0, 0);
+    font-family: inherit;
+    font-size: var(--theme-font-size-sm, 14px);
+    font-weight: var(--theme-font-weight-normal, 400);
+    cursor: pointer;
+    transition:
+        background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+        border-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+        color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mmgis-map-popup__actions--single .mmgis-map-popup__button {
+    flex: 0 0 auto;
+}
+
+.mmgis-map-popup__button:focus-visible {
+    outline: 3px solid var(--theme-color-primary-light, #73b3e7);
+    outline-offset: 0;
+}
+
+.mmgis-map-popup__button--primary {
+    border: 1px solid transparent;
+    background: var(--theme-color-primary, var(--color-mmgis, #005ea2));
+    color: var(--theme-color-white, #fff);
+}
+
+.mmgis-map-popup__button--primary:hover {
+    background: var(--theme-color-primary-dark, #1a4480);
+}
+
+.mmgis-map-popup__button--secondary {
+    border: 1px solid var(--theme-color-base-lighter, #e6e6e6);
+    background: var(--theme-color-white, #fff);
+    color: var(--theme-color-ink, #1b1b1b);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.mmgis-map-popup__button--secondary:hover {
+    background: var(--theme-color-base-lightest, #f0f0f0);
+}
