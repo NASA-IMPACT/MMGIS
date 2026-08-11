@@ -64,6 +64,10 @@ export function GradientGraphic({
     const cogPopoverRef = useRef<HTMLDivElement | null>(null)
 
     const hasCogSettings = cog?.isCog === true
+    // A layer can paint from a COG colormap without that colormap being
+    // changeable, in which case the ramp and its bounds are shown but the
+    // settings popover is left out.
+    const canEditCog = cog?.editable === true
     const { colors: colormapColors } = useColormapGradient(
         cog?.colormap,
         hasCogSettings,
@@ -120,7 +124,7 @@ export function GradientGraphic({
                     )}
                 </div>
                 <div className="blocks-gradient-graphic__cog-wrapper">
-                    {hasCogSettings && cog && (
+                    {canEditCog && cog && (
                         <>
                             <button
                                 ref={cogBtnRef}

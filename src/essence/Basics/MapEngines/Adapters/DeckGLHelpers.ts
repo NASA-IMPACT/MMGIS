@@ -306,6 +306,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             return new GeoJsonLayer({
                 id,
                 data: o.geojson as unknown as ConstructorParameters<typeof GeoJsonLayer>[0]['data'],
+                opacity: o.opacity ?? 1,
                 filled: o.filled ?? true,
                 stroked: o.stroked ?? true,
                 extruded: o.extruded ?? false,
