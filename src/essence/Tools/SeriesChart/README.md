@@ -39,9 +39,11 @@ config entry, not a code change:
 
 `variables.layout` — `"single"` (default) or `"stacked"`. Single renders all
 of a card's variables in one chart with a single-select legend as the
-variable picker. Stacked renders one chart row per variable — each with its
-own unit-named y-axis — with hover and zoom linked across rows, so mixed-unit
-variables can be compared over the same x-range.
+variable picker. Stacked renders one card per variable: a clean single-series
+chart over a preview zoom strip (the series ghosted inside the slider), with
+a footer chip naming the variable and unit, a hover hint, and a Download CSV
+link exporting that variable's points. Each card zooms independently, which
+keeps mixed-unit variables comparable without a dual axis.
 
 ## Smoke test (devtools console)
 

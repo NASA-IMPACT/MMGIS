@@ -45,7 +45,7 @@
                     {
                         "field": "variables.layout",
                         "name": "Chart layout",
-                        "description": "single: all variables share one chart and the legend picks which is visible. stacked: one chart row per variable, with hover and zoom linked across rows.",
+                        "description": "single: all variables share one chart and the legend picks which is visible. stacked: one card per variable with its own preview zoom strip and a Download CSV link.",
                         "type": "dropdown",
                         "width": 4,
                         "options": ["single", "stacked"]

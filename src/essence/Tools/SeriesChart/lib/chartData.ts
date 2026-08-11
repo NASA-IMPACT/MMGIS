@@ -117,16 +117,6 @@ export function formatTooltipTime(ms: number): string {
     return TOOLTIP_FMT.format(new Date(ms))
 }
 
-/** Vertical space one stacked row occupies (title band + plot). */
-const STACKED_ROW = 150
-/** Below the last row: its x-axis labels plus the shared zoom slider. */
-const STACKED_EXTRA = 48
-
-/** Canvas height for a stacked option of `n` variables. */
-export function stackedChartHeight(n: number): number {
-    return Math.max(n, 1) * STACKED_ROW + STACKED_EXTRA
-}
-
 function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
     const color = s.color || theme.palette[i % theme.palette.length]
     return {
@@ -295,70 +285,45 @@ export function buildChartOption(
 }
 
 /**
- * Stacked small-multiples option: one grid row per variable with its own
- * unit-named y-axis. The x-axes are linked (`axisPointer.link`) and one
- * zoom pair drives them all, so hovering or zooming any row moves every
- * row together. No legend — each variable is always visible in its row,
- * titled by the series label. The canvas must be `stackedChartHeight(n)`
- * tall for the pixel-positioned grids to land inside it.
+ * One variable's card in the stacked layout: a single-series chart over a
+ * preview zoom strip (the series redrawn inside the slider), per the design
+ * reference. Sparse unlabeled axes — the card's footer chip, not the chart,
+ * names the variable and unit. `index` fixes the palette slot so a variable
+ * keeps its color no matter which subset of variables renders.
  */
-export function buildStackedChartOption(
+export function buildVariableCardOption(
+    s: ChartSeries,
     payload: ChartSeriesPayload,
     theme: ChartTheme,
+    index: number,
 ): Record<string, any> {
-    const n = payload.series.length
-    const allX = payload.series.map((_, i) => i)
     const isTime = payload.xType === 'time'
     const isCategory = payload.xType === 'category'
+    const color = s.color || theme.palette[index % theme.palette.length]
 
-    const category = isCategory ? toCategoryData(payload.series) : null
-    const data: Array<Array<[number, number | null]> | Array<number | null>> =
-        category
-            ? category.rows
-            : payload.series.map((s) =>
-                  (isTime ? toTimePoints(s.points) : toLinearPoints(s.points)).map(
-                      (p) => [p.x, p.y] as [number, number | null],
-                  ),
-              )
+    const category = isCategory ? toCategoryData([s]) : null
+    const data: Array<[number, number | null]> | Array<number | null> = category
+        ? category.rows[0]
+        : (isTime ? toTimePoints(s.points) : toLinearPoints(s.points)).map(
+              (p) => [p.x, p.y] as [number, number | null],
+          )
     const xs = category
         ? []
-        : (data as Array<Array<[number, number | null]>>).flatMap((d) =>
-              d.map((p) => p[0]),
-          )
+        : (data as Array<[number, number | null]>).map((d) => d[0])
     const tickFormat =
         isTime && xs.length > 0
             ? makeTimeTickFormat(Math.min(...xs), Math.max(...xs))
             : null
 
-    const title: Array<Record<string, any>> = []
-    const grid: Array<Record<string, any>> = []
-    const xAxis: Array<Record<string, any>> = []
-    const yAxis: Array<Record<string, any>> = []
-    const series: Array<Record<string, any>> = []
-
-    payload.series.forEach((s, i) => {
-        const rowTop = i * STACKED_ROW
-        // Only the bottom row prints x labels — the rows above share its axis
-        // via the link, and repeating the labels n times just eats plot height.
-        const isBottom = i === n - 1
-        title.push({
-            text: s.label,
-            top: rowTop + 2,
-            left: 8,
-            textStyle: {
-                fontSize: 12,
-                fontWeight: 600,
-                color: theme.textColor,
-            },
-        })
-        grid.push({
-            left: 56,
-            right: 16,
-            top: rowTop + 28,
-            height: STACKED_ROW - 40,
-        })
-        xAxis.push({
-            gridIndex: i,
+    return {
+        tooltip: {
+            trigger: 'axis' as const,
+            axisPointer: { type: 'cross' as const, label: { show: false } },
+            ...(isTime ? { formatter: timeTooltipFormatter } : {}),
+        },
+        // Bottom band holds the x labels and the preview strip.
+        grid: { left: 48, right: 12, top: 12, bottom: 84 },
+        xAxis: {
             ...(category
                 ? { type: 'category' as const, data: category.labels }
                 : {
@@ -368,51 +333,62 @@ export function buildStackedChartOption(
                       splitLine: { show: false },
                   }),
             axisLabel: {
-                show: isBottom,
                 color: theme.textColor,
                 hideOverlap: true,
                 ...(tickFormat
                     ? { formatter: (v: number) => tickFormat(v) }
                     : {}),
             },
-        })
-        yAxis.push({
-            gridIndex: i,
+        },
+        yAxis: {
             type: 'value' as const,
             scale: true,
-            name: s.unit ?? payload.yLabel ?? undefined,
-            nameLocation: 'middle' as const,
-            nameGap: 42,
-            nameTextStyle: { color: theme.textColor },
+            // A handful of unnamed ticks — identity and unit live in the
+            // card footer, so the plot stays clean like the reference.
+            splitNumber: 2,
             axisLabel: { color: theme.textColor },
-            splitLine: { lineStyle: { color: theme.gridColor } },
-        })
-        series.push({
-            ...seriesBase(s, i, theme),
-            xAxisIndex: i,
-            yAxisIndex: i,
-            data: data[i],
-        })
-    })
-
-    const slider = sliderZoom(theme, allX)
-    return {
-        axisPointer: { link: [{ xAxisIndex: 'all' }] },
-        tooltip: {
-            trigger: 'axis' as const,
-            axisPointer: { type: 'cross' as const, label: { show: false } },
-            ...(isTime ? { formatter: timeTooltipFormatter } : {}),
+            splitLine: { show: false },
         },
-        title,
-        grid,
-        xAxis,
-        yAxis,
-        series,
+        series: [
+            {
+                ...seriesBase(s, index, theme),
+                showSymbol: false,
+                data,
+            },
+        ],
         dataZoom: [
-            { type: 'inside' as const, xAxisIndex: allX },
-            tickFormat
-                ? { ...slider, labelFormatter: (v: number) => tickFormat(v) }
-                : slider,
+            { type: 'inside' as const },
+            {
+                type: 'slider' as const,
+                // Preview strip: the series ghosted inside the slider, light
+                // default filler over it, dark end handles.
+                height: 30,
+                bottom: 10,
+                showDataShadow: true,
+                brushSelect: false,
+                borderColor: theme.gridColor,
+                handleSize: '80%',
+                handleStyle: { color: theme.textColor },
+                moveHandleSize: 0,
+                dataBackground: {
+                    lineStyle: { color, opacity: 0.6, width: 1 },
+                    areaStyle: { color, opacity: 0.08 },
+                },
+                ...(tickFormat
+                    ? { labelFormatter: (v: number) => tickFormat(v) }
+                    : {}),
+            },
         ],
     }
+}
+
+/**
+ * A variable's points as a two-column CSV, `x` then the series label.
+ * `y: null` gaps become empty cells; fields with commas/quotes are quoted.
+ */
+export function seriesToCsv(s: ChartSeries): string {
+    const esc = (v: string) =>
+        /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+    const rows = s.points.map((p) => `${esc(String(p.x))},${p.y ?? ''}`)
+    return [`x,${esc(s.label)}`, ...rows].join('\n')
 }

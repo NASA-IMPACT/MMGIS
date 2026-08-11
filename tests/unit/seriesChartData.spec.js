@@ -6,8 +6,8 @@ import {
     makeTimeTickFormat,
     formatTooltipTime,
     buildChartOption,
-    buildStackedChartOption,
-    stackedChartHeight,
+    buildVariableCardOption,
+    seriesToCsv,
 } from '../../src/essence/Tools/SeriesChart/lib/chartData.ts'
 
 const THEME = {
@@ -270,7 +270,7 @@ describe('seriesChart chartData', () => {
         })
     })
 
-    describe('buildStackedChartOption', () => {
+    describe('buildVariableCardOption', () => {
         const series = (over = {}) => ({
             id: over.id ?? 's1',
             label: over.label ?? 'S1',
@@ -280,102 +280,110 @@ describe('seriesChart chartData', () => {
             ],
             ...over,
         })
-        const three = [
-            series({ id: 'a', label: 'A', unit: 'ppm' }),
-            series({ id: 'b', label: 'B', unit: 'K' }),
-            series({ id: 'c', label: 'C' }),
-        ]
-
-        test('one grid, axis pair, row title, and series per variable', () => {
-            const opt = buildStackedChartOption(payloadWith(three), THEME)
-            expect(opt.grid).toHaveLength(3)
-            expect(opt.xAxis).toHaveLength(3)
-            expect(opt.yAxis).toHaveLength(3)
-            expect(opt.series).toHaveLength(3)
-            expect(opt.title.map((t) => t.text)).toEqual(['A', 'B', 'C'])
-            opt.series.forEach((s, i) => {
-                expect(s.xAxisIndex).toBe(i)
-                expect(s.yAxisIndex).toBe(i)
-            })
-            expect(opt.xAxis.map((x) => x.gridIndex)).toEqual([0, 1, 2])
-            expect(opt.yAxis.map((y) => y.gridIndex)).toEqual([0, 1, 2])
-        })
-
-        test('rows stack downward and the canvas height covers them', () => {
-            const opt = buildStackedChartOption(payloadWith(three), THEME)
-            const tops = opt.grid.map((g) => g.top)
-            expect([...tops].sort((a, b) => a - b)).toEqual(tops)
-            const lastBottom = tops[2] + opt.grid[2].height
-            expect(stackedChartHeight(3)).toBeGreaterThan(lastBottom)
-            expect(stackedChartHeight(3)).toBeGreaterThan(stackedChartHeight(1))
-        })
-
-        test('only the bottom row prints x labels', () => {
-            const opt = buildStackedChartOption(payloadWith(three), THEME)
-            expect(opt.xAxis.map((x) => x.axisLabel.show)).toEqual([
-                false,
-                false,
-                true,
-            ])
-        })
-
-        test('hover and zoom act on every row: linked pointer, all-axes zoom', () => {
-            const opt = buildStackedChartOption(payloadWith(three), THEME)
-            expect(opt.axisPointer.link).toEqual([{ xAxisIndex: 'all' }])
-            expect(opt.dataZoom.map((z) => z.type)).toEqual(['inside', 'slider'])
-            for (const z of opt.dataZoom) {
-                expect(z.xAxisIndex).toEqual([0, 1, 2])
-            }
-        })
-
-        test('no legend: every variable is always visible in its own row', () => {
-            const opt = buildStackedChartOption(payloadWith(three), THEME)
-            expect(opt.legend).toBeUndefined()
-        })
-
-        test('each y-axis is named by its variable unit, yLabel as fallback', () => {
-            const opt = buildStackedChartOption(
-                { ...payloadWith(three), yLabel: 'fallback' },
+        const card = (s, over = {}) =>
+            buildVariableCardOption(
+                s,
+                { ...payloadWith([s]), ...over },
                 THEME,
+                over.index ?? 0,
             )
-            expect(opt.yAxis.map((y) => y.name)).toEqual([
-                'ppm',
-                'K',
-                'fallback',
-            ])
+
+        test('single clean series: no legend, no symbols, no gridlines', () => {
+            const opt = card(series())
+            expect(opt.legend).toBeUndefined()
+            expect(opt.series).toHaveLength(1)
+            expect(opt.series[0].showSymbol).toBe(false)
+            expect(opt.yAxis.splitLine.show).toBe(false)
         })
 
-        test('time rows share UTC tick formatting on axis and slider', () => {
-            const opt = buildStackedChartOption(payloadWith(three), THEME)
-            const bottom = opt.xAxis[2]
-            expect(bottom.type).toBe('value')
-            expect(typeof bottom.axisLabel.formatter).toBe('function')
+        test('identity lives in the footer, not the plot: unnamed sparse y-axis', () => {
+            const opt = card(series({ unit: 'ppm' }))
+            expect(opt.yAxis.name).toBeUndefined()
+            expect(opt.yAxis.splitNumber).toBe(2)
+        })
+
+        test('the palette slot follows the variable index, explicit color wins', () => {
+            const s = series()
+            const first = buildVariableCardOption(s, payloadWith([s]), THEME, 0)
+            const second = buildVariableCardOption(s, payloadWith([s]), THEME, 1)
+            expect(first.series[0].itemStyle.color).toBe(THEME.palette[0])
+            expect(second.series[0].itemStyle.color).toBe(THEME.palette[1])
+            const explicit = buildVariableCardOption(
+                series({ color: '#abcdef' }),
+                payloadWith([s]),
+                THEME,
+                1,
+            )
+            expect(explicit.series[0].itemStyle.color).toBe('#abcdef')
+        })
+
+        test('zoom strip previews the series in its own color', () => {
+            const opt = card(series())
+            const slider = opt.dataZoom.find((z) => z.type === 'slider')
+            expect(slider.showDataShadow).toBe(true)
+            expect(slider.dataBackground.lineStyle.color).toBe(THEME.palette[0])
+            expect(opt.dataZoom.map((z) => z.type)).toEqual(['inside', 'slider'])
+        })
+
+        test('time cards format axis, slider labels, and tooltip as UTC', () => {
+            const opt = card(series())
+            expect(opt.xAxis.type).toBe('value')
+            expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
             const slider = opt.dataZoom.find((z) => z.type === 'slider')
             expect(typeof slider.labelFormatter).toBe('function')
+            expect(typeof opt.tooltip.formatter).toBe('function')
             expect(opt.series[0].data[0]).toEqual([
                 Date.parse('2026-01-01T00:00:00Z'),
                 1,
             ])
         })
 
-        test('category rows align every row to the shared label union', () => {
-            const cat = [
-                series({ id: 'a', label: 'A', points: [{ x: 'x1', y: 1 }] }),
-                series({
-                    id: 'b',
-                    label: 'B',
-                    points: [
-                        { x: 'x2', y: 2 },
-                        { x: 'x1', y: 3 },
-                    ],
-                }),
-            ]
-            const opt = buildStackedChartOption(payloadWith(cat, 'category'), THEME)
-            expect(opt.xAxis[0].type).toBe('category')
-            expect(opt.xAxis[0].data).toEqual(['x1', 'x2'])
-            expect(opt.xAxis[1].data).toEqual(['x1', 'x2'])
+        test('category cards use the variable’s own labels', () => {
+            const s = series({
+                points: [
+                    { x: 'x1', y: 1 },
+                    { x: 'x2', y: null },
+                ],
+            })
+            const opt = buildVariableCardOption(
+                s,
+                payloadWith([s], 'category'),
+                THEME,
+                0,
+            )
+            expect(opt.xAxis.type).toBe('category')
+            expect(opt.xAxis.data).toEqual(['x1', 'x2'])
             expect(opt.series[0].data).toEqual([1, null])
-            expect(opt.series[1].data).toEqual([3, 2])
+        })
+    })
+
+    describe('seriesToCsv', () => {
+        test('two columns headed x and the series label; gaps are empty cells', () => {
+            const csv = seriesToCsv({
+                id: 'o3',
+                label: 'O3',
+                points: [
+                    { x: '2026-01-01T00:00:00Z', y: 0.04 },
+                    { x: '2026-01-02T00:00:00Z', y: null },
+                ],
+            })
+            expect(csv.split('\n')).toEqual([
+                'x,O3',
+                '2026-01-01T00:00:00Z,0.04',
+                '2026-01-02T00:00:00Z,',
+            ])
+        })
+
+        test('fields with commas or quotes are quoted and escaped', () => {
+            const csv = seriesToCsv({
+                id: 's',
+                label: 'PM2.5, "fine"',
+                points: [{ x: 'a,b', y: 1 }],
+            })
+            expect(csv.split('\n')).toEqual([
+                'x,"PM2.5, ""fine"""',
+                '"a,b",1',
+            ])
         })
     })
 

@@ -1,11 +1,14 @@
 import React, { useEffect, useRef } from 'react'
 import * as echarts from 'echarts'
-import type { ChartSeriesPayload } from '../../../_shared/types/chartSeries'
+import type {
+    ChartSeries,
+    ChartSeriesPayload,
+} from '../../../_shared/types/chartSeries'
 import type { ChartCard, ChartLayout, ChartTheme } from '../types'
 import {
     buildChartOption,
-    buildStackedChartOption,
-    stackedChartHeight,
+    buildVariableCardOption,
+    seriesToCsv,
 } from '../chartData'
 
 export interface SeriesChartPanelProps {
@@ -98,6 +101,23 @@ function ReadyCard({
     layout: ChartLayout
 }) {
     const chartRef = useRef<echarts.ECharts | null>(null)
+    if (layout === 'stacked') {
+        // One sub-card per variable, each with its own preview-strip zoom —
+        // no shared reset button; dragging a card's strip is its reset.
+        return (
+            <>
+                <CardHeader title={payload.title} />
+                {payload.series.map((s, i) => (
+                    <VariableCard
+                        key={s.id}
+                        series={s}
+                        payload={payload}
+                        index={i}
+                    />
+                ))}
+            </>
+        )
+    }
     return (
         <>
             <CardHeader
@@ -110,7 +130,7 @@ function ReadyCard({
                     })
                 }
             />
-            <SeriesCanvas payload={payload} layout={layout} chartRef={chartRef} />
+            <SeriesCanvas payload={payload} chartRef={chartRef} />
         </>
     )
 }
@@ -136,15 +156,12 @@ function themeFromCss(el: HTMLElement): ChartTheme {
 
 function SeriesCanvas({
     payload,
-    layout,
     chartRef,
 }: {
     payload: ChartSeriesPayload
-    layout: ChartLayout
     chartRef?: React.MutableRefObject<echarts.ECharts | null>
 }) {
     const hostRef = useRef<HTMLDivElement>(null)
-    const stacked = layout === 'stacked'
 
     useEffect(() => {
         const host = hostRef.current
@@ -152,36 +169,31 @@ function SeriesCanvas({
         const chart = echarts.init(host)
         if (chartRef) chartRef.current = chart
         const theme = themeFromCss(host)
+        let visible = payload.series[0]?.label
+        chart.setOption(buildChartOption(payload, theme, visible) as never)
 
-        if (stacked) {
-            chart.setOption(buildStackedChartOption(payload, theme) as never)
-        } else {
-            let visible = payload.series[0]?.label
-            chart.setOption(buildChartOption(payload, theme, visible) as never)
-
-            // Single-select legend is the variable picker; rebuild so the y-axis
-            // renames to the picked variable's unit, keeping the zoom range.
-            // Re-clicking the active chip would empty the chart — keep it on.
-            chart.on('legendselectchanged', (e) => {
-                const event = e as {
-                    name: string
-                    selected: Record<string, boolean>
-                }
-                visible = event.selected[event.name] ? event.name : visible
-                const zoom = (
-                    chart.getOption() as { dataZoom?: Array<{ start?: number; end?: number }> }
-                ).dataZoom?.[0]
-                const option = buildChartOption(payload, theme, visible)
-                if (zoom && Array.isArray(option.dataZoom)) {
-                    option.dataZoom = option.dataZoom.map((z: Record<string, unknown>) => ({
-                        ...z,
-                        start: zoom.start,
-                        end: zoom.end,
-                    }))
-                }
-                chart.setOption(option as never, { notMerge: true })
-            })
-        }
+        // Single-select legend is the variable picker; rebuild so the y-axis
+        // renames to the picked variable's unit, keeping the zoom range.
+        // Re-clicking the active chip would empty the chart — keep it on.
+        chart.on('legendselectchanged', (e) => {
+            const event = e as {
+                name: string
+                selected: Record<string, boolean>
+            }
+            visible = event.selected[event.name] ? event.name : visible
+            const zoom = (
+                chart.getOption() as { dataZoom?: Array<{ start?: number; end?: number }> }
+            ).dataZoom?.[0]
+            const option = buildChartOption(payload, theme, visible)
+            if (zoom && Array.isArray(option.dataZoom)) {
+                option.dataZoom = option.dataZoom.map((z: Record<string, unknown>) => ({
+                    ...z,
+                    start: zoom.start,
+                    end: zoom.end,
+                }))
+            }
+            chart.setOption(option as never, { notMerge: true })
+        })
 
         const observer = new ResizeObserver(() => chart.resize())
         observer.observe(host)
@@ -190,20 +202,92 @@ function SeriesCanvas({
             if (chartRef?.current === chart) chartRef.current = null
             chart.dispose()
         }
-    }, [payload, stacked, chartRef])
+    }, [payload, chartRef])
+
+    return <div className="series-chart__canvas-wrap" ref={hostRef} />
+}
+
+/** CSS vars in the order themeFromCss builds its palette, so a variable's
+ *  footer dot and its chart line resolve to the same theme color. */
+const PALETTE_VARS = [
+    '--theme-color-primary',
+    '--theme-color-accent-cool',
+    '--theme-color-accent-warm',
+    '--theme-color-secondary',
+]
+
+function downloadCsv(s: ChartSeries) {
+    const blob = new Blob([seriesToCsv(s)], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${s.label.replace(/[^\w.-]+/g, '_') || 'series'}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+}
+
+function VariableCard({
+    series,
+    payload,
+    index,
+}: {
+    series: ChartSeries
+    payload: ChartSeriesPayload
+    index: number
+}) {
+    const hostRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        const host = hostRef.current
+        if (!host) return
+        const chart = echarts.init(host)
+        const theme = themeFromCss(host)
+        chart.setOption(
+            buildVariableCardOption(series, payload, theme, index) as never,
+        )
+        const observer = new ResizeObserver(() => chart.resize())
+        observer.observe(host)
+        return () => {
+            observer.disconnect()
+            chart.dispose()
+        }
+    }, [series, payload, index])
 
     return (
-        <div
-            className="series-chart__canvas-wrap"
-            ref={hostRef}
-            // Stacked grids are pixel-positioned per row, so the canvas must
-            // grow with the variable count; the default height suits one grid.
-            style={
-                stacked
-                    ? { height: stackedChartHeight(payload.series.length) }
-                    : undefined
-            }
-        />
+        <section className="series-chart__variable-card">
+            <div className="series-chart__variable-canvas" ref={hostRef} />
+            <footer className="series-chart__variable-footer">
+                <div>
+                    <span className="series-chart__variable-chip">
+                        <span
+                            className="series-chart__variable-dot"
+                            style={{
+                                background:
+                                    series.color ||
+                                    `var(${PALETTE_VARS[index % PALETTE_VARS.length]})`,
+                            }}
+                            aria-hidden="true"
+                        />
+                        {series.label}
+                        {series.unit && (
+                            <span className="series-chart__variable-unit">
+                                {series.unit}
+                            </span>
+                        )}
+                    </span>
+                    <p className="series-chart__variable-hint">
+                        Hover to inspect · drag the strip to zoom
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    className="series-chart__csv-link"
+                    onClick={() => downloadCsv(series)}
+                >
+                    Download CSV
+                </button>
+            </footer>
+        </section>
     )
 }
 
