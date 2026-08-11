@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import MapPopup_ from '../../src/essence/Basics/MapPopup_/MapPopup_'
 import type { MapPopupRequest } from '../../src/essence/Basics/MapPopup_/types'
 
@@ -183,7 +183,8 @@ describe('MapPopup_', () => {
 
     it('ignores the map click that deck.gl emits after the feature click that opened the popup', async () => {
         // deck.gl calls its feature-click handler and then emits the click, so
-        // the popup is already listening when its own opening click arrives.
+        // a popup opened from a feature click would otherwise be dismissed by
+        // the very click that opened it.
         show(bus, engine)
         bus.fire('map:click')
 
@@ -238,9 +239,16 @@ describe('MapPopup_', () => {
         expect(bus.emitted).toEqual([])
     })
 
-    it('closes without firing the dismiss event when hidden programmatically', () => {
+    it('retracts the popup for map:hidePopup without firing its dismiss event', () => {
         show(bus, engine)
 
+        // What the map:hidePopup provider calls.
+        MapPopup_.hide()
+
+        expect(popups()).toHaveLength(0)
+        expect(bus.emitted).toEqual([])
+
+        // Asking again with nothing open changes nothing.
         MapPopup_.hide()
 
         expect(popups()).toHaveLength(0)
@@ -321,13 +329,39 @@ describe('MapPopup_', () => {
         expect(card().style.visibility).toBe('visible')
     })
 
-    it('unsubscribes from the engine and the bus when hidden', () => {
+    it('unsubscribes from the engine, the window and the bus when hidden', async () => {
+        const removeListener = vi.spyOn(window, 'removeEventListener')
         show(bus, engine)
+        await nextTick()
         expect(engine.listenerCount('move')).toBe(1)
         expect(bus.listenerCount('map:click')).toBe(1)
 
         MapPopup_.hide()
 
+        expect(engine.listenerCount('move')).toBe(0)
+        expect(bus.listenerCount('map:click')).toBe(0)
+        expect(removeListener).toHaveBeenCalledWith('resize', expect.any(Function))
+        removeListener.mockRestore()
+    })
+
+    it('never subscribes to the bus when hidden before the opening task ends', async () => {
+        show(bus, engine)
+        MapPopup_.hide()
+
+        await nextTick()
+
+        expect(bus.listenerCount('map:click')).toBe(0)
+    })
+
+    it('leaves nothing subscribed or mounted when wiring the popup fails', () => {
+        window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
+        engine.engine.on = () => {
+            throw new Error('engine destroyed')
+        }
+
+        expect(MapPopup_.show(request(), engine.engine as never)).toBe(false)
+
+        expect(popups()).toHaveLength(0)
         expect(engine.listenerCount('move')).toBe(0)
         expect(bus.listenerCount('map:click')).toBe(0)
     })

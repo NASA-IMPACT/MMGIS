@@ -18,9 +18,10 @@ interface OpenPopup {
     latlng: { lat: number; lng: number }
     dismissEvent?: string
     offMapClick: () => void
-    /** Set while the gesture that opened this popup is still being delivered. */
-    ignoreMapClick: boolean
-    pendingDismiss: ReturnType<typeof setTimeout> | null
+    /** Pending subscription to `map:click`, see `show`. */
+    subscribeTimer: ReturnType<typeof setTimeout> | null
+    /** Watches the card for late-reflowing content. Absent outside browsers. */
+    cardResize: ResizeObserver | null
 }
 
 interface PopupCardOptions {
@@ -38,7 +39,7 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value)
 }
 
-function isEventName(value: unknown): value is string {
+function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value !== ''
 }
 
@@ -52,7 +53,9 @@ function normalizeAction(
 ): MapPopupAction | undefined {
     if (action == null) return undefined
     const { label, event } = action
-    if (isEventName(label) && isEventName(event)) return { label, event }
+    if (isNonEmptyString(label) && isNonEmptyString(event)) {
+        return { label, event }
+    }
     console.warn(
         `[MapPopup] Ignoring ${field}: label and event must be non-empty strings.`
     )
@@ -180,38 +183,47 @@ const MapPopup_ = {
             }),
             engine,
             latlng: { lat: request.latlng.lat, lng: request.latlng.lng },
-            dismissEvent: isEventName(request.dismissEvent)
+            dismissEvent: isNonEmptyString(request.dismissEvent)
                 ? request.dismissEvent
                 : undefined,
             offMapClick: () => {},
-            ignoreMapClick: true,
-            pendingDismiss: null,
+            subscribeTimer: null,
+            cardResize: null,
         }
 
-        // The gesture that opens a popup usually carries the very map click
-        // that would dismiss it, and the engines order `map:featureClick` and
-        // `map:click` differently, so clicks are ignored until the task that
-        // opened the popup has run to completion.
-        setTimeout(() => {
-            popup.ignoreMapClick = false
-        }, 0)
-
-        engine.on('move', reposition)
-        window.addEventListener('resize', reposition)
-        popup.offMapClick = window.mmgisAPI.on('map:click', () => {
-            // Every deferral is anchored to its own popup: the bus hands a
-            // handler the clicks of the emit it was unsubscribed during, and a
-            // later request may have replaced this popup in the meantime.
-            if (this._open !== popup || popup.ignoreMapClick) return
-            popup.pendingDismiss = setTimeout(() => {
-                popup.pendingDismiss = null
-                if (this._open !== popup) return
-                this.hide({ fireDismiss: true })
-            }, 0)
-        })
-
+        // Recorded before anything is wired so that a failure part-way through
+        // can be unwound by `hide`, leaving nothing subscribed or mounted.
         this._open = popup
-        document.body.appendChild(popup.card)
+        try {
+            document.body.appendChild(popup.card)
+            engine.on('move', reposition)
+            window.addEventListener('resize', reposition)
+            if (typeof ResizeObserver === 'function') {
+                popup.cardResize = new ResizeObserver(reposition)
+                popup.cardResize.observe(popup.card)
+            }
+            // The gesture that opens a popup usually carries the very map
+            // click that would dismiss it, so this popup does not listen for
+            // clicks until the task that opened it has run to completion.
+            popup.subscribeTimer = setTimeout(() => {
+                popup.subscribeTimer = null
+                popup.offMapClick = window.mmgisAPI.on('map:click', () => {
+                    // A replacement popup can still be shown later in the
+                    // same gesture, so the dismissal waits a task too and
+                    // fires only while this popup is still the open one.
+                    setTimeout(() => {
+                        if (this._open === popup) {
+                            this.hide({ fireDismiss: true })
+                        }
+                    }, 0)
+                })
+            }, 0)
+        } catch (err) {
+            console.warn('[MapPopup] Could not show the popup:', err)
+            this.hide()
+            return false
+        }
+
         this._reposition()
         return true
     },
@@ -227,18 +239,19 @@ const MapPopup_ = {
         const open = this._open
         if (!open) return
         this._open = null
-        if (open.pendingDismiss !== null) clearTimeout(open.pendingDismiss)
 
-        // Teardown can run after the engine has been destroyed (mission swap),
-        // in which case unsubscribing throws.
+        if (open.card.parentNode) open.card.parentNode.removeChild(open.card)
+        if (open.subscribeTimer !== null) clearTimeout(open.subscribeTimer)
+        open.cardResize?.disconnect()
+
         try {
             open.engine.off('move', reposition)
-        } catch (err) {
-            console.warn('[MapPopup] Could not unsubscribe from the engine:', err)
+        } catch {
+            // Teardown can run after the engine has been destroyed (the map is
+            // re-initialised), in which case unsubscribing throws.
         }
         window.removeEventListener('resize', reposition)
         open.offMapClick()
-        if (open.card.parentNode) open.card.parentNode.removeChild(open.card)
 
         if (fireDismiss && open.dismissEvent) {
             window.mmgisAPI.emit(open.dismissEvent)
@@ -283,8 +296,10 @@ const MapPopup_ = {
             open.card.style.transform = `translate(${center - halfCard}px, ${top}px)`
             open.card.style.visibility = 'visible'
         } catch {
-            // Projection is unavailable until the engine has a view — the
-            // popup stays hidden and the next move event places it.
+            // The anchor cannot be projected — before the engine has a view, or
+            // once its container is gone — so the card waits, hidden, for a
+            // later move to place it.
+            open.card.style.visibility = 'hidden'
         }
     },
 }
