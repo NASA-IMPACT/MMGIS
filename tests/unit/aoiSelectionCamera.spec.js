@@ -192,15 +192,15 @@ test.describe('AOITool._applySelection camera behavior', () => {
         AOITool._state.currentAOI = null
     })
 
-    test('makes no camera call and mounts the tooltip promptly when the selection is in view', async () => {
+    test('makes no camera call and opens the popup promptly when the selection is in view', async () => {
         const calls = mockApi(view)
         AOITool._applySelection(squareFeature(-98, 32, -92, 38), 'draw', 'In view')
         await flush()
         expect(names(calls)).not.toContain('map:fitBounds')
-        const overlay = calls.find((c) => c.name === 'map:addOverlay')
+        const popup = calls.find((c) => c.name === 'map:showPopup')
         // Anchored at the selection's own centroid — the view never moved, but
         // the centroid was already on-screen.
-        expect(overlay?.payload.latlng).toEqual({ lat: 35, lng: -95 })
+        expect(popup?.payload.latlng).toEqual({ lat: 35, lng: -95 })
         expect(window.mmgisAPI.on).not.toHaveBeenCalledWith(
             'map:moveend',
             expect.anything()
@@ -224,16 +224,16 @@ test.describe('AOITool._applySelection camera behavior', () => {
                 ],
             })
         )
-        // The tooltip waits for the camera; this mock never fires moveend, so
+        // The popup waits for the camera; this mock never fires moveend, so
         // the fallback timer mounts it — at the centroid, now framed.
-        expect(names(calls)).not.toContain('map:addOverlay')
+        expect(names(calls)).not.toContain('map:showPopup')
         vi.advanceTimersByTime(1600)
         await flush()
-        const overlay = calls.find((c) => c.name === 'map:addOverlay')
-        expect(overlay?.payload.latlng).toEqual({ lat: 35, lng: -89 })
+        const popup = calls.find((c) => c.name === 'map:showPopup')
+        expect(popup?.payload.latlng).toEqual({ lat: 35, lng: -89 })
     })
 
-    test('mounts the tooltip on moveend and unhooks the handler', async () => {
+    test('opens the popup on moveend and unhooks the handler', async () => {
         const calls = mockApi(view)
         AOITool._applySelection(
             squareFeature(-98, 32, -80, 38),
@@ -243,7 +243,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
         await flush()
         const [event, onMoveend] = window.mmgisAPI.on.mock.calls[0]
         expect(event).toBe('map:moveend')
-        expect(names(calls)).not.toContain('map:addOverlay')
+        expect(names(calls)).not.toContain('map:showPopup')
 
         // Map_ re-emits moveend with the engine's view state, so the handler
         // must drop that payload rather than pass it on as a ViewBounds.
@@ -251,19 +251,19 @@ test.describe('AOITool._applySelection camera behavior', () => {
         // At the centroid: the camera has framed the selection, so no anchor
         // fallback applies.
         expect(
-            calls.find((c) => c.name === 'map:addOverlay')?.payload.latlng
+            calls.find((c) => c.name === 'map:showPopup')?.payload.latlng
         ).toEqual({ lat: 35, lng: -89 })
         expect(window.mmgisAPI.off).toHaveBeenCalledWith(
             'map:moveend',
             onMoveend
         )
-        // The fallback timer is disarmed, so it cannot mount a second tooltip.
+        // The fallback timer is disarmed, so it cannot open a second popup.
         vi.advanceTimersByTime(1600)
         await flush()
-        expect(calls.filter((c) => c.name === 'map:addOverlay')).toHaveLength(1)
+        expect(calls.filter((c) => c.name === 'map:showPopup')).toHaveLength(1)
     })
 
-    test('anchors the tooltip inside the view when fitBounds is rejected', async () => {
+    test('anchors the popup inside the view when fitBounds is rejected', async () => {
         const calls = mockApi(view)
         const request = window.mmgisAPI.request
         window.mmgisAPI.request = vi.fn((name, payload) =>
@@ -278,12 +278,12 @@ test.describe('AOITool._applySelection camera behavior', () => {
         )
         await flush()
         // The camera never moved, so the off-screen centroid (-89) would strand
-        // the tooltip; it falls back to the centre of the unchanged view.
-        const overlay = calls.find((c) => c.name === 'map:addOverlay')
-        expect(overlay?.payload.latlng).toEqual({ lat: 35, lng: -95 })
+        // the popup; it falls back to the centre of the unchanged view.
+        const popup = calls.find((c) => c.name === 'map:showPopup')
+        expect(popup?.payload.latlng).toEqual({ lat: 35, lng: -95 })
     })
 
-    test('anchors the tooltip inside the view for an unframeable selection (Alaska)', async () => {
+    test('anchors the popup inside the view for an unframeable selection (Alaska)', async () => {
         const calls = mockApi(view)
         // A ring straddling ±180, as Alaska's MultiPolygon does.
         AOITool._applySelection(
@@ -293,8 +293,8 @@ test.describe('AOITool._applySelection camera behavior', () => {
         )
         await flush()
         expect(names(calls)).not.toContain('map:fitBounds')
-        const overlay = calls.find((c) => c.name === 'map:addOverlay')
-        expect(overlay).toBeDefined()
-        expect(overlay.payload.latlng).toEqual({ lat: 35, lng: -95 })
+        const popup = calls.find((c) => c.name === 'map:showPopup')
+        expect(popup).toBeDefined()
+        expect(popup.payload.latlng).toEqual({ lat: 35, lng: -95 })
     })
 })
