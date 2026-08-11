@@ -25,13 +25,16 @@ interface OpenPopup {
     cardResize: ResizeObserver | null
 }
 
+/** The two button slots a card can render. */
+type ActionSlot = 'primary' | 'secondary'
+
 interface PopupCardOptions {
     /** Popup body, already sanitized by the caller. */
     html: string
     primaryAction?: MapPopupAction
     secondaryAction?: MapPopupAction
     /** Called with the slot of the clicked action button. */
-    onAction: (action: 'primary' | 'secondary') => void
+    onAction: (action: ActionSlot) => void
     /** Called when the close control is pressed. */
     onClose: () => void
 }
@@ -62,14 +65,14 @@ function normalizeAction(
 }
 
 function buildActionButton(
-    action: MapPopupAction,
-    variant: 'primary' | 'secondary',
-    onAction: (action: 'primary' | 'secondary') => void
+    label: string,
+    variant: ActionSlot,
+    onAction: (action: ActionSlot) => void
 ): HTMLButtonElement {
     const button = document.createElement('button')
     button.type = 'button'
     button.className = `mmgis-map-popup__button mmgis-map-popup__button--${variant}`
-    button.textContent = action.label
+    button.textContent = label
     button.addEventListener('click', () => onAction(variant))
     return button
 }
@@ -107,12 +110,12 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
         actions.className = 'mmgis-map-popup__actions'
         if (secondaryAction) {
             actions.appendChild(
-                buildActionButton(secondaryAction, 'secondary', onAction)
+                buildActionButton(secondaryAction.label, 'secondary', onAction)
             )
         }
         if (primaryAction) {
             actions.appendChild(
-                buildActionButton(primaryAction, 'primary', onAction)
+                buildActionButton(primaryAction.label, 'primary', onAction)
             )
         }
         card.appendChild(actions)
@@ -257,22 +260,29 @@ const MapPopup_ = {
         if (!open) return
         this._open = null
 
-        if (open.card.parentNode) open.card.parentNode.removeChild(open.card)
-        if (open.subscribeTimer !== null) clearTimeout(open.subscribeTimer)
-        open.cardResize?.disconnect()
-
         try {
-            open.engine.off('move', reposition)
-            open.engine.off('zoomstart', hideForZoom)
-            open.engine.off('zoomend', reposition)
-        } catch {
-            // Teardown can run after the engine has been destroyed (the map is
-            // re-initialised), in which case unsubscribing throws.
-        }
-        window.removeEventListener('resize', reposition)
-        open.offMapClick()
+            if (open.card.parentNode)
+                open.card.parentNode.removeChild(open.card)
+            if (open.subscribeTimer !== null) clearTimeout(open.subscribeTimer)
+            open.cardResize?.disconnect()
 
-        open.settle({ action })
+            try {
+                open.engine.off('move', reposition)
+                open.engine.off('zoomstart', hideForZoom)
+                open.engine.off('zoomend', reposition)
+            } catch {
+                // Teardown can run after the engine has been destroyed (the
+                // map is re-initialised), in which case unsubscribing throws.
+            }
+            window.removeEventListener('resize', reposition)
+            open.offMapClick()
+        } finally {
+            // Answer the request whatever teardown did, so a throw part-way
+            // through cannot leave the caller waiting on a popup that is
+            // already gone. A rejection raised before the unwind still sticks:
+            // the first settlement is the answer.
+            open.settle({ action })
+        }
     },
 
     /**

@@ -90,9 +90,11 @@ function request(overrides: Partial<MapPopupRequest> = {}): MapPopupRequest {
 }
 
 /**
- * Watch a request promise and record every way it settles: a resolution as its
- * action, a rejection as `rejected: <message>`. Specs assert the recorded list
- * whole, so an outcome that never arrives or arrives twice fails the test.
+ * Watch a request promise and record how it settles: a resolution as its
+ * action, a rejection as `rejected: <message>`. Later settlements are absorbed
+ * by the promise, so the list holds the first one only. Specs assert it whole,
+ * which fails the test when the answer never arrives or when the wrong close
+ * path answered first.
  */
 function track(promise: Promise<MapPopupResult>): string[] {
     const settlements: string[] = []
