@@ -123,10 +123,11 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
 }
 
 /**
- * Stable handler identity, so the engine and window subscriptions made in
+ * Stable handler identities, so the engine and window subscriptions made in
  * `show` can be removed again in `hide`.
  */
 const reposition = (): void => MapPopup_._reposition()
+const hideForZoom = (): void => MapPopup_._hideForZoom()
 
 /**
  * Core-owned, map-anchored popup.
@@ -197,6 +198,8 @@ const MapPopup_ = {
         try {
             document.body.appendChild(popup.card)
             engine.on('move', reposition)
+            engine.on('zoomstart', hideForZoom)
+            engine.on('zoomend', reposition)
             window.addEventListener('resize', reposition)
             if (typeof ResizeObserver === 'function') {
                 popup.cardResize = new ResizeObserver(reposition)
@@ -246,6 +249,8 @@ const MapPopup_ = {
 
         try {
             open.engine.off('move', reposition)
+            open.engine.off('zoomstart', hideForZoom)
+            open.engine.off('zoomend', reposition)
         } catch {
             // Teardown can run after the engine has been destroyed (the map is
             // re-initialised), in which case unsubscribing throws.
@@ -256,6 +261,19 @@ const MapPopup_ = {
         if (fireDismiss && open.dismissEvent) {
             window.mmgisAPI.emit(open.dismissEvent)
         }
+    },
+
+    /**
+     * Blank the card for the duration of a zoom.
+     *
+     * Leaflet animates a zoom by transforming its panes and emits no `move`
+     * until the animation lands, so a card left on screen would hang at its
+     * pre-zoom position and then jump. Hiding it is the honest reading; the
+     * `move` and `zoomend` that follow the animation put it back. Engines that
+     * report every zoom frame (deck.gl) emit no `zoomstart` and keep tracking.
+     */
+    _hideForZoom(): void {
+        if (this._open) this._open.card.style.visibility = 'hidden'
     },
 
     /** Project the anchor to viewport coordinates and move the card there. */

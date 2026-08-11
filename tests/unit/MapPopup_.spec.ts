@@ -329,16 +329,35 @@ describe('MapPopup_', () => {
         expect(card().style.visibility).toBe('visible')
     })
 
+    it('blanks the card while the engine animates a zoom and places it again after', () => {
+        // Leaflet emits no move while its zoom animation runs, so the card
+        // would otherwise hang at the pre-zoom position and jump at the end.
+        show(bus, engine)
+        sizeCard(200, 100)
+        expect(card().style.visibility).toBe('visible')
+
+        engine.fire('zoomstart')
+        expect(card().style.visibility).toBe('hidden')
+
+        engine.fire('zoomend')
+        expect(card().style.visibility).toBe('visible')
+        expect(card().style.transform).toBe('translate(300px, 138px)')
+    })
+
     it('unsubscribes from the engine, the window and the bus when hidden', async () => {
         const removeListener = vi.spyOn(window, 'removeEventListener')
         show(bus, engine)
         await nextTick()
         expect(engine.listenerCount('move')).toBe(1)
+        expect(engine.listenerCount('zoomstart')).toBe(1)
+        expect(engine.listenerCount('zoomend')).toBe(1)
         expect(bus.listenerCount('map:click')).toBe(1)
 
         MapPopup_.hide()
 
         expect(engine.listenerCount('move')).toBe(0)
+        expect(engine.listenerCount('zoomstart')).toBe(0)
+        expect(engine.listenerCount('zoomend')).toBe(0)
         expect(bus.listenerCount('map:click')).toBe(0)
         expect(removeListener).toHaveBeenCalledWith('resize', expect.any(Function))
         removeListener.mockRestore()
@@ -355,14 +374,17 @@ describe('MapPopup_', () => {
 
     it('leaves nothing subscribed or mounted when wiring the popup fails', () => {
         window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
-        engine.engine.on = () => {
-            throw new Error('engine destroyed')
+        const subscribe = engine.engine.on
+        engine.engine.on = (event: string, handler: () => void) => {
+            if (event === 'zoomend') throw new Error('engine destroyed')
+            subscribe(event, handler)
         }
 
         expect(MapPopup_.show(request(), engine.engine as never)).toBe(false)
 
         expect(popups()).toHaveLength(0)
         expect(engine.listenerCount('move')).toBe(0)
+        expect(engine.listenerCount('zoomstart')).toBe(0)
         expect(bus.listenerCount('map:click')).toBe(0)
     })
 
