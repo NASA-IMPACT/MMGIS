@@ -331,6 +331,19 @@ $legend-content-indent: 28px;
     }
 }
 
+/* Names the layer the description belongs to. The popover is portaled away
+   from its row, so without it the text has no visible owner. Wraps in full
+   rather than truncating — the surface is wide enough and the name is the
+   only context the overlay carries. */
+.blocks-layer-legend__info-title {
+    margin-bottom: var(--theme-spacing-05, 0.25rem);
+    font-size: var(--theme-font-size-2xs, 0.88rem);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    line-height: 1.4;
+    color: var(--theme-color-ink, #1c1d1f);
+    overflow-wrap: anywhere;
+}
+
 /* Rendered markdown from a layer description, wherever the panel shows it.
    Core styles the content from theme tokens; this adds only what the panel's
    narrow surfaces need. */
