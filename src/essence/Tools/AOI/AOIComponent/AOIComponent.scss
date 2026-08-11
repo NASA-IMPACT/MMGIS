@@ -409,38 +409,6 @@
     margin: 0 var(--aoi-space-1);
 }
 
-.aoi-draw__actions {
-    display: flex;
-    gap: var(--aoi-space-2);
-}
-
-.aoi-draw__confirm,
-.aoi-draw__cancel {
-    flex: 1 1 auto;
-    height: 36px;
-    border-radius: var(--aoi-radius-sm);
-    cursor: pointer;
-    font: inherit;
-    font-weight: 600;
-}
-
-.aoi-draw__confirm {
-    border: 1px solid var(--aoi-accent);
-    background: var(--aoi-accent);
-    color: var(--aoi-accent-fg);
-}
-
-.aoi-draw__confirm:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.aoi-draw__cancel {
-    border: 1px solid var(--aoi-border);
-    background: var(--aoi-bg);
-    color: var(--aoi-fg);
-}
-
 .aoi-upload__button {
     width: 100%;
     height: 40px;

@@ -26,7 +26,7 @@
  *   Requests:
  *     - map:createLayer / map:removeLayer
  *     - map:fitBounds
- *     - map:enableDrawing / map:finishDrawing / map:disableDrawing
+ *     - map:enableDrawing / map:disableDrawing
  *     - map:addOverlay / map:removeOverlay
 
  * AOIComponent.tsx and AOITooltip.tsx must stay MMGIS-agnostic.
@@ -307,8 +307,6 @@ const AOITool = {
                 isDrawing: this._state.isDrawing,
                 drawVerticesCount: this._state.drawVerticesCount,
                 onDrawShapeChange: (drawShape) => this._onDrawShapeChange(drawShape),
-                onDrawConfirm: () => this._onDrawConfirm(),
-                onDrawCancel: () => this._onDrawCancel(),
 
                 uploadStatus: this._state.uploadStatus,
                 uploadError: this._state.uploadError,
@@ -371,16 +369,6 @@ const AOITool = {
             shape,
             options: { style: SELECTION_STYLE },
         }).catch((err) => console.warn('[AOI] enableDrawing failed', err))
-    },
-
-    _onDrawConfirm() {
-        window.mmgisAPI?.request?.('map:finishDrawing')
-            .catch((err) => console.warn('[AOI] finishDrawing failed', err))
-    },
-
-    _onDrawCancel() {
-        window.mmgisAPI?.request?.('map:disableDrawing')
-            .catch((err) => console.warn('[AOI] disableDrawing failed', err))
     },
 
     _onDrawStart() {

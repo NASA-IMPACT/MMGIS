@@ -30,8 +30,6 @@ export interface AOIComponentProps {
     isDrawing: boolean
     drawVerticesCount: number
     onDrawShapeChange: (shape: AOIShape) => void
-    onDrawConfirm: () => void
-    onDrawCancel: () => void
 
     uploadStatus: UploadStatus
     uploadError?: string
@@ -298,43 +296,33 @@ const MIN_VERTICES_BY_SHAPE: Record<AOIShape, number> = {
     circle: 2,
 }
 
+// Two-click shapes (rectangle, circle) finish on their final click, so their
+// hints must not advertise Enter/double-click — only gestures that work.
 const HINT_BY_SHAPE: Record<AOIShape, (count: number, min: number) => string> = {
-    point: () => 'Click on the map to place the point.',
-    linestring: (count) =>
-        `Click to add vertices. ${count} placed (need 2+). Double-click or Enter to finish.`,
+    point: () => 'Click on the map to place the point. Esc to cancel.',
+    linestring: (count, min) =>
+        `Click to add vertices. ${count} placed (need ${min}+). ` +
+        'Press Enter or double-click to finish. Esc to cancel.',
     polygon: (count, min) =>
-        `Click on the map to add vertices. ${count} placed (need ${min}+).`,
-    rectangle: () => 'Click two corners to define the rectangle.',
-    circle: () => 'Click the centre, then click the edge to define the circle.',
+        `Click on the map to add vertices. ${count} placed (need ${min}+). ` +
+        'Press Enter, double-click, or click the first vertex to finish. ' +
+        'Esc to cancel.',
+    rectangle: () =>
+        'Click two corners to define the rectangle. Esc to cancel.',
+    circle: () =>
+        'Click the centre, then click the edge to define the circle. Esc to cancel.',
 }
 
 function DrawInProgressPanel(props: AOIComponentProps) {
     const shape = props.drawShape!
-    const minVertices = MIN_VERTICES_BY_SHAPE[shape]
-    const valid = props.drawVerticesCount >= minVertices
-    const hint = HINT_BY_SHAPE[shape](props.drawVerticesCount, minVertices)
+    const hint = HINT_BY_SHAPE[shape](
+        props.drawVerticesCount,
+        MIN_VERTICES_BY_SHAPE[shape]
+    )
 
     return (
         <div className="aoi-panel aoi-panel--draw">
             <p className="aoi-panel__hint">{hint}</p>
-            <div className="aoi-draw__actions" role="group" aria-label="Drawing actions">
-                <Button
-                    type="button"
-                    className="aoi-draw__confirm"
-                    onClick={props.onDrawConfirm}
-                    disabled={!valid}
-                >
-                    Confirm
-                </Button>
-                <Button
-                    type="button"
-                    outline
-                    className="aoi-draw__cancel"
-                    onClick={props.onDrawCancel}
-                >
-                    Cancel
-                </Button>
-            </div>
         </div>
     )
 }
