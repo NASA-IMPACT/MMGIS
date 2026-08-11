@@ -14,9 +14,6 @@
  *     - getCurrentSelection -> { feature, source } | null
  *
  *   Listens to:
- *     - plugin:aoi:analyzeClicked /
- *       plugin:aoi:drawingCancelled       (its own popup's button and dismiss
- *                                          events, broadcast by core)
  *     - map:drawstart / drawvertex /
  *       drawcomplete / drawcancel         (engine bus)
  *     - map:featureClick                  (inspect-mode boundary clicks, filtered by layerId)
@@ -28,8 +25,8 @@
  *     - map:createLayer / map:removeLayer
  *     - map:getBounds / map:fitBounds
  *     - map:enableDrawing / map:disableDrawing / map:finishDrawing
- *     - map:showPopup / map:hidePopup
-
+ *     - map:showPopup      (resolves with how the popup closed) / map:hidePopup
+ *
  * AOIComponent.tsx must stay MMGIS-agnostic.
  */
 
@@ -56,11 +53,6 @@ const DEFAULT_DRAW_SHAPES = ['polygon', 'rectangle', 'circle']
 const VALID_DRAW_SHAPES = new Set(['point', 'linestring', 'polygon', 'rectangle', 'circle'])
 const SELECTION_LAYER_ID = 'aoi:selection'
 const INSPECT_BOUNDARIES_LAYER_ID = 'aoi:inspect-boundaries'
-
-// Popup events. Full names, because the popup request and the subscriptions
-// below both need absolute bus paths.
-const ANALYZE_EVENT = `plugin:${PLUGIN_ID}:analyzeClicked`
-const CANCEL_EVENT = `plugin:${PLUGIN_ID}:drawingCancelled`
 
 // ── Draw-session keys ──────────────────────────────────────────────────────────
 // Components with these roles handle Escape themselves — a dialog, menu,
@@ -194,8 +186,6 @@ const AOITool = {
                 const off = api.on(event, handler)
                 this._cleanups.push(typeof off === 'function' ? off : () => { })
             }
-            subscribe(ANALYZE_EVENT,       () => this._onAnalyze())
-            subscribe(CANCEL_EVENT,        () => this._clearSelection())
             subscribe('map:drawstart',     () => this._onDrawStart())
             subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
@@ -580,9 +570,9 @@ const AOITool = {
     _applySelection(feature, source, label) {
         this._cancelPendingPopup()
         this._removeSelectionLayer()
-        // Retract the current popup up front: a click that starts a new
-        // selection would otherwise dismiss it — and wipe this selection —
-        // after the deferred show below has already run.
+        // Retract the current popup up front: the click that starts a new
+        // selection would otherwise dismiss it a task later, which answers
+        // its request as a dismissal and clears the selection just made.
         this._hidePopup()
 
         const api = window.mmgisAPI
@@ -689,7 +679,7 @@ const AOITool = {
     _clearSelection() {
         if (!this._state.currentAOI) return
         this._removeSelectionLayer()
-        this._hidePopup()
+        this._cancelPendingPopup()
         this._state.currentAOI = null
         this._api?.emit('drawingCleared', {})
         this._render()
@@ -705,18 +695,26 @@ const AOITool = {
 
     /**
      * Ask core for the analyze/cancel popup at a feature centroid. The request
-     * is data only: core owns the DOM, the styling and the lifecycle, and
-     * broadcasts the button events back on the bus.
+     * is data only — core owns the DOM, the styling and the lifecycle — and it
+     * answers with how the popup closed.
      */
     _showPopup(label, latlng) {
         window.mmgisAPI?.request?.('map:showPopup', {
             latlng,
             html: `<strong>${escapeHtml(label)}</strong>`,
-            secondaryAction: { label: 'Cancel', event: CANCEL_EVENT },
-            primaryAction: { label: 'Analyze area', event: ANALYZE_EVENT },
-            // The X and a click away mean the same thing as Cancel here.
-            dismissEvent: CANCEL_EVENT,
-        }).catch((err) => console.warn('[AOI] showPopup failed', err))
+            secondaryAction: { label: 'Cancel' },
+            primaryAction: { label: 'Analyze area' },
+        })
+            .then(({ action } = {}) => {
+                // Cancel, the X and a click on the map all abandon the
+                // selection; 'closed' means AOI itself retracted the popup,
+                // which leaves the selection alone.
+                if (action === 'primary') this._onAnalyze()
+                else if (action === 'secondary' || action === 'dismiss') {
+                    this._clearSelection()
+                }
+            })
+            .catch((err) => console.warn('[AOI] showPopup failed', err))
     },
 
     _hidePopup() {
@@ -726,8 +724,8 @@ const AOITool = {
     // ── Analysis hand-off ──────────────────────────────────────────────────────
 
     /**
-     * The popup's events carry no payload, so the feature is attached here —
-     * `analysisAOIReady` reaches FetchStats and Chart exactly as before.
+     * The popup's result carries no data, so the feature is attached here:
+     * `analysisAOIReady` is what reaches the FetchStats and Chart plugins.
      */
     _onAnalyze() {
         const aoi = this._state.currentAOI

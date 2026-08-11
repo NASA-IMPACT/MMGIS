@@ -9,9 +9,6 @@ vi.mock('react-dom/client', () => ({
 
 import AOITool from '../../src/essence/Tools/AOI/AOITool'
 
-const ANALYZE_EVENT = 'plugin:aoi:analyzeClicked'
-const CANCEL_EVENT = 'plugin:aoi:drawingCancelled'
-
 const polygon = (ring) => ({
     type: 'Feature',
     properties: {},
@@ -27,6 +24,10 @@ const FAR_SQUARE = polygon([[20, 20], [20, 30], [30, 30], [30, 20], [20, 20]])
  * Minimal stand-in for `window.mmgisAPI`: a mitt-like bus plus recording
  * `request`/`emit` logs, so a spec can assert exactly what the plugin asked
  * core for and what it broadcast.
+ *
+ * `map:showPopup` and `map:hidePopup` model the core service's contract — one
+ * popup slot, a later show or a hide closes the current one, and every show is
+ * answered on its own promise with how its popup closed.
  */
 function makeFakeApi() {
     const listeners = new Map()
@@ -34,6 +35,14 @@ function makeFakeApi() {
     const emits = []
     const provided = new Map()
     const requestImpl = new Map()
+
+    let openPopup = null
+    const settleOpen = (action) => {
+        if (!openPopup) return
+        const { resolve } = openPopup
+        openPopup = null
+        resolve({ action })
+    }
 
     const api = {
         on(event, handler) {
@@ -64,9 +73,6 @@ function makeFakeApi() {
             return {
                 emit: (event, data) => api.emit(prefix + event, data),
                 provide: (name, handler) => api.provide(prefix + name, handler),
-                getVars: () => ({}),
-                pluginId,
-                prefix,
             }
         },
 
@@ -78,11 +84,26 @@ function makeFakeApi() {
         namesOf: (name) => requests.filter((r) => r.name === name),
         emitsOf: (event) => emits.filter((e) => e.event === event),
         getSelection: () => provided.get('plugin:aoi:getCurrentSelection')?.(),
+        /** Close the open popup the way core would, answering its request. */
+        closePopup: (action) => settleOpen(action),
+        hasOpenPopup: () => openPopup !== null,
         reset() {
             requests.length = 0
             emits.length = 0
         },
     }
+
+    requestImpl.set('map:showPopup', (payload) => {
+        settleOpen('closed')
+        return new Promise((resolve) => {
+            openPopup = { payload, resolve }
+        })
+    })
+    requestImpl.set('map:hidePopup', () => {
+        settleOpen('closed')
+        return true
+    })
+
     return api
 }
 
@@ -90,6 +111,13 @@ let api
 
 /** Let queued microtasks (bus request promises) run. */
 const flush = () => vi.advanceTimersByTimeAsync(0)
+
+/** Make a selection and let its deferred popup open. */
+async function selectAndOpen(feature, label) {
+    AOITool._applySelection(feature, 'search', label)
+    api.emit('map:moveend')
+    await flush()
+}
 
 beforeEach(async () => {
     vi.useFakeTimers()
@@ -114,8 +142,10 @@ afterEach(() => {
 })
 
 describe('AOITool popup requests', () => {
-    test('asks core for the analyze/cancel popup at the feature centroid', () => {
+    test('asks core for the analyze/cancel popup at the feature centroid, once the camera settles', () => {
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
+
         api.emit('map:moveend')
 
         const shows = api.namesOf('map:showPopup')
@@ -123,39 +153,31 @@ describe('AOITool popup requests', () => {
         const payload = shows[0].payload
         expect(payload.latlng).toEqual({ lat: 5, lng: 5 })
         expect(payload.html).toBe('<strong>Alabama</strong>')
-        expect(payload.primaryAction).toEqual({
-            label: 'Analyze area',
-            event: ANALYZE_EVENT,
-        })
-        expect(payload.secondaryAction).toEqual({
-            label: 'Cancel',
-            event: CANCEL_EVENT,
-        })
-        expect(payload.dismissEvent).toBe(CANCEL_EVENT)
+        // Labels only: the outcome comes back on the request's promise, so the
+        // plugin names no events for core to broadcast.
+        expect(payload.primaryAction).toEqual({ label: 'Analyze area' })
+        expect(payload.secondaryAction).toEqual({ label: 'Cancel' })
 
         // The request must survive a postMessage boundary: data only, no
         // functions crossing into core.
         expect(JSON.parse(JSON.stringify(payload))).toEqual(payload)
     })
 
-    test('defers the popup until the camera settles', () => {
-        AOITool._applySelection(SQUARE, 'search', 'Alabama')
-        expect(api.namesOf('map:showPopup')).toHaveLength(0)
+    test('retracts the open popup before showing the next one, keeping the new selection', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        expect(api.hasOpenPopup()).toBe(true)
+        api.reset()
 
-        api.emit('map:moveend')
-        expect(api.namesOf('map:showPopup')).toHaveLength(1)
-    })
+        // The retract answers the first request with 'closed', which must not
+        // be read as the user abandoning the selection just made.
+        await selectAndOpen(FAR_SQUARE, 'Alaska')
 
-    test('retracts the open popup before showing the next one', () => {
-        AOITool._applySelection(SQUARE, 'search', 'Alabama')
-        // Synchronous, so a click that dismisses the old popup cannot land
-        // after the deferred show and wipe the new selection.
-        const hideAt = api.requests.findIndex((r) => r.name === 'map:hidePopup')
-        expect(hideAt).toBeGreaterThanOrEqual(0)
-
-        api.emit('map:moveend')
-        const showAt = api.requests.findIndex((r) => r.name === 'map:showPopup')
-        expect(showAt).toBeGreaterThan(hideAt)
+        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.html).toBe('<strong>Alaska</strong>')
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(0)
+        expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE })
     })
 
     test('escapes markup in the label', () => {
@@ -167,35 +189,74 @@ describe('AOITool popup requests', () => {
     })
 })
 
-describe('AOITool popup events', () => {
-    test('analyze hands the selected feature to the analysis consumers', () => {
-        AOITool._applySelection(SQUARE, 'search', 'Alabama')
-        api.emit('map:moveend')
+describe('AOITool popup outcomes', () => {
+    test('a primary press hands the selected feature to the analysis consumers', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
         api.reset()
 
-        api.emit(ANALYZE_EVENT)
+        api.closePopup('primary')
+        await flush()
 
         const ready = api.emitsOf('plugin:aoi:analysisAOIReady')
         expect(ready).toHaveLength(1)
         expect(ready[0].data).toEqual({ feature: SQUARE })
-        // Analyzing keeps the selection; only Cancel clears it.
+        // Analyzing keeps the selection; only cancelling clears it.
         expect(api.getSelection()).toMatchObject({ feature: SQUARE, source: 'search' })
     })
 
-    test('cancel clears the selection without re-broadcasting itself', () => {
-        AOITool._applySelection(SQUARE, 'search', 'Alabama')
-        api.emit('map:moveend')
+    test('a secondary press clears the selection and its highlight', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
         api.reset()
 
-        api.emit(CANCEL_EVENT)
+        api.closePopup('secondary')
+        await flush()
 
         expect(api.namesOf('map:removeLayer').map((r) => r.payload)).toContainEqual({
             id: 'aoi:selection',
         })
         expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(1)
         expect(api.getSelection()).toBeNull()
-        // Core broadcasts the cancellation; re-emitting it here would recurse.
-        expect(api.emitsOf(CANCEL_EVENT)).toHaveLength(1)
+    })
+
+    test('a dismissal clears the selection too', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.reset()
+
+        api.closePopup('dismiss')
+        await flush()
+
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(1)
+        expect(api.getSelection()).toBeNull()
+    })
+
+    test('a popup that closed on its own leaves the selection alone', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.reset()
+
+        api.closePopup('closed')
+        await flush()
+
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(0)
+        expect(api.emitsOf('plugin:aoi:analysisAOIReady')).toHaveLength(0)
+        expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+    })
+
+    test('a rejected popup request is reported and leaves the tool usable', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => { })
+        api.requestImpl.set('map:showPopup', () => {
+            throw new Error('invalid request')
+        })
+
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        api.emit('map:moveend')
+        await flush()
+
+        expect(warn).toHaveBeenCalled()
+        // The selection survives, and a later selection still works.
+        expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+        api.requestImpl.delete('map:showPopup')
+        await selectAndOpen(FAR_SQUARE, 'Alaska')
+        expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE })
     })
 })
 
@@ -212,8 +273,18 @@ describe('AOITool popup lifecycle', () => {
         expect(api.namesOf('map:showPopup')).toHaveLength(0)
 
         expect(api.listenerCount('map:moveend')).toBe(0)
-        expect(api.listenerCount(ANALYZE_EVENT)).toBe(0)
-        expect(api.listenerCount(CANCEL_EVENT)).toBe(0)
+        expect(api.listenerCount('map:featureClick')).toBe(0)
+    })
+
+    test('clearing the selection drops a pending show', () => {
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        api.reset()
+
+        AOITool._clearSelection()
+
+        api.emit('map:moveend')
+        vi.advanceTimersByTime(2000)
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
     })
 
     test('a superseding selection leaves only its own popup pending', () => {
@@ -224,6 +295,7 @@ describe('AOITool popup lifecycle', () => {
         expect(api.listenerCount('map:moveend')).toBe(1)
 
         api.emit('map:moveend')
+        vi.advanceTimersByTime(2000)
 
         const shows = api.namesOf('map:showPopup')
         expect(shows).toHaveLength(1)
@@ -241,7 +313,7 @@ describe('AOITool popup lifecycle', () => {
         expect(api.namesOf('map:showPopup')).toHaveLength(1)
     })
 
-    test('a rejected fitBounds still shows the popup exactly once', async () => {
+    test('a rejected fitBounds leaves the popup to the fallback timer, still once', async () => {
         api.requestImpl.set('map:fitBounds', () => {
             throw new Error('no view yet')
         })
@@ -249,28 +321,13 @@ describe('AOITool popup lifecycle', () => {
 
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
         await flush()
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
+
+        vi.advanceTimersByTime(1500)
         expect(api.namesOf('map:showPopup')).toHaveLength(1)
 
         api.emit('map:moveend')
         vi.advanceTimersByTime(2000)
         expect(api.namesOf('map:showPopup')).toHaveLength(1)
-    })
-
-    test('a superseded selection\'s rejected fitBounds cannot show or cancel', async () => {
-        api.requestImpl.set('map:fitBounds', () => {
-            throw new Error('no view yet')
-        })
-        vi.spyOn(console, 'warn').mockImplementation(() => { })
-
-        // The first selection's rejection resolves only after the second has
-        // taken over, so it must neither open its own popup nor drop the
-        // second selection's pending show.
-        AOITool._applySelection(SQUARE, 'search', 'Alabama')
-        AOITool._applySelection(FAR_SQUARE, 'search', 'Alaska')
-        await flush()
-
-        const shows = api.namesOf('map:showPopup')
-        expect(shows).toHaveLength(1)
-        expect(shows[0].payload.html).toBe('<strong>Alaska</strong>')
     })
 })
