@@ -220,6 +220,58 @@ test.describe('DeckGLAdapter', () => {
             expect(() => adapter.setLayerOpacity(false, 0.5)).not.toThrow()
             expect(adapter.setLayerOpacity(false, 0.5)).toBeUndefined()
         })
+
+        test('setLayerZIndex keeps a layer with no z-index above the ordered stack', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('data-layer'))
+            adapter.setLayerZIndex('data-layer', 2)
+            adapter.addLayer(makeLayer('aoi:selection'))
+            // Unhiding a data layer re-applies its z-index, re-sorting the registry.
+            adapter.updateLayer('data-layer', { visible: true })
+            adapter.setLayerZIndex('data-layer', 2)
+            const ids = adapter.getLayers().map((l) => l.id)
+            expect(ids[ids.length - 1]).toBe('aoi:selection')
+        })
+
+        test('setLayerZIndex orders layers that have one by ascending z-index', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('top'))
+            adapter.addLayer(makeLayer('bottom'))
+            adapter.setLayerZIndex('top', 5)
+            adapter.setLayerZIndex('bottom', 1)
+            expect(adapter.getLayers().map((l) => l.id)).toEqual(['bottom', 'top'])
+        })
+
+        test('a re-sort of a startup-ranked stack keeps the ranks ascending and the overlay on top', () => {
+            const adapter = makeAdapter()
+            // Startup ranks every mission layer as it is added.
+            adapter.addLayer(makeLayer('above'))
+            adapter.setLayerZIndex('above', 2)
+            adapter.addLayer(makeLayer('below'))
+            adapter.setLayerZIndex('below', 1)
+            adapter.addLayer(makeLayer('aoi:selection'))
+            // Unhiding a mission layer re-applies its z-index, re-sorting the registry.
+            adapter.setLayerZIndex('above', 2)
+            expect(adapter.getLayers().map((l) => l.id)).toEqual([
+                'below',
+                'above',
+                'aoi:selection',
+            ])
+        })
+
+        test('a re-sort keeps two layers with no z-index in the order they were added', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('mission'))
+            adapter.setLayerZIndex('mission', 1)
+            adapter.addLayer(makeLayer('aoi:selection'))
+            adapter.addLayer(makeLayer('draw:preview'))
+            adapter.setLayerZIndex('mission', 1)
+            expect(adapter.getLayers().map((l) => l.id)).toEqual([
+                'mission',
+                'aoi:selection',
+                'draw:preview',
+            ])
+        })
     })
 
     test.describe('event system', () => {
@@ -260,6 +312,120 @@ test.describe('DeckGLAdapter', () => {
             adapter.emit('ping')
             adapter.emit('ping')
             expect(count).toBe(1)
+        })
+    })
+
+    test.describe('drawing overlay stacking', () => {
+        const ANCHOR_ID = 'td-polygon'
+
+        // Enough of the maplibre Map surface for TerraDrawMapLibreGLAdapter to
+        // construct, register its layers, and tear them down. Registered ids are
+        // tracked so getLayer() answers like a real style does.
+        function makeDrawingBasemap() {
+            const canvas = document.createElement('canvas')
+            const container = document.createElement('div')
+            const styleLayers = new Set()
+            return {
+                getContainer: () => container,
+                getCanvas: () => canvas,
+                dragRotate: { isEnabled: () => true, enable: () => {}, disable: () => {} },
+                dragPan: { isEnabled: () => true, enable: () => {}, disable: () => {} },
+                doubleClickZoom: { enable: () => {}, disable: () => {} },
+                addSource: vi.fn(),
+                addLayer: vi.fn((layer) => styleLayers.add(layer.id)),
+                removeLayer: vi.fn((id) => styleLayers.delete(id)),
+                removeSource: vi.fn(),
+                getLayer: (id) => (styleLayers.has(id) ? { id } : undefined),
+                getSource: () => ({ setData: () => {} }),
+                setStyle: vi.fn(() => styleLayers.clear()),
+                version: '5.8.0',
+            }
+        }
+
+        function makeDrawingAdapter() {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = true
+            adapter._basemap = makeDrawingBasemap()
+            adapter._overlay = { setProps: vi.fn() }
+            return adapter
+        }
+
+        function lastSyncedLayers(adapter) {
+            const calls = adapter._overlay.setProps.mock.calls
+            return calls[calls.length - 1][0].layers
+        }
+
+        test('enableDrawing anchors every deck layer below the terra-draw stack', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.addLayer(makeLayer('raster'))
+            adapter.addLayer(makeLayer('vector'))
+            adapter.enableDrawing('polygon')
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([
+                ANCHOR_ID,
+                ANCHOR_ID,
+            ])
+        })
+
+        test('the anchor id matches the bottom-most layer terra-draw registers', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.enableDrawing('polygon')
+            expect(adapter._basemap.addLayer.mock.calls[0][0].id).toBe('td-polygon')
+        })
+
+        test('layers added mid-draw are anchored too', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.enableDrawing('rectangle')
+            adapter.addLayer(makeLayer('added-mid-draw'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([ANCHOR_ID])
+        })
+
+        test('no anchor is stamped while the terra-draw layers are out of the style', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.addLayer(makeLayer('raster'))
+            adapter.enableDrawing('polygon')
+            adapter._basemap.getLayer = () => undefined
+            adapter.addLayer(makeLayer('added-after-wipe'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([
+                undefined,
+                undefined,
+            ])
+        })
+
+        test('setBasemapStyle drops the anchor before the swap wipes the terra-draw layers', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.addLayer(makeLayer('raster'))
+            adapter.enableDrawing('polygon')
+            adapter.setBasemapStyle('https://example.com/style.json')
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([undefined])
+            expect(adapter._overlay.setProps.mock.invocationCallOrder.at(-1)).toBeLessThan(
+                adapter._basemap.setStyle.mock.invocationCallOrder[0]
+            )
+        })
+
+        test('setBasemapStyle cancels the live drawing session', () => {
+            const adapter = makeDrawingAdapter()
+            const cancels = []
+            adapter.on('drawcancel', (e) => cancels.push(e))
+            adapter.enableDrawing('polygon')
+            adapter.setBasemapStyle('https://example.com/style.json')
+            expect(adapter.isDrawing()).toBe(false)
+            expect(cancels).toEqual([{ shape: 'polygon' }])
+        })
+
+        test('disableDrawing drops the anchor', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.addLayer(makeLayer('raster'))
+            adapter.enableDrawing('polygon')
+            adapter.disableDrawing()
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([undefined])
+        })
+
+        test('the layer registry keeps the original un-anchored instances', () => {
+            const adapter = makeDrawingAdapter()
+            const original = makeLayer('raster')
+            adapter.addLayer(original)
+            adapter.enableDrawing('polygon')
+            expect(adapter.getLayers()[0]).toBe(original)
         })
     })
 

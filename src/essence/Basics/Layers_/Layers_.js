@@ -1325,6 +1325,20 @@ const L_ = {
                                 L_.layers.layer[L_.layers.dataFlat[i].name]
                             )
                         )
+                        // Rank every layer the same way toggleLayerHelper does,
+                        // so the stack follows z-index order at start instead of
+                        // element order and a later toggle re-sorts against
+                        // ranks that are already assigned.
+                        engine.setLayerZIndex(
+                            L_.Map_.nativeLayer(
+                                L_.layers.layer[L_.layers.dataFlat[i].name]
+                            ),
+                            L_._layersOrdered.length +
+                                1 -
+                                L_._layersOrdered.indexOf(
+                                    L_.layers.dataFlat[i].name
+                                )
+                        )
 
                         // Ensure video layers start muted when added to map
                         if (L_.layers.dataFlat[i].type === 'video') {
@@ -1367,14 +1381,6 @@ const L_ = {
                     s.type === 'data' ||
                     s.type === 'vectortile'
                 ) {
-                    // Make sure all tile layers follow z-index order at start instead of element order
-                    engine.setLayerZIndex(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(s.name)
-                    )
-
                     let demUrl = s.demtileurl
                     if (!F_.isUrlAbsolute(demUrl))
                         demUrl = L_.missionPath + demUrl
