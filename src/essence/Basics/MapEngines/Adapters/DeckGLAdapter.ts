@@ -270,6 +270,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _drawingShape: DrawShape | null = null
     private _terraDraw: TerraDraw | null = null
     private _terraDrawListeners: Array<() => void> = []
+    private _drawKeyBridge: ((evt: KeyboardEvent) => void) | null = null
 
     /** Registry of anchored HTML overlays (id -> teardown function). */
     private _overlays = new Map<string, () => void>()
@@ -375,6 +376,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
+        this._removeDrawKeyBridge()
         this._drawingShape = null
 
         if (this._isOverlayMode) {
@@ -1075,7 +1077,44 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         td.setMode(shape)
         this._drawingShape = shape
         this._syncLayers()
+        this._installDrawKeyBridge()
         this._emitEvent('drawstart', { shape })
+    }
+
+    /** The element terra-draw's MapLibre adapter attaches its listeners to. */
+    private _drawEventElement(): HTMLElement | null {
+        return (this._basemap as any)?.getCanvas?.() ?? null
+    }
+
+    /**
+     * terra-draw's Enter/Escape listeners live on the map canvas, which only
+     * receives key events while focused — after any panel interaction they go
+     * nowhere. While a session is active, this document-level bridge handles
+     * Escape itself (terra-draw's own Escape path only deletes the geometry
+     * and emits no event the adapter observes, so `drawcancel` must come from
+     * here regardless) and forwards Enter to the canvas when the event did
+     * not already reach it.
+     */
+    private _installDrawKeyBridge(): void {
+        if (this._drawKeyBridge) return
+        this._drawKeyBridge = (evt: KeyboardEvent) => {
+            if (!this._drawingShape) return
+            if (evt.key === 'Escape') {
+                this.disableDrawing()
+            } else if (evt.key === 'Enter') {
+                const el = this._drawEventElement()
+                if (el && evt.target !== el && !el.contains(evt.target as Node)) {
+                    el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter' }))
+                }
+            }
+        }
+        document.addEventListener('keyup', this._drawKeyBridge)
+    }
+
+    private _removeDrawKeyBridge(): void {
+        if (!this._drawKeyBridge) return
+        document.removeEventListener('keyup', this._drawKeyBridge)
+        this._drawKeyBridge = null
     }
 
     /**
@@ -1089,6 +1128,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (!this._drawingShape) return null
         const shape = this._drawingShape
         this._drawingShape = null
+        this._removeDrawKeyBridge()
         if (this._terraDraw) {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
@@ -1106,15 +1146,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * terra-draw modes commit on `Enter` via their `keyEvents.finish` binding.
      * There's no programmatic-finish API yet (see
      * https://github.com/JamesLMilner/terra-draw), so we dispatch a synthetic
-     * keydown to the map container — the mode's keyboard handler picks it up
-     * and emits `finish` if the geometry is valid. If it isn't (e.g. polygon
-     * with <3 vertices), the dispatch is a no-op and we fall through to
-     * cancel.
+     * keyup on the map canvas — the element terra-draw listens on. The mode
+     * emits `finish` if the geometry is valid; if it isn't (e.g. polygon with
+     * <3 vertices), the dispatch is a no-op and we fall through to cancel.
      */
     finishDrawing(): void {
         if (!this._drawingShape || !this._terraDraw) return
-        const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
-        this._container?.dispatchEvent(evt)
+        this._drawEventElement()?.dispatchEvent(
+            new KeyboardEvent('keyup', { key: 'Enter' })
+        )
         if (this._drawingShape) this.disableDrawing()
     }
 
