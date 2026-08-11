@@ -64,8 +64,14 @@ function normalizeAction(
     return undefined
 }
 
+/**
+ * @param slot Which action the button reports when pressed.
+ * @param variant Which styling it takes, which is the slot except for a lone
+ * secondary action, see `buildPopupCard`.
+ */
 function buildActionButton(
     label: string,
+    slot: ActionSlot,
     variant: ActionSlot,
     onAction: (action: ActionSlot) => void
 ): HTMLButtonElement {
@@ -73,7 +79,7 @@ function buildActionButton(
     button.type = 'button'
     button.className = `mmgis-map-popup__button mmgis-map-popup__button--${variant}`
     button.textContent = label
-    button.addEventListener('click', () => onAction(variant))
+    button.addEventListener('click', () => onAction(slot))
     return button
 }
 
@@ -108,14 +114,27 @@ function buildPopupCard(options: PopupCardOptions): HTMLElement {
     if (primaryAction || secondaryAction) {
         const actions = document.createElement('div')
         actions.className = 'mmgis-map-popup__actions'
-        if (secondaryAction) {
-            actions.appendChild(
-                buildActionButton(secondaryAction.label, 'secondary', onAction)
-            )
-        }
+        // The primary action leads the row.
         if (primaryAction) {
             actions.appendChild(
-                buildActionButton(primaryAction.label, 'primary', onAction)
+                buildActionButton(
+                    primaryAction.label,
+                    'primary',
+                    'primary',
+                    onAction
+                )
+            )
+        }
+        if (secondaryAction) {
+            // A lone action is the primary one whichever slot it arrived in,
+            // so it takes the primary styling while still reporting its slot.
+            actions.appendChild(
+                buildActionButton(
+                    secondaryAction.label,
+                    'secondary',
+                    primaryAction ? 'secondary' : 'primary',
+                    onAction
+                )
             )
         }
         card.appendChild(actions)

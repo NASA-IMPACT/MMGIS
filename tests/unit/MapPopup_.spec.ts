@@ -162,11 +162,12 @@ describe('MapPopup_', () => {
             primaryAction: { label: 'Analyze' },
         })
 
+        // The primary leads the row.
         expect(
             Array.from(buttons()).map((button) => button.textContent)
-        ).toEqual(['Cancel', 'Analyze'])
+        ).toEqual(['Analyze', 'Cancel'])
 
-        buttons()[1].dispatchEvent(new MouseEvent('click'))
+        buttons()[0].dispatchEvent(new MouseEvent('click'))
         await nextTick()
 
         expect(outcome).toEqual(['primary'])
@@ -180,12 +181,28 @@ describe('MapPopup_', () => {
             primaryAction: { label: 'Analyze' },
         })
 
-        buttons()[0].dispatchEvent(new MouseEvent('click'))
+        buttons()[1].dispatchEvent(new MouseEvent('click'))
         await nextTick()
 
         expect(outcome).toEqual(['secondary'])
         expect(popups()).toHaveLength(0)
         expect(bus.emitted).toEqual([])
+    })
+
+    it('styles a lone secondary action as the primary button', async () => {
+        const outcome = show(bus, engine, {
+            secondaryAction: { label: 'Cancel' },
+        })
+
+        expect(buttons()).toHaveLength(1)
+        expect(buttons()[0].className).toContain(
+            'mmgis-map-popup__button--primary'
+        )
+
+        // It still answers with the slot it was requested in.
+        buttons()[0].dispatchEvent(new MouseEvent('click'))
+        await nextTick()
+        expect(outcome).toEqual(['secondary'])
     })
 
     it('drops an action whose label is unusable', () => {

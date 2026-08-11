@@ -66,17 +66,28 @@
     color: var(--theme-color-ink, #1b1b1b);
 }
 
+/* Equal columns, so two buttons come out the same width rather than sized by
+   their own labels. Grid rather than a flex row: an `fr` track measures as the
+   widest label in the row, so the card grows to hold both buttons at that
+   width, where `flex: 1 1 0` items measure as the sum of their own labels and
+   leave the equal split too narrow for the longer one. */
 .mmgis-map-popup__actions {
-    display: flex;
-    justify-content: flex-end;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     gap: var(--theme-spacing-1, 0.5rem);
     margin-top: var(--theme-spacing-105, 0.75rem);
 }
 
-/* Basis 0 so two buttons come out equal width rather than sized by their own
-   labels. */
 .mmgis-map-popup__button {
-    flex: 1 1 0;
+    /* A label reads as one line. Once the card is at its max width there is no
+       room left to grow into, so an outsized label ends in an ellipsis rather
+       than wrapping or painting outside the button. The zero minimum lets the
+       column, not the label, decide how much room there is. */
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     height: 32px;
     padding: 0 var(--theme-spacing-105, 0.75rem);
     border-radius: var(--theme-radius-0, 0);
@@ -87,9 +98,11 @@
     transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* A lone button sits at the end of the row rather than filling it. */
+/* A lone button sits at the end of the row rather than filling it, and stays
+   inside the card when its label is too long to fit. */
 .mmgis-map-popup__button:only-child {
-    flex: 0 0 auto;
+    justify-self: end;
+    max-width: 100%;
 }
 
 .mmgis-map-popup__button:focus-visible {

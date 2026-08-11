@@ -393,8 +393,8 @@ const outcome = window.mmgisAPI.request('map:showPopup', {
     // Popup body. Sanitized by the core before it is rendered.
     html: '<strong>Crater A</strong><p>Diameter: 12 km</p>',
     // Up to two buttons, labelled only — the core reports which was pressed.
-    secondaryAction: { label: 'Cancel' },
-    primaryAction: { label: 'Analyze' }
+    primaryAction: { label: 'Analyze' },
+    secondaryAction: { label: 'Cancel' }
 })
 
 outcome.then(({ action }) => {
@@ -417,8 +417,8 @@ The result is `{ action }`:
 
 | `action` | Meaning |
 |----------|---------|
-| `'primary'` | The filled button was pressed |
-| `'secondary'` | The outlined button was pressed |
+| `'primary'` | The primary button was pressed |
+| `'secondary'` | The secondary button was pressed |
 | `'dismiss'` | The user dismissed the popup with the X or a click elsewhere on the map |
 | `'closed'` | The popup went away without the user acting on it: another `map:showPopup` replaced it, `map:hidePopup` retracted it, or the mission switched |
 
@@ -426,6 +426,11 @@ The request rejects — showing nothing — when it is invalid (`html` must be a
 string and `latlng` must hold finite numbers) or when the popup could not be
 mounted, so handle the rejection if a failure matters to the plugin. An
 action is rendered only when its `label` is a non-empty string.
+
+Two actions render as equal-width buttons on one row, the primary on the left.
+A single action sits at the bottom right and takes the primary styling whichever
+field it was passed in, since a lone choice is the primary one; it still answers
+with the field it was requested in.
 
 There is a single popup at a time — a request from any plugin replaces the
 current one, and there is no popup id. Each request keeps its own promise, so
