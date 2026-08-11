@@ -213,6 +213,20 @@ describe('MapPopup_', () => {
         expect(host.style.transform).toBe('translate(110px, 70px)')
     })
 
+    it('stays hidden until the anchor can be projected', () => {
+        engine.engine.latLngToContainerPoint = () => {
+            throw new Error('the engine has no view yet')
+        }
+        show(bus, engine)
+        const host = document.querySelector<HTMLElement>('.mmgis-map-popup-host')!
+        expect(host.style.visibility).toBe('hidden')
+
+        engine.engine.latLngToContainerPoint = () => ({ x: 300, y: 200 })
+        engine.fire('move')
+
+        expect(host.style.visibility).toBe('visible')
+    })
+
     it('flips below the anchor when the card would clip the viewport top', () => {
         engine = makeEngine({ point: { x: 300, y: 5 }, containerTop: 0 })
         show(bus, engine)

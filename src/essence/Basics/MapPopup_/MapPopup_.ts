@@ -6,8 +6,9 @@ import type { IMapEngine } from '../MapEngines/IMapEngine'
 
 import './MapPopup.css'
 
-/** Gap in pixels between the anchor point and the card, and from the viewport edges. */
+/** Gap in pixels between the anchor point and the card, mirroring MapPopup.css. */
 const ANCHOR_GAP = 12
+/** How close in pixels the card may come to a viewport edge. */
 const VIEWPORT_MARGIN = 8
 
 interface OpenPopup {
@@ -45,8 +46,6 @@ const MapPopup_ = {
      * @returns `true` when the popup was shown, `false` on an invalid request.
      */
     show(request: MapPopupRequest, engine: IMapEngine): boolean {
-        this._clearPendingDismiss()
-
         if (
             !request ||
             typeof request.html !== 'string' ||
@@ -68,8 +67,8 @@ const MapPopup_ = {
 
         const host = document.createElement('div')
         host.className = 'mmgis-map-popup-host'
-        // Stay hidden until the first projection lands, so the card never
-        // flashes at the top-left corner before it is positioned.
+        // Stays hidden until a projection lands, so the card never flashes at
+        // the top-left corner before it is positioned.
         host.style.visibility = 'hidden'
 
         const card = buildPopupCard({
@@ -92,14 +91,14 @@ const MapPopup_ = {
             if (event.key === 'Escape') this.hide({ fireDismiss: true })
         }
         // The click that opens a popup is usually the same map click that
-        // would dismiss it, so defer the dismissal by a tick: a show() in the
-        // same task or microtask cancels it.
+        // would dismiss it, so defer the dismissal by a tick: showing a popup
+        // in the same task or microtask cancels it.
         const offMapClick = window.mmgisAPI.on('map:click', () => {
             this._clearPendingDismiss()
-            this._pendingDismiss = setTimeout(
-                () => this.hide({ fireDismiss: true }),
-                0
-            )
+            this._pendingDismiss = setTimeout(() => {
+                this._pendingDismiss = null
+                this.hide({ fireDismiss: true })
+            }, 0)
         })
 
         engine.on('move', reposition)
@@ -118,7 +117,6 @@ const MapPopup_ = {
         }
 
         this._reposition()
-        host.style.visibility = 'visible'
         return true
     },
 
@@ -181,9 +179,10 @@ const MapPopup_ = {
                 window.innerWidth - halfCard - VIEWPORT_MARGIN
             )
             open.host.style.transform = `translate(${left}px, ${top}px)`
+            open.host.style.visibility = 'visible'
         } catch {
-            // Projection is unavailable until the engine has a view — the next
-            // move event repositions.
+            // Projection is unavailable until the engine has a view — the
+            // popup stays hidden and the next move event places it.
         }
     },
 }
