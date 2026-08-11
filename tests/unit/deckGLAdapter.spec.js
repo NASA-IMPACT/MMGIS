@@ -220,6 +220,27 @@ test.describe('DeckGLAdapter', () => {
             expect(() => adapter.setLayerOpacity(false, 0.5)).not.toThrow()
             expect(adapter.setLayerOpacity(false, 0.5)).toBeUndefined()
         })
+
+        test('setLayerZIndex keeps a layer with no z-index above the ordered stack', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('data-layer'))
+            adapter.setLayerZIndex('data-layer', 2)
+            adapter.addLayer(makeLayer('aoi:selection'))
+            // Unhiding a data layer re-applies its z-index, re-sorting the registry.
+            adapter.updateLayer('data-layer', { visible: true })
+            adapter.setLayerZIndex('data-layer', 2)
+            const ids = adapter.getLayers().map((l) => l.id)
+            expect(ids[ids.length - 1]).toBe('aoi:selection')
+        })
+
+        test('setLayerZIndex orders layers that have one by ascending z-index', () => {
+            const adapter = makeAdapter()
+            adapter.addLayer(makeLayer('top'))
+            adapter.addLayer(makeLayer('bottom'))
+            adapter.setLayerZIndex('top', 5)
+            adapter.setLayerZIndex('bottom', 1)
+            expect(adapter.getLayers().map((l) => l.id)).toEqual(['bottom', 'top'])
+        })
     })
 
     test.describe('event system', () => {

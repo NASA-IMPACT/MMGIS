@@ -157,6 +157,14 @@ const TERRA_DRAW_PREFIX = 'td'
  */
 const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
 
+/**
+ * Sort rank for layers that never received an explicit z-index. Only the
+ * configured mission layer stack calls {@link DeckGLAdapter.setLayerZIndex};
+ * everything else (plugin overlays such as a selection highlight) is added on
+ * top of that stack, so it ranks above every assigned index.
+ */
+const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
+
 function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
     return new Promise((resolve, reject) => {
         if (typeof canvas.toBlob !== 'function') {
@@ -1389,11 +1397,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /**
      * Re-order the layer Map by ascending z-index so `_syncLayers` sends them in the
      * correct draw order (lower z-index = rendered first = behind).
+     *
+     * Layers with no assigned z-index rank {@link UNRANKED_Z_INDEX}, keeping
+     * them above the mission layer stack; the sort is stable, so they also keep
+     * their order relative to each other.
      */
     private _sortLayersByZIndex(): void {
+        const rank = (id: string) => this._layerZIndices.get(id) ?? UNRANKED_Z_INDEX
         const entries = [...this._layers.entries()].sort(
-            ([aId], [bId]) =>
-                (this._layerZIndices.get(aId) ?? 0) - (this._layerZIndices.get(bId) ?? 0)
+            ([aId], [bId]) => rank(aId) - rank(bId)
         )
         this._layers = new Map(entries)
     }
