@@ -179,6 +179,9 @@ const L_ = {
         nameToUUID: {},
         refreshIntervals: {}, // In order to reloadLayer
         refreshFailed: {}, // Track layers with failed refreshes
+        // Name -> { status: 'ok' | 'error', message } as reported by the map
+        // engine's request hooks. Written only via L_.setLayerLoadStatus.
+        loadStatus: {},
     },
     // ===== Private ======
     //Index -> layer name
@@ -394,6 +397,24 @@ const L_ = {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true
                 }),
+                // In-memory layer add/remove (not persisted; lost on reload).
+                // layerObj requires { name, type, ... }. See mmgisAPI.addLayer.
+                window.mmgisAPI.provide('layers:addLayer', (layerObj) =>
+                    window.mmgisAPI.addLayer(layerObj)
+                ),
+                window.mmgisAPI.provide('layers:removeLayer', (layerUUID) =>
+                    window.mmgisAPI.removeLayer(layerUUID)
+                ),
+                // Engine-reported load health. With a layerUUID returns that
+                // layer's { status, message } (null if none reported yet);
+                // without, the whole name-keyed map. Live updates broadcast
+                // as 'layers:loadStatusChanged'.
+                window.mmgisAPI.provide('layers:getLoadStatus', (layerUUID) =>
+                    layerUUID != null
+                        ? L_.layers.loadStatus[L_.asLayerUUID(layerUUID)] ??
+                          null
+                        : L_.layers.loadStatus
+                ),
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
@@ -623,16 +644,6 @@ const L_ = {
                 window.mmgisglobal.IS_DOCKER === 'true'
             ) {
                 nextUrl = `/${nextUrl}`
-            }
-        }
-        if (process.env.NODE_ENV === 'development' && F_.isUrlAbsolute(nextUrl)) {
-            try {
-                if (new URL(nextUrl).origin !== window.location.origin) {
-                    const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
-                    nextUrl = `${rootPath}/corsproxy/${nextUrl}`
-                }
-            } catch (e) {
-                // Invalid URL, leave unchanged
             }
         }
         return nextUrl
@@ -2095,6 +2106,26 @@ const L_ = {
                 }
             )
     },
+    // Records engine-reported load health for a layer and broadcasts
+    // transitions on the bus. Engines call this from their request hooks
+    // (tile load/error, WMS image load/error, GeoJSON fetch), but the status
+    // is per LAYER, not per request: once a layer has loaded anything
+    // successfully it stays 'ok' — later individual failures (tiles outside
+    // a regional dataset's coverage, transient requests) don't flip it back.
+    // 'error' therefore means the layer has never loaded anything.
+    setLayerLoadStatus: function (name, status, message) {
+        message = message ?? null
+        const prev = L_.layers.loadStatus[name]
+        if (prev && prev.status === 'ok' && status === 'error') return
+        if (prev && prev.status === status && prev.message === message) return
+        L_.layers.loadStatus[name] = { status, message }
+        if (window.mmgisAPI)
+            window.mmgisAPI.emit('layers:loadStatusChanged', {
+                layerName: name,
+                status,
+                message,
+            })
+    },
     setLayerOpacity: function (name, newOpacity) {
         newOpacity = parseFloat(newOpacity)
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
@@ -3556,6 +3587,7 @@ const L_ = {
         L_._layersOrdered = []
         L_.layers.dataFlat = []
         L_._layersLoaded = []
+        L_.layers.loadStatus = {}
 
         await L_.parseConfig(data)
 
@@ -3579,6 +3611,14 @@ const L_ = {
             await L_.removeLayerFromLayersData(layerName)
         }
 
+        // Notify subscribers (e.g. the modern-layout Layers panel) that the
+        // layer list changed, so they rebuild.
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('layers:listChanged')
+        }
+
+        // The classic-layout LayersTool doesn't subscribe to the bus, so
+        // rebuild it directly when it's the active tool.
         if (ToolController_.activeToolName === 'LayersTool') {
             const layersTool = ToolController_.getTool('LayersTool')
             if (layersTool.destroy && layersTool.make) {
@@ -3646,6 +3686,7 @@ const L_ = {
                 delete L_.layers.on[layerUUID]
                 delete L_.layers.attachments[layerUUID]
                 delete L_.layers.opacity[layerUUID]
+                delete L_.layers.loadStatus[layerUUID]
             }
         }
     },
