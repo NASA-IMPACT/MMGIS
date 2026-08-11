@@ -349,8 +349,8 @@ window.mmgisAPI.on('legend:made', ({ layerName, legendData }) => {
 | `map:setView` | `{ center, zoom }` | `true` | Set map view |
 | `map:fitBounds` | `bounds` | `true` | Fit map to bounds |
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
-| `map:showPopup` | `MapPopupRequest` | `boolean` | Show a map-anchored popup at a lat/lng, replacing any current popup |
-| `map:hidePopup` | none | `true` | Close the current popup without firing its dismiss event |
+| `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored popup at a lat/lng, replacing any current popup. Answers only once the popup closes |
+| `map:hidePopup` | none | `true` | Close the current popup, resolving its own request with `{ action: 'closed' }` |
 
 ```javascript
 // Get current map state
@@ -375,38 +375,54 @@ await window.mmgisAPI.request('map:panTo', { lat: 45, lng: -120 })
 #### `map:showPopup`
 
 A map-anchored popup rendered and styled by the core. The request holds only
-serializable data, so it survives a sandbox boundary — the plugin sends
-content and event names, and core owns the DOM, the theme, and the lifecycle.
+serializable data, so it survives a sandbox boundary — the plugin sends the
+content, and core owns the DOM, the theme, and the lifecycle.
+
+The request answers itself: its promise stays pending for as long as the popup
+is open and resolves with how the popup closed. Nothing about a popup is
+broadcast on the bus, so the core never emits an event on a plugin's behalf
+and an outcome reaches only the plugin that asked for it. A plugin that wants
+to announce what happened emits its own namespaced event afterwards.
 
 ```javascript
-await window.mmgisAPI.request('map:showPopup', {
+const { action } = await window.mmgisAPI.request('map:showPopup', {
     // Where the popup is anchored. It tracks this point as the map moves.
     latlng: { lat: 45, lng: -120 },
     // Popup body. Sanitized by the core before it is rendered.
     html: '<strong>Crater A</strong><p>Diameter: 12 km</p>',
-    // Up to two buttons. Each broadcasts its event, with no payload, on click.
-    secondaryAction: { label: 'Cancel', event: 'plugin:myPlugin:cancel' },
-    primaryAction: { label: 'Analyze', event: 'plugin:myPlugin:analyze' },
-    // Broadcast when the user dismisses the popup.
-    dismissEvent: 'plugin:myPlugin:popupDismissed'
+    // Up to two buttons, labelled only — the core reports which was pressed.
+    secondaryAction: { label: 'Cancel' },
+    primaryAction: { label: 'Analyze' }
 })
 
-window.mmgisAPI.on('plugin:myPlugin:analyze', () => {
-    // The plugin attaches its own context; the popup's events carry no payload.
-})
+if (action === 'primary') analyze()
+// Cancel and a user dismissal mean the same thing to this plugin.
+else if (action === 'secondary' || action === 'dismiss') clearSelection()
+// 'closed' means the popup was replaced or retracted, so there is nothing
+// for this plugin to undo.
 
 // On unload, so the popup never outlives the plugin that opened it.
 await window.mmgisAPI.request('map:hidePopup')
 ```
 
-Returns `true` when the popup was shown, or `false` when the request is
-invalid (`html` must be a string and `latlng` must hold finite numbers) or when
-the popup could not be mounted. An
-action is rendered only when both its `label` and its `event` are non-empty
-strings.
+The result is `{ action }`:
+
+| `action` | Meaning |
+|----------|---------|
+| `'primary'` | The filled button was pressed |
+| `'secondary'` | The outlined button was pressed |
+| `'dismiss'` | The user dismissed the popup with the X or a click elsewhere on the map |
+| `'closed'` | The popup went away without the user acting on it: another `map:showPopup` replaced it, `map:hidePopup` retracted it, or the mission switched |
+
+The request rejects — showing nothing — when it is invalid (`html` must be a
+string and `latlng` must hold finite numbers) or when the popup could not be
+mounted, so wrap the `await` in a `try` if a failure matters to the plugin. An
+action is rendered only when its `label` is a non-empty string.
 
 There is a single popup at a time — a request from any plugin replaces the
-current one, and there is no popup id. The user closes it with the X or a
+current one, and there is no popup id. Each request keeps its own promise, so
+a replaced popup's requester is told (`'closed'`) rather than left waiting on
+a popup that is no longer on screen. The user closes a popup with the X or a
 click elsewhere on the map; `map:hidePopup` retracts it programmatically, for
 a plugin tearing itself down.
 
@@ -415,24 +431,26 @@ The popup follows its anchor frame by frame while the map pans. A zoom on the
 card is hidden for the length of the animation and placed again once the zoom
 settles.
 
-| Trigger | Closes the popup | Fires `dismissEvent` |
-|---------|------------------|----------------------|
-| Another `map:showPopup` request | Yes | No |
-| Button click (the popup closes, then its event is broadcast) | Yes | No |
-| The X control | Yes | Yes |
-| A click elsewhere on the map | Yes | Yes |
-| `map:hidePopup` | Yes | No |
-| Mission switch | Yes | No |
+| Trigger | Closes the popup | Resolves with |
+|---------|------------------|---------------|
+| Button click (the popup closes, then the request is answered) | Yes | `'primary'` or `'secondary'` |
+| The X control | Yes | `'dismiss'` |
+| A click elsewhere on the map | Yes | `'dismiss'` |
+| Another `map:showPopup` request | Yes | `'closed'` |
+| `map:hidePopup` | Yes | `'closed'` |
+| Mission switch | Yes | `'closed'` |
 
-`dismissEvent` marks a user dismissal only, so a plugin can clear its
-selection on dismiss without that teardown firing when its own next popup
-replaces the current one.
+`'dismiss'` marks a user dismissal only, so a plugin can clear its selection on
+dismiss without that teardown running when its own next popup replaces the
+current one.
 
-A click elsewhere on the map dismisses the popup at the end of that click's
-own task, so a replacement shown in the same task replaces it silently and no
-`dismissEvent` is fired. A replacement shown later — after waiting for
-`map:moveend`, say — arrives after the dismissal instead; retracting with
-`map:hidePopup` before the wait removes the ordering.
+A click elsewhere on the map dismisses the popup at the end of that click's own
+task, so a popup shown in the same task replaces it first and the earlier
+request resolves `'closed'` rather than `'dismiss'`. A popup shown later —
+after waiting for `map:moveend`, say — arrives after the dismissal instead, so
+the earlier request resolves `'dismiss'`; retracting with `map:hidePopup`
+before the wait removes the ordering and resolves `'closed'`. Either way the
+plugin is told, and exactly once.
 
 ### Layer Providers
 
@@ -528,10 +546,6 @@ Examples:
 - `layer:visibilityChange` - Core layer event
 - `plugin:draw:getActiveFeature` - DrawTool plugin provider
 - `custom:analytics:trackEvent` - Custom event for external integration
-
-Event names a plugin hands to core — such as the action and dismiss events of
-`map:showPopup` — are broadcast verbatim on the global bus, so namespace them
-with `plugin:pluginName:` to keep them from colliding with another plugin's.
 
 ---
 
