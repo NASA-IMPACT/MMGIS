@@ -5,16 +5,17 @@ import {
 } from '../../src/essence/Tools/AOI/aoiHelpers.ts'
 import AOITool from '../../src/essence/Tools/AOI/AOITool.js'
 
-// Deliberately asymmetric so a predicate that swapped lat and lng, or dropped
-// one of the two axes, would fail rather than coincide with the right answer.
+// Deliberately asymmetric: a check that swapped lat and lng, or that ignored
+// one of the two axes, gets the wrong answer here instead of landing on the
+// right one by accident.
 const view = {
     southWest: { lat: 30, lng: -100 },
     northEast: { lat: 40, lng: -90 },
 }
 
-// Alaska's bundled boundary: parts either side of ±180 make the naive sweep
-// ~359° wide, and the vertex-mean centroid lands at -139°, well outside a
-// lower-48 view.
+// Alaska's bundled boundary. It has parts on either side of ±180, so the naive
+// sweep across it is ~359° wide, and the vertex-mean centroid lands at -139° —
+// well outside a view of the lower 48.
 const ALASKA_BBOX = [-179.17, 51.22, 179.77, 71.35]
 
 const flush = () => new Promise((resolve) => setTimeout(resolve))
@@ -43,8 +44,8 @@ test.describe('selectionFitBounds', () => {
             { lat: 32, lng: -98 },
             { lat: 38, lng: -80 },
         ])
-        // Modest margin, and a maxZoom high enough never to bind on an
-        // ordinary selection.
+        // A modest margin, and a maxZoom high enough that an ordinary
+        // selection never reaches it.
         expect(fit?.options.padding).toBeLessThanOrEqual(60)
         expect(fit?.options.maxZoom).toBeGreaterThanOrEqual(16)
     })
@@ -86,16 +87,16 @@ test.describe('selectionFitBounds', () => {
     })
 
     test('treats a view reported wider than a full turn as containing every longitude', () => {
-        // Standalone deck.gl zoomed out on a wide container envelopes its
-        // container corners without wrapping, so more than the whole world is
-        // on screen.
+        // Zoomed out in a wide container, standalone deck.gl boxes its corners
+        // without wrapping them, so it reports more than the whole world on
+        // screen.
         const overwide = {
             southWest: { lat: 30, lng: -292 },
             northEast: { lat: 40, lng: 292 },
         }
-        // 63 sits exactly a full turn east of the west edge: folding that
-        // offset into [0, 360) reads it as 355 and would zoom in on an
-        // already-visible boundary.
+        // 63 sits exactly a full turn east of the west edge. Folding that
+        // offset into [0, 360) reads it as 355, which would zoom in on a
+        // boundary that is already visible.
         expect(selectionFitBounds([63, 32, 73, 38], overwide)).toBeNull()
         // Latitude still decides.
         expect(selectionFitBounds([63, 10, 73, 20], overwide)).not.toBeNull()
@@ -178,8 +179,9 @@ test.describe('AOITool._applySelection camera behavior', () => {
     const names = (calls) => calls.map((c) => c.name)
 
     beforeEach(() => {
-        // The fitBounds path arms a 1500ms fallback timer that must not outlive
-        // its test. `shouldAdvanceTime` keeps `flush()` working on fake timers.
+        // The fitBounds path sets a 1500ms fallback timer that must not outlive
+        // its test. `shouldAdvanceTime` keeps `flush()` working under fake
+        // timers.
         vi.useFakeTimers({ shouldAdvanceTime: true })
     })
 
@@ -244,7 +246,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
         expect(names(calls)).not.toContain('map:addOverlay')
 
         // Map_ re-emits moveend with the engine's view state, so the handler
-        // must swallow that payload rather than pass it on as a ViewBounds.
+        // must drop that payload rather than pass it on as a ViewBounds.
         onMoveend({ longitude: -89, latitude: 35, zoom: 6 })
         // At the centroid: the camera has framed the selection, so no anchor
         // fallback applies.

@@ -67,9 +67,10 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('standalone mode returns the same envelope rotated half a turn', () => {
-            // At bearing 180 the bottom-left pixel unprojects north-east of the
-            // top-right one, so reading only those two corners inverts both
-            // axes and every containment test against these bounds flips.
+            // At bearing 180 the bottom-left pixel unprojects north-east of
+            // the top-right one. Reading only those two corners inverts both
+            // axes, and every containment test against these bounds then gives
+            // the opposite answer.
             const upright = boundsFor()
             const rotated = boundsFor(180)
             expect(rotated.southWest.lat).toBeLessThan(rotated.northEast.lat)
@@ -353,9 +354,9 @@ test.describe('DeckGLAdapter', () => {
     test.describe('drawing overlay stacking', () => {
         const ANCHOR_ID = 'td-polygon'
 
-        // Enough of the maplibre Map surface for TerraDrawMapLibreGLAdapter to
-        // construct, register its layers, and tear them down. Registered ids are
-        // tracked so getLayer() answers like a real style does.
+        // Just enough of the maplibre Map API for TerraDrawMapLibreGLAdapter
+        // to construct, register its layers, and tear them down. Registered ids
+        // are tracked so getLayer() answers the way a real style would.
         function makeDrawingBasemap() {
             const canvas = document.createElement('canvas')
             const container = document.createElement('div')

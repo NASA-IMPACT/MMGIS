@@ -590,20 +590,21 @@ const AOITool = {
                     // mounts at the final centroid pixel instead of flickering through
                     // intermediate positions during the camera move.
                     let fallback
-                    // Takes a view only when the camera never moved; once
-                    // fitBounds has framed the selection its centroid is
-                    // on-screen and needs no anchor fallback.
+                    // Pass a view here only when the camera never moved. Once
+                    // fitBounds has framed the selection, its centroid is
+                    // on-screen and needs no fallback anchor.
                     const settle = (unmovedView) => {
                         api.off('map:moveend', oneShot)
                         clearTimeout(fallback)
                         showTooltip(unmovedView)
                     }
-                    // Shields `settle` from the moveend payload, which is a
-                    // view state ({ longitude, latitude, zoom }), not a
-                    // ViewBounds: it must reach `settle` as no view at all.
+                    // `map:moveend` hands its listener a view state
+                    // ({ longitude, latitude, zoom }), not a ViewBounds. This
+                    // wrapper drops that payload so `settle` is called with no
+                    // view at all.
                     const oneShot = () => settle()
                     api.on('map:moveend', oneShot)
-                    // Belt-and-braces: if no moveend fires (e.g. an engine that
+                    // Safety net: if no moveend fires (e.g. an engine that
                     // skips the event on a programmatic fit), show the tooltip
                     // after a short timeout anyway.
                     fallback = setTimeout(oneShot, 1500)
