@@ -315,6 +315,7 @@ export function LayerLegend({
                     className="blocks-layer-legend__info-popover"
                     label={`Information for ${title}`}
                 >
+                    <div className="blocks-layer-legend__info-title">{title}</div>
                     <Markdown
                         source={description}
                         className="blocks-layer-legend__markdown"
