@@ -654,6 +654,14 @@ ws.on("message", function (message) {
   - Include checklist from spec-kit
   - Link to related issues
 
+#### Required CI Checks
+
+- PRs into `development`, `main`, and `production` cannot merge until every required status check passes, on top of the existing 1-approval review requirement. This is enforced by the repository ruleset `require-pr`.
+- The required checks are exactly: `unit`, `config-generation`, `e2e (full)`, and `e2e (lean)` — all from `.github/workflows/playwright-tests.yml` (the two e2e checks come from one matrix job named `e2e (${{ matrix.mode }})`).
+- "Not green" includes still-running and never-reported: a check that never reports blocks the merge indefinitely.
+- **Renaming a workflow job silently breaks the rule.** Required check names are matched as plain strings, so a renamed job leaves the ruleset waiting on a context that will never report — blocking every PR until an admin updates the ruleset. Treat any job rename in `playwright-tests.yml` as a ruleset-affecting change that must be coordinated with an admin.
+- Nobody, including admins, has bypass rights; an emergency override is an audited edit to the ruleset itself.
+
 ### Tool Plugin Conventions
 
 - Each tool is a self-contained module in `src/essence/Tools/ToolName/`
