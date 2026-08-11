@@ -83,7 +83,7 @@ function buildActionButton(
 function buildPopupCard(options: PopupCardOptions): HTMLElement {
     const card = document.createElement('div')
     card.className = 'mmgis-map-popup'
-    card.setAttribute('role', 'dialog')
+    card.setAttribute('role', 'group')
     card.setAttribute('aria-label', 'Map popup')
     // Stays hidden until a projection lands, so the card never flashes at the
     // top-left corner before it is positioned.

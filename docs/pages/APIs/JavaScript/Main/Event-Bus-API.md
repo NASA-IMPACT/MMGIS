@@ -400,7 +400,8 @@ await window.mmgisAPI.request('map:hidePopup')
 ```
 
 Returns `true` when the popup was shown, or `false` when the request is
-invalid (`html` must be a string and `latlng` must hold finite numbers). An
+invalid (`html` must be a string and `latlng` must hold finite numbers) or when
+the popup could not be mounted. An
 action is rendered only when both its `label` and its `event` are non-empty
 strings.
 
