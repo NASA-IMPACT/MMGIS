@@ -126,8 +126,52 @@ function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
         itemStyle: { color },
         lineStyle: { width: 2 },
         symbolSize: 5,
+        showSymbol: false,
         connectNulls: false,
     }
+}
+
+/** The preview zoom strip both layouts share: the series ghosted inside the
+ *  slider in its own color, light default filler over it, dark end handles. */
+function previewSlider(
+    theme: ChartTheme,
+    color: string,
+    tickFormat: ((ms: number) => string) | null,
+) {
+    return {
+        type: 'slider' as const,
+        height: 30,
+        bottom: 10,
+        showDataShadow: true,
+        brushSelect: false,
+        borderColor: theme.gridColor,
+        handleSize: '80%',
+        handleStyle: { color: theme.textColor },
+        moveHandleSize: 0,
+        dataBackground: {
+            lineStyle: { color, opacity: 0.6, width: 1 },
+            areaStyle: { color, opacity: 0.08 },
+        },
+        ...(tickFormat
+            ? { labelFormatter: (v: number) => tickFormat(v) }
+            : {}),
+    }
+}
+
+type TooltipParam = {
+    marker: string
+    seriesName: string
+    value: [number, number | null]
+}
+
+/** Axis tooltip whose title is the hovered UTC datetime, not raw epoch ms. */
+function timeTooltipFormatter(params: TooltipParam[] | TooltipParam): string {
+    const list = Array.isArray(params) ? params : [params]
+    if (list.length === 0) return ''
+    const rows = list.map(
+        (p) => `${p.marker}${p.seriesName}: ${p.value[1] ?? '—'}`,
+    )
+    return [formatTooltipTime(list[0].value[0]), ...rows].join('<br/>')
 }
 
 /**
@@ -136,8 +180,10 @@ function seriesBase(s: ChartSeries, i: number, theme: ChartTheme) {
  * by rendering it.
  *
  * One variable is visible at a time (`visibleLabel`, default: the first
- * series); the single-select legend is the picker and the y-axis is named
- * for the visible variable's unit.
+ * series) and the single-select legend is the picker. Same visual grammar
+ * as the stacked variable card — clean line, sparse unnamed y-axis, preview
+ * zoom strip in the visible variable's color; the card footer, not the
+ * chart, names the variable and unit.
  */
 export function buildChartOption(
     payload: ChartSeriesPayload,
@@ -148,19 +194,22 @@ export function buildChartOption(
     const selected: Record<string, boolean> = {}
     for (const s of payload.series) selected[s.label] = s.label === visible
 
-    const activeSeries = payload.series.find((s) => s.label === visible)
-    const yTitle = payload.yLabel ?? activeSeries?.unit ?? null
+    const activeIndex = Math.max(
+        payload.series.findIndex((s) => s.label === visible),
+        0,
+    )
+    const activeSeries = payload.series[activeIndex]
+    const activeColor =
+        activeSeries?.color ||
+        theme.palette[activeIndex % theme.palette.length]
 
     const yAxis = [
         {
             type: 'value' as const,
             scale: true,
-            name: yTitle ?? undefined,
-            nameLocation: 'middle' as const,
-            nameGap: 42,
-            nameTextStyle: { color: theme.textColor },
+            splitNumber: 2,
             axisLabel: { color: theme.textColor },
-            splitLine: { lineStyle: { color: theme.gridColor } },
+            splitLine: { show: false },
         },
     ]
 
@@ -175,30 +224,11 @@ export function buildChartOption(
             textStyle: { color: theme.textColor },
             selected,
         },
-        grid: { left: 56, right: 16, top: 32, bottom: 44 },
+        // Bottom band holds the x labels and the preview strip.
+        grid: { left: 48, right: 12, top: 32, bottom: 84 },
         dataZoom: [
             { type: 'inside' as const, xAxisIndex: 0 },
-            {
-                type: 'slider' as const,
-                xAxisIndex: 0,
-                // Slim range-input look: grey track, solid primary fill,
-                // round handles, no border, no data preview, no move grip.
-                height: 8,
-                bottom: 10,
-                showDataShadow: false,
-                brushSelect: false,
-                borderColor: 'transparent',
-                backgroundColor: theme.gridColor,
-                fillerColor: theme.palette[0],
-                handleIcon: 'circle',
-                handleSize: 14,
-                handleStyle: {
-                    color: theme.palette[0],
-                    borderColor: theme.surface,
-                    borderWidth: 1,
-                },
-                moveHandleSize: 0,
-            },
+            previewSlider(theme, activeColor, null),
         ],
         yAxis,
     }
@@ -245,33 +275,7 @@ export function buildChartOption(
         tooltip: {
             trigger: 'axis' as const,
             axisPointer: { type: 'cross' as const, label: { show: false } },
-            ...(isTime
-                ? {
-                      formatter: (
-                          params:
-                              | Array<{
-                                    marker: string
-                                    seriesName: string
-                                    value: [number, number | null]
-                                }>
-                              | {
-                                    marker: string
-                                    seriesName: string
-                                    value: [number, number | null]
-                                },
-                      ) => {
-                          const list = Array.isArray(params) ? params : [params]
-                          if (list.length === 0) return ''
-                          const rows = list.map(
-                              (p) =>
-                                  `${p.marker}${p.seriesName}: ${p.value[1] ?? '—'}`,
-                          )
-                          return [formatTooltipTime(list[0].value[0]), ...rows].join(
-                              '<br/>',
-                          )
-                      },
-                  }
-                : {}),
+            ...(isTime ? { formatter: timeTooltipFormatter } : {}),
         },
         xAxis: {
             type: 'value' as const,
@@ -288,4 +292,93 @@ export function buildChartOption(
         },
         series,
     }
+}
+
+/**
+ * One variable's card in the stacked layout: a single-series chart over a
+ * preview zoom strip (the series redrawn inside the slider), per the design
+ * reference. Sparse unlabeled axes — the card's footer chip, not the chart,
+ * names the variable and unit. `index` fixes the palette slot so a variable
+ * keeps its color no matter which subset of variables renders.
+ */
+export function buildVariableCardOption(
+    s: ChartSeries,
+    payload: ChartSeriesPayload,
+    theme: ChartTheme,
+    index: number,
+): Record<string, any> {
+    const isTime = payload.xType === 'time'
+    const isCategory = payload.xType === 'category'
+    const color = s.color || theme.palette[index % theme.palette.length]
+
+    const category = isCategory ? toCategoryData([s]) : null
+    const data: Array<[number, number | null]> | Array<number | null> = category
+        ? category.rows[0]
+        : (isTime ? toTimePoints(s.points) : toLinearPoints(s.points)).map(
+              (p) => [p.x, p.y] as [number, number | null],
+          )
+    const xs = category
+        ? []
+        : (data as Array<[number, number | null]>).map((d) => d[0])
+    const tickFormat =
+        isTime && xs.length > 0
+            ? makeTimeTickFormat(Math.min(...xs), Math.max(...xs))
+            : null
+
+    return {
+        tooltip: {
+            trigger: 'axis' as const,
+            axisPointer: { type: 'cross' as const, label: { show: false } },
+            ...(isTime ? { formatter: timeTooltipFormatter } : {}),
+        },
+        // Bottom band holds the x labels and the preview strip.
+        grid: { left: 48, right: 12, top: 12, bottom: 84 },
+        xAxis: {
+            ...(category
+                ? { type: 'category' as const, data: category.labels }
+                : {
+                      type: 'value' as const,
+                      min: 'dataMin' as const,
+                      max: 'dataMax' as const,
+                      splitLine: { show: false },
+                  }),
+            axisLabel: {
+                color: theme.textColor,
+                hideOverlap: true,
+                ...(tickFormat
+                    ? { formatter: (v: number) => tickFormat(v) }
+                    : {}),
+            },
+        },
+        yAxis: {
+            type: 'value' as const,
+            scale: true,
+            // A handful of unnamed ticks — identity and unit live in the
+            // card footer, so the plot stays clean like the reference.
+            splitNumber: 2,
+            axisLabel: { color: theme.textColor },
+            splitLine: { show: false },
+        },
+        series: [
+            {
+                ...seriesBase(s, index, theme),
+                data,
+            },
+        ],
+        dataZoom: [
+            { type: 'inside' as const },
+            previewSlider(theme, color, tickFormat),
+        ],
+    }
+}
+
+/**
+ * A variable's points as a two-column CSV, `x` then the series label.
+ * `y: null` gaps become empty cells; fields with commas/quotes are quoted.
+ */
+export function seriesToCsv(s: ChartSeries): string {
+    const esc = (v: string) =>
+        /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+    const rows = s.points.map((p) => `${esc(String(p.x))},${p.y ?? ''}`)
+    return [`x,${esc(s.label)}`, ...rows].join('\n')
 }

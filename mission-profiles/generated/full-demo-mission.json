@@ -281,7 +281,8 @@
       "variables": {
         "sources": [
           "fetch-timeseries"
-        ]
+        ],
+        "layout": "single"
       },
       "metadata": {
         "icon": "chart-line",

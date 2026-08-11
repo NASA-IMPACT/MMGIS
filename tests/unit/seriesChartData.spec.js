@@ -6,6 +6,8 @@ import {
     makeTimeTickFormat,
     formatTooltipTime,
     buildChartOption,
+    buildVariableCardOption,
+    seriesToCsv,
 } from '../../src/essence/Tools/SeriesChart/lib/chartData.ts'
 
 const THEME = {
@@ -145,16 +147,25 @@ describe('seriesChart chartData', () => {
             expect(opt.dataZoom.map((z) => z.type)).toEqual(['inside', 'slider'])
         })
 
-        test('the zoom scrubber is a slim primary-filled range slider', () => {
-            const opt = buildChartOption(payloadWith([series()]), THEME)
+        test('the zoom strip previews the visible variable in its color', () => {
+            const opt = buildChartOption(
+                payloadWith([series(), series({ id: 's2', label: 'S2' })]),
+                THEME,
+            )
             const slider = opt.dataZoom.find((z) => z.type === 'slider')
-            expect(slider.fillerColor).toBe('#111111')
-            expect(slider.handleStyle.color).toBe('#111111')
-            expect(slider.handleStyle.borderColor).toBe('#eeeeee')
-            expect(slider.backgroundColor).toBe('#dddddd')
-            expect(slider.handleIcon).toBe('circle')
-            expect(slider.showDataShadow).toBe(false)
+            expect(slider.showDataShadow).toBe(true)
+            expect(slider.dataBackground.lineStyle.color).toBe(THEME.palette[0])
             expect(slider.moveHandleSize).toBe(0)
+
+            const picked = buildChartOption(
+                payloadWith([series(), series({ id: 's2', label: 'S2' })]),
+                THEME,
+                'S2',
+            )
+            const pickedSlider = picked.dataZoom.find((z) => z.type === 'slider')
+            expect(pickedSlider.dataBackground.lineStyle.color).toBe(
+                THEME.palette[1],
+            )
         })
 
         test('cycles the theme palette and honors explicit series color', () => {
@@ -226,10 +237,9 @@ describe('seriesChart chartData', () => {
             expect(opt.legend.selectedMode).toBe('single')
             expect(opt.legend.selected).toEqual({ S1: true, S2: false, S3: false })
             expect(opt.yAxis).toHaveLength(1)
-            expect(opt.yAxis[0].name).toBe('µg/m³')
         })
 
-        test('the y-axis renames to the picked variable unit', () => {
+        test('picking a variable moves the selection', () => {
             const opt = buildChartOption(
                 payloadWith([
                     series({ unit: 'µg/m³' }),
@@ -239,7 +249,6 @@ describe('seriesChart chartData', () => {
                 'S2',
             )
             expect(opt.legend.selected).toEqual({ S1: false, S2: true })
-            expect(opt.yAxis[0].name).toBe('Knots')
         })
 
         test('no in-canvas toolbox: reset zoom lives in the card header', () => {
@@ -247,24 +256,132 @@ describe('seriesChart chartData', () => {
             expect(opt.toolbox).toBeUndefined()
         })
 
-        test('a single unit becomes the y-axis name', () => {
-            const one = buildChartOption(
-                payloadWith([series({ unit: 'ppm' })]),
+        test('identity lives in the footer: unnamed sparse clean y-axis', () => {
+            const opt = buildChartOption(
+                { ...payloadWith([series({ unit: 'ppm' })]), yLabel: 'NO₂' },
                 THEME,
             )
-            expect(one.yAxis[0].name).toBe('ppm')
-            expect(one.yAxis).toHaveLength(1)
-            expect(one.legend.selected).toEqual({ S1: true })
+            expect(opt.yAxis[0].name).toBeUndefined()
+            expect(opt.yAxis[0].splitNumber).toBe(2)
+            expect(opt.yAxis[0].splitLine.show).toBe(false)
+            expect(opt.series[0].showSymbol).toBe(false)
+        })
+    })
+
+    describe('buildVariableCardOption', () => {
+        const series = (over = {}) => ({
+            id: over.id ?? 's1',
+            label: over.label ?? 'S1',
+            points: [
+                { x: '2026-01-01T00:00:00Z', y: 1 },
+                { x: '2026-01-02T00:00:00Z', y: 2 },
+            ],
+            ...over,
+        })
+        const card = (s, over = {}) =>
+            buildVariableCardOption(
+                s,
+                { ...payloadWith([s]), ...over },
+                THEME,
+                over.index ?? 0,
+            )
+
+        test('single clean series: no legend, no symbols, no gridlines', () => {
+            const opt = card(series())
+            expect(opt.legend).toBeUndefined()
+            expect(opt.series).toHaveLength(1)
+            expect(opt.series[0].showSymbol).toBe(false)
+            expect(opt.yAxis.splitLine.show).toBe(false)
         })
 
-        test('yLabel wins as the y-axis name', () => {
-            const withLabel = buildChartOption(
-                { ...payloadWith([series()]), yLabel: 'NO₂' },
+        test('identity lives in the footer, not the plot: unnamed sparse y-axis', () => {
+            const opt = card(series({ unit: 'ppm' }))
+            expect(opt.yAxis.name).toBeUndefined()
+            expect(opt.yAxis.splitNumber).toBe(2)
+        })
+
+        test('the palette slot follows the variable index, explicit color wins', () => {
+            const s = series()
+            const first = buildVariableCardOption(s, payloadWith([s]), THEME, 0)
+            const second = buildVariableCardOption(s, payloadWith([s]), THEME, 1)
+            expect(first.series[0].itemStyle.color).toBe(THEME.palette[0])
+            expect(second.series[0].itemStyle.color).toBe(THEME.palette[1])
+            const explicit = buildVariableCardOption(
+                series({ color: '#abcdef' }),
+                payloadWith([s]),
                 THEME,
+                1,
             )
-            const without = buildChartOption(payloadWith([series()]), THEME)
-            expect(withLabel.yAxis[0].name).toBe('NO₂')
-            expect(without.yAxis[0].name).toBeUndefined()
+            expect(explicit.series[0].itemStyle.color).toBe('#abcdef')
+        })
+
+        test('zoom strip previews the series in its own color', () => {
+            const opt = card(series())
+            const slider = opt.dataZoom.find((z) => z.type === 'slider')
+            expect(slider.showDataShadow).toBe(true)
+            expect(slider.dataBackground.lineStyle.color).toBe(THEME.palette[0])
+            expect(opt.dataZoom.map((z) => z.type)).toEqual(['inside', 'slider'])
+        })
+
+        test('time cards format axis, slider labels, and tooltip as UTC', () => {
+            const opt = card(series())
+            expect(opt.xAxis.type).toBe('value')
+            expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
+            const slider = opt.dataZoom.find((z) => z.type === 'slider')
+            expect(typeof slider.labelFormatter).toBe('function')
+            expect(typeof opt.tooltip.formatter).toBe('function')
+            expect(opt.series[0].data[0]).toEqual([
+                Date.parse('2026-01-01T00:00:00Z'),
+                1,
+            ])
+        })
+
+        test('category cards use the variable’s own labels', () => {
+            const s = series({
+                points: [
+                    { x: 'x1', y: 1 },
+                    { x: 'x2', y: null },
+                ],
+            })
+            const opt = buildVariableCardOption(
+                s,
+                payloadWith([s], 'category'),
+                THEME,
+                0,
+            )
+            expect(opt.xAxis.type).toBe('category')
+            expect(opt.xAxis.data).toEqual(['x1', 'x2'])
+            expect(opt.series[0].data).toEqual([1, null])
+        })
+    })
+
+    describe('seriesToCsv', () => {
+        test('two columns headed x and the series label; gaps are empty cells', () => {
+            const csv = seriesToCsv({
+                id: 'o3',
+                label: 'O3',
+                points: [
+                    { x: '2026-01-01T00:00:00Z', y: 0.04 },
+                    { x: '2026-01-02T00:00:00Z', y: null },
+                ],
+            })
+            expect(csv.split('\n')).toEqual([
+                'x,O3',
+                '2026-01-01T00:00:00Z,0.04',
+                '2026-01-02T00:00:00Z,',
+            ])
+        })
+
+        test('fields with commas or quotes are quoted and escaped', () => {
+            const csv = seriesToCsv({
+                id: 's',
+                label: 'PM2.5, "fine"',
+                points: [{ x: 'a,b', y: 1 }],
+            })
+            expect(csv.split('\n')).toEqual([
+                'x,"PM2.5, ""fine"""',
+                '"a,b",1',
+            ])
         })
     })
 
