@@ -255,8 +255,11 @@ export function featureBounds(f: Feature): [number, number, number, number] | nu
 
 /**
  * A view as the map engines report it through `map:getBounds`: latitudes
- * ordered south-to-north, longitudes in west-to-east reading order — which for
- * a view straddling the antimeridian means `southWest.lng > northEast.lng`.
+ * ordered south-to-north. Every producer — Leaflet, deck.gl overlaying a
+ * basemap, and standalone deck.gl (a min/max envelope of the container
+ * corners) — emits longitudes unwrapped and west-to-east, so a view straddling
+ * the antimeridian is spelled by running past ±180 (170..190), and standalone
+ * deck.gl zoomed out can report a window wider than a full turn.
  */
 export interface ViewBounds {
     southWest: { lat: number; lng: number }
@@ -278,11 +281,6 @@ function wrap360(d: number): number {
 function viewLngExtent(view: ViewBounds): number {
     const raw = view.northEast.lng - view.southWest.lng
     return raw > 0 ? raw : wrap360(raw)
-}
-
-/** As `viewLngExtent`, capped at a full turn. */
-function viewLngSpan(view: ViewBounds): number {
-    return Math.min(viewLngExtent(view), 360)
 }
 
 /** How many degrees east of the view's west edge a longitude sits, in [0, 360). */
@@ -311,7 +309,12 @@ export function selectionFitBounds(
     const [w, s, e, n] = bbox
     if (e - w <= 0 || n - s <= 0 || e - w >= 180) return null
     if (view) {
-        const inLng = lngOffset(w, view) + (e - w) <= viewLngSpan(view)
+        const extent = viewLngExtent(view)
+        // A view at least a full turn wide shows every longitude, so nothing
+        // can sit outside it east-west. Measuring such a view instead would
+        // seam: offsets fold into [0, 360), so a selection a full turn east of
+        // the west edge reads as offset ~355 and falsely overflows.
+        const inLng = extent >= 360 || lngOffset(w, view) + (e - w) <= extent
         const inLat = s >= view.southWest.lat && n <= view.northEast.lat
         if (inLng && inLat) return null
     }
@@ -338,16 +341,20 @@ export function selectionTooltipAnchor(
     view?: ViewBounds | null
 ): { lat: number; lng: number } {
     if (!view) return centroid
+    const extent = viewLngExtent(view)
+    // A point needs no width allowance, and offsets are always under 360, so an
+    // overwide view admits every longitude here without the explicit full-turn
+    // case `selectionFitBounds` needs.
     const inView =
-        lngOffset(centroid.lng, view) <= viewLngSpan(view) &&
+        lngOffset(centroid.lng, view) <= extent &&
         centroid.lat >= view.southWest.lat &&
         centroid.lat <= view.northEast.lat
     if (inView) return centroid
     return {
         lat: (view.southWest.lat + view.northEast.lat) / 2,
-        // The uncapped extent: a view reported wider than a full turn still
-        // centres on its own middle rather than on its west edge plus 180°.
-        lng: view.southWest.lng + viewLngExtent(view) / 2,
+        // A view reported wider than a full turn still centres on its own
+        // middle rather than on its west edge plus 180°.
+        lng: view.southWest.lng + extent / 2,
     }
 }
 

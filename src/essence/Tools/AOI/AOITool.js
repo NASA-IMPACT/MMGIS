@@ -598,6 +598,9 @@ const AOITool = {
                         clearTimeout(fallback)
                         showTooltip(unmovedView)
                     }
+                    // Shields `settle` from the moveend payload, which is a
+                    // view state ({ longitude, latitude, zoom }), not a
+                    // ViewBounds: it must reach `settle` as no view at all.
                     const oneShot = () => settle()
                     api.on('map:moveend', oneShot)
                     // Belt-and-braces: if no moveend fires (e.g. an engine that

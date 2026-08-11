@@ -85,6 +85,22 @@ test.describe('selectionFitBounds', () => {
         expect(selectionFitBounds([160, 32, 165, 38], wrapped)).not.toBeNull()
     })
 
+    test('treats a view reported wider than a full turn as containing every longitude', () => {
+        // Standalone deck.gl zoomed out on a wide container envelopes its
+        // container corners without wrapping, so more than the whole world is
+        // on screen.
+        const overwide = {
+            southWest: { lat: 30, lng: -292 },
+            northEast: { lat: 40, lng: 292 },
+        }
+        // 63 sits exactly a full turn east of the west edge: folding that
+        // offset into [0, 360) reads it as 355 and would zoom in on an
+        // already-visible boundary.
+        expect(selectionFitBounds([63, 32, 73, 38], overwide)).toBeNull()
+        // Latitude still decides.
+        expect(selectionFitBounds([63, 10, 73, 20], overwide)).not.toBeNull()
+    })
+
     test('treats an unwrapped panned view as contiguous', () => {
         const unwrapped = {
             southWest: { lat: 30, lng: 190 },
@@ -227,7 +243,9 @@ test.describe('AOITool._applySelection camera behavior', () => {
         expect(event).toBe('map:moveend')
         expect(names(calls)).not.toContain('map:addOverlay')
 
-        onMoveend()
+        // Map_ re-emits moveend with the engine's view state, so the handler
+        // must swallow that payload rather than pass it on as a ViewBounds.
+        onMoveend({ longitude: -89, latitude: 35, zoom: 6 })
         // At the centroid: the camera has framed the selection, so no anchor
         // fallback applies.
         expect(
