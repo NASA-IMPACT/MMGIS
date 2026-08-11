@@ -263,6 +263,87 @@ test.describe('DeckGLAdapter', () => {
         })
     })
 
+    test.describe('drawing overlay stacking', () => {
+        // Enough of the maplibre Map surface for TerraDrawMapLibreGLAdapter to
+        // construct, register its layers, and tear them down.
+        function makeDrawingBasemap() {
+            const canvas = document.createElement('canvas')
+            const container = document.createElement('div')
+            return {
+                getContainer: () => container,
+                getCanvas: () => canvas,
+                dragRotate: { isEnabled: () => true, enable: () => {}, disable: () => {} },
+                dragPan: { isEnabled: () => true, enable: () => {}, disable: () => {} },
+                doubleClickZoom: { enable: () => {}, disable: () => {} },
+                addSource: vi.fn(),
+                addLayer: vi.fn(),
+                removeLayer: vi.fn(),
+                removeSource: vi.fn(),
+                getSource: () => ({ setData: () => {} }),
+                project: () => ({ x: 0, y: 0 }),
+                unproject: () => ({ lng: 0, lat: 0 }),
+                version: '5.8.0',
+            }
+        }
+
+        function makeDrawingAdapter() {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = true
+            adapter._basemap = makeDrawingBasemap()
+            adapter._overlay = { setProps: vi.fn() }
+            return adapter
+        }
+
+        function lastSyncedLayers(adapter) {
+            const calls = adapter._overlay.setProps.mock.calls
+            return calls[calls.length - 1][0].layers
+        }
+
+        test('enableDrawing anchors every deck layer below the terra-draw stack', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.addLayer(makeLayer('raster'))
+            adapter.addLayer(makeLayer('vector'))
+            adapter.enableDrawing('polygon')
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([
+                'td-polygon',
+                'td-polygon',
+            ])
+        })
+
+        test('the anchor id matches the bottom-most layer terra-draw registers', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.enableDrawing('polygon')
+            expect(adapter._basemap.addLayer.mock.calls[0][0].id).toBe('td-polygon')
+        })
+
+        test('layers added mid-draw are anchored too', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.enableDrawing('rectangle')
+            adapter.addLayer(makeLayer('added-mid-draw'))
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([
+                'td-polygon',
+            ])
+        })
+
+        test('disableDrawing drops the anchor and restores normal stacking', () => {
+            const adapter = makeDrawingAdapter()
+            adapter.addLayer(makeLayer('raster'))
+            adapter.enableDrawing('polygon')
+            adapter.disableDrawing()
+            expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([
+                undefined,
+            ])
+        })
+
+        test('the layer registry keeps the original un-anchored instances', () => {
+            const adapter = makeDrawingAdapter()
+            const original = makeLayer('raster')
+            adapter.addLayer(original)
+            adapter.enableDrawing('polygon')
+            expect(adapter.getLayers()[0]).toBe(original)
+        })
+    })
+
     test.describe('captureScreenshot', () => {
         test('overlay mode reads the canvas inside the render event after triggerRepaint', async () => {
             const adapter = makeAdapter()

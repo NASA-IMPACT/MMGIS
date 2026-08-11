@@ -142,6 +142,17 @@ interface BasemapInstance {
  */
 const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
 
+/**
+ * Prefix for the MapLibre layers terra-draw renders the in-progress drawing
+ * into. Passed to `TerraDrawMapLibreGLAdapter` explicitly so the ids are
+ * owned here rather than inherited from the library default. The polygon
+ * fill layer is registered first, making it the bottom of the terra-draw
+ * stack — deck layers anchored on it via `beforeId` render below the whole
+ * drawing.
+ */
+const TERRA_DRAW_PREFIX = 'td'
+const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
+
 function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
     return new Promise((resolve, reject) => {
         if (typeof canvas.toBlob !== 'function') {
@@ -971,7 +982,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
 
         const td = new TerraDraw({
-            adapter: new TerraDrawMapLibreGLAdapter({ map: this._basemap as any }),
+            adapter: new TerraDrawMapLibreGLAdapter({
+                map: this._basemap as any,
+                prefixId: TERRA_DRAW_PREFIX,
+            }),
             modes: [
                 new TerraDrawPointMode(),
                 new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
@@ -1033,6 +1047,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
+        this._syncLayers()
         this._emitEvent('drawstart', { shape })
     }
 
@@ -1051,6 +1066,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
+        this._syncLayers()
         return shape
     }
 
@@ -1331,7 +1347,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // Since we manage layers imperatively, we hand it a fresh copy of the
         // layers *array* (the layer instances themselves are reused) so the diff
         // picks up additions, removals, and drawing-order changes.
-        const layers = [...this._layers.values()]
+        let layers = [...this._layers.values()]
+        // While a terra-draw session is active, anchor every deck layer below
+        // terra-draw's bottom-most MapLibre layer. Without a beforeId, the
+        // interleaved overlay's resolveLayers() re-hoists deck layers to the
+        // top of the style on every styledata event, burying the in-progress
+        // drawing. An anchor id absent from the style is ignored by
+        // resolveLayers(), so this degrades to normal stacking until
+        // terra-draw registers its layers.
+        if (this._drawingShape) {
+            layers = layers.map((layer) =>
+                layer.clone({ beforeId: TERRA_DRAW_BOTTOM_LAYER_ID } as any)
+            )
+        }
         if (this._isOverlayMode) {
             this._overlay?.setProps({ layers })
         } else {
