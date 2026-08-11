@@ -339,6 +339,9 @@ test.describe('DeckGLAdapter', () => {
                 getLayer: (id) => (styleLayers.has(id) ? { id } : undefined),
                 getSource: () => ({ setData: () => {} }),
                 setStyle: vi.fn(() => styleLayers.clear()),
+                off: vi.fn(),
+                removeControl: vi.fn(),
+                remove: vi.fn(),
                 version: '5.8.0',
             }
         }
@@ -347,7 +350,7 @@ test.describe('DeckGLAdapter', () => {
             const adapter = makeAdapter()
             adapter._isOverlayMode = true
             adapter._basemap = makeDrawingBasemap()
-            adapter._overlay = { setProps: vi.fn() }
+            adapter._overlay = { setProps: vi.fn(), finalize: vi.fn() }
             return adapter
         }
 
@@ -410,6 +413,15 @@ test.describe('DeckGLAdapter', () => {
             adapter.enableDrawing('polygon')
             adapter.setBasemapStyle('https://example.com/style.json')
             expect(adapter.isDrawing()).toBe(false)
+            expect(cancels).toEqual([{ shape: 'polygon' }])
+        })
+
+        test('destroy cancels the live drawing session', () => {
+            const adapter = makeDrawingAdapter()
+            const cancels = []
+            adapter.on('drawcancel', (e) => cancels.push(e))
+            adapter.enableDrawing('polygon')
+            adapter.destroy()
             expect(cancels).toEqual([{ shape: 'polygon' }])
         })
 
@@ -589,7 +601,7 @@ test.describe('DeckGLAdapter', () => {
         // configured keyEvents, so let the real bindings decide the commit.
         function makeKeyBoundAdapter(shape) {
             const { adapter, canvas } = makeSessionAdapter(shape)
-            const keyEvents = drawModeKeyEvents(shape, true)
+            const keyEvents = drawModeKeyEvents(shape)
             canvas.addEventListener('keyup', (e) => {
                 if (e.key === keyEvents.finish) adapter._drawingShape = null
             })
@@ -630,6 +642,17 @@ test.describe('DeckGLAdapter', () => {
             for (const shape of ['polygon', 'linestring']) {
                 expect(makeKeyBoundAdapter(shape).finishDrawing()).toBe(true)
             }
+        })
+
+        // With the map focused, the user's real Enter reaches terra-draw on top
+        // of the plugin that already asked to finish. The session is over by
+        // then, so the adapter sends nothing a second time — and terra-draw's
+        // own close() bails on a mode it has already finished.
+        test('finishing again after the session ended dispatches nothing', () => {
+            const { adapter, keys } = makeDrawingAdapter({ finishes: true })
+            expect(adapter.finishDrawing()).toBe(true)
+            expect(adapter.finishDrawing()).toBe(false)
+            expect(keys).toEqual(['Enter'])
         })
 
         test('disableDrawing emits drawcancel once', () => {

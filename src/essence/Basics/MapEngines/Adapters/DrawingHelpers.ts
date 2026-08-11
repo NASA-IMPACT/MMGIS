@@ -91,95 +91,26 @@ export function committedVerticesFromChange(
 }
 
 /**
- * The keys a mode finishes and cancels on.
+ * The keys terra-draw itself binds for a mode.
  *
  * Rectangle and circle commit on their second click, so there is no state in
  * which Enter has a sensible shape to commit: it would finish a zero-area
  * rectangle from one corner, or a circle of the mode's minimum radius from its
  * center. `null` is how terra-draw is told a key is unbound, so Enter stays
  * with the click-per-vertex modes the panel hints advertise it for.
+ *
+ * Cancel is unbound for every mode: terra-draw's own Escape deletes the
+ * in-progress geometry and reports it as a `delete` change, which no adapter
+ * listener reads, so the session would end without a `drawcancel`. Escape
+ * belongs to whoever started the drawing, which ends the session — and emits
+ * that event — through `disableDrawing()`.
  */
 export function drawModeKeyEvents(
-    shape: DrawShape,
-    cancelOnEscape: boolean
-): { finish: string | null; cancel: string | null } {
+    shape: DrawShape
+): { finish: string | null; cancel: null } {
     return {
         finish: shape === 'linestring' || shape === 'polygon' ? 'Enter' : null,
-        cancel: cancelOnEscape ? 'Escape' : null,
-    }
-}
-
-/**
- * Elements that own Enter and Escape themselves: text entry commits on Enter
- * and clears on Escape, and dialogs, menus and listboxes close on Escape. A
- * key pressed inside one of them belongs to it, not to the drawing session.
- */
-const KEY_OWNING_SELECTOR = [
-    'input',
-    'textarea',
-    'select',
-    '[contenteditable]:not([contenteditable="false"])',
-    '[role="dialog"]',
-    '[role="menu"]',
-    '[role="listbox"]',
-    '[role="combobox"]',
-].join(',')
-
-function ownsDrawKeys(target: EventTarget | null): boolean {
-    return target instanceof Element && target.closest(KEY_OWNING_SELECTOR) !== null
-}
-
-export interface DrawKeyBridgeOptions {
-    /** The element terra-draw's adapter attaches its key listeners to. */
-    getEventElement: () => HTMLElement | null
-    /** Whether a drawing session is still active. */
-    isDrawing: () => boolean
-    /** Honours `DrawingOptions.cancelOnEscape`. */
-    cancelOnEscape: boolean
-    /** Ends the session and emits `drawcancel`. */
-    onCancel: () => void
-}
-
-export interface DrawKeyBridge {
-    install(): void
-    remove(): void
-}
-
-/**
- * terra-draw's Enter/Escape listeners live on the map canvas or container,
- * which only receives key events while focused — after any panel interaction
- * they go nowhere. While a session is active, this document-level bridge
- * handles Escape itself (terra-draw's own Escape path only deletes the
- * geometry and emits no event the adapter observes, so `drawcancel` must come
- * from here regardless) and forwards Enter to that element as the `keyup`
- * terra-draw listens for.
- *
- * Both keys are read on `keydown`, because that is where the components that
- * own them act: a field blurs itself on Enter and a popover closes on Escape,
- * so by `keyup` the event no longer originates anywhere the guard can see.
- */
-export function createDrawKeyBridge(options: DrawKeyBridgeOptions): DrawKeyBridge {
-    const onKeyDown = (evt: KeyboardEvent) => {
-        if (!options.isDrawing()) return
-        if (ownsDrawKeys(evt.target)) return
-
-        if (evt.key === 'Escape') {
-            if (options.cancelOnEscape) options.onCancel()
-            return
-        }
-        if (evt.key !== 'Enter') return
-
-        const el = options.getEventElement()
-        // When the key already landed inside that element, terra-draw's own
-        // listener gets the real keyup — forwarding would fire it twice.
-        if (el && !el.contains(evt.target as Node)) {
-            el.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter' }))
-        }
-    }
-
-    return {
-        install: () => document.addEventListener('keydown', onKeyDown),
-        remove: () => document.removeEventListener('keydown', onKeyDown),
+        cancel: null,
     }
 }
 

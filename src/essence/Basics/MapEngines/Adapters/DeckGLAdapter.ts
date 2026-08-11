@@ -49,7 +49,6 @@ import type {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from '../types/events'
 
 import {
@@ -74,11 +73,9 @@ import {
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
 import {
     committedVerticesFromChange,
-    createDrawKeyBridge,
     drawModeKeyEvents,
     validateDrawnLineString,
 } from './DrawingHelpers'
-import type { DrawKeyBridge } from './DrawingHelpers'
 
 /**
  * Minimal API surface that is identical between mapbox-gl and maplibre-gl `Map` instances.
@@ -276,7 +273,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _drawingShape: DrawShape | null = null
     private _terraDraw: TerraDraw | null = null
     private _terraDrawListeners: Array<() => void> = []
-    private _drawKeyBridge: DrawKeyBridge | null = null
 
     /** Registry of anchored HTML overlays (id -> teardown function). */
     private _overlays = new Map<string, () => void>()
@@ -376,14 +372,17 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * The adapter must not be used again after this call.
      */
     destroy(): void {
+        // End a live session the normal way, while its listeners are still
+        // attached, so its initiator hears `drawcancel` and stops driving a
+        // session that is about to have no engine.
+        this.disableDrawing()
+
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
             this._terraDrawListeners = []
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
-        this._removeDrawKeyBridge()
-        this._drawingShape = null
 
         if (this._isOverlayMode) {
             if (this._basemap) {
@@ -1009,12 +1008,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._emitEvent(eventName, data)
     }
 
-    private _ensureTerraDraw(options: DrawingOptions): TerraDraw | null {
+    private _ensureTerraDraw(): TerraDraw | null {
         if (this._terraDraw) return this._terraDraw
         if (!this._isOverlayMode || !this._basemap) return null
-
-        const keyEvents = (shape: DrawShape) =>
-            drawModeKeyEvents(shape, options.cancelOnEscape !== false)
 
         const td = new TerraDraw({
             adapter: new TerraDrawMapLibreGLAdapter({
@@ -1024,12 +1020,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             modes: [
                 new TerraDrawPointMode(),
                 new TerraDrawLineStringMode({
-                    keyEvents: keyEvents('linestring'),
+                    keyEvents: drawModeKeyEvents('linestring'),
                     validation: validateDrawnLineString,
                 }),
-                new TerraDrawPolygonMode({ keyEvents: keyEvents('polygon') }),
-                new TerraDrawRectangleMode({ keyEvents: keyEvents('rectangle') }),
-                new TerraDrawCircleMode({ keyEvents: keyEvents('circle') }),
+                new TerraDrawPolygonMode({ keyEvents: drawModeKeyEvents('polygon') }),
+                new TerraDrawRectangleMode({ keyEvents: drawModeKeyEvents('rectangle') }),
+                new TerraDrawCircleMode({ keyEvents: drawModeKeyEvents('circle') }),
             ],
         })
 
@@ -1067,12 +1063,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return td
     }
 
-    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+    enableDrawing(shape: DrawShape): void {
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
-        const td = this._ensureTerraDraw(options)
+        const td = this._ensureTerraDraw()
         if (!td) {
             throw new Error(
                 '[DeckGLAdapter] enableDrawing requires overlay mode ' +
@@ -1085,29 +1081,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         td.setMode(shape)
         this._drawingShape = shape
         this._syncLayers()
-        this._installDrawKeyBridge(options)
         this._emitEvent('drawstart', { shape })
     }
 
     /** The element terra-draw's MapLibre adapter attaches its listeners to. */
     private _drawEventElement(): HTMLElement | null {
         return (this._basemap as any)?.getCanvas?.() ?? null
-    }
-
-    private _installDrawKeyBridge(options: DrawingOptions): void {
-        this._removeDrawKeyBridge()
-        this._drawKeyBridge = createDrawKeyBridge({
-            getEventElement: () => this._drawEventElement(),
-            isDrawing: () => this.isDrawing(),
-            cancelOnEscape: options.cancelOnEscape !== false,
-            onCancel: () => this.disableDrawing(),
-        })
-        this._drawKeyBridge.install()
-    }
-
-    private _removeDrawKeyBridge(): void {
-        this._drawKeyBridge?.remove()
-        this._drawKeyBridge = null
     }
 
     /**
@@ -1121,7 +1100,6 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (!this._drawingShape) return null
         const shape = this._drawingShape
         this._drawingShape = null
-        this._removeDrawKeyBridge()
         if (this._terraDraw) {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }

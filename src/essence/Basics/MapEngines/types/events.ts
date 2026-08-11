@@ -56,17 +56,6 @@ export interface QueryFeaturesOptions {
 export type DrawShape = 'point' | 'linestring' | 'polygon' | 'rectangle' | 'circle'
 
 /**
- * Options for `IMapEngine.enableDrawing`. `style` follows the same shape as
- * `GeoJSONLayerOptions.style` — adapters apply it to the in-progress preview
- * layer and to the final committed feature's stroke / fill.
- */
-export interface DrawingOptions {
-    style?: Record<string, unknown>
-    finishOnDoubleClick?: boolean
-    cancelOnEscape?: boolean
-}
-
-/**
  * Payload for the `drawstart` engine event.
  */
 export interface DrawStartEvent {
@@ -85,17 +74,17 @@ export interface DrawVertexEvent {
 }
 
 /**
- * Payload for the `drawcomplete` engine event. The adapter calls
- * `disableDrawing()` internally before emitting.
+ * Payload for the `drawcomplete` engine event. The adapter has already torn
+ * the session down when it fires, so no `drawcancel` accompanies a finish.
  */
 export interface DrawCompleteEvent {
     feature: GeoJSON.Feature
 }
 
 /**
- * Payload for the `drawcancel` engine event. Fires when the user pressed
- * Escape (when `DrawingOptions.cancelOnEscape !== false`) or when the plugin
- * called `disableDrawing()` mid-draw.
+ * Payload for the `drawcancel` engine event. Fires when the drawing's
+ * initiator called `disableDrawing()` mid-draw — including the Escape it
+ * handles itself.
  */
 export interface DrawCancelEvent {
     shape: DrawShape

@@ -48,10 +48,8 @@ import {
 import { TerraDrawLeafletAdapter } from 'terra-draw-leaflet-adapter'
 import {
     committedVerticesFromChange,
-    createDrawKeyBridge,
     drawModeKeyEvents,
     validateDrawnLineString,
-    DrawKeyBridge,
 } from './DrawingHelpers'
 import { getMapScreenshot } from './LeafletScreenshot'
 import {
@@ -61,7 +59,6 @@ import {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from '../types/events'
 import { MapEngineType } from '../types/engine'
 
@@ -125,7 +122,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _terraDraw: TerraDraw | null = null
     private _drawingShape: DrawShape | null = null
     private _terraDrawListeners: Array<() => void> = []
-    private _drawKeyBridge: DrawKeyBridge | null = null
 
     /**
      * Initialize the Leaflet map instance
@@ -299,6 +295,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     destroy(): void {
         if (!this._map) return
 
+        // End a live session the normal way, while its listeners are still
+        // attached, so its initiator hears `drawcancel` and stops driving a
+        // session that is about to have no engine.
+        this.disableDrawing()
+
         this._removeBasemapLayer()
 
         this._eventHandlers.forEach((handler, eventName) => {
@@ -321,8 +322,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
-        this._removeDrawKeyBridge()
-        this._drawingShape = null
 
         this._detachFeatureClickListener()
         this._detachFeatureHoverListeners()
@@ -937,23 +936,20 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._featureHoverOutListener = null
     }
 
-    private _ensureTerraDraw(options: DrawingOptions): TerraDraw {
+    private _ensureTerraDraw(): TerraDraw {
         if (this._terraDraw) return this._terraDraw
-
-        const keyEvents = (shape: DrawShape) =>
-            drawModeKeyEvents(shape, options.cancelOnEscape !== false)
 
         const td = new TerraDraw({
             adapter: new TerraDrawLeafletAdapter({ lib: L, map: this._map }),
             modes: [
                 new TerraDrawPointMode(),
                 new TerraDrawLineStringMode({
-                    keyEvents: keyEvents('linestring'),
+                    keyEvents: drawModeKeyEvents('linestring'),
                     validation: validateDrawnLineString,
                 }),
-                new TerraDrawPolygonMode({ keyEvents: keyEvents('polygon') }),
-                new TerraDrawRectangleMode({ keyEvents: keyEvents('rectangle') }),
-                new TerraDrawCircleMode({ keyEvents: keyEvents('circle') }),
+                new TerraDrawPolygonMode({ keyEvents: drawModeKeyEvents('polygon') }),
+                new TerraDrawRectangleMode({ keyEvents: drawModeKeyEvents('rectangle') }),
+                new TerraDrawCircleMode({ keyEvents: drawModeKeyEvents('circle') }),
             ],
         })
 
@@ -991,39 +987,22 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return td
     }
 
-    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+    enableDrawing(shape: DrawShape): void {
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
-        const td = this._ensureTerraDraw(options)
+        const td = this._ensureTerraDraw()
         if (!td.enabled) td.start()
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
-        this._installDrawKeyBridge(options)
         this.emit('drawstart', { shape })
     }
 
     /** The element terra-draw's Leaflet adapter attaches its listeners to. */
     private _drawEventElement(): HTMLElement | null {
         return this._map?.getContainer?.() ?? null
-    }
-
-    private _installDrawKeyBridge(options: DrawingOptions): void {
-        this._removeDrawKeyBridge()
-        this._drawKeyBridge = createDrawKeyBridge({
-            getEventElement: () => this._drawEventElement(),
-            isDrawing: () => this.isDrawing(),
-            cancelOnEscape: options.cancelOnEscape !== false,
-            onCancel: () => this.disableDrawing(),
-        })
-        this._drawKeyBridge.install()
-    }
-
-    private _removeDrawKeyBridge(): void {
-        this._drawKeyBridge?.remove()
-        this._drawKeyBridge = null
     }
 
     /**
@@ -1037,7 +1016,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         if (!this._drawingShape) return null
         const shape = this._drawingShape
         this._drawingShape = null
-        this._removeDrawKeyBridge()
         if (this._terraDraw) {
             try { this._terraDraw.clear() } catch { /* terra-draw mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }

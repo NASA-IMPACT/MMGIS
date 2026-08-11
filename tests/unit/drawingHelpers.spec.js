@@ -1,7 +1,6 @@
-import { test, expect, vi, beforeEach, afterEach } from 'vitest'
+import { test, expect } from 'vitest'
 import {
     committedVerticesFromChange,
-    createDrawKeyBridge,
     drawModeKeyEvents,
     extractCommittedVertices,
     validateDrawnLineString,
@@ -158,7 +157,7 @@ test.describe('committedVerticesFromChange', () => {
 test.describe('drawModeKeyEvents', () => {
     test('binds Enter for the modes that finish on a key', () => {
         for (const shape of ['linestring', 'polygon']) {
-            expect(drawModeKeyEvents(shape, true).finish).toBe('Enter')
+            expect(drawModeKeyEvents(shape).finish).toBe('Enter')
         }
     })
 
@@ -166,110 +165,16 @@ test.describe('drawModeKeyEvents', () => {
     // minimum-radius circle, so terra-draw must have no finish key to match.
     test('leaves Enter unbound for the two-click shapes', () => {
         for (const shape of ['rectangle', 'circle']) {
-            expect(drawModeKeyEvents(shape, true).finish).toBeNull()
+            expect(drawModeKeyEvents(shape).finish).toBeNull()
         }
     })
 
-    test('binds Escape to cancel unless cancelOnEscape is off', () => {
-        expect(drawModeKeyEvents('polygon', true).cancel).toBe('Escape')
-        expect(drawModeKeyEvents('polygon', false).cancel).toBeNull()
-    })
-})
-
-test.describe('createDrawKeyBridge', () => {
-    let eventElement
-    let bridge
-    let onCancel
-    let forwarded
-
-    function install({ cancelOnEscape = true, isDrawing = () => true } = {}) {
-        bridge = createDrawKeyBridge({
-            getEventElement: () => eventElement,
-            isDrawing,
-            cancelOnEscape,
-            onCancel,
-        })
-        bridge.install()
-    }
-
-    function press(key, target) {
-        target.dispatchEvent(
-            new window.KeyboardEvent('keydown', { key, bubbles: true })
-        )
-    }
-
-    beforeEach(() => {
-        forwarded = []
-        onCancel = vi.fn()
-        eventElement = document.createElement('canvas')
-        eventElement.addEventListener('keyup', (e) => forwarded.push(e.key))
-        document.body.appendChild(eventElement)
-    })
-
-    afterEach(() => {
-        if (bridge) bridge.remove()
-        document.body.innerHTML = ''
-    })
-
-    test('cancels on Escape pressed on the body', () => {
-        install()
-        press('Escape', document.body)
-        expect(onCancel).toHaveBeenCalledTimes(1)
-    })
-
-    test('honours cancelOnEscape: false', () => {
-        install({ cancelOnEscape: false })
-        press('Escape', document.body)
-        expect(onCancel).not.toHaveBeenCalled()
-    })
-
-    test('forwards Enter pressed on the body to terra-draw exactly once', () => {
-        install()
-        press('Enter', document.body)
-        expect(forwarded).toEqual(['Enter'])
-    })
-
-    test('leaves Enter alone when it already reached terra-draw', () => {
-        install()
-        press('Enter', eventElement)
-        expect(forwarded).toEqual([])
-    })
-
-    test('ignores both keys typed in a text field', () => {
-        install()
-        const input = document.createElement('input')
-        document.body.appendChild(input)
-        press('Enter', input)
-        press('Escape', input)
-        expect(forwarded).toEqual([])
-        expect(onCancel).not.toHaveBeenCalled()
-    })
-
-    test('ignores both keys pressed inside an open dialog', () => {
-        install()
-        const dialog = document.createElement('div')
-        dialog.setAttribute('role', 'dialog')
-        const button = document.createElement('button')
-        dialog.appendChild(button)
-        document.body.appendChild(dialog)
-        press('Enter', button)
-        press('Escape', button)
-        expect(forwarded).toEqual([])
-        expect(onCancel).not.toHaveBeenCalled()
-    })
-
-    test('does nothing once the session has ended', () => {
-        install({ isDrawing: () => false })
-        press('Enter', document.body)
-        press('Escape', document.body)
-        expect(forwarded).toEqual([])
-        expect(onCancel).not.toHaveBeenCalled()
-    })
-
-    test('stops listening after remove', () => {
-        install()
-        bridge.remove()
-        press('Escape', document.body)
-        expect(onCancel).not.toHaveBeenCalled()
+    // terra-draw's own cancel deletes the geometry and reports only a delete
+    // change, which ends the session with no drawcancel. Escape is the drawing
+    // initiator's, and reaches the engine as disableDrawing().
+    test('never binds a cancel key', () => {
+        for (const shape of ['point', 'linestring', 'polygon', 'rectangle', 'circle']) {
+            expect(drawModeKeyEvents(shape).cancel).toBeNull()
+        }
     })
 })

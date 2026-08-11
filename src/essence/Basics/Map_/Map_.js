@@ -293,8 +293,8 @@ let Map_ = {
                     return true
                 }),
                 // Drawing — wraps the IMapEngine drawing primitives from spec 013
-                window.mmgisAPI.provide('map:enableDrawing', ({ shape, options } = {}) => {
-                    engine.enableDrawing(shape, options)
+                window.mmgisAPI.provide('map:enableDrawing', ({ shape } = {}) => {
+                    engine.enableDrawing(shape)
                     return true
                 }),
                 window.mmgisAPI.provide('map:disableDrawing', () => {
