@@ -150,7 +150,7 @@ time; otherwise the CI diff would flap.)
 
 | Artifact | Generated from | Consumed by |
 |----------|----------------|-------------|
-| `mission-profiles/generated/full-demo-mission.json` | `mission-profiles/full-demo.json` | The local deployment tooling (`.claude/skills/mmgis-deployment`) seeds the template database from it; PR previews (#156) will publish it. |
+| `mission-profiles/generated/full-demo-mission.json` | `mission-profiles/full-demo.json` | The local deployment tooling (`.claude/skills/mmgis-deployment`) seeds the template database from it; PR previews will publish it; boot-time convergence (`scripts/demo-mission-converge.js`) reconciles the demo mission to it on servers that set `OVERWRITE_DEMO_MISSION=true`, appending a new config version only when the artifact differs from the newest saved one — the committed config supersedes hand edits, prior versions stay in history, and no other mission is ever read or written. |
 | `API/templates/config_template.json` | `mission-profiles/minimal.json` | The new-mission template (#109 wires it into `config_template.js`). |
 
 Both artifacts are committed. Both are regenerated and diff-checked in CI.
