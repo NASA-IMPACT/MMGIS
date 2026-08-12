@@ -13,15 +13,31 @@ import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
 import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
 import { FloatingPopover } from '../../FloatingPopover'
 import { useClickOutside } from '../../hooks/useClickOutside'
-import {
-    Markdown,
-    hasMarkdownContent,
-} from '../../../../_shared/content/markdown'
 import type { Layer } from '../../types'
+
+/**
+ * Renders an authored description. Markdown is a host concern — the parser,
+ * the sanitizer policy and the stylesheet all belong to whoever embeds this
+ * panel — so a host that has one passes it in and everyone else gets the text
+ * as written.
+ */
+export type RenderDescription = (
+    source: string,
+    className?: string,
+) => ReactNode
+
+const renderAsPlainText: RenderDescription = (source, className) => (
+    <div className={className}>{source}</div>
+)
+
+/** A description of only whitespace counts as absent. */
+const hasText = (value: string | null | undefined): boolean =>
+    Boolean(value?.trim())
 
 export type LayerLegendProps = {
     layer: Layer
     defaultInfoExpanded?: boolean
+    renderDescription?: RenderDescription
     onVisibilityChange?: (layerId: string, newVisibility: boolean) => void
     onOpacityChange?: (layerId: string, opacity: number) => void
     onColormapChange?: (layerId: string, colormap: string) => void
@@ -31,6 +47,7 @@ export type LayerLegendProps = {
 export function LayerLegend({
     layer,
     defaultInfoExpanded = false,
+    renderDescription = renderAsPlainText,
     onVisibilityChange,
     onOpacityChange,
     onColormapChange,
@@ -68,11 +85,7 @@ export function LayerLegend({
     // colormap baked in at construction shows the ramp but offers no controls.
     const hasColorRamp = cog?.editable === true
 
-    // Descriptions are authored as markdown in mission configuration and
-    // rendered by core. A description of only whitespace counts as absent, so
-    // this tracks whether there is anything to show rather than whether the
-    // field is set.
-    const hasDescription = hasMarkdownContent(description)
+    const hasDescription = hasText(description)
 
     useEffect(() => {
         setIsVisible(visible)
@@ -138,14 +151,12 @@ export function LayerLegend({
                 // description reads consistently wherever it appears.
                 return (
                     <div className="blocks-layer-legend__text">
-                        {hasDescription ? (
-                            <Markdown
-                                source={description}
-                                className="blocks-layer-legend__markdown"
-                            />
-                        ) : (
-                            'No legend information available'
-                        )}
+                        {hasDescription
+                            ? renderDescription(
+                                  description as string,
+                                  'blocks-layer-legend__markdown',
+                              )
+                            : 'No legend information available'}
                     </div>
                 )
             case 'none':
@@ -316,10 +327,10 @@ export function LayerLegend({
                     label={`Information for ${title}`}
                 >
                     <div className="blocks-layer-legend__info-title">{title}</div>
-                    <Markdown
-                        source={description}
-                        className="blocks-layer-legend__markdown"
-                    />
+                    {renderDescription(
+                        description as string,
+                        'blocks-layer-legend__markdown',
+                    )}
                 </FloatingPopover>
             )}
         </div>
