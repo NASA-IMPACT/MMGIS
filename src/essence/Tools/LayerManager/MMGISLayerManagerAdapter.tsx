@@ -47,6 +47,7 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layer:refreshStatusChange', refresh)
     useMMGISEvent('layer:opacityChange', refresh)
     useMMGISEvent('layer:listedChange', refresh)
+    useMMGISEvent('layers:listChanged', refresh)
 
     // 'layers:getAll' is registered by Layers_.fina() during mission load.
     // Wait for it before doing the initial refresh, otherwise the adapter

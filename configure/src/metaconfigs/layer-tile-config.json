@@ -301,6 +301,20 @@
           ]
         },
         {
+          "name": "COG Renderer",
+          "components": [
+            {
+              "field": "cogRendererMode",
+              "name": "COG Renderer",
+              "description": "How a Cloud-Optimized GeoTIFF is rendered. 'titiler' uses the tile server (default). 'deckRaster' renders the COG directly in the browser on the GPU with no tile server — deck.gl missions only, single-band colormap + rescale.",
+              "type": "dropdown",
+              "width": 4,
+              "options": ["titiler", "deckRaster"],
+              "default": "titiler"
+            }
+          ]
+        },
+        {
           "name": "Single Data Band COG Transformation",
           "components": [
             {

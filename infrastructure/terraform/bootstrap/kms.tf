@@ -10,7 +10,7 @@
 # master secrets and the roles listed here, and no environment reaches the
 # other's secret (Secrets Manager scoping does that, in boundary.tf).
 resource "aws_kms_key" "master_secret" {
-  description             = "Encrypts the RDS-managed master password secrets for every MMGIS environment. Owned here so the CI apply roles can be granted on it; the account's default aws/secretsmanager key cannot be."
+  description             = "Encrypts the RDS-managed master password secrets for every MMGIS environment. Owned here so the CI apply roles can hold the encrypt/decrypt and CreateGrant permissions they need; an AWS-managed key policy delegates only metadata actions to IAM, so the account's default aws/secretsmanager key cannot authorize those."
   enable_key_rotation     = true
   deletion_window_in_days = 30
 

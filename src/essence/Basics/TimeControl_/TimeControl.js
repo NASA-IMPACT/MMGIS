@@ -10,8 +10,12 @@ import {
     compileTileUrl,
     formatLayerTime,
     buildTileUrlOptions,
+    shouldUseDeckRaster,
 } from '../Layers_/tileUrlUtils'
-import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
+import {
+    resolveTileLayerSource,
+    resolveDeckCOGFileUrl,
+} from '../Layers_/tileLayerSource'
 import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
 
 import './TimeControl.css'
@@ -418,7 +422,27 @@ var TimeControl = {
                     // into the map engine adapters so TimeControl doesn't branch
                     // on Map_.engine.engineType
                     // https://github.com/NASA-IMPACT/MMGIS/issues/212 tracks this
-                    if (tileLayer && typeof tileLayer.refresh === 'function') {
+                    if (
+                        shouldUseDeckRaster(
+                            Map_.engine?.engineType,
+                            splitColonType,
+                            layer
+                        )
+                    ) {
+                        // The client-side COG renderer reads the file directly —
+                        // the compiled TiTiler tiles URL above is meaningless to
+                        // it, and updateLayer({url}) would be silently ignored
+                        // (COGLayer is keyed on its `geotiff` prop). Rebuild
+                        // from the time-substituted file URL so deck.gl swaps
+                        // the layer in place by id.
+                        L_.rebuildDeckCOGLayer(
+                            layer,
+                            resolveDeckCOGFileUrl(layer, tileSource)
+                        )
+                    } else if (
+                        tileLayer &&
+                        typeof tileLayer.refresh === 'function'
+                    ) {
                         // refresh() copies every key onto this.options, which the
                         // per-tile getTileUrl then reads. Safe to pass whole:
                         // buildTileUrlOptions returns only tile-URL keys.
