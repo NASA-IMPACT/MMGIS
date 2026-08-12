@@ -9,7 +9,7 @@ import {
     parseColormapList,
     toForwardColormapNames,
     validateRescale,
-} from '../../../src/essence/Tools/LayerManager/lib/utils/colormaps.ts'
+} from '../lib/utils/colormaps.ts'
 
 test.describe('colormap names', () => {
     test('reads direction off the name suffix', () => {

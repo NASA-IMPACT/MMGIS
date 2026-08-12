@@ -235,3 +235,139 @@ describe('layers:getCogCapabilities provider', () => {
         expect(providers['layers:getCogCapabilities']()).toEqual({})
     })
 })
+
+/**
+ * `layers:getTiTilerUrl` is how a plugin learns where a layer's tiles and
+ * colormaps come from without resolving the question itself. Core owns the
+ * whole chain — per-layer override, mission-wide services config, same-origin
+ * proxy — so a plugin never has to know a deployment proxies its services, and
+ * a deployment with nothing reachable gets null rather than a path that 404s.
+ */
+describe('layers:getTiTilerUrl provider', () => {
+    let providers
+
+    const DISPLACEMENT = 'Displacement_0123456789abcdef'
+    const BASEMAP = 'Basemap_fedcba9876543210'
+
+    afterAll(() => {
+        delete window.mmgisAPI
+        delete window.mmgisglobal
+        L_.layers.data = {}
+        L_.layers.nameToUUID = {}
+    })
+
+    beforeEach(() => {
+        L_.layers.data = {
+            [DISPLACEMENT]: { type: 'TileLayer', display_name: 'Displacement' },
+            [BASEMAP]: { type: 'TileLayer', display_name: 'Basemap' },
+        }
+        L_.layers.nameToUUID = {
+            Displacement: [DISPLACEMENT],
+            Basemap: [BASEMAP],
+        }
+        providers = {}
+        window.mmgisAPI = {
+            provide: (name, fn) => {
+                providers[name] = fn
+                return () => {}
+            },
+        }
+        // A server-backed build running TiTiler; the same-origin proxy is the
+        // last resort.
+        window.mmgisglobal = { SERVER: 'node', WITH_TITILER: 'true' }
+        L_.fina(null, null, null, null, null, null)
+    })
+
+    const localTiTiler = `${window.location.origin}/titiler`
+
+    test('answers for every layer, keyed by uuid', () => {
+        expect(providers['layers:getTiTilerUrl']()).toEqual({
+            [DISPLACEMENT]: localTiTiler,
+            [BASEMAP]: localTiTiler,
+        })
+    })
+
+    // A mission can point one layer at its own service while the rest use the
+    // deployment's, so the answer is per layer rather than global.
+    test("prefers a layer's own service over the deployment's", () => {
+        L_.layers.data[DISPLACEMENT].titilerUrl = 'https://titiler.example.com/'
+
+        expect(providers['layers:getTiTilerUrl']()).toEqual({
+            // Normalized, so consumers never build a double-slashed path.
+            [DISPLACEMENT]: 'https://titiler.example.com',
+            [BASEMAP]: localTiTiler,
+        })
+    })
+
+    test('answers for a single layer by uuid or by display name', () => {
+        expect(providers['layers:getTiTilerUrl'](DISPLACEMENT)).toBe(localTiTiler)
+        expect(providers['layers:getTiTilerUrl']('Displacement')).toBe(localTiTiler)
+    })
+
+    test('answers null for a layer it has never heard of', () => {
+        expect(providers['layers:getTiTilerUrl']('NoSuchLayer')).toBeNull()
+    })
+
+    // Nothing to proxy through and nothing configured: the honest answer is
+    // that there is no service, which leaves plugins showing no ramps.
+    test('answers null per layer in a static build with no service configured', () => {
+        window.mmgisglobal = { SERVER: 'static' }
+
+        expect(providers['layers:getTiTilerUrl']()).toEqual({
+            [DISPLACEMENT]: null,
+            [BASEMAP]: null,
+        })
+    })
+
+    test('resolves the configured service in a static build', () => {
+        window.mmgisglobal = {
+            SERVER: 'static',
+            options: { services: { titilerUrl: 'https://titiler.example.com/' } },
+        }
+
+        expect(providers['layers:getTiTilerUrl'](DISPLACEMENT)).toBe(
+            'https://titiler.example.com',
+        )
+    })
+
+    // The proxy path is only mounted when TiTiler is running; otherwise it
+    // reaches the SPA catch-all, which answers 200 with HTML.
+    test('answers null per layer when the deployment runs without TiTiler', () => {
+        window.mmgisglobal = { SERVER: 'node', WITH_TITILER: 'false' }
+
+        expect(providers['layers:getTiTilerUrl']()).toEqual({
+            [DISPLACEMENT]: null,
+            [BASEMAP]: null,
+        })
+    })
+
+    test('answers null per layer when the deployment never says', () => {
+        window.mmgisglobal = { SERVER: 'node' }
+
+        expect(providers['layers:getTiTilerUrl'](DISPLACEMENT)).toBeNull()
+    })
+
+    // An external service is someone else's to serve, so whether this
+    // deployment runs its own says nothing about reaching it.
+    test('resolves an external service without TiTiler running', () => {
+        window.mmgisglobal = { SERVER: 'node', WITH_TITILER: 'false' }
+        L_.layers.data[DISPLACEMENT].titilerUrl = 'https://titiler.example.com/'
+
+        expect(providers['layers:getTiTilerUrl']()).toEqual({
+            [DISPLACEMENT]: 'https://titiler.example.com',
+            [BASEMAP]: null,
+        })
+    })
+
+    test('resolves a mission-wide service without TiTiler running', () => {
+        window.mmgisglobal = {
+            SERVER: 'node',
+            WITH_TITILER: 'false',
+            options: { services: { titilerUrl: 'https://titiler.example.com/' } },
+        }
+
+        expect(providers['layers:getTiTilerUrl'](DISPLACEMENT)).toBe(
+            'https://titiler.example.com',
+        )
+    })
+})

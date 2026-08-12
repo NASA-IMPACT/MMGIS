@@ -3,7 +3,7 @@ import {
     fetchColormapColors,
     clearColormapCache,
     resolveTiTilerBase,
-} from '../../../src/essence/Tools/LayerManager/lib/utils/colormapCache.ts'
+} from '../lib/utils/colormapCache.ts'
 
 const BASE = 'https://titiler.test'
 const VIRIDIS = { 0: [68, 1, 84, 255], 1: [253, 231, 37, 255] }
@@ -20,8 +20,14 @@ afterEach(() => {
 })
 
 test.describe('resolveTiTilerBase', () => {
-    test('strips a trailing slash from a per-layer URL', () => {
+    test('strips a trailing slash from the supplied URL', () => {
         expect(resolveTiTilerBase('https://titiler.test/')).toBe(BASE)
+    })
+
+    test('is null when no service is supplied, with no host fallback', () => {
+        expect(resolveTiTilerBase(null)).toBe(null)
+        expect(resolveTiTilerBase(undefined)).toBe(null)
+        expect(resolveTiTilerBase('')).toBe(null)
     })
 })
 
@@ -85,8 +91,6 @@ test.describe('fetchColormapColors', () => {
 
     test('resolves to null without fetching when no service is reachable', async () => {
         global.fetch = vi.fn()
-        // A static build with no configured TiTiler resolves no base URL.
-        window.mmgisglobal = { SERVER: 'static' }
         expect(await fetchColormapColors('viridis', null)).toBe(null)
         expect(await fetchColormapColors('', BASE)).toBe(null)
         expect(global.fetch).not.toHaveBeenCalled()

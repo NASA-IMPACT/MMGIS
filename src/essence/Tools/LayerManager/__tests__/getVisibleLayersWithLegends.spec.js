@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'vitest'
-import { getVisibleLayersWithLegends } from '../../../src/essence/Tools/LayerManager/adapters/getVisibleLayersWithLegends.ts'
+import { getVisibleLayersWithLegends } from '../adapters/getVisibleLayersWithLegends.ts'
 
 /**
  * Covers the seam between core and the legend: the COG capabilities core
@@ -25,13 +25,14 @@ const CONFIGS = {
     [BASEMAP]: { display_name: 'Basemap', cogColormap: 'viridis' },
 }
 
-const setupMock = ({ capabilities, provideCapability = true }) => {
+const setupMock = ({ capabilities, provideCapability = true, titilerUrls }) => {
     const responses = {
         'layers:getAllConfigs': CONFIGS,
         'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
         'layers:getAllOpacities': { [DISPLACEMENT]: 1, [BASEMAP]: 1 },
     }
     if (provideCapability) responses['layers:getCogCapabilities'] = capabilities
+    if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
 
     global.window = global.window || {}
     global.window.mmgisAPI = {
@@ -113,5 +114,39 @@ describe('getVisibleLayersWithLegends', () => {
 
         expect(layers).toHaveLength(2)
         expect(layers.every((l) => l.cog === null)).toBe(true)
+    })
+
+    // Per layer rather than global, since a mission can point one layer at a
+    // different service than the rest.
+    test('carries the tiling service core resolved through per layer', async () => {
+        setupMock({
+            capabilities: { [DISPLACEMENT]: EDITABLE, [BASEMAP]: EDITABLE },
+            titilerUrls: {
+                [DISPLACEMENT]: 'https://titiler.test',
+                [BASEMAP]: 'https://other-titiler.test',
+            },
+        })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBe('https://titiler.test')
+        expect(byId(layers, BASEMAP).cog?.titilerUrl).toBe('https://other-titiler.test')
+    })
+
+    test('leaves the service null when core resolves none for a layer', async () => {
+        setupMock({
+            capabilities: { [DISPLACEMENT]: EDITABLE, [BASEMAP]: EDITABLE },
+            titilerUrls: { [DISPLACEMENT]: null, [BASEMAP]: 'https://titiler.test' },
+        })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
+        expect(byId(layers, BASEMAP).cog?.titilerUrl).toBe('https://titiler.test')
+    })
+
+    test('leaves the service null against a core without the handler', async () => {
+        setupMock({ capabilities: { [DISPLACEMENT]: EDITABLE } })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
     })
 })

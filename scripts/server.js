@@ -750,6 +750,7 @@ setups.getBackendSetups(function (setups) {
             IS_DOCKER: process.env.IS_DOCKER,
             SKIP_CLIENT_INITIAL_LOGIN: process.env.SKIP_CLIENT_INITIAL_LOGIN,
             THIRD_PARTY_COOKIES: process.env.THIRD_PARTY_COOKIES,
+            WITH_TITILER: process.env.WITH_TITILER,
             PORT: process.env.PORT,
             ROOT_PATH: ROOT_PATH,
             WEBSOCKET_ROOT_PATH: process.env.WEBSOCKET_ROOT_PATH,

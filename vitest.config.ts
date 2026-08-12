@@ -29,7 +29,11 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: false,
-    include: ["tests/unit/**/*.spec.{js,ts}"],
+    // Central specs, plus specs co-located inside a plugin
+    include: [
+      "tests/unit/**/*.spec.{js,ts}",
+      "src/**/__tests__/**/*.spec.{js,ts,jsx,tsx}",
+    ],
     setupFiles: ["./tests/unit/vitest.setup.js"],
   },
 });
