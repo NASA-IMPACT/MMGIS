@@ -29,13 +29,13 @@ export interface FilterDef {
     countLabel?: string
 }
 
-/** One step-1 theme: a rail entry + the step-2 filters it reveals. */
+/**
+ * One step-1 theme's panel half: the step-2 filters it reveals. The rail's
+ * half (label, icon, selection order) is configured on the rail plugin; the
+ * two join on `id`.
+ */
 export interface ThemeDef {
     id: string
-    /** Rail label, e.g. "Need". */
-    label: string
-    /** Rail icon (Material/MDI name). */
-    icon?: string
     /** Panel heading, e.g. "Need". */
     title: string
     /** Panel sub-text under the title. */
@@ -49,7 +49,6 @@ export interface ThemeDef {
 }
 
 export interface LayerFilterConfig {
-    defaultThemeId?: string
     themes: ThemeDef[]
     /** The catalogue (GeoJSON FeatureCollection) — see SCHEMA.md §5. */
     catalog?: unknown

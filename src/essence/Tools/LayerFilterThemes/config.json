@@ -1,10 +1,30 @@
 {
     "defaults": {
-        "variables": {}
+        "variables": {
+            "defaultThemeId": "need",
+            "themes": [
+                {
+                    "id": "need",
+                    "label": "Need",
+                    "icon": "satellite-variant"
+                },
+                {
+                    "id": "hazard",
+                    "label": "Hazard",
+                    "icon": "flash-outline"
+                },
+                {
+                    "id": "event",
+                    "label": "Event",
+                    "icon": "calendar-outline"
+                }
+            ]
+        }
     },
     "name": "LayerFilterThemes",
     "defaultIcon": "view-dashboard-outline",
-    "description": "Theme rail for the two-step layer filter (step 1). Requires a panel plugin that serves the theme contract (LayerFilter, or a swap-in). Events \u2014 emits: plugin:layerfilterthemes:selectedThemeChanged { themeId }; requests: plugin:layerfilter:getThemes; subscribes: plugin:layerfilter:ready.",
+    "description": "Theme rail for the two-step layer filter (step 1). Configures its own theme list and owns the selection; pair it with a panel plugin (LayerFilter, or a swap-in) whose theme ids match. Events \u2014 emits: plugin:layerfilterthemes:selectedThemeChanged { themeId, initial? }.",
+    "hasVars": true,
     "width": 66,
     "height": 0,
     "paths": {
@@ -20,5 +40,32 @@
         "modernLayoutSupport": true,
         "width": 66,
         "height": 0
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.defaultThemeId",
+                        "name": "Default theme",
+                        "description": "Theme id selected on load. Falls back to the first theme when it matches nothing.",
+                        "type": "text",
+                        "width": 12
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
+                        "field": "variables.themes",
+                        "name": "Themes (JSON)",
+                        "description": "The rail's entries: [{ id, label, icon }]. `icon` is an MDI name without the 'mdi-' prefix. Each `id` must match a theme id in the paired filter panel's config — that id is what the rail broadcasts on selection.",
+                        "type": "json",
+                        "width": 12,
+                        "height": "260px"
+                    }
+                ]
+            }
+        ]
     }
 }

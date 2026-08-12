@@ -3,8 +3,9 @@
 > Status: agreed working design — **up for team review (#221)**.
 > Implementation tracked in #219 (foundation) and #220 (themes UI),
 > children of #164. Review as a PR: comment inline on anything here.
-> Applies to the two-plugin pair: **LayerFilter** (panel, owns all config)
-> and **LayerFilterThemes** (rail, dumb renderer, no config of its own).
+> Applies to the two-plugin pair: **LayerFilter** (panel) and
+> **LayerFilterThemes** (rail). Each configures only what it renders and they
+> join on theme `id` — see §5.
 
 ## 1. The model
 
@@ -79,22 +80,45 @@ in config, never hardcoded):
   layer — storing them on layers creates false combinations: MODIS
   serving CA-2025 and TX-2024 would wrongly match "CA 2024").
 
-## 5. What the app builder writes (LayerFilter tool config)
+## 5. What the app builder writes (tool config)
 
-Two separate Configure fields — different change cadence (themes: set
-once; catalogue: edited every disaster), different authors, and the
-catalogue is the part expected to move to a hosted URL/STAC later
-(a third `Catalog URL` field will take precedence over the JSON when set).
+**Config ownership: each plugin configures only what it renders.** The rail
+draws the theme entries and owns which one is selected; the panel draws each
+theme's filters. They join on theme `id`. So "change the rail's icon" is an
+edit to the tool named LayerFilterThemes, not to LayerFilter.
 
-### Field 1 — Themes & filters (JSON)
+The panel's two fields are separate because they have different change
+cadences (themes: set once; catalogue: edited every disaster), different
+authors, and the catalogue is the part expected to move to a hosted URL/STAC
+later (a third `Catalog URL` field will take precedence over the JSON when
+set).
+
+### Field 0 — Rail entries (JSON) — on the **LayerFilterThemes** tool
+
+```json
+{
+    "defaultThemeId": "need",
+    "themes": [
+        { "id": "need",   "label": "Need",   "icon": "satellite-variant" },
+        { "id": "hazard", "label": "Hazard", "icon": "flash-outline" },
+        { "id": "event",  "label": "Event",  "icon": "calendar-range" }
+    ]
+}
+```
+
+Drift is the accepted cost of the split: a rail id with no matching panel
+theme warns and shows an empty panel; a panel theme with no rail entry is
+simply unreachable. A future builder that wires rail→panel visually can
+diff the two id sets and offer to sync them.
+
+### Field 1 — Themes & filters (JSON) — on the **LayerFilter** tool
 
 ```json
 {
     "themes": [
         {
             "id": "need",
-            "label": "Need",
-            "icon": "satellite-variant",
+            "title": "Need",
             "description": "Filter by sector to explore Earth-science datasets relevant to your operational needs.",
             "filters": [
                 { "id": "sector", "label": "Sector", "property": "sector", "multi": true, "allLabel": "All Sectors" }
@@ -102,8 +126,7 @@ catalogue is the part expected to move to a hosted URL/STAC later
         },
         {
             "id": "hazard",
-            "label": "Hazard",
-            "icon": "flash-outline",
+            "title": "Hazard",
             "description": "Explore datasets by hazard type.",
             "filters": [
                 { "id": "hazard", "label": "Hazard", "property": "hazard", "allLabel": "All Hazards" }
@@ -111,8 +134,7 @@ catalogue is the part expected to move to a hosted URL/STAC later
         },
         {
             "id": "event",
-            "label": "Event",
-            "icon": "calendar-range",
+            "title": "Event",
             "description": "Filter the activation catalogue by hazard, location and year.",
             "catalog": "activations",
             "filters": [
@@ -218,6 +240,11 @@ LayerFilter                     core (Layers_.js)              LayerManager
   core state + both channels + change emit, LayerManager skip,
   LayerFilter writing the complement map via `buildListedUpdates`,
   gated on first user interaction (boot never narrows the list).
+- That gate rides on the rail's broadcast payload: the rail announces its
+  boot-time default as `{ themeId, initial: true }` and only user clicks
+  omit the flag. Making it explicit (rather than "the rail must not emit its
+  default", enforced by a comment) means a replacement rail can't silently
+  reintroduce boot-time narrowing.
 - Event name `layer:listedChange` (singular family) is **deliberate** —
   chosen to stay visually distinct from the existing `layers:listChanged`
   (layer add/remove), which a plural `layers:listedChanged` would collide

@@ -1,17 +1,17 @@
 /**
- * LayerFilterThemes — the two-step filter's theme rail (step 1). Not
- * functional without a panel plugin providing the themes (LayerFilter, or a
- * swap-in honoring the same contract).
+ * LayerFilterThemes — the two-step filter's theme rail (step 1). Configures
+ * its own theme list (id/label/icon) and owns which theme is selected; a
+ * panel plugin (LayerFilter, or a swap-in) configures each theme's filters
+ * under matching ids and follows the broadcast below.
  *
  * pluginId: 'layerfilterthemes'
  *
  * Emits:
- *   - plugin:layerfilterthemes:selectedThemeChanged  { themeId }  (user clicks only)
+ *   - plugin:layerfilterthemes:selectedThemeChanged  { themeId, initial? }
+ *     `initial: true` marks the boot-time default so consumers can select it
+ *     without treating it as user interaction.
  * Requests:
- *   - plugin:layerfilter:getThemes → { themes: [{ id, label, icon }], defaultThemeId }
- * Subscribes:
- *   - plugin:layerfilter:ready — re-pulls the theme list after the panel's
- *     config resolves
+ *   - tool:getVars
  */
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
