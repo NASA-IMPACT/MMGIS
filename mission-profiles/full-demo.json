@@ -25,7 +25,9 @@
     "Card",
     "Chart",
     "FetchStats",
-    "ShareExport"
+    "ShareExport",
+    "LayerFilterThemes",
+    "LayerFilter"
   ],
   "overrides": {
     "Card": {
@@ -117,7 +119,7 @@
       "panels": [
         {
           "position": "left",
-          "priority": 1,
+          "priority": 2,
           "layoutType": "stacked",
           "hasHeader": false,
           "stateConstraints": {
@@ -144,6 +146,56 @@
             "Title",
             "Card"
           ]
+        },
+        {
+          "position": "left",
+          "priority": 0,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false,
+            "supportedOrientation": "vertical"
+          },
+          "panelTools": [
+            "LayerFilterThemes"
+          ],
+          "id": "leftmost-panel",
+          "title": "",
+          "dimensions": {
+            "focusedWidth": "",
+            "expandedSize": "62"
+          }
+        },
+        {
+          "position": "left",
+          "priority": 1,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false,
+            "supportedOrientation": "vertical"
+          },
+          "panelTools": [
+            "LayerFilter"
+          ],
+          "id": "filter-panel",
+          "title": "",
+          "dimensions": {
+            "focusedWidth": "",
+            "expandedSize": "320"
+          }
         }
       ],
       "floatingPanels": [
