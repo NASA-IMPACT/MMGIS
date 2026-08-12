@@ -49,7 +49,6 @@ import type {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from '../types/events'
 
 import {
@@ -72,7 +71,11 @@ import {
     TerraDrawCircleMode,
 } from 'terra-draw'
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
-import { extractVerticesFromGeometry } from './DrawingHelpers'
+import {
+    committedVerticesFromChange,
+    drawModeKeyEvents,
+    validateDrawnLineString,
+} from './DrawingHelpers'
 
 /**
  * Minimal API surface that is identical between mapbox-gl and maplibre-gl `Map` instances.
@@ -369,13 +372,17 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * The adapter must not be used again after this call.
      */
     destroy(): void {
+        // End a live session the normal way, while its listeners are still
+        // attached, so its initiator hears `drawcancel` and stops driving a
+        // session that is about to have no engine.
+        this.disableDrawing()
+
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
             this._terraDrawListeners = []
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
-        this._drawingShape = null
 
         if (this._isOverlayMode) {
             if (this._basemap) {
@@ -1001,12 +1008,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._emitEvent(eventName, data)
     }
 
-    private _ensureTerraDraw(options: DrawingOptions): TerraDraw | null {
+    private _ensureTerraDraw(): TerraDraw | null {
         if (this._terraDraw) return this._terraDraw
         if (!this._isOverlayMode || !this._basemap) return null
-
-        const finishKey = 'Enter'
-        const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
 
         const td = new TerraDraw({
             adapter: new TerraDrawMapLibreGLAdapter({
@@ -1015,10 +1019,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             }),
             modes: [
                 new TerraDrawPointMode(),
-                new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawPolygonMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawRectangleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawCircleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawLineStringMode({
+                    keyEvents: drawModeKeyEvents('linestring'),
+                    validation: validateDrawnLineString,
+                }),
+                new TerraDrawPolygonMode({ keyEvents: drawModeKeyEvents('polygon') }),
+                new TerraDrawRectangleMode({ keyEvents: drawModeKeyEvents('rectangle') }),
+                new TerraDrawCircleMode({ keyEvents: drawModeKeyEvents('circle') }),
             ],
         })
 
@@ -1037,13 +1044,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         const onChange = (ids: any[], type: string) => {
             if (type !== 'create' && type !== 'update') return
-            if (!this._drawingShape) return
-            const lastId = ids[ids.length - 1]
-            const snap = td.getSnapshotFeature(lastId)
-            if (!snap) return
-            const vertices = extractVerticesFromGeometry(snap.geometry as GeoJSON.Geometry)
-            if (!vertices) return
-            this._emitEvent('drawvertex', { shape: this._drawingShape, vertices })
+            const shape = this._drawingShape
+            if (!shape) return
+            const vertices = committedVerticesFromChange(shape, ids, (id) =>
+                td.getSnapshotFeature(id)
+            )
+            if (vertices) this._emitEvent('drawvertex', { shape, vertices })
         }
 
         td.on('finish', onFinish)
@@ -1057,12 +1063,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return td
     }
 
-    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+    enableDrawing(shape: DrawShape): void {
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
-        const td = this._ensureTerraDraw(options)
+        const td = this._ensureTerraDraw()
         if (!td) {
             throw new Error(
                 '[DeckGLAdapter] enableDrawing requires overlay mode ' +
@@ -1076,6 +1082,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._drawingShape = shape
         this._syncLayers()
         this._emitEvent('drawstart', { shape })
+    }
+
+    /** The element terra-draw's MapLibre adapter attaches its listeners to. */
+    private _drawEventElement(): HTMLElement | null {
+        return (this._basemap as any)?.getCanvas?.() ?? null
     }
 
     /**
@@ -1106,16 +1117,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * terra-draw modes commit on `Enter` via their `keyEvents.finish` binding.
      * There's no programmatic-finish API yet (see
      * https://github.com/JamesLMilner/terra-draw), so we dispatch a synthetic
-     * keydown to the map container — the mode's keyboard handler picks it up
-     * and emits `finish` if the geometry is valid. If it isn't (e.g. polygon
-     * with <3 vertices), the dispatch is a no-op and we fall through to
-     * cancel.
+     * keyup on the map canvas — the element terra-draw listens on. The mode
+     * emits `finish` if the geometry is valid, which ends the session; if it
+     * isn't (e.g. polygon with <3 vertices), the dispatch is a no-op and the
+     * session is left untouched. Rectangle and circle bind no finish key at
+     * all (see {@link drawModeKeyEvents}), so they only ever finish on their
+     * second click.
      */
-    finishDrawing(): void {
-        if (!this._drawingShape || !this._terraDraw) return
-        const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
-        this._container?.dispatchEvent(evt)
-        if (this._drawingShape) this.disableDrawing()
+    finishDrawing(): boolean {
+        if (!this._drawingShape || !this._terraDraw) return false
+        this._drawEventElement()?.dispatchEvent(
+            new KeyboardEvent('keyup', { key: 'Enter' })
+        )
+        return !this.isDrawing()
     }
 
     isDrawing(): boolean {

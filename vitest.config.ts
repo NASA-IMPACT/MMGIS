@@ -9,6 +9,10 @@ import { defineConfig } from "vitest/config";
  * types at module-load time. Those imports throw under a plain Node process,
  * so the suite runs in a jsdom environment instead. End-to-end specs stay on
  * Playwright (see playwright.config.js).
+ *
+ * Unit specs live in two places, both covered by `include` below: engine and
+ * backend specs in `tests/unit/`, and React component specs beside the
+ * component they render.
  */
 export default defineConfig({
   resolve: {
@@ -29,7 +33,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: false,
-    include: ["tests/unit/**/*.spec.{js,ts}"],
+    include: ["tests/unit/**/*.spec.{js,ts}", "src/**/*.test.{ts,tsx}"],
     setupFiles: ["./tests/unit/vitest.setup.js"],
   },
 });

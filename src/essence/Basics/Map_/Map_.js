@@ -293,18 +293,17 @@ let Map_ = {
                     return true
                 }),
                 // Drawing — wraps the IMapEngine drawing primitives from spec 013
-                window.mmgisAPI.provide('map:enableDrawing', ({ shape, options } = {}) => {
-                    engine.enableDrawing(shape, options)
+                window.mmgisAPI.provide('map:enableDrawing', ({ shape } = {}) => {
+                    engine.enableDrawing(shape)
                     return true
                 }),
                 window.mmgisAPI.provide('map:disableDrawing', () => {
                     engine.disableDrawing()
                     return true
                 }),
-                window.mmgisAPI.provide('map:finishDrawing', () => {
+                window.mmgisAPI.provide('map:finishDrawing', () =>
                     engine.finishDrawing()
-                    return true
-                }),
+                ),
                 window.mmgisAPI.provide('map:isDrawing', () => engine.isDrawing()),
                 // Layer management — engine-agnostic CRUD on vector layers
                 window.mmgisAPI.provide('map:createLayer', (spec) => {
