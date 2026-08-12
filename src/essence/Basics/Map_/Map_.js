@@ -1108,7 +1108,7 @@ function emitFeatureClick(feature, layerName, e) {
         featureCopy.properties = { ...feature.properties }
     window.mmgisAPI.emit('feature:click', {
         feature: featureCopy,
-        layerName: layerName ?? null,
+        layerName: L_.asLayerUUID(layerName),
         latlng: e?.latlng ? { lat: e.latlng.lat, lng: e.latlng.lng } : null,
         pixel: e?.containerPoint
             ? { x: e.containerPoint.x, y: e.containerPoint.y }
