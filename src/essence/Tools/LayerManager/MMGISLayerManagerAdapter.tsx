@@ -2,8 +2,8 @@ import React from 'react'
 import { useState, useCallback } from 'react'
 import { LayerManagerPanel } from './lib'
 import type { Layer } from './lib/types'
-import { useMMGISEvent } from './adapters/useMMGISEvent'
-import { useMMGISToolVars } from './adapters/useMMGISToolVars'
+import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
+import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import { getVisibleLayersWithLegends } from './adapters/getVisibleLayersWithLegends'
 import { renderDescription } from './adapters/renderDescription'
@@ -56,6 +56,7 @@ export function MMGISLayerManagerAdapter() {
     useMMGISEvent('layer:visibilityChange', refresh)
     useMMGISEvent('layer:refreshStatusChange', refresh)
     useMMGISEvent('layer:opacityChange', refresh)
+    useMMGISEvent('layer:listedChange', refresh)
     useMMGISEvent('layers:listChanged', refresh)
 
     // 'layers:getAll' is registered by Layers_.fina() during mission load.

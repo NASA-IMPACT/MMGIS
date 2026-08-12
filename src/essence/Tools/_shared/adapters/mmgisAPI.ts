@@ -123,6 +123,15 @@ export const mmgisGetVisibleLayers = (): Promise<Record<
     return mmgisRequestIfProvided<Record<string, boolean>>('layers:getVisible')
 }
 
+/** Runtime "shown in layer lists" flags, keyed by layer UUID; absent =
+ *  listed, false = hidden (e.g. filtered out by the LayerFilter plugin). */
+export const mmgisGetListedLayers = (): Promise<Record<
+    string,
+    boolean
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, boolean>>('layers:getListed')
+}
+
 /**
  * What a layer's COG colormap supports: `hasColormap` for whether there is a
  * ramp to draw a legend from, `canChangeColormap` for whether that ramp can be
