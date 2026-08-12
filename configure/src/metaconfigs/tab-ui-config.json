@@ -23,7 +23,7 @@
           "name": "Theme",
           "description": "The USWDS theme to apply to the modern interface.",
           "type": "dropdown",
-          "options": ["default", "disasters", "earthgov"],
+          "options": ["default", "disasters", "horizon", "air4us", "earthgov"],
           "default": "default",
           "width": 6
         }
