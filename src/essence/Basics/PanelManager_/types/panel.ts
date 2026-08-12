@@ -204,6 +204,15 @@ export interface FloatPanelConfig extends BasePanelConfig {
 
     /** Floats can't be drag-resized; `resizable` must be false/omitted */
     capabilities?: Omit<PanelCapabilities, 'resizable'> & { resizable?: false };
+
+    /**
+     * Whether the layout paints no surface for this panel — no background,
+     * border or shadow on the panel, and none on the cards behind its tools.
+     * Tools keep whatever surfaces they draw themselves, so a tool that brings
+     * its own boxes (map controls, for instance) sits directly on the map.
+     * Default: false
+     */
+    transparent?: boolean;
 }
 
 /**
