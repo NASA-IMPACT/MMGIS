@@ -1102,8 +1102,12 @@ function emitFeatureClick(feature, layerName, e) {
         ToolController_.activeTool.disableLayerInteractions === true
     )
         return
+    const featureCopy = { ...feature }
+    if (feature.geometry !== undefined) featureCopy.geometry = feature.geometry
+    if (feature.properties != null)
+        featureCopy.properties = { ...feature.properties }
     window.mmgisAPI.emit('feature:click', {
-        feature,
+        feature: featureCopy,
         layerName: layerName ?? null,
         latlng: e?.latlng ? { lat: e.latlng.lat, lng: e.latlng.lng } : null,
         pixel: e?.containerPoint
