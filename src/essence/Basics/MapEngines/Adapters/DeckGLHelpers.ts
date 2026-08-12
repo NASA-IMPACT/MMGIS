@@ -145,11 +145,13 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
     if (!info.picked) {
         return { feature: null }
     }
-    const [lng, lat] = (info.coordinate as [number, number]) ?? [0, 0]
+    const coordinate = info.coordinate as [number, number] | undefined
     return {
         feature: (info.object as Record<string, unknown>) ?? null,
         layerId: info.layer?.id,
-        latlng: { lat, lng },
+        ...(coordinate
+            ? { latlng: { lat: coordinate[1], lng: coordinate[0] } }
+            : {}),
         pixel: { x: info.x, y: info.y },
     }
 }
