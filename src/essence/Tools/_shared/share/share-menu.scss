@@ -1,30 +1,33 @@
 // ShareExport "Share map" control — a compact trigger button that opens a
 // small dropdown menu. The trigger is placed by the layout (e.g. a
 // float-top-right floating panel); this file only styles the control, it never
-// positions it. Mirrors the AOI plugin's token convention: every literal
-// carries an `--mmgis-*` fallback so a host theme can override it at :root
-// without touching this file. Scoped entirely under the .shareExport-tool-host
+// positions it. Mirrors the AOI plugin's token convention: every value carries
+// an `--mmgis-*` override so a host theme can retheme it at :root without
+// touching this file. Scoped entirely under the .shareExport-tool-host
 // root so it never leaks into core styles. The dropdown menu is portaled to
 // document.body (so the float zone's overflow clipping can't cut it off), so
 // the portal element carries the .shareExport-tool-host class too to keep the
 // token scope.
 
 .shareExport-tool-host {
-    // Tokens (host theme overrides --mmgis-* on :root).
-    --se-bg: var(--mmgis-surface, #ffffff);
-    --se-bg-hover: var(--mmgis-surface-muted, #f6f7f8);
-    --se-fg: var(--mmgis-text, #1b1b1b);
-    --se-fg-muted: var(--mmgis-text-muted, #565c65);
-    --se-accent: var(--mmgis-accent, #137480);
-    --se-border: var(--mmgis-border, #dfe1e2);
-    --se-radius-sm: var(--mmgis-radius-sm, 4px);
-    --se-radius-md: var(--mmgis-radius-md, 6px);
-    --se-shadow-pop: var(--mmgis-shadow-pop, 0 2px 6px rgba(0, 0, 0, 0.18));
+    // Tokens, resolved in three steps: a host theme's --mmgis-* override, then
+    // the design system's --theme-* token, then a literal for when neither is
+    // loaded. Surfaces are square and unshadowed, separated by a border alone.
+    --se-bg: var(--mmgis-surface, var(--theme-color-white, #ffffff));
+    --se-bg-hover: var(
+        --mmgis-surface-muted,
+        var(--theme-color-primary-lightest, #eaf0fd)
+    );
+    --se-fg: var(--mmgis-text, var(--theme-color-base, #77777a));
+    --se-fg-hover: var(--mmgis-accent, var(--theme-color-primary, #1c67e3));
+    --se-fg-muted: var(--mmgis-text-muted, var(--theme-color-base, #77777a));
+    --se-accent: var(--mmgis-accent, var(--theme-color-primary, #1c67e3));
+    --se-border: var(--mmgis-border, var(--theme-color-base-lighter, #e3e3e3));
+    --se-radius-sm: var(--mmgis-radius-sm, var(--theme-radius-0, 0));
+    --se-radius-md: var(--mmgis-radius-md, var(--theme-radius-0, 0));
     --se-font-body: var(
         --mmgis-font-body,
-        'Source Sans Pro',
-        system-ui,
-        sans-serif
+        var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue', sans-serif)
     );
     --se-font-size-sm: var(--mmgis-font-size-sm, 13px);
     --se-font-size-md: var(--mmgis-font-size-md, 14px);
@@ -49,9 +52,9 @@
     display: inline-block;
 }
 
-// The hosting tool card provides the chrome (white background, rounded
-// corners), so the trigger itself is chromeless — a bordered/shadowed button
-// inside the card reads as a double border.
+// The hosting tool card provides the chrome (background and border), so the
+// trigger itself is chromeless — a bordered button inside the card reads as a
+// double border.
 .share-menu__trigger {
     display: inline-flex;
     align-items: center;
@@ -67,33 +70,40 @@
     font-weight: 600;
     line-height: 1;
     white-space: nowrap;
-    transition: background 0.15s ease;
+    transition: background-color 0.15s ease, color 0.15s ease;
 
     &:hover {
         background: var(--se-bg-hover);
+        color: var(--se-fg-hover);
     }
 
     &:focus-visible {
         outline: 2px solid var(--se-accent);
         outline-offset: -2px;
     }
+
+    // Filled while its menu is open, matching the other map controls.
+    &[aria-expanded='true'],
+    &[aria-expanded='true']:hover {
+        background: var(--se-accent);
+        color: var(--theme-color-white, #ffffff);
+    }
 }
 
 // Portaled to document.body and anchored to the trigger with an inline
 // top/right computed from the trigger's bounding rect (see <ShareMenu>), so
 // the float zone's overflow clipping can't cut the menu off.
+// The surface is a plain list: no inset padding and no gaps, so each item
+// spans it edge to edge and a hovered item reads as a full-width row rather
+// than a pill floating inside a frame.
 .share-menu__dropdown {
     position: fixed;
     z-index: var(--mmgis-popup-z, 1200);
-    min-width: 200px;
-    padding: var(--se-space-1);
+    min-width: 220px;
     background: var(--se-bg);
-    border: 1px solid var(--se-border);
     border-radius: var(--se-radius-md);
-    box-shadow: var(--se-shadow-pop);
     display: flex;
     flex-direction: column;
-    gap: 1px;
 }
 
 .share-menu__item {
@@ -101,21 +111,22 @@
     align-items: center;
     gap: var(--se-space-2);
     width: 100%;
-    padding: 6px var(--se-space-2); // ~px-2 py-1.5
+    padding: var(--se-space-2) var(--se-space-3);
     background: none;
     border: 0;
     border-radius: var(--se-radius-sm);
     color: var(--se-fg);
     cursor: pointer;
     font: inherit;
-    font-size: var(--se-font-size-sm);
+    font-size: var(--se-font-size-md);
     line-height: 1.2;
     text-align: left;
     white-space: nowrap;
-    transition: background 0.12s ease;
+    transition: background-color 0.12s ease, color 0.12s ease;
 
     &:hover {
         background: var(--se-bg-hover);
+        color: var(--se-fg-hover);
     }
 
     &:focus-visible {
@@ -129,11 +140,13 @@
     }
 }
 
+// Takes the item's color so it follows the hover state rather than holding a
+// muted tint the filled row would leave stranded.
 .share-menu__item-icon {
     flex: 0 0 auto;
     width: 16px;
     height: 16px;
-    color: var(--se-fg-muted);
+    color: inherit;
 }
 
 .share-menu__separator {

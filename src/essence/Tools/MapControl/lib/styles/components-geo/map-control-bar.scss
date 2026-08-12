@@ -1,3 +1,11 @@
+/* Map Control Bar
+   Grouped icon buttons over the map. Every value resolves against the theme's
+   exported --theme-* custom properties; the literal after each is the horizon
+   value, used only when no theme bundle is loaded. Control geometry (button
+   and divider sizes) has no token and is stated in px.
+
+   Every surface is square-cornered: --theme-radius-0 is stated rather than
+   left to the initial value, so a UA or framework default cannot round it. */
 .blocks-map-control {
     // Placement is owned by the host container (e.g. a floating panel zone);
     // the bar only anchors its own dropdowns.
@@ -6,26 +14,25 @@
     flex-direction: column;
     align-items: flex-end;
     pointer-events: auto;
-    font-family: var(--theme-font-ui);
+    font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue', sans-serif);
 
     &__bar {
         display: flex;
         flex-direction: row;
         align-items: center;
-        gap: var(--theme-spacing-1, 0.5rem);
+        gap: var(--theme-spacing-05, 0.25rem);
         white-space: nowrap;
     }
 
+    /* Sizes to its buttons: each is a 36x36 square, so a group of two is
+       72x36 plus its border. */
     &__group {
         display: flex;
         flex-direction: row;
         align-items: center;
-        height: 36px;
         overflow: hidden;
         background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-        border-radius: var(--theme-radius-md, 0.25rem);
-        box-shadow: 0 1px 3px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+        border-radius: var(--theme-radius-0, 0);
     }
 
     &__btn {
@@ -33,22 +40,34 @@
         align-items: center;
         justify-content: center;
         width: 36px;
-        height: 100%;
+        height: 36px;
         padding: 0;
         border: none;
         cursor: pointer;
         flex-shrink: 0;
         background: transparent;
-        color: var(--theme-color-ink, #1b1b1b);
-        transition: background 0.12s ease, color 0.12s ease;
+        /* The glyph is drawn in currentColor, so this is the icon's color. */
+        color: var(--theme-color-base-darker, #444447);
+        transition: background-color 0.12s ease, color 0.12s ease;
 
         &:hover {
-            background: var(--theme-color-base-lightest, #f1f3f6);
+            background: var(--theme-color-primary-lightest, #eaf0fd);
+            color: var(--theme-color-primary, #1c67e3);
         }
 
-        &--active {
-            color: var(--theme-color-primary, #0e7482);
-            background: var(--theme-color-base-lighter, #dfe1e2);
+        /* Core's global `*:focus { outline: none }` strips the native ring, so
+           the bar restores one for keyboard users. */
+        &:focus-visible {
+            outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
+            outline-offset: -2px;
+        }
+
+        /* Filled while the button's panel is open or measure mode is on. Stated
+           after :hover so pointing at an already-on button keeps it filled. */
+        &--active,
+        &--active:hover {
+            background: var(--theme-color-primary, #1c67e3);
+            color: var(--theme-color-white, #ffffff);
         }
     }
 
@@ -56,39 +75,23 @@
         width: 1px;
         height: 24px;
         flex-shrink: 0;
-        background: var(--theme-color-base-lighter, #dfe1e2);
+        background: var(--theme-color-base-lighter, #e3e3e3);
     }
 
-    // The hosted share control ("Share map") in the bar's end slot — the
-    // dropdown stays the component's own; only the trigger is restyled to the
-    // bar's dark filled-button design.
+    // The hosted share control ("Share map") in the bar's end slot. Its colors,
+    // square corners and interaction states come from the component's own
+    // tokens, which resolve to the same theme values the bar uses; only the
+    // boxed chrome and the 36px control height are the bar's to state.
     &__share {
         display: flex;
         align-items: center;
+        background: var(--theme-color-white, #ffffff);
+        border-radius: var(--theme-radius-0, 0);
 
         &.shareExport-tool-host .share-menu__trigger {
-            background: var(--theme-color-primary-darker, #162e51);
-            color: var(--theme-color-white, #ffffff);
-            font-family: var(--theme-font-ui);
+            height: 36px;
             font-size: var(--theme-font-size-2xs, 0.88rem);
-            border-radius: var(--theme-radius-md, 0.25rem);
-            box-shadow: 0 1px 3px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
-
-            &:hover {
-                background: var(--theme-color-primary-dark, #1a4480);
-            }
         }
     }
 
-    &__hint {
-        margin-top: var(--theme-spacing-05, 0.25rem);
-        align-self: flex-end;
-        padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
-        background: var(--theme-color-white, #ffffff);
-        border-radius: var(--theme-radius-md, 0.25rem);
-        box-shadow: 0 2px 8px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
-        font-size: var(--theme-font-size-3xs, 0.75rem);
-        font-weight: var(--theme-font-weight-semibold, 600);
-        color: var(--theme-color-base-dark, #565c65);
-    }
 }
