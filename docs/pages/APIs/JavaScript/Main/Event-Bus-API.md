@@ -288,7 +288,7 @@ window.mmgisAPI.on('tool:change', ({ toolName }) => {
 | Event | Payload | Description |
 |-------|---------|-------------|
 | `feature:active` | `{ layerName, feature, layer }` | Fired when a feature becomes active/selected |
-| `feature:click` | `{ feature, layerName, latlng, pixel }` | Fired on every click on a vector feature, on any layer type and engine. Carries no selection semantics; `layerName` is the layer's uuid |
+| `feature:click` | `{ feature, layerName, latlng, pixel }` | Fired when a vector feature is clicked on the 2D engines (Leaflet and deck.gl adapters); the 3D globe does not emit it. Also fires on programmatic feature selection (search results, URL restore) with `latlng`/`pixel` `null`. Carries no selection semantics. `feature` is a snapshot copy (shallow, `properties` cloned); `layerName` is the mission layer's uuid, or `null` for layers not in the mission config; `latlng` and `pixel` may each be `null`. Suppressed while the active tool disables layer interactions |
 
 ```javascript
 window.mmgisAPI.on('feature:active', ({ layerName, feature }) => {
