@@ -54,13 +54,18 @@
         transition: background 0.12s ease;
 
         // Hover: only lightens the background; text stays white, no indicator.
+        // A translucent white wash rather than a palette token — it lightens
+        // relative to whatever the rail is painted with, so it survives a
+        // theme swap. (The token this used to use, --theme-color-primary-dark,
+        // resolves to the rail's own background, so hover changed nothing on
+        // unselected items.)
         // Guarded against the selected item: a bare `&:hover` (0,2,0) outranks
         // `&--active` (0,1,0), so hovering the selected item repainted it with
         // the rail's own background and left its dark text on a dark fill —
         // the item looked blank. Excluding the active item fixes that without
         // depending on source order the way an `&--active:hover` override would.
         &:not(#{&}--active):hover {
-            background: var(--theme-color-primary-dark, #1a4480);
+            background: rgba(255, 255, 255, 0.12);
         }
 
         &--active {
