@@ -1904,19 +1904,15 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         }
     }
     var timedSelectTimeout = null
-    var timedSelect = function (layer, layerName, e) {
+    var timedSelect = function (layer, layerName, e, clickedFeature) {
         clearTimeout(timedSelectTimeout)
         timedSelectTimeout = setTimeout(
-            (function (layer, layerName, e) {
+            (function (layer, layerName, e, clickedFeature) {
                 return function () {
                     let ell = { latlng: null }
                     if (e.latlng != null)
                         ell.latlng = JSON.parse(JSON.stringify(e.latlng))
-                    emitFeatureClick(
-                        L_.layers.layer[layerName]?.activeFeatures?.[0],
-                        layerName,
-                        ell
-                    )
+                    emitFeatureClick(clickedFeature, layerName, ell)
                     MetadataCapturer.populateMetadata(layer, () => {
                         Kinds.use(
                             L_.layers.data[layerName].kind,
@@ -1940,7 +1936,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                         L_.layers.layer[layerName].activeFeatures = []
                     })
                 }
-            })(layer, layerName, e),
+            })(layer, layerName, e, clickedFeature),
             100
         )
     }
@@ -1986,13 +1982,14 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                     fillOpacity: 1,
                 }
             )
-            L_.layers.layer[layerName].activeFeatures =
-                L_.layers.layer[layerName].activeFeatures || []
-            L_.layers.layer[layerName].activeFeatures.push({
+            const clickedFeature = {
                 type: 'Feature',
                 properties: e.layer.properties,
                 geometry: {},
-            })
+            }
+            L_.layers.layer[layerName].activeFeatures =
+                L_.layers.layer[layerName].activeFeatures || []
+            L_.layers.layer[layerName].activeFeatures.push(clickedFeature)
 
             Map_.activeLayer = e.layer
             if (Map_.activeLayer) L_.Map_._justSetActiveLayer = true
@@ -2025,7 +2022,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                 }
             }
 
-            timedSelect(e.layer, layerName, e)
+            timedSelect(e.layer, layerName, e, clickedFeature)
 
             L.DomEvent.stop(e)
         })
