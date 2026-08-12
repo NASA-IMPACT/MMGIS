@@ -70,7 +70,7 @@ export function ColorRampPicker({
     const {
         colormaps: availableColormaps,
         loading: colormapsLoading,
-    } = useAvailableColormaps(titilerUrl ? { titilerUrl } : null)
+    } = useAvailableColormaps(titilerUrl)
 
     // The service reports each ramp twice, forward and reversed; direction is
     // the toggle's job, so only the forward names are listed.

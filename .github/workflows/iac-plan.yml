@@ -1,86 +1,24 @@
 name: Terraform plan preview
 
-# Plan preview for infrastructure pull requests.
+# Plan preview for infrastructure pull requests: `terraform plan` IS the review
+# artifact for an infra PR — the HCL diff says what the author wrote, the plan
+# says what AWS will actually do. One sticky comment per environment root.
 #
-# `terraform plan` IS the review artifact for an infra PR: the HCL diff says
-# what the author wrote, the plan says what AWS will actually do. This workflow
-# runs a plan for both environment roots on every PR that touches
-# `infrastructure/terraform/**` and posts the result as a single sticky comment
-# per root, updated in place on each push rather than appended.
+# ── Invariants for anyone editing this file ──────────────────────────────────
+# - The `plan` job must NOT carry an `environment:` key. Unbound, it presents
+#   the `pull_request`-form OIDC subject the read-only plan role's trust policy
+#   is written for; binding an Environment changes the subject and every
+#   AssumeRole starts failing.
+# - `pull_request`, NEVER `pull_request_target`: this workflow checks out and
+#   effectively executes PR-authored Terraform, and `pull_request_target` would
+#   run it with the base repo's write-scoped token and full secret access.
+# - Missing configuration degrades GREEN (bootstrap not applied yet); INVALID
+#   configuration fails RED, so a real error cannot read as a pending
+#   bootstrap. Do not invert them.
 #
-# Read-only by construction:
-#   - Credentials come from OIDC-assuming the dedicated read-only plan role
-#     (`IAC_PLAN_ROLE_ARN`, created by the bootstrap root,
-#     `infrastructure/terraform/bootstrap`). No
-#     long-lived keys, and the role cannot mutate anything.
-#   - `terraform plan -lock=false` — a PR preview never takes or contends for
-#     the S3 state lock, so a preview can never block or corrupt a real apply.
-#   - Before planning, the workflow discovers the live environment's serving
-#     image and both Express values with the same read-only describes the deploy
-#     engine uses (the plan role's ReadOnlyDiscovery statement covers them),
-#     and passes `greenfield=true` only when discovery verifies the environment
-#     has never been fully built — so the preview shows exactly what the next
-#     apply would do, and a preview that cannot read the live facts fails red
-#     instead of faking a plan. The probe is an adapted copy of
-#     iac-deploy.yml's probe; change them together.
-#   - The `plan` job deliberately does NOT bind a GitHub Environment (no
-#     `environment:` key). An unbound pull_request job presents the
-#     `pull_request`-form OIDC subject (`repo:NASA-IMPACT/MMGIS:pull_request`),
-#     which is exactly what the bootstrap root's plan-role trust policy is
-#     written for. Adding an `environment:` key would change the subject to the
-#     environment form and every AssumeRole would start failing.
-#
-# `pull_request`, never `pull_request_target`: this workflow checks out and
-# effectively executes untrusted PR-authored content (terraform configuration,
-# and whatever providers/modules it references). `pull_request_target` would run
-# that content with the base repo's write-scoped GITHUB_TOKEN and full secret
-# access. `pull_request` keeps the blast radius at "read-only plan role".
-#
-# Repository configuration (all repo-level, NOT environment-scoped — an unbound
-# job cannot read Environment-scoped values, and this job must stay unbound to
-# keep the OIDC subject above):
-#   secrets: IAC_PLAN_ROLE_ARN
-#              ARN of the read-only plan role (bootstrap root).
-#   vars:    IAC_AWS_REGION
-#              Region for the S3 backend and the credential default, and
-#              injected as the root's `region` variable unless the tfvars JSON
-#              overrides it.
-#            IAC_TFSTATE_BUCKET_DEVELOPMENT / IAC_TFSTATE_BUCKET_PRODUCTION
-#              Per-environment state bucket names. Each root commits its
-#              backend `key`/`encrypt`/`use_lockfile` and takes `bucket` and
-#              `region` at init time via -backend-config.
-#            IAC_TFVARS_DEVELOPMENT / IAC_TFVARS_PRODUCTION
-#              A JSON object of the root's required input variables, e.g.
-#              {"vpc_id":"vpc-...","private_subnet_ids":["subnet-a","subnet-b"],
-#               "rds_ca_bundle_base64":"...","permissions_boundary":"arn:..."}
-#              CI writes it verbatim to `ci.auto.tfvars.json` inside the root
-#              before planning (terraform auto-loads `*.auto.tfvars.json`).
-#              Exactly these keys (plus an optional `region` override) and
-#              nothing else — the object lands in `ci.auto.tfvars.json`, which
-#              outranks the `TF_VAR_*` values this workflow computes per run,
-#              so a `greenfield` or live-fact key here would override
-#              discovery and disable the module's guards.
-#              These are account-identifying values that must never be
-#              committed. Repo Actions variables are visible only to repo
-#              collaborators, but the plan text they produce is public on a
-#              public repo (run logs and PR comments) — the team accepted that:
-#              these are network identifiers, not secrets.
-#
-# Degrade path: on a repository where the bootstrap root has not been applied,
-# NONE of the values above are set. The workflow must not turn infra PRs
-# red for that. When configuration is incomplete it skips the AWS steps, posts a
-# comment naming exactly which values are missing, and exits GREEN. Once
-# bootstrap is applied and the values are set, real plans start appearing with
-# no change to this file. Missing configuration degrades green; INVALID
-# configuration (an `IAC_TFVARS_*` object carrying keys outside its contract)
-# fails red — a real error must not read as a pending bootstrap.
-#
-# Fork PRs get a step-summary notice instead of a plan — see the `fork-notice`
-# job for why a comment is impossible there.
-#
-# Expect long output the first time: against empty or partial state the plan is
-# an all-creates listing of the whole environment. That is correct, not a bug;
-# the comment truncates and points at the run log.
+# How previews behave: docs/infrastructure/pipelines.md#plan-previews-on-pull-requests.
+# The repo-level settings this reads:
+# infrastructure/README.md#plan-preview-configuration-repo-level.
 
 on:
   pull_request:

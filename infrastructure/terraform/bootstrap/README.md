@@ -44,7 +44,7 @@ Every later edit to this root: same `terraform init -backend-config=...` (both v
 
 This root leads the environment roots, and not only on day one. The environment module reads `alias/mmgis-master-secret` (§4) through a data source, so an environment plan or apply fails on that read until this root has been applied with the key in place — apply here first whenever this root and an environment root move together.
 
-State loss and recovery posture are covered in [docs/infrastructure/identity.md](../../../docs/infrastructure/identity.md); the short version is that state holds no secret values, versioning makes any single bad write a rollback, and worst case is re-importing the long-lived resources with `terraform import`. The state buckets carry `prevent_destroy` — removing that guard is a deliberate two-step (edit the `lifecycle` block, then destroy).
+State loss and recovery posture are covered in [docs/infrastructure/identity.md](../../../docs/infrastructure/identity.md); the short version is that state holds no secret values, versioning makes any single bad write a rollback, and worst case is re-importing the long-lived resources with `terraform import`. The state buckets carry `prevent_destroy`, and so does the master-secret KMS key (§4), whose loss would leave both environments' master secrets undecryptable — removing either guard is a deliberate two-step (edit the `lifecycle` block, then destroy).
 
 ## 3. Verified at apply time
 
@@ -101,7 +101,7 @@ This is the one that actually proves the apply-role policy against the module's 
 - The destroy stops on the CloudFront distribution's `prevent_destroy`. The scratch directory is a copy of the root only — its `source` path resolves to the TRACKED module in the worktree — so the intentional-teardown edit is made to the tracked `modules/mmgis-environment/cloudfront.tf`: set `prevent_destroy = false`, destroy, then revert the file (`git checkout -- infrastructure/terraform/modules/mmgis-environment/cloudfront.tf`). Never commit that edit.
 - All of it under the assumed dev apply role's credentials. A clean end-to-end run is the proof; any `AccessDenied` found here is a missing grant in this root.
 
-This run is also what proves the three grants that cannot be reasoned out offline: the ECS tagging surface (provider `default_tags` ride every create call, and ECS authorizes `ecs:TagResource` against the resource being created), the `aws:rds:primaryDBInstanceArn` tag condition the boundary uses to scope the RDS-managed master secret, and the managed-master-password path — the caller-side `secretsmanager:CreateSecret` on `rds!*` plus `kms:CreateGrant` conditioned on `kms:GrantIsForAWSResource`, which is what lets RDS take its own grant on the key. If the run reaches a healthy service and destroys cleanly, all three hold.
+This run is also what proves the grants that cannot be reasoned out offline: the ECS tagging surface (provider `default_tags` ride every create call, and ECS authorizes `ecs:TagResource` against the resource being created), the `aws:rds:primaryDBInstanceArn` tag condition the boundary uses to scope the RDS-managed master secret, and both halves of the managed-master-password path — the caller-side `secretsmanager:CreateSecret` on `rds!*` and the `kms:CreateGrant` conditioned on `kms:GrantIsForAWSResource` that lets RDS take its own grant on the key. If the run reaches a healthy service and destroys cleanly, every one of them holds.
 
 ### e. The deploy roles work from an environment-bound job
 
