@@ -16,9 +16,14 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
-import { compileTileUrl, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
+import {
+    compileTileUrl,
+    buildTileUrlOptions,
+    shouldUseDeckRaster,
+} from '../Layers_/tileUrlUtils'
 import {
     resolveTileLayerSource,
+    resolveDeckCOGFileUrl,
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
 import { Kinds } from '../../../pre/tools'
@@ -38,7 +43,7 @@ import {
     LeafletAdapter,
     DeckGLAdapter,
 } from '../MapEngines/index'
-import { buildDeckLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 
 let L = window.L
 
@@ -1673,6 +1678,21 @@ async function makeTileLayer(layerObj, mapContext = null) {
     )
 
     if (Map_.engine && Map_.engine.engineType === MAP_ENGINE.DECKGL) {
+        // Client-side COG rendering via ColormappedCOGLayer (bypasses TiTiler).
+        // resolveDeckCOGFileUrl yields the bare, time-substituted .tif URL —
+        // the same derivation every rebuild path uses.
+        if (shouldUseDeckRaster(Map_.engine.engineType, splitColonType, layerObj)) {
+            ctx.layerRegistry.layer[layerObj.name] = buildDeckCOGLayer(layerObj.name, {
+                rawCogUrl: resolveDeckCOGFileUrl(layerObj, tileSource),
+                layerObj,
+                // ?? not ||: an opacity of 0 is a real value, not "default to 1"
+                opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
+            })
+            L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+            allLayersLoaded()
+            return
+        }
+
         // DeckGL needs a static URL upfront, so we bake in whatever params Leaflet
         // would normally add per-tile in getTileUrl.
         layerUrl = compileTileUrl(
@@ -1683,11 +1703,38 @@ async function makeTileLayer(layerObj, mapContext = null) {
         ctx.layerRegistry.layer[layerObj.name] = buildDeckLayer(layerObj.name, {
             type: layerObj.type || 'tile',
             url: layerUrl,
+            tileformat: tileFormat,
             opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
             tileElevation,
+            nativeOptions:
+                tileFormat === 'wms'
+                    ? {
+                          onImageLoad: () =>
+                              L_.setLayerLoadStatus(layerObj.name, 'ok'),
+                          onImageLoadError: (requestId, error) =>
+                              L_.setLayerLoadStatus(
+                                  layerObj.name,
+                                  'error',
+                                  `WMS request failed: ${
+                                      error?.message || error
+                                  }`
+                              ),
+                      }
+                    : {
+                          onTileLoad: () =>
+                              L_.setLayerLoadStatus(layerObj.name, 'ok'),
+                          onTileError: (error) =>
+                              L_.setLayerLoadStatus(
+                                  layerObj.name,
+                                  'error',
+                                  `Tile request failed: ${
+                                      error?.message || error
+                                  }`
+                              ),
+                      },
         })
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
@@ -1728,6 +1775,18 @@ async function makeTileLayer(layerObj, mapContext = null) {
     ctx.layerRegistry.layer[layerObj.name].off('loading')
     ctx.layerRegistry.layer[layerObj.name].on('loading', () => {
         L_.setGlobalLoading(layerObj.name)
+    })
+    ctx.layerRegistry.layer[layerObj.name].off('tileload')
+    ctx.layerRegistry.layer[layerObj.name].on('tileload', () => {
+        L_.setLayerLoadStatus(layerObj.name, 'ok')
+    })
+    ctx.layerRegistry.layer[layerObj.name].off('tileerror')
+    ctx.layerRegistry.layer[layerObj.name].on('tileerror', (e) => {
+        L_.setLayerLoadStatus(
+            layerObj.name,
+            'error',
+            `Tile request failed: ${e?.tile?.src || layerUrl}`
+        )
     })
     ctx.layerRegistry.layer[layerObj.name].off('load')
     ctx.layerRegistry.layer[layerObj.name].on('load', () => {

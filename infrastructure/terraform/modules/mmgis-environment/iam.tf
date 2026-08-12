@@ -181,6 +181,29 @@ resource "aws_iam_role_policy" "admin_task" {
         Action   = ["s3:PutObject"]
         Resource = "${aws_s3_bucket.assets.arn}/*"
       },
+      {
+        # The runtime container fetches the current DB password from the
+        # RDS-managed master secret at connection time to track rotation
+        # (API/Backend/Utils/dbPassword.js reads DB_SECRET_ARN). The execution
+        # role's once-at-launch secrets[] injection cannot refresh a long-running
+        # task, so the task role needs its own read.
+        Sid      = "ReadRdsMasterSecretAtRuntime"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = aws_db_instance.this.master_user_secret[0].secret_arn
+      },
+      {
+        # GetSecretValue makes Secrets Manager decrypt the value with the
+        # caller's credentials; the ViaService condition confines the key to the
+        # Secrets Manager path, mirroring the execution roles.
+        Sid      = "DecryptRdsMasterSecretAtRuntime"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = local.master_secret_key_arn
+        Condition = {
+          StringEquals = { "kms:ViaService" = "secretsmanager.${local.region}.amazonaws.com" }
+        }
+      },
     ]
   })
 }
@@ -241,7 +264,7 @@ resource "aws_iam_role_policy" "publish_exec" {
 # ── Publish task role (runtime container code) ──
 resource "aws_iam_role" "publish_task" {
   name                 = "${local.name_prefix}-publish-task"
-  description          = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/delete the ${local.dashboard_prefix}* stacks and their S3/CloudFront resources, read the shared asset bucket. No secretsmanager (password rides the exec role's secrets[]). No rds-db:connect (password auth). Lean deployment only."
+  description          = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/delete the ${local.dashboard_prefix}* stacks and their S3/CloudFront resources, read the shared asset bucket, and read the RDS master secret at connection time to track rotation. No rds-db:connect (password auth). Lean deployment only."
   assume_role_policy   = local.ecs_tasks_assume_role
   permissions_boundary = var.permissions_boundary
 }
@@ -335,6 +358,28 @@ resource "aws_iam_role_policy" "publish_task" {
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
         Resource = aws_s3_bucket.assets.arn
+      },
+      {
+        # publish-static.js reads the mission config from Postgres through the
+        # same Sequelize connection path, so it also fetches the current DB
+        # password from the RDS-managed master secret at connection time
+        # (DB_SECRET_ARN). Short-lived, but it connects, so it needs the read.
+        Sid      = "ReadRdsMasterSecretAtRuntime"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = aws_db_instance.this.master_user_secret[0].secret_arn
+      },
+      {
+        # GetSecretValue makes Secrets Manager decrypt the value with the
+        # caller's credentials; the ViaService condition confines the key to the
+        # Secrets Manager path, mirroring the execution roles.
+        Sid      = "DecryptRdsMasterSecretAtRuntime"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt"]
+        Resource = local.master_secret_key_arn
+        Condition = {
+          StringEquals = { "kms:ViaService" = "secretsmanager.${local.region}.amazonaws.com" }
+        }
       },
     ]
   })

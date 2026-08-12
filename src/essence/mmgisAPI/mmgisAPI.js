@@ -69,6 +69,7 @@ var mmgisAPI_ = {
                         layerObj.uuid || layerObj.name
                     }'`
                 )
+                return
             }
 
             // Inject new layer into configData
@@ -127,10 +128,19 @@ var mmgisAPI_ = {
                 true
             )
 
-            // Then add
-            if (didSet)
-                await L_.modifyLayer(configData, layerObj.name, 'addLayer')
-            else {
+            // Then add. resetConfig re-parses configData into L_.layers.data so the
+            // new layer exists before modifyLayer renders it (matches the
+            // updateLayersHelper/WebSocket flow). In-memory only — not persisted to
+            // the backend, so added layers are lost on reload.
+            if (didSet) {
+                try {
+                    await L_.resetConfig(configData)
+                    await L_.modifyLayer(configData, layerObj.name, 'addLayer')
+                } catch (err) {
+                    reject(err)
+                    return
+                }
+            } else {
                 reject('Failed to add layer.')
                 return
             }
@@ -149,6 +159,9 @@ var mmgisAPI_ = {
             }
         })
         if (didRemove) {
+            // Commit the stripped config, else the next addLayer's
+            // resetConfig re-parses the removed layer back to life.
+            L_.configData = configData
             L_.modifyLayer(configData, layerUUID, 'removeLayer')
             return true
         }
