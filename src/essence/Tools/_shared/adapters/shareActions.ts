@@ -5,7 +5,7 @@ import {
     mmgisCopyText,
     type MapScreenshotResult,
     type ViewState,
-} from '../../_shared/adapters/mmgisAPI'
+} from './mmgisAPI'
 import { buildSharePdf, type JsPdfLike } from './sharePdf'
 import { blobToDataUrl, downloadBlob } from './download'
 
