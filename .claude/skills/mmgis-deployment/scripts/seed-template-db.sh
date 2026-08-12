@@ -36,7 +36,7 @@ seed_json="$HERE/../../../../mission-profiles/generated/full-demo-mission.json"
 # here so the seeding API has the same branch's code as the seed it receives.
 repo_root="$(cd "$HERE/../../../.." && pwd)"
 main_dir="$(mw_main_dir)"
-[ -d "$repo_root/node_modules" ] || mw_die "$repo_root has no node_modules — run npm install --force there first"
+[ -d "$repo_root/node_modules" ] || mw_die "$repo_root has no node_modules — run npm ci there first"
 env_file="$repo_root/.env"; [ -f "$env_file" ] || env_file="$main_dir/.env"
 mw_db_env "$env_file"
 

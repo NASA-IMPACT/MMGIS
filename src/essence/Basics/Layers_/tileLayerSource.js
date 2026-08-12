@@ -14,7 +14,12 @@
 import F_ from '../Formulae_/Formulae_'
 import L_ from './Layers_'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { cogSourceType, resolveTileFormat } from './tileUrlUtils'
+import {
+    cogSourceType,
+    resolveTileFormat,
+    compileTileUrl,
+    buildTileUrlOptions,
+} from './tileUrlUtils'
 
 /**
  * Returns the tile level a layer is currently displaying, or null when the
@@ -64,14 +69,18 @@ export function getTileLevelElevation(level) {
  * syncTileFormatToConfig's job.
  *
  * @param {object} layerObj - Layer config from the mission JSON.
- * @returns {{url: string, sourceUrl: string, splitColonType: (string|undefined), tileElevation: (number|undefined), tileFormat: string}}
+ * @returns {{url: string, fileUrl: string, sourceUrl: string, splitColonType: (string|undefined), tileElevation: (number|undefined), tileFormat: string}}
  */
 export function resolveTileLayerSource(layerObj) {
     const tileLevel = getActiveTileLevel(layerObj)
     const sourceUrl = getTileLevelUrl(tileLevel) || layerObj.url
     const tileElevation = getTileLevelElevation(tileLevel)
 
-    let url = L_.getUrl(layerObj.type, sourceUrl, layerObj)
+    // For a COG source this is the bare file URL (prefix stripped by
+    // L_.getUrl, no TiTiler wrapping) — the client-side deck.gl renderer
+    // reads the file directly from it.
+    const fileUrl = L_.getUrl(layerObj.type, sourceUrl, layerObj)
+    let url = fileUrl
     const splitColonType = cogSourceType(sourceUrl)
 
     switch (splitColonType) {
@@ -111,7 +120,32 @@ export function resolveTileLayerSource(layerObj) {
             ? 'wmts'
             : resolveTileFormat(layerObj)
 
-    return { url, sourceUrl, splitColonType, tileElevation, tileFormat }
+    return { url, fileUrl, sourceUrl, splitColonType, tileElevation, tileFormat }
+}
+
+/**
+ * Resolves the raw COG file URL the client-side deck.gl renderer reads —
+ * the single place this derivation lives, shared by layer creation and every
+ * rebuild path (colormap/rescale refresh, time reload).
+ *
+ * Time placeholders ({time}/{starttime}/{endtime}/{customtime.N}) are
+ * substituted from the layer's time config; nothing else is applied — a file
+ * URL takes no COG/TMS/datetime query params (those belong to tile requests,
+ * and range-reading a .tif ignores them at best).
+ *
+ * @param {object} layerObj - Layer config from the mission JSON.
+ * @param {object} [tileSource] - Optional precomputed resolveTileLayerSource
+ *                                result, to avoid resolving twice.
+ * @returns {string} Bare, time-substituted .tif URL.
+ */
+export function resolveDeckCOGFileUrl(layerObj, tileSource) {
+    const source = tileSource ?? resolveTileLayerSource(layerObj)
+    return compileTileUrl(source.fileUrl, {
+        ...buildTileUrlOptions(layerObj, source.splitColonType, source.tileFormat),
+        // Placeholder substitution only — disable the param-injection steps.
+        splitColonType: undefined,
+        tileFormat: undefined,
+    })
 }
 
 /**

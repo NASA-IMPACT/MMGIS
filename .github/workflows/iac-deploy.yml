@@ -1,104 +1,29 @@
 name: Infrastructure deploy engine
 
-# The shared infrastructure engine. Every environment's trigger workflow
-# (`deploy-development.yml`, `deploy-production.yml`) calls this file — there is
-# one implementation of "converge an environment's infrastructure", and the
-# triggers differ only in which GitHub Environment they name and when they run.
+# The shared infrastructure engine: one implementation of "converge an
+# environment's infrastructure", called by every environment's trigger
+# workflow. Reusable only (`on: workflow_call`).
 #
-# Reusable only (`on: workflow_call`): it has no trigger of its own, so it can
-# never run against an environment nobody asked for.
+# ── Invariants for anyone editing this file ──────────────────────────────────
+# - The job below MUST keep `environment: ${{ inputs.environment }}`, and
+#   callers MUST pass `secrets: inherit`. The binding is what makes GitHub mint
+#   the environment-form OIDC subject `mmgis-terraform-apply-<env>`'s trust
+#   policy accepts, and what makes the environment-scoped configuration
+#   resolve; a caller cannot supply it, because `environment:` is not settable
+#   through `workflow_call` inputs. Losing either half surfaces as a cryptic
+#   AssumeRole failure.
+# - IAC_TFVARS is written verbatim to `ci.auto.tfvars.json`, which OUTRANKS the
+#   `TF_VAR_*` values this workflow computes per run. Never add `greenfield` or
+#   a live fact to it — that would override discovery and disable the module's
+#   guards.
+# - The discovery probe is duplicated verbatim in the re-discovery step below
+#   and adapted in `iac-plan.yml`. Change all three together.
 #
-# ── The environment binding is load-bearing ──────────────────────────────────
-# `environment: ${{ inputs.environment }}` on the job below is not decoration.
-# GitHub only mints the *environment*-form OIDC subject
-# (`repo:NASA-IMPACT/MMGIS:environment:<env>`) for a job that binds an
-# Environment, and that is the exact subject the bootstrap root's
-# `mmgis-terraform-apply-<env>` trust policy accepts. A job without an
-# `environment:` key presents the branch form and every AssumeRole fails.
-# A caller cannot supply this — `environment:` is not settable through
-# `workflow_call` inputs — which is why the binding lives here, inside the
-# engine, rather than in each trigger.
-#
-# The same binding is what makes the environment-scoped configuration below
-# resolve. Callers MUST pass `secrets: inherit`; environment-scoped secrets and
-# variables resolve against the environment the CALLED job binds, so `inherit`
-# forwards the caller's access without the caller naming any value.
-#
-# ── Configuration contract (environment-scoped) ──────────────────────────────
-#   secrets: IAC_APPLY_ROLE_ARN
-#              ARN of `mmgis-terraform-apply-<env>` (bootstrap root).
-#   vars:    IAC_AWS_REGION
-#              Region for the S3 backend, the credential default, and the
-#              root's `region` variable. May also exist repo-level for the PR
-#              plan preview — the name is deliberately the same, and for a job
-#              bound to an Environment the environment-scoped value shadows the
-#              repo one.
-#            IAC_TFSTATE_BUCKET
-#              The environment's own state bucket. The root commits its backend
-#              `key`/`encrypt`/`use_lockfile`; `bucket` and `region` arrive here
-#              via -backend-config at init.
-#            IAC_TFVARS
-#              JSON object of the root's required no-default variables:
-#              {"vpc_id":"vpc-...","private_subnet_ids":["subnet-a","subnet-b"],
-#               "rds_ca_bundle_base64":"...","permissions_boundary":"arn:..."}
-#              Written verbatim to `ci.auto.tfvars.json` inside the root.
-#              Exactly these keys (plus an optional `region` override) and
-#              nothing else — the object lands in `ci.auto.tfvars.json`, which
-#              outranks the `TF_VAR_*` values this workflow computes per run,
-#              so a `greenfield` or live-fact key here would override
-#              discovery and disable the module's guards.
-# No `_DEVELOPMENT`/`_PRODUCTION` suffixes here, unlike the PR plan preview
-# (iac-plan.yml): that workflow must stay Environment-unbound to keep its
-# `pull_request` OIDC subject, so it can only read repo-level values and needs
-# the suffix to tell environments apart. Environment scoping replaces the
-# suffix for everything downstream of this file.
-#
-# Unlike the PR preview, missing configuration here fails RED. A preview that
-# cannot run is pending; a deploy that cannot configure itself is broken.
-#
-# ── This engine never writes GitHub variables or secrets ─────────────────────
-# The six runtime names (region, ECR repository, cluster, service, the two
-# task-definition families) are read out of terraform state at run time with
-# `terraform output -json workflow_variables` and handed to the caller as
-# workflow outputs. Nothing is persisted back into repository settings:
-# GITHUB_TOKEN has no variables scope, so writing them would mean minting and
-# hand-rotating a PAT — a credential nobody wants to own — and would leave a
-# second copy of the truth to drift from state.
-#
-# ── The image sandwich ───────────────────────────────────────────────────────
-# `deployed_image` is what both task-definition FAMILIES get registered with,
-# so an infra apply must never feed them a tag that does not exist in ECR (the
-# backend starts publish jobs with RunTask on the bare family name, which
-# resolves to the family's latest revision). The Express service itself carries
-# `ignore_changes = [primary_container[0].image]`, so an infra apply never rolls
-# the running container — the app engine does that.
-# In steady state this engine therefore *discovers* the image the service is
-# already serving and applies with it, the app engine then builds the new image
-# and rolls it exactly once. Infra never moves the image; it only avoids moving
-# it backwards.
-#
-# ── Greenfield ───────────────────────────────────────────────────────────────
-# On a brand-new environment there is no state, no service, and no image to
-# discover. The first apply registers the families against the module's
-# `:latest` placeholder, which does not exist in ECR, and the service
-# crash-loops for a few minutes. That is expected and harmless: the app phase of
-# the SAME composed run pushes a real image and rolls the service, and ECS's
-# launch retry self-heals. Do not "fix" it by hand. These runs pass the module
-# `greenfield = true` (TF_VAR_greenfield) — the module refuses empty live facts
-# without it, which is what protects a hand apply that has no discovery step.
-#
-# ── The two phases ───────────────────────────────────────────────────────────
-# CloudFront is only created once `express_internal_alb_arn` and
-# `express_onaws_endpoint` are known, and those values only exist after the
-# Express service does — hence phase 1 (create/converge) then phase 2 (feed the
-# discovered values back). Because discovery runs BEFORE phase 1, a steady-state
-# run already knows both phase-2 values and converges fully in phase 1;
-# phase 2 is the greenfield/values-changed path only. Passing them on every
-# apply is mandatory, not optional: applying with them empty against a live
-# environment would DESTROY CloudFront — which the module refuses outright
-# (validation without greenfield, prevent_destroy on the distribution); the
-# guards in this file remain because only they can tell a transient read
-# failure from true greenfield.
+# Run anatomy, modes, phases, and the image sandwich:
+# docs/infrastructure/pipelines.md#a-deploy-run-step-by-step, with
+# docs/infrastructure/aws-environments.md#building-an-environment-takes-two-phases
+# and #images-and-task-definitions. The five Environment-scoped settings:
+# infrastructure/README.md#configuration-contract.
 
 on:
   workflow_call:
@@ -1117,8 +1042,8 @@ jobs:
             exit "$rc"
           fi
 
-      # Requirement 2 made flesh: the six runtime names are READ out of state
-      # here, at run time, and handed to the caller as workflow outputs. They
+      # The six runtime names are READ out of state here, at run time, and
+      # handed to the caller as workflow outputs. They
       # are never written back into repository settings, so there is exactly one
       # source of truth and nothing to keep in sync by hand.
       #

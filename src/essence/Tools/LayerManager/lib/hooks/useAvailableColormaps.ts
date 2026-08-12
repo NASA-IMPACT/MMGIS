@@ -2,41 +2,30 @@ import { useEffect, useState } from 'react'
 import { resolveTiTilerBase } from '../utils/colormapCache'
 import { parseColormapList } from '../utils/colormaps'
 
-type Options = { titilerUrl: string | null } | null
-
 type Result = {
     colormaps: string[] | null
     loading: boolean
     error: Error | null
 }
 
-declare global {
-    interface Window {
-        mmgisglobal?: { WITH_TITILER?: string }
-    }
-}
-
-const hasTiTilerConfigured = (titilerUrl: string | null): boolean =>
-    window.mmgisglobal?.WITH_TITILER === 'true' || titilerUrl != null
-
 /**
  * Ramp names the tiling service reports, sorted with each ramp's reversed
  * variant directly after its forward form. Resolves to null whenever no list
- * can be obtained — no TiTiler configured, or the request failed — which
- * callers surface as "ramps unavailable" rather than an empty list.
+ * can be obtained — no service supplied, or the request failed — which callers
+ * surface as "ramps unavailable" rather than an empty list.
  */
-export const useAvailableColormaps = (layerConfig: Options = null): Result => {
-    const titilerUrl = layerConfig?.titilerUrl || null
+export const useAvailableColormaps = (titilerUrl: string | null = null): Result => {
+    const baseUrl = resolveTiTilerBase(titilerUrl)
     const [colormaps, setColormaps] = useState<string[] | null>(null)
-    // A service that is configured is presumed to be loading from the first
-    // render, before the effect has had a chance to start the request. Without
-    // that, the empty initial list is indistinguishable from "no ramps exist"
-    // and callers flash an unavailable state on every mount.
-    const [loading, setLoading] = useState(() => hasTiTilerConfigured(titilerUrl))
+    // A reachable service is presumed to be loading from the first render,
+    // before the effect has had a chance to start the request. Without that,
+    // the empty initial list is indistinguishable from "no ramps exist" and
+    // callers flash an unavailable state on every mount.
+    const [loading, setLoading] = useState(() => baseUrl != null)
     const [error, setError] = useState<Error | null>(null)
 
     useEffect(() => {
-        if (!hasTiTilerConfigured(titilerUrl)) {
+        if (baseUrl == null) {
             setColormaps(null)
             setLoading(false)
             setError(null)
@@ -47,12 +36,6 @@ export const useAvailableColormaps = (layerConfig: Options = null): Result => {
             setLoading(true)
             setError(null)
             try {
-                const baseUrl = resolveTiTilerBase(titilerUrl)
-                if (baseUrl == null) {
-                    // No TiTiler available (static build without one configured)
-                    setColormaps(null)
-                    return
-                }
                 const response = await fetch(`${baseUrl}/colorMaps`)
                 if (!response.ok) throw new Error(`Failed to fetch colormaps: ${response.status}`)
                 const data = await response.json()
@@ -83,7 +66,7 @@ export const useAvailableColormaps = (layerConfig: Options = null): Result => {
         return () => {
             cancelled = true
         }
-    }, [titilerUrl])
+    }, [baseUrl])
 
     return { colormaps, loading, error }
 }
