@@ -34,6 +34,12 @@ export type MapControlBarProps = {
 
     // Geocode search
     onSearchSelect?: (result: GeocodeResult) => void
+
+    /**
+     * Optional element rendered at the right end of the bar (e.g. a share
+     * control). The bar only places it; look and behavior belong to the host.
+     */
+    endSlot?: React.ReactNode
 }
 
 export function MapControlBar({
@@ -49,6 +55,7 @@ export function MapControlBar({
     onRemoveMeasureLabel,
     onSetCursor,
     onSearchSelect,
+    endSlot,
 }: MapControlBarProps) {
     const rootRef = useRef<HTMLDivElement>(null)
     const [basemapOpen, setBasemapOpen] = useState(false)
@@ -162,6 +169,7 @@ export function MapControlBar({
                             </button>
                         </div>
                     )}
+                    {endSlot}
                 </div>
 
                 {basemapOpen && hasStyles && (
@@ -184,6 +192,7 @@ export function MapControlBar({
                         onSelect={handleSearchSelect}
                     />
                 )}
+
 
                 {measure.awaitingFirst && (
                     <div className="blocks-map-control__hint">Click two points on the map</div>

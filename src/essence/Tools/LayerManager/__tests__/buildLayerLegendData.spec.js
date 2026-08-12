@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { buildLayerLegendData } from '../../../src/essence/Tools/LayerManager/adapters/buildLayerLegendData.ts'
+import { buildLayerLegendData } from '../adapters/buildLayerLegendData.ts'
 
 // The three verdicts core can return for a layer. A colormap that can be
 // shown but not changed is what an `image` layer reports: it paints from the
@@ -52,9 +52,10 @@ test.describe('buildLayerLegendData', () => {
             cogMin: 0,
             cogMax: 1000,
             cogUnits: 'm',
-            titilerUrl: 'https://example.com/titiler',
         }
-        const result = buildLayerLegendData('layer4', cfg, null, true, EDITABLE_COG)
+        const result = buildLayerLegendData(
+            'layer4', cfg, null, true, EDITABLE_COG, 'https://example.com/titiler',
+        )
         expect(result.cog).not.toBeNull()
         expect(result.cog?.titilerUrl).toBe('https://example.com/titiler')
         expect(result.cog?.colormap).toBe('plasma')
@@ -63,6 +64,22 @@ test.describe('buildLayerLegendData', () => {
         expect(result.cog?.editable).toBe(true)
         expect(result.type).toBe('gradient')
         expect(result.stops).toBeNull()
+    })
+
+    // Core's answer already accounts for the mission-wide override, so a raw
+    // config read would disagree with the service the tiles are drawn from.
+    test('takes the service URL from core, not from the raw layer config', () => {
+        const cfg = { cogColormap: 'plasma', titilerUrl: 'https://from-config.test' }
+        const result = buildLayerLegendData(
+            'layer4b', cfg, null, true, EDITABLE_COG, 'https://from-core.test',
+        )
+        expect(result.cog?.titilerUrl).toBe('https://from-core.test')
+    })
+
+    test('leaves the service URL null when core resolves none', () => {
+        const cfg = { cogColormap: 'plasma' }
+        const result = buildLayerLegendData('layer4c', cfg, null, true, EDITABLE_COG)
+        expect(result.cog?.titilerUrl).toBeNull()
     })
 
     test('prefers the current colormap and rescale over the configured ones', () => {

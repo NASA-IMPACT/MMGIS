@@ -2,6 +2,7 @@ import {
     mmgisRequest,
     mmgisGetCogCapabilities,
     mmgisGetListedLayers,
+    mmgisGetTiTilerUrls,
     type CogCapabilities,
 } from '../../_shared/adapters/mmgisAPI'
 import { buildLayerLegendData } from './buildLayerLegendData'
@@ -16,10 +17,12 @@ export const getVisibleLayersWithLegends = async ({
     if (!layerConfigs) return []
 
     const [visibleLayers, opacities, listed, cogCapabilities] = await Promise.all([
+    const [visibleLayers, opacities, cogCapabilities, titilerUrls] = await Promise.all([
         mmgisRequest<Record<string, boolean>>('layers:getVisible'),
         mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
         mmgisGetListedLayers(),
         mmgisGetCogCapabilities(),
+        mmgisGetTiTilerUrls(),
     ])
 
     const result: Layer[] = []
@@ -37,6 +40,7 @@ export const getVisibleLayersWithLegends = async ({
                 opacities ?? null,
                 isVisible,
                 cogCapabilities?.[layerName] as CogCapabilities | undefined,
+                titilerUrls?.[layerName] ?? null,
             ),
         )
     }

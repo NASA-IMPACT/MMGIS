@@ -2,7 +2,7 @@ import { test, expect } from 'vitest'
 import {
     computeCenteredPlacement,
     buildSharePdf,
-} from '../../../src/essence/Tools/ShareExport/adapters/sharePdf.ts'
+} from '../../../src/essence/Tools/_shared/adapters/sharePdf.ts'
 
 // Issue #144 - the PDF embeds the PNG snapshot centered on a portrait page,
 // scaled to fit within margins while preserving aspect ratio.

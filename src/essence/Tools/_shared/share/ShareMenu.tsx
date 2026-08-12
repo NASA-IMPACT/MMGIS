@@ -1,8 +1,8 @@
 import React from 'react'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { ShareFormatFlags } from '../../types'
-import { getShareMenuItems } from '../../getShareMenuItems'
+import type { ShareFormatFlags } from './types'
+import { getShareMenuItems } from './getShareMenuItems'
 import { SHARE_MENU_ICONS } from './icons'
 
 export type ShareMenuProps = {

@@ -293,18 +293,17 @@ let Map_ = {
                     return true
                 }),
                 // Drawing — wraps the IMapEngine drawing primitives from spec 013
-                window.mmgisAPI.provide('map:enableDrawing', ({ shape, options } = {}) => {
-                    engine.enableDrawing(shape, options)
+                window.mmgisAPI.provide('map:enableDrawing', ({ shape } = {}) => {
+                    engine.enableDrawing(shape)
                     return true
                 }),
                 window.mmgisAPI.provide('map:disableDrawing', () => {
                     engine.disableDrawing()
                     return true
                 }),
-                window.mmgisAPI.provide('map:finishDrawing', () => {
+                window.mmgisAPI.provide('map:finishDrawing', () =>
                     engine.finishDrawing()
-                    return true
-                }),
+                ),
                 window.mmgisAPI.provide('map:isDrawing', () => engine.isDrawing()),
                 // Layer management — engine-agnostic CRUD on vector layers
                 window.mmgisAPI.provide('map:createLayer', (spec) => {
@@ -1393,7 +1392,7 @@ async function makeVectorLayer(
 
             // Only Leaflet vector layers reach here — the deck.gl branch above
             // returns first. Attachments are therefore Leaflet-only, which is
-            // why L_.setLayerOpacity skips its sublayer pass for engine-owned
+            // why L_.setLayerOpacity skips its sublayer pass for facade-managed
             // layers.
             ctx.layerRegistry.attachments[layerObj.name] = vl.sublayers
             ctx.layerRegistry.layer[layerObj.name] = vl.layer

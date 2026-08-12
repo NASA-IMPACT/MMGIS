@@ -176,6 +176,46 @@ function getPropValue(object: unknown, path: string | undefined): unknown {
         )
 }
 
+/** The part of a fetch Response that {@link isImageTileResponse} reads. */
+interface TileResponseLike {
+    ok: boolean
+    headers: { get(name: string): string | null }
+}
+
+/**
+ * True when a tile response carries image bytes.
+ *
+ * Tile servers signal an absent tile inconsistently. Some answer 404, but a
+ * STAC-backed raster service fronted by a CDN answers 200 with its HTML
+ * browser page when asked for a timestamp it holds no item for. The content
+ * type is therefore the reliable test; the status code alone is not.
+ */
+export function isImageTileResponse(response: TileResponseLike): boolean {
+    if (!response.ok) return false
+    const contentType = response.headers.get('content-type') ?? ''
+    return contentType.toLowerCase().startsWith('image/')
+}
+
+/**
+ * Fetches one raster tile, resolving to null for anything that is not an
+ * image so an absent tile is drawn as absent rather than handed to the
+ * decoder as a texture.
+ *
+ * `premultiplyAlpha: 'none'` mirrors the ImageLoader options deck.gl registers
+ * for its own tile pipeline, so alpha is composited identically either way.
+ */
+async function fetchImageTile(
+    url?: string | null,
+    signal?: AbortSignal
+): Promise<ImageBitmap | null> {
+    if (!url) return null
+    const response = await fetch(url, signal ? { signal } : undefined)
+    if (!isImageTileResponse(response)) return null
+    return await createImageBitmap(await response.blob(), {
+        premultiplyAlpha: 'none',
+    })
+}
+
 /**
  * Split a full WMS url into its service endpoint and LAYERS list. Mirrors the
  * param parsing Leaflet's WMSColorFilter does, so a single layer url renders
@@ -283,7 +323,18 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 minZoom: o.minZoom,
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
+                getTileData: (tile: { url?: string | null; signal?: AbortSignal }) =>
+                    fetchImageTile(tile.url, tile.signal),
+                onTileError: (error: Error) => {
+                    console.warn(
+                        `DeckGL tile request failed for layer '${id}':`,
+                        error?.message ?? error
+                    )
+                },
                 renderSubLayers: (props: Record<string, unknown>) => {
+                    // deck.gl still renders sublayers for a tile that failed or
+                    // resolved empty, so a tile carrying no image draws nothing.
+                    if (props.data == null) return null
                     const bbox = (props.tile as { bbox: { west: number; south: number; east: number; north: number } }).bbox
                     const bounds = Number.isFinite(tileElevation)
                         ? [

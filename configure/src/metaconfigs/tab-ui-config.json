@@ -23,7 +23,7 @@
           "name": "Theme",
           "description": "The USWDS theme to apply to the modern interface.",
           "type": "dropdown",
-          "options": ["default", "disasters", "earthgov"],
+          "options": ["default", "disasters", "horizon", "air4us", "earthgov"],
           "default": "default",
           "width": 6
         }
@@ -269,6 +269,13 @@
               "width": 6
             },
             {
+              "field": "title",
+              "name": "Title",
+              "description": "Display title shown in the header (only relevant when Has Header is enabled).",
+              "type": "text",
+              "width": 4
+            },
+            {
               "field": "hasHeader",
               "name": "Has Header",
               "description": "Whether the panel shows a title bar with control buttons.",
@@ -277,11 +284,12 @@
               "defaultChecked": false
             },
             {
-              "field": "title",
-              "name": "Title",
-              "description": "Display title shown in the header (only relevant when Has Header is enabled).",
-              "type": "text",
-              "width": 4
+              "field": "transparent",
+              "name": "Transparent",
+              "description": "Draw no background, border or shadow for this panel or for the cards behind its tools, so the map shows through and tools that draw their own boxes (like Map Control) sit directly on it.",
+              "type": "checkbox",
+              "width": 4,
+              "defaultChecked": false
             },
             {
               "field": "stateConstraints.allowedStates",
