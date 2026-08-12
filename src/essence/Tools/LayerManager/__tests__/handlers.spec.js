@@ -4,7 +4,7 @@ import {
     setOpacity,
     setColormap,
     setRescale,
-} from '../../../src/essence/Tools/LayerManager/adapters/handlers.ts'
+} from '../adapters/handlers.ts'
 
 const setupMock = (responses = {}, emitCalls = []) => {
     global.window = global.window || {}

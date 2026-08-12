@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { formatValue, formatRange, formatPercent, interpolateValue } from '../../../src/essence/Tools/LayerManager/lib/utils/formatters.ts'
+import { formatValue, formatRange, formatPercent, interpolateValue } from '../lib/utils/formatters.ts'
 
 test.describe('formatters', () => {
     test('formatValue handles integers, decimals, NaN', () => {

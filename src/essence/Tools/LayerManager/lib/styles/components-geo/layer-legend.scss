@@ -49,7 +49,7 @@ $legend-content-indent: 28px;
         margin: 0;
         flex-shrink: 0;
         background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-primary-light, #6b8a96);
+        border: 1px solid var(--theme-color-base-light, #77777a);
         border-radius: var(--theme-radius-0, 0);
         cursor: pointer;
 
@@ -61,6 +61,7 @@ $legend-content-indent: 28px;
             background-repeat: no-repeat;
             background-position: center;
             background-size: 12px 12px;
+            border: 1px solid var(--theme-color-primary, #1c67e3);
         }
 
         &:focus-visible {
@@ -98,8 +99,11 @@ $legend-content-indent: 28px;
         transition: opacity 0.15s ease;
     }
 
+    /* An open popover lives in a portal, so focus leaving the row would
+       otherwise fade out the very button that opened it. */
     &:hover &__actions,
-    &:focus-within &__actions {
+    &:focus-within &__actions,
+    &--menu-open &__actions {
         opacity: 1;
     }
 
@@ -113,17 +117,22 @@ $legend-content-indent: 28px;
         background: transparent;
         border: none;
         border-radius: var(--theme-radius-0, 0);
-        color: var(--theme-color-primary-light, #6b8a96);
+        color: var(--theme-color-base, #77777a);
         cursor: pointer;
         transition: background-color 0.15s ease, color 0.15s ease;
 
         &:hover {
             background: var(--theme-color-primary-lightest, #e6f4f6);
-            color: var(--theme-color-base-darker, #3d4551);
+            color: var(--theme-color-primary, #1c67e3);
         }
 
         &--active {
-            color: var(--theme-color-primary, #0e7482);
+            color: var(--theme-color-primary, #1c67e3);
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #1c67e3);
+            outline-offset: -2px;
         }
     }
 
@@ -145,6 +154,11 @@ $legend-content-indent: 28px;
         &--opacity {
             -webkit-mask-image: url('../../geo/icons/opacity.svg');
             mask-image: url('../../geo/icons/opacity.svg');
+        }
+
+        &--color-ramp {
+            -webkit-mask-image: url('../../geo/icons/color-ramp.svg');
+            mask-image: url('../../geo/icons/color-ramp.svg');
         }
 
         &--info {
@@ -290,4 +304,13 @@ $legend-content-indent: 28px;
         min-width: 32px;
         text-align: right;
     }
+}
+
+/* Color Ramp Popover
+   Portaled to <body> to clear the layer list's clipped overflow. FloatingPopover
+   owns the placement and stacking, so only the surface chrome belongs here. */
+.blocks-layer-legend__ramp-popover {
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
 }

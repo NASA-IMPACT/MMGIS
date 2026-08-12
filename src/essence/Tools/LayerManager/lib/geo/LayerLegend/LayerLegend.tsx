@@ -4,11 +4,14 @@ import {
     useRef,
     useEffect,
     useCallback,
+    useId,
     type ReactNode,
     type ChangeEvent,
 } from 'react'
 import { GradientGraphic } from '../GradientGraphic/GradientGraphic'
 import { CategoricalGraphic } from '../CategoricalGraphic/CategoricalGraphic'
+import { ColorRampPicker } from '../ColorRampPicker/ColorRampPicker'
+import { FloatingPopover } from '../../FloatingPopover'
 import { useClickOutside } from '../../hooks/useClickOutside'
 import type { Layer } from '../../types'
 
@@ -47,9 +50,17 @@ export function LayerLegend({
     const [isVisible, setIsVisible] = useState(visible)
     const [isInfoExpanded, setIsInfoExpanded] = useState(defaultInfoExpanded)
     const [isOpacityExpanded, setIsOpacityExpanded] = useState(false)
+    const [isRampPickerOpen, setIsRampPickerOpen] = useState(false)
     const [localOpacity, setLocalOpacity] = useState(opacity ?? 1)
     const opacityBtnRef = useRef<HTMLButtonElement | null>(null)
     const opacityPopoverRef = useRef<HTMLDivElement | null>(null)
+    const rampBtnRef = useRef<HTMLButtonElement | null>(null)
+    const rampPopoverId = useId()
+
+    // Only raster layers carry rescale/ramp settings to expose, and only those
+    // whose colormap can actually be changed. A layer painting from a COG
+    // colormap baked in at construction shows the ramp but offers no controls.
+    const hasColorRamp = cog?.editable === true
 
     useEffect(() => {
         setIsVisible(visible)
@@ -64,6 +75,11 @@ export function LayerLegend({
         useCallback(() => setIsOpacityExpanded(false), []),
         isOpacityExpanded,
     )
+
+    // The picker rides along with its row as the layer list scrolls, and stays
+    // open once the row leaves the viewport. Dismissing it there would hand
+    // focus back to an off-screen trigger, scrolling the list back to it.
+    const closeRampPicker = useCallback(() => setIsRampPickerOpen(false), [])
 
     const handleVisibilityToggle = () => {
         const newState = !isVisible
@@ -94,9 +110,6 @@ export function LayerLegend({
                         max={max ?? 0}
                         unit={unit}
                         cog={cog}
-                        layerId={id}
-                        onColormapChange={onColormapChange}
-                        onRescaleChange={onRescaleChange}
                     />
                 )
             case 'categorical':
@@ -121,7 +134,10 @@ export function LayerLegend({
     const hasLegendContent = type && type !== 'none'
 
     return (
-        <div className="blocks-layer-legend" data-legend-id={id}>
+        <div
+            className={`blocks-layer-legend ${isRampPickerOpen ? 'blocks-layer-legend--menu-open' : ''}`}
+            data-legend-id={id}
+        >
             <div className="blocks-layer-legend__header">
                 <div className="blocks-layer-legend__checkbox-wrapper">
                     <input
@@ -166,6 +182,24 @@ export function LayerLegend({
                             </div>
                         )}
                     </div>
+                    {hasColorRamp && (
+                        <button
+                            ref={rampBtnRef}
+                            type="button"
+                            className={`blocks-layer-legend__action-btn ${isRampPickerOpen ? 'blocks-layer-legend__action-btn--active' : ''}`}
+                            onClick={() =>
+                                isRampPickerOpen
+                                    ? closeRampPicker()
+                                    : setIsRampPickerOpen(true)
+                            }
+                            aria-haspopup="dialog"
+                            aria-expanded={isRampPickerOpen}
+                            aria-controls={isRampPickerOpen ? rampPopoverId : undefined}
+                            title={isRampPickerOpen ? 'Hide color ramp' : 'Change color ramp'}
+                        >
+                            <span className="blocks-layer-legend__icon blocks-layer-legend__icon--color-ramp" />
+                        </button>
+                    )}
                     <button
                         className={`blocks-layer-legend__action-btn ${isInfoExpanded ? 'blocks-layer-legend__action-btn--active' : ''}`}
                         onClick={handleInfoToggle}
@@ -193,6 +227,34 @@ export function LayerLegend({
                 <div className="blocks-layer-legend__content">
                     {renderLegendGraphic()}
                 </div>
+            )}
+            {/* Rendered in a portal, out of the layer list, which clips its
+                overflow and would otherwise cut the dropdown off at the panel
+                edge. Focus moves into the surface on open, since tab order
+                follows the document and the portal sits at its end. */}
+            {hasColorRamp && cog && (
+                <FloatingPopover
+                    id={rampPopoverId}
+                    anchorRef={rampBtnRef}
+                    isOpen={isRampPickerOpen}
+                    onClose={closeRampPicker}
+                    placement="bottom"
+                    offset={6}
+                    className="blocks-layer-legend__ramp-popover"
+                    label={`Color ramp settings for ${title}`}
+                    autoFocus
+                >
+                    <ColorRampPicker
+                        layerId={id}
+                        colormap={cog.colormap}
+                        min={cog.min}
+                        max={cog.max}
+                        units={cog.units}
+                        titilerUrl={cog.titilerUrl}
+                        onColormapChange={onColormapChange}
+                        onRescaleChange={onRescaleChange}
+                    />
+                </FloatingPopover>
             )}
         </div>
     )

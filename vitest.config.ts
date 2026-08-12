@@ -11,8 +11,9 @@ import { defineConfig } from "vitest/config";
  * Playwright (see playwright.config.js).
  *
  * Unit specs live in two places, both covered by `include` below: engine and
- * backend specs in `tests/unit/`, and React component specs beside the
- * component they render.
+ * backend specs in `tests/unit/`, and specs co-located with the source they
+ * cover — beside the component they render, or under a plugin's `__tests__/`
+ * so they travel with the directory when it is extracted.
  */
 export default defineConfig({
   resolve: {
@@ -33,7 +34,11 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: false,
-    include: ["tests/unit/**/*.spec.{js,ts}", "src/**/*.test.{ts,tsx}"],
+    include: [
+      "tests/unit/**/*.spec.{js,ts}",
+      "src/**/*.test.{ts,tsx}",
+      "src/**/__tests__/**/*.spec.{js,ts,jsx,tsx}",
+    ],
     setupFiles: ["./tests/unit/vitest.setup.js"],
   },
 });
