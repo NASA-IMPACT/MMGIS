@@ -47,6 +47,41 @@ test.describe('DeckGLAdapter', () => {
         })
     })
 
+    test.describe('getBounds', () => {
+        // Standalone deck derives bounds from the container, so it needs a
+        // sized element; the view is deliberately wider than it is tall.
+        const boundsFor = (bearing = 0) => {
+            const adapter = makeAdapter({ longitude: -95, latitude: 35, zoom: 5 })
+            adapter._isOverlayMode = false
+            adapter._viewState.bearing = bearing
+            adapter._container = { offsetWidth: 800, offsetHeight: 400 }
+            return adapter.getBounds()
+        }
+
+        test('standalone mode brackets the centre south-west to north-east', () => {
+            const b = boundsFor()
+            expect(b.southWest.lat).toBeLessThan(35)
+            expect(b.northEast.lat).toBeGreaterThan(35)
+            expect(b.southWest.lng).toBeLessThan(-95)
+            expect(b.northEast.lng).toBeGreaterThan(-95)
+        })
+
+        test('standalone mode returns the same envelope rotated half a turn', () => {
+            // At bearing 180 the bottom-left pixel unprojects north-east of
+            // the top-right one. Reading only those two corners inverts both
+            // axes, and every containment test against these bounds then gives
+            // the opposite answer.
+            const upright = boundsFor()
+            const rotated = boundsFor(180)
+            expect(rotated.southWest.lat).toBeLessThan(rotated.northEast.lat)
+            expect(rotated.southWest.lng).toBeLessThan(rotated.northEast.lng)
+            expect(rotated.southWest.lat).toBeCloseTo(upright.southWest.lat, 6)
+            expect(rotated.northEast.lat).toBeCloseTo(upright.northEast.lat, 6)
+            expect(rotated.southWest.lng).toBeCloseTo(upright.southWest.lng, 6)
+            expect(rotated.northEast.lng).toBeCloseTo(upright.northEast.lng, 6)
+        })
+    })
+
     test.describe('view state setters', () => {
         test('setZoom updates the zoom', () => {
             const adapter = makeAdapter()
@@ -319,9 +354,9 @@ test.describe('DeckGLAdapter', () => {
     test.describe('drawing overlay stacking', () => {
         const ANCHOR_ID = 'td-polygon'
 
-        // Enough of the maplibre Map surface for TerraDrawMapLibreGLAdapter to
-        // construct, register its layers, and tear them down. Registered ids are
-        // tracked so getLayer() answers like a real style does.
+        // Just enough of the maplibre Map API for TerraDrawMapLibreGLAdapter
+        // to construct, register its layers, and tear them down. Registered ids
+        // are tracked so getLayer() answers the way a real style would.
         function makeDrawingBasemap() {
             const canvas = document.createElement('canvas')
             const container = document.createElement('div')

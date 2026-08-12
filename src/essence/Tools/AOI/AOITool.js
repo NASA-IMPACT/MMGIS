@@ -25,7 +25,7 @@
  *
  *   Requests:
  *     - map:createLayer / map:removeLayer
- *     - map:fitBounds
+ *     - map:getBounds / map:fitBounds
  *     - map:enableDrawing / map:disableDrawing / map:finishDrawing
  *     - map:addOverlay / map:removeOverlay
 
@@ -45,6 +45,8 @@ import {
     parseShapefileBuffer,
     featureCentroid,
     featureBounds,
+    selectionFitBounds,
+    selectionTooltipAnchor,
 } from './aoiHelpers'
 import { loadBoundaries } from './aoiBoundaryLoader'
 
@@ -560,42 +562,61 @@ const AOITool = {
         this._api?.emit('areaDrawn', { feature, source })
 
         const c = featureCentroid(feature)
-        const showTooltip = () => {
+        // `view` keeps the tooltip on-screen when the camera does not move; omit
+        // it once the camera has been fitted to the selection.
+        const showTooltip = (view) => {
             if (c) {
                 this._showTooltip({
                     label,
-                    latlng: { lat: c[1], lng: c[0] },
+                    latlng: selectionTooltipAnchor({ lat: c[1], lng: c[0] }, view),
                     analyzeEnabled: true,
                 })
             }
         }
 
         const bbox = featureBounds(feature)
-        if (bbox && api?.on && api?.off) {
-            // Defer the tooltip until the fitBounds animation settles so it
-            // mounts at the final centroid pixel instead of flickering through
-            // intermediate positions during the camera move.
-            let fallback
-            const oneShot = () => {
-                api.off('map:moveend', oneShot)
-                clearTimeout(fallback)
-                showTooltip()
-            }
-            api.on('map:moveend', oneShot)
-            // Belt-and-braces: if no moveend fires (e.g. already at target view),
-            // show the tooltip after a short timeout anyway.
-            fallback = setTimeout(oneShot, 1500)
+        if (bbox && api?.request && api?.on && api?.off) {
+            // Leave the camera alone unless the selection extends beyond the
+            // current view; then fit its extent minimally (selectionFitBounds).
+            api.request('map:getBounds')
+                .catch(() => null)
+                .then((view) => {
+                    const fit = selectionFitBounds(bbox, view)
+                    if (!fit) {
+                        showTooltip(view)
+                        return
+                    }
+                    // Defer the tooltip until the fitBounds animation settles so it
+                    // mounts at the final centroid pixel instead of flickering through
+                    // intermediate positions during the camera move.
+                    let fallback
+                    // Pass a view here only when the camera never moved. Once
+                    // fitBounds has framed the selection, its centroid is
+                    // on-screen and needs no fallback anchor.
+                    const settle = (unmovedView) => {
+                        api.off('map:moveend', oneShot)
+                        clearTimeout(fallback)
+                        showTooltip(unmovedView)
+                    }
+                    // `map:moveend` hands its listener a view state
+                    // ({ longitude, latitude, zoom }), not a ViewBounds. This
+                    // wrapper drops that payload so `settle` is called with no
+                    // view at all.
+                    const oneShot = () => settle()
+                    api.on('map:moveend', oneShot)
+                    // Safety net: if no moveend fires (e.g. an engine that
+                    // skips the event on a programmatic fit), show the tooltip
+                    // after a short timeout anyway.
+                    fallback = setTimeout(oneShot, 1500)
 
-            api.request('map:fitBounds', {
-                bounds: [
-                    { lat: bbox[1], lng: bbox[0] },
-                    { lat: bbox[3], lng: bbox[2] },
-                ],
-                options: { padding: 120, maxZoom: 5 },
-            }).catch((err) => {
-                console.warn('[AOI] fitBounds failed', err)
-                oneShot()
-            })
+                    api.request('map:fitBounds', fit).catch((err) => {
+                        console.warn('[AOI] fitBounds failed', err)
+                        settle(view)
+                    })
+                })
+                .catch((err) =>
+                    console.warn('[AOI] selection camera step failed', err)
+                )
         } else {
             showTooltip()
         }

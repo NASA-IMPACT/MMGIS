@@ -253,6 +253,136 @@ export function featureBounds(f: Feature): [number, number, number, number] | nu
     return Number.isFinite(w) ? [w, s, e, n] : null
 }
 
+/**
+ * A map view as the engines report it back from `map:getBounds`. Latitude
+ * always runs south to north.
+ *
+ * Longitude does not. Every engine that answers this request — Leaflet,
+ * deck.gl drawn over a basemap, and standalone deck.gl, which takes the
+ * min/max envelope of its container corners — reports longitudes unwrapped and
+ * west to east. Two things follow:
+ *
+ * - A view straddling the antimeridian is written by running past ±180, as
+ *   170..190.
+ * - Standalone deck.gl, zoomed out, can report a window wider than a full
+ *   360° turn.
+ */
+export interface ViewBounds {
+    southWest: { lat: number; lng: number }
+    northEast: { lat: number; lng: number }
+}
+
+/** Folds a longitude difference into [0, 360). */
+function wrap360(d: number): number {
+    return ((d % 360) + 360) % 360
+}
+
+/**
+ * How wide a view is in degrees of longitude, measured east from its west
+ * edge.
+ *
+ * An engine may report a view that straddles the antimeridian either way: as
+ * `sw.lng` 170 with `ne.lng` -170, or, after panning, as 190..210. Both
+ * describe the same 20° window.
+ *
+ * The two corner longitudes are never put back in order here. `sw.lng >
+ * ne.lng` is how a straddling view is written, so swapping them would change
+ * which window is meant.
+ */
+function viewLngExtent(view: ViewBounds): number {
+    const raw = view.northEast.lng - view.southWest.lng
+    return raw > 0 ? raw : wrap360(raw)
+}
+
+/** How many degrees east of the view's west edge a longitude sits, in [0, 360). */
+function lngOffset(lng: number, view: ViewBounds): number {
+    return wrap360(lng - view.southWest.lng)
+}
+
+/**
+ * Decide whether committing a selection should move the camera.
+ *
+ * Returns null — meaning leave the camera where it is — in two cases:
+ *
+ * - The selection's bbox already fits inside the current view.
+ * - The bbox cannot be framed: it has zero area, or it is 180° or more of
+ *   longitude wide.
+ *
+ * That 180° rule is blunt on purpose. It drops any selection spanning half the
+ * globe, not only the naive antimeridian sweeps that motivate it (Alaska's
+ * MultiPolygon reads ~359° wide). For both, doing nothing beats jumping out to
+ * a view of nearly the whole world.
+ *
+ * Otherwise it returns a `map:fitBounds` payload that frames the selection as
+ * tightly as it can: a small padding, and a maxZoom ceiling set high enough
+ * that an ordinary selection never reaches it.
+ */
+export function selectionFitBounds(
+    bbox: [number, number, number, number],
+    view: ViewBounds | null | undefined
+): {
+    bounds: [{ lat: number; lng: number }, { lat: number; lng: number }]
+    options: { padding: number; maxZoom: number }
+} | null {
+    const [w, s, e, n] = bbox
+    if (e - w <= 0 || n - s <= 0 || e - w >= 180) return null
+    if (view) {
+        const extent = viewLngExtent(view)
+        // A view at least a full turn wide already shows every longitude, so
+        // nothing can sit outside it east-west. Measuring such a view instead
+        // would put a seam in it: offsets fold into [0, 360), so a selection a
+        // full turn east of the west edge reads as an offset of ~355 and looks
+        // like it overflows.
+        const inLng = extent >= 360 || lngOffset(w, view) + (e - w) <= extent
+        const inLat = s >= view.southWest.lat && n <= view.northEast.lat
+        if (inLng && inLat) return null
+    }
+    return {
+        bounds: [
+            { lat: s, lng: w },
+            { lat: n, lng: e },
+        ],
+        options: { padding: 40, maxZoom: 18 },
+    }
+}
+
+/**
+ * Pick where to anchor the selection tooltip. The tooltip holds the only
+ * Analyze and Cancel buttons a selection has, so mounting it off-screen
+ * strands the selection.
+ *
+ * That is a risk whenever the camera stays put: the selection was already in
+ * view, or its extent could not be framed (a zero-area polygon, or Alaska's
+ * naive ~360° sweep, whose vertex-mean centroid lands near -140°). In those
+ * cases the centroid can sit outside the current view, so fall back to the
+ * centre of the view.
+ *
+ * Pass no view once the camera has been fitted to the selection — the centroid
+ * is on-screen by then.
+ */
+export function selectionTooltipAnchor(
+    centroid: { lat: number; lng: number },
+    view?: ViewBounds | null
+): { lat: number; lng: number } {
+    if (!view) return centroid
+    const extent = viewLngExtent(view)
+    // A single point needs no allowance for width, and an offset is always
+    // under 360, so a view wider than a full turn already contains every
+    // longitude here — without the explicit full-turn case
+    // `selectionFitBounds` needs.
+    const inView =
+        lngOffset(centroid.lng, view) <= extent &&
+        centroid.lat >= view.southWest.lat &&
+        centroid.lat <= view.northEast.lat
+    if (inView) return centroid
+    return {
+        lat: (view.southWest.lat + view.northEast.lat) / 2,
+        // A view reported wider than a full turn still centres on its own
+        // middle rather than on its west edge plus 180°.
+        lng: view.southWest.lng + extent / 2,
+    }
+}
+
 function isPolygonal(f: Feature | undefined | null): f is Feature {
     return (
         !!f &&
