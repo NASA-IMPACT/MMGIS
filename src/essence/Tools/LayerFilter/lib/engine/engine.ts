@@ -125,10 +125,7 @@ export function applyTheme(
             rowPassesFacet(row, facet, current[facet.id], now),
         ),
     )
-    const layerKeys: string[] = []
-    for (const row of surviving) {
-        if (!layerKeys.includes(row.layerKey)) layerKeys.push(row.layerKey)
-    }
+    const layerKeys = [...new Set(surviving.map((row) => row.layerKey))]
 
     return { options: optionsByFacet, rows: surviving, layerKeys, selections: current }
 }

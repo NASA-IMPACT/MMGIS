@@ -398,19 +398,22 @@ const L_ = {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true
                 }),
-                // Runtime "shown in layer lists" flags (uuid -> bool; absent =
-                // listed). Orthogonal to map visibility (layers.on). Session-only
-                // sibling of layers.on; lives outside configData so resetConfig
-                // re-parses don't wipe it. `source` is accepted but unused —
-                // reserved for arbitrating between multiple writers later.
+                // Runtime "shown in layer lists" flags. Only unlisted layers
+                // get an entry (uuid -> false); absent = listed, so the map
+                // stays empty until something filters. Orthogonal to map
+                // visibility (layers.on). Session-only sibling of layers.on;
+                // lives outside configData so resetConfig re-parses don't
+                // wipe it. `source` is accepted but unused — reserved for
+                // arbitrating between multiple writers later.
                 window.mmgisAPI.provide('layers:getListed', () => L_.layers.listed),
                 window.mmgisAPI.provide('layers:setListed', ({ updates, source } = {}) => {
                     if (updates == null || typeof updates !== 'object')
                         return false
                     Object.entries(updates).forEach(([name, isListed]) => {
                         const uuid = L_.asLayerUUID(name)
-                        if (uuid != null)
-                            L_.layers.listed[uuid] = isListed !== false
+                        if (uuid == null) return
+                        if (isListed !== false) delete L_.layers.listed[uuid]
+                        else L_.layers.listed[uuid] = false
                     })
                     window.mmgisAPI.emit('layer:listedChange', {
                         listed: L_.layers.listed,

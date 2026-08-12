@@ -78,9 +78,6 @@ var TimeControl = {
                     }
                     return false
                 }),
-                // Expose the mission's configured time settings (incl.
-                // initialstart/initialend) so plugins can read the overall range
-                // even when the live time window isn't set (time.enabled: false).
             ]
         }
 

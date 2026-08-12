@@ -199,14 +199,15 @@ state and everything downstream re-renders reactively:
 ```
 LayerFilter                     core (Layers_.js)              LayerManager
     │  layers:setListed({updates})  │                               │
-    ├──────────────────────────────>│  L_.layers.listed[uuid]=bool  │
-    │                               ├── emit layers:listedChanged ─>│
+    ├──────────────────────────────>│  L_.layers.listed[uuid]=false │
+    │                               ├── emit layer:listedChange ───>│
     │                               │                               ├─ re-fetch, skip
     │                               │<── layers:getListed ──────────┤  listed === false
 ```
 
-- `L_.layers.listed` — uuid → bool, **absent = listed** (no boot
-  initialization needed), runtime-only, deliberately outside `configData`
+- `L_.layers.listed` — only unlisted layers get an entry (uuid → false);
+  **absent = listed** (no boot initialization needed; a `true` update
+  deletes the key), runtime-only, deliberately outside `configData`
   so config re-parses don't wipe it. Cleaned up on layer removal.
 - `layers:setListed({ updates, source })` — bulk write (the filter sets
   its whole result in one call). `source` is accepted-but-unused,

@@ -12,7 +12,7 @@
  * Subscribes:
  *   - plugin:layerfilterthemes:selectedThemeChanged  { themeId }
  * Requests:
- *   - tool:getVars, layers:getAllConfigs, time:getStart, time:getEnd, layers:setListed
+ *   - tool:getVars, layers:getAllConfigs, layers:setListed
  */
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
