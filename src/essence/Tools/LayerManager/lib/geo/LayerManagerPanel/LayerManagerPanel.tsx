@@ -4,11 +4,13 @@ import {
     LayerLegendList,
     type LayerLegendListProps,
 } from '../LayerLegendList/LayerLegendList'
+import type { RenderDescription } from '../LayerLegend/LayerLegend'
 
 export type LayerManagerPanelProps = {
     layers: Layer[]
     loading?: boolean
     emptyMessage?: string
+    renderDescription?: RenderDescription
     onVisibilityChange?: (layerId: string, newVisibility: boolean) => void
     onOpacityChange?: (layerId: string, opacity: number) => void
     onColormapChange?: (layerId: string, colormap: string) => void
@@ -21,6 +23,7 @@ export function LayerManagerPanel({
     layers,
     loading = false,
     emptyMessage = 'No visible layers. Turn on layers in the Layers tool to manage them here.',
+    renderDescription,
     onVisibilityChange,
     onOpacityChange,
     onColormapChange,
@@ -39,6 +42,7 @@ export function LayerManagerPanel({
                     <LayerLegendList
                         layers={layers}
                         emptyMessage={emptyMessage}
+                        renderDescription={renderDescription}
                         onVisibilityChange={onVisibilityChange}
                         onOpacityChange={onOpacityChange}
                         onColormapChange={onColormapChange}

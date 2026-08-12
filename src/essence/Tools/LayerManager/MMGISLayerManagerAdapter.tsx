@@ -6,6 +6,7 @@ import { useMMGISEvent } from './adapters/useMMGISEvent'
 import { useMMGISToolVars } from './adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import { getVisibleLayersWithLegends } from './adapters/getVisibleLayersWithLegends'
+import { renderDescription } from './adapters/renderDescription'
 import {
     toggleVisibility,
     setOpacity,
@@ -67,6 +68,7 @@ export function MMGISLayerManagerAdapter() {
         <LayerManagerPanel
             layers={layers}
             loading={loading}
+            renderDescription={renderDescription}
             onVisibilityChange={(id) => { report('toggleVisibility', toggleVisibility(id)) }}
             onOpacityChange={(id, op) => { report('setOpacity', setOpacity(id, op)) }}
             onColormapChange={(id, cm) => { report('setColormap', setColormap(id, cm, refresh)) }}
