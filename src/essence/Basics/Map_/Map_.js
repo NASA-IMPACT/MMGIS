@@ -16,6 +16,7 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
+import { buildFeatureClickPayload } from './featureClickPayload'
 import {
     compileTileUrl,
     buildTileUrlOptions,
@@ -1096,24 +1097,18 @@ function onEachFeatureDefault(feature, layer) {
 
 function emitFeatureClick(feature, layerName, e) {
     if (!window.mmgisAPI) return
-    if (feature == null) return
     if (
         ToolController_.activeTool &&
         ToolController_.activeTool.disableLayerInteractions === true
     )
         return
-    const featureCopy = { ...feature }
-    if (feature.geometry !== undefined) featureCopy.geometry = feature.geometry
-    if (feature.properties != null)
-        featureCopy.properties = { ...feature.properties }
-    window.mmgisAPI.emit('feature:click', {
-        feature: featureCopy,
-        layerName: L_.asLayerUUID(layerName),
-        latlng: e?.latlng ? { lat: e.latlng.lat, lng: e.latlng.lng } : null,
-        pixel: e?.containerPoint
-            ? { x: e.containerPoint.x, y: e.containerPoint.y }
-            : null,
-    })
+    const payload = buildFeatureClickPayload(
+        feature,
+        L_.asLayerUUID(layerName),
+        e
+    )
+    if (payload == null) return
+    window.mmgisAPI.emit('feature:click', payload)
 }
 
 Map_.featureDefaultClick = featureDefaultClick
