@@ -5,6 +5,7 @@ import type { Layer } from '../../types'
 export type LayerLegendListProps = {
     layers: Layer[]
     emptyMessage?: string
+    renderDescription?: LayerLegendProps['renderDescription']
     onVisibilityChange?: LayerLegendProps['onVisibilityChange']
     onOpacityChange?: LayerLegendProps['onOpacityChange']
     onColormapChange?: LayerLegendProps['onColormapChange']
@@ -14,6 +15,7 @@ export type LayerLegendListProps = {
 export function LayerLegendList({
     layers,
     emptyMessage = 'No layers with legends are currently visible.',
+    renderDescription,
     onVisibilityChange,
     onOpacityChange,
     onColormapChange,
@@ -32,6 +34,7 @@ export function LayerLegendList({
                 <LayerLegend
                     key={layer.id}
                     layer={layer}
+                    renderDescription={renderDescription}
                     onVisibilityChange={onVisibilityChange}
                     onOpacityChange={onOpacityChange}
                     onColormapChange={onColormapChange}
