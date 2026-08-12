@@ -7,15 +7,12 @@
 // list quickly or opening two layers' pickers costs a single fetch per ramp.
 
 import { colormapResponseToColors } from './colormaps'
-import { getTiTilerBaseUrl } from './titiler'
 
 const cache = new Map<string, Promise<string[] | null>>()
 
-/** Trailing-slash-normalized base, or null when no TiTiler is reachable. */
-export const resolveTiTilerBase = (titilerUrl?: string | null): string | null => {
-    if (titilerUrl) return titilerUrl.replace(/\/$/, '')
-    return getTiTilerBaseUrl()
-}
+/** Trailing-slash-normalized base, or null when no service was supplied. */
+export const resolveTiTilerBase = (titilerUrl?: string | null): string | null =>
+    titilerUrl ? titilerUrl.replace(/\/$/, '') : null
 
 /**
  * Resolve one ramp's ordered colors. Names are cached per base URL so two

@@ -204,6 +204,24 @@ export const mmgisFitBounds = async (
     return fitted === true
 }
 
+/**
+ * Where each layer's tiling service lives, keyed by layer UUID, already
+ * resolved through the per-layer and mission-wide overrides core applies. An
+ * entry is null when no service is reachable for that layer.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat
+ * applies. Null against a core without the handler, in which case callers
+ * have no service to reach.
+ */
+export const mmgisGetTiTilerUrls = (): Promise<Record<
+    string,
+    string | null
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, string | null>>(
+        'layers:getTiTilerUrl',
+    )
+}
+
 /** Whether the mission has time enabled at all. */
 export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')

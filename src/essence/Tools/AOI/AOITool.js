@@ -26,7 +26,7 @@
  *   Requests:
  *     - map:createLayer / map:removeLayer
  *     - map:fitBounds
- *     - map:enableDrawing / map:finishDrawing / map:disableDrawing
+ *     - map:enableDrawing / map:disableDrawing / map:finishDrawing
  *     - map:addOverlay / map:removeOverlay
 
  * AOIComponent.tsx and AOITooltip.tsx must stay MMGIS-agnostic.
@@ -55,6 +55,13 @@ const VALID_DRAW_SHAPES = new Set(['point', 'linestring', 'polygon', 'rectangle'
 const SELECTION_LAYER_ID = 'aoi:selection'
 const INSPECT_BOUNDARIES_LAYER_ID = 'aoi:inspect-boundaries'
 const TOOLTIP_OVERLAY_ID = 'aoi:tooltip'
+
+// ── Draw-session keys ──────────────────────────────────────────────────────────
+// Components with these roles handle Escape themselves — a dialog, menu,
+// listbox or combobox closes on it — so a key pressed anywhere inside one of
+// them is theirs, not the drawing session's.
+const KEY_OWNING_ROLE_SELECTOR =
+    '[role="dialog"],[role="menu"],[role="listbox"],[role="combobox"]'
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const SELECTION_STYLE = {
@@ -114,6 +121,7 @@ const AOITool = {
     _cleanups: [],
     _api: null,
     _analysisErrorTimeout: null,
+    _drawKeyHandler: null,
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -157,7 +165,7 @@ const AOITool = {
                 this._cleanups.push(typeof off === 'function' ? off : () => { })
             }
             subscribe('tool:change',       () => this._clearSelection())
-            subscribe('map:drawstart',     (e) => this._onDrawStart(e))
+            subscribe('map:drawstart',     () => this._onDrawStart())
             subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
@@ -202,6 +210,7 @@ const AOITool = {
         }
 
         // Fire-and-forget: cancel any active drawing session via the bus.
+        this._removeDrawKeys()
         window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
 
         this._removeSelectionLayer()
@@ -307,8 +316,6 @@ const AOITool = {
                 isDrawing: this._state.isDrawing,
                 drawVerticesCount: this._state.drawVerticesCount,
                 onDrawShapeChange: (drawShape) => this._onDrawShapeChange(drawShape),
-                onDrawConfirm: () => this._onDrawConfirm(),
-                onDrawCancel: () => this._onDrawCancel(),
 
                 uploadStatus: this._state.uploadStatus,
                 uploadError: this._state.uploadError,
@@ -367,24 +374,49 @@ const AOITool = {
 
     _onDrawShapeChange(shape) {
         this._setState({ drawShape: shape, drawVerticesCount: 0 })
-        window.mmgisAPI?.request?.('map:enableDrawing', {
-            shape,
-            options: { style: SELECTION_STYLE },
-        }).catch((err) => console.warn('[AOI] enableDrawing failed', err))
-    },
-
-    _onDrawConfirm() {
-        window.mmgisAPI?.request?.('map:finishDrawing')
-            .catch((err) => console.warn('[AOI] finishDrawing failed', err))
-    },
-
-    _onDrawCancel() {
-        window.mmgisAPI?.request?.('map:disableDrawing')
-            .catch((err) => console.warn('[AOI] disableDrawing failed', err))
+        window.mmgisAPI?.request?.('map:enableDrawing', { shape })
+            .catch((err) => console.warn('[AOI] enableDrawing failed', err))
     },
 
     _onDrawStart() {
+        this._installDrawKeys()
         this._setState({ isDrawing: true, drawVerticesCount: 0 })
+    },
+
+    /**
+     * Enter and Escape belong to the session this plugin started, and the panel
+     * hints promise both from anywhere. The engine only hears keys while the
+     * map element has focus, so listen on the document for as long as the
+     * session lasts and drive it over the bus. Keys typed into a field are the
+     * field's, and so are keys pressed inside a component that closes on
+     * Escape (see {@link KEY_OWNING_ROLE_SELECTOR}).
+     */
+    _installDrawKeys() {
+        if (this._drawKeyHandler) return
+        this._drawKeyHandler = (evt) => {
+            if (evt.repeat) return
+            const target = evt.target
+            const tag = target?.tagName
+            if (
+                target?.isContentEditable ||
+                tag === 'INPUT' ||
+                tag === 'TEXTAREA' ||
+                tag === 'SELECT' ||
+                target?.closest?.(KEY_OWNING_ROLE_SELECTOR)
+            ) return
+            if (evt.key === 'Escape') {
+                window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
+            } else if (evt.key === 'Enter') {
+                window.mmgisAPI?.request?.('map:finishDrawing').catch(() => { })
+            }
+        }
+        document.addEventListener('keydown', this._drawKeyHandler)
+    },
+
+    _removeDrawKeys() {
+        if (!this._drawKeyHandler) return
+        document.removeEventListener('keydown', this._drawKeyHandler)
+        this._drawKeyHandler = null
     },
 
     _onDrawVertex(e) {
@@ -393,6 +425,7 @@ const AOITool = {
     },
 
     _onDrawComplete(e) {
+        this._removeDrawKeys()
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
         const feature = e?.feature
         if (!feature) return
@@ -403,6 +436,7 @@ const AOITool = {
     },
 
     _onDrawCancelEvent() {
+        this._removeDrawKeys()
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
     },
 

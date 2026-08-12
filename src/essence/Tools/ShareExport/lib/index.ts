@@ -1,13 +1,11 @@
-// Components
-export { ShareMenu, type ShareMenuProps } from './components/ShareMenu/ShareMenu'
-
-// Pure helpers / domain types
+// The share-menu unit moved to _shared/share so MapControl can use it
+// without importing this plugin; this shim keeps ShareExport's lib API stable.
 export {
+    ShareMenu,
+    type ShareMenuProps,
     getShareMenuItems,
     type ShareMenuItem,
     type ShareMenuHandlers,
-} from './getShareMenuItems'
-export type { ShareActionKind, ShareFormatFlags } from './types'
-
-// Side-effect import of compiled styles
-import './styles/index.scss'
+    type ShareActionKind,
+    type ShareFormatFlags,
+} from '../../_shared/share'
