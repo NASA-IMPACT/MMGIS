@@ -21,6 +21,7 @@ import {
     shouldUseDeckRaster,
     supportsCogTransform,
 } from './tileUrlUtils'
+import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
@@ -77,26 +78,25 @@ function titilerUrlFor(layerConfig) {
 }
 
 /**
- * True when a registry entry is owned by the active non-Leaflet engine.
- * Engine-owned layers must go through the IMapEngine facade rather than
- * Leaflet's methods — they have no Leaflet API to call, and under deck.gl a
- * mutation returns a replacement instance for the registry to adopt.
+ * True when a registry entry has to be mutated through the IMapEngine facade
+ * rather than Leaflet's methods — it has no Leaflet API to call, and under
+ * deck.gl a mutation returns a replacement instance for the registry to adopt.
  *
- * Which types are engine-owned is per-engine, not universal — see
+ * Which layer types the facade builds is per-engine, not universal — see
  * ENGINE_LAYER_SUPPORT. Types the active engine has no builder for (velocity,
  * model, data, image and video under deck.gl) stay Leaflet-built, so the
  * registry always holds a mix.
  *
- * Ownership is identified positively by shape: a deck.gl layer carries deck's
- * `props` (or arrives as a `_deckLayer` wrapper, which `Map_.nativeLayer`
- * unwraps) and never Leaflet's `options`. Anything else in the registry —
- * Leaflet layers, aggregate arrays of them, and the load-failure sentinel
- * (`false`) — takes the Leaflet path.
+ * Facade-managed entries are identified positively by shape: a deck.gl layer
+ * carries deck's `props` (or arrives as a `_deckLayer` wrapper, which
+ * `Map_.nativeLayer` unwraps) and never Leaflet's `options`. Anything else in
+ * the registry — Leaflet layers, aggregate arrays of them, and the
+ * load-failure sentinel (`false`) — takes the Leaflet path.
  *
  * @param {object} layer - A registry entry from `L_.layers.layer`.
  * @returns {boolean}
  */
-function isEngineOwnedLayer(layer) {
+function requiresEngineFacade(layer) {
     return (
         layer != null &&
         layer.options == null &&
@@ -107,12 +107,91 @@ function isEngineOwnedLayer(layer) {
 }
 
 /**
- * Rebuilds an engine-owned raster tile layer around a freshly compiled URL.
+ * A layer's geographic extent as `[[south, west], [north, east]]` — the
+ * `[LatLngLike, LatLngLike]` pair both map engines normalise — or null when no
+ * extent can be worked out.
+ *
+ * Where an extent comes from depends on how the layer is drawn, so the sources
+ * are tried in order of fidelity: a Leaflet layer measures the geometry it has
+ * actually rendered, a deck.gl layer has to be measured from the GeoJSON it was
+ * handed, and a raster layer has no geometry at all — only the footprint
+ * declared in mission configuration.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {[[number, number], [number, number]] | null}
+ */
+function layerBoundsFor(uuid) {
+    const layer = L_.layers.layer[uuid]
+
+    // Leaflet measures its own rendered geometry. A vector layer whose features
+    // have not arrived yet reports empty bounds, and getBounds() throws outright
+    // on layer types that only look like they have one, so neither case counts
+    // as an extent — both fall through to the sources below.
+    if (layer && typeof layer.getBounds === 'function') {
+        try {
+            const bounds = layer.getBounds()
+            if (bounds && bounds.isValid && bounds.isValid()) {
+                const sw = bounds.getSouthWest()
+                const ne = bounds.getNorthEast()
+                return [
+                    [sw.lat, sw.lng],
+                    [ne.lat, ne.lng],
+                ]
+            }
+        } catch (err) {
+            // Not measurable through Leaflet; try the remaining sources.
+        }
+    }
+
+    // A deck.gl layer keeps its features on `props.data` and exposes no
+    // measurement method. Only inline GeoJSON can be measured here — when
+    // `data` is a URL the features live inside deck's loaders, out of reach.
+    if (requiresEngineFacade(layer)) {
+        const data = layer.props?.data ?? layer._deckLayer?.props?.data
+        if (data != null && typeof data === 'object') {
+            // deck accepts a bare array of features as readily as a GeoJSON
+            // object; turf measures only the latter.
+            const geojson = Array.isArray(data)
+                ? { type: 'FeatureCollection', features: data }
+                : data
+            try {
+                const [west, south, east, north] = bbox(geojson)
+                // An empty FeatureCollection measures to infinities.
+                if ([west, south, east, north].every(Number.isFinite)) {
+                    return [
+                        [south, west],
+                        [north, east],
+                    ]
+                }
+            } catch (err) {
+                // Unmeasurable GeoJSON; try the configured footprint.
+            }
+        }
+    }
+
+    // Raster layers carry no geometry of their own. Mission configuration
+    // declares their footprint as [west, south, east, north].
+    const boundingBox = L_.layers.data[uuid]?.boundingBox
+    if (Array.isArray(boundingBox) && boundingBox.length === 4) {
+        const [west, south, east, north] = boundingBox.map((n) => parseFloat(n))
+        if ([west, south, east, north].every(Number.isFinite)) {
+            return [
+                [south, west],
+                [north, east],
+            ]
+        }
+    }
+
+    return null
+}
+
+/**
+ * Rebuilds a facade-managed raster tile layer around a freshly compiled URL.
  *
  * A Leaflet tile layer recompiles its URL per tile from `this.options`, so its
- * `refresh()` only has to merge the caller's overrides into those options. An
- * engine-owned layer is built around one static URL instead, so the overrides
- * are compiled in here.
+ * `refresh()` only has to merge the caller's overrides into those options. A
+ * facade-managed layer wraps one static URL instead, so the overrides are
+ * compiled in here.
  *
  * Resolution order — source, then time replacements, then tile-URL options —
  * is the one layer creation and time-driven reloads use, so all three agree on
@@ -127,9 +206,9 @@ function isEngineOwnedLayer(layer) {
  * buildTileUrlOptions produces. These win over the layer config.
  * @returns {Promise<boolean>} Whether the engine took a new URL.
  */
-async function refreshEngineOwnedTileLayer(uuid, updateOptions) {
+async function refreshEngineFacadeTileLayer(uuid, updateOptions) {
     const layerObj = L_.layers.data[uuid]
-    // Only raster tiles carry a compiled tile URL. The other engine-owned
+    // Only raster tiles carry a compiled tile URL. The other facade-managed
     // types (vector, vectortile, pointcloud) reload through their own paths.
     if (!isRasterTileLayerType(layerObj)) return false
 
@@ -379,9 +458,9 @@ const L_ = {
                         tileLayer.refresh(null, false, options || {})
                         return true
                     }
-                    // An engine-owned layer has no Leaflet refresh() to call.
-                    if (isEngineOwnedLayer(tileLayer))
-                        return refreshEngineOwnedTileLayer(uuid, options)
+                    // A facade-managed layer has no Leaflet refresh() to call.
+                    if (requiresEngineFacade(tileLayer))
+                        return refreshEngineFacadeTileLayer(uuid, options)
                     return false
                 }),
                 window.mmgisAPI.provide('layers:updateConfig', ({ layerUUID, updates }) => {
@@ -409,6 +488,27 @@ const L_ = {
                         capabilities[uuid] = cogCapabilitiesFor(uuid)
                     })
                     return capabilities
+                }),
+                // Where each layer sits, for moving the map to it. Called with
+                // a layer identifier it answers for that one layer, resolving a
+                // name the way every other layer-keyed provider does; called
+                // with none it returns the whole map, keyed by UUID.
+                //
+                // An extent is measured on demand, not looked up: every deck.gl
+                // layer answered for is walked feature by feature. That is
+                // nothing for one layer and a blocking sweep of the mission's
+                // whole geometry for all of them, so ask by identifier wherever
+                // a single layer will do.
+                window.mmgisAPI.provide('layers:getBounds', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : layerBoundsFor(uuid)
+                    }
+                    const bounds = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        bounds[uuid] = layerBoundsFor(uuid)
+                    })
+                    return bounds
                 }),
                 // Where a layer's tiles and colormaps are served from, and
                 // null when nowhere is. Called with a layer identifier it
@@ -2171,11 +2271,11 @@ const L_ = {
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
         let l = L_.layers.layer[name]
 
-        // Engine-owned layers go through the IMapEngine facade, which may return
-        // a replacement instance for the registry to hold (deck.gl layers are
-        // immutable). They have no attachments and no Leaflet marker elements,
-        // so the sublayer and CSS passes below do not apply to them.
-        if (isEngineOwnedLayer(l)) {
+        // Facade-managed layers go through the IMapEngine facade, which may
+        // return a replacement instance for the registry to hold (deck.gl
+        // layers are immutable). They have no attachments and no Leaflet marker
+        // elements, so the sublayer and CSS passes below do not apply to them.
+        if (requiresEngineFacade(l)) {
             const updated = L_.Map_.engine.setLayerOpacity(
                 L_.Map_.nativeLayer(l),
                 newOpacity
@@ -2183,7 +2283,7 @@ const L_ = {
             if (updated) L_.layers.layer[name] = updated
         } else if (l && l.options) {
             // Leaflet layers only. A registry entry that is neither
-            // engine-owned nor a Leaflet layer — the load failure sentinel
+            // facade-managed nor a Leaflet layer — the load failure sentinel
             // (`false`) or an aggregate array — falls through to the registry
             // write below, which is the value the engine reads when it builds
             // or re-adds the layer.
@@ -2264,9 +2364,9 @@ const L_ = {
 
         if (l == null) return 0
 
-        // Engine-owned layer objects carry no Leaflet `options`; the registry is
-        // the authority on their opacity.
-        if (isEngineOwnedLayer(l)) return L_.layers.opacity[name] ?? 1
+        // Facade-managed layer objects carry no Leaflet `options`; the registry
+        // is the authority on their opacity.
+        if (requiresEngineFacade(l)) return L_.layers.opacity[name] ?? 1
 
         var opacity
         try {

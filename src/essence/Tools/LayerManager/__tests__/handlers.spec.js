@@ -1,10 +1,15 @@
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 import {
     toggleVisibility,
     setOpacity,
     setColormap,
     setRescale,
+    zoomToLayer,
 } from '../adapters/handlers.ts'
+import {
+    ZOOM_TO_LAYER_PADDING,
+    ZOOM_TO_LAYER_POINT_MAX_ZOOM,
+} from '../lib/utils/constants.ts'
 
 const setupMock = (responses = {}, emitCalls = []) => {
     global.window = global.window || {}
@@ -172,5 +177,87 @@ test.describe('handlers', () => {
         await setColormap('layerB', 'plasma', () => {})
         expect(emitCalls).toHaveLength(0)
         expect(requests.map((r) => r.name)).toEqual(['layers:getCogCapabilities'])
+    })
+
+    // [[south, west], [north, east]] — the pair both map engines normalise.
+    const EXTENT = [
+        [30, -120],
+        [45, -100],
+    ]
+
+    // Every feature of the layer sitting at one point: an extent enclosing no
+    // area at all.
+    const POINT_EXTENT = [
+        [30, -120],
+        [30, -120],
+    ]
+
+    const LOCATABLE = {
+        'layers:getBounds': (layerId) =>
+            ({ layerA: EXTENT, layerPoint: POINT_EXTENT }[layerId] ?? null),
+        'map:fitBounds': true,
+    }
+
+    test('zoomToLayer fits the map to the extent core reports', async () => {
+        const { requests } = setupMock(LOCATABLE)
+        await zoomToLayer('layerA')
+
+        expect(requests).toEqual([
+            { name: 'layers:getBounds', params: 'layerA' },
+            {
+                name: 'map:fitBounds',
+                params: {
+                    bounds: EXTENT,
+                    options: { padding: ZOOM_TO_LAYER_PADDING },
+                },
+            },
+        ])
+    })
+
+    // An extent with area is fitted uncapped, so a layer covering a few hundred
+    // metres reaches the detail it carries rather than stopping where a point
+    // layer has to.
+    test('zoomToLayer leaves an extent with area uncapped', async () => {
+        const { requests } = setupMock(LOCATABLE)
+        await zoomToLayer('layerA')
+
+        const fit = requests.find((r) => r.name === 'map:fitBounds')
+        expect(fit.params.options.maxZoom).toBeUndefined()
+    })
+
+    // An extent enclosing no area fits to maximum zoom without a cap, landing
+    // far past any tile the layer serves.
+    test('zoomToLayer caps a fit to an extent enclosing no area', async () => {
+        const { requests } = setupMock(LOCATABLE)
+        await zoomToLayer('layerPoint')
+
+        const fit = requests.find((r) => r.name === 'map:fitBounds')
+        expect(fit.params.options).toEqual({
+            padding: ZOOM_TO_LAYER_PADDING,
+            maxZoom: ZOOM_TO_LAYER_POINT_MAX_ZOOM,
+        })
+    })
+
+    test('zoomToLayer moves nothing for a layer with no extent', async () => {
+        const { requests } = setupMock(LOCATABLE)
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        await zoomToLayer('layerB')
+
+        expect(requests.map((r) => r.name)).toEqual(['layers:getBounds'])
+        // The panel has no channel for reporting a click that led nowhere, so
+        // the log is where it has to show up.
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('layerB'))
+        warn.mockRestore()
+    })
+
+    // Against a core too old to register the handler there is no extent to
+    // move to, and asking the map to fit nothing would throw.
+    test('zoomToLayer is a no-op against a core without the bounds handler', async () => {
+        const { requests } = setupMock({ 'map:fitBounds': true })
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        await zoomToLayer('layerA')
+
+        expect(requests).toHaveLength(0)
+        warn.mockRestore()
     })
 })
