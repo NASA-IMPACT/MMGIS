@@ -16,8 +16,7 @@ export const getVisibleLayersWithLegends = async ({
     const layerConfigs = await mmgisRequest<Record<string, Record<string, unknown>>>('layers:getAllConfigs')
     if (!layerConfigs) return []
 
-    const [visibleLayers, opacities, listed, cogCapabilities] = await Promise.all([
-    const [visibleLayers, opacities, cogCapabilities, titilerUrls] = await Promise.all([
+    const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls] = await Promise.all([
         mmgisRequest<Record<string, boolean>>('layers:getVisible'),
         mmgisRequest<Record<string, number>>('layers:getAllOpacities'),
         mmgisGetListedLayers(),
