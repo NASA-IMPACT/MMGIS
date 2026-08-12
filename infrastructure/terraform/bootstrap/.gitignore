@@ -1,0 +1,19 @@
+# Local Terraform state, plugins, and crash logs
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# The repo-root .gitignore excludes .terraform.lock.hcl globally; this root
+# COMMITS its dependency lock so a clean checkout resolves the exact provider
+# it was validated with.
+!.terraform.lock.hcl
+
+# Day-one-only local-backend override (see README.md); never committed
+backend_override.tf
+
+# Uncommitted, account-specific inputs (only *.example files are committed)
+terraform.tfvars
+*.auto.tfvars
+backend.hcl

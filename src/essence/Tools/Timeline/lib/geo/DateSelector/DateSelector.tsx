@@ -2,6 +2,9 @@ import React, { useState, useRef } from 'react'
 import moment from 'moment'
 import { FloatingPopover } from '../../FloatingPopover'
 import { TimeMode } from '../../types'
+import { ChevronLeft, ChevronRight } from '../../icons/Chevron'
+import { snapMonthToRange } from '../../utils/timeUtils'
+import { DayCalendar } from './DayCalendar'
 
 export interface DateSelectorProps {
     selectedDate: Date
@@ -9,6 +12,15 @@ export interface DateSelectorProps {
     endTime: Date
     timeMode?: TimeMode
     onDateChange: (date: Date) => void
+}
+
+// The granularity each time mode selects; a picked value covers this whole
+// interval, which is what range checking and clamping operate on.
+const UNIT_BY_MODE: Record<TimeMode, moment.unitOfTime.StartOf> = {
+    YEAR: 'year',
+    MONTH: 'month',
+    DAY: 'day',
+    HOUR: 'minute',
 }
 
 export const DateSelector: React.FC<DateSelectorProps> = ({
@@ -19,11 +31,20 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     onDateChange,
 }) => {
     const [isOpen, setIsOpen] = useState(false)
+    // YEAR and MONTH drive their own fields; DAY and HOUR use the native inputs.
+    const [yearInput, setYearInput] = useState('')
+    const [monthIndex, setMonthIndex] = useState(0)
     const [inputValue, setInputValue] = useState('')
+    const [error, setError] = useState<string | null>(null)
     const buttonRef = useRef<HTMLButtonElement>(null)
 
-    // Format the selected date for display
-    let formattedDate = moment(selectedDate).format('MMM D, YYYY')
+    const minYear = moment(startTime).year()
+    const maxYear = moment(endTime).year()
+
+    // Format the selected date for display. Deliberately not formatDateByMode:
+    // the axis labels a tick within a visible range and can stay terse, while
+    // this reads on its own and always carries the year.
+    let formattedDate = moment.utc(selectedDate).format('MMM D, YYYY')
     if (timeMode === 'YEAR') {
         formattedDate = moment(selectedDate).format('YYYY')
     } else if (timeMode === 'MONTH') {
@@ -32,6 +53,15 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
         formattedDate = moment(selectedDate).format('MMM D, YYYY, HH:mm')
     }
 
+    const popoverTitle =
+        timeMode === 'YEAR'
+            ? 'Select Year'
+            : timeMode === 'MONTH'
+              ? 'Select Month'
+              : timeMode === 'HOUR'
+                ? 'Select Date & Time'
+                : 'Select Date'
+
     const getFormatPattern = () => {
         if (timeMode === 'YEAR') return 'YYYY'
         if (timeMode === 'MONTH') return 'YYYY-MM'
@@ -39,48 +69,180 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
         return 'YYYY-MM-DD'
     }
 
-    const getInputType = () => {
-        if (timeMode === 'MONTH') return 'month'
-        if (timeMode === 'HOUR') return 'datetime-local'
-        return 'date'
-    }
-
     const handleDateClick = () => {
-        setIsOpen(!isOpen)
-        setInputValue(moment(selectedDate).format(getFormatPattern()))
+        const nextOpen = !isOpen
+        setIsOpen(nextOpen)
+        if (nextOpen) {
+            const selected = moment(selectedDate)
+            setYearInput(selected.format('YYYY'))
+            setMonthIndex(selected.month())
+            setInputValue(selected.format(getFormatPattern()))
+            setError(null)
+        }
     }
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setInputValue(e.target.value)
+    // The year is only usable once all four digits are typed.
+    const yearNumber = /^\d{4}$/.test(yearInput) ? parseInt(yearInput, 10) : NaN
+    const hasYear = !Number.isNaN(yearNumber)
+
+    // Every control applies its value straight away; the popover only closes on
+    // a discrete pick (a month cell) or Enter, so typing isn't cut short.
+    const commit = (candidate: moment.Moment, closeAfter = false) => {
+        if (!candidate.isValid()) {
+            setError('Enter a valid date')
+            return
+        }
+
+        // A picked value stands for its whole unit (a year, a month, a day), so
+        // it counts as in range when that unit overlaps the timeline at all.
+        // Clamping to the boundary then keeps partially covered units usable
+        // instead of rejecting them for starting before or after the range.
+        const unit = UNIT_BY_MODE[timeMode]
+        const unitStart = candidate.clone().startOf(unit).toDate()
+        const unitEnd = candidate.clone().endOf(unit).toDate()
+        if (unitEnd < startTime || unitStart > endTime) {
+            setError('Date must be within the timeline range')
+            return
+        }
+
+        let date = candidate.toDate()
+        if (date < startTime) date = new Date(startTime)
+        if (date > endTime) date = new Date(endTime)
+
+        setError(null)
+        onDateChange(date)
+        if (closeAfter) setIsOpen(false)
+    }
+
+    const commitYearMonth = (year: number, month: number, closeAfter = false) => {
+        if (timeMode !== 'MONTH') {
+            commit(moment({ year, month: 0, day: 1 }), closeAfter)
+            return
+        }
+        const snapped = snapMonthToRange(year, month, startTime, endTime)
+        if (snapped !== month) setMonthIndex(snapped)
+        commit(moment({ year, month: snapped, day: 1 }), closeAfter)
+    }
+
+    const commitHour = (datePart: string, timePart: string) => {
+        // Either half can be momentarily empty while being edited.
+        if (!datePart || !timePart) return
+        let candidate = moment(`${datePart}T${timePart}`)
+        if (!candidate.isValid()) {
+            setError('Enter a valid date')
+            return
+        }
+
+        // The first and last day of the range are only partly covered, so a time
+        // that falls off the edge of an otherwise valid day snaps to the
+        // boundary rather than being refused.
+        const day = candidate.clone()
+        if (candidate.toDate() < startTime && day.endOf('day').toDate() >= startTime) {
+            candidate = moment(startTime)
+        } else if (
+            candidate.toDate() > endTime &&
+            day.startOf('day').toDate() <= endTime
+        ) {
+            candidate = moment(endTime)
+        }
+
+        setInputValue(candidate.format('YYYY-MM-DDTHH:mm'))
+        setError(null)
+        commit(candidate)
+    }
+
+    const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const digits = e.target.value.replace(/\D/g, '').slice(0, 4)
+        setYearInput(digits)
+        setError(null)
+        if (/^\d{4}$/.test(digits)) {
+            commitYearMonth(parseInt(digits, 10), monthIndex)
+        }
+    }
+
+    const handleYearBlur = () => {
+        if (!hasYear) return
+        const clamped = Math.min(maxYear, Math.max(minYear, yearNumber))
+        if (clamped === yearNumber) return
+        setYearInput(String(clamped).padStart(4, '0'))
+        commitYearMonth(clamped, monthIndex)
+    }
+
+    const stepYear = (delta: number) => {
+        const base = hasYear ? yearNumber : moment(selectedDate).year()
+        const next = Math.min(maxYear, Math.max(minYear, base + delta))
+        setYearInput(String(next).padStart(4, '0'))
+        commitYearMonth(next, monthIndex)
+    }
+
+    const handleMonthClick = (month: number) => {
+        setMonthIndex(month)
+        if (!hasYear) {
+            setError('Enter a 4-digit year')
+            return
+        }
+        commitYearMonth(yearNumber, month, true)
+    }
+
+    // A month is selectable when any part of it falls inside the timeline range.
+    const isMonthInRange = (month: number) => {
+        if (!hasYear) return true
+        const start = moment({ year: yearNumber, month, day: 1 })
+        return (
+            start.clone().endOf('month').toDate() >= startTime &&
+            start.toDate() <= endTime
+        )
     }
 
     const handleInputSubmit = (e: React.FormEvent) => {
         e.preventDefault()
-        const newDate = timeMode === 'YEAR' ? moment(inputValue, 'YYYY') : moment(inputValue)
 
-        if (newDate.isValid()) {
-            let date = newDate.toDate()
-
-            // For YEAR granularity the value is Jan 1 of the year; if that year
-            // overlaps the timeline range, clamp it to the range boundary so an
-            // in-range year is accepted rather than rejected as out of range.
-            if (timeMode === 'YEAR') {
-                const year = newDate.year()
-                if (year >= moment(startTime).year() && year <= moment(endTime).year()) {
-                    if (date < startTime) date = new Date(startTime)
-                    if (date > endTime) date = new Date(endTime)
-                }
+        if (timeMode === 'YEAR' || timeMode === 'MONTH') {
+            if (!hasYear) {
+                setError('Enter a 4-digit year')
+                return
             }
-
-            // Clamp to valid range
-            if (date >= startTime && date <= endTime) {
-                onDateChange(date)
-                setIsOpen(false)
-            } else {
-                alert('Date must be within the timeline range')
-            }
+            commitYearMonth(yearNumber, monthIndex, true)
+        } else {
+            commit(moment(inputValue), true)
         }
     }
+
+    const yearField = (
+        <div className="date-field">
+            <button
+                type="button"
+                className="date-step-button"
+                onClick={() => stepYear(-1)}
+                disabled={hasYear && yearNumber <= minYear}
+                aria-label="Previous year"
+            >
+                <ChevronLeft />
+            </button>
+            <input
+                className="date-field-input"
+                type="text"
+                inputMode="numeric"
+                pattern="\d{4}"
+                maxLength={4}
+                size={4}
+                value={yearInput}
+                onChange={handleYearChange}
+                onBlur={handleYearBlur}
+                placeholder="YYYY"
+                aria-label="Year"
+            />
+            <button
+                type="button"
+                className="date-step-button"
+                onClick={() => stepYear(1)}
+                disabled={hasYear && yearNumber >= maxYear}
+                aria-label="Next year"
+            >
+                <ChevronRight />
+            </button>
+        </div>
+    )
 
     return (
         <div className="date-selector">
@@ -88,15 +250,26 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 <button
                     ref={buttonRef}
                     className="date-selector-main-button"
+                    data-time-mode={timeMode}
                     onClick={handleDateClick}
                     type="button"
                 >
-                    <i className="mdi mdi-calendar calendar-icon"></i>
+                    <svg
+                        className="calendar-icon"
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="16"
+                        height="16"
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        aria-hidden="true"
+                    >
+                        <path d="M6 2H14V0H16V2H19V20H1V2H4V0H6V2ZM3 18H17V8H3V18ZM3 6H17V4H3V6Z" />
+                    </svg>
                     <span className="date-text">{formattedDate}</span>
                 </button>
-                
+
                 <div className="date-selector-divider"></div>
-                
+
                 <button className="compare-date-button" type="button">
                     Compare date
                 </button>
@@ -109,99 +282,88 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 placement="bottom"
                 offset={10}
             >
-                <div className="date-selector-dropdown" style={{ position: 'relative', top: 0, left: 0 }}>
-                    <form onSubmit={handleInputSubmit} className="date-input-form">
-                        <label htmlFor="date-input">
-                            {timeMode === 'YEAR' ? 'Select Year' : timeMode === 'MONTH' ? 'Select Month' : timeMode === 'HOUR' ? 'Select Date & Time' : 'Select Date'}
-                        </label>
+                <div className="date-selector-dropdown">
+                    <form
+                        onSubmit={handleInputSubmit}
+                        className="date-input-form"
+                        aria-labelledby="date-picker-title"
+                    >
+                        <div className="date-picker-title" id="date-picker-title">
+                            {popoverTitle}
+                        </div>
 
-                        {timeMode === 'YEAR' && (
-                            <input
-                                id="date-input"
-                                type="number"
-                                value={inputValue}
-                                onChange={handleInputChange}
-                                min={moment(startTime).year()}
-                                max={moment(endTime).year()}
-                                step={1}
-                                placeholder="YYYY"
-                                className="time-input-field"
-                            />
+                        {timeMode === 'YEAR' && yearField}
+
+                        {timeMode === 'MONTH' && (
+                            <>
+                                {yearField}
+                                <div className="month-grid" role="group" aria-label="Month">
+                                    {moment.monthsShort().map((label, i) => {
+                                        const inRange = isMonthInRange(i)
+                                        return (
+                                            <button
+                                                key={label}
+                                                type="button"
+                                                className={`month-grid-cell${
+                                                    i === monthIndex
+                                                        ? ' month-grid-cell--selected'
+                                                        : ''
+                                                }`}
+                                                disabled={!inRange}
+                                                aria-pressed={i === monthIndex}
+                                                onClick={() => handleMonthClick(i)}
+                                            >
+                                                {label}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </>
                         )}
 
-                        {timeMode === 'MONTH' && (() => {
-                            const currentMonth = moment(inputValue || selectedDate).month() + 1
-                            const currentYear = moment(inputValue || selectedDate).year()
-                            const startY = moment(startTime).year()
-                            const endY = moment(endTime).year()
-                            const years = []
-                            for(let y=startY; y<=endY; y++) years.push(y)
-
-                            return (
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <select 
-                                        className="date-select" 
-                                        value={currentMonth.toString().padStart(2, '0')} 
-                                        onChange={(e) => setInputValue(`${currentYear}-${e.target.value}`)}
-                                    >
-                                        {moment.months().map((m, i) => <option key={m} value={(i+1).toString().padStart(2, '0')}>{m}</option>)}
-                                    </select>
-                                    <select 
-                                        className="date-select" 
-                                        value={currentYear} 
-                                        onChange={(e) => setInputValue(`${e.target.value}-${currentMonth.toString().padStart(2, '0')}`)}
-                                    >
-                                        {years.map(y => <option key={y} value={y}>{y}</option>)}
-                                    </select>
-                                </div>
-                            )
-                        })()}
-
                         {timeMode === 'HOUR' && (() => {
-                            const datePart = moment(inputValue || selectedDate).format('YYYY-MM-DD')
-                            const timePart = moment(inputValue || selectedDate).format('HH:mm')
+                            const current = moment(inputValue || selectedDate)
+                            const datePart = current.format('YYYY-MM-DD')
+                            const timePart = current.format('HH:mm')
                             return (
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <input 
-                                        className="time-input-field" 
-                                        type="date" 
-                                        value={datePart} 
-                                        onChange={e => setInputValue(`${e.target.value}T${timePart}`)} 
-                                        min={moment(startTime).format('YYYY-MM-DD')}
-                                        max={moment(endTime).format('YYYY-MM-DD')}
+                                <>
+                                    <DayCalendar
+                                        value={current.toDate()}
+                                        startTime={startTime}
+                                        endTime={endTime}
+                                        onSelect={(date) =>
+                                            commitHour(
+                                                moment(date).format('YYYY-MM-DD'),
+                                                timePart
+                                            )
+                                        }
                                     />
-                                    <input 
-                                        className="time-input-field" 
-                                        type="time" 
-                                        value={timePart} 
-                                        onChange={e => setInputValue(`${datePart}T${e.target.value}`)} 
+                                    <input
+                                        className="time-input-field"
+                                        type="time"
+                                        value={timePart}
+                                        onChange={e => commitHour(datePart, e.target.value)}
+                                        aria-label="Time"
                                     />
-                                </div>
+                                </>
                             )
                         })()}
 
                         {timeMode === 'DAY' && (
-                            <input
-                                id="date-input"
-                                type="date"
-                                value={inputValue}
-                                onChange={handleInputChange}
-                                min={moment(startTime).format('YYYY-MM-DD')}
-                                max={moment(endTime).format('YYYY-MM-DD')}
-                                className="time-input-field"
+                            <DayCalendar
+                                value={selectedDate}
+                                startTime={startTime}
+                                endTime={endTime}
+                                onSelect={(date) => commit(moment(date), true)}
                             />
                         )}
 
-                        <button type="submit" className="date-submit-button">
-                            Apply
-                        </button>
+                        {error && (
+                            <div className="date-input-error" role="alert">
+                                {error}
+                            </div>
+                        )}
                     </form>
-                    <div className="date-range-info">
-                        <small>Range</small>
-                        <div className="date-range-dates">
-                            {moment(startTime).format('MMM D, YYYY')} - {moment(endTime).format('MMM D, YYYY')}
-                        </div>
-                    </div>
                 </div>
             </FloatingPopover>
         </div>

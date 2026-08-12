@@ -18,6 +18,14 @@ import {
 } from './types/events'
 import { MapEngineType } from './types/engine'
 
+export interface MapScreenshotResult {
+    blob: Blob
+    mimeType: 'image/png'
+    extension: 'png'
+    width: number
+    height: number
+}
+
 /**
  * Core map engine contract.
  *
@@ -64,6 +72,18 @@ export interface IMapEngine<
      * Get the DOM container element holding the map.
      */
     getContainer(): HTMLElement
+
+    /**
+     * Capture the current map view as a PNG image.
+     *
+     * Each engine owns the capture strategy for its rendering technology:
+     * - Leaflet rasterizes its DOM/SVG/tile panes with html2canvas.
+     * - deck.gl reads the WebGL canvas directly (the base map's GL context
+     *   when running in interleaved overlay mode), which html2canvas cannot do.
+     *
+     * @returns Resolves to a PNG image Blob plus metadata.
+     */
+    captureScreenshot(): Promise<MapScreenshotResult>
 
     /**
      * Jump to a center and zoom without animation.
@@ -198,8 +218,13 @@ export interface IMapEngine<
 
     /**
      * Set the opacity of a layer.
+     *
+     * Engines with immutable layer objects (deck.gl) return the instance that
+     * carries the new opacity; callers holding a reference to the layer must
+     * replace it with the returned one. Engines that mutate in place (Leaflet)
+     * return nothing.
      */
-    setLayerOpacity(layer: TLayer | string, opacity: number): void
+    setLayerOpacity(layer: TLayer | string, opacity: number): TLayer | void
 
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).

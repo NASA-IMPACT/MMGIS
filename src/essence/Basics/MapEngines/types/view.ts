@@ -45,18 +45,38 @@ export interface FitBoundsOptions extends ViewOptions {
 }
 
 /**
- * Supported basemap providers for deck.gl overlay mode.
+ * Supported basemap providers for deck.gl and Leaflet overlay mode.
  *
  * `'maplibre'` uses MapLibre GL JS (open-source, no access token required).
  * `'mapbox'` uses Mapbox GL JS (requires a valid {@link BasemapOptions.accessToken}).
  */
-export type BasemapProvider = 'mapbox' | 'maplibre'
+export type BasemapProvider = 'mapbox' | 'maplibre' | 'none'
 
 /**
- * Configuration for an optional vector-tile basemap rendered beneath deck.gl layers
- * via `@deck.gl/mapbox`'s `MapboxOverlay`. When present, the adapter runs in overlay
- * mode; when absent it falls back to a standalone `Deck` instance with a transparent
- * background.
+ * A named basemap style preset for the in-map style switcher control.
+ * Each entry maps a user-friendly display name to a MapLibre/Mapbox style URL.
+ *
+ * @example
+ * ```ts
+ * { name: 'Streets', style: 'https://demotiles.maplibre.org/style.json' }
+ * ```
+ */
+export interface BasemapStyleEntry {
+    /** Display name shown in the style switcher. */
+    name: string
+    /** MapLibre/Mapbox style URL for this entry. */
+    style: string
+}
+
+/**
+ * Configuration for an optional vector-tile basemap rendered beneath map layers
+ * for both the deck.gl and Leaflet adapters.
+ *
+ * **deck.gl**: Uses `@deck.gl/mapbox`'s `MapboxOverlay` to composite deck.gl layers
+ * on top of a MapLibre/Mapbox GL basemap.
+ *
+ * **Leaflet**: Creates a MapLibre/Mapbox GL map behind a transparent Leaflet canvas
+ * and synchronises pan/zoom events so the basemap and Leaflet layers stay aligned.
  *
  * The chosen provider's stylesheet must be imported in the application entry point:
  * `import 'maplibre-gl/dist/maplibre-gl.css'` or `import 'mapbox-gl/dist/mapbox-gl.css'`.
@@ -69,6 +89,7 @@ export interface BasemapOptions {
     provider: BasemapProvider
     /**
      * Map style URL or a Mapbox/MapLibre style JSON object URL.
+     * This is the default/initial style that the basemap loads with.
      * @example 'https://demotiles.maplibre.org/style.json'
      * @example 'mapbox://styles/mapbox/streets-v12'
      */
@@ -78,6 +99,12 @@ export interface BasemapOptions {
      * Ignored for `'maplibre'`.
      */
     accessToken?: string
+    /**
+     * Optional array of named style presets for the in-map style switcher control.
+     * When provided, a floating UI selector lets the user switch between basemap
+     * styles (e.g. Streets, Satellite, Terrain) at runtime.
+     */
+    styles?: BasemapStyleEntry[]
 }
 
 /**
@@ -102,9 +129,12 @@ export interface MapInitOptions {
     editable?: boolean
     projection?: ProjectionOptions
     /**
-     * Optional vector-tile basemap to render beneath deck.gl layers via `MapboxOverlay`.
-     * When absent the DeckGL adapter operates in standalone mode with a transparent background.
-     * Has no effect on the Leaflet adapter.
+     * Optional vector-tile basemap to render beneath map layers.
+     *
+     * - **deck.gl**: renders via `MapboxOverlay` (overlay mode).
+     * - **Leaflet**: renders a MapLibre/Mapbox GL map behind a transparent Leaflet canvas.
+     *
+     * When absent, both adapters fall back to their default (no basemap) behaviour.
      */
     basemap?: BasemapOptions
 }

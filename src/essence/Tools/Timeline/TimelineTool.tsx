@@ -1,7 +1,7 @@
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { TimelineAdapter } from './TimelineAdapter'
-import { mmgisRequest } from './adapters/mmgisAPI'
+import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 
 type ToolVars = {
     width?: number
@@ -16,7 +16,6 @@ const TimelineTool = {
     vars: {} as ToolVars,
     targetId: null as string | null,
     made: false,
-    _cleanups: [] as Array<() => void>,
 
     initialize: async function () {
         try {
@@ -57,6 +56,12 @@ const TimelineTool = {
             )
             return
         }
+        // A prior root left mounted on this container would collide with the
+        // new one, so it is torn down first.
+        if (_root) {
+            _root.unmount()
+            _root = null
+        }
         _root = createRoot(container)
         _root.render(<TimelineAdapter />)
         this.made = true
@@ -67,8 +72,6 @@ const TimelineTool = {
             _root.unmount()
             _root = null
         }
-        this._cleanups.forEach((cleanup) => cleanup())
-        this._cleanups = []
         this.targetId = null
         this.made = false
     },

@@ -40,6 +40,8 @@ export interface TileLayerOptions extends LayerOptions {
     maxNativeZoom?: number
     tileSize?: number
     tileElevation?: number
+    /** 'wms' => deck.gl WMSLayer; else a {z}/{x}/{y} url template. */
+    tileformat?: string
     nativeOptions?: Record<string, unknown>
 }
 

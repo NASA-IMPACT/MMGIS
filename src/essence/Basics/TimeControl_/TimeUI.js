@@ -90,19 +90,51 @@ const TimeUI = {
     modeIndex: 0,
     _initialStart: null,
     _initialEnd: null,
+    // Payload of the last emitted time:changeRequested — used to recognize
+    // the committed echo on time:changed and skip a redundant resync
+    _lastEmitted: null,
+    // When true, change() updates the UI but does not emit — used while
+    // mirroring already-committed TimeControl state
+    _suppressChangeEmit: false,
     // Follow Feature properties
     followEnabled: false,
     followedFeature: null, // {layerName, featureId, properties}
-    init: function (timeChange, enabled) {
-        TimeUI.timeChange = timeChange
-        TimeUI.enabled = enabled
+    init: function () {
+        TimeUI.enabled = L_.configData.time?.enabled === true
         TimeUI._cleanups = [] // Track cleanup functions for event listeners
 
-        // Subscribe to TimeControl events via Event Bus
+        // Subscribe to TimeControl events via Event Bus. TimeControl commits
+        // all time state itself; this widget only mirrors committed state and
+        // requests changes with time:changeRequested.
         if (window.mmgisAPI) {
             TimeUI._cleanups.push(
-                window.mmgisAPI.on('time:setRequested', (data) => {
-                    TimeUI.updateTimes(data.startTime, data.endTime, data.currentTime)
+                window.mmgisAPI.on('time:changed', (data) => {
+                    // Skip the echo of this widget's own committed request.
+                    // Consume it: a stale _lastEmitted would otherwise also
+                    // match a later external commit of the same times and
+                    // wrongly skip that resync.
+                    const le = TimeUI._lastEmitted
+                    if (
+                        le != null &&
+                        le.startTime === data.startTime &&
+                        le.endTime === data.endTime &&
+                        le.currentTime === data.currentTime
+                    ) {
+                        TimeUI._lastEmitted = null
+                        return
+                    }
+                    // Sync widgets without re-emitting: the state is already
+                    // committed, so emitting again would reload layers twice.
+                    TimeUI._suppressChangeEmit = true
+                    try {
+                        TimeUI.updateTimes(
+                            data.startTime,
+                            data.endTime,
+                            data.currentTime
+                        )
+                    } finally {
+                        TimeUI._suppressChangeEmit = false
+                    }
                 }),
                 // Listen for time layer reloads to handle follow feature
                 window.mmgisAPI.on('time:layersReloaded', (data) => {
@@ -111,15 +143,6 @@ const TimeUI = {
             )
         }
 
-        // Check if we're in modern mode - skip UI initialization if so
-        const isModernMode = $('#modern-content').length > 0
-        if (isModernMode) {
-            // In modern mode, TimeUI doesn't render - modern timeline tool handles it
-            // But event listeners are still active for the API
-            return TimeUI
-        }
-
-        // Legacy mode: Initialize TimeUI as normal
         // prettier-ignore
         let markup = [
             `<div id="mmgisTimeUI">`,
@@ -398,7 +421,7 @@ const TimeUI = {
             }, 200)
         }
     },
-    attachEvents: function (timeChange) {
+    attachEvents: function () {
         // Defensive: if the markup never mounted (e.g. no compatible container
         // in the active layout), skip rather than constructing TempusDominus
         // against a null element, which throws and aborts app initialization.
@@ -1020,31 +1043,9 @@ const TimeUI = {
 
         let dateAddSec = null
 
-        // Initial end
-        if (L_.FUTURES.endTime != null) {
-            L_.configData.time.initialend = L_.FUTURES.endTime
-        }
-
-        // parse formats like "2024-03-04T14:05:00Z + 10000000" for relative times
-        dateAddSec = parseTimeWithOffset(
-            L_.configData.time.initialend
-        )
-        if (
-            L_.configData.time.initialend != null &&
-            L_.configData.time.initialend != 'now'
-        ) {
-            const dateStaged = new Date(dateAddSec.dateString)
-            if (dateStaged == 'Invalid Date') {
-                TimeUI._initialEnd = new Date()
-                console.warn(
-                    "Invalid 'Initial End Time' provided. Defaulting to 'now'."
-                )
-            } else TimeUI._initialEnd = dateStaged
-        } else TimeUI._initialEnd = new Date()
-        TimeUI._initialEnd.setSeconds(
-            TimeUI._initialEnd.getSeconds() + dateAddSec.additionalSeconds
-        )
-
+        // Initial start/end come from TimeControl's committed state (set in
+        // TimeControl.init()) — see fina(). Only the timeline window, a
+        // purely presentational concern, is derived here.
         if (
             L_.configData.time.initialwindowend != null &&
             L_.configData.time.initialwindowend != 'now'
@@ -1064,46 +1065,6 @@ const TimeUI = {
                     dateStaged.getSeconds() + dateAddSec.additionalSeconds
                 )
                 TimeUI._timelineEndTimestamp = dateStaged.getTime()
-            }
-        }
-
-        // Initial start
-        // Start 1 month ago
-        TimeUI._initialStart = new Date(TimeUI._initialEnd)
-        if (L_.FUTURES.startTime != null) {
-            L_.configData.time.initialstart = L_.FUTURES.startTime
-        }
-
-        if (L_.configData.time.initialstart == null)
-            TimeUI._initialStart.setUTCMonth(
-                TimeUI._initialStart.getUTCMonth() - 1
-            )
-        else {
-            // parse formats like "2024-03-04T14:05:00Z + 10000000" for relative times
-            dateAddSec = parseTimeWithOffset(
-                L_.configData.time.initialstart
-            )
-
-            const dateStaged = new Date(dateAddSec.dateString)
-            if (dateStaged == 'Invalid Date') {
-                TimeUI._initialStart.setUTCMonth(
-                    TimeUI._initialStart.getUTCMonth() - 1
-                )
-                console.warn(
-                    "Invalid 'Initial Start Time' provided. Defaulting to 1 month before the end time."
-                )
-            } else {
-                dateStaged.setSeconds(
-                    dateStaged.getSeconds() + dateAddSec.additionalSeconds
-                )
-                if (dateStaged.getTime() > TimeUI._initialEnd.getTime()) {
-                    TimeUI._initialStart.setUTCMonth(
-                        TimeUI._initialStart.getUTCMonth() - 1
-                    )
-                    console.warn(
-                        "'Initial Start Time' cannot be later than the end time. Defaulting to 1 month before the end time."
-                    )
-                } else TimeUI._initialStart = dateStaged
             }
         }
 
@@ -1132,32 +1093,19 @@ const TimeUI = {
             }
         }
 
-        // FIXME
-        if (TimeUI.timeChange) {
-            if (L_.UserInterface_?.isMobile !== true) {
-                // Initialize the time control times, but don't trigger events
-                TimeUI.timeChange(
-                    TimeUI._initialStart.toISOString(),
-                    TimeUI._initialEnd.toISOString(),
-                    null,
-                    true
-                )
-            } else {
-                // If in mobile mode, the TimeUI is created and destroyed based on whether it is visible
-                // or not and the user selected time should persist after the TimeUI is opened/closed
-                TimeUI._initialStart = L_.TimeControl_?.startTime
-                TimeUI._initialEnd = L_.TimeControl_?.endTime
-
-                TimeUI.timeChange(
-                    L_.TimeControl_?.startTime,
-                    L_.TimeControl_?.endTime,
-                    null,
-                    true
-                )
-            }
-        }
     },
     fina() {
+        // Seed the widgets from TimeControl's committed state — TimeControl
+        // derives and owns the time state. Reading committed state also
+        // keeps the user's selected time when mobile destroys and recreates
+        // the TimeUI.
+        TimeUI._initialStart = new Date(L_.TimeControl_.startTime)
+        TimeUI._initialEnd = new Date(L_.TimeControl_.endTime)
+
+        // Seed without emitting time:changeRequested: this state is already
+        // committed, and TimeControl.fina() drives the single initial reload.
+        TimeUI._suppressChangeEmit = true
+
         let date
         // Initial end
         date = new Date(TimeUI._initialEnd)
@@ -1172,23 +1120,6 @@ const TimeUI = {
         }
 
         // Initial start
-        // Start 1 month ago
-        if (L_.configData.time.initialstart == null)
-            date.setUTCMonth(date.getUTCMonth() - 1)
-        else {
-            const dateStaged = new Date(L_.configData.time.initialstart)
-            if (dateStaged === 'Invalid Date') {
-                date.setUTCMonth(date.getUTCMonth() - 1)
-                console.warn(
-                    "Invalid 'Initial Start Time' provided. Defaulting to 1 month before the end time."
-                )
-            } else if (dateStaged.getTime() > savedEndDate.getTime()) {
-                date.setUTCMonth(date.getUTCMonth() - 1)
-                console.warn(
-                    "'Initial Start Time' cannot be later than the end time. Defaulting to 1 month before the end time."
-                )
-            } else date = dateStaged
-        }
         date = new Date(TimeUI._initialStart)
 
         const offsetStartDate = TimeUI.addOffset(date.getTime())
@@ -1214,6 +1145,10 @@ const TimeUI = {
         if (TimeUI.enabled) {
             TimeUI._makeHistogram()
         }
+
+        // Widgets now mirror the committed state; anything below (mode
+        // changes, live mode) is a real state change and must emit.
+        TimeUI._suppressChangeEmit = false
 
         if (L_.configData.time?.startInPointMode == true)
             TimeUI.changeMode(TimeUI.modes.indexOf('Point'))
@@ -3051,6 +2986,10 @@ const TimeUI = {
         }
     },
     updateTimes(start, end, current) {
+        // The widgets may not be mounted (e.g. TimeUI absent in the modern
+        // layout, or called before make()) — nothing to sync against.
+        if (TimeUI.startTempus == null || TimeUI.endTempus == null) return false
+
         let date
 
         // Start
@@ -3224,6 +3163,7 @@ const TimeUI = {
     },
     change() {
         if (
+            TimeUI._suppressChangeEmit !== true &&
             TimeUI._startTimestamp != null &&
             TimeUI._endTimestamp != null
         ) {
@@ -3240,16 +3180,17 @@ const TimeUI = {
                   ).toISOString()
             const currentTime = new Date(TimeUI.getCurrentTimestamp(true)).toISOString()
 
-            // Event Bus is the single canonical path for user time changes.
-            // Direct callback only used in a no-mmgisAPI build.
+            // The Event Bus is the single path for user time changes:
+            // TimeControl commits them and broadcasts 'time:changed' back.
+            // _lastEmitted lets that listener recognize the echo of this
+            // request and skip a redundant widget resync.
+            TimeUI._lastEmitted = { startTime, endTime, currentTime }
             if (window.mmgisAPI) {
                 window.mmgisAPI.emit('time:changeRequested', {
                     startTime,
                     endTime,
                     currentTime,
                 })
-            } else if (typeof TimeUI.timeChange === 'function') {
-                TimeUI.timeChange(startTime, endTime, currentTime)
             }
         }
         // Update expanded rows if expanded
@@ -3509,7 +3450,7 @@ function interfaceWithMMWebGIS() {
     //Add the markup to tools or do it manually
     //tools.html(markup)
 
-    TimeUI.init(TimeUI.timeChange, true)
+    TimeUI.init()
 
     function separateFromMMWebGIS() {
         const tools = $('#tools')

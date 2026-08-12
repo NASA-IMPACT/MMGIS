@@ -65,21 +65,21 @@ else
   mw_info "wrote .env: port=$port db=$dbname"
 fi
 
-# --- database (clone the frozen golden; before npm install so a missing golden fails fast) ---
+# --- database (clone the frozen template DB; before npm ci so a missing template DB fails fast) ---
 if mw_db_exists "$dbname"; then
   mw_info "database $dbname already exists (skipping clone)"
 else
-  mw_db_exists mmgis_golden || mw_die "mmgis_golden does not exist — run seed-golden.sh (builds it from the committed baseline) or refresh-golden.sh (snapshots a live DB)"
-  mw_psql postgres "CREATE DATABASE \"$dbname\" TEMPLATE mmgis_golden"
-  mw_info "cloned mmgis_golden -> $dbname"
+  mw_db_exists mmgis_template_db || mw_die "mmgis_template_db does not exist — run seed-template-db.sh (builds it from the committed baseline) or refresh-template-db.sh (snapshots a live DB)"
+  mw_psql postgres "CREATE DATABASE \"$dbname\" TEMPLATE mmgis_template_db"
+  mw_info "cloned mmgis_template_db -> $dbname"
 fi
 
 # --- node_modules ---
 if [ -d "$dir/node_modules" ]; then
-  mw_info "node_modules present (skipping npm install)"
+  mw_info "node_modules present (skipping npm ci)"
 else
-  mw_info "running npm install --force (takes a few minutes)..."
-  (cd "$dir" && npm install --force)
+  mw_info "running npm ci (takes a few minutes)..."
+  (cd "$dir" && npm ci)
 fi
 
 # --- configure CMS bundle ---

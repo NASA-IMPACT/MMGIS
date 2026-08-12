@@ -2,7 +2,7 @@
 # teardown.sh — remove a deployment: stop server, drop its database, remove the worktree.
 #   teardown.sh <name|dir> [--force]
 # Safety: refuses if the deployment has uncommitted or unpushed work, unless --force.
-# Never touches the main checkout or the protected databases (mmgis, mmgis_golden, mmgis-stac).
+# Never touches the main checkout or the protected databases (mmgis, mmgis_template_db, mmgis-stac).
 # NOTE: the agent must show this plan and get explicit user confirmation before running.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -57,7 +57,7 @@ if [ "$force" -ne 1 ] && { [ -n "$dirty" ] || [ -n "$unpushed" ]; }; then
   mw_die "uncommitted or unpushed work present — re-run with --force to override."
 fi
 case "$db" in
-  mmgis|mmgis_golden|mmgis-stac|"") [ -z "$db" ] || mw_die "refusing to drop protected database: $db" ;;
+  mmgis|mmgis_template_db|mmgis-stac|"") [ -z "$db" ] || mw_die "refusing to drop protected database: $db" ;;
 esac
 
 # stop server

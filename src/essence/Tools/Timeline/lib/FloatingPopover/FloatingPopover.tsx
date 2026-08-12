@@ -8,6 +8,15 @@ export interface FloatingPopoverProps {
     placement?: 'top' | 'bottom' | 'left' | 'right'
     offset?: number
     className?: string
+    /** Ties the anchor's aria-controls to this popover. */
+    id?: string
+    /** Accessible name for the dialog. */
+    label?: string
+    /**
+     * Moves focus into the popover on open. Leave false for informational
+     * content, where taking focus off the trigger is disruptive.
+     */
+    autoFocus?: boolean
     children: React.ReactNode
 }
 
@@ -18,10 +27,75 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
     placement = 'bottom',
     offset = 8,
     className = '',
+    id,
+    label,
+    autoFocus = false,
     children
 }) => {
     const popupRef = useRef<HTMLDivElement>(null)
     const [pos, setPos] = useState({ top: 0, left: 0 })
+    // Whether focus currently sits inside the popover. Read on close, when the
+    // portal's DOM is already detached and document.activeElement has fallen
+    // back to <body>, so it can't be worked out from the DOM by then.
+    const focusInsideRef = useRef(false)
+
+    useEffect(() => {
+        if (!isOpen) return
+
+        const trackFocus = () => {
+            focusInsideRef.current = !!(
+                popupRef.current &&
+                document.activeElement &&
+                popupRef.current.contains(document.activeElement)
+            )
+        }
+
+        trackFocus()
+        document.addEventListener('focusin', trackFocus)
+        return () => document.removeEventListener('focusin', trackFocus)
+    }, [isOpen])
+
+    // Escape closes from anywhere, including while focus sits on the trigger.
+    useEffect(() => {
+        if (!isOpen || !onClose) return
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation()
+                onClose()
+            }
+        }
+
+        document.addEventListener('keydown', handleKeyDown)
+        return () => document.removeEventListener('keydown', handleKeyDown)
+    }, [isOpen, onClose])
+
+    // The portal renders at the end of document.body, so focus is placed and
+    // restored explicitly rather than following DOM order.
+    useEffect(() => {
+        if (!isOpen) return
+        const previouslyFocused = document.activeElement as HTMLElement | null
+
+        if (autoFocus) {
+            const focusTarget =
+                popupRef.current?.querySelector<HTMLElement>(
+                    'input, button, [href], select, textarea, [tabindex]:not([tabindex="-1"])',
+                ) || popupRef.current
+            focusTarget?.focus()
+        }
+
+        return () => {
+            // Only reclaim focus if the popover held it as it closed; a click
+            // elsewhere has already placed focus where the user wants it.
+            if (!focusInsideRef.current) return
+            focusInsideRef.current = false
+
+            const anchor = anchorRef.current
+            const restoreTo =
+                anchor && document.contains(anchor) ? anchor : previouslyFocused
+            restoreTo?.focus()
+        }
+    }, [isOpen, autoFocus, anchorRef])
 
     // Close on outside click
     useEffect(() => {
@@ -108,11 +182,21 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
         window.addEventListener('resize', updatePosition)
         window.addEventListener('scroll', updatePosition, true)
 
+        // Content can change size after opening — a validation message
+        // appearing, a calendar switching to a longer month — which moves where
+        // the popover should sit relative to its anchor.
+        const contentObserver =
+            typeof ResizeObserver !== 'undefined'
+                ? new ResizeObserver(updatePosition)
+                : null
+        if (popupRef.current) contentObserver?.observe(popupRef.current)
+
         // Wait a tick and update again in case children render changed dimensions
         const timeout = setTimeout(updatePosition, 0)
 
         return () => {
             clearTimeout(timeout)
+            contentObserver?.disconnect()
             window.removeEventListener('resize', updatePosition)
             window.removeEventListener('scroll', updatePosition, true)
         }
@@ -123,6 +207,10 @@ export const FloatingPopover: React.FC<FloatingPopoverProps> = ({
     return createPortal(
         <div
             ref={popupRef}
+            id={id}
+            role="dialog"
+            aria-label={label}
+            tabIndex={-1}
             className={`floating-popover-portal ${className}`}
             style={{
                 position: 'fixed',

@@ -32,23 +32,25 @@ export function generateTimeTicks(
     const ticks: Date[] = []
     const { unit, value } = getTimeStep(mode)
 
-    let current = moment(startTime).startOf(unit as moment.unitOfTime.StartOf)
-    const end = moment(endTime)
+    // The whole plugin reads and writes UTC, so ticks snap to UTC unit
+    // boundaries. Local snapping would offset every label from the date it
+    // carries by the viewer's UTC offset.
+    const start = moment.utc(startTime)
+    const end = moment.utc(endTime)
+    if (!end.isAfter(start)) return [startTime]
+
+    // Snapping to the unit boundary can land before the domain; step forward
+    // until the first tick is inside it so the axis never renders a label for
+    // an instant left of startTime.
+    let current = start.clone().startOf(unit as moment.unitOfTime.StartOf)
 
     const totalSteps = end.diff(current, unit as moment.unitOfTime.Diff) / value
     let stepMultiplier = 1
     if (totalSteps > maxTicks) {
         stepMultiplier = Math.ceil(totalSteps / maxTicks)
-        
-        // Make the multiplier "nice" (e.g. multiples of 2, 5, 10)
-        if (unit === 'minutes' || unit === 'seconds') {
-            if (stepMultiplier <= 2) stepMultiplier = 2
-            else if (stepMultiplier <= 5) stepMultiplier = 5
-            else if (stepMultiplier <= 10) stepMultiplier = 10
-            else if (stepMultiplier <= 15) stepMultiplier = 15
-            else if (stepMultiplier <= 30) stepMultiplier = 30
-            else stepMultiplier = Math.ceil(stepMultiplier / 60) * 60
-        } else if (unit === 'hours') {
+
+        // Round the multiplier to a readable interval
+        if (unit === 'hours') {
             if (stepMultiplier <= 2) stepMultiplier = 2
             else if (stepMultiplier <= 3) stepMultiplier = 3
             else if (stepMultiplier <= 6) stepMultiplier = 6
@@ -62,15 +64,21 @@ export function generateTimeTicks(
         }
     }
 
+    const step = value * stepMultiplier
+    while (current.isBefore(start)) {
+        current = current.add(step, unit)
+    }
+
     let count = 0
     while (current.isBefore(end) && count < maxTicks) {
         ticks.push(current.toDate())
-        current = current.add(value * stepMultiplier, unit as moment.unitOfTime.DurationConstructor)
+        current = current.clone().add(step, unit)
         count++
     }
 
-    // Always add the end tick
-    if (ticks.length === 0 || ticks[ticks.length - 1].getTime() !== endTime.getTime()) {
+    // Close the axis on the domain's end, unless a tick already sits there.
+    const last = ticks[ticks.length - 1]
+    if (!last || last.getTime() !== endTime.getTime()) {
         ticks.push(endTime)
     }
 
@@ -78,10 +86,11 @@ export function generateTimeTicks(
 }
 
 /**
- * Format date based on time mode
+ * Format date based on time mode. UTC, matching the header, the layer bar
+ * tooltips and the scrubber's accessible value.
  */
 export function formatDateByMode(date: Date, mode: TimeMode): string {
-    const m = moment(date)
+    const m = moment.utc(date)
     switch (mode) {
         case 'YEAR':
             return m.format('YYYY')
@@ -95,31 +104,35 @@ export function formatDateByMode(date: Date, mode: TimeMode): string {
 }
 
 /**
- * Calculate zoom extents for the timeline
+ * Move an instant by whole time-mode units, in UTC. Local calendar arithmetic
+ * would make a step across the viewer's daylight-saving boundary 23 or 25
+ * hours long, drifting the displayed UTC clock by an hour each time.
  */
-export function calculateZoomExtent(
-    totalDuration: number,
-    mode: TimeMode
-): [number, number] {
-    // Minimum zoom shows at least 2 units
-    // Maximum zoom shows the entire range
-    const minUnits = 2
-    const maxUnits = Math.ceil(totalDuration / getMillisecondsPerUnit(mode))
-
-    return [1, Math.max(maxUnits / minUnits, 1)]
+export function stepTime(date: Date, mode: TimeMode, steps: number): Date {
+    const { unit, value } = getTimeStep(mode)
+    return moment
+        .utc(date)
+        .add(steps * value, unit)
+        .toDate()
 }
 
-function getMillisecondsPerUnit(mode: TimeMode): number {
-    switch (mode) {
-        case 'YEAR':
-            return 365 * 24 * 60 * 60 * 1000 // Approximate
-        case 'MONTH':
-            return 30 * 24 * 60 * 60 * 1000 // Approximate
-        case 'DAY':
-            return 24 * 60 * 60 * 1000
-        case 'HOUR':
-            return 60 * 60 * 1000
-    }
+/**
+ * The month of `year` nearest to `month` that [startTime, endTime] covers.
+ * Stepping or typing a year can leave the held month outside the timeline —
+ * January of the end year, say, when the range only reaches back to June — so
+ * the pickers snap to the nearest covered month instead of refusing the year.
+ */
+export function snapMonthToRange(
+    year: number,
+    month: number,
+    startTime: Date,
+    endTime: Date
+): number {
+    const start = moment.utc(startTime)
+    const end = moment.utc(endTime)
+    const first = year === start.year() ? start.month() : 0
+    const last = year === end.year() ? end.month() : 11
+    return Math.min(last, Math.max(first, month))
 }
 
 /**
