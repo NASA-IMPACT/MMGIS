@@ -366,8 +366,7 @@
     flex-wrap: wrap;
 }
 
-.aoi-draw__shape,
-.aoi-draw__history {
+.aoi-draw__shape {
     width: 36px;
     height: 36px;
     display: inline-flex;
@@ -380,8 +379,7 @@
     cursor: pointer;
 }
 
-.aoi-draw__shape:hover:not(:disabled),
-.aoi-draw__history:hover:not(:disabled) {
+.aoi-draw__shape:hover:not(:disabled) {
     border-color: var(--aoi-border-hover);
 }
 
@@ -390,55 +388,14 @@
     border-color: var(--aoi-fg);
 }
 
-.aoi-draw__shape:disabled,
-.aoi-draw__history:disabled {
+.aoi-draw__shape:disabled {
     opacity: 0.5;
     cursor: not-allowed;
 }
 
-.aoi-draw__shape-icon,
-.aoi-draw__history-icon {
+.aoi-draw__shape-icon {
     font-size: 16px;
     line-height: 1;
-}
-
-.aoi-draw__divider {
-    width: 1px;
-    height: 24px;
-    background: var(--aoi-border);
-    margin: 0 var(--aoi-space-1);
-}
-
-.aoi-draw__actions {
-    display: flex;
-    gap: var(--aoi-space-2);
-}
-
-.aoi-draw__confirm,
-.aoi-draw__cancel {
-    flex: 1 1 auto;
-    height: 36px;
-    border-radius: var(--aoi-radius-sm);
-    cursor: pointer;
-    font: inherit;
-    font-weight: 600;
-}
-
-.aoi-draw__confirm {
-    border: 1px solid var(--aoi-accent);
-    background: var(--aoi-accent);
-    color: var(--aoi-accent-fg);
-}
-
-.aoi-draw__confirm:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.aoi-draw__cancel {
-    border: 1px solid var(--aoi-border);
-    background: var(--aoi-bg);
-    color: var(--aoi-fg);
 }
 
 .aoi-upload__button {

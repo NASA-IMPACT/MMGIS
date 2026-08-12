@@ -1,4 +1,5 @@
 // Holds all layer data
+import { buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
@@ -15,7 +16,9 @@ import {
 import {
     buildTileUrlOptions,
     compileTileUrl,
+    cogSourceType,
     hasCogColormap,
+    shouldUseDeckRaster,
     supportsCogTransform,
 } from './tileUrlUtils'
 import $ from 'jquery'
@@ -41,9 +44,18 @@ function cogCapabilitiesFor(uuid) {
     // never reads.
     const sourceUrl =
         getTileLevelUrl(getActiveTileLevel(layerObj || {})) || layerObj?.url
+    // A deckRaster layer changes its colormap by rebuilding the layer rather
+    // than recompiling a tile URL, so it qualifies without a service-prefixed
+    // source — which is what supportsCogTransform requires.
+    const deckRaster = shouldUseDeckRaster(
+        L_.Map_?.engine?.engineType,
+        cogSourceType(sourceUrl),
+        layerObj || {}
+    )
     return {
         hasColormap: hasCogColormap(layerObj),
-        canChangeColormap: supportsCogTransform(layerObj, sourceUrl),
+        canChangeColormap:
+            supportsCogTransform(layerObj, sourceUrl) || deckRaster,
     }
 }
 
@@ -184,6 +196,9 @@ const L_ = {
         nameToUUID: {},
         refreshIntervals: {}, // In order to reloadLayer
         refreshFailed: {}, // Track layers with failed refreshes
+        // Name -> { status: 'ok' | 'error', message } as reported by the map
+        // engine's request hooks. Written only via L_.setLayerLoadStatus.
+        loadStatus: {},
     },
     // ===== Private ======
     //Index -> layer name
@@ -338,6 +353,27 @@ const L_ = {
                 }),
                 window.mmgisAPI.provide('layers:refresh', async ({ layerUUID, options }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
+                    const layerObj = L_.layers.data[uuid]
+                    // Deck.gl deckRaster COG branch: rebuild the layer with updated
+                    // current* values and re-register it so deck.gl diffs in place.
+                    if (
+                        L_.Map_ &&
+                        L_.Map_.engine &&
+                        L_.Map_.engine.engineType === 'deckgl' &&
+                        layerObj &&
+                        layerObj.cogRendererMode === 'deckRaster'
+                    ) {
+                        // The existing layer's geotiff prop is the already
+                        // resolved (and time-substituted) file URL; fall back
+                        // to getUrl only if the instance is unavailable.
+                        const existing = L_.layers.layer[uuid]
+                        const rawCogUrl =
+                            (existing && existing.props && existing.props.geotiff) ||
+                            L_.getUrl(layerObj.type, layerObj.url, layerObj)
+                        L_.rebuildDeckCOGLayer(layerObj, rawCogUrl)
+                        return true
+                    }
+                    // Leaflet fallback — unchanged existing path.
                     const tileLayer = L_.layers.layer[uuid]
                     if (tileLayer && typeof tileLayer.refresh === 'function') {
                         tileLayer.refresh(null, false, options || {})
@@ -395,6 +431,24 @@ const L_ = {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true
                 }),
+                // In-memory layer add/remove (not persisted; lost on reload).
+                // layerObj requires { name, type, ... }. See mmgisAPI.addLayer.
+                window.mmgisAPI.provide('layers:addLayer', (layerObj) =>
+                    window.mmgisAPI.addLayer(layerObj)
+                ),
+                window.mmgisAPI.provide('layers:removeLayer', (layerUUID) =>
+                    window.mmgisAPI.removeLayer(layerUUID)
+                ),
+                // Engine-reported load health. With a layerUUID returns that
+                // layer's { status, message } (null if none reported yet);
+                // without, the whole name-keyed map. Live updates broadcast
+                // as 'layers:loadStatusChanged'.
+                window.mmgisAPI.provide('layers:getLoadStatus', (layerUUID) =>
+                    layerUUID != null
+                        ? L_.layers.loadStatus[L_.asLayerUUID(layerUUID)] ??
+                          null
+                        : L_.layers.loadStatus
+                ),
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
@@ -561,6 +615,30 @@ const L_ = {
             return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
         }
     },
+    /**
+     * The single build-and-register path for every client-side deck COG
+     * update (colormap/rescale refresh, time reload). Rebuilds the layer
+     * from its current config and swaps it in by id — deck.gl diffs the new
+     * instance against the old one, so cached tiles are kept and only what
+     * updateTriggers name is recomputed.
+     * @param {object} layerObj - Layer config (L_.layers.data entry).
+     * @param {string} rawCogUrl - Bare, time-substituted .tif URL
+     *                             (resolveDeckCOGFileUrl, or the existing
+     *                             layer's geotiff prop).
+     */
+    rebuildDeckCOGLayer: function (layerObj, rawCogUrl) {
+        const uuid = L_.asLayerUUID(layerObj.name)
+        const rebuilt = buildDeckCOGLayer(uuid, {
+            rawCogUrl,
+            layerObj,
+            opacity: L_.layers.opacity[uuid] ?? 1,
+        })
+        L_.layers.layer[uuid] = rebuilt
+        // addLayer registers by id in the adapter's registry then syncs, so
+        // deck.gl diffs and re-renders in place.
+        L_.Map_.engine.addLayer(rebuilt)
+        return rebuilt
+    },
     getUrl: function (type, url, layerData) {
         let wasCOG = false
 
@@ -600,16 +678,6 @@ const L_ = {
                 window.mmgisglobal.IS_DOCKER === 'true'
             ) {
                 nextUrl = `/${nextUrl}`
-            }
-        }
-        if (process.env.NODE_ENV === 'development' && F_.isUrlAbsolute(nextUrl)) {
-            try {
-                if (new URL(nextUrl).origin !== window.location.origin) {
-                    const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
-                    nextUrl = `${rootPath}/corsproxy/${nextUrl}`
-                }
-            } catch (e) {
-                // Invalid URL, leave unchanged
             }
         }
         return nextUrl
@@ -1291,6 +1359,20 @@ const L_ = {
                                 L_.layers.layer[L_.layers.dataFlat[i].name]
                             )
                         )
+                        // Rank every layer the same way toggleLayerHelper does,
+                        // so the stack follows z-index order at start instead of
+                        // element order and a later toggle re-sorts against
+                        // ranks that are already assigned.
+                        engine.setLayerZIndex(
+                            L_.Map_.nativeLayer(
+                                L_.layers.layer[L_.layers.dataFlat[i].name]
+                            ),
+                            L_._layersOrdered.length +
+                                1 -
+                                L_._layersOrdered.indexOf(
+                                    L_.layers.dataFlat[i].name
+                                )
+                        )
 
                         // Ensure video layers start muted when added to map
                         if (L_.layers.dataFlat[i].type === 'video') {
@@ -1333,14 +1415,6 @@ const L_ = {
                     s.type === 'data' ||
                     s.type === 'vectortile'
                 ) {
-                    // Make sure all tile layers follow z-index order at start instead of element order
-                    engine.setLayerZIndex(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(s.name)
-                    )
-
                     let demUrl = s.demtileurl
                     if (!F_.isUrlAbsolute(demUrl))
                         demUrl = L_.missionPath + demUrl
@@ -2071,6 +2145,26 @@ const L_ = {
                         })
                 }
             )
+    },
+    // Records engine-reported load health for a layer and broadcasts
+    // transitions on the bus. Engines call this from their request hooks
+    // (tile load/error, WMS image load/error, GeoJSON fetch), but the status
+    // is per LAYER, not per request: once a layer has loaded anything
+    // successfully it stays 'ok' — later individual failures (tiles outside
+    // a regional dataset's coverage, transient requests) don't flip it back.
+    // 'error' therefore means the layer has never loaded anything.
+    setLayerLoadStatus: function (name, status, message) {
+        message = message ?? null
+        const prev = L_.layers.loadStatus[name]
+        if (prev && prev.status === 'ok' && status === 'error') return
+        if (prev && prev.status === status && prev.message === message) return
+        L_.layers.loadStatus[name] = { status, message }
+        if (window.mmgisAPI)
+            window.mmgisAPI.emit('layers:loadStatusChanged', {
+                layerName: name,
+                status,
+                message,
+            })
     },
     setLayerOpacity: function (name, newOpacity) {
         newOpacity = parseFloat(newOpacity)
@@ -3533,6 +3627,7 @@ const L_ = {
         L_._layersOrdered = []
         L_.layers.dataFlat = []
         L_._layersLoaded = []
+        L_.layers.loadStatus = {}
 
         await L_.parseConfig(data)
 
@@ -3556,6 +3651,14 @@ const L_ = {
             await L_.removeLayerFromLayersData(layerName)
         }
 
+        // Notify subscribers (e.g. the modern-layout Layers panel) that the
+        // layer list changed, so they rebuild.
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('layers:listChanged')
+        }
+
+        // The classic-layout LayersTool doesn't subscribe to the bus, so
+        // rebuild it directly when it's the active tool.
         if (ToolController_.activeToolName === 'LayersTool') {
             const layersTool = ToolController_.getTool('LayersTool')
             if (layersTool.destroy && layersTool.make) {
@@ -3623,6 +3726,7 @@ const L_ = {
                 delete L_.layers.on[layerUUID]
                 delete L_.layers.attachments[layerUUID]
                 delete L_.layers.opacity[layerUUID]
+                delete L_.layers.loadStatus[layerUUID]
             }
         }
     },
