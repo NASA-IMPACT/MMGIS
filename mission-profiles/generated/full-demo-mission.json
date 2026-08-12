@@ -70,7 +70,7 @@
     "panels": [
       {
         "position": "left",
-        "priority": 1,
+        "priority": 2,
         "layoutType": "stacked",
         "hasHeader": false,
         "stateConstraints": {
@@ -97,6 +97,56 @@
           "Title",
           "Card"
         ]
+      },
+      {
+        "position": "left",
+        "priority": 0,
+        "layoutType": "stacked",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "capabilities": {
+          "resizable": false,
+          "supportedOrientation": "vertical"
+        },
+        "panelTools": [
+          "LayerFilterThemes"
+        ],
+        "id": "leftmost-panel",
+        "title": "",
+        "dimensions": {
+          "focusedWidth": "",
+          "expandedSize": "62"
+        }
+      },
+      {
+        "position": "left",
+        "priority": 1,
+        "layoutType": "stacked",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "capabilities": {
+          "resizable": false,
+          "supportedOrientation": "vertical"
+        },
+        "panelTools": [
+          "LayerFilter"
+        ],
+        "id": "filter-panel",
+        "title": "",
+        "dimensions": {
+          "focusedWidth": "",
+          "expandedSize": "320"
+        }
       }
     ],
     "floatingPanels": [
@@ -283,14 +333,11 @@
       "name": "LayerFilter",
       "icon": "filter-outline",
       "js": "LayerFilterTool",
-      "on": false,
+      "on": true,
       "variables": {
-        "defaultThemeId": "need",
         "themes": [
           {
             "id": "need",
-            "label": "Need",
-            "icon": "satellite-variant",
             "title": "Need",
             "description": "Filter by sector to explore Earth-science datasets relevant to your operational needs.",
             "filters": [
@@ -305,8 +352,6 @@
           },
           {
             "id": "hazard",
-            "label": "Hazard",
-            "icon": "flash-outline",
             "title": "Hazard",
             "description": "Explore datasets by hazard type to understand conditions, impacts, and response context.",
             "filters": [
@@ -320,8 +365,6 @@
           },
           {
             "id": "event",
-            "label": "Event",
-            "icon": "calendar-outline",
             "title": "Event",
             "description": "Filter the activation catalogue by hazard, location and year.",
             "catalog": "activations",
@@ -383,8 +426,27 @@
       "name": "LayerFilterThemes",
       "icon": "view-dashboard-outline",
       "js": "LayerFilterThemesTool",
-      "on": false,
-      "variables": {},
+      "on": true,
+      "variables": {
+        "defaultThemeId": "need",
+        "themes": [
+          {
+            "id": "need",
+            "label": "Need",
+            "icon": "satellite-variant"
+          },
+          {
+            "id": "hazard",
+            "label": "Hazard",
+            "icon": "flash-outline"
+          },
+          {
+            "id": "event",
+            "label": "Event",
+            "icon": "calendar-outline"
+          }
+        ]
+      },
       "metadata": {
         "icon": "view-dashboard-outline",
         "requiredOrientation": "vertical",

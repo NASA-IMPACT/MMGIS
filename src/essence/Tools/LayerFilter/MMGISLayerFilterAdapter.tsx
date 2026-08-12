@@ -14,10 +14,8 @@ import { parseCatalog } from './lib/catalog/parseCatalog'
 import { buildRows, type LayerInput } from './lib/catalog/buildRows'
 import { stacBboxToPolygon } from './lib/utils/geo'
 import { buildEntryDisplays } from './lib/utils/entryDisplay'
-import {
-    normalizeThemesConfig,
-    resolveDefaultThemeId,
-} from './lib/normalizeConfig'
+import { normalizeThemesConfig } from './lib/normalizeConfig'
+import { interpretThemeSelection } from './lib/utils/themeSelection'
 import type { LayerLike } from './lib/utils/listedUpdates'
 import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -98,25 +96,29 @@ export function MMGISLayerFilterAdapter() {
         [catalog],
     )
 
-    // Pick the default theme once the config loads. A defaultThemeId that
-    // matches no theme falls back to the first theme (with a warning) —
-    // selecting it verbatim would leave activeTheme null and the panel blank.
+    // The rail owns theme selection and announces its boot-time default, so
+    // normally it names the theme before this fires. Fall back to the first
+    // configured theme anyway, so the panel still works when it's placed
+    // without a rail (otherwise it would render blank forever).
+    //
+    // The fallback only shows through if the rail's announcement lands before
+    // this component subscribes — it shouldn't, since we subscribe at mount
+    // while the rail waits on 'tool:getVars' (registered after mission load).
+    // If that ordering ever breaks, the visible symptom is the panel showing
+    // its first theme while the rail highlights another, self-healing on the
+    // first click; the fix would be a 'getSelected' provider on the rail.
     useEffect(() => {
-        if (!selectedThemeId && themes.length) {
-            const id = resolveDefaultThemeId(themes, vars.defaultThemeId)
-            if (id) setSelectedThemeId(id)
-        }
-    }, [themes, vars.defaultThemeId, selectedThemeId])
+        if (!selectedThemeId && themes.length) setSelectedThemeId(themes[0].id)
+    }, [themes, selectedThemeId])
 
-    // Follow the rail's selection. The rail only emits on user clicks (its
-    // boot-time default selection is set locally, not emitted), so hearing
-    // this event counts as interaction.
+    // Follow the rail's selection. Its boot announcement carries
+    // `initial: true` and must NOT count as interaction — otherwise boot
+    // would narrow the layers list unprompted.
     const onThemeChanged = useCallback((payload?: unknown) => {
-        const id = (payload as { themeId?: string })?.themeId
-        if (id) {
-            setSelectedThemeId(id)
-            setHasInteracted(true)
-        }
+        const selection = interpretThemeSelection(payload)
+        if (!selection) return
+        setSelectedThemeId(selection.themeId)
+        if (selection.isInteraction) setHasInteracted(true)
     }, [])
     useMMGISEvent(SELECTED_THEME_EVENT, onThemeChanged)
 

@@ -1,8 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import {
-    normalizeThemesConfig,
-    resolveDefaultThemeId,
-} from '../../src/essence/Tools/LayerFilter/lib/normalizeConfig.ts'
+import { normalizeThemesConfig } from '../../src/essence/Tools/LayerFilter/lib/normalizeConfig.ts'
 
 const theme = (over = {}) => ({
     id: 'need',
@@ -72,22 +69,5 @@ describe('normalizeThemesConfig', () => {
     })
 })
 
-describe('resolveDefaultThemeId', () => {
-    const themes = [theme(), theme({ id: 'hazard' })]
-
-    test('returns the configured id when it matches', () => {
-        expect(resolveDefaultThemeId(themes, 'hazard')).toBe('hazard')
-        expect(warn).not.toHaveBeenCalled()
-    })
-
-    test('falls back to the first theme with a warning when it matches nothing', () => {
-        expect(resolveDefaultThemeId(themes, 'typo')).toBe('need')
-        expect(warn.mock.calls[0][0]).toMatch(/matches no theme/)
-    })
-
-    test('unset default → first theme, silently; no themes → null', () => {
-        expect(resolveDefaultThemeId(themes, undefined)).toBe('need')
-        expect(resolveDefaultThemeId([], 'anything')).toBeNull()
-        expect(warn).not.toHaveBeenCalled()
-    })
-})
+// Default-theme resolution moved to LayerFilterThemes (the rail owns
+// selection) — see tests/unit/layerFilterThemesRail.spec.js.

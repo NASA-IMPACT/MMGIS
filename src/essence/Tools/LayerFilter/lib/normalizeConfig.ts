@@ -80,20 +80,3 @@ export function normalizeThemesConfig(raw: unknown): ThemeDef[] {
     })
     return themes
 }
-
-/** The theme id to select on load: the configured default when it exists,
- *  else the first theme (warning when a configured default matches nothing —
- *  the silent alternative is a permanently blank panel). */
-export function resolveDefaultThemeId(
-    themes: ThemeDef[],
-    configured: unknown,
-): string | null {
-    if (themes.length === 0) return null
-    if (typeof configured === 'string' && configured !== '') {
-        if (themes.some((t) => t.id === configured)) return configured
-        console.warn(
-            `${TAG} config error: defaultThemeId "${configured}" matches no theme — falling back to "${themes[0].id}"`,
-        )
-    }
-    return themes[0].id
-}
