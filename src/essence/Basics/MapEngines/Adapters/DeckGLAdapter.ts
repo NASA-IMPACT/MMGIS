@@ -74,6 +74,7 @@ import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
 import {
     committedVerticesFromChange,
     drawModeKeyEvents,
+    drawStyles,
     validateDrawnLineString,
 } from './DrawingHelpers'
 
@@ -1031,20 +1032,35 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (this._terraDraw) return this._terraDraw
         if (!this._isOverlayMode || !this._basemap) return null
 
+        // The drawing is rendered in the theme's accent, at the stroke width
+        // a committed shape is drawn with; terra-draw's own defaults supply
+        // the opacities.
+        const styles = drawStyles()
+
         const td = new TerraDraw({
             adapter: new TerraDrawMapLibreGLAdapter({
                 map: this._basemap as any,
                 prefixId: TERRA_DRAW_PREFIX,
             }),
             modes: [
-                new TerraDrawPointMode(),
+                new TerraDrawPointMode({ styles: styles.point }),
                 new TerraDrawLineStringMode({
                     keyEvents: drawModeKeyEvents('linestring'),
                     validation: validateDrawnLineString,
+                    styles: styles.linestring,
                 }),
-                new TerraDrawPolygonMode({ keyEvents: drawModeKeyEvents('polygon') }),
-                new TerraDrawRectangleMode({ keyEvents: drawModeKeyEvents('rectangle') }),
-                new TerraDrawCircleMode({ keyEvents: drawModeKeyEvents('circle') }),
+                new TerraDrawPolygonMode({
+                    keyEvents: drawModeKeyEvents('polygon'),
+                    styles: styles.polygon,
+                }),
+                new TerraDrawRectangleMode({
+                    keyEvents: drawModeKeyEvents('rectangle'),
+                    styles: styles.rectangle,
+                }),
+                new TerraDrawCircleMode({
+                    keyEvents: drawModeKeyEvents('circle'),
+                    styles: styles.circle,
+                }),
             ],
         })
 
