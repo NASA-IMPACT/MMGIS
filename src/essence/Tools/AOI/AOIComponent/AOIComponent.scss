@@ -1,31 +1,28 @@
-// AOI plugin — scoped under .aoi-tool-host / .aoi-tool / .aoi-tooltip roots only.
-// All literal values live in _aoi-tokens.scss; everywhere else uses var(--aoi-*).
-// A host theme overrides --mmgis-* on :root and propagates through the var() fallbacks.
-
-@use 'aoi-tokens' as tokens;
-
-.aoi-tool-host {
-    position: fixed;
-    top: 70px;
-    right: 16px;
-    width: 372px;
-    max-height: calc(100vh - 90px);
-    overflow: hidden;
-    z-index: 1003;
-    border-radius: var(--mmgis-radius-md, 6px);
-    box-shadow: var(--mmgis-shadow-pop, 0 2px 6px rgba(0, 0, 0, 0.18));
-    pointer-events: auto;
-}
+// AOI plugin — scoped under the .aoi-tool / .aoi-tooltip roots only.
+//
+// Every value resolves against the global design tokens exported by
+// src/styles/_theme-export.scss as :root --theme-* custom properties; the
+// literal after each is the horizon value, used only when no theme bundle is
+// loaded. Theming itself comes from the per-theme bundles at dist/<theme>.css,
+// loaded at runtime — there is no Sass theme coupling here.
+//
+// The values are the ones the Disasters Portal design names, and the design's
+// variables line up with the theme's almost exactly: carbon/90 is ink,
+// carbon/50 is base, carbon/10 is base-lighter, base/lightest is #f6f6f6,
+// nasa-blue/default is primary, and the sm/2xs/3xs type steps are 16/14/12px.
+//
+// Layout and chrome follow that design: a header rule, a bordered tab strip,
+// 2px corners, and filled grounds for fields. States the design does not
+// picture — hover, focus, disabled — use the accent tint the rest of the map
+// controls use.
 
 .aoi-tool,
 .aoi-tooltip {
-    @include tokens.aoi-tokens;
-
     box-sizing: border-box;
-    color: var(--aoi-fg);
-    font-family: var(--aoi-font-body);
-    font-size: var(--aoi-font-size-md);
-    background: var(--aoi-bg);
+    color: var(--theme-color-ink, #17171b);
+    font-family: var(--theme-font-body, 'Public Sans', system-ui, sans-serif);
+    font-size: var(--theme-font-size-2xs, 14px);
+    background: var(--theme-color-white, #ffffff);
 }
 
 .aoi-tool *,
@@ -33,75 +30,255 @@
     box-sizing: border-box;
 }
 
+// A vendor stylesheet (MetricsGraphics) carries a bare, unscoped
+// `li { color: #cfcfcf }`. It matches list items directly, and a directly
+// matched declaration beats one inherited from the list — however specific the
+// list's own selector is — so every list in the tool would render in that pale
+// gray. Restoring `inherit` hands the cascade back to the list.
+.aoi-tool li,
+.aoi-tooltip li {
+    color: var(--theme-color-base-dark, #58585b);
+}
+
+// Core's global `*:focus { outline: none }` strips the native ring, so every
+// focusable control in the plugin restores one here.
+.aoi-tool button:focus-visible,
+.aoi-tool input:focus-visible,
+.aoi-tool [tabindex]:focus-visible,
+.aoi-tooltip button:focus-visible {
+    outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
+    outline-offset: -2px;
+}
+
+// Glyphs are exported SVGs painted through a mask, so a single file serves
+// every state: the mask takes its color from the element, which inherits the
+// control's own color. 20px is the design's icon step; the title's is 24px.
+.aoi-icon {
+    display: block;
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    background-color: currentColor;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: center;
+    mask-position: center;
+    -webkit-mask-size: contain;
+    mask-size: contain;
+}
+
+.aoi-icon--analyze {
+    width: 24px;
+    height: 24px;
+    -webkit-mask-image: url('../assets/icons/analyze.svg');
+    mask-image: url('../assets/icons/analyze.svg');
+}
+
+.aoi-icon--chevron-down {
+    -webkit-mask-image: url('../assets/icons/chevron-down.svg');
+    mask-image: url('../assets/icons/chevron-down.svg');
+}
+
+.aoi-icon--search {
+    -webkit-mask-image: url('../assets/icons/search.svg');
+    mask-image: url('../assets/icons/search.svg');
+}
+
+.aoi-icon--inspect {
+    -webkit-mask-image: url('../assets/icons/inspect.svg');
+    mask-image: url('../assets/icons/inspect.svg');
+}
+
+.aoi-icon--draw {
+    -webkit-mask-image: url('../assets/icons/draw.svg');
+    mask-image: url('../assets/icons/draw.svg');
+}
+
+.aoi-icon--upload {
+    -webkit-mask-image: url('../assets/icons/upload.svg');
+    mask-image: url('../assets/icons/upload.svg');
+}
+
+// Fills whatever the layout gives it: the panel owns the width (its
+// `dimensions.defaultWidth` / `expandedSize`), the tool only spans it. The
+// `min-width: 0` on the blocks below stops a panel's own content from setting
+// that width — in a shrink-to-fit container a long hint or a wide result would
+// otherwise widen the whole tool, resizing it each time a tab was selected.
+//
+// `min-width` here is the floor the tab strip needs to hold four legible tabs,
+// and bites only when no width is configured. There is deliberately no
+// `max-width`: the tool is meant to span whatever it is given.
 .aoi-tool {
     display: flex;
     flex-direction: column;
     height: 100%;
     width: 100%;
-    padding: var(--aoi-space-4);
-    gap: var(--aoi-space-3);
+    min-width: 280px;
 }
 
+// The one rule in the panel, separating the title bar from the body.
 .aoi-tool__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: var(--theme-spacing-1, 8px);
+    flex-shrink: 0;
+    padding: var(--theme-spacing-205, 20px) var(--theme-spacing-2, 16px);
+    border-bottom: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #e3e3e3);
 }
 
 .aoi-tool__title {
     display: inline-flex;
     align-items: center;
-    gap: var(--aoi-space-2);
-    font-size: var(--aoi-font-size-lg);
-    font-weight: 600;
+    gap: var(--theme-spacing-1, 8px);
+    font-size: var(--theme-font-size-sm, 16px);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    line-height: 1.6;
+    color: var(--theme-color-ink, #17171b);
 }
 
 .aoi-tool__title-icon {
-    font-size: 16px;
-    line-height: 1;
-    color: var(--aoi-accent);
+    color: var(--theme-color-ink, #17171b);
 }
 
-.aoi-tool__close {
-    background: none;
-    border: 0;
-    color: var(--aoi-fg-muted);
-    font-size: 18px;
-    line-height: 1;
-    cursor: pointer;
-    padding: var(--aoi-space-1);
+.aoi-tool__header-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+// A filled chip rather than a glyph: the design names the action in words. Its
+// 10px type is below the theme's smallest step, so it is stated here.
+.aoi-tool__exit {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: var(--theme-spacing-1, 8px);
+    padding: var(--theme-spacing-05, 4px) var(--theme-spacing-105, 12px);
+    border: 0;
+    border-radius: 0;
+    background: var(--theme-color-primary, #1c67e3);
+    color: var(--theme-color-white, #ffffff);
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: var(--theme-font-weight-semibold, 600);
+    line-height: 1.6;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: background-color 0.12s ease;
 }
 
-.aoi-tool__close:hover {
-    color: var(--aoi-fg);
+.aoi-tool__exit:hover {
+    background: var(--theme-color-primary-dark, #0b3d91);
 }
 
+.aoi-tool__collapse {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--theme-color-base, #77777a);
+    cursor: pointer;
+    transition: color 0.12s ease;
+}
+
+.aoi-tool__collapse:hover {
+    color: var(--theme-color-primary, #1c67e3);
+}
+
+// The inset block under the header rule: the tab strip and whichever panel the
+// selected tab shows. The header stays full-bleed so its rule spans the panel.
+.aoi-tool__content {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--theme-spacing-205, 20px);
+    padding: var(--theme-spacing-205, 20px) var(--theme-spacing-2, 16px);
+    overflow-y: auto;
+}
+
+.aoi-tool__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+}
+
+// The tab strip is framed as a single field, with the tabs dividing it. The
+// strip itself is the muted ground; the selected tab lifts out of it in white.
+.aoi-tool__tabs {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    flex-shrink: 0;
+    min-width: 0;
+    background: var(--theme-color-base-lightest, #f6f6f6);
+    border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #e3e3e3);
+    border-radius: var(--theme-radius-sm, 2px);
+    overflow: hidden;
+}
+
+.aoi-tool__tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 10px var(--theme-spacing-105, 12px);
+    border: 0;
+    background: transparent;
+    color: var(--theme-color-base, #77777a);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: var(--theme-font-size-3xs, 12px);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    line-height: 1.6;
+    transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.aoi-tool__tab:hover {
+    background: var(--theme-color-primary-lightest, #eaf0fd);
+    color: var(--theme-color-primary, #1c67e3);
+}
+
+// The selected tab is the white cell in the strip, stated after :hover so
+// pointing at the tab already selected keeps it white.
+.aoi-tool__tab--active,
+.aoi-tool__tab--active:hover {
+    background: var(--theme-color-white, #ffffff);
+    color: var(--theme-color-ink, #17171b);
+}
+
+.aoi-tool__tab-label {
+    white-space: nowrap;
+}
+
+// The theme exports no error tint, so the alert's ground is stated here.
 .aoi-tool__alert {
     display: flex;
     align-items: flex-start;
-    gap: var(--aoi-space-2);
-    margin: var(--aoi-space-3) var(--aoi-space-4) 0;
-    padding: var(--aoi-space-3);
-    border-radius: var(--aoi-radius-sm);
-    border-left: 4px solid var(--aoi-danger);
+    gap: var(--theme-spacing-1, 8px);
+    flex-shrink: 0;
+    margin: var(--theme-spacing-105, 12px) var(--theme-spacing-2, 16px) 0;
+    padding: var(--theme-spacing-105, 12px);
+    border-radius: var(--theme-radius-sm, 2px);
     background: rgba(181, 9, 9, 0.08);
-    color: var(--aoi-fg);
-    font-size: var(--aoi-font-size-sm);
+    color: var(--theme-color-ink, #17171b);
+    font-size: var(--theme-font-size-3xs, 12px);
     line-height: 1.35;
 }
 
 .aoi-tool__alert--error {
-    border-left-color: var(--aoi-danger);
     background: rgba(181, 9, 9, 0.08);
 }
 
 .aoi-tool__alert-icon {
     flex: 0 0 auto;
-    color: var(--aoi-danger);
-    font-size: 18px;
+    color: var(--theme-color-secondary-dark, #b60109);
+    font-size: 16px;
     line-height: 1;
     margin-top: 1px;
 }
@@ -117,116 +294,78 @@
     height: 24px;
     padding: 0;
     border: 0;
-    border-radius: var(--aoi-radius-sm);
+    border-radius: var(--theme-radius-sm, 2px);
     background: transparent;
-    color: var(--aoi-fg-muted);
+    color: var(--theme-color-base, #77777a);
     cursor: pointer;
     line-height: 1;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .aoi-tool__alert-dismiss:hover {
-    color: var(--aoi-fg);
-    background: var(--aoi-bg-muted);
+    background: var(--theme-color-primary-lightest, #eaf0fd);
+    color: var(--theme-color-primary, #1c67e3);
 }
 
 .aoi-tool__alert-dismiss .mdi {
     font-size: 16px;
 }
 
-.aoi-tool__tabs {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: var(--aoi-space-1);
-    border: 1px solid var(--aoi-border);
-    border-radius: var(--aoi-radius-sm);
-    padding: var(--aoi-space-1);
-}
-
-.aoi-tool__tab {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--aoi-space-1);
-    padding: var(--aoi-space-2) var(--aoi-space-1);
-    border: 0;
-    background: transparent;
-    color: var(--aoi-fg-muted);
-    border-radius: var(--aoi-radius-sm);
-    cursor: pointer;
-    font-family: inherit;
-    font-size: var(--aoi-font-size-sm);
-}
-
-.aoi-tool__tab:hover {
-    color: var(--aoi-fg);
-}
-
-.aoi-tool__tab--active {
-    background: var(--aoi-bg-muted);
-    color: var(--aoi-fg);
-}
-
-.aoi-tool__tab-icon {
-    font-size: 18px;
-    line-height: 1;
-}
-
-.aoi-tool__tab-label {
-    font-size: var(--aoi-font-size-sm);
-}
-
-.aoi-tool__body {
-    flex: 1 1 auto;
-    min-height: 0;
-}
-
+// Prose wraps rather than pushing the tool wider; every panel is free to be
+// as tall as it needs, but none of them decide how wide the tool is.
 .aoi-panel {
     display: flex;
     flex-direction: column;
-    gap: var(--aoi-space-3);
+    gap: var(--theme-spacing-1, 8px);
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 .aoi-panel__hint {
     margin: 0;
-    color: var(--aoi-fg);
-    font-size: var(--aoi-font-size-sm);
+    color: var(--theme-color-base-dark, #58585b);
+    font-size: var(--theme-font-size-2xs, 14px);
+    font-weight: var(--theme-font-weight-normal, 400);
+    line-height: 1.6;
 }
 
 .aoi-panel__hint--secondary {
-    color: var(--aoi-fg-muted);
+    color: var(--theme-color-base, #77777a);
 }
 
 .aoi-panel__empty {
     margin: 0;
-    color: var(--aoi-fg-muted);
-    font-size: var(--aoi-font-size-sm);
+    color: var(--theme-color-base, #77777a);
+    font-size: var(--theme-font-size-2xs, 14px);
 }
 
 .aoi-panel__error {
     margin: 0;
-    color: var(--aoi-danger);
-    font-size: var(--aoi-font-size-sm);
+    color: var(--theme-color-secondary-dark, #b60109);
+    font-size: var(--theme-font-size-2xs, 14px);
 }
 
 .aoi-panel--analyzing {
     flex: 1 1 auto;
     align-items: center;
     justify-content: center;
-    padding: var(--aoi-space-5) var(--aoi-space-4);
+    padding: var(--theme-spacing-3, 24px) var(--theme-spacing-2, 16px);
     text-align: center;
-    gap: var(--aoi-space-2);
+    gap: var(--theme-spacing-1, 8px);
 }
 
+// The ring is drawn with a border because that is how a spinner is made; it is
+// structure, not chrome.
 .aoi-analyzing__spinner {
     width: 40px;
     height: 40px;
-    border: 3px solid var(--aoi-bg-muted);
-    border-top-color: var(--aoi-accent);
+    border: 3px solid var(--theme-color-base-lightest, #f6f6f6);
+    border-top-color: var(--theme-color-primary, #1c67e3);
     border-radius: 50%;
-    margin-bottom: var(--aoi-space-3);
+    margin-bottom: var(--theme-spacing-105, 12px);
     animation: aoi-spin 800ms linear infinite;
 }
 
@@ -240,46 +379,48 @@
 
 .aoi-analyzing__caption {
     margin: 0;
-    color: var(--aoi-fg-muted);
-    font-size: var(--aoi-font-size-md);
+    color: var(--theme-color-base, #77777a);
+    font-size: var(--theme-font-size-2xs, 14px);
 }
 
 .aoi-analyzing__label {
     margin: 0;
-    color: var(--aoi-fg);
-    font-size: var(--aoi-font-size-lg);
-    font-weight: 700;
+    color: var(--theme-color-ink, #17171b);
+    font-size: var(--theme-font-size-sm, 16px);
+    font-weight: var(--theme-font-weight-bold, 700);
     line-height: 1.2;
 }
 
+// The readout sits between the theme's sm and 2xl steps (16px and ~40px), so
+// its size is stated rather than snapped to a step that would misjudge it.
 .aoi-analyzing__percent {
-    margin: var(--aoi-space-3) 0 0;
-    color: var(--aoi-accent);
+    margin: var(--theme-spacing-105, 12px) 0 0;
+    color: var(--theme-color-primary, #1c67e3);
     font-size: 28px;
-    font-weight: 700;
+    font-weight: var(--theme-font-weight-bold, 700);
     line-height: 1;
 }
 
 .aoi-analyzing__bar {
     width: 80%;
     height: 6px;
-    background: var(--aoi-bg-muted);
-    border-radius: 999px;
+    background: var(--theme-color-base-lightest, #f6f6f6);
+    border-radius: var(--theme-radius-sm, 2px);
     overflow: hidden;
-    margin-top: var(--aoi-space-2);
+    margin-top: var(--theme-spacing-1, 8px);
 }
 
 .aoi-analyzing__bar-fill {
     height: 100%;
-    background: var(--aoi-accent);
-    border-radius: 999px;
+    background: var(--theme-color-primary, #1c67e3);
+    border-radius: var(--theme-radius-sm, 2px);
     transition: width 200ms ease-out;
 }
 
 .aoi-analyzing__status {
-    margin: var(--aoi-space-3) 0 0;
-    color: var(--aoi-fg-muted);
-    font-size: var(--aoi-font-size-sm);
+    margin: var(--theme-spacing-105, 12px) 0 0;
+    color: var(--theme-color-base, #77777a);
+    font-size: var(--theme-font-size-3xs, 12px);
 }
 
 .aoi-search {
@@ -287,45 +428,64 @@
     display: block;
 }
 
-.aoi-search__input {
+// A white field with its glyph at the trailing edge, per the design.
+//
+// Scoped under .aoi-tool to outrank .usa-input, which the underlying USWDS
+// TextInput also carries: it sets a base-dark border, a 40px height, even 8px
+// padding, and a `margin-top` that would make the wrapping label taller than
+// the field — dropping the centred icon below the field's middle and past its
+// edge. Every one of those is reset here.
+.aoi-tool .aoi-search__input {
     width: 100%;
+    max-width: none;
     height: 36px;
-    padding: 0 var(--aoi-space-5) 0 var(--aoi-space-3);
-    border: 1px solid var(--aoi-border);
-    border-radius: var(--aoi-radius-sm);
-    background: var(--aoi-bg);
-    color: var(--aoi-fg);
-    font: inherit;
+    margin: 0;
+    padding: var(--theme-spacing-1, 8px) var(--theme-spacing-4, 32px) var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
+    border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #e3e3e3);
+    border-radius: var(--theme-radius-sm, 2px);
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--theme-color-white, #ffffff);
+    color: var(--theme-color-ink, #17171b);
+    font-family: inherit;
+    font-size: var(--theme-font-size-sm, 16px);
+    font-weight: var(--theme-font-weight-semibold, 600);
 }
 
-.aoi-search__input:focus {
-    outline: 2px solid var(--aoi-accent);
-    outline-offset: -1px;
+.aoi-tool .aoi-search__input::placeholder {
+    color: var(--theme-color-base-light, #b9b9bb);
+    font-weight: var(--theme-font-weight-semibold, 600);
 }
 
-.aoi-search__input:disabled {
-    background: var(--aoi-bg-muted);
-    color: var(--aoi-fg-muted);
+.aoi-tool .aoi-search__input:focus {
+    outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
+    outline-offset: -2px;
+}
+
+.aoi-tool .aoi-search__input:disabled {
+    background: var(--theme-color-base-lightest, #f6f6f6);
+    color: var(--theme-color-base-light, #b9b9bb);
     cursor: not-allowed;
 }
 
+// Centred on the field, which is the label's full height now that the input
+// carries no margin of its own.
 .aoi-search__icon {
     position: absolute;
-    right: var(--aoi-space-3);
+    right: var(--theme-spacing-105, 12px);
     top: 50%;
     transform: translateY(-50%);
-    font-size: 16px;
-    line-height: 1;
-    color: var(--aoi-fg-muted);
+    width: 16px;
+    height: 16px;
+    color: var(--theme-color-base-light, #b9b9bb);
     pointer-events: none;
 }
 
+// A plain list: rows run edge to edge and separate by their hover ground.
 .aoi-search__results {
     list-style: none;
     margin: 0;
     padding: 0;
-    border: 1px solid var(--aoi-border);
-    border-radius: var(--aoi-radius-sm);
     max-height: 220px;
     overflow-y: auto;
 }
@@ -335,34 +495,44 @@
     width: 100%;
     align-items: center;
     justify-content: space-between;
-    padding: var(--aoi-space-2) var(--aoi-space-3);
+    gap: var(--theme-spacing-1, 8px);
+    padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
     background: transparent;
     border: 0;
-    border-bottom: 1px solid var(--aoi-border);
-    color: var(--aoi-fg);
+    color: var(--theme-color-ink, #17171b);
     cursor: pointer;
     text-align: left;
-    font: inherit;
-}
-
-.aoi-search__result:last-child {
-    border-bottom: 0;
+    font-family: inherit;
+    font-size: var(--theme-font-size-2xs, 14px);
+    transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .aoi-search__result:hover {
-    background: var(--aoi-bg-muted);
+    background: var(--theme-color-primary-lightest, #eaf0fd);
+    color: var(--theme-color-primary, #1c67e3);
 }
 
+// A long place name is truncated rather than allowed to set the tool's width.
+.aoi-search__result-label {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+// Takes the row's color so it follows the hover state.
 .aoi-search__result-kind {
-    color: var(--aoi-fg-muted);
-    font-size: var(--aoi-font-size-sm);
+    flex: 0 0 auto;
+    color: inherit;
+    opacity: 0.75;
+    font-size: var(--theme-font-size-3xs, 12px);
     text-transform: capitalize;
 }
 
 .aoi-draw__shapes {
     display: flex;
     align-items: center;
-    gap: var(--aoi-space-2);
+    gap: var(--theme-spacing-05, 4px);
     flex-wrap: wrap;
 }
 
@@ -372,20 +542,23 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--aoi-border);
-    border-radius: var(--aoi-radius-sm);
-    background: var(--aoi-bg);
-    color: var(--aoi-fg);
+    border: 0;
+    border-radius: var(--theme-radius-sm, 2px);
+    background: var(--theme-color-base-lightest, #f6f6f6);
+    color: var(--theme-color-base, #77777a);
     cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .aoi-draw__shape:hover:not(:disabled) {
-    border-color: var(--aoi-border-hover);
+    background: var(--theme-color-primary-lightest, #eaf0fd);
+    color: var(--theme-color-primary, #1c67e3);
 }
 
-.aoi-draw__shape--active {
-    background: var(--aoi-bg-muted);
-    border-color: var(--aoi-fg);
+.aoi-draw__shape--active,
+.aoi-draw__shape--active:hover:not(:disabled) {
+    background: var(--theme-color-primary, #1c67e3);
+    color: var(--theme-color-white, #ffffff);
 }
 
 .aoi-draw__shape:disabled {
@@ -396,26 +569,38 @@
 .aoi-draw__shape-icon {
     font-size: 16px;
     line-height: 1;
+    color: inherit;
 }
 
-.aoi-upload__button {
+// A dropzone rather than a solid call to action: it sits in the panel body
+// beside explanatory text, so it is outlined instead of filled.
+//
+// Scoped under .aoi-tool to outrank .usa-button, which the underlying USWDS
+// Button carries and which would otherwise fill it with primary and paint its
+// own hover.
+.aoi-tool .aoi-upload__button {
     width: 100%;
     height: 40px;
-    border: 1px dashed var(--aoi-accent);
-    border-radius: var(--aoi-radius-sm);
-    background: transparent;
-    color: var(--aoi-accent);
+    margin: 0;
+    border: var(--theme-border-width-sm, 1px) dashed var(--theme-color-primary, #1c67e3);
+    border-radius: var(--theme-radius-sm, 2px);
+    box-shadow: none;
+    background: var(--theme-color-white, #ffffff);
+    color: var(--theme-color-primary, #1c67e3);
     cursor: pointer;
-    font: inherit;
-    font-weight: 600;
-    text-decoration: underline;
+    font-family: inherit;
+    font-size: var(--theme-font-size-2xs, 14px);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    text-decoration: none;
+    transition: background-color 0.12s ease;
 }
 
-.aoi-upload__button:hover:not(:disabled) {
-    background: var(--aoi-bg-muted);
+.aoi-tool .aoi-upload__button:hover:not(:disabled) {
+    background: var(--theme-color-primary-lighter, #c4dbfa);
+    color: var(--theme-color-primary, #1c67e3);
 }
 
-.aoi-upload__button:disabled {
+.aoi-tool .aoi-upload__button:disabled {
     opacity: 0.6;
     cursor: not-allowed;
 }
@@ -424,50 +609,58 @@
     display: none;
 }
 
+// Set in the panel's body copy, matching .aoi-panel__hint: the list reads as
+// part of the prose around it rather than as fine print under it.
 .aoi-upload__formats {
     margin: 0;
-    padding-left: var(--aoi-space-4);
-    color: var(--aoi-fg);
-    font-size: var(--aoi-font-size-sm);
+    padding-left: var(--theme-spacing-2, 16px);
+    color: var(--theme-color-base-dark, #58585b);
+    font-size: var(--theme-font-size-2xs, 14px);
+    line-height: 1.6;
 }
 
 .aoi-tooltip {
     position: absolute;
-    transform: translate(-50%, calc(-100% - var(--aoi-space-3)));
+    transform: translate(-50%, calc(-100% - var(--theme-spacing-105, 12px)));
     min-width: 220px;
-    padding: var(--aoi-space-3);
-    border: 1px solid var(--aoi-border);
-    border-radius: var(--aoi-radius-md);
-    box-shadow: var(--aoi-shadow-pop);
+    padding: var(--theme-spacing-105, 12px);
+    border-radius: var(--theme-radius-sm, 2px);
+    box-shadow: 0 4px 8px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
     pointer-events: auto;
     z-index: 1000;
 }
 
 .aoi-tooltip__label {
-    margin: 0 0 var(--aoi-space-2);
-    font-size: var(--aoi-font-size-md);
-    font-weight: 600;
+    margin: 0 0 var(--theme-spacing-1, 8px);
+    font-size: var(--theme-font-size-2xs, 14px);
+    font-weight: var(--theme-font-weight-semibold, 600);
 }
 
 .aoi-tooltip__actions {
     display: flex;
-    gap: var(--aoi-space-2);
+    gap: var(--theme-spacing-1, 8px);
 }
 
 .aoi-tooltip__primary,
 .aoi-tooltip__secondary {
     flex: 1 1 auto;
     height: 32px;
-    border-radius: var(--aoi-radius-sm);
+    border: 0;
+    border-radius: var(--theme-radius-sm, 2px);
     cursor: pointer;
-    font: inherit;
-    font-weight: 600;
+    font-family: inherit;
+    font-size: var(--theme-font-size-2xs, 14px);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    transition: background-color 0.12s ease, color 0.12s ease;
 }
 
 .aoi-tooltip__primary {
-    border: 1px solid var(--aoi-accent);
-    background: var(--aoi-accent);
-    color: var(--aoi-accent-fg);
+    background: var(--theme-color-primary, #1c67e3);
+    color: var(--theme-color-white, #ffffff);
+}
+
+.aoi-tooltip__primary:hover:not(:disabled) {
+    background: var(--theme-color-primary-dark, #0b3d91);
 }
 
 .aoi-tooltip__primary:disabled {
@@ -476,7 +669,11 @@
 }
 
 .aoi-tooltip__secondary {
-    border: 1px solid var(--aoi-border);
-    background: var(--aoi-bg);
-    color: var(--aoi-fg);
+    background: var(--theme-color-base-lightest, #f6f6f6);
+    color: var(--theme-color-ink, #17171b);
+}
+
+.aoi-tooltip__secondary:hover {
+    background: var(--theme-color-primary-lightest, #eaf0fd);
+    color: var(--theme-color-primary, #1c67e3);
 }

@@ -45,11 +45,14 @@ export interface AOIComponentProps {
     onClose: () => void
 }
 
+// `icon` names an .aoi-icon--* modifier, which masks the matching SVG exported
+// from the design. The glyph takes its color from the tab, so one file serves
+// the default, hover and selected states.
 const MODES: Array<{ id: AOIMode; label: string; icon: string }> = [
-    { id: 'search', label: 'Search', icon: 'magnify' },
-    { id: 'inspect', label: 'Inspect', icon: 'hand-pointing-up' },
-    { id: 'draw', label: 'Draw', icon: 'vector-polyline' },
-    { id: 'upload', label: 'Upload', icon: 'tray-arrow-up' },
+    { id: 'search', label: 'Search', icon: 'search' },
+    { id: 'inspect', label: 'Inspect', icon: 'inspect' },
+    { id: 'draw', label: 'Draw', icon: 'draw' },
+    { id: 'upload', label: 'Upload', icon: 'upload' },
 ]
 
 export function AOIComponent(props: AOIComponentProps) {
@@ -59,18 +62,21 @@ export function AOIComponent(props: AOIComponentProps) {
         <div className="aoi-tool" role="region" aria-label="Analyze areas">
             <header className="aoi-tool__header">
                 <div className="aoi-tool__title">
-                    <i className="mdi mdi-chart-bar aoi-tool__title-icon" aria-hidden="true" />
+                    <span
+                        className="aoi-icon aoi-icon--analyze aoi-tool__title-icon"
+                        aria-hidden="true"
+                    />
                     <span>Analyze areas</span>
                 </div>
-                <Button
-                    type="button"
-                    unstyled
-                    className="aoi-tool__close"
-                    onClick={props.onClose}
-                    aria-label="Close"
-                >
-                    <i className="mdi mdi-close" aria-hidden="true" />
-                </Button>
+                <div className="aoi-tool__header-actions">
+                    <button
+                        type="button"
+                        className="aoi-tool__exit"
+                        onClick={props.onClose}
+                    >
+                        EXIT
+                    </button>
+                </div>
             </header>
 
             {props.analysisError ? (
@@ -96,44 +102,46 @@ export function AOIComponent(props: AOIComponentProps) {
                 </div>
             ) : null}
 
-            {isAnalyzing ? (
-                <AnalyzingPanel
-                    label={props.analysisLabel || 'Area of interest'}
-                    done={props.analysisDone ?? 0}
-                    total={props.analysisTotal ?? 0}
-                />
-            ) : (
-                <>
-                    <nav className="aoi-tool__tabs" role="tablist" aria-label="AOI selection mode">
-                        {MODES.map((m) => (
-                            <button
-                                key={m.id}
-                                type="button"
-                                role="tab"
-                                aria-selected={props.mode === m.id}
-                                className={
-                                    'aoi-tool__tab' +
-                                    (props.mode === m.id ? ' aoi-tool__tab--active' : '')
-                                }
-                                onClick={() => props.onModeChange(m.id)}
-                            >
-                                <i
-                                    className={`mdi mdi-${m.icon} aoi-tool__tab-icon`}
-                                    aria-hidden="true"
-                                />
-                                <span className="aoi-tool__tab-label">{m.label}</span>
-                            </button>
-                        ))}
-                    </nav>
+            <div className="aoi-tool__content">
+                {isAnalyzing ? (
+                    <AnalyzingPanel
+                        label={props.analysisLabel || 'Area of interest'}
+                        done={props.analysisDone ?? 0}
+                        total={props.analysisTotal ?? 0}
+                    />
+                ) : (
+                    <>
+                        <nav className="aoi-tool__tabs" role="tablist" aria-label="AOI selection mode">
+                            {MODES.map((m) => (
+                                <button
+                                    key={m.id}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={props.mode === m.id}
+                                    className={
+                                        'aoi-tool__tab' +
+                                        (props.mode === m.id ? ' aoi-tool__tab--active' : '')
+                                    }
+                                    onClick={() => props.onModeChange(m.id)}
+                                >
+                                    <span
+                                        className={`aoi-icon aoi-icon--${m.icon}`}
+                                        aria-hidden="true"
+                                    />
+                                    <span className="aoi-tool__tab-label">{m.label}</span>
+                                </button>
+                            ))}
+                        </nav>
 
-                    <div className="aoi-tool__body" role="tabpanel">
-                        {props.mode === 'search' && <SearchPanel {...props} />}
-                        {props.mode === 'inspect' && <InspectPanel />}
-                        {props.mode === 'draw' && <DrawPanel {...props} />}
-                        {props.mode === 'upload' && <UploadPanel {...props} />}
-                    </div>
-                </>
-            )}
+                        <div className="aoi-tool__body" role="tabpanel">
+                            {props.mode === 'search' && <SearchPanel {...props} />}
+                            {props.mode === 'inspect' && <InspectPanel />}
+                            {props.mode === 'draw' && <DrawPanel {...props} />}
+                            {props.mode === 'upload' && <UploadPanel {...props} />}
+                        </div>
+                    </>
+                )}
+            </div>
         </div>
     )
 }
@@ -192,7 +200,10 @@ function SearchPanel(props: AOIComponentProps) {
                     disabled={inputDisabled}
                     onChange={(e) => props.onSearchQueryChange(e.target.value)}
                 />
-                <i className="mdi mdi-magnify aoi-search__icon" aria-hidden="true" />
+                <span
+                    className="aoi-icon aoi-icon--search aoi-search__icon"
+                    aria-hidden="true"
+                />
             </label>
 
             {props.searchLoading && (
@@ -340,7 +351,6 @@ function UploadPanel(props: AOIComponentProps) {
 
             <Button
                 type="button"
-                outline
                 className="aoi-upload__button"
                 onClick={() => inputRef.current?.click()}
                 disabled={props.uploadStatus === 'parsing'}
@@ -365,7 +375,7 @@ function UploadPanel(props: AOIComponentProps) {
                 </Alert>
             )}
 
-            <p className="aoi-panel__hint aoi-panel__hint--secondary">
+            <p className="aoi-panel__hint">
                 Supported formats:
             </p>
             <ul className="aoi-upload__formats">
