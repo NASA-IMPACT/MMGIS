@@ -231,6 +231,54 @@ export const mmgisGetTiTilerUrls = (): Promise<Record<
     )
 }
 
+/**
+ * Where the active mission's files are served from, e.g. `Missions/MSL/`.
+ * Uploads configured through the Configure page are stored as paths relative
+ * to this. Null before a mission loads, or against a core without the handler.
+ */
+export const mmgisGetMissionPath = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('app:getMissionPath')
+}
+
+/** Fired whenever any panel's state, size or membership changes. */
+export const PANEL_LAYOUT_CHANGED_EVENT = 'mmgis-panel-layout-changed'
+
+/** A panel in the layout, as plugins see it. */
+export type PanelSummary = {
+    id: string
+    position: string
+    state: 'collapsed' | 'iconified' | 'focused' | 'expanded'
+    /** Whether the panel's constraints permit collapsing it at all. */
+    collapsible: boolean
+    /** Ids of the tools this panel hosts — how a plugin finds its own panel. */
+    toolIds: string[]
+}
+
+/**
+ * Every panel in the layout, in priority order. Null against a core that does
+ * not register the handler, in which case callers leave panel controls out.
+ *
+ * Re-request on PANEL_LAYOUT_CHANGED_EVENT to follow state changes.
+ */
+export const mmgisGetPanels = (): Promise<PanelSummary[] | null> => {
+    return mmgisRequestIfProvided<PanelSummary[]>('panels:getAll')
+}
+
+/**
+ * Collapses a visible panel, or restores a collapsed one to the state it last
+ * had. False when the panel is unknown, its constraints forbid collapsing, or
+ * core lacks the handler.
+ */
+export const mmgisTogglePanelCollapsed = async (
+    panelId: string,
+): Promise<boolean> => {
+    const toggled = await mmgisRequestIfProvided<boolean>(
+        'panels:toggleCollapsed',
+        panelId,
+    )
+    return toggled === true
+}
+
 /** Whether the mission has time enabled at all. */
 export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')

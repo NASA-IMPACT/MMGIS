@@ -6,12 +6,60 @@
 // by hand, so realistic typos degrade to a loud warning and a rail that still
 // renders, never a crash.
 
-import type { ThemeSummary } from './types'
+import type { ThemeIcon, ThemeSummary } from './types'
 
 const TAG = '[LayerFilterThemes]'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** A config value only when it's a non-empty string. */
+function text(value: unknown): string | null {
+    return typeof value === 'string' && value.trim() !== '' ? value.trim() : null
+}
+
+/**
+ * A bare `icon` string, from configs written before the icon gained a source.
+ * Anything carrying a path or scheme is a file; the rest is an MDI name.
+ */
+function legacyIcon(value: string): ThemeIcon {
+    return /[/.]|^data:/i.test(value)
+        ? { kind: 'image', src: value }
+        : { kind: 'mdi', name: value }
+}
+
+/**
+ * Which icon a theme entry carries.
+ *
+ * `iconSource` says which of the three inputs the author filled in; when it
+ * names one that was left empty, or is missing entirely, the first input that
+ * does hold something wins. That keeps a half-finished row rendering the icon
+ * it visibly has rather than nothing at all.
+ */
+function resolveIcon(entry: Record<string, unknown>, index: number): ThemeIcon | undefined {
+    const upload = text(entry.iconUpload)
+    const url = text(entry.iconUrl)
+    const mdi = text(entry.iconMdi)
+    const source = text(entry.iconSource)
+
+    if (source === 'upload' && upload) return { kind: 'image', src: upload }
+    if (source === 'link' && url) return { kind: 'image', src: url }
+    if (source === 'mdi' && mdi) return { kind: 'mdi', name: mdi }
+
+    if (upload) return { kind: 'image', src: upload }
+    if (url) return { kind: 'image', src: url }
+    if (mdi) return { kind: 'mdi', name: mdi }
+
+    const legacy = text(entry.icon)
+    if (legacy) return legacyIcon(legacy)
+
+    if (source) {
+        console.warn(
+            `${TAG} config error: themes[${index}] selects icon source "${source}" but that field is empty — the entry renders without an icon`,
+        )
+    }
+    return undefined
 }
 
 /** Always returns a safe ThemeSummary[]; every dropped/coerced shape warns. */
@@ -55,10 +103,8 @@ export function normalizeRailThemes(raw: unknown): ThemeSummary[] {
                     ? entry.label
                     : entry.id,
         }
-        // Anything non-string would render as `mdi-undefined`.
-        if (typeof entry.icon === 'string' && entry.icon !== '') {
-            theme.icon = entry.icon
-        }
+        const icon = resolveIcon(entry, i)
+        if (icon) theme.icon = icon
         themes.push(theme)
     })
 
