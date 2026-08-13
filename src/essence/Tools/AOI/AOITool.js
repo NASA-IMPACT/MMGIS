@@ -66,18 +66,32 @@ const KEY_OWNING_ROLE_SELECTOR =
     '[role="dialog"],[role="menu"],[role="listbox"],[role="combobox"]'
 
 // ── Styles ─────────────────────────────────────────────────────────────────────
-const SELECTION_STYLE = {
-    color: '#005ea2',
-    weight: 3,
-    fillColor: '#005ea2',
-    fillOpacity: 0.25,
+// The map is handed concrete colors: these end up on SVG presentation
+// attributes, which do not resolve var(). So a token is read off :root and
+// passed by value — and read at the moment a layer is drawn, not at module
+// load, since the theme bundle is fetched at runtime and may not have applied
+// yet when this file is first evaluated.
+const themeToken = (name, fallback) => {
+    if (typeof window === 'undefined' || !window.getComputedStyle) return fallback
+    const value = window
+        .getComputedStyle(document.documentElement)
+        .getPropertyValue(name)
+        .trim()
+    return value || fallback
 }
 
-const INSPECT_STYLE = {
-    color: '#137480',
-    weight: 1,
-    fillColor: '#137480',
-    fillOpacity: 0.06,
+// The chosen area, in the accent the panel uses for a selected control.
+const selectionStyle = () => {
+    const color = themeToken('--theme-color-primary', '#1c67e3')
+    return { color, weight: 2, fillColor: color, fillOpacity: 0.25 }
+}
+
+// The boundaries offered for picking: the same accent a step lighter, and far
+// thinner, so the mesh reads as a guide under the selection rather than
+// competing with it.
+const inspectStyle = () => {
+    const color = themeToken('--theme-color-primary-light', '#288bff')
+    return { color, weight: 1, fillColor: color, fillOpacity: 0.06 }
 }
 
 const initialState = () => ({
@@ -469,7 +483,7 @@ const AOITool = {
                     type: 'FeatureCollection',
                     features,
                 },
-                style: INSPECT_STYLE,
+                style: inspectStyle(),
                 interactive: true,
             }))
             .catch((err) => console.warn('[AOI] failed to show inspect boundaries', err))
@@ -554,7 +568,7 @@ const AOITool = {
             id: SELECTION_LAYER_ID,
             type: 'vector',
             geojson: { type: 'FeatureCollection', features: [feature] },
-            style: SELECTION_STYLE,
+            style: selectionStyle(),
             interactive: false,
         }).catch((err) => console.warn('[AOI] failed to add selection layer', err))
 
