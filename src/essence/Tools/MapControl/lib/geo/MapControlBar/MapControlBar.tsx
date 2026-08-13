@@ -76,8 +76,9 @@ export function MapControlBar({
     })
     const { results, loading } = useDebouncedSearch(searchOpen ? searchQuery : '')
 
-    // Each panel closes itself on Escape and on an outside click; measure mode
-    // has no surface of its own, so the bar exits it here.
+    // Escape exits measure mode. An open panel's own Escape handler fires on
+    // the same press (both listen on document), so the panel closes and
+    // measure exits together.
     useEffect(() => {
         function onKey(e: KeyboardEvent) {
             if (e.key !== 'Escape') return

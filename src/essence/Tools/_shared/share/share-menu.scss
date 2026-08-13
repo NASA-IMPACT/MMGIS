@@ -12,7 +12,7 @@
 .shareExport-tool-host {
     // Tokens, resolved in three steps: a host theme's --mmgis-* override, then
     // the design system's --theme-* token, then a literal for when neither is
-    // loaded. Surfaces are square and unshadowed, separated by a border alone.
+    // loaded. Surfaces are square and unshadowed, separated by ground alone.
     --se-bg: var(--mmgis-surface, var(--theme-color-white, #ffffff));
     --se-bg-hover: var(
         --mmgis-surface-muted,
