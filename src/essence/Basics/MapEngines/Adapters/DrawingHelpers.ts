@@ -201,12 +201,13 @@ export function drawStyles(): {
     }
 
     return {
-        polygon: { ...area },
+        polygon: { ...area, closingPointColor: accent },
         rectangle: { ...area },
         circle: { ...area },
         linestring: {
             lineStringColor: accent,
             lineStringWidth: DRAW_STROKE_WIDTH,
+            closingPointColor: accent,
         },
         point: { pointColor: accent },
     }
