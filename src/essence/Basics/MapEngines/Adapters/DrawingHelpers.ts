@@ -178,7 +178,12 @@ const DRAW_STROKE_WIDTH = 2
  * The fallback is the horizon palette, for when no theme bundle is loaded.
  */
 export function drawStyles(): {
-    polygon: { fillColor: HexColor; outlineColor: HexColor; outlineWidth: number }
+    polygon: {
+        fillColor: HexColor
+        outlineColor: HexColor
+        outlineWidth: number
+        closingPointColor: HexColor
+    }
     rectangle: { fillColor: HexColor; outlineColor: HexColor; outlineWidth: number }
     circle: { fillColor: HexColor; outlineColor: HexColor; outlineWidth: number }
     linestring: { lineStringColor: HexColor; lineStringWidth: number }
