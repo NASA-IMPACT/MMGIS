@@ -1,14 +1,15 @@
+/* Basemap Panel
+   The basemap list on a popover surface. FloatingPopover owns placement,
+   stacking and the gap to the trigger; only the surface chrome lives here. */
 .blocks-basemap-panel {
-    margin-top: var(--theme-spacing-05, 0.25rem);
     min-width: 220px;
     max-height: 320px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     background: var(--theme-color-white, #ffffff);
-    border-radius: var(--theme-radius-lg, 0.5rem);
-    box-shadow: 0 4px 16px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
-    font-family: var(--theme-font-ui);
+    border-radius: var(--theme-radius-0, 0);
+    font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue', sans-serif);
 
     &__header {
         flex-shrink: 0;
@@ -17,7 +18,7 @@
         font-weight: var(--theme-font-weight-bold, 700);
         letter-spacing: 0.8px;
         text-transform: uppercase;
-        color: var(--theme-color-base, #71767a);
+        color: var(--theme-color-base, #77777a);
     }
 
     &__row {
@@ -32,41 +33,50 @@
         border: none;
         cursor: pointer;
         text-align: left;
-        transition: background 0.1s ease;
+        color: var(--theme-color-base, #77777a);
+        transition: background-color 0.1s ease, color 0.1s ease;
 
         &:hover {
-            background: var(--theme-color-base-lightest, #f1f3f6);
+            background: var(--theme-color-primary-lightest, #eaf0fd);
+            color: var(--theme-color-primary, #1c67e3);
         }
 
-        &--active {
-            background: var(--theme-color-base-lighter, #dfe1e2);
+        /* Core's global `*:focus { outline: none }` strips the native ring, so
+           the panel restores one for keyboard users. */
+        &:focus-visible {
+            outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
+            outline-offset: -2px;
+        }
+
+        /* The selected basemap. Stated after :hover so pointing at the row that
+           is already selected keeps it filled. */
+        &--active,
+        &--active:hover {
+            background: var(--theme-color-primary, #1c67e3);
+            color: var(--theme-color-white, #ffffff);
 
             .blocks-basemap-panel__label {
-                color: var(--theme-color-primary, #0e7482);
                 font-weight: var(--theme-font-weight-semibold, 600);
-            }
-
-            .blocks-basemap-panel__thumb {
-                border-color: var(--theme-color-primary, #0e7482);
             }
         }
     }
 
+    /* Takes the row's color so it follows the hover and selected states. */
     &__label {
         flex: 1;
         font-size: var(--theme-font-size-2xs, 0.88rem);
-        color: var(--theme-color-ink, #1b1b1b);
+        color: inherit;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
+    /* The selected row is filled, so the thumbnail carries no marker of its
+       own — it only shows the style it stands for. */
     &__thumb {
         width: 44px;
         height: 28px;
         flex-shrink: 0;
-        border-radius: var(--theme-radius-sm, 2px);
-        border: 2px solid transparent;
-        box-shadow: 0 1px 3px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+        border-radius: var(--theme-radius-0, 0);
     }
 }

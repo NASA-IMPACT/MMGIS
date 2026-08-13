@@ -20,7 +20,7 @@ export type MeasureState = {
     measuring: boolean
     /** Two-point segment being measured (or live preview), else null. */
     segment: [LatLng, LatLng] | null
-    /** No points collected yet (show the hint). */
+    /** Measuring, with no points collected yet. */
     awaitingFirst: boolean
     toggle: () => void
     stop: () => void
