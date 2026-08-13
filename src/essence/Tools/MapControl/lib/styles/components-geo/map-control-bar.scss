@@ -6,13 +6,24 @@
 
    Every surface is square-cornered: --theme-radius-0 is stated rather than
    left to the initial value, so a UA or framework default cannot round it. */
+/* The element the tool mounts into. It spans the full width of the panel's
+   tool card so the bar below has room to align itself within it; without this
+   the host shrink-wraps the bar and alignment has no effect. */
+.mapControl-tool-host {
+    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
 .blocks-map-control {
     // Placement is owned by the host container (e.g. a floating panel zone);
-    // the bar only anchors its own dropdowns.
+    // the bar only anchors its own dropdowns. It spans its host and pins its
+    // contents to the right edge.
     position: relative;
     display: flex;
     flex-direction: column;
     align-items: flex-end;
+    width: 100%;
     pointer-events: auto;
     font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue', sans-serif);
 
