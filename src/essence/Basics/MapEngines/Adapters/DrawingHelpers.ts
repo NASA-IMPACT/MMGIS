@@ -135,3 +135,70 @@ export function validateDrawnLineString(
     }
     return { valid: true }
 }
+
+/**
+ * Reads a design token off :root, resolved to a concrete value.
+ *
+ * terra-draw's styling takes hex colors, not CSS — the values it is handed
+ * reach the renderer as literal colors, which do not resolve var(). A theme
+ * emitting a non-hex color would fail terra-draw's own styling validation, so
+ * anything that isn't a hex falls back too.
+ *
+ * Read when the modes are built rather than at module load: the theme bundle
+ * is fetched at runtime and may not have applied when this file is evaluated.
+ */
+type HexColor = `#${string}`
+
+function themeColor(name: string, fallback: HexColor): HexColor {
+    if (typeof window === 'undefined' || !window.getComputedStyle) return fallback
+    const value = window
+        .getComputedStyle(document.documentElement)
+        .getPropertyValue(name)
+        .trim()
+    return /^#[0-9a-f]{3,8}$/i.test(value) ? (value as HexColor) : fallback
+}
+
+/**
+ * Stroke width of a drawing in progress, in pixels.
+ *
+ * Matches the width a plugin draws the committed shape at, so the outline does
+ * not thicken or thin at the moment the drawing is confirmed. terra-draw's own
+ * default is 4, which reads heavier than the shape it becomes.
+ */
+const DRAW_STROKE_WIDTH = 2
+
+/**
+ * The accent a drawing in progress is rendered in.
+ *
+ * Only colors and the stroke width are stated; opacities are left unset so
+ * terra-draw applies its own. That matters for the fill: it and the outline
+ * share a color, and it is the fill's lower opacity alone that lets the
+ * outline read as an edge rather than disappearing into the area it encloses.
+ *
+ * The fallback is the horizon palette, for when no theme bundle is loaded.
+ */
+export function drawStyles(): {
+    polygon: { fillColor: HexColor; outlineColor: HexColor; outlineWidth: number }
+    rectangle: { fillColor: HexColor; outlineColor: HexColor; outlineWidth: number }
+    circle: { fillColor: HexColor; outlineColor: HexColor; outlineWidth: number }
+    linestring: { lineStringColor: HexColor; lineStringWidth: number }
+    point: { pointColor: HexColor }
+} {
+    const accent = themeColor('--theme-color-primary', '#1c67e3')
+    const area = {
+        fillColor: accent,
+        outlineColor: accent,
+        outlineWidth: DRAW_STROKE_WIDTH,
+    }
+
+    return {
+        polygon: { ...area },
+        rectangle: { ...area },
+        circle: { ...area },
+        linestring: {
+            lineStringColor: accent,
+            lineStringWidth: DRAW_STROKE_WIDTH,
+        },
+        point: { pointColor: accent },
+    }
+}

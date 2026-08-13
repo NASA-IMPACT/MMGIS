@@ -49,6 +49,7 @@ import { TerraDrawLeafletAdapter } from 'terra-draw-leaflet-adapter'
 import {
     committedVerticesFromChange,
     drawModeKeyEvents,
+    drawStyles,
     validateDrawnLineString,
 } from './DrawingHelpers'
 import { getMapScreenshot } from './LeafletScreenshot'
@@ -939,17 +940,32 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _ensureTerraDraw(): TerraDraw {
         if (this._terraDraw) return this._terraDraw
 
+        // The drawing is rendered in the theme's accent, at the stroke width
+        // a committed shape is drawn with; terra-draw's own defaults supply
+        // the opacities.
+        const styles = drawStyles()
+
         const td = new TerraDraw({
             adapter: new TerraDrawLeafletAdapter({ lib: L, map: this._map }),
             modes: [
-                new TerraDrawPointMode(),
+                new TerraDrawPointMode({ styles: styles.point }),
                 new TerraDrawLineStringMode({
                     keyEvents: drawModeKeyEvents('linestring'),
                     validation: validateDrawnLineString,
+                    styles: styles.linestring,
                 }),
-                new TerraDrawPolygonMode({ keyEvents: drawModeKeyEvents('polygon') }),
-                new TerraDrawRectangleMode({ keyEvents: drawModeKeyEvents('rectangle') }),
-                new TerraDrawCircleMode({ keyEvents: drawModeKeyEvents('circle') }),
+                new TerraDrawPolygonMode({
+                    keyEvents: drawModeKeyEvents('polygon'),
+                    styles: styles.polygon,
+                }),
+                new TerraDrawRectangleMode({
+                    keyEvents: drawModeKeyEvents('rectangle'),
+                    styles: styles.rectangle,
+                }),
+                new TerraDrawCircleMode({
+                    keyEvents: drawModeKeyEvents('circle'),
+                    styles: styles.circle,
+                }),
             ],
         })
 
