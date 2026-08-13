@@ -433,17 +433,20 @@
           {
             "id": "need",
             "label": "Need",
-            "icon": "satellite-variant"
+            "iconSource": "mdi",
+            "iconMdi": "satellite-variant"
           },
           {
             "id": "hazard",
             "label": "Hazard",
-            "icon": "flash-outline"
+            "iconSource": "mdi",
+            "iconMdi": "flash-outline"
           },
           {
             "id": "event",
             "label": "Event",
-            "icon": "calendar-outline"
+            "iconSource": "mdi",
+            "iconMdi": "calendar-outline"
           }
         ]
       },
