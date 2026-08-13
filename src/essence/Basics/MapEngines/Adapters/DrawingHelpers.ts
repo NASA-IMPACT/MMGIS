@@ -186,7 +186,11 @@ export function drawStyles(): {
     }
     rectangle: { fillColor: HexColor; outlineColor: HexColor; outlineWidth: number }
     circle: { fillColor: HexColor; outlineColor: HexColor; outlineWidth: number }
-    linestring: { lineStringColor: HexColor; lineStringWidth: number }
+    linestring: {
+        lineStringColor: HexColor
+        lineStringWidth: number
+        closingPointColor: HexColor
+    }
     point: { pointColor: HexColor }
 } {
     const accent = themeColor('--theme-color-primary', '#1c67e3')
