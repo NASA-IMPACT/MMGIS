@@ -20,6 +20,16 @@ const SQUARE = polygon([[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]])
 // Centroid (25, 25), so a superseding selection is distinguishable.
 const FAR_SQUARE = polygon([[20, 20], [20, 30], [30, 30], [30, 20], [20, 20]])
 
+// The view `map:getBounds` reports. It holds neither square, so every
+// selection here overflows it and the popup waits on a camera move — the
+// path this file is about. Its centre, (-35, -35), is where the popup is
+// anchored when the camera turns out not to move after all.
+const VIEW = {
+    southWest: { lat: -40, lng: -40 },
+    northEast: { lat: -30, lng: -30 },
+}
+const VIEW_CENTRE = { lat: -35, lng: -35 }
+
 /**
  * Minimal stand-in for `window.mmgisAPI`: a mitt-like bus plus recording
  * `request`/`emit` logs, so a spec can assert exactly what the plugin asked
@@ -91,6 +101,7 @@ function makeFakeApi() {
         },
     }
 
+    requestImpl.set('map:getBounds', () => VIEW)
     requestImpl.set('map:showPopup', (payload) => {
         settleOpen('closed')
         return new Promise((resolve) => {
@@ -107,12 +118,20 @@ function makeFakeApi() {
 
 let api
 
-/** Let queued microtasks (bus request promises) run. */
-const flush = () => vi.advanceTimersByTimeAsync(0)
+/**
+ * Let queued microtasks (bus request promises) run. A selection chains several
+ * of them — reading the camera, then deciding the fit — so one tick is not
+ * enough to reach the state a test is about to assert on.
+ */
+const flush = async () => {
+    for (let i = 0; i < 5; i++) await vi.advanceTimersByTimeAsync(0)
+}
 
 /** Make a selection and let its deferred popup open. */
 async function selectAndOpen(feature, label) {
     AOITool._applySelection(feature, 'search', label)
+    // The camera is read before the popup is armed to wait on `map:moveend`.
+    await flush()
     api.emit('map:moveend')
     await flush()
 }
@@ -140,8 +159,9 @@ afterEach(() => {
 })
 
 describe('AOITool popup requests', () => {
-    test('asks core for the analyze/cancel popup at the feature centroid, once the camera settles', () => {
+    test('asks core for the analyze/cancel popup at the feature centroid, once the camera settles', async () => {
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        await flush()
         expect(api.namesOf('map:showPopup')).toHaveLength(0)
 
         api.emit('map:moveend')
@@ -178,8 +198,9 @@ describe('AOITool popup requests', () => {
         expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE })
     })
 
-    test('escapes markup in the label', () => {
+    test('escapes markup in the label', async () => {
         AOITool._applySelection(SQUARE, 'upload', 'Smith & <b>Sons</b>')
+        await flush()
         api.emit('map:moveend')
 
         const { html } = api.namesOf('map:showPopup')[0].payload
@@ -246,6 +267,7 @@ describe('AOITool popup outcomes', () => {
         })
 
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        await flush()
         api.emit('map:moveend')
         await flush()
 
@@ -259,30 +281,54 @@ describe('AOITool popup outcomes', () => {
 })
 
 describe('AOITool popup lifecycle', () => {
-    test('destroy retracts the popup and drops a pending show', () => {
+    test('destroy retracts the popup and drops a pending show', async () => {
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
         api.reset()
 
+        // Torn down while the camera is still being read, which is the earliest
+        // a pending show can be dropped.
         AOITool.destroy()
         expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        await flush()
 
         api.emit('map:moveend')
-        vi.advanceTimersByTime(2000)
+        await vi.advanceTimersByTimeAsync(2000)
         expect(api.namesOf('map:showPopup')).toHaveLength(0)
 
         expect(api.listenerCount('map:moveend')).toBe(0)
         expect(api.listenerCount('map:featureClick')).toBe(0)
     })
 
-    test('a superseding selection leaves only its own popup pending', () => {
+    // Switching tools, closing the tool and collapsing its panel all reach the
+    // plugin the same way — through `destroy()` — so this is the whole of the
+    // teardown contract: nothing of the selection outlives the tool.
+    test('destroy clears the selection, its highlight and the popup', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        expect(api.hasOpenPopup()).toBe(true)
+        api.reset()
+
+        AOITool.destroy()
+        await flush()
+
+        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        expect(api.hasOpenPopup()).toBe(false)
+        expect(
+            api.namesOf('map:removeLayer').map((r) => r.payload.id)
+        ).toContain('aoi:selection')
+        expect(AOITool._state.currentAOI).toBeNull()
+    })
+
+    test('a superseding selection leaves only its own popup pending', async () => {
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
         AOITool._applySelection(FAR_SQUARE, 'search', 'Alaska')
+        await flush()
 
-        // The superseded one-shot is unsubscribed, not just neutered.
+        // The superseded show never subscribes at all: it is dropped while the
+        // camera is being read.
         expect(api.listenerCount('map:moveend')).toBe(1)
 
         api.emit('map:moveend')
-        vi.advanceTimersByTime(2000)
+        await vi.advanceTimersByTimeAsync(2000)
 
         const shows = api.namesOf('map:showPopup')
         expect(shows).toHaveLength(1)
@@ -290,17 +336,18 @@ describe('AOITool popup lifecycle', () => {
         expect(shows[0].payload.latlng).toEqual({ lat: 25, lng: 25 })
     })
 
-    test('the fallback timer shows the popup exactly once', () => {
+    test('the fallback timer shows the popup exactly once', async () => {
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        await flush()
 
-        vi.advanceTimersByTime(1500)
+        await vi.advanceTimersByTimeAsync(1500)
         expect(api.namesOf('map:showPopup')).toHaveLength(1)
 
         api.emit('map:moveend')
         expect(api.namesOf('map:showPopup')).toHaveLength(1)
     })
 
-    test('a rejected fitBounds leaves the popup to the fallback timer, still once', async () => {
+    test('a rejected fitBounds opens the popup against the unchanged view, once', async () => {
         api.requestImpl.set('map:fitBounds', () => {
             throw new Error('no view yet')
         })
@@ -308,13 +355,41 @@ describe('AOITool popup lifecycle', () => {
 
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
         await flush()
-        expect(api.namesOf('map:showPopup')).toHaveLength(0)
 
-        vi.advanceTimersByTime(1500)
-        expect(api.namesOf('map:showPopup')).toHaveLength(1)
+        // The fit never happened, so the camera will emit no moveend and there
+        // is nothing to wait for: the popup opens straight away, and against the
+        // view still on screen, since the centroid it would otherwise use is
+        // outside it.
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.latlng).toEqual(VIEW_CENTRE)
 
         api.emit('map:moveend')
-        vi.advanceTimersByTime(2000)
+        await vi.advanceTimersByTimeAsync(2000)
+        expect(api.namesOf('map:showPopup')).toHaveLength(1)
+    })
+
+    test('a selection already in view opens its popup without waiting on the camera', async () => {
+        // Reported as containing SQUARE, so `selectionFitBounds` declines to
+        // move the camera. No moveend follows a camera that never moves, so a
+        // popup left waiting on one would hang until the fallback timer — and
+        // this asserts it does not wait at all.
+        api.requestImpl.set('map:getBounds', () => ({
+            southWest: { lat: -10, lng: -10 },
+            northEast: { lat: 20, lng: 20 },
+        }))
+
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        await flush()
+
+        expect(api.namesOf('map:fitBounds')).toHaveLength(0)
+        expect(api.listenerCount('map:moveend')).toBe(0)
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        // Its own centroid: already on screen, so no fallback anchor applies.
+        expect(shows[0].payload.latlng).toEqual({ lat: 5, lng: 5 })
+
+        await vi.advanceTimersByTimeAsync(2000)
         expect(api.namesOf('map:showPopup')).toHaveLength(1)
     })
 })
