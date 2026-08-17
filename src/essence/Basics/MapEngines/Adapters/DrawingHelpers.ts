@@ -137,6 +137,60 @@ export function validateDrawnLineString(
 }
 
 /**
+ * Tells an engine that a click still to arrive ended a drawing, so that click
+ * is not reported as a map click.
+ *
+ * terra-draw commits a shape on `pointerup` and the engine hears about the same
+ * gesture's click only afterwards: Leaflet on the native `click` that follows,
+ * deck.gl up to 300ms later, since its `click` recognizer waits for a
+ * double-click to fail before it fires. Both land after the session has ended,
+ * so an engine's "am I drawing?" check no longer covers them, and reporting them
+ * hands every consumer a map click the user never made — one that arrives after
+ * `drawcomplete` and so dismisses whatever a plugin opened in response to it.
+ *
+ * Only the ending gesture's own click can be covered. The next gesture opens
+ * with a `pointerdown`, which disarms the guard — and, in deck's case, cancels
+ * the recognizer's pending click outright, so nothing from the old gesture can
+ * arrive after it.
+ */
+export class DrawEndClickGuard {
+    private _pending = false
+    private _element: HTMLElement | null = null
+    private readonly _disarm = (): void => {
+        this._pending = false
+    }
+
+    /**
+     * Cover the click that may still arrive from the gesture that just ended a
+     * drawing session.
+     *
+     * @param element The element the engine's pointer events reach. Without one
+     * the guard stays open: an engine with no map cannot be delivering clicks.
+     */
+    arm(element: HTMLElement | null): void {
+        if (!element) return
+        if (element !== this._element) {
+            this.dispose()
+            this._element = element
+            element.addEventListener('pointerdown', this._disarm, true)
+        }
+        this._pending = true
+    }
+
+    /** Whether a click reaching the engine now can only be the drawing's. */
+    get pending(): boolean {
+        return this._pending
+    }
+
+    /** Stop watching for the next gesture. Arming again resumes it. */
+    dispose(): void {
+        this._element?.removeEventListener('pointerdown', this._disarm, true)
+        this._element = null
+        this._pending = false
+    }
+}
+
+/**
  * Reads a design token off :root, resolved to a concrete value.
  *
  * terra-draw's styling takes hex colors, not CSS — the values it is handed

@@ -48,6 +48,7 @@ import {
 import { TerraDrawLeafletAdapter } from 'terra-draw-leaflet-adapter'
 import {
     committedVerticesFromChange,
+    DrawEndClickGuard,
     drawModeKeyEvents,
     drawStyles,
     validateDrawnLineString,
@@ -123,6 +124,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _terraDraw: TerraDraw | null = null
     private _drawingShape: DrawShape | null = null
     private _terraDrawListeners: Array<() => void> = []
+    private _drawEndClick = new DrawEndClickGuard()
 
     /**
      * Initialize the Leaflet map instance
@@ -316,6 +318,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             }
         })
         this._overlays.clear()
+
+        this._drawEndClick.dispose()
 
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
@@ -789,6 +793,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     on(eventName: string, handler: MapEventHandler<any>, options: MapEventOptions = {}): void {
         // Wrap the handler to normalize event data
         const wrappedHandler = (e: any) => {
+            // The click a drawing ended on is not a map click; see
+            // {@link DrawEndClickGuard}.
+            if (eventName === 'click' && this._drawEndClick.pending) return
             const normalizedEvent = this._normalizeEvent(e, eventName)
             handler(normalizedEvent)
         }
@@ -867,6 +874,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     onFeatureClick(handler: FeatureInteractionHandler): () => void {
         this._detachFeatureClickListener()
         const listener = (e: any) => {
+            if (this._drawEndClick.pending) return
             const result = this._pickFeatureAtLatLng(e.latlng)
             handler({
                 feature: result?.feature ?? null,
@@ -1032,6 +1040,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         if (!this._drawingShape) return null
         const shape = this._drawingShape
         this._drawingShape = null
+        // Whichever way the session ended, the click that ended it reaches
+        // Leaflet after this, on the native click that follows the pointerup.
+        this._drawEndClick.arm(this._drawEventElement())
         if (this._terraDraw) {
             try { this._terraDraw.clear() } catch { /* terra-draw mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }

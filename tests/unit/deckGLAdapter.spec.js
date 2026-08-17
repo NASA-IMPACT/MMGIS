@@ -690,6 +690,46 @@ test.describe('DeckGLAdapter', () => {
             expect(keys).toEqual(['Enter'])
         })
 
+        // A deck pick, whose `coordinate` is in [lng, lat] order.
+        const pickAt = (lng, lat) => ({ coordinate: [lng, lat], x: 12, y: 34 })
+
+        // deck reports a click through its `click` recognizer, which waits for
+        // a double-click to fail before it fires, so the click terra-draw
+        // committed the shape on arrives long after the session it ended — with
+        // `_drawingShape` already null, so that guard is no longer looking.
+        // Reporting it hands every consumer a map click the user never made,
+        // one that would dismiss the popup a plugin opened from the
+        // `drawcomplete` that came first.
+        test('the click a drawing ended on is not reported as a map click', () => {
+            const { adapter } = makeSessionAdapter('rectangle')
+            const clicks = []
+            const picks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+            adapter.onFeatureClick((result) => picks.push(result))
+
+            // terra-draw commits on pointerup, and the adapter ends the session
+            // there and then — this is what deck calls afterwards.
+            adapter._stopDrawing()
+            adapter._onPointerClick(pickAt(-120, 40))
+
+            expect(clicks).toEqual([])
+            expect(picks).toEqual([])
+        })
+
+        test('the click that starts the next gesture is still reported', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            adapter._stopDrawing()
+            // A pointerdown is the engine's proof that the click to come is the
+            // user's own rather than the drawing's trailing one.
+            canvas.dispatchEvent(new Event('pointerdown'))
+            adapter._onPointerClick(pickAt(-120, 40))
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        })
+
         test('disableDrawing emits drawcancel once', () => {
             const { adapter } = makeDrawingAdapter({ finishes: false })
             const shapes = []

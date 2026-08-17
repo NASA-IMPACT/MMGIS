@@ -791,6 +791,88 @@ test.describe('LeafletAdapter - onFeatureClick', () => {
     })
 })
 
+// ─── the click a drawing ended on ─────────────────────────────────────────────
+
+test.describe('LeafletAdapter - the click a drawing ended on', () => {
+
+    /** Stands in for the map container terra-draw and the guard listen on. */
+    function makeEventTarget() {
+        const listeners = new Map()
+        return {
+            addEventListener: (type, fn) => {
+                if (!listeners.has(type)) listeners.set(type, new Set())
+                listeners.get(type).add(fn)
+            },
+            removeEventListener: (type, fn) => {
+                listeners.get(type)?.delete(fn)
+            },
+            fire: (type) => {
+                listeners.get(type)?.forEach((fn) => fn())
+            },
+        }
+    }
+
+    /**
+     * An adapter mid-rectangle, with the map's click subscribers captured so a
+     * spec can deliver the click itself.
+     */
+    function setupDrawing() {
+        const { mockMap } = setupWithLayerMocks()
+        const container = makeEventTarget()
+        mockMap.getContainer = () => container
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const subscribers = []
+        mockMap.on = (event, cb) => { if (event === 'click') subscribers.push(cb) }
+
+        const clicks = []
+        const picks = []
+        adapter.on('click', (e) => clicks.push(e.latlng))
+        adapter.onFeatureClick((result) => picks.push(result))
+        adapter._drawingShape = 'rectangle'
+
+        return {
+            adapter,
+            container,
+            clicks,
+            picks,
+            click: () =>
+                subscribers.forEach((cb) =>
+                    cb({ latlng: { lat: 40, lng: -120 }, containerPoint: { x: 12, y: 34 } })
+                ),
+        }
+    }
+
+    // terra-draw commits a shape on `pointerup`, and the native `click` that
+    // finished it reaches Leaflet right after — by which time the session is
+    // over. Reporting it hands every consumer a map click the user never made,
+    // one that would dismiss the popup a plugin opened from the `drawcomplete`
+    // that came first.
+    test('is not reported as a map click', () => {
+        const { adapter, clicks, picks, click } = setupDrawing()
+
+        adapter._stopDrawing()
+        click()
+
+        expect(clicks).toEqual([])
+        expect(picks).toEqual([])
+    })
+
+    test('does not swallow the click that starts the next gesture', () => {
+        const { adapter, container, clicks, picks, click } = setupDrawing()
+
+        adapter._stopDrawing()
+        // A pointerdown is the engine's proof that the click to come is the
+        // user's own rather than the drawing's trailing one.
+        container.fire('pointerdown')
+        click()
+
+        expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        expect(picks).toHaveLength(1)
+    })
+})
+
 // ─── onFeatureHover ───────────────────────────────────────────────────────────
 
 test.describe('LeafletAdapter - onFeatureHover', () => {
