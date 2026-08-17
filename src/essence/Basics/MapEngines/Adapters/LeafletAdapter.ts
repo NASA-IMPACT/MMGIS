@@ -793,9 +793,18 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     on(eventName: string, handler: MapEventHandler<any>, options: MapEventOptions = {}): void {
         // Wrap the handler to normalize event data
         const wrappedHandler = (e: any) => {
-            // The click a drawing ended on is not a map click; see
-            // {@link DrawEndClickGuard}.
-            if (eventName === 'click' && this._drawEndClick.pending) return
+            // The clicks a drawing owns are not map clicks: the ones terra-draw
+            // is taking as vertices, and the ones the session ended on, which
+            // arrive after it (see {@link DrawEndClickGuard}). Nothing in
+            // Leaflet holds a vertex click back on its own — terra-draw's
+            // adapter never stops click propagation — so the session has to be
+            // checked here, as DeckGLAdapter's own click path does.
+            if (
+                eventName === 'click' &&
+                (this._drawingShape || this._drawEndClick.pending)
+            ) {
+                return
+            }
             const normalizedEvent = this._normalizeEvent(e, eventName)
             handler(normalizedEvent)
         }
@@ -874,7 +883,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     onFeatureClick(handler: FeatureInteractionHandler): () => void {
         this._detachFeatureClickListener()
         const listener = (e: any) => {
-            if (this._drawEndClick.pending) return
+            if (this._drawingShape || this._drawEndClick.pending) return
             const result = this._pickFeatureAtLatLng(e.latlng)
             handler({
                 feature: result?.feature ?? null,

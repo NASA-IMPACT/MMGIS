@@ -823,8 +823,14 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         const adapter = new LeafletAdapter()
         adapter.init({ containerId: 'map' })
 
-        const subscribers = []
-        mockMap.on = (event, cb) => { if (event === 'click') subscribers.push(cb) }
+        const subscribers = new Map()
+        mockMap.on = (event, cb) => {
+            if (!subscribers.has(event)) subscribers.set(event, [])
+            subscribers.get(event).push(cb)
+        }
+        mockMap.fire = (event, data) => {
+            subscribers.get(event)?.forEach((cb) => cb({ ...data, type: event }))
+        }
 
         const clicks = []
         const picks = []
@@ -839,11 +845,38 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
             clicks,
             picks,
             click: () =>
-                subscribers.forEach((cb) =>
-                    cb({ latlng: { lat: 40, lng: -120 }, containerPoint: { x: 12, y: 34 } })
-                ),
+                mockMap.fire('click', {
+                    latlng: { lat: 40, lng: -120 },
+                    containerPoint: { x: 12, y: 34 },
+                }),
         }
     }
+
+    // Nothing in Leaflet holds back the click that places a vertex: it fires a
+    // map `click` for every native one, and terra-draw's Leaflet adapter never
+    // stops click propagation. Reported, those clicks would dismiss whatever a
+    // plugin has open and clear its selection halfway through a drawing — on
+    // the 2D engine only, since DeckGLAdapter has always checked the session.
+    test('a click placing a vertex mid-session is not reported', () => {
+        const { clicks, picks, click } = setupDrawing()
+
+        click()
+
+        expect(clicks).toEqual([])
+        expect(picks).toEqual([])
+    })
+
+    // The session check must not reach past clicks: the drawing's own events
+    // are emitted through this same wrapper while the session is live.
+    test('a session does not hold back the drawing events themselves', () => {
+        const { adapter } = setupDrawing()
+        const vertices = []
+        adapter.on('drawvertex', (e) => vertices.push(e.shape))
+
+        adapter.emit('drawvertex', { shape: 'rectangle' })
+
+        expect(vertices).toEqual(['rectangle'])
+    })
 
     // terra-draw commits a shape on `pointerup`, and the native `click` that
     // finished it reaches Leaflet right after — by which time the session is
@@ -917,13 +950,14 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     test('stops swallowing once the finish window has passed', () => {
         vi.useFakeTimers()
         try {
-            const { adapter, clicks, click } = setupDrawing()
+            const { adapter, clicks, picks, click } = setupDrawing()
 
             adapter._stopDrawing()
             vi.advanceTimersByTime(600)
             click()
 
             expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            expect(picks).toHaveLength(1)
         } finally {
             vi.useRealTimers()
         }
