@@ -145,6 +145,10 @@ const AOITool = {
     _drawKeyHandler: null,
     // Cancels the deferred popup show while the camera is still moving.
     _pendingPopup: null,
+    // Identifies the popup AOI has on screen, for as long as its `map:showPopup`
+    // request goes unanswered. Null means the popup slot is someone else's, or
+    // empty.
+    _openPopup: null,
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -571,9 +575,9 @@ const AOITool = {
     _applySelection(feature, source, label) {
         this._cancelPendingPopup()
         this._removeSelectionLayer()
-        // Retract the current popup up front: the click that starts a new
-        // selection would otherwise dismiss it a task later, which answers
-        // its request as a dismissal and clears the selection just made.
+        // Retract AOI's own popup up front: the click that starts a new
+        // selection would otherwise dismiss it a task later, which answers its
+        // request as a dismissal and clears the selection just made.
         // Load-bearing, not redundant with the replacement `map:showPopup`
         // performs for itself — the popup for this selection opens only once
         // the camera settles, long after that deferred dismissal has fired.
@@ -640,9 +644,18 @@ const AOITool = {
                         settled(view)
                         return
                     }
-                    // Defer the popup until the fitBounds animation settles so
-                    // it opens at the final centroid pixel instead of tracking
-                    // through the camera move.
+                    // Defer the popup to the next `map:moveend`, whichever
+                    // movement produces it. Normally that is the fit below, and
+                    // the popup opens at the framed centroid rather than
+                    // tracking through the move; a camera already gliding to a
+                    // stop can end first and open it early, which MapPopup_
+                    // then re-anchors as the fit runs.
+                    //
+                    // Subscribing before the fit is requested is load-bearing:
+                    // `mmgisAPI.request` runs its provider synchronously, and a
+                    // fit with no transition emits `moveend` from inside that
+                    // call, so a listener added afterwards would miss it and
+                    // leave the popup to the fallback timer.
                     //
                     // `map:moveend` hands its listener a view state
                     // ({ longitude, latitude, zoom }), not a ViewBounds, so this
@@ -665,9 +678,14 @@ const AOITool = {
                         settled(view)
                     })
                 })
-                .catch((err) =>
+                .catch((err) => {
                     console.warn('[AOI] selection camera step failed', err)
-                )
+                    // Nothing can open this popup any more, so the pending
+                    // slot has to be released — but only while it is still
+                    // this chain's, since a superseding selection that took
+                    // it owns its own show from that moment on.
+                    if (this._pendingPopup === cancel) this._cancelPendingPopup()
+                })
         } else {
             showPopup()
         }
@@ -702,30 +720,53 @@ const AOITool = {
      * answers with how the popup closed.
      */
     _showPopup(label, latlng) {
-        window.mmgisAPI?.request?.('map:showPopup', {
+        const request = window.mmgisAPI?.request?.('map:showPopup', {
             latlng,
             html: `<strong>${escapeHtml(label)}</strong>`,
             secondaryAction: { label: 'Cancel' },
             primaryAction: { label: 'Analyze area' },
         })
+        if (!request) return
+
+        // The request stays unanswered for exactly as long as this popup is on
+        // screen, so claim the slot now and release it however it is answered.
+        // Identity, not a bare flag, so a release cannot free a newer popup.
+        const token = {}
+        this._openPopup = token
+        const release = () => {
+            if (this._openPopup === token) this._openPopup = null
+        }
+
+        request
             // Two-arg `then`, so the rejection handler covers the request only
             // and a throw out of the outcome branches is not reported as a
             // failure to show the popup.
             .then(
                 ({ action } = {}) => {
+                    release()
                     // Cancel, the X and a click on the map all abandon the
-                    // selection; 'closed' means AOI itself retracted the
-                    // popup, which leaves the selection alone.
+                    // selection; 'closed' means something else took the popup
+                    // slot — AOI retracting it, or another plugin showing its
+                    // own — which leaves the selection alone.
                     if (action === 'primary') this._onAnalyze()
                     else if (action === 'secondary' || action === 'dismiss') {
                         this._clearSelection()
                     }
                 },
-                (err) => console.warn('[AOI] showPopup failed', err)
+                (err) => {
+                    release()
+                    console.warn('[AOI] showPopup failed', err)
+                }
             )
     },
 
+    /**
+     * Retract AOI's own popup. The slot is global — a hide empties it whoever
+     * filled it — so this stays quiet unless the popup showing is AOI's.
+     */
     _hidePopup() {
+        if (!this._openPopup) return
+        this._openPopup = null
         window.mmgisAPI?.request?.('map:hidePopup').catch(() => { })
     },
 

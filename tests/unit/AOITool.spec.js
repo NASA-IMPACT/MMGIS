@@ -281,14 +281,15 @@ describe('AOITool popup outcomes', () => {
 })
 
 describe('AOITool popup lifecycle', () => {
-    test('destroy retracts the popup and drops a pending show', async () => {
+    test('destroy drops a pending show without retracting anything', async () => {
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
         api.reset()
 
         // Torn down while the camera is still being read, which is the earliest
-        // a pending show can be dropped.
+        // a pending show can be dropped. Nothing of AOI's is on screen yet, so
+        // there is nothing for it to retract.
         AOITool.destroy()
-        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
         await flush()
 
         api.emit('map:moveend')
@@ -369,6 +370,58 @@ describe('AOITool popup lifecycle', () => {
         expect(api.namesOf('map:showPopup')).toHaveLength(1)
     })
 
+    test('a camera step that fails leaves nothing pending', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => { })
+        // A view missing a corner: deciding the fit throws on it, so the chain
+        // ends after the show was already marked pending and before anything
+        // was armed to settle it.
+        api.requestImpl.set('map:getBounds', () => ({
+            northEast: { lat: -30, lng: -30 },
+        }))
+
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        await flush()
+
+        expect(warn).toHaveBeenCalled()
+        // No popup can open from here, so claiming one is pending would be a
+        // lie — and would suppress the next selection's show.
+        expect(AOITool._pendingPopup).toBeNull()
+        api.emit('map:moveend')
+        await vi.advanceTimersByTimeAsync(2000)
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
+    })
+
+    test('a failed camera step does not drop a superseding selection', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => { })
+        let reads = 0
+        api.requestImpl.set('map:getBounds', () => {
+            reads += 1
+            if (reads > 1) return VIEW
+            return {
+                // Read while the first selection decides on its fit: a newer
+                // selection takes the pending slot, and then this view turns
+                // out to be missing the corner the decision needs.
+                get southWest() {
+                    AOITool._applySelection(FAR_SQUARE, 'search', 'Alaska')
+                    return undefined
+                },
+                northEast: { lat: -30, lng: -30 },
+            }
+        })
+
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        await flush()
+        await flush()
+
+        // The first chain died, but the slot belongs to the second selection.
+        expect(AOITool._pendingPopup).not.toBeNull()
+        api.emit('map:moveend')
+        await flush()
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.html).toBe('<strong>Alaska</strong>')
+    })
+
     test('a selection already in view opens its popup without waiting on the camera', async () => {
         // Reported as containing SQUARE, so `selectionFitBounds` declines to
         // move the camera. No moveend follows a camera that never moves, so a
@@ -391,5 +444,75 @@ describe('AOITool popup lifecycle', () => {
 
         await vi.advanceTimersByTimeAsync(2000)
         expect(api.namesOf('map:showPopup')).toHaveLength(1)
+    })
+})
+
+// `map:hidePopup` empties core's single popup slot, whoever filled it. AOI may
+// therefore ask for it only while the popup on screen is its own.
+describe('AOITool popup ownership', () => {
+    test('destroy retracts nothing when AOI has no popup open', () => {
+        AOITool.destroy()
+        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+    })
+
+    test('destroy retracts a popup AOI itself opened', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.reset()
+
+        AOITool.destroy()
+        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+    })
+
+    test('a first selection retracts nothing', async () => {
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        await flush()
+
+        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+    })
+
+    test('a selection made with an AOI popup open retracts it up front', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.reset()
+
+        // Up front, before the camera step: the retract has to beat the
+        // click-away that would otherwise dismiss the selection just made.
+        AOITool._applySelection(FAR_SQUARE, 'search', 'Alaska')
+        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
+    })
+
+    test('a show that never opened retracts nothing', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => { })
+        api.requestImpl.set('map:showPopup', () => {
+            throw new Error('invalid request')
+        })
+
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        await flush()
+        api.emit('map:moveend')
+        await flush()
+        expect(warn).toHaveBeenCalled()
+        api.reset()
+
+        // The slot is claimed as the request goes out, so a request that
+        // answers with a failure has to give it back like any other answer.
+        AOITool.destroy()
+        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+    })
+
+    test('a popup another plugin replaced is left alone', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+
+        // Another plugin takes the slot: core answers AOI's request with
+        // 'closed' and its own popup is the one showing from here on.
+        api.request('map:showPopup', { html: 'someone else' })
+        await flush()
+        api.reset()
+
+        AOITool.destroy()
+        await flush()
+
+        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+        expect(api.hasOpenPopup()).toBe(true)
     })
 })
