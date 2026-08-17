@@ -386,7 +386,9 @@ to announce what happened emits its own namespaced event afterwards.
 
 ```javascript
 // The request stays pending while the popup is open, so hold onto it
-// rather than blocking the rest of the plugin on it.
+// rather than blocking the rest of the plugin on it. While it is pending,
+// the one popup slot is this plugin's.
+let open = true
 const outcome = window.mmgisAPI.request('map:showPopup', {
     // Where the popup is anchored. It tracks this point as the map moves.
     latlng: { lat: 45, lng: -120 },
@@ -403,15 +405,20 @@ outcome.then(({ action }) => {
     else if (action === 'secondary' || action === 'dismiss') clearSelection()
     // 'closed' means the popup was replaced or retracted, so there is
     // nothing for this plugin to undo.
-}, showError)
+}, showError).finally(() => { open = false })
 
 // Elsewhere in the plugin: retract the popup as the plugin tears itself
 // down, so a popup never outlives the plugin that opened it. The request
 // above then answers with 'closed'.
 function destroy() {
-    window.mmgisAPI.request('map:hidePopup')
+    if (open) window.mmgisAPI.request('map:hidePopup')
 }
 ```
+
+There is one popup slot, and `map:hidePopup` retracts whatever is in it —
+your popup or another plugin's. Ask for it only while your own request is
+still unresolved, as `destroy` above does: once your request has answered,
+anything on screen belongs to someone else.
 
 The result is `{ action }`:
 
