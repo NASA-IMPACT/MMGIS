@@ -834,6 +834,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
 
         return {
             adapter,
+            mockMap,
             container,
             clicks,
             picks,
@@ -859,17 +860,103 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         expect(picks).toEqual([])
     })
 
+    // A pointer that goes down more than a tap interval after the finish is
+    // too late to be the second tap of a double-click that ended the drawing,
+    // so it is the user's own next gesture and the guard steps aside for it.
     test('does not swallow the click that starts the next gesture', () => {
-        const { adapter, container, clicks, picks, click } = setupDrawing()
+        vi.useFakeTimers()
+        try {
+            const { adapter, container, clicks, picks, click } = setupDrawing()
 
-        adapter._stopDrawing()
-        // A pointerdown is the engine's proof that the click to come is the
-        // user's own rather than the drawing's trailing one.
-        container.fire('pointerdown')
-        click()
+            adapter._stopDrawing()
+            vi.advanceTimersByTime(400)
+            container.fire('pointerdown')
+            container.fire('pointerup')
+            click()
 
-        expect(clicks).toEqual([{ lat: 40, lng: -120 }])
-        expect(picks).toHaveLength(1)
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            expect(picks).toHaveLength(1)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // Finishing on a double-click is trained behaviour, and terra-draw commits
+    // on the first of the two clicks. Leaflet has no double-click
+    // disambiguation — `_fireDOMEvent` fires a map `click` for every native
+    // click — so the second one arrives as an ordinary click, from a gesture
+    // the user made to finish the drawing rather than to click the map.
+    test('swallows both clicks of a double-click finish', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, container, clicks, picks, click } = setupDrawing()
+
+            // Tap 1: terra-draw commits on its pointerup, and the native click
+            // that follows is the one the guard was first written for.
+            adapter._stopDrawing()
+            click()
+
+            // Tap 2, inside the 300ms tap interval that makes the pair a
+            // double-click.
+            vi.advanceTimersByTime(150)
+            container.fire('pointerdown')
+            vi.advanceTimersByTime(50)
+            container.fire('pointerup')
+            click()
+
+            expect(clicks).toEqual([])
+            expect(picks).toEqual([])
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // A session can end with no click at all — Enter, Escape, a mode switch —
+    // and then no pointer arrives to close the window. It closes on its own so
+    // the guard cannot sit there absorbing the user's clicks indefinitely.
+    test('stops swallowing once the finish window has passed', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, clicks, click } = setupDrawing()
+
+            adapter._stopDrawing()
+            vi.advanceTimersByTime(600)
+            click()
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // terra-draw turns double-click zoom back on the moment the mode stops, so
+    // the second click of a double-click finish would zoom the map on top of
+    // everything else it does. Hold that re-enable back for as long as the
+    // guard is still absorbing the same gesture's clicks.
+    test('holds double-click zoom back until the finish window closes', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, mockMap } = setupDrawing()
+            let enabled = false
+            mockMap.doubleClickZoom = {
+                enabled: () => enabled,
+                enable: () => { enabled = true },
+                disable: () => { enabled = false },
+            }
+            // Stopping the mode is what turns it back on, inside _stopDrawing.
+            adapter._terraDraw = {
+                clear: () => { },
+                stop: () => { enabled = true },
+            }
+
+            adapter._stopDrawing()
+            expect(enabled).toBe(false)
+
+            vi.advanceTimersByTime(600)
+            expect(enabled).toBe(true)
+        } finally {
+            vi.useRealTimers()
+        }
     })
 })
 

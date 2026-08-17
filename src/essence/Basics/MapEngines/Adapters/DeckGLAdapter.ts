@@ -1139,14 +1139,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (!this._drawingShape) return null
         const shape = this._drawingShape
         this._drawingShape = null
-        // Whichever way the session ended, the click that ended it may still be
-        // on its way here — as may the last vertex click, when a plugin or a key
-        // ended the session before deck's recognizer fired.
-        this._drawEndClick.arm(this._drawEventElement())
         if (this._terraDraw) {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
+        // Whichever way the session ended, the clicks that ended it may still
+        // be on their way here — as may the last vertex click, when a plugin or
+        // a key ended the session before deck's recognizer fired. Armed after
+        // terra-draw has stopped, because stopping is what turns double-click
+        // zoom back on for the guard to hold back again.
+        this._drawEndClick.arm(
+            this._drawEventElement(),
+            (this._basemap as any)?.doubleClickZoom
+        )
         this._syncLayers()
         return shape
     }

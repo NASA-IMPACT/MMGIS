@@ -1040,13 +1040,18 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         if (!this._drawingShape) return null
         const shape = this._drawingShape
         this._drawingShape = null
-        // Whichever way the session ended, the click that ended it reaches
-        // Leaflet after this, on the native click that follows the pointerup.
-        this._drawEndClick.arm(this._drawEventElement())
         if (this._terraDraw) {
             try { this._terraDraw.clear() } catch { /* terra-draw mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
+        // Whichever way the session ended, the clicks that ended it reach
+        // Leaflet after this, on the native clicks that follow the pointerups.
+        // Armed after terra-draw has stopped, because stopping is what turns
+        // double-click zoom back on for the guard to hold back again.
+        this._drawEndClick.arm(
+            this._drawEventElement(),
+            (this._map as any)?.doubleClickZoom
+        )
         return shape
     }
 

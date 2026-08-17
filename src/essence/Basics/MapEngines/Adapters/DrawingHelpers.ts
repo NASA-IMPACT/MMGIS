@@ -137,56 +137,162 @@ export function validateDrawnLineString(
 }
 
 /**
- * Tells an engine that a click still to arrive ended a drawing, so that click
- * is not reported as a map click.
+ * hammer's tap interval, in milliseconds — the one number every click deck
+ * delivers is timed against.
+ *
+ * deck builds its `click` and `dblclick` on hammer `Tap` recognizers and leaves
+ * their `interval: 300` and `posThreshold: 10` defaults alone (mjolnir.js
+ * `hammerjs/recognizers/tap`, `@deck.gl/core` `RECOGNIZERS`). Two taps are one
+ * double-click when their pointerups fall inside that interval and within those
+ * ten pixels; and because deck wires each of the two recognizers to require the
+ * other's failure, whichever of them wins waits a further interval after the
+ * pointerup before it emits.
+ */
+const TAP_INTERVAL_MS = 300
+
+/**
+ * How long the guard keeps absorbing after the last pointer of the gesture that
+ * ended a drawing, in milliseconds.
+ *
+ * The latest click that gesture can produce is deck's, one
+ * {@link TAP_INTERVAL_MS} after its final pointerup; doubling the interval
+ * leaves that much margin again for a busy main thread running the recognizer's
+ * timer late. The margin is cheap: the user's own next gesture opens with a
+ * pointerdown, and that closes the window outright rather than waiting for it.
+ */
+const CLICK_SETTLE_MS = TAP_INTERVAL_MS * 2
+
+/**
+ * The `doubleClickZoom` handler a map exposes, in either engine's spelling —
+ * Leaflet's `L.Handler` and MapLibre's `DoubleClickZoomHandler` agree on
+ * `enable`/`disable` and differ only on how the state is read back.
+ */
+export interface DoubleClickZoomHandler {
+    enable(): void
+    disable(): void
+    /** Leaflet. */
+    enabled?(): boolean
+    /** MapLibre. */
+    isEnabled?(): boolean
+}
+
+/**
+ * Tells an engine that the clicks still to arrive ended a drawing, so they are
+ * not reported as map clicks.
  *
  * terra-draw commits a shape on `pointerup` and the engine hears about the same
- * gesture's click only afterwards: Leaflet on the native `click` that follows,
- * deck.gl up to 300ms later, since its `click` recognizer waits for a
- * double-click to fail before it fires. Both land after the session has ended,
- * so an engine's "am I drawing?" check no longer covers them, and reporting them
- * hands every consumer a map click the user never made — one that arrives after
+ * gesture's clicks only afterwards: Leaflet on the native `click` that follows,
+ * deck.gl a tap interval later, since its recognizers wait to see whether a
+ * double-click is coming. Both land after the session has ended, so an engine's
+ * "am I drawing?" check no longer covers them, and reporting them hands every
+ * consumer a map click the user never made — one that arrives after
  * `drawcomplete` and so dismisses whatever a plugin opened in response to it.
  *
- * Only the ending gesture's own click can be covered. The next gesture opens
- * with a `pointerdown`, which disarms the guard — and, in deck's case, cancels
- * the recognizer's pending click outright, so nothing from the old gesture can
- * arrive after it.
+ * That gesture is not always a single click. Finishing on a double-click is
+ * trained behaviour, and terra-draw commits on the first of the two taps: the
+ * second is still part of the same gesture, and it reaches the engine either as
+ * a second Leaflet `click` — Leaflet has no double-click disambiguation — or as
+ * the `onClick` deck maps its `dblclick` recognizer onto. So the guard absorbs
+ * by time rather than by count:
+ *
+ * - A pointerdown within {@link TAP_INTERVAL_MS} of the finish may still be
+ *   that second tap, so the window stays open.
+ * - A pointerdown any later cannot be, which makes it the user starting a
+ *   gesture of their own, and the window closes there and then.
+ * - Every pointerup inside the window re-opens it for {@link CLICK_SETTLE_MS},
+ *   which is how long the engine may take to turn that pointer into a click.
+ *
+ * The window also closes on its own, so a session that ended without a click at
+ * all — Enter, Escape, a mode switch — cannot leave the guard absorbing.
  */
 export class DrawEndClickGuard {
-    private _pending = false
+    private _armedAt = 0
+    private _openUntil = 0
     private _element: HTMLElement | null = null
-    private readonly _disarm = (): void => {
-        this._pending = false
+    private _closeTimer: ReturnType<typeof setTimeout> | null = null
+    private _zoom: DoubleClickZoomHandler | null = null
+    private _zoomWasEnabled = false
+
+    private readonly _onPointerDown = (): void => {
+        if (this.pending && Date.now() - this._armedAt > TAP_INTERVAL_MS) {
+            this._close()
+        }
+    }
+
+    private readonly _onPointerUp = (): void => {
+        if (this.pending) this._openFor(CLICK_SETTLE_MS)
     }
 
     /**
-     * Cover the click that may still arrive from the gesture that just ended a
+     * Cover the clicks that may still arrive from the gesture that just ended a
      * drawing session.
      *
      * @param element The element the engine's pointer events reach. Without one
      * the guard stays open: an engine with no map cannot be delivering clicks.
+     * @param doubleClickZoom The map's double-click zoom handler, when it has
+     * one. terra-draw re-enables it the moment the mode stops, which would let
+     * a double-click finish zoom the map as well; the guard holds the re-enable
+     * back until its window closes. Pass it after terra-draw has stopped, so
+     * the state captured to restore is the one terra-draw left behind.
      */
-    arm(element: HTMLElement | null): void {
+    arm(
+        element: HTMLElement | null,
+        doubleClickZoom?: DoubleClickZoomHandler | null
+    ): void {
         if (!element) return
         if (element !== this._element) {
             this.dispose()
             this._element = element
-            element.addEventListener('pointerdown', this._disarm, true)
+            element.addEventListener('pointerdown', this._onPointerDown, true)
+            element.addEventListener('pointerup', this._onPointerUp, true)
         }
-        this._pending = true
+        this._armedAt = Date.now()
+        this._openFor(CLICK_SETTLE_MS)
+        this._suspendDoubleClickZoom(doubleClickZoom)
     }
 
     /** Whether a click reaching the engine now can only be the drawing's. */
     get pending(): boolean {
-        return this._pending
+        return Date.now() < this._openUntil
     }
 
     /** Stop watching for the next gesture. Arming again resumes it. */
     dispose(): void {
-        this._element?.removeEventListener('pointerdown', this._disarm, true)
+        this._close()
+        this._element?.removeEventListener('pointerdown', this._onPointerDown, true)
+        this._element?.removeEventListener('pointerup', this._onPointerUp, true)
         this._element = null
-        this._pending = false
+    }
+
+    private _openFor(ms: number): void {
+        this._openUntil = Date.now() + ms
+        if (this._closeTimer) clearTimeout(this._closeTimer)
+        this._closeTimer = setTimeout(() => this._close(), ms)
+    }
+
+    private _close(): void {
+        this._openUntil = 0
+        if (this._closeTimer) {
+            clearTimeout(this._closeTimer)
+            this._closeTimer = null
+        }
+        const zoom = this._zoom
+        this._zoom = null
+        // The map is torn down under the guard on a mission swap.
+        if (zoom && this._zoomWasEnabled) {
+            try { zoom.enable() } catch { /* map already gone */ }
+        }
+    }
+
+    private _suspendDoubleClickZoom(handler?: DoubleClickZoomHandler | null): void {
+        if (!handler) return
+        // Re-arming inside an open window must not read the state back off a
+        // handler this guard is the one holding disabled.
+        if (!this._zoom) {
+            this._zoomWasEnabled = handler.enabled?.() ?? handler.isEnabled?.() ?? true
+        }
+        this._zoom = handler
+        try { handler.disable() } catch { /* map already gone */ }
     }
 }
 

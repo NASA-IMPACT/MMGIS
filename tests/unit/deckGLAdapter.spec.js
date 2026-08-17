@@ -716,18 +716,173 @@ test.describe('DeckGLAdapter', () => {
             expect(picks).toEqual([])
         })
 
+        // A pointer that goes down more than a tap interval after the finish is
+        // too late to be the second tap of a double-click that ended the
+        // drawing, so it is the user's own next gesture. deck reports its click
+        // a further interval later, once the double-click that would have
+        // outranked it has failed.
         test('the click that starts the next gesture is still reported', () => {
-            const { adapter, canvas } = makeSessionAdapter('rectangle')
-            const clicks = []
-            adapter.on('click', (e) => clicks.push(e.latlng))
+            vi.useFakeTimers()
+            try {
+                const { adapter, canvas } = makeSessionAdapter('rectangle')
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
 
-            adapter._stopDrawing()
-            // A pointerdown is the engine's proof that the click to come is the
-            // user's own rather than the drawing's trailing one.
-            canvas.dispatchEvent(new Event('pointerdown'))
-            adapter._onPointerClick(pickAt(-120, 40))
+                adapter._stopDrawing()
+                vi.advanceTimersByTime(400)
+                canvas.dispatchEvent(new Event('pointerdown'))
+                vi.advanceTimersByTime(50)
+                canvas.dispatchEvent(new Event('pointerup'))
+                vi.advanceTimersByTime(300)
+                adapter._onPointerClick(pickAt(-120, 40))
 
-            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // Finishing on a double-click is trained behaviour, and terra-draw
+        // commits on the first of the two taps. deck maps `dblclick` onto
+        // `onClick` alongside `click` (@deck.gl/core EVENT_HANDLERS), and
+        // because it wires the two recognizers to require each other's failure,
+        // the winner emits a tap interval after the second tap's pointerup —
+        // half a second after the drawing was committed, and after the
+        // pointerdown that used to be taken as proof of a new gesture.
+        test('the double-click a drawing ended on is not reported as a map click', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter, canvas } = makeSessionAdapter('rectangle')
+                const clicks = []
+                const picks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+                adapter.onFeatureClick((result) => picks.push(result))
+
+                // Tap 1's pointerup is where terra-draw commits; the guard's
+                // own listeners only go on from here, so that pointerup is not
+                // one of the events it sees.
+                adapter._stopDrawing()
+
+                // Tap 2, inside the 300ms interval that makes the pair a
+                // double-click.
+                vi.advanceTimersByTime(150)
+                canvas.dispatchEvent(new Event('pointerdown'))
+                vi.advanceTimersByTime(50)
+                canvas.dispatchEvent(new Event('pointerup'))
+
+                // The recognizer's own wait, and then the click.
+                vi.advanceTimersByTime(300)
+                adapter._onPointerClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([])
+                expect(picks).toEqual([])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // The widest the finishing gesture can be: the second tap released at
+        // the very edge of the interval that still makes it a double-click,
+        // and deck's recognizer waiting a full interval on top of that.
+        test('a double-click finish is covered to the edge of the interval', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter, canvas } = makeSessionAdapter('rectangle')
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                adapter._stopDrawing()
+                vi.advanceTimersByTime(250)
+                canvas.dispatchEvent(new Event('pointerdown'))
+                vi.advanceTimersByTime(49)
+                canvas.dispatchEvent(new Event('pointerup'))
+                vi.advanceTimersByTime(300)
+                adapter._onPointerClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // The recognizer's wait is a timer, and a busy main thread runs it
+        // late. Timing the cover from the gesture's own last pointerup rather
+        // than from the finish is what leaves room for that: the same interval
+        // again, on top of the one the recognizer was already going to take.
+        test('a double-click finish is covered when the recognizer runs late', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter, canvas } = makeSessionAdapter('rectangle')
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                adapter._stopDrawing()
+                vi.advanceTimersByTime(250)
+                canvas.dispatchEvent(new Event('pointerdown'))
+                vi.advanceTimersByTime(49)
+                canvas.dispatchEvent(new Event('pointerup'))
+                vi.advanceTimersByTime(300 + 200)
+                adapter._onPointerClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // A session can end with no click at all — Enter, Escape, a mode switch
+        // — and then no pointer arrives to close the window. It closes on its
+        // own so the guard cannot sit there absorbing the user's clicks
+        // indefinitely.
+        test('the guard stops absorbing once the finish window has passed', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter } = makeSessionAdapter('rectangle')
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                adapter._stopDrawing()
+                vi.advanceTimersByTime(600)
+                adapter._onPointerClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // terra-draw turns double-click zoom back on the moment the mode stops,
+        // so the second click of a double-click finish would zoom the map on
+        // top of everything else it does. Hold that re-enable back for as long
+        // as the guard is still absorbing the same gesture's clicks.
+        test('double-click zoom stays off until the finish window closes', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter, canvas } = makeSessionAdapter('rectangle')
+                let enabled = false
+                adapter._basemap = {
+                    getCanvas: () => canvas,
+                    doubleClickZoom: {
+                        isEnabled: () => enabled,
+                        enable: () => { enabled = true },
+                        disable: () => { enabled = false },
+                    },
+                }
+                // Stopping the mode is what turns it back on, inside
+                // _stopDrawing.
+                adapter._terraDraw = {
+                    clear: () => { },
+                    stop: () => { enabled = true },
+                }
+
+                adapter._stopDrawing()
+                expect(enabled).toBe(false)
+
+                vi.advanceTimersByTime(600)
+                expect(enabled).toBe(true)
+            } finally {
+                vi.useRealTimers()
+            }
         })
 
         test('disableDrawing emits drawcancel once', () => {
