@@ -17,9 +17,9 @@ export interface MapPopupRequest {
     latlng: { lat: number; lng: number }
     /** Popup body. Sanitized by the core before it reaches the DOM. */
     html: string
-    /** Filled button, rendered last in the actions row. */
+    /** Filled button, rendered first in the actions row. */
     primaryAction?: MapPopupAction
-    /** Outlined button, rendered first in the actions row. */
+    /** Outlined button, rendered last in the actions row. */
     secondaryAction?: MapPopupAction
 }
 
