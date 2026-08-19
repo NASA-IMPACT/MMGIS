@@ -6,6 +6,7 @@
 export type ShareToolVars = {
     exportPng?: boolean
     exportPdf?: boolean
+    includeLegend?: boolean
 }
 
 // Structurally identical to lib/types' ShareFormatFlags by design: the adapter
@@ -22,4 +23,9 @@ export function resolveShareFormats(vars?: ShareToolVars | null): ShareFormats {
         png: v.exportPng !== false,
         pdf: v.exportPdf !== false,
     }
+}
+
+/** The legend band defaults to on; an unset value is treated as enabled. */
+export function resolveIncludeLegend(vars?: ShareToolVars | null): boolean {
+    return (vars || {}).includeLegend !== false
 }

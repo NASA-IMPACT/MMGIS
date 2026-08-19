@@ -5,6 +5,7 @@ import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
     resolveShareFormats,
+    resolveIncludeLegend,
     type ShareToolVars,
     type ShareFormats,
 } from './adapters/shareConfig'
@@ -26,6 +27,7 @@ const COPIED_RESET_MS = 1800
  */
 export function MMGISShareExportAdapter() {
     const [formats, setFormats] = useState<ShareFormats>(DEFAULT_FORMATS)
+    const [includeLegend, setIncludeLegend] = useState(true)
     const [busy, setBusy] = useState(false)
     const [copied, setCopied] = useState(false)
     const copiedTimer = useRef<number | null>(null)
@@ -37,6 +39,7 @@ export function MMGISShareExportAdapter() {
                 PLUGIN_ID,
             )
             setFormats(resolveShareFormats(vars))
+            setIncludeLegend(resolveIncludeLegend(vars))
         } catch (err) {
             console.error('ShareExport: refresh failed', err)
         }
@@ -74,24 +77,24 @@ export function MMGISShareExportAdapter() {
     const handleDownloadPng = useCallback(async () => {
         setBusy(true)
         try {
-            await downloadSharePng()
+            await downloadSharePng({ includeLegend })
         } catch (err) {
             console.error('ShareExport: PNG download failed', err)
         } finally {
             setBusy(false)
         }
-    }, [])
+    }, [includeLegend])
 
     const handleDownloadPdf = useCallback(async () => {
         setBusy(true)
         try {
-            await downloadSharePdf()
+            await downloadSharePdf({ includeLegend })
         } catch (err) {
             console.error('ShareExport: PDF download failed', err)
         } finally {
             setBusy(false)
         }
-    }, [])
+    }, [includeLegend])
 
     return (
         <ShareMenu
