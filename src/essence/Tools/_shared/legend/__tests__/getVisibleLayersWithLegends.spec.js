@@ -1,5 +1,5 @@
 import { describe, test, expect, afterEach } from 'vitest'
-import { getVisibleLayersWithLegends } from '../adapters/getVisibleLayersWithLegends.ts'
+import { getVisibleLayersWithLegends } from '../getVisibleLayersWithLegends.ts'
 
 /**
  * Covers the seam between core and the legend: the COG capabilities core

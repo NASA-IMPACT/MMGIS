@@ -17,7 +17,7 @@ import {
     isReversedColormap,
     toForwardColormapNames,
     validateRescale,
-} from '../../utils/colormaps'
+} from '../../../../_shared/legend/colormaps'
 
 export type ColorRampPickerProps = {
     layerId: string

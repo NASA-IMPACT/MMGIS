@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { fetchColormapColors } from '../utils/colormapCache'
-import { getBaseColormapName } from '../utils/colormaps'
+import { fetchColormapColors } from '../../../_shared/legend/colormapCache'
+import { getBaseColormapName } from '../../../_shared/legend/colormaps'
 
 type Result = {
     colors: string[] | null

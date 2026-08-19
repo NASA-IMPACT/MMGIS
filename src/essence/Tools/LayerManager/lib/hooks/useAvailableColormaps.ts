@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { resolveTiTilerBase } from '../utils/colormapCache'
-import { parseColormapList } from '../utils/colormaps'
+import { resolveTiTilerBase } from '../../../_shared/legend/colormapCache'
+import { parseColormapList } from '../../../_shared/legend/colormaps'
 
 type Result = {
     colormaps: string[] | null

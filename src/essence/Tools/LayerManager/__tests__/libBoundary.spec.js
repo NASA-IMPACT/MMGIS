@@ -22,6 +22,12 @@ import { join, relative, resolve, dirname } from 'node:path'
 const PLUGIN_ROOT = resolve(process.cwd(), 'src/essence/Tools/LayerManager')
 const LIB_ROOT = join(PLUGIN_ROOT, 'lib')
 
+// The legend model and colormap helpers are shared, host-agnostic code used
+// by both this plugin and the export pipeline — as portable as anything
+// inside lib/ itself, so lib/ may reach it the same way it reaches its own
+// modules. Nothing else outside lib/ is exempt.
+const SHARED_LEGEND_ROOT = resolve(PLUGIN_ROOT, '../_shared/legend')
+
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx']
 
 const sourceFilesUnder = (dir) => {
@@ -68,6 +74,7 @@ describe('lib/ is free of the host', () => {
                 if (!specifier.startsWith('.')) continue
                 const target = resolve(dirname(file), specifier)
                 if (target.startsWith(LIB_ROOT)) continue
+                if (target.startsWith(SHARED_LEGEND_ROOT)) continue
                 escaping.push(
                     `${relative(PLUGIN_ROOT, file)} -> ${specifier}`,
                 )

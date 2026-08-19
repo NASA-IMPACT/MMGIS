@@ -1,5 +1,5 @@
-import type { CogCapabilities } from '../../_shared/adapters/mmgisAPI'
-import type { Layer, LegendType, CategoricalStop, CogData } from '../lib/types'
+import type { CogCapabilities } from '../adapters/mmgisAPI'
+import type { Layer, LegendType, CategoricalStop, CogData } from './types'
 
 type MMGISLegendEntry = {
     shape?: string

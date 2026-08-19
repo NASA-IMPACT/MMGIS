@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { buildLayerLegendData } from '../adapters/buildLayerLegendData.ts'
+import { buildLayerLegendData } from '../buildLayerLegendData.ts'
 
 // The three verdicts core can return for a layer. A colormap that can be
 // shown but not changed is what an `image` layer reports: it paints from the

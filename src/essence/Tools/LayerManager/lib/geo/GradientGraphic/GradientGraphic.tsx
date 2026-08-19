@@ -2,7 +2,7 @@ import React from 'react'
 import { useState, useCallback, useRef, type MouseEvent } from 'react'
 import { scaleLinear } from 'd3'
 import { useColormapColors } from '../../hooks/useColormapColors'
-import { buildGradientCss, isReversedColormap } from '../../utils/colormaps'
+import { buildGradientCss, isReversedColormap } from '../../../../_shared/legend/colormaps'
 import type { CogData } from '../../types'
 
 export type GradientGraphicProps = {

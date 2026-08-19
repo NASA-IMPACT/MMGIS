@@ -4,9 +4,9 @@ import {
     mmgisGetListedLayers,
     mmgisGetTiTilerUrls,
     type CogCapabilities,
-} from '../../_shared/adapters/mmgisAPI'
+} from '../adapters/mmgisAPI'
 import { buildLayerLegendData } from './buildLayerLegendData'
-import type { Layer } from '../lib/types'
+import type { Layer } from './types'
 
 export type FetchOptions = { showOnlyVisible?: boolean }
 
