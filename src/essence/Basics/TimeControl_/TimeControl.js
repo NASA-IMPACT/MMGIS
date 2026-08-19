@@ -63,6 +63,20 @@ var TimeControl = {
                 // seeded"; the getters below return null for both.
                 window.mmgisAPI.provide('time:isEnabled', () => TimeControl.enabled === true),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
+                // Same current time as time:getCurrent, but through the
+                // mission's globalTimeFormat rather than raw ISO — null
+                // whenever globalTimeFormat isn't set up yet (time disabled
+                // or not yet seeded), matching time:isEnabled/getCurrent's
+                // own null-until-ready convention.
+                window.mmgisAPI.provide('time:getCurrentFormatted', () =>
+                    TimeControl.enabled &&
+                    TimeControl.currentTime != null &&
+                    TimeControl.globalTimeFormat != null
+                        ? TimeControl.globalTimeFormat(
+                              new Date(TimeControl.currentTime)
+                          )
+                        : null
+                ),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
                 window.mmgisAPI.provide('time:set', (params) => {

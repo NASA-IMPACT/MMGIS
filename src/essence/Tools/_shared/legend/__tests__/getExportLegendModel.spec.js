@@ -9,11 +9,16 @@ vi.mock('../resolveColormapColors', () => ({
 vi.mock('../../adapters/mmgisAPI', () => ({
     mmgisGetViewState: vi.fn(),
     mmgisIsTimeEnabled: vi.fn(),
+    mmgisGetCurrentTimeFormatted: vi.fn(),
 }))
 
 import { getVisibleLayersWithLegends } from '../getVisibleLayersWithLegends'
 import { resolveColormapColors } from '../resolveColormapColors'
-import { mmgisGetViewState, mmgisIsTimeEnabled } from '../../adapters/mmgisAPI'
+import {
+    mmgisGetViewState,
+    mmgisIsTimeEnabled,
+    mmgisGetCurrentTimeFormatted,
+} from '../../adapters/mmgisAPI'
 import { getExportLegendModel } from '../getExportLegendModel'
 
 const baseLayer = (overrides) => ({
@@ -32,6 +37,7 @@ beforeEach(() => {
     vi.mocked(resolveColormapColors).mockReset()
     vi.mocked(mmgisGetViewState).mockReset()
     vi.mocked(mmgisIsTimeEnabled).mockReset()
+    vi.mocked(mmgisGetCurrentTimeFormatted).mockReset()
     vi.mocked(mmgisGetViewState).mockResolvedValue({
         missionName: 'Test Mission',
         time: null,
@@ -39,6 +45,7 @@ beforeEach(() => {
         zoom: null,
     })
     vi.mocked(mmgisIsTimeEnabled).mockResolvedValue(false)
+    vi.mocked(mmgisGetCurrentTimeFormatted).mockResolvedValue(null)
 })
 
 describe('getExportLegendModel', () => {
@@ -206,6 +213,34 @@ describe('getExportLegendModel', () => {
             zoom: null,
         })
         vi.mocked(mmgisIsTimeEnabled).mockResolvedValue(true)
+        const model = await getExportLegendModel()
+        expect(model.timeLabel).toBe('2024-01-01T00:00:00Z')
+    })
+
+    test('timeLabel prefers the mission-formatted time over the raw ISO string', async () => {
+        vi.mocked(getVisibleLayersWithLegends).mockResolvedValue([])
+        vi.mocked(mmgisGetViewState).mockResolvedValue({
+            missionName: 'M',
+            time: '2024-01-01T00:00:00Z',
+            center: null,
+            zoom: null,
+        })
+        vi.mocked(mmgisIsTimeEnabled).mockResolvedValue(true)
+        vi.mocked(mmgisGetCurrentTimeFormatted).mockResolvedValue('Jan 2024')
+        const model = await getExportLegendModel()
+        expect(model.timeLabel).toBe('Jan 2024')
+    })
+
+    test('timeLabel falls back to the raw ISO string against an older core (null formatter)', async () => {
+        vi.mocked(getVisibleLayersWithLegends).mockResolvedValue([])
+        vi.mocked(mmgisGetViewState).mockResolvedValue({
+            missionName: 'M',
+            time: '2024-01-01T00:00:00Z',
+            center: null,
+            zoom: null,
+        })
+        vi.mocked(mmgisIsTimeEnabled).mockResolvedValue(true)
+        vi.mocked(mmgisGetCurrentTimeFormatted).mockResolvedValue(null)
         const model = await getExportLegendModel()
         expect(model.timeLabel).toBe('2024-01-01T00:00:00Z')
     })

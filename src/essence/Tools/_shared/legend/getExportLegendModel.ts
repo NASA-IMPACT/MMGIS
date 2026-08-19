@@ -1,6 +1,10 @@
 import { getVisibleLayersWithLegends } from './getVisibleLayersWithLegends'
 import { resolveColormapColors } from './resolveColormapColors'
-import { mmgisGetViewState, mmgisIsTimeEnabled } from '../adapters/mmgisAPI'
+import {
+    mmgisGetViewState,
+    mmgisIsTimeEnabled,
+    mmgisGetCurrentTimeFormatted,
+} from '../adapters/mmgisAPI'
 import type { Layer, CategoricalStop } from './types'
 
 export type ExportLegendRow =
@@ -59,18 +63,23 @@ const toRow = async (layer: Layer): Promise<ExportLegendRow | null> => {
 }
 
 export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
-    const [layers, viewState, timeEnabled] = await Promise.all([
+    const [layers, viewState, timeEnabled, formattedTime] = await Promise.all([
         getVisibleLayersWithLegends({ showOnlyVisible: true }),
         mmgisGetViewState(),
         mmgisIsTimeEnabled(),
+        mmgisGetCurrentTimeFormatted(),
     ])
     const rows = (await Promise.all(layers.map(toRow))).filter(
         (row): row is ExportLegendRow => row !== null,
     )
     return {
         missionName: viewState?.missionName ?? null,
+        // Prefer the mission-formatted time; fall back to the raw ISO string
+        // viewState carries against a core that predates time:getCurrentFormatted.
         timeLabel:
-            timeEnabled === true && viewState?.time ? viewState.time : null,
+            timeEnabled === true && viewState?.time
+                ? formattedTime ?? viewState.time
+                : null,
         rows,
     }
 }
