@@ -22,11 +22,22 @@ import { join, relative, resolve, dirname } from 'node:path'
 const PLUGIN_ROOT = resolve(process.cwd(), 'src/essence/Tools/LayerManager')
 const LIB_ROOT = join(PLUGIN_ROOT, 'lib')
 
-// The legend model and colormap helpers are shared, host-agnostic code used
-// by both this plugin and the export pipeline — as portable as anything
-// inside lib/ itself, so lib/ may reach it the same way it reaches its own
-// modules. Nothing else outside lib/ is exempt.
+// Only these four modules under _shared/legend are host-agnostic — pure
+// types, formatting rules, and colormap-name/list/cache logic with no
+// dependency on an MMGIS module or a network call — so lib/ may reach them
+// the same way it reaches its own modules. Everything else in that
+// directory is NOT exempt: getVisibleLayersWithLegends and
+// getExportLegendModel import mmgisAPI (a host bus client), and
+// resolveColormapColors makes a relative import into src/external/ — all
+// host-coupled in ways lib/ must never be.
 const SHARED_LEGEND_ROOT = resolve(PLUGIN_ROOT, '../_shared/legend')
+const SHARED_LEGEND_ALLOWLIST = ['types', 'format', 'colormaps', 'colormapCache']
+
+const isAllowedSharedLegendImport = (target) => {
+    if (dirname(target) !== SHARED_LEGEND_ROOT) return false
+    const base = target.replace(/\.(ts|tsx|js|jsx)$/, '').split('/').pop()
+    return SHARED_LEGEND_ALLOWLIST.includes(base)
+}
 
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx']
 
@@ -74,7 +85,7 @@ describe('lib/ is free of the host', () => {
                 if (!specifier.startsWith('.')) continue
                 const target = resolve(dirname(file), specifier)
                 if (target.startsWith(LIB_ROOT)) continue
-                if (target.startsWith(SHARED_LEGEND_ROOT)) continue
+                if (isAllowedSharedLegendImport(target)) continue
                 escaping.push(
                     `${relative(PLUGIN_ROOT, file)} -> ${specifier}`,
                 )
@@ -132,5 +143,24 @@ describe('lib/ is free of the host', () => {
 
         expect(/\bmmgis(API|global)\b/i.test("window.mmgisglobal?.WITH_TITILER === 'true'"))
             .toBe(true)
+    })
+
+    test('the shared-legend allowlist is scoped to the host-agnostic files, not the whole directory', () => {
+        const allowed = (name) =>
+            isAllowedSharedLegendImport(join(SHARED_LEGEND_ROOT, name))
+        // What lib/ actually imports today — must stay allowed.
+        expect(allowed('types')).toBe(true)
+        expect(allowed('format')).toBe(true)
+        expect(allowed('colormaps')).toBe(true)
+        expect(allowed('colormapCache')).toBe(true)
+        // Host-coupled modules in the same directory — a lib/ import of any
+        // of these must now fail the "no relative import escapes lib/"
+        // check above, the way it would for any other host module.
+        expect(allowed('getExportLegendModel')).toBe(false)
+        expect(allowed('getVisibleLayersWithLegends')).toBe(false)
+        expect(allowed('resolveColormapColors')).toBe(false)
+        // A file outside _shared/legend entirely, even with an allowlisted
+        // basename, is not exempt.
+        expect(isAllowedSharedLegendImport(join(PLUGIN_ROOT, '../_shared/adapters/types'))).toBe(false)
     })
 })
