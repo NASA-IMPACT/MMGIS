@@ -89,7 +89,7 @@ Register a provider that responds to requests.
 
 **Parameters:**
 - `name` (string): Provider name using namespace:action format
-- `handler` (function): Handler function that returns data (can be async)
+- `handler` (function): Handler function that returns data (can be async). It is called as `handler(params, caller)`, where `caller` is the id of the plugin whose handle made the request, or `undefined` for a request that went out without one. Most providers answer the same either way and take `params` alone; one that answers per-caller (`map:hidePopup`) reads it. An existing function registered point-free — `provide('x', someFn)` — is handed it too
 
 **Returns:** Cleanup function to remove the provider
 
@@ -106,13 +106,14 @@ const cleanup = window.mmgisAPI.provide('plugin:myPlugin:getData', (params) => {
 cleanup()
 ```
 
-### `mmgisAPI.request(name, params)`
+### `mmgisAPI.request(name, params, caller)`
 
 Request data from a provider.
 
 **Parameters:**
 - `name` (string): Provider name
 - `params` (any): Parameters to pass to the provider
+- `caller` (string, optional): Id of the plugin asking, handed to the provider beside `params` rather than mixed into it, so a payload of any shape reaches the provider as it was written. Plugins do not pass this themselves — `forPlugin(id).request(...)` stamps it, which is the only reason it says anything (see Scoped `request` below)
 
 **Returns:** Promise resolving to the provider's response
 
@@ -203,6 +204,22 @@ console.log(data.result) // 42
 // Later, remove the provider
 cleanup()
 ```
+
+### Scoped `request(name, params)`
+
+Make a request stamped with the plugin's id.
+
+The name is **not** prefixed, unlike `emit` and `provide`: a request names someone else's provider, not one of this plugin's, and prefixing it would put `map:showPopup` out of reach. What the handle adds is the plugin's id, which travels beside the params and tells the provider who is asking.
+
+```javascript
+const api = window.mmgisAPI.forPlugin('myPlugin')
+
+// Reaches 'map:hidePopup' under that exact name, with 'myPlugin'
+// stamped on as the caller.
+await api.request('map:hidePopup')
+```
+
+Prefer this to `window.mmgisAPI.request(...)`: some providers answer differently, or not at all, for a caller they cannot identify. A request made straight on `mmgisAPI` carries no id, so `map:hidePopup` retracts only a popup that was opened the same anonymous way.
 
 ### Metadata Properties
 
@@ -414,7 +431,9 @@ outcome.then(({ action }) => {
 // track whether it is still open — the core retracts it only if it is
 // yours, and the request above then answers with 'closed'.
 function destroy() {
-    api.request('map:hidePopup')
+    // A mission switch takes the provider down with the map, and a
+    // request with no provider rejects — nothing to act on here.
+    api.request('map:hidePopup').catch(() => {})
 }
 ```
 

@@ -1085,7 +1085,10 @@ var mmgisAPI = {
     /**
      * Register a request handler (data provider)
      * @param {string} name - Request name (e.g., 'map:getCenter', 'plugin:info:showFeature')
-     * @param {function} handler - Async handler function that returns data
+     * @param {function} handler - Async handler function that returns data.
+     * Called as `handler(data, caller)`: `caller` is the id of the plugin
+     * whose handle made the request, absent for one made without a handle.
+     * A handler registered point-free is handed it too.
      * @returns {function} - Cleanup function to remove the handler
      * @example
      * const cleanup = mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter());
