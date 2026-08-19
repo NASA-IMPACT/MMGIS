@@ -16,6 +16,12 @@ interface OpenPopup {
     card: HTMLElement
     engine: IMapEngine
     latlng: { lat: number; lng: number }
+    /**
+     * Who asked for this popup: the id the plugin's bus handle stamped on the
+     * request, or null when it came from a caller that has no handle (the
+     * console, an embedding page). Only this caller can retract it.
+     */
+    owner: string | null
     /** Settles this popup's request promise with how the popup closed. */
     settle: (result: MapPopupResult) => void
     offMapClick: () => void
@@ -166,13 +172,18 @@ const MapPopup_ = {
      *
      * @param request Serializable popup description from the event bus.
      * @param engine The active map engine, used to project the anchor.
+     * @param owner The id of the caller asking, as stamped by its bus handle.
+     * It decides who may retract this popup later; callers with no handle
+     * open a popup only they — that is, anyone else without a handle — can
+     * retract. See {@link hideForCaller}.
      * @returns A promise that stays pending for as long as the popup is open
      * and resolves with how it closed. It rejects when the request is invalid
      * or the popup could not be mounted, in which case nothing is shown.
      */
     show(
         request: MapPopupRequest,
-        engine: IMapEngine
+        engine: IMapEngine,
+        owner?: string | null
     ): Promise<MapPopupResult> {
         if (
             !request ||
@@ -216,6 +227,7 @@ const MapPopup_ = {
             }),
             engine,
             latlng: { lat: request.latlng.lat, lng: request.latlng.lng },
+            owner: owner ?? null,
             settle,
             offMapClick: () => {},
             subscribeTimer: null,
@@ -302,6 +314,35 @@ const MapPopup_ = {
             // the first settlement is the answer.
             open.settle({ action })
         }
+    },
+
+    /**
+     * Retract the popup on behalf of `caller`, if the popup is that caller's.
+     *
+     * There is one popup slot, so a plugin asking to hide is really asking to
+     * empty the slot — and the slot may hold someone else's popup by then, or
+     * a replacement of its own it never learned about. Rather than make every
+     * plugin track that, the core answers only for the popup the caller
+     * opened; a hide aimed at anyone else's popup does nothing.
+     *
+     * A caller with no handle owns the popups it opens in the same way, and
+     * matches only other callers without one. Ownership is compared exactly,
+     * with "no caller" as a value of its own, so an anonymous hide cannot
+     * reach a plugin's popup and a plugin's hide cannot reach an anonymous one.
+     *
+     * This is core's own arbitration, not a security boundary — the id is
+     * stamped by the bus handle rather than taken from author code, and the
+     * sandbox bridge is what will make it unforgeable.
+     *
+     * @param caller The id the requesting plugin's handle stamped, if any.
+     * @returns Whether a popup was retracted. The retracted popup's request
+     * still answers `{ action: 'closed' }`, as it does for any other close.
+     */
+    hideForCaller(caller?: string | null): boolean {
+        if (!this._open) return false
+        if (this._open.owner !== (caller ?? null)) return false
+        this.hide()
+        return true
     },
 
     /**

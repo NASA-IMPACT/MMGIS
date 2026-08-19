@@ -108,10 +108,13 @@ function track(promise: Promise<MapPopupResult>): string[] {
 function show(
     bus: ReturnType<typeof makeBus>,
     engine: ReturnType<typeof makeEngine>,
-    overrides: Partial<MapPopupRequest> = {}
+    overrides: Partial<MapPopupRequest> = {},
+    owner?: string | null
 ): string[] {
     window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
-    return track(MapPopup_.show(request(overrides), engine.engine as never))
+    return track(
+        MapPopup_.show(request(overrides), engine.engine as never, owner)
+    )
 }
 
 const INVALID_REQUEST =
@@ -536,5 +539,87 @@ describe('MapPopup_', () => {
         expect(popups()).toHaveLength(1)
         expect(card().textContent).toContain('Crater A')
         expect(outcome).toEqual([])
+    })
+
+    // One slot, many plugins: a hide is a request to empty the slot, and by
+    // the time it arrives the slot may hold someone else's popup. Core answers
+    // only for the popup the caller opened, so no plugin has to track whether
+    // what is on screen is still its own.
+    describe('retracting is scoped to whoever opened the popup', () => {
+        it("closes the caller's own popup and says so", async () => {
+            const outcome = show(bus, engine, {}, 'aoi')
+
+            expect(MapPopup_.hideForCaller('aoi')).toBe(true)
+            await nextTick()
+
+            expect(popups()).toHaveLength(0)
+            // Evicted, but still answered — the opener learns it is gone.
+            expect(outcome).toEqual(['closed'])
+        })
+
+        it("leaves another plugin's popup alone", async () => {
+            const outcome = show(bus, engine, {}, 'aoi')
+
+            expect(MapPopup_.hideForCaller('draw')).toBe(false)
+            await nextTick()
+
+            expect(popups()).toHaveLength(1)
+            expect(outcome).toEqual([])
+        })
+
+        // A caller with no handle — the console, an embedding page — is not a
+        // skeleton key. "No caller" is a value of its own on both sides.
+        it("does not let an anonymous hide reach a plugin's popup", async () => {
+            const outcome = show(bus, engine, {}, 'aoi')
+
+            expect(MapPopup_.hideForCaller()).toBe(false)
+            await nextTick()
+
+            expect(popups()).toHaveLength(1)
+            expect(outcome).toEqual([])
+        })
+
+        it('does not let a plugin hide an anonymous popup', async () => {
+            const outcome = show(bus, engine)
+
+            expect(MapPopup_.hideForCaller('aoi')).toBe(false)
+            await nextTick()
+
+            expect(popups()).toHaveLength(1)
+            expect(outcome).toEqual([])
+        })
+
+        it('lets an anonymous hide close an anonymous popup', async () => {
+            const outcome = show(bus, engine)
+
+            expect(MapPopup_.hideForCaller()).toBe(true)
+            await nextTick()
+
+            expect(popups()).toHaveLength(0)
+            expect(outcome).toEqual(['closed'])
+        })
+
+        it('reports that nothing was retracted when no popup is open', () => {
+            expect(MapPopup_.hideForCaller('aoi')).toBe(false)
+            expect(MapPopup_.hideForCaller()).toBe(false)
+        })
+
+        // Showing is not retracting: the slot holds one popup, so a new
+        // request takes it whoever the last one belonged to. Ownership decides
+        // who may retract, never who may open.
+        it("lets a plugin's popup replace another plugin's", async () => {
+            const first = show(bus, engine, { html: '<p>AOI</p>' }, 'aoi')
+            const second = show(bus, engine, { html: '<p>Draw</p>' }, 'draw')
+            await nextTick()
+
+            expect(first).toEqual(['closed'])
+            expect(second).toEqual([])
+            expect(popups()).toHaveLength(1)
+            expect(card().textContent).toContain('Draw')
+            // The replacement is the new owner, and the old one cannot take
+            // the slot back.
+            expect(MapPopup_.hideForCaller('aoi')).toBe(false)
+            expect(MapPopup_.hideForCaller('draw')).toBe(true)
+        })
     })
 })

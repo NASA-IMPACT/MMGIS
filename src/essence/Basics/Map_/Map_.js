@@ -328,15 +328,16 @@ let Map_ = {
                 // Map-anchored popup — a single, core-owned slot. The handler's
                 // promise is the request's, so it stays pending while the popup
                 // is open and answers the caller with how it closed.
-                window.mmgisAPI.provide('map:showPopup', (request) =>
-                    MapPopup_.show(request, engine)
+                window.mmgisAPI.provide('map:showPopup', (request, caller) =>
+                    MapPopup_.show(request, engine, caller)
                 ),
                 // Retracting a popup resolves its own request with
-                // `{ action: 'closed' }`, so whoever opened it learns it is gone.
-                window.mmgisAPI.provide('map:hidePopup', () => {
-                    MapPopup_.hide()
-                    return true
-                }),
+                // `{ action: 'closed' }`, so whoever opened it learns it is
+                // gone. Only the caller that opened it can: anyone else's
+                // hide finds a popup that is not theirs and answers false.
+                window.mmgisAPI.provide('map:hidePopup', (payload, caller) =>
+                    MapPopup_.hideForCaller(caller)
+                ),
                 window.mmgisAPI.provide('map:setBasemap', (styleName) => {
                     const index = _basemapStyles.findIndex((s) => s.name === styleName)
                     if (index === -1) {

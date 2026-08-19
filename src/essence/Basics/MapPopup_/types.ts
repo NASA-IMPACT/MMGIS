@@ -5,6 +5,13 @@
  * survive a `postMessage` boundary unchanged — no functions, no DOM nodes, no
  * component code. The popup's outcome travels back on the request's own
  * promise, so nothing about a popup is broadcast on the bus.
+ *
+ * Who is asking is deliberately not one of these fields. The core needs it to
+ * decide whose popup a `map:hidePopup` may retract, but a request an author
+ * fills in is the wrong place to keep it: the id is stamped by the plugin's
+ * bus handle and travels beside the payload, so it is never an author's to
+ * write and never core's to take on trust from one. It is plain data today,
+ * which the sandbox bridge is what will later make unforgeable.
  */
 
 export interface MapPopupAction {
