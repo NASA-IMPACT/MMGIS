@@ -37,7 +37,7 @@ const CORE_NAMESPACES = new Set(['core', 'panels', 'plugins'])
  *                             namespace → reported with console.warn, nothing
  *                             is requested or emitted
  *   'plugin:title:refresh' → emit('plugin:title:refresh')
- *   'refresh'              → emit('refresh')
+ *   'refresh'              → emit('refresh'), with a warning — see below
  *
  * Targets may themselves contain colons; everything after the verb is the
  * target. The namespace match is exact — 'Panels:hide:left' is not a core
@@ -79,6 +79,19 @@ export const resolveAction = async (action?: string): Promise<void> => {
             `[resolveAction] "${action}" is not a usable core action. Supported actions: ${Object.keys(TARGET_PARAM).join(', ')}.`,
         )
         return
+    }
+
+    // A name carrying no namespace is emitted exactly as written, which is
+    // what the string asks for but rarely what the author meant: every tool
+    // publishes under `plugin:<toolId>:`, so a bare name reaches none of them
+    // and lands on a channel nothing subscribes to. Emit it anyway — a bare
+    // event name is legal — but say so, because the alternative is a button
+    // that looks wired up and does nothing.
+    if (!action.includes(':')) {
+        console.warn(
+            `[resolveAction] "${action}" has no namespace and is emitted verbatim. ` +
+                `A tool's own event needs its full name, e.g. "plugin:<toolId>:${action}".`,
+        )
     }
 
     mmgisEmit(action)

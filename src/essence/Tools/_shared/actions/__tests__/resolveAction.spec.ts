@@ -50,10 +50,29 @@ describe('resolveAction', () => {
         expect(request).not.toHaveBeenCalled()
     })
 
-    test('emits a colonless action without warning', async () => {
+    test('emits an un-namespaced action, but warns that nothing will hear it', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
         await resolveAction('refresh')
+
+        // Still emitted verbatim — a bare event name is legal.
         expect(emit).toHaveBeenCalledWith('refresh', undefined)
+        // But it reaches no `plugin:<toolId>:` listener, so it is called out
+        // and the warning names the form the author most likely wanted.
+        expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('"refresh" has no namespace'),
+        )
+        expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('plugin:<toolId>:refresh'),
+        )
+    })
+
+    test('a namespaced custom event is emitted with no warning', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+        await resolveAction('LayerManager:someEvent')
+
+        expect(emit).toHaveBeenCalledWith('LayerManager:someEvent', undefined)
         expect(warn).not.toHaveBeenCalled()
     })
 
@@ -127,4 +146,5 @@ describe('resolveAction TARGET_PARAM registration', () => {
             expect(coreMmgisAPI.hasHandler(name)).toBe(true)
         }
     })
+
 })

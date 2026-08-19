@@ -604,9 +604,12 @@ and unloading a plugin needs a state argument that a colon-delimited string
 can't carry — those calls belong in code, not a config string.
 
 A string with no colon at all has no namespace, so it resolves like any other
-non-core action — a plain `emit`. Event names are still expected to be
-namespaced in practice (e.g. `plugin:title:refresh`); a bare word like
-`refresh` just emits an event named `refresh`.
+non-core action — a plain `emit` of exactly what was written. That is legal
+but seldom what an author means: every tool publishes under
+`plugin:<toolId>:`, so a bare word like `refresh` emits an event named
+`refresh` that no tool listener is subscribed to. It is emitted anyway and
+reported with `console.warn`, naming the fully qualified form instead —
+otherwise the button looks wired up and does nothing.
 
 ---
 
