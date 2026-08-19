@@ -333,13 +333,17 @@ window.mmgisAPI.on('legend:made', ({ layerName, legendData }) => {
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `panels:changed` | `{ panels }` | Fired whenever the panel layout changes — a panel registered or unregistered, changed state, gained or lost a tool, or was resized |
-| `plugins:changed` | `{ plugins }` | Fired whenever a plugin is loaded, unloaded, shown or hidden |
+| `panels:changed` | `{ panels }` | Fired whenever the panel layout changes — a panel registered or unregistered, changed state, lost a tool, or was resized |
+| `plugins:changed` | `{ plugins }` | Fired whenever a plugin is shown, hidden, loaded or unloaded by command, and once after a batch of plugins loads with the layout |
 
 `panels` carries the same listing [`panels:getAll`](#panel-and-plugin-providers)
 returns, and `plugins` the same listing `plugins:getAll` returns, so there is
 nothing to re-request. Setting something to the state it already holds is a
 quiet no-op — no event fires.
+
+Neither event fires while the layout is being torn down: teardown destroys
+the subscribers along with the state they were following, so there is nobody
+left to tell.
 
 ```javascript
 window.mmgisAPI.on('panels:changed', ({ panels }) => {
