@@ -1,8 +1,5 @@
 import { test, expect } from 'vitest'
-import {
-    resolveShareFormats,
-    resolveIncludeLegend,
-} from '../../../src/essence/Tools/ShareExport/adapters/shareConfig.ts'
+import { resolveShareFormats } from '../../../src/essence/Tools/ShareExport/adapters/shareConfig.ts'
 
 // Issue #144 - the share link is always available; PNG and PDF are each
 // toggleable per-dashboard and default to ON when unset.
@@ -35,18 +32,5 @@ test.describe('resolveShareFormats', () => {
     })
 })
 
-test.describe('resolveIncludeLegend', () => {
-    test('defaults on when no vars are set', () => {
-        expect(resolveIncludeLegend(undefined)).toBe(true)
-        expect(resolveIncludeLegend(null)).toBe(true)
-        expect(resolveIncludeLegend({})).toBe(true)
-    })
-
-    test('treats an explicit true as enabled', () => {
-        expect(resolveIncludeLegend({ includeLegend: true })).toBe(true)
-    })
-
-    test('disables only when explicitly set to false', () => {
-        expect(resolveIncludeLegend({ includeLegend: false })).toBe(false)
-    })
-})
+// includeLegend resolution moved to _shared/share/resolveIncludeLegend,
+// shared with the MapControl adapter — see that module's own spec.

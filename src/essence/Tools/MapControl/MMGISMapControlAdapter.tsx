@@ -4,7 +4,7 @@ import type { BasemapStyle } from './lib'
 // The shared share-menu control (_shared/share) — same look
 // and behaves identically wherever it's hosted. Importing the lib barrel also
 // loads its (host-class-scoped) styles.
-import { ShareMenu } from '../_shared/share'
+import { ShareMenu, resolveIncludeLegend } from '../_shared/share'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
@@ -47,8 +47,8 @@ export function MMGISMapControlAdapter() {
     const [shareCopied, setShareCopied] = useState(false)
     const copiedTimer = useRef<number | null>(null)
     const vars = useMMGISToolVars<ToolVars>('mapcontrol')
-    // Default ON; a saved false/0 disables the legend band on exports.
-    const includeLegend = !isFalsy(vars.includeLegend)
+    // Shared with ShareExport's adapter — see _shared/share/resolveIncludeLegend.
+    const includeLegend = resolveIncludeLegend(vars)
 
     // Same handler pattern as MMGISShareExportAdapter, wired to the shared
     // share actions.

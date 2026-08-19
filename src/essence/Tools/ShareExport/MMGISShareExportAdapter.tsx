@@ -3,9 +3,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ShareMenu } from './lib'
 import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
+import { resolveIncludeLegend } from '../_shared/share'
 import {
     resolveShareFormats,
-    resolveIncludeLegend,
     type ShareToolVars,
     type ShareFormats,
 } from './adapters/shareConfig'

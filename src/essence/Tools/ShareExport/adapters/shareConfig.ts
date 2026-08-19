@@ -2,6 +2,9 @@
 // enabled export formats. The share link is always available; PNG and PDF are
 // each toggleable per-dashboard and default to on (so an unset/undefined value
 // is treated as enabled, matching the config's defaultChecked: true).
+//
+// includeLegend resolution lives in _shared/share/resolveIncludeLegend —
+// shared with the MapControl adapter, which toggles the same export flag.
 
 export type ShareToolVars = {
     exportPng?: boolean
@@ -23,9 +26,4 @@ export function resolveShareFormats(vars?: ShareToolVars | null): ShareFormats {
         png: v.exportPng !== false,
         pdf: v.exportPdf !== false,
     }
-}
-
-/** The legend band defaults to on; an unset value is treated as enabled. */
-export function resolveIncludeLegend(vars?: ShareToolVars | null): boolean {
-    return (vars || {}).includeLegend !== false
 }
