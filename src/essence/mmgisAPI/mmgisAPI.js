@@ -7,6 +7,7 @@ import Login from '../Ancillary/Login/Login'
 import LegendTool from '../Tools/Legend/LegendTool.js'
 import { PANEL_STATE } from '../Basics/PanelManager_/types/layout'
 import mitt from 'mitt'
+import { registerCoreProviders } from './providers'
 
 import $ from 'jquery'
 
@@ -1218,5 +1219,10 @@ mmgisAPI.provide('app:copyText', (text) =>
     // than clobber the user's clipboard with a coerced 'undefined'.
     typeof text === 'string' ? mmgisAPI_.copyText(text) : Promise.resolve(false)
 )
+
+registerCoreProviders(mmgisAPI, {
+    getPanelManager: () => mmgisAPI_._panelManager,
+    getPluginController: () => mmgisAPI_._pluginController,
+})
 
 export { mmgisAPI_, mmgisAPI }

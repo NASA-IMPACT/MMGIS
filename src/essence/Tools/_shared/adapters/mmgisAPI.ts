@@ -236,6 +236,93 @@ export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')
 }
 
+export type PanelState = 'collapsed' | 'expanded' | 'iconified' | 'focused'
+export type PluginState = 'unloaded' | 'hidden' | 'visible'
+
+/** One panel in the layout, as much of it as a plugin needs to target it. */
+export type PanelInfo = {
+    id: string
+    position: string
+    state: PanelState
+    /** Tool ids the panel holds — how a plugin finds the panel it lives in. */
+    toolIds: string[]
+}
+
+export type PluginInfo = {
+    id: string
+    state: PluginState
+}
+
+/**
+ * `layout-inactive` covers two causes a caller cannot tell apart: a core new
+ * enough to register the handler but with no layout currently mounted
+ * (reported by the providers themselves), and a core too old to have the
+ * handler at all (synthesized below by `command`, mirroring the null-on-old-
+ * core behaviour every other wrapper in this file already resolves to).
+ * Both mean the same thing to a caller — there is nothing to command — so
+ * they share the reason rather than adding a version-skew-specific one.
+ */
+export type CommandResult =
+    | { ok: true; state: PanelState | PluginState; changed: boolean }
+    | {
+          ok: false
+          reason:
+              | 'not-found'
+              | 'state-not-allowed'
+              | 'no-visible-state'
+              | 'layout-inactive'
+              | 'bad-request'
+              | 'load-failed'
+              | 'transition-failed'
+      }
+
+const UNREACHABLE: CommandResult = { ok: false, reason: 'layout-inactive' }
+
+/** Against a core too old to register the handler, synthesizes the same
+ *  layout-inactive result a current core reports for an inactive layout. */
+const command = async (name: string, params: unknown): Promise<CommandResult> => {
+    const result = await mmgisRequestIfProvided<CommandResult>(name, params)
+    return result ?? UNREACHABLE
+}
+
+/**
+ * Every panel in the layout, ordered by priority. Empty against a core with no
+ * layout or no handler — follow state with the `panels:changed` event rather
+ * than polling.
+ */
+export const mmgisGetPanels = async (): Promise<PanelInfo[]> => {
+    return (await mmgisRequestIfProvided<PanelInfo[]>('panels:getAll')) ?? []
+}
+
+/** Move a panel to a state. Naming the state makes repeats and retries safe. */
+export const mmgisSetPanelState = (panelId: string, state: PanelState): Promise<CommandResult> =>
+    command('panels:setState', { panelId, state })
+
+/** Restore a collapsed panel to the state it last held. */
+export const mmgisShowPanel = (panelId: string): Promise<CommandResult> =>
+    command('panels:show', { panelId })
+
+/** Collapse a panel without destroying its contents. */
+export const mmgisHidePanel = (panelId: string): Promise<CommandResult> =>
+    command('panels:hide', { panelId })
+
+/** Every plugin known to the layout and its lifecycle state. */
+export const mmgisGetPlugins = async (): Promise<PluginInfo[]> => {
+    return (await mmgisRequestIfProvided<PluginInfo[]>('plugins:getAll')) ?? []
+}
+
+/** Move a plugin to a lifecycle state, loading it first if that is required. */
+export const mmgisSetPluginState = (pluginId: string, state: PluginState): Promise<CommandResult> =>
+    command('plugins:setState', { pluginId, state })
+
+/** Reveal a plugin, loading it first if it is unloaded. */
+export const mmgisShowPlugin = (pluginId: string): Promise<CommandResult> =>
+    command('plugins:show', { pluginId })
+
+/** Hide a plugin without destroying its instance or state. */
+export const mmgisHidePlugin = (pluginId: string): Promise<CommandResult> =>
+    command('plugins:hide', { pluginId })
+
 /**
  * Copies text to the clipboard via core's app:copyText handler; true on
  * success. Against cores that predate the handler — including ones whose
