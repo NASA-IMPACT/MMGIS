@@ -87,7 +87,7 @@ test.describe('PanelManager - Registration', () => {
             panelManager.registerPanel(config)
 
             expect(mock.events.length).toBe(1)
-            expect(mock.events[0].type).toBe('mmgis-panel-layout-changed')
+            expect(mock.events[0].type).toBe('panels:changed')
             mock.restore()
         })
     })
@@ -118,7 +118,7 @@ test.describe('PanelManager - Registration', () => {
             panelManager.unregisterPanel('test-panel')
 
             expect(mock.events.length).toBe(1)
-            expect(mock.events[0].type).toBe('mmgis-panel-layout-changed')
+            expect(mock.events[0].type).toBe('panels:changed')
             mock.restore()
         })
 

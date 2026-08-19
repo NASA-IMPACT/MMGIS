@@ -2,6 +2,7 @@ import PanelManager_ from '../PanelManager_/PanelManager_'
 import { toolModules } from '../../../pre/tools'
 import { generateToolMetadata } from './ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
+import { mmgisAPI } from '../../mmgisAPI/mmgisAPI'
 
 const logger = createLogger('ToolControllerModern')
 
@@ -644,7 +645,90 @@ const ToolControllerModern_ = {
      */
     isPluginHidden: function (pluginId) {
         return hiddenTools.has(pluginId) || deferredTools.has(pluginId)
-    }
+    },
+
+    /**
+     * A plugin's lifecycle state:
+     * - unloaded: registered but make() has not run; DOM container is empty
+     * - hidden:   loaded, instance and state intact, not visible
+     * - visible:  loaded and on screen
+     *
+     * @param {string} pluginId - Tool ID
+     * @returns {'unloaded'|'hidden'|'visible'|null} null when the id is unknown
+     */
+    getPluginState: function (pluginId) {
+        if (deferredTools.has(pluginId)) return 'unloaded'
+        if (!toolIdToTargetId.has(pluginId)) return null
+        return hiddenTools.has(pluginId) ? 'hidden' : 'visible'
+    },
+
+    /**
+     * Move a plugin to a lifecycle state, taking whatever intermediate steps the
+     * transition needs — asking for 'visible' on an unloaded plugin loads it.
+     * Idempotent: asking for the state a plugin already holds changes nothing.
+     *
+     * @param {string} pluginId - Tool ID
+     * @param {'unloaded'|'hidden'|'visible'} state - Target state
+     * @returns {object} { ok: true, state, changed } or { ok: false, reason }
+     */
+    setPluginState: function (pluginId, state) {
+        if (!['unloaded', 'hidden', 'visible'].includes(state)) {
+            return { ok: false, reason: 'bad-request' }
+        }
+
+        const current = this.getPluginState(pluginId)
+        if (current === null) return { ok: false, reason: 'not-found' }
+        if (current === state) return { ok: true, state, changed: false }
+
+        let succeeded = false
+        if (state === 'unloaded') {
+            succeeded = this.unloadPlugin(pluginId)
+        } else {
+            // Both 'hidden' and 'visible' require a loaded instance.
+            if (current === 'unloaded' && !this.loadPlugin(pluginId)) {
+                return { ok: false, reason: 'load-failed' }
+            }
+            succeeded = state === 'visible'
+                ? this.showPlugin(pluginId)
+                : this.hidePlugin(pluginId)
+        }
+
+        // getPluginState already resolved the plugin, so a mutator refusing it
+        // here means the lifecycle registries disagree about where it lives.
+        // That is this controller failing, not the caller naming a plugin that
+        // isn't there, and the reason has to say so or it sends a debugger
+        // looking for a typo in the id.
+        if (!succeeded) return { ok: false, reason: 'transition-failed' }
+
+        this.notifyPluginsChanged()
+        return { ok: true, state, changed: true }
+    },
+
+    /**
+     * Public projection of every known plugin: just id and state, stripped of
+     * the live `tools` map and other core references, so it clones cleanly
+     * across a sandbox postMessage boundary. Frozen on top of that so a
+     * subscriber holding a reference can't mutate core's plugin state.
+     *
+     * @returns {Array<{id: string, state: string}>}
+     */
+    listPlugins: function () {
+        const ids = new Set([...toolIdToTargetId.keys(), ...deferredTools.keys()])
+        return Object.freeze(
+            Array.from(ids).map((id) =>
+                Object.freeze({ id, state: this.getPluginState(id) })
+            )
+        )
+    },
+
+    /**
+     * Broadcast that plugin lifecycle state moved.
+     */
+    notifyPluginsChanged: function () {
+        mmgisAPI.emit('plugins:changed', Object.freeze({
+            plugins: this.listPlugins(),
+        }))
+    },
 }
 
 export default ToolControllerModern_

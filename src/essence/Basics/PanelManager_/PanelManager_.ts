@@ -1,6 +1,12 @@
 import { ToolOrientation, ToolMetadata } from '../ToolController_/types/tool';
 import { PanelPosition, PanelState, PanelLayoutType, PANEL_STATE, FLOAT_POSITIONS } from './types/layout';
-import { PanelConfig, PanelStateObject, PanelManager as PanelManagerInterface } from './types/panel';
+import {
+    PanelConfig,
+    PanelStateObject,
+    PanelManager as PanelManagerInterface,
+    PanelCommandResult,
+    PanelInfo,
+} from './types/panel';
 import { mmgisAPI } from '../../mmgisAPI/mmgisAPI';
 
 /**
@@ -47,7 +53,7 @@ class PanelManager implements PanelManagerInterface {
         };
 
         this.panels.set(config.id, stateObj);
-        this.notifyLayoutChanged();
+        this.notifyChanged();
     }
 
     /**
@@ -63,7 +69,7 @@ class PanelManager implements PanelManagerInterface {
         }
 
         this.panels.delete(panelId);
-        this.notifyLayoutChanged();
+        this.notifyChanged();
     }
 
     /**
@@ -128,7 +134,7 @@ class PanelManager implements PanelManagerInterface {
             panel.activeToolId = firstToolId;
         }
 
-        this.notifyLayoutChanged();
+        this.notifyChanged();
     }
 
     /**
@@ -155,38 +161,73 @@ class PanelManager implements PanelManagerInterface {
     }
 
     /**
-     * Change a panel's visual state.
-     * Validates transition is allowed based on stateConstraints.
-     *
-     * @param panelId Panel identifier
-     * @param newState Target state
-     * @throws Error if transition is not allowed
+     * Whether a panel may enter the given state. Float panels support only
+     * collapsed and expanded; every panel is additionally bound by its
+     * configured allowedStates.
      */
-    setPanelState(panelId: string, newState: PanelState): void {
+    canSetState(panelId: string, newState: PanelState): boolean {
         const panel = this.panels.get(panelId);
-        if (!panel) {
-            throw new Error(`Panel with ID ${panelId} not found`);
-        }
+        if (!panel) return false;
 
         if ((FLOAT_POSITIONS as Set<string>).has(panel.config.position) &&
             (newState === PANEL_STATE.ICONIFIED || newState === PANEL_STATE.FOCUSED)) {
-            throw new Error(
-                `Float panels do not support '${newState}' state. ` +
-                `Only 'collapsed' and 'expanded' are allowed for float panel ${panelId}.`
-            );
+            return false;
         }
 
-        if (!panel.config.stateConstraints.allowedStates.includes(newState)) {
-            throw new Error(`State transition to ${newState} is not allowed for panel ${panelId}`);
-        }
+        return panel.config.stateConstraints.allowedStates.includes(newState);
+    }
 
-        // Track last visible state when collapsing
-        if (newState === PANEL_STATE.COLLAPSED && panel.state !== PANEL_STATE.COLLAPSED) {
+    /**
+     * Move a panel to a state. Idempotent: asking for the state a panel already
+     * holds succeeds without notifying, so repeated or retried commands cannot
+     * produce spurious layout churn.
+     */
+    setPanelState(panelId: string, newState: PanelState): PanelCommandResult {
+        const panel = this.panels.get(panelId);
+        if (!panel) return { ok: false, reason: 'not-found' };
+        if (!this.canSetState(panelId, newState)) return { ok: false, reason: 'state-not-allowed' };
+
+        if (panel.state === newState) return { ok: true, state: newState, changed: false };
+
+        if (newState === PANEL_STATE.COLLAPSED) {
             panel.lastVisibleState = panel.state;
         }
 
         panel.state = newState;
-        this.notifyLayoutChanged();
+        this.notifyChanged();
+        return { ok: true, state: newState, changed: true };
+    }
+
+    /**
+     * Restore a collapsed panel to the state it last held, falling back to its
+     * configured default and then to any allowed visible state.
+     *
+     * A panel that is already visible stays exactly where it is. Show only ever
+     * reveals; resolving a target for a panel the user has expanded would demote
+     * it whenever the configured default is the smaller state, which is how
+     * every stock layout configures its left panel.
+     */
+    showPanel(panelId: string): PanelCommandResult {
+        const panel = this.panels.get(panelId);
+        if (!panel) return { ok: false, reason: 'not-found' };
+        if (panel.state !== PANEL_STATE.COLLAPSED) {
+            return { ok: true, state: panel.state, changed: false };
+        }
+
+        const candidates: PanelState[] = [
+            panel.lastVisibleState,
+            panel.config.stateConstraints.defaultState,
+            PANEL_STATE.EXPANDED,
+            PANEL_STATE.ICONIFIED,
+            PANEL_STATE.FOCUSED,
+        ].filter(Boolean) as PanelState[];
+
+        const target = candidates.find(
+            (state) => state !== PANEL_STATE.COLLAPSED && this.canSetState(panelId, state)
+        );
+
+        if (!target) return { ok: false, reason: 'no-visible-state' };
+        return this.setPanelState(panelId, target);
     }
 
     /**
@@ -221,56 +262,7 @@ class PanelManager implements PanelManagerInterface {
         }
 
         panel.activeToolId = toolId;
-        this.notifyLayoutChanged();
-    }
-
-    /**
-     * Toggle a panel's visibility.
-     * Behavior depends on current state and constraints:
-     * - collapsed -> last visible state (or default state, or first available visible state)
-     * - iconified/focused/expanded -> collapsed
-     *
-     * @param panelId Panel identifier
-     * @throws Error if panel not found
-     * @throws Error if toggle cannot be performed due to state constraints
-     */
-    togglePanelCollapsed(panelId: string): void {
-        const panel = this.panels.get(panelId);
-        if (!panel) {
-            throw new Error(`Panel with ID ${panelId} not found`);
-        }
-
-        const allowed = panel.config.stateConstraints.allowedStates;
-
-        if (panel.state === PANEL_STATE.COLLAPSED) {
-            // Try to restore last visible state first
-            let targetState: PanelState = panel.lastVisibleState || panel.config.stateConstraints.defaultState;
-
-            // If target is collapsed or not allowed, try to find a visible state
-            if (targetState === PANEL_STATE.COLLAPSED || !allowed.includes(targetState)) {
-                targetState = allowed.includes(PANEL_STATE.EXPANDED) ? PANEL_STATE.EXPANDED :
-                            allowed.includes(PANEL_STATE.ICONIFIED) ? PANEL_STATE.ICONIFIED :
-                            allowed.includes(PANEL_STATE.FOCUSED) ? PANEL_STATE.FOCUSED : PANEL_STATE.COLLAPSED;
-            }
-
-            if (targetState === PANEL_STATE.COLLAPSED) {
-                throw new Error(
-                    `Cannot uncollapse panel ${panelId}: no visible states available in constraints`
-                );
-            }
-
-            this.setPanelState(panelId, targetState);
-        } else {
-            // Check if we can collapse
-            if (!allowed.includes(PANEL_STATE.COLLAPSED)) {
-                throw new Error(
-                    `Cannot collapse panel ${panelId}: collapsed state not allowed in constraints`
-                );
-            }
-
-            // setPanelState will automatically track lastVisibleState
-            this.setPanelState(panelId, PANEL_STATE.COLLAPSED);
-        }
+        this.notifyChanged();
     }
 
     /**
@@ -297,17 +289,31 @@ class PanelManager implements PanelManagerInterface {
     }
 
     /**
-     * Notify UI layer that panel state has changed and layout needs updating.
-     * Should be called whenever:
-     * - Panel state changes
-     * - Panel is added/removed
+     * Public projection of every panel, ordered by priority. Stripped of
+     * `config`, the live `tools` map, and other core references, so it clones
+     * cleanly across a sandbox postMessage boundary. Frozen on top of that so
+     * a subscriber holding a reference can't mutate core's panel state.
      */
-    notifyLayoutChanged(): void {
-        const allPanels = this.getAllPanelsByPriority();
-        // Fire custom event for any listeners hooked into the DOM.
-        if (typeof window !== 'undefined') {
-            mmgisAPI.emit('mmgis-panel-layout-changed', { panels: allPanels });
-        }
+    list(): PanelInfo[] {
+        return Object.freeze(
+            this.getAllPanelsByPriority().map((panel) => {
+                return Object.freeze({
+                    id: panel.id,
+                    position: panel.config.position,
+                    state: panel.state,
+                    toolIds: Object.freeze(Array.from(panel.tools.keys())),
+                });
+            })
+        ) as PanelInfo[];
+    }
+
+    /**
+     * Broadcast that the layout moved.
+     */
+    notifyChanged(): void {
+        mmgisAPI.emit('panels:changed', Object.freeze({
+            panels: this.list(),
+        }));
     }
 
     /**
@@ -366,7 +372,7 @@ class PanelManager implements PanelManagerInterface {
         const boundedSize = Math.max(minSize, Math.min(newSize, maxSize));
 
         panel.currentSize = boundedSize;
-        this.notifyLayoutChanged();
+        this.notifyChanged();
     }
 }
 

@@ -251,7 +251,7 @@ const UserInterfaceModern_ = {
         }
 
         if (!cleanupLayoutListener) {
-            cleanupLayoutListener = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+            cleanupLayoutListener = mmgisAPI.on('panels:changed', this.syncDOMState.bind(this))
         }
 
         // Set up ResizeObserver to dispatch resize events when the center map area changes size
