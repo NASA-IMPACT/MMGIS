@@ -2,10 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('../colormapCache', () => ({ fetchColormapColors: vi.fn() }))
 import { fetchColormapColors } from '../colormapCache'
-import {
-    resolveColormapColors,
-    hasLocalColormap,
-} from '../resolveColormapColors'
+import { resolveColormapColors } from '../resolveColormapColors'
 
 // A block body, not an implicit return: `mockReset()` returns the mock
 // itself, and vitest treats a function returned from `beforeEach` as an
@@ -21,7 +18,8 @@ describe('resolveColormapColors', () => {
             new Error('titiler is down'),
         )
         const colors = await resolveColormapColors('viridis', null)
-        expect(colors).toHaveLength(32)
+        // 256 samples, matching TiTiler's own granularity.
+        expect(colors).toHaveLength(256)
         expect(colors[0]).toMatch(/^rgb\(/)
         expect(fetchColormapColors).not.toHaveBeenCalled()
     })
@@ -45,12 +43,20 @@ describe('resolveColormapColors', () => {
             ['#fff', '#000'],
         )
     })
-    it('resolves null when the name is unknown and TiTiler fails', async () => {
+    it('falls back to the viridis ramp when the name is unknown and TiTiler resolves nothing', async () => {
+        // Matches colormapLUT's fallback so the export never disagrees with
+        // what deckRaster painted for the same unrecognized name.
         vi.mocked(fetchColormapColors).mockResolvedValue(null)
-        expect(await resolveColormapColors('customramp', null)).toBeNull()
+        const colors = await resolveColormapColors('customramp', null)
+        expect(colors).toHaveLength(256)
+        expect(colors[0]).toMatch(/^rgb\(/)
     })
-    it('hasLocalColormap is case-insensitive and _r-aware', () => {
-        expect(hasLocalColormap('Viridis_r')).toBe(true)
-        expect(hasLocalColormap('not_a_ramp')).toBe(false)
+    it('falls back to the viridis ramp — never throws — when fetchColormapColors rejects', async () => {
+        vi.mocked(fetchColormapColors).mockRejectedValue(
+            new Error('network down'),
+        )
+        const colors = await resolveColormapColors('customramp', 'http://t')
+        expect(colors).toHaveLength(256)
+        expect(colors[0]).toMatch(/^rgb\(/)
     })
 })

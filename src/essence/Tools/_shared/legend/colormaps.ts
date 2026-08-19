@@ -23,6 +23,23 @@ export const getBaseColormapName = (name: string | null | undefined): string => 
     return name.replace(REVERSED_SUFFIX, '')
 }
 
+/**
+ * Case-insensitively matches a colormap name (optionally `_r`-suffixed)
+ * against a set of canonical keys, returning the key's original casing. The
+ * client-side js-colormaps evaluator (used by both the export legend and the
+ * deckRaster renderer) keys its bundled ramps by their published casing
+ * (e.g. `RdBu`), so a lowercased comparison is needed either way — shared
+ * here so the two lookups can't drift apart.
+ */
+export const findColormapKey = (
+    name: string | null | undefined,
+    keys: string[],
+): string | null => {
+    const base = getBaseColormapName(name).toLowerCase()
+    if (!base) return null
+    return keys.find((k) => k.toLowerCase() === base) ?? null
+}
+
 /** Recombine a base ramp name with a direction into the name TiTiler expects. */
 export const applyColormapDirection = (base: string, reversed: boolean): string => {
     const normalized = getBaseColormapName(base).toLowerCase()
