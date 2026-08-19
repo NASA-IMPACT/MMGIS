@@ -139,3 +139,38 @@ test('the minimize button falls back to collapsed when the panel disallows iconi
     expect(spy).toHaveBeenCalledWith('panels:setState', { panelId: 'collapse-only-panel', state: PANEL_STATE.COLLAPSED })
     PanelManager_.unregisterPanel('collapse-only-panel')
 })
+
+test('a float panel gets no minimize button even when its constraints allow iconified', async () => {
+    // The constraints say iconified is fine; the float position overrides that.
+    // Reading allowedStates directly would draw a Minimize button here, and
+    // clicking it would strand the panel — the header has to ask canSetState.
+    PanelManager_.registerPanel({
+        ...config('float-panel', [PANEL_STATE.EXPANDED, PANEL_STATE.ICONIFIED]),
+        position: 'float-top-left',
+    })
+
+    const { _createPanelHeader } = await import(
+        '../../src/essence/Basics/UserInterface_/UserInterfaceModern_.js'
+    )
+    const header = _createPanelHeader(PanelManager_.getPanelState('float-panel'))
+
+    expect(header.find('.ui-panel-btn-minimize').length).toBe(0)
+    PanelManager_.unregisterPanel('float-panel')
+})
+
+test('a float panel still gets a close button, which collapsing does allow', async () => {
+    PanelManager_.registerPanel({
+        ...config('float-closable', [PANEL_STATE.EXPANDED, PANEL_STATE.COLLAPSED]),
+        position: 'float-top-left',
+    })
+    const spy = vi.spyOn(mmgisAPI, 'request')
+
+    const { _createPanelHeader } = await import(
+        '../../src/essence/Basics/UserInterface_/UserInterfaceModern_.js'
+    )
+    const header = _createPanelHeader(PanelManager_.getPanelState('float-closable'))
+    header.find('.ui-panel-btn-close').trigger('click')
+
+    expect(spy).toHaveBeenCalledWith('panels:hide', { panelId: 'float-closable' })
+    PanelManager_.unregisterPanel('float-closable')
+})

@@ -1,4 +1,4 @@
-import { mmgisEmit, mmgisRequest } from '../adapters/mmgisAPI'
+import { mmgisEmit, mmgisHasHandler, mmgisRequest } from '../adapters/mmgisAPI'
 
 /**
  * Core actions expressible as a config string, mapped to the parameter their
@@ -42,8 +42,9 @@ const CORE_NAMESPACES = new Set(['core', 'panels', 'plugins'])
  * Targets may themselves contain colons; everything after the verb is the
  * target. The namespace match is exact — 'Panels:hide:left' is not a core
  * action, so it falls through and is emitted verbatim. A request core
- * refuses is warned with its reason; a bus with no handler registered warns
- * 'no handler' rather than surfacing a rejected promise to the caller.
+ * refuses is warned with its reason; a core that never registered the handler,
+ * or no bus at all, warns 'no handler' rather than surfacing a rejected
+ * promise to the caller.
  */
 export const resolveAction = async (action?: string): Promise<void> => {
     if (!action) return
@@ -58,12 +59,19 @@ export const resolveAction = async (action?: string): Promise<void> => {
     const param = TARGET_PARAM[name]
 
     if (param && rest.length > 0) {
+        // Ask before requesting: an unregistered name makes `request` throw,
+        // and a config author reading "failed: Error: No handler for…" learns
+        // less than one told the action is simply unavailable here.
+        if (!mmgisHasHandler(name)) {
+            console.warn(`[resolveAction] "${action}" refused: no handler`)
+            return
+        }
         try {
             const result = await mmgisRequest<{ ok: boolean; reason?: string }>(name, {
                 [param]: rest.join(':'),
             })
             if (!result?.ok) {
-                console.warn(`[resolveAction] "${action}" refused: ${result?.reason ?? 'no handler'}`)
+                console.warn(`[resolveAction] "${action}" refused: ${result?.reason ?? 'no result'}`)
             }
         } catch (err) {
             console.warn(`[resolveAction] "${action}" failed:`, err)

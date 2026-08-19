@@ -14,7 +14,7 @@ const emit = vi.fn()
 beforeEach(() => {
     request.mockReset().mockResolvedValue({ ok: true })
     emit.mockReset()
-    ;(window as any).mmgisAPI = { request, emit, on: () => () => {} }
+    ;(window as any).mmgisAPI = { request, emit, hasHandler: () => true, on: () => () => {} }
     vi.spyOn(window, 'open').mockImplementation(() => null)
 })
 
@@ -128,6 +128,20 @@ describe('resolveAction', () => {
         delete (window as any).mmgisAPI
         await resolveAction('panels:hide:left-panel')
         expect(warn).toHaveBeenCalledWith(expect.stringContaining('no handler'))
+    })
+
+    test('warns "no handler" when the bus exists but never registered the action', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        ;(window as any).mmgisAPI.hasHandler = () => false
+
+        await resolveAction('panels:hide:left-panel')
+
+        // Asked first, so the caller is told the action is unavailable rather
+        // than handed the raw throw `request` produces for an unknown name.
+        expect(request).not.toHaveBeenCalled()
+        expect(warn).toHaveBeenCalledWith(
+            '[resolveAction] "panels:hide:left-panel" refused: no handler',
+        )
     })
 
     test('a rejected request is caught and warned, not thrown', async () => {
