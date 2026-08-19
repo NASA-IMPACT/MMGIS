@@ -8,8 +8,8 @@ export type ExportLegendRow =
           kind: 'gradient'
           title: string
           colors: string[] | null
-          min: number | string
-          max: number | string
+          min: number | string | null
+          max: number | string | null
           unit: string | null
       }
     | { kind: 'categorical'; title: string; stops: CategoricalStop[] }
@@ -37,8 +37,8 @@ const toRow = async (layer: Layer): Promise<ExportLegendRow | null> => {
             kind: 'gradient',
             title: layer.title,
             colors: layer.stops,
-            min: layer.min ?? '',
-            max: layer.max ?? '',
+            min: layer.min ?? null,
+            max: layer.max ?? null,
             unit: layer.unit?.label ?? layer.cog?.units ?? null,
         }
     }

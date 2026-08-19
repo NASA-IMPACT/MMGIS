@@ -3,7 +3,7 @@ import { useState, useCallback, useRef, type MouseEvent } from 'react'
 import { scaleLinear } from 'd3'
 import { useColormapColors } from '../../hooks/useColormapColors'
 import { buildGradientCss, isReversedColormap } from '../../../../_shared/legend/colormaps'
-import { formatLegendValue } from '../../../../_shared/legend/format'
+import { formatLegendValue, formatLegendBound } from '../../../../_shared/legend/format'
 import type { CogData } from '../../types'
 
 export type GradientGraphicProps = {
@@ -12,17 +12,6 @@ export type GradientGraphicProps = {
     max: number | string
     unit?: { label: string } | null
     cog?: CogData | null
-}
-
-const formatTooltipValue = (rawVal: number, unit?: { label: string } | null): string => {
-    if (rawVal === 0) return unit?.label ? `0 ${unit.label}` : '0'
-    let value: number | string
-    if (Math.abs(rawVal) < 9999 && Math.abs(rawVal) > 0.0009) {
-        value = parseFloat(rawVal.toFixed(3))
-    } else {
-        value = rawVal.toExponential(2)
-    }
-    return unit?.label ? `${value} ${unit.label}` : String(value)
 }
 
 export function GradientGraphic({ stops, min, max, unit, cog }: GradientGraphicProps) {
@@ -79,7 +68,7 @@ export function GradientGraphic({ stops, min, max, unit, cog }: GradientGraphicP
                             className="blocks-gradient-graphic__tooltip blocks-gradient-graphic__tooltip--visible"
                             style={{ left: tooltipPos.x }}
                         >
-                            {formatTooltipValue(hoverVal, unit)}
+                            {formatLegendBound(hoverVal, unit?.label ?? null)}
                         </div>
                     )}
                 </div>

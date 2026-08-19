@@ -210,6 +210,20 @@ describe('getExportLegendModel', () => {
         expect(model.timeLabel).toBe('2024-01-01T00:00:00Z')
     })
 
+    test('missing authored bounds pass through as null, not an empty string', async () => {
+        vi.mocked(getVisibleLayersWithLegends).mockResolvedValue([
+            baseLayer({
+                title: 'No bounds',
+                type: 'gradient',
+                stops: ['#a', '#b'],
+                unit: { label: 'm' },
+            }),
+        ])
+        const model = await getExportLegendModel()
+        expect(model.rows[0].min).toBeNull()
+        expect(model.rows[0].max).toBeNull()
+    })
+
     test('renders no unit when neither the layer nor the cog names one', async () => {
         vi.mocked(getVisibleLayersWithLegends).mockResolvedValue([
             baseLayer({

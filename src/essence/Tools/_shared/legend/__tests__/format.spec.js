@@ -21,6 +21,13 @@ describe('formatLegendValue', () => {
     test('passes non-numeric input through untouched', () => {
         expect(formatLegendValue('n/a')).toBe('n/a')
     })
+
+    test('renders null/undefined/blank as blank, not 0', () => {
+        expect(formatLegendValue(null)).toBe('')
+        expect(formatLegendValue(undefined)).toBe('')
+        expect(formatLegendValue('')).toBe('')
+        expect(formatLegendValue('   ')).toBe('')
+    })
 })
 
 describe('formatLegendBound', () => {
@@ -30,5 +37,20 @@ describe('formatLegendBound', () => {
 
     test('is bare when no unit is supplied', () => {
         expect(formatLegendBound(5, null)).toBe('5')
+    })
+
+    test('missing bounds render blank, with no dangling unit', () => {
+        expect(formatLegendBound(null, 'm')).toBe('')
+        expect(formatLegendBound(undefined, 'm')).toBe('')
+        expect(formatLegendBound('', 'ppm')).toBe('')
+    })
+
+    test('a non-numeric bound renders verbatim, once, with no unit appended', () => {
+        expect(formatLegendBound('<0.1 ppm', 'ppm')).toBe('<0.1 ppm')
+    })
+
+    test('a numeric bound (number or numeric string) still gets its unit', () => {
+        expect(formatLegendBound(0, 'm')).toBe('0 m')
+        expect(formatLegendBound('5', 'm')).toBe('5 m')
     })
 })
