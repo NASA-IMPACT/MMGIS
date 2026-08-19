@@ -4,7 +4,7 @@ import { mmgisAPI, mmgisAPI_ } from '../../mmgisAPI/mmgisAPI'
 import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
-import { FLOAT_POSITIONS } from '../PanelManager_/types/layout'
+import { PANEL_STATE, FLOAT_POSITIONS } from '../PanelManager_/types/layout'
 import './UserInterfaceModern_.css'
 
 const logger = createLogger('UserInterfaceModern')
@@ -17,7 +17,6 @@ let panels = []
 let layoutStyle = ''
 let toolLoadQueue = []
 let cleanupLayoutListener = null
-let cleanupCoreCommandDispatcher = null
 let _resizeObserver = null
 
 // --- DOM Builder Helpers ---
@@ -42,8 +41,8 @@ const _createPanelIconTray = (panel) => {
             .append(iconSpan)
 
         iconBtn.on('click', () => {
-            if (panel.state === 'focused' && panel.activeToolId === toolId) {
-                PanelManager_.setPanelState(panel.id, 'iconified')
+            if (panel.state === PANEL_STATE.FOCUSED && panel.activeToolId === toolId) {
+                _panelCommand('panels:setState', panel.id, { state: PANEL_STATE.ICONIFIED })
             } else {
                 PanelManager_.focusTool(panel.id, toolId)
             }
@@ -53,35 +52,58 @@ const _createPanelIconTray = (panel) => {
     return iconsContainer
 }
 
+/**
+ * Issue a panel command over the bus and surface a refusal. Every control goes
+ * through here, so a command the constraints reject leaves a diagnosable trace
+ * instead of a dead click.
+ */
+const _panelCommand = (name, panelId, extra = {}) => {
+    mmgisAPI.request(name, { panelId, ...extra })
+        .then((result) => {
+            if (!result?.ok) {
+                logger.warn(`Panel command "${name}" on "${panelId}" refused: ${result?.reason}`)
+            }
+        })
+        .catch((err) => {
+            logger.warn(`Panel command "${name}" on "${panelId}" failed:`, err)
+        })
+}
+
 const _createPanelHeader = (panel) => {
-    const allowed = panel.config.stateConstraints?.allowedStates || []
     const header = $('<div class="ui-panel-header"></div>')
     const title = $('<h3 class="ui-panel-title"></h3>').text(panel.config.title || panel.id)
     const headerButtons = $('<div class="ui-panel-header-buttons"></div>')
 
-    if (allowed.includes('iconified') || allowed.includes('collapsed')) {
-        const minBtn = $('<button class="ui-panel-btn ui-panel-btn-minimize" title="Minimize"><span class="mdi mdi-window-minimize"></span></button>')
-        minBtn.on('click', () => {
-            const target = allowed.includes('iconified') ? 'iconified' : 'collapsed'
-            PanelManager_.setPanelState(panel.id, target)
-        })
-        headerButtons.append(minBtn)
+    const addButton = (className, titleText, icon, onClick) => {
+        const btn = $(`<button class="ui-panel-btn ${className}" title="${titleText}"><span class="mdi ${icon}"></span></button>`)
+        btn.on('click', onClick)
+        headerButtons.append(btn)
     }
 
-    if (allowed.includes('expanded')) {
-        const maxBtn = $('<button class="ui-panel-btn ui-panel-btn-maximize" title="Maximize"><span class="mdi mdi-window-maximize"></span></button>')
-        maxBtn.on('click', () => {
-            PanelManager_.setPanelState(panel.id, 'expanded')
-        })
-        headerButtons.append(maxBtn)
+    // Minimize prefers iconified — it keeps the tool icons reachable — and falls
+    // back to collapsing outright when the panel has no iconified state.
+    const minimizeTarget = PanelManager_.canSetState(panel.id, PANEL_STATE.ICONIFIED)
+        ? PANEL_STATE.ICONIFIED
+        : PanelManager_.canSetState(panel.id, PANEL_STATE.COLLAPSED)
+            ? PANEL_STATE.COLLAPSED
+            : null
+
+    if (minimizeTarget) {
+        addButton('ui-panel-btn-minimize', 'Minimize', 'mdi-window-minimize', () =>
+            _panelCommand('panels:setState', panel.id, { state: minimizeTarget })
+        )
     }
 
-    if (allowed.includes('collapsed')) {
-        const closeBtn = $('<button class="ui-panel-btn ui-panel-btn-close" title="Close"><span class="mdi mdi-close"></span></button>')
-        closeBtn.on('click', () => {
-            PanelManager_.setPanelState(panel.id, 'collapsed')
-        })
-        headerButtons.append(closeBtn)
+    if (PanelManager_.canSetState(panel.id, PANEL_STATE.EXPANDED)) {
+        addButton('ui-panel-btn-maximize', 'Maximize', 'mdi-window-maximize', () =>
+            _panelCommand('panels:setState', panel.id, { state: PANEL_STATE.EXPANDED })
+        )
+    }
+
+    if (PanelManager_.canSetState(panel.id, PANEL_STATE.COLLAPSED)) {
+        addButton('ui-panel-btn-close', 'Close', 'mdi-close', () =>
+            _panelCommand('panels:hide', panel.id)
+        )
     }
 
     header.append(title).append(headerButtons)
@@ -241,14 +263,10 @@ const UserInterfaceModern_ = {
 
         this.render()
 
-        // Wire plugin lifecycle API into mmgisAPI so plugins and core can call
-        // showPlugin/hidePlugin/loadPlugin/unloadPlugin without a direct import
+        // Expose the controller and manager instances so the panels/plugins
+        // bus providers can read live state without a direct import.
         mmgisAPI_._pluginController = ToolControllerModern_
         mmgisAPI_._panelManager = PanelManager_
-
-        if (!cleanupCoreCommandDispatcher) {
-            cleanupCoreCommandDispatcher = mmgisAPI_._initCoreCommandDispatcher()
-        }
 
         if (!cleanupLayoutListener) {
             cleanupLayoutListener = mmgisAPI.on('panels:changed', this.syncDOMState.bind(this))
@@ -273,10 +291,6 @@ const UserInterfaceModern_ = {
     destroy: function () {
         ToolControllerModern_.destroyAllTools()
         toolLoadQueue = [] // Clear any pending loads
-        if (cleanupCoreCommandDispatcher) {
-            cleanupCoreCommandDispatcher()
-            cleanupCoreCommandDispatcher = null
-        }
         if (cleanupLayoutListener) {
             cleanupLayoutListener()
             cleanupLayoutListener = null
@@ -576,10 +590,6 @@ const UserInterfaceModern_ = {
      * @param {Object} e Layout changed event payload
      */
     syncDOMState: function (e) {
-        if (e && e.panels) {
-            this.panels = e.panels
-        }
-
         panels.forEach(panel => {
             const isFloatingPanel = FLOAT_POSITIONS.has(panel.config?.position)
 
@@ -749,3 +759,4 @@ const UserInterfaceModern_ = {
 }
 
 export default UserInterfaceModern_
+export { _createPanelHeader }
