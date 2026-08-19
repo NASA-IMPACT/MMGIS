@@ -165,8 +165,8 @@ test.describe('AOITool._applySelection camera behavior', () => {
     const mockApi = (currentView) => {
         const calls = []
         window.mmgisAPI = {
-            request: vi.fn((name, payload) => {
-                calls.push({ name, payload })
+            request: vi.fn((name, payload, caller) => {
+                calls.push({ name, payload, caller })
                 return Promise.resolve(
                     name === 'map:getBounds' ? currentView : undefined
                 )
@@ -174,6 +174,17 @@ test.describe('AOITool._applySelection camera behavior', () => {
             on: vi.fn(),
             off: vi.fn(),
         }
+        // The popup requests go through the plugin's handle, which is what
+        // stamps them with the plugin's id.
+        window.mmgisAPI.forPlugin = (pluginId) => ({
+            emit: () => { },
+            provide: () => () => { },
+            request: (name, data) =>
+                window.mmgisAPI.request(name, data, pluginId),
+        })
+        // These specs drive `_applySelection` on its own rather than through
+        // `make()`, so hand the tool the handle `make()` would have given it.
+        AOITool._api = window.mmgisAPI.forPlugin('aoi')
         return calls
     }
     const names = (calls) => calls.map((c) => c.name)
@@ -189,6 +200,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
         vi.clearAllTimers()
         vi.useRealTimers()
         delete window.mmgisAPI
+        AOITool._api = null
         AOITool._state.currentAOI = null
     })
 

@@ -195,6 +195,7 @@ test.describe('AOI draw-session keys', () => {
         window.mmgisAPI.forPlugin = () => ({
             emit: () => { },
             provide: () => () => { },
+            request: () => Promise.resolve(undefined),
         })
         appendTo(document.body, 'div', { id: 'toolPanel' })
         AOITool.make('toolPanel')

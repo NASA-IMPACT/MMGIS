@@ -69,10 +69,12 @@ function makeFakeApi() {
             // Snapshot: a handler may unsubscribe itself while dispatching.
             Array.from(listeners.get(event) || []).forEach((h) => h(data))
         },
-        request(name, payload) {
-            requests.push({ name, payload })
+        request(name, payload, caller) {
+            requests.push({ name, payload, caller })
             const impl = requestImpl.get(name)
-            return Promise.resolve().then(() => (impl ? impl(payload) : true))
+            return Promise.resolve().then(() =>
+                impl ? impl(payload, caller) : true
+            )
         },
         provide(name, handler) {
             provided.set(name, handler)
@@ -83,6 +85,10 @@ function makeFakeApi() {
             return {
                 emit: (event, data) => api.emit(prefix + event, data),
                 provide: (name, handler) => api.provide(prefix + name, handler),
+                // Unprefixed, and stamped with the plugin's id — the shape
+                // core's handle has, because it is the stamp that decides
+                // whose popup a hide is allowed to reach.
+                request: (name, data) => api.request(name, data, pluginId),
             }
         },
 
@@ -102,13 +108,18 @@ function makeFakeApi() {
     }
 
     requestImpl.set('map:getBounds', () => VIEW)
-    requestImpl.set('map:showPopup', (payload) => {
+    // Showing takes the slot whoever held it, and records who the new popup
+    // belongs to.
+    requestImpl.set('map:showPopup', (payload, caller) => {
         settleOpen('closed')
         return new Promise((resolve) => {
-            openPopup = { payload, resolve }
+            openPopup = { payload, resolve, owner: caller ?? null }
         })
     })
-    requestImpl.set('map:hidePopup', () => {
+    // Hiding reaches only the caller's own popup, as core's does — otherwise
+    // these specs would pin a contract core does not offer.
+    requestImpl.set('map:hidePopup', (payload, caller) => {
+        if (!openPopup || openPopup.owner !== (caller ?? null)) return false
         settleOpen('closed')
         return true
     })
@@ -281,15 +292,15 @@ describe('AOITool popup outcomes', () => {
 })
 
 describe('AOITool popup lifecycle', () => {
-    test('destroy drops a pending show without retracting anything', async () => {
+    test('destroy drops a pending show', async () => {
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
         api.reset()
 
         // Torn down while the camera is still being read, which is the earliest
         // a pending show can be dropped. Nothing of AOI's is on screen yet, so
-        // there is nothing for it to retract.
+        // the retract it asks for on the way out closes nothing.
         AOITool.destroy()
-        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+        expect(api.hasOpenPopup()).toBe(false)
         await flush()
 
         api.emit('map:moveend')
@@ -447,27 +458,36 @@ describe('AOITool popup lifecycle', () => {
     })
 })
 
-// `map:hidePopup` empties core's single popup slot, whoever filled it. AOI may
-// therefore ask for it only while the popup on screen is its own.
+// One popup slot, and core decides whose popup a `map:hidePopup` reaches. AOI
+// asks whenever it is done with a popup and lets core sort out whether there
+// is one of its own to close — so what these pin is the outcome, not whether
+// AOI worked out for itself that it should stay quiet.
 describe('AOITool popup ownership', () => {
-    test('destroy retracts nothing when AOI has no popup open', () => {
+    // The stamp is the whole mechanism: a popup opened without AOI's id on the
+    // request is one AOI could never retract.
+    test('asks for its popup as AOI', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
         AOITool.destroy()
-        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+
+        expect(api.namesOf('map:showPopup')[0].caller).toBe('aoi')
+        expect(api.namesOf('map:hidePopup')[0].caller).toBe('aoi')
     })
 
     test('destroy retracts a popup AOI itself opened', async () => {
         await selectAndOpen(SQUARE, 'Alabama')
-        api.reset()
+        expect(api.hasOpenPopup()).toBe(true)
 
         AOITool.destroy()
-        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
-    })
-
-    test('a first selection retracts nothing', async () => {
-        AOITool._applySelection(SQUARE, 'search', 'Alabama')
         await flush()
 
-        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
+        expect(api.hasOpenPopup()).toBe(false)
+    })
+
+    test('destroy closes nothing when AOI has no popup open', async () => {
+        AOITool.destroy()
+        await flush()
+
+        expect(api.hasOpenPopup()).toBe(false)
     })
 
     test('a selection made with an AOI popup open retracts it up front', async () => {
@@ -477,42 +497,39 @@ describe('AOITool popup ownership', () => {
         // Up front, before the camera step: the retract has to beat the
         // click-away that would otherwise dismiss the selection just made.
         AOITool._applySelection(FAR_SQUARE, 'search', 'Alaska')
+        await flush()
         expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        expect(api.hasOpenPopup()).toBe(false)
         expect(api.namesOf('map:showPopup')).toHaveLength(0)
     })
 
-    test('a show that never opened retracts nothing', async () => {
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => { })
-        api.requestImpl.set('map:showPopup', () => {
-            throw new Error('invalid request')
-        })
+    // The one that matters: once another plugin owns the slot, nothing AOI
+    // does on the way out may take it away from them.
+    test('leaves the popup that replaced its own alone', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+
+        // Another plugin takes the slot, through its own handle. AOI's request
+        // answers 'closed' and the slot is theirs from here on.
+        api.forPlugin('other').request('map:showPopup', { html: 'someone else' })
+        await flush()
+        api.reset()
+
+        AOITool.destroy()
+        await flush()
+
+        // AOI still asked — it has no idea the slot changed hands — and core
+        // declined, because the popup showing is not AOI's.
+        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        expect(api.hasOpenPopup()).toBe(true)
+    })
+
+    test('a selection does not retract a popup that is not AOI\'s', async () => {
+        api.forPlugin('other').request('map:showPopup', { html: 'someone else' })
+        await flush()
 
         AOITool._applySelection(SQUARE, 'search', 'Alabama')
         await flush()
-        api.emit('map:moveend')
-        await flush()
-        expect(warn).toHaveBeenCalled()
-        api.reset()
 
-        // The slot is claimed as the request goes out, so a request that
-        // answers with a failure has to give it back like any other answer.
-        AOITool.destroy()
-        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
-    })
-
-    test('a popup another plugin replaced is left alone', async () => {
-        await selectAndOpen(SQUARE, 'Alabama')
-
-        // Another plugin takes the slot: core answers AOI's request with
-        // 'closed' and its own popup is the one showing from here on.
-        api.request('map:showPopup', { html: 'someone else' })
-        await flush()
-        api.reset()
-
-        AOITool.destroy()
-        await flush()
-
-        expect(api.namesOf('map:hidePopup')).toHaveLength(0)
         expect(api.hasOpenPopup()).toBe(true)
     })
 })
