@@ -18,6 +18,25 @@ const NEUTRAL_RAMP = ['#bdbdbd', '#757575']
 const FONT = (px: number, scale: number, weight = '') =>
     `${weight ? `${weight} ` : ''}${Math.round(px * scale)}px sans-serif`
 
+/**
+ * Truncates `text` to fit `maxWidth`, appending an ellipsis, so a long
+ * header/title/category label can't overflow the band. A no-op when the text
+ * already fits.
+ */
+const clipText = (ctx: Ctx2D, text: string, maxWidth: number): string => {
+    if (maxWidth <= 0) return ''
+    if (ctx.measureText(text).width <= maxWidth) return text
+    const ellipsis = '…'
+    let clipped = text
+    while (
+        clipped.length > 0 &&
+        ctx.measureText(clipped + ellipsis).width > maxWidth
+    ) {
+        clipped = clipped.slice(0, -1)
+    }
+    return clipped.length > 0 ? clipped + ellipsis : ellipsis
+}
+
 type Ctx2D = Pick<
     CanvasRenderingContext2D,
     | 'fillRect'
@@ -40,6 +59,12 @@ const rowHeight = (row: ExportLegendRow, scale: number): number => {
     return (TITLE_TEXT + LINE_GAP + SWATCH) * scale
 }
 
+// The widest a single category label can render, clipped so that even alone
+// on a fresh line it can't overflow the row — the same cap `wrapCategorical`
+// (measure) and the draw loop apply, so wrapping agrees between the two.
+const categoryLabelMaxWidth = (width: number, scale: number): number =>
+    width - 2 * PAD * scale - (SWATCH + 6) * scale - 16 * scale
+
 const wrapCategorical = (
     ctx: Ctx2D,
     row: Extract<ExportLegendRow, { kind: 'categorical' }>,
@@ -48,13 +73,13 @@ const wrapCategorical = (
 ): { lines: number } => {
     ctx.font = FONT(LABEL_TEXT, scale)
     const maxX = width - PAD * scale
+    const labelMaxWidth = categoryLabelMaxWidth(width, scale)
     let x = PAD * scale
     let lines = 1
     for (const stop of row.stops) {
+        const label = clipText(ctx, stop.label, labelMaxWidth)
         const itemW =
-            (SWATCH + 6) * scale +
-            ctx.measureText(stop.label).width +
-            16 * scale
+            (SWATCH + 6) * scale + ctx.measureText(label).width + 16 * scale
         if (x + itemW > maxX && x > PAD * scale) {
             lines += 1
             x = PAD * scale
@@ -99,7 +124,12 @@ const paintRamp = (
         ctx.fillStyle = ramp[0]
     } else {
         const grad = ctx.createLinearGradient(x, y, x + w, y)
-        ramp.forEach((color, i) => grad.addColorStop(i / (ramp.length - 1), color))
+        // A blank stop color (buildGradientFields' `entry.color || ''`) would
+        // throw here and fail the whole band away — fall back to the same
+        // neutral swatch the categorical path uses for a missing color.
+        ramp.forEach((color, i) =>
+            grad.addColorStop(i / (ramp.length - 1), color || '#bdbdbd'),
+        )
         ctx.fillStyle = grad
     }
     ctx.fillRect(x, y, w, h)
@@ -121,20 +151,21 @@ export const drawLegendBand = (
     ctx.fillRect(0, yTop, width, Math.max(1, Math.round(scale)))
 
     const left = PAD * scale
+    const textMaxWidth = width - 2 * left
     let y = yTop + PAD * scale
 
     const header = [model.missionName, model.timeLabel].filter(Boolean).join('  ·  ')
     if (header) {
         ctx.fillStyle = '#111111'
         ctx.font = FONT(HEADER_TEXT, scale, 'bold')
-        ctx.fillText(header, left, y)
+        ctx.fillText(clipText(ctx, header, textMaxWidth), left, y)
         y += (HEADER_TEXT + ROW_GAP) * scale
     }
 
     for (const row of model.rows) {
         ctx.fillStyle = '#111111'
         ctx.font = FONT(TITLE_TEXT, scale, 'bold')
-        ctx.fillText(row.title, left, y)
+        ctx.fillText(clipText(ctx, row.title, textMaxWidth), left, y)
         y += (TITLE_TEXT + LINE_GAP) * scale
 
         if (row.kind === 'gradient') {
@@ -151,9 +182,11 @@ export const drawLegendBand = (
         } else {
             ctx.font = FONT(LABEL_TEXT, scale)
             const maxX = width - left
+            const labelMaxWidth = categoryLabelMaxWidth(width, scale)
             let x = left
             for (const stop of row.stops) {
-                const labelW = ctx.measureText(stop.label).width
+                const label = clipText(ctx, stop.label, labelMaxWidth)
+                const labelW = ctx.measureText(label).width
                 const itemW = (SWATCH + 6) * scale + labelW + 16 * scale
                 if (x + itemW > maxX && x > left) {
                     x = left
@@ -162,7 +195,7 @@ export const drawLegendBand = (
                 ctx.fillStyle = stop.color || '#bdbdbd'
                 ctx.fillRect(x, y, SWATCH * scale, SWATCH * scale)
                 ctx.fillStyle = '#444444'
-                ctx.fillText(stop.label, x + (SWATCH + 6) * scale, y + 1 * scale)
+                ctx.fillText(label, x + (SWATCH + 6) * scale, y + 1 * scale)
                 x += itemW
             }
             y += SWATCH * scale
