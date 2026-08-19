@@ -722,6 +722,30 @@ const ToolControllerModern_ = {
     },
 
     /**
+     * Run a batch of queued load and register functions, then broadcast once.
+     *
+     * A batch is one settling of the layout, so it reports one complete listing
+     * rather than a partial one per plugin. Broadcasting per plugin would also
+     * expose states no command asked for — loading a plugin bound for 'hidden'
+     * passes through 'visible' on the way.
+     *
+     * A plugin that throws while loading is reported and skipped so the rest of
+     * the batch still loads.
+     *
+     * @param {Array<function>} queue - Load or register calls to run in order
+     */
+    runLoadQueue: function (queue) {
+        queue.forEach((loadFn) => {
+            try {
+                loadFn()
+            } catch (error) {
+                logger.error('Failed to load tool:', error)
+            }
+        })
+        this.notifyPluginsChanged()
+    },
+
+    /**
      * Broadcast that plugin lifecycle state moved.
      */
     notifyPluginsChanged: function () {

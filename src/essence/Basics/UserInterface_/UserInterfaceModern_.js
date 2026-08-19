@@ -562,16 +562,7 @@ const UserInterfaceModern_ = {
             logger.debug(`Loading ${toolLoadQueue.length} queued tools`)
             const queue = toolLoadQueue;
             toolLoadQueue = [] // Clear the queue
-            setTimeout(() => {
-                queue.forEach(loadFn => {
-                    try {
-                        loadFn()
-                    } catch (error) {
-                        logger.error('Failed to load tool:', error)
-                        // Continue loading other tools even if one fails
-                    }
-                })
-            }, 0)
+            setTimeout(() => ToolControllerModern_.runLoadQueue(queue), 0)
         }
 
         this.attachResizeEvents()

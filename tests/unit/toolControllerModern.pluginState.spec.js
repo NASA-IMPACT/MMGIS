@@ -129,3 +129,40 @@ test('a mutator that refuses reports the transition, not a missing plugin', () =
         .toEqual({ ok: false, reason: 'transition-failed' })
     expect(seen).toEqual([])
 })
+
+test('a load batch broadcasts once, after every plugin in it has loaded', () => {
+    // A startup batch: one plugin loaded outright, one registered deferred.
+    // Separate containers, since a container registerDeferred has touched
+    // carries plugin-hidden and would load hidden.
+    document.body.innerHTML += '<div id="second-target"></div><div id="third-target"></div>'
+    const seen = listenForChanges()
+
+    ToolControllerModern_.runLoadQueue([
+        () => ToolControllerModern_.loadTool(metadata, 'second-target'),
+        () => ToolControllerModern_.registerDeferred(
+            { id: 'SecondTool', name: 'Second' }, 'third-target'
+        ),
+    ])
+
+    // One event, not one per plugin, and it carries the settled listing rather
+    // than the partial one a subscriber seeding mid-batch would have captured.
+    expect(seen).toHaveLength(1)
+    expect(seen[0].plugins).toContainEqual({ id: 'FakeTool', state: 'visible' })
+    expect(seen[0].plugins).toContainEqual({ id: 'SecondTool', state: 'unloaded' })
+})
+
+test('a plugin that throws while loading does not stop the batch', () => {
+    document.body.innerHTML += '<div id="second-target"></div>'
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const seen = listenForChanges()
+
+    ToolControllerModern_.runLoadQueue([
+        () => { throw new Error('boom') },
+        () => ToolControllerModern_.registerDeferred(
+            { id: 'SecondTool', name: 'Second' }, 'second-target'
+        ),
+    ])
+
+    expect(seen).toHaveLength(1)
+    expect(seen[0].plugins).toContainEqual({ id: 'SecondTool', state: 'unloaded' })
+})
