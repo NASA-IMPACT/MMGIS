@@ -4,9 +4,9 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
  * TimeControl.init() registers its bus providers (time:isEnabled,
  * time:getCurrent, ...) before checking whether the mission has time
  * enabled, so time:getCurrentFormatted — added alongside them to expose the
- * current time through the mission's globalTimeFormat rather than a raw ISO
- * string — must always be registered, and must itself resolve null until
- * time is both enabled and seeded.
+ * current time through the mission's moment-style time.format rather than a
+ * raw ISO string — must always be registered, and must itself resolve null
+ * until time is both enabled and seeded.
  */
 
 vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
@@ -59,7 +59,7 @@ describe('TimeControl time:getCurrentFormatted provider', () => {
         expect(handlers['time:getCurrentFormatted']()).toBeNull()
     })
 
-    test('formats the seeded current time through globalTimeFormat once time is enabled', async () => {
+    test('formats the seeded current time through the mission moment format once time is enabled', async () => {
         const { bus, handlers } = makeFakeBus()
         window.mmgisAPI = bus
         vi.doMock('../../src/essence/Basics/Layers_/Layers_', () => ({
@@ -67,9 +67,9 @@ describe('TimeControl time:getCurrentFormatted provider', () => {
                 configData: {
                     time: {
                         enabled: true,
-                        format: '%Y-%m-%d',
-                        initialend: '2024-06-15T00:00:00Z',
-                        initialstart: '2024-05-15T00:00:00Z',
+                        format: 'YYYY-MM-DDTHH:mm:ss[Z]',
+                        initialend: '2026-08-20T19:24:39Z',
+                        initialstart: '2026-07-20T19:24:39Z',
                     },
                 },
                 FUTURES: {},
@@ -82,9 +82,39 @@ describe('TimeControl time:getCurrentFormatted provider', () => {
         ).default
         TimeControl.init()
 
-        expect(handlers['time:getCurrentFormatted']()).toBe('2024-06-15')
+        // The actual formatted date, never the literal pattern string.
+        expect(handlers['time:getCurrentFormatted']()).toBe(
+            '2026-08-20T19:24:39Z'
+        )
         // Same underlying time as the existing raw-ISO provider, just
         // formatted differently.
         expect(handlers['time:getCurrent']()).toBe(TimeControl.getTime())
+    })
+
+    test('falls back to the default moment format when the mission has no time.format', async () => {
+        const { bus, handlers } = makeFakeBus()
+        window.mmgisAPI = bus
+        vi.doMock('../../src/essence/Basics/Layers_/Layers_', () => ({
+            default: {
+                configData: {
+                    time: {
+                        enabled: true,
+                        initialend: '2026-08-20T19:24:39Z',
+                        initialstart: '2026-07-20T19:24:39Z',
+                    },
+                },
+                FUTURES: {},
+                layers: { data: {}, dataFlat: {} },
+            },
+        }))
+
+        const TimeControl = (
+            await import('../../src/essence/Basics/TimeControl_/TimeControl')
+        ).default
+        TimeControl.init()
+
+        expect(handlers['time:getCurrentFormatted']()).toBe(
+            '2026-08-20T19:24:39Z'
+        )
     })
 })

@@ -28,6 +28,12 @@ const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
 )
 
+// Mission time.format strings are moment-style tokens (e.g.
+// 'YYYY-MM-DDTHH:mm:ss[Z]'), matching how the rest of the app formats times
+// (TimeUI.js, DrawTool_Templater.js's default). Falls back to this when a
+// mission has time enabled but never configured a format.
+const DEFAULT_TIME_FORMAT = 'YYYY-MM-DDTHH:mm:ss[Z]'
+
 var TimeControl = {
     enabled: false,
     isRelative: true,
@@ -64,17 +70,18 @@ var TimeControl = {
                 window.mmgisAPI.provide('time:isEnabled', () => TimeControl.enabled === true),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
                 // Same current time as time:getCurrent, but through the
-                // mission's globalTimeFormat rather than raw ISO — null
-                // whenever globalTimeFormat isn't set up yet (time disabled
-                // or not yet seeded), matching time:isEnabled/getCurrent's
-                // own null-until-ready convention.
+                // mission's time.format (moment tokens, e.g.
+                // 'YYYY-MM-DDTHH:mm:ss[Z]') rather than raw ISO — null
+                // whenever time isn't enabled or not yet seeded, matching
+                // time:isEnabled/getCurrent's own null-until-ready convention.
                 window.mmgisAPI.provide('time:getCurrentFormatted', () =>
-                    TimeControl.enabled &&
-                    TimeControl.currentTime != null &&
-                    TimeControl.globalTimeFormat != null
-                        ? TimeControl.globalTimeFormat(
-                              new Date(TimeControl.currentTime)
-                          )
+                    TimeControl.enabled && TimeControl.currentTime != null
+                        ? moment
+                              .utc(TimeControl.currentTime)
+                              .format(
+                                  L_.configData.time?.format ||
+                                      DEFAULT_TIME_FORMAT
+                              )
                         : null
                 ),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
