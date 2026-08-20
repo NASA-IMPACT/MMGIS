@@ -1,7 +1,7 @@
 import React from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LayerManagerPanel } from '../lib/geo/LayerManagerPanel/LayerManagerPanel'
-import type { Layer } from '../lib/types'
+import type { Layer } from '../../_shared/legend/types'
 import { mount, click } from './reactHarness'
 
 /**

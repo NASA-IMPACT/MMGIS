@@ -145,6 +145,10 @@ export const drawLegendBand = (
 ): void => {
     ctx.save()
     ctx.textBaseline = 'top'
+    // Hardcoded white background with dark text, independent of the app
+    // theme: an exported PNG/PDF is a printable/shareable artifact, not a UI
+    // surface, so it stays legible and print-friendly regardless of which
+    // theme produced it.
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, yTop, width, bandHeight)
     ctx.fillStyle = '#d0d0d0'
