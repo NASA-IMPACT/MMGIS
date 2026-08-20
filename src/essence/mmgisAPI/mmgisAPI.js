@@ -1087,6 +1087,12 @@ var mmgisAPI = {
                 console.error(`[mmgisAPI] ${label} for "${event}" threw:`, err)
             }
         }
+        // Dispatching from events.all — mitt's published subscriber map —
+        // rather than through events.emit, so each listener can be isolated.
+        // It restates two of mitt's rules: specific listeners before
+        // wildcards, and wildcards called with (type, data). A mitt upgrade is
+        // a place to re-check both.
+        //
         // Copy before iterating: a handler may subscribe or unsubscribe mid-emit.
         ;[...(events.all.get(event) || [])].forEach((fn) => run(fn, [data], 'listener'))
         ;[...(events.all.get('*') || [])].forEach((fn) => run(fn, [event, data], 'wildcard listener'))
