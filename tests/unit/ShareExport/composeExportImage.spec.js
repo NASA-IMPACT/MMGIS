@@ -1,22 +1,37 @@
 import { test, expect, vi } from 'vitest'
-import { composeExportImage } from '../../../src/essence/Tools/_shared/adapters/composeExportImage.ts'
+import { composeExportImage } from '../../../src/essence/Tools/_shared/legend/composeExportImage.ts'
 
 // A minimal 2D-context stand-in: jsdom has no real canvas, so every drawing
 // op the compositor and the legend renderer call is recorded instead of
-// executed. Shared across the measuring and drawing contexts a real canvas
-// would give, since both are only ever read here, not rendered.
-const makeCtx = (calls) => ({
-    fillStyle: null,
-    font: '',
-    textBaseline: 'alphabetic',
-    fillRect: (...args) => calls.push({ op: 'fillRect', args }),
-    fillText: (...args) => calls.push({ op: 'fillText', args }),
-    measureText: (t) => ({ width: t.length * 6 }),
-    createLinearGradient: () => ({ addColorStop: vi.fn() }),
-    save: vi.fn(),
-    restore: vi.fn(),
-    drawImage: (...args) => calls.push({ op: 'drawImage', args }),
-})
+// executed. Now a single context (composeExportImage measures and draws on
+// the same canvas — see its "measure before resize" comment), but calls
+// still record `fillStyle` at call time, not just the draw args, so a test
+// can tell a real paint color from an incidental empty fillRect.
+const makeCtx = (calls) => {
+    const ctx = {
+        fillStyle: null,
+        font: '',
+        textBaseline: 'alphabetic',
+        fillRect: (...args) =>
+            calls.push({ op: 'fillRect', args, fillStyle: ctx.fillStyle }),
+        fillText: (...args) =>
+            calls.push({ op: 'fillText', args, fillStyle: ctx.fillStyle }),
+        measureText: (t) => ({ width: t.length * 6 }),
+        createLinearGradient: (...args) => {
+            const stops = []
+            const gradient = {
+                addColorStop: (offset, color) => stops.push({ offset, color }),
+            }
+            calls.push({ op: 'createLinearGradient', args, stops, gradient })
+            return gradient
+        },
+        save: vi.fn(),
+        restore: vi.fn(),
+        drawImage: (...args) =>
+            calls.push({ op: 'drawImage', args, fillStyle: ctx.fillStyle }),
+    }
+    return ctx
+}
 
 const makeCanvas = (calls) => {
     const canvas = {
@@ -108,6 +123,19 @@ test.describe('composeExportImage', () => {
         expect(bandOpIndex).toBeGreaterThan(drawImageIndex)
         expect(calls[drawImageIndex].args[1]).toBe(0)
         expect(calls[drawImageIndex].args[2]).toBe(0)
+    })
+
+    test('paints the gradient bar with the model\'s actual colors', async () => {
+        const calls = []
+        const bitmap = { close: vi.fn() }
+        await composeExportImage(screenshot, gradientModel, {
+            createBitmap: async () => bitmap,
+            createCanvas: () => makeCanvas(calls),
+            scale: 1,
+        })
+        const gradients = calls.filter((c) => c.op === 'createLinearGradient')
+        expect(gradients).toHaveLength(1)
+        expect(gradients[0].stops.map((s) => s.color)).toEqual(['#000', '#fff'])
     })
 
     test('a null blob from toBlob rejects, and the bitmap is still closed', async () => {

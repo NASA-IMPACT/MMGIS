@@ -1,6 +1,6 @@
-import type { MapScreenshotResult } from './mmgisAPI'
-import { measureLegendBand, drawLegendBand } from '../legend/renderLegendBand'
-import type { ExportLegendModel } from '../legend/getExportLegendModel'
+import type { MapScreenshotResult } from '../adapters/mmgisAPI'
+import { measureLegendBand, drawLegendBand } from './renderLegendBand'
+import type { ExportLegendModel } from './getExportLegendModel'
 
 export type ComposeDeps = {
     createBitmap?: (blob: Blob) => Promise<ImageBitmap>
@@ -31,17 +31,17 @@ export async function composeExportImage(
     const bitmap = await createBitmap(screenshot.blob)
     try {
         const canvas = createCanvas()
-        const measureCtx = createCanvas().getContext('2d')
         const ctx = canvas.getContext('2d')
-        if (!ctx || !measureCtx) {
+        if (!ctx) {
             throw new Error('Legend compositing needs a 2D canvas context')
         }
-        const bandHeight = measureLegendBand(
-            measureCtx,
-            model,
-            screenshot.width,
-            scale,
-        )
+        // Measure on this same context before resizing the canvas: setting
+        // canvas.width/height resets all context state (font, fillStyle,
+        // ...), and drawLegendBand sets its own fonts before it draws
+        // anyway, so nothing here depends on that state surviving the
+        // resize. That makes a second, throwaway canvas just for measuring
+        // unnecessary.
+        const bandHeight = measureLegendBand(ctx, model, screenshot.width, scale)
         canvas.width = screenshot.width
         canvas.height = screenshot.height + bandHeight
         ctx.drawImage(bitmap, 0, 0)

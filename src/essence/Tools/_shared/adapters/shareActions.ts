@@ -8,9 +8,11 @@ import {
 } from './mmgisAPI'
 import { buildSharePdf, type JsPdfLike } from './sharePdf'
 import { blobToDataUrl, downloadBlob } from './download'
-import { composeExportImage } from './composeExportImage'
-import { getExportLegendModel } from '../legend/getExportLegendModel'
-import type { ExportLegendModel } from '../legend/getExportLegendModel'
+import { composeExportImage } from '../legend/composeExportImage'
+import {
+    getExportLegendModel,
+    type ExportLegendModel,
+} from '../legend/getExportLegendModel'
 
 // Orchestrates the three export actions, reaching core only through the
 // shared mmgisAPI client. Dependencies are injectable for tests.
