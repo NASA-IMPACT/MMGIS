@@ -196,4 +196,42 @@ test.describe('buildLayerLegendData', () => {
         expect(buildLayerLegendData('layer11', cfg, null, true, null).cog).toBeNull()
         expect(buildLayerLegendData('layer11', cfg, null, true, undefined).cog).toBeNull()
     })
+
+    // A purely numeric value must never invent a unit out of its own digits
+    // (the old [\d.]+\s*(.+) regex backtracked into '-0.1' and captured '1').
+    test('derives no unit from a negative decimal value', () => {
+        const legend = [
+            { shape: 'continuous', color: '#000000', value: '-0.1' },
+            { shape: 'continuous', color: '#ffffff', value: '1' },
+        ]
+        const result = buildLayerLegendData('layer13', { _legend: legend }, null, true, NO_COG)
+        expect(result.unit).toBeNull()
+    })
+
+    test('derives a unit from a decimal value with a suffix', () => {
+        const legend = [
+            { shape: 'continuous', color: '#000000', value: '0.5 ppm' },
+            { shape: 'continuous', color: '#ffffff', value: '1 ppm' },
+        ]
+        const result = buildLayerLegendData('layer14', { _legend: legend }, null, true, NO_COG)
+        expect(result.unit).toEqual({ label: 'ppm' })
+    })
+
+    test('derives a unit from a signed exponent value with a suffix', () => {
+        const legend = [
+            { shape: 'continuous', color: '#000000', value: '-3e2 m' },
+            { shape: 'continuous', color: '#ffffff', value: '1e2 m' },
+        ]
+        const result = buildLayerLegendData('layer15', { _legend: legend }, null, true, NO_COG)
+        expect(result.unit).toEqual({ label: 'm' })
+    })
+
+    test('derives no unit from a plain integer value', () => {
+        const legend = [
+            { shape: 'continuous', color: '#000000', value: '10' },
+            { shape: 'continuous', color: '#ffffff', value: '20' },
+        ]
+        const result = buildLayerLegendData('layer16', { _legend: legend }, null, true, NO_COG)
+        expect(result.unit).toBeNull()
+    })
 })

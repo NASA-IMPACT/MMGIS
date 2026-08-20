@@ -51,8 +51,18 @@ const buildGradientFields = (legend: MMGISLegendEntry[]) => {
     let unit: { label: string } | null = null
     const firstVal = legend[0]?.value
     if (firstVal !== undefined) {
-        const match = String(firstVal).match(/[\d.]+\s*(.+)/)
-        if (match && match[1]) unit = { label: match[1].trim() }
+        const str = String(firstVal)
+        // Anchored so the numeric prefix is matched greedily from the start
+        // (no backtracking into it) — the unit is whatever's left after
+        // that prefix, so a purely numeric value like '-0.1' or '10' yields
+        // no unit instead of a digit-eating regex inventing one from it.
+        const numericPrefix = str.match(
+            /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/
+        )
+        if (numericPrefix) {
+            const remainder = str.slice(numericPrefix[0].length).trim()
+            if (remainder.length > 0) unit = { label: remainder }
+        }
     }
     return { stops, min, max, unit }
 }
