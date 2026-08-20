@@ -73,6 +73,16 @@ class PanelManager implements PanelManagerInterface {
     }
 
     /**
+     * Drop every panel at once, as a layout teardown does.
+     */
+    clear(): void {
+        if (this.panels.size === 0) return;
+
+        this.panels.clear();
+        this.notifyChanged();
+    }
+
+    /**
      * Add a tool to a panel region.
      * Tools are assigned at dashboard creation time.
      * Validates tool compatibility against panel capabilities.

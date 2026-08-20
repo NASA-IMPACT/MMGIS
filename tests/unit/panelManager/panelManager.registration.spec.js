@@ -134,4 +134,35 @@ test.describe('PanelManager - Registration', () => {
             expect(state).toBeDefined()
         })
     })
+
+    test.describe('clear', () => {
+        test('removes every registered panel', () => {
+            panelManager.registerPanel(createMockPanelConfig({ id: 'left' }))
+            panelManager.registerPanel(createMockPanelConfig({ id: 'right' }))
+
+            panelManager.clear()
+
+            expect(panelManager.list()).toEqual([])
+        })
+
+        test('announces the empty layout once, not once per panel', () => {
+            panelManager.registerPanel(createMockPanelConfig({ id: 'left' }))
+            panelManager.registerPanel(createMockPanelConfig({ id: 'right' }))
+
+            const mock = mockLayoutChangedEvents()
+            panelManager.clear()
+
+            expect(mock.events.length).toBe(1)
+            expect(mock.events[0].detail.panels).toEqual([])
+            mock.restore()
+        })
+
+        test('clearing an already-empty layout says nothing', () => {
+            const mock = mockLayoutChangedEvents()
+            panelManager.clear()
+
+            expect(mock.events.length).toBe(0)
+            mock.restore()
+        })
+    })
 })
