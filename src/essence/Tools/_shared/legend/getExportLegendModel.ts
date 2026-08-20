@@ -1,9 +1,14 @@
 import { getVisibleLayersWithLegends } from './getVisibleLayersWithLegends'
 import { resolveColormapColors } from './resolveColormapColors'
+import { filterLayersForExportView } from './filterLayersForExportView'
 import {
     mmgisGetViewState,
     mmgisIsTimeEnabled,
     mmgisGetCurrentTimeFormatted,
+    mmgisGetLayerConfigs,
+    mmgisGetMapBounds,
+    mmgisGetMapZoom,
+    mmgisGetAllLayerBounds,
 } from '../adapters/mmgisAPI'
 import type { Layer, CategoricalStop } from './types'
 
@@ -63,13 +68,36 @@ const toRow = async (layer: Layer): Promise<ExportLegendRow | null> => {
 }
 
 export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
-    const [layers, viewState, timeEnabled, formattedTime] = await Promise.all([
+    const [
+        layers,
+        viewState,
+        timeEnabled,
+        formattedTime,
+        layerConfigs,
+        viewportBounds,
+        zoom,
+        layerBounds,
+    ] = await Promise.all([
         getVisibleLayersWithLegends({ showOnlyVisible: true }),
         mmgisGetViewState(),
         mmgisIsTimeEnabled(),
         mmgisGetCurrentTimeFormatted(),
+        mmgisGetLayerConfigs(),
+        mmgisGetMapBounds(),
+        mmgisGetMapZoom(),
+        mmgisGetAllLayerBounds(),
     ])
-    const rows = (await Promise.all(layers.map(toRow))).filter(
+    // Narrows the toggled-on layers down to ones actually visible in the
+    // current viewport — panel/LayerManager listings stay unfiltered; this
+    // is export-only. Any signal core couldn't answer (no viewport, no
+    // zoom, no bounds for a layer) keeps that layer rather than dropping it.
+    const inViewLayers = filterLayersForExportView(layers, {
+        layerConfigs,
+        viewportBounds,
+        zoom,
+        layerBounds,
+    })
+    const rows = (await Promise.all(inViewLayers.map(toRow))).filter(
         (row): row is ExportLegendRow => row !== null,
     )
     return {

@@ -10,6 +10,10 @@ vi.mock('../../adapters/mmgisAPI', () => ({
     mmgisGetViewState: vi.fn(),
     mmgisIsTimeEnabled: vi.fn(),
     mmgisGetCurrentTimeFormatted: vi.fn(),
+    mmgisGetLayerConfigs: vi.fn(),
+    mmgisGetMapBounds: vi.fn(),
+    mmgisGetMapZoom: vi.fn(),
+    mmgisGetAllLayerBounds: vi.fn(),
 }))
 
 import { getVisibleLayersWithLegends } from '../getVisibleLayersWithLegends'
@@ -18,6 +22,10 @@ import {
     mmgisGetViewState,
     mmgisIsTimeEnabled,
     mmgisGetCurrentTimeFormatted,
+    mmgisGetLayerConfigs,
+    mmgisGetMapBounds,
+    mmgisGetMapZoom,
+    mmgisGetAllLayerBounds,
 } from '../../adapters/mmgisAPI'
 import { getExportLegendModel } from '../getExportLegendModel'
 
@@ -38,6 +46,10 @@ beforeEach(() => {
     vi.mocked(mmgisGetViewState).mockReset()
     vi.mocked(mmgisIsTimeEnabled).mockReset()
     vi.mocked(mmgisGetCurrentTimeFormatted).mockReset()
+    vi.mocked(mmgisGetLayerConfigs).mockReset()
+    vi.mocked(mmgisGetMapBounds).mockReset()
+    vi.mocked(mmgisGetMapZoom).mockReset()
+    vi.mocked(mmgisGetAllLayerBounds).mockReset()
     vi.mocked(mmgisGetViewState).mockResolvedValue({
         missionName: 'Test Mission',
         time: null,
@@ -46,6 +58,13 @@ beforeEach(() => {
     })
     vi.mocked(mmgisIsTimeEnabled).mockResolvedValue(false)
     vi.mocked(mmgisGetCurrentTimeFormatted).mockResolvedValue(null)
+    // No view-filtering signals by default: every test above this filter's
+    // introduction exercises rows unfiltered by view, so leaving these null
+    // (core couldn't answer) keeps every layer through filterLayersForExportView.
+    vi.mocked(mmgisGetLayerConfigs).mockResolvedValue(null)
+    vi.mocked(mmgisGetMapBounds).mockResolvedValue(null)
+    vi.mocked(mmgisGetMapZoom).mockResolvedValue(null)
+    vi.mocked(mmgisGetAllLayerBounds).mockResolvedValue(null)
 })
 
 describe('getExportLegendModel', () => {
@@ -282,5 +301,53 @@ describe('getExportLegendModel', () => {
         vi.mocked(resolveColormapColors).mockResolvedValue(['#000'])
         const model = await getExportLegendModel()
         expect(model.rows[0].unit).toBeNull()
+    })
+
+    describe('view-aware filtering', () => {
+        const twoLayers = [
+            baseLayer({
+                id: 'in-view',
+                title: 'In view',
+                type: 'gradient',
+                stops: ['#a', '#b'],
+            }),
+            baseLayer({
+                id: 'out-of-view',
+                title: 'Out of view',
+                type: 'gradient',
+                stops: ['#a', '#b'],
+            }),
+        ]
+
+        test('drops a layer whose bounds provably sit outside the viewport', async () => {
+            vi.mocked(getVisibleLayersWithLegends).mockResolvedValue(twoLayers)
+            vi.mocked(mmgisGetMapBounds).mockResolvedValue({
+                southWest: { lat: -10, lng: -10 },
+                northEast: { lat: 10, lng: 10 },
+            })
+            vi.mocked(mmgisGetAllLayerBounds).mockResolvedValue({
+                'in-view': [
+                    [-5, -5],
+                    [5, 5],
+                ],
+                'out-of-view': [
+                    [40, 40],
+                    [50, 50],
+                ],
+            })
+            const model = await getExportLegendModel()
+            expect(model.rows.map((r) => r.title)).toEqual(['In view'])
+        })
+
+        test('keeps every layer when core answers none of the view signals', async () => {
+            vi.mocked(getVisibleLayersWithLegends).mockResolvedValue(twoLayers)
+            // mmgisGetMapBounds/mmgisGetAllLayerBounds/mmgisGetMapZoom/
+            // mmgisGetLayerConfigs already default to null in beforeEach.
+            const model = await getExportLegendModel()
+            expect(model.rows.map((r) => r.title)).toEqual([
+                'In view',
+                'Out of view',
+            ])
+        })
     })
 })
