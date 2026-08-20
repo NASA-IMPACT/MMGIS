@@ -57,6 +57,43 @@ test('showPanel prefers the last visible state over the configured default', () 
         .toEqual({ ok: true, state: PANEL_STATE.ICONIFIED, changed: true })
 })
 
+test('showPanel falls through a collapsed default to the first visible state', () => {
+    // The default is a state show can never resolve to, and there is no last
+    // visible state, so the candidate chain has to walk past both.
+    panelManager.registerPanel(createMockPanelConfig({
+        id: 'starts-collapsed',
+        stateConstraints: {
+            allowedStates: [
+                PANEL_STATE.COLLAPSED, PANEL_STATE.ICONIFIED, PANEL_STATE.EXPANDED,
+            ],
+            defaultState: PANEL_STATE.COLLAPSED,
+        },
+    }))
+
+    expect(panelManager.showPanel('starts-collapsed'))
+        .toEqual({ ok: true, state: PANEL_STATE.EXPANDED, changed: true })
+})
+
+test('showPanel on a freshly loaded icon rail leaves it iconified', () => {
+    // The shape every stock layout gives its left panel: iconified counts as
+    // visible, so show leaves it alone and the caller asks for expanded.
+    panelManager.registerPanel(createMockPanelConfig({
+        id: 'icon-rail',
+        stateConstraints: {
+            allowedStates: [
+                PANEL_STATE.COLLAPSED, PANEL_STATE.ICONIFIED, PANEL_STATE.EXPANDED,
+            ],
+            defaultState: PANEL_STATE.ICONIFIED,
+        },
+    }))
+
+    expect(panelManager.showPanel('icon-rail'))
+        .toEqual({ ok: true, state: PANEL_STATE.ICONIFIED, changed: false })
+
+    expect(panelManager.setPanelState('icon-rail', PANEL_STATE.EXPANDED))
+        .toEqual({ ok: true, state: PANEL_STATE.EXPANDED, changed: true })
+})
+
 test('showPanel reports no-visible-state when constraints allow none', () => {
     panelManager.registerPanel(createMockPanelConfig({
         id: 'stuck',

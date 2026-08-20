@@ -206,6 +206,11 @@ class PanelManager implements PanelManagerInterface {
      * reveals; resolving a target for a panel the user has expanded would demote
      * it whenever the configured default is the smaller state, which is how
      * every stock layout configures its left panel.
+     *
+     * `iconified` counts as visible, and is where those same layouts start
+     * their left panel: on a fresh load this succeeds with `changed: false`
+     * and the panel stays an icon rail. A caller needing a usable panel reads
+     * the `state` reported here and asks for a larger one.
      */
     showPanel(panelId: string): PanelCommandResult {
         const panel = this.panels.get(panelId);

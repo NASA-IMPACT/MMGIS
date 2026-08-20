@@ -1,5 +1,5 @@
-import { PANEL_STATE } from '../../Basics/PanelManager_/types/layout'
-import { withResource } from './_shared'
+import { PANEL_STATE, PANEL_STATES } from '../../Basics/PanelManager_/types/layout'
+import { withResource, withStateIn } from './_shared'
 
 /**
  * Panel layout on the request/provide bus.
@@ -17,11 +17,9 @@ export function registerPanelProviders(api, getManager) {
 
     api.provide('panels:getAll', () => getManager()?.list() ?? [])
 
-    api.provide('panels:setState', withPanel((manager, panelId, { state }) =>
-        typeof state === 'string'
-            ? manager.setPanelState(panelId, state)
-            : { ok: false, reason: 'bad-request' }
-    ))
+    api.provide('panels:setState', withPanel(withStateIn(PANEL_STATES,
+        (manager, panelId, state) => manager.setPanelState(panelId, state)
+    )))
 
     api.provide('panels:show', withPanel((manager, panelId) => manager.showPanel(panelId)))
 

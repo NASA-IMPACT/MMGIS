@@ -1,4 +1,7 @@
-import { withResource } from './_shared'
+import { withResource, withStateIn } from './_shared'
+
+/** The lifecycle states a plugin can be commanded into. */
+const PLUGIN_STATES = ['unloaded', 'hidden', 'visible']
 
 /**
  * Plugin lifecycle on the request/provide bus. Mirrors providers/panels.js:
@@ -10,11 +13,9 @@ export function registerPluginProviders(api, getController) {
 
     api.provide('plugins:getAll', () => getController()?.listPlugins() ?? [])
 
-    api.provide('plugins:setState', withPlugin((controller, pluginId, { state }) =>
-        typeof state === 'string'
-            ? controller.setPluginState(pluginId, state)
-            : { ok: false, reason: 'bad-request' }
-    ))
+    api.provide('plugins:setState', withPlugin(withStateIn(PLUGIN_STATES,
+        (controller, pluginId, state) => controller.setPluginState(pluginId, state)
+    )))
 
     api.provide('plugins:show', withPlugin((controller, pluginId) =>
         controller.setPluginState(pluginId, 'visible')

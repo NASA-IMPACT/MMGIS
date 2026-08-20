@@ -74,6 +74,20 @@ test('a malformed payload is a bad-request', async () => {
     expect(console.error).not.toHaveBeenCalled()
 })
 
+test('setState with a well-formed but unrecognised state is a bad-request', async () => {
+    // 'state-not-allowed' is reserved for a real state this panel forbids; a
+    // state that exists nowhere is a malformed payload.
+    expect(await mmgisAPI.request('panels:setState', { panelId: 'left-panel', state: 'sideways' }))
+        .toEqual({ ok: false, reason: 'bad-request' })
+    expect(console.warn).not.toHaveBeenCalled()
+    expect(console.error).not.toHaveBeenCalled()
+})
+
+test('a malformed state is judged before an unknown panel', async () => {
+    expect(await mmgisAPI.request('panels:setState', { panelId: 'ghost', state: 'sideways' }))
+        .toEqual({ ok: false, reason: 'bad-request' })
+})
+
 test('an unknown panel is not-found', async () => {
     expect(await mmgisAPI.request('panels:hide', { panelId: 'ghost' }))
         .toEqual({ ok: false, reason: 'not-found' })
@@ -121,4 +135,11 @@ test('getAll returns the public projection', async () => {
         state: 'expanded',
         toolIds: [],
     }])
+})
+
+test('the projection names the tools a panel holds', async () => {
+    PanelManager_.addToolToPanel('left-panel', { id: 'DrawTool', name: 'Draw' })
+
+    const [panel] = await mmgisAPI.request('panels:getAll')
+    expect(panel.toolIds).toEqual(['DrawTool'])
 })

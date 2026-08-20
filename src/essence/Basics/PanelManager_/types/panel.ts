@@ -5,6 +5,7 @@ import {
     FloatPanelPosition,
     PanelState,
     PanelLayoutType,
+    CommandRefusalReason,
 } from './layout';
 
 /**
@@ -267,7 +268,7 @@ export interface PanelStateObject {
 /** Result of a state-changing panel command. */
 export type PanelCommandResult =
     | { ok: true; state: PanelState; changed: boolean }
-    | { ok: false; reason: 'not-found' | 'state-not-allowed' | 'no-visible-state' };
+    | { ok: false; reason: CommandRefusalReason };
 
 /** The public shape of a panel — everything a caller needs to target one. */
 export type PanelInfo = {

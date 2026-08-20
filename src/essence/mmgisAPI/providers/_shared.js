@@ -18,3 +18,17 @@ export const withResource = (idField, getOwner) => (fn) => (payload) => {
 
     return fn(owner, id, payload)
 }
+
+/**
+ * Wraps a state-setting handler so a state outside `allowed` is refused as
+ * bad-request, ahead of any call into the subsystem.
+ *
+ * @param {readonly string[]} allowed - The subsystem's state vocabulary
+ * @param {function} fn - Receives (owner, id, state)
+ */
+export const withStateIn = (allowed, fn) => (owner, id, payload) => {
+    const { state } = payload
+    return allowed.includes(state)
+        ? fn(owner, id, state)
+        : { ok: false, reason: 'bad-request' }
+}
