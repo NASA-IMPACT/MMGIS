@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { resolveAction, TARGET_PARAM } from '../resolveAction'
+import { resolveAction, CORE_ACTIONS } from '../resolveAction'
 
 // Loaded only for the "handlers are actually registered" check below — it
 // pulls in the real core bus, not the window.mmgisAPI stand-in the rest of
@@ -152,13 +152,12 @@ describe('resolveAction', () => {
     })
 })
 
-describe('resolveAction TARGET_PARAM registration', () => {
+describe('resolveAction CORE_ACTIONS registration', () => {
     // A rename on either side — the table here or the provider that answers
     // the request — must not degrade silently into the plain-emit branch.
-    test('every TARGET_PARAM entry has a handler registered on the real bus', () => {
-        for (const name of Object.keys(TARGET_PARAM)) {
+    test('every CORE_ACTIONS entry has a handler registered on the real bus', () => {
+        for (const name of Object.keys(CORE_ACTIONS)) {
             expect(coreMmgisAPI.hasHandler(name)).toBe(true)
         }
     })
-
 })

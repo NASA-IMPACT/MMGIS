@@ -71,6 +71,70 @@ test('a button for a disallowed state is not rendered', async () => {
     PanelManager_.unregisterPanel('no-collapse')
 })
 
+test('the maximize button issues a panels:setState request for expanded', async () => {
+    PanelManager_.registerPanel(config('maximize-panel', [PANEL_STATE.EXPANDED, PANEL_STATE.ICONIFIED]))
+    const spy = vi.spyOn(mmgisAPI, 'request')
+
+    const { _createPanelHeader } = await import(
+        '../../src/essence/Basics/UserInterface_/UserInterfaceModern_.js'
+    )
+    const header = _createPanelHeader(PanelManager_.getPanelState('maximize-panel'))
+    header.find('.ui-panel-btn-maximize').trigger('click')
+
+    expect(spy).toHaveBeenCalledWith('panels:setState', {
+        panelId: 'maximize-panel',
+        state: PANEL_STATE.EXPANDED,
+    })
+    PanelManager_.unregisterPanel('maximize-panel')
+})
+
+test('a rejected panel command is caught and logged, not left unhandled', async () => {
+    // A refusal arrives as a result; a rejected request takes the other arm.
+    PanelManager_.registerPanel(config('throw-panel', [PANEL_STATE.EXPANDED, PANEL_STATE.COLLAPSED]))
+    vi.spyOn(mmgisAPI, 'request').mockRejectedValue(new Error('bus is down'))
+
+    const { _createPanelHeader } = await import(
+        '../../src/essence/Basics/UserInterface_/UserInterfaceModern_.js'
+    )
+    const header = _createPanelHeader(PanelManager_.getPanelState('throw-panel'))
+
+    expect(() => header.find('.ui-panel-btn-close').trigger('click')).not.toThrow()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(warnSpy).toHaveBeenCalledTimes(1)
+    expect(warnSpy.mock.calls[0][0]).toContain('failed')
+    expect(warnSpy.mock.calls[0][1]).toBeInstanceOf(Error)
+    PanelManager_.unregisterPanel('throw-panel')
+})
+
+test('an icon-tray click focuses that tool, and clicking the focused one goes back', async () => {
+    PanelManager_.registerPanel(config('tray-panel', [
+        PANEL_STATE.EXPANDED, PANEL_STATE.ICONIFIED, PANEL_STATE.FOCUSED,
+    ]))
+    PanelManager_.addToolToPanel('tray-panel', { id: 'DrawTool', name: 'Draw', icon: 'draw' })
+    PanelManager_.setPanelState('tray-panel', PANEL_STATE.ICONIFIED)
+
+    const { _createPanelIconTray } = await import(
+        '../../src/essence/Basics/UserInterface_/UserInterfaceModern_.js'
+    )
+    const tray = _createPanelIconTray(PanelManager_.getPanelState('tray-panel'))
+    tray.find('[data-tool="DrawTool"]').trigger('click')
+
+    const panel = PanelManager_.getPanelState('tray-panel')
+    expect(panel.state).toBe(PANEL_STATE.FOCUSED)
+    expect(panel.activeToolId).toBe('DrawTool')
+
+    const spy = vi.spyOn(mmgisAPI, 'request')
+    const refreshedTray = _createPanelIconTray(PanelManager_.getPanelState('tray-panel'))
+    refreshedTray.find('[data-tool="DrawTool"]').trigger('click')
+
+    expect(spy).toHaveBeenCalledWith('panels:setState', {
+        panelId: 'tray-panel',
+        state: PANEL_STATE.ICONIFIED,
+    })
+    PanelManager_.unregisterPanel('tray-panel')
+})
+
 test('init wires syncDOMState to the panels:changed event', async () => {
     const { default: UserInterfaceModern_ } = await import(
         '../../src/essence/Basics/UserInterface_/UserInterfaceModern_.js'

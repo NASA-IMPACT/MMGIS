@@ -143,6 +143,13 @@ if (window.mmgisAPI.hasHandler('map:getCenter')) {
 }
 ```
 
+This asks whether this build of core offers the capability, not whether core is
+currently in a state to serve it. The panel and plugin providers, for instance,
+register at page load and read `true` with no layout mounted at all. Use it to
+guard against a core too old to know the name; read the request's own answer —
+an empty listing, or a `layout-inactive` refusal — for whether there is
+anything there right now.
+
 ---
 
 ## Plugin Scoped API
@@ -333,21 +340,30 @@ window.mmgisAPI.on('legend:made', ({ layerName, legendData }) => {
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `panels:changed` | `{ panels }` | Fired whenever the panel layout changes — a panel registered or unregistered, changed state, lost a tool, or was resized |
-| `plugins:changed` | `{ plugins }` | Fired whenever a plugin is shown, hidden, loaded or unloaded by command, and once after a batch of plugins loads with the layout |
+| `panels:changed` | `{ panels }` | Fired whenever the panel layout changes — a panel registered or unregistered, changed state, lost a tool, or was resized — and once with an empty listing when the layout is torn down |
+| `plugins:changed` | `{ plugins }` | Fired whenever a plugin is shown, hidden, loaded or unloaded by command, once after a batch of plugins loads with the layout, and once with an empty listing when the layout is torn down |
 
 `panels` carries the same listing [`panels:getAll`](#panel-and-plugin-providers)
 returns, and `plugins` the same listing `plugins:getAll` returns, so there is
 nothing to re-request. Setting something to the state it already holds is a
 quiet no-op — no event fires.
 
-Neither event fires while the layout is being torn down: teardown destroys
-the subscribers along with the state they were following, so there is nobody
-left to tell.
+Tearing a layout down — a mission swap, for instance — fires each event once
+more, carrying an empty listing. The bus outlives the layout, so a plugin that
+subscribed is still subscribed after the panels and plugins it was following
+are gone; the empty listing is what tells it so. Only that final listing goes
+out, never the intermediate half-dismantled layouts, and a request made from
+here on agrees with it: `panels:getAll` and `plugins:getAll` return empty
+listings and every panel or plugin command refuses with `layout-inactive`.
+
+So a subscriber cannot assume a panel or plugin it knows about is still in the
+listing it receives:
 
 ```javascript
 window.mmgisAPI.on('panels:changed', ({ panels }) => {
     const mine = panels.find((p) => p.id === 'left-panel')
+    // Absent once the panel is unregistered, and once the layout is torn down.
+    if (mine == null) return
     console.log(`left-panel is now ${mine.state}`)
 })
 ```
@@ -477,9 +493,29 @@ Each `PluginInfo` carries `id` and `state`.
 rather than flipping whatever they find. `panels:show` restores the panel's
 `lastVisibleState`; `plugins:show` resolves to `visible`, loading the plugin
 first if it is unloaded. `panels:hide` and `plugins:hide` always target
-`collapsed`/`hidden`. A panel that is not collapsed is already shown, so
-`panels:show` leaves it exactly as it is and reports `changed: false` —
-it never moves a panel the user expanded down to a smaller state.
+`collapsed`/`hidden`.
+
+`panels:show` only ever lifts a panel out of `collapsed`. Anything else already
+counts as visible, so the panel is left exactly where it is and the result
+reports `changed: false` — which is what stops it from moving a panel the user
+expanded down to whatever smaller state the configuration defaults to.
+
+`iconified` counts as visible under that rule, and every stock layout starts its
+left panel there. So "reveal the panel I live in" is two steps, not one: show
+it, then read the `state` the result carries and ask for a larger one if an
+icon rail is not enough. Reading the result is the general pattern — `show`
+reports where the panel actually ended up, which is not always where the caller
+wanted it.
+
+```javascript
+const shown = await window.mmgisAPI.request('panels:show', { panelId: 'left-panel' })
+if (shown.ok && shown.state === 'iconified') {
+    await window.mmgisAPI.request('panels:setState', {
+        panelId: 'left-panel',
+        state: 'expanded',
+    })
+}
+```
 
 Every command returns a `CommandResult` rather than a bare boolean:
 
@@ -493,7 +529,12 @@ Every command returns a `CommandResult` rather than a bare boolean:
 `not-found` is an unknown id. `state-not-allowed` is a transition the panel's
 own configuration forbids — a float panel refusing `iconified`, for example.
 `no-visible-state` is a `panels:show` with no allowed state left to restore to.
-`bad-request` is a malformed payload. `load-failed` is any `plugins:*` command
+`bad-request` is a malformed payload: a missing or non-string id, or a state
+name outside the vocabulary in the table above. Note the difference between the
+last two — a state that does not exist anywhere is `bad-request`, your mistake,
+while a real state this particular target forbids is `state-not-allowed`. The
+payload is judged first, so a command carrying both an unknown id and an
+unrecognised state reports `bad-request`. `load-failed` is any `plugins:*` command
 that must load an unloaded plugin first and fails to. `transition-failed` is
 core failing to carry out a transition it accepted — distinct from
 `not-found`, which means the id named nothing. `layout-inactive` covers

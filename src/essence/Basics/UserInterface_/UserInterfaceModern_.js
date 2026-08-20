@@ -759,4 +759,4 @@ const UserInterfaceModern_ = {
 }
 
 export default UserInterfaceModern_
-export { _createPanelHeader }
+export { _createPanelHeader, _createPanelIconTray }
