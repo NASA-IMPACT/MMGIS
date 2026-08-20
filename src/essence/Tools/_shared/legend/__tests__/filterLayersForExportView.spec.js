@@ -56,6 +56,22 @@ describe('boundsIntersect', () => {
         expect(boundsIntersect(viewport, layerBounds)).toBe(true)
     })
 
+    test('a layer spanning >= 360 degrees of longitude (a global basemap) is treated as whole-world', () => {
+        // Normalizing [-180, 180] the same way a normal interval is
+        // normalized collapses it to the single point at the antimeridian
+        // (normalizeLng(180) === -180), which would wrongly report "no
+        // overlap" against a viewport nowhere near the dateline.
+        const viewport = {
+            southWest: { lat: 35, lng: 0 },
+            northEast: { lat: 60, lng: 40 },
+        }
+        const layerBounds = [
+            [-90, -180],
+            [90, 180],
+        ]
+        expect(boundsIntersect(viewport, layerBounds)).toBe(true)
+    })
+
     test('a viewport straddling the antimeridian intersects a layer on the far side', () => {
         // Viewport spans 170..200 (i.e. 170 to -160), a layer sits at
         // 175..185 (175 to -175) — they overlap near 180.

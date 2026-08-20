@@ -50,9 +50,15 @@ export const boundsIntersect = (
 
     // A viewport spanning 360° or more of longitude has wrapped all the way
     // around — every longitude is visible, so treat it as whole-world rather
-    // than normalizing it into a deceptively narrow segment pair.
+    // than normalizing it into a deceptively narrow segment pair. A layer's
+    // bounds can just as well span the whole world (e.g. [[-90,-180],[90,180]]
+    // for a global basemap); normalizing that the same way collapses it to
+    // the single point at the antimeridian, so it needs the same guard.
     const viewportLngSpan = viewport.northEast.lng - viewport.southWest.lng
     if (viewportLngSpan >= 360) return true
+
+    const layerLngSpan = layerEast - layerWest
+    if (layerLngSpan >= 360) return true
 
     const viewportSegments = lngSegments(
         viewport.southWest.lng,
