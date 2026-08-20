@@ -24,9 +24,9 @@ If enabled and visible, the Time UI will be initially open on the bottom of the 
 
 ## Time Format
 
-The time format to be displayed on the Time UI. Uses D3 time format specifiers: https://github.com/d3/d3-time-format
+The time format to be displayed on the Time UI. Uses moment.js time format tokens: https://momentjs.com/docs/#/displaying/format/
 
-Default: `%Y-%m-%dT%H:%M:%SZ`
+Default: `YYYY-MM-DDTHH:mm:ss[Z]`
 
 ## Initial Start Time
 
