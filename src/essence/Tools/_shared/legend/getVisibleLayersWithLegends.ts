@@ -8,12 +8,24 @@ import {
 import { buildLayerLegendData } from './buildLayerLegendData'
 import type { Layer } from './types'
 
-export type FetchOptions = { showOnlyVisible?: boolean }
+export type FetchOptions = {
+    showOnlyVisible?: boolean
+    // A caller that already fetched layers:getAllConfigs for its own
+    // purposes (e.g. the export model's view-aware filtering) can pass it
+    // through here instead of this module hitting the bus for it again.
+    layerConfigs?: Record<string, Record<string, unknown>> | null
+}
 
 export const getVisibleLayersWithLegends = async ({
     showOnlyVisible = false,
+    layerConfigs: providedLayerConfigs,
 }: FetchOptions = {}): Promise<Layer[]> => {
-    const layerConfigs = await mmgisRequest<Record<string, Record<string, unknown>>>('layers:getAllConfigs')
+    const layerConfigs =
+        providedLayerConfigs !== undefined
+            ? providedLayerConfigs
+            : await mmgisRequest<Record<string, Record<string, unknown>>>(
+                  'layers:getAllConfigs',
+              )
     if (!layerConfigs) return []
 
     const [visibleLayers, opacities, listed, cogCapabilities, titilerUrls] = await Promise.all([

@@ -303,6 +303,16 @@ describe('getExportLegendModel', () => {
         expect(model.rows[0].unit).toBeNull()
     })
 
+    test('threads the fetched layerConfigs into getVisibleLayersWithLegends rather than refetching', async () => {
+        vi.mocked(getVisibleLayersWithLegends).mockResolvedValue([])
+        const configs = { layer1: { display_name: 'Layer 1' } }
+        vi.mocked(mmgisGetLayerConfigs).mockResolvedValue(configs)
+        await getExportLegendModel()
+        expect(getVisibleLayersWithLegends).toHaveBeenCalledWith(
+            expect.objectContaining({ layerConfigs: configs }),
+        )
+    })
+
     describe('view-aware filtering', () => {
         const twoLayers = [
             baseLayer({

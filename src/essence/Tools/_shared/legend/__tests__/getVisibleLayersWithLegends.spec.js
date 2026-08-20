@@ -149,4 +149,41 @@ describe('getVisibleLayersWithLegends', () => {
 
         expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
     })
+
+    // A caller (getExportLegendModel) that already fetched
+    // layers:getAllConfigs for its own purposes can pass it straight
+    // through, so this module never re-requests it from core.
+    test('uses a provided layerConfigs instead of requesting layers:getAllConfigs itself', async () => {
+        const responses = {
+            'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
+            'layers:getAllOpacities': { [DISPLACEMENT]: 1, [BASEMAP]: 1 },
+            'layers:getCogCapabilities': {
+                [DISPLACEMENT]: EDITABLE,
+                [BASEMAP]: NONE,
+            },
+        }
+        global.window = global.window || {}
+        global.window.mmgisAPI = {
+            request: async (name) => {
+                if (name === 'layers:getAllConfigs') {
+                    throw new Error(
+                        'layers:getAllConfigs should not be requested when layerConfigs is provided',
+                    )
+                }
+                if (responses[name] === undefined)
+                    throw new Error(`No handler for ${name}`)
+                return responses[name]
+            },
+            hasHandler: (name) => responses[name] !== undefined,
+            on: () => () => {},
+            emit: () => {},
+        }
+
+        const layers = await getVisibleLayersWithLegends({
+            layerConfigs: CONFIGS,
+        })
+
+        expect(layers).toHaveLength(2)
+        expect(byId(layers, DISPLACEMENT).cog).not.toBeNull()
+    })
 })

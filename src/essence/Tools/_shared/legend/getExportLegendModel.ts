@@ -68,25 +68,30 @@ const toRow = async (layer: Layer): Promise<ExportLegendRow | null> => {
 }
 
 export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
+    // layerConfigs is fetched once here and threaded into
+    // getVisibleLayersWithLegends below, rather than each independently
+    // requesting layers:getAllConfigs from core.
     const [
-        layers,
+        layerConfigs,
         viewState,
         timeEnabled,
         formattedTime,
-        layerConfigs,
         viewportBounds,
         zoom,
         layerBounds,
     ] = await Promise.all([
-        getVisibleLayersWithLegends({ showOnlyVisible: true }),
+        mmgisGetLayerConfigs(),
         mmgisGetViewState(),
         mmgisIsTimeEnabled(),
         mmgisGetCurrentTimeFormatted(),
-        mmgisGetLayerConfigs(),
         mmgisGetMapBounds(),
         mmgisGetMapZoom(),
         mmgisGetAllLayerBounds(),
     ])
+    const layers = await getVisibleLayersWithLegends({
+        showOnlyVisible: true,
+        layerConfigs,
+    })
     // Narrows the toggled-on layers down to ones actually visible in the
     // current viewport — panel/LayerManager listings stay unfiltered; this
     // is export-only. Any signal core couldn't answer (no viewport, no
