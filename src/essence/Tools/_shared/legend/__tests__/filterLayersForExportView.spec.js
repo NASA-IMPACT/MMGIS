@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import {
     boundsIntersect,
     isWithinConfiguredZoomRange,
@@ -197,10 +197,10 @@ describe('filterLayersForExportView', () => {
         expect(result).toHaveLength(2)
     })
 
-    test('drops a layer zoomed out of its configured range', () => {
+    test('drops a vector layer zoomed out of its configured range', () => {
         const layers = [baseLayer({ id: 'a' })]
         const result = filterLayersForExportView(layers, {
-            layerConfigs: { a: { minZoom: 10 } },
+            layerConfigs: { a: { type: 'vector', minZoom: 10 } },
             viewportBounds: null,
             zoom: 5,
             layerBounds: null,
@@ -208,7 +208,33 @@ describe('filterLayersForExportView', () => {
         expect(result).toEqual([])
     })
 
-    test('drops a layer whose bounds are outside the viewport', () => {
+    // Live repro: a `tile` layer configured maxZoom 8, viewed at zoom 8.6 —
+    // core's enforceVisibilityCutoffs only zoom-gates `type === 'vector'`,
+    // so a raster keeps painting past its configured maxZoom and the export
+    // must not drop its legend row.
+    test('does not zoom-gate a non-vector layer, even overzoomed past its configured maxZoom', () => {
+        const layers = [baseLayer({ id: 'a' })]
+        const result = filterLayersForExportView(layers, {
+            layerConfigs: { a: { type: 'tile', maxZoom: 8 } },
+            viewportBounds: null,
+            zoom: 8.6,
+            layerBounds: null,
+        })
+        expect(result).toHaveLength(1)
+    })
+
+    test('the same maxZoom config zoom-gates a vector layer', () => {
+        const layers = [baseLayer({ id: 'a' })]
+        const result = filterLayersForExportView(layers, {
+            layerConfigs: { a: { type: 'vector', maxZoom: 8 } },
+            viewportBounds: null,
+            zoom: 8.6,
+            layerBounds: null,
+        })
+        expect(result).toEqual([])
+    })
+
+    test('drops a layer whose bounds are far outside the viewport, even padded (raster path)', () => {
         const layers = [baseLayer({ id: 'a' })]
         const result = filterLayersForExportView(layers, {
             layerConfigs: null,
@@ -227,6 +253,96 @@ describe('filterLayersForExportView', () => {
         expect(result).toEqual([])
     })
 
+    // Live-diagnosed regression: a raster (COG) painted ~40% of its
+    // footprint span past its declared bbox, so a viewport just outside the
+    // declared box — but well within a generously padded one — had real
+    // painted pixels on screen while the row was dropped. A raster-ish
+    // (non-vector) layer's footprint is advisory, so it must be padded
+    // before testing rather than treated as a hard edge.
+    test('keeps a non-vector layer whose declared bbox the viewport just misses but the padded footprint reaches', () => {
+        const layers = [baseLayer({ id: 'a' })]
+        const result = filterLayersForExportView(layers, {
+            layerConfigs: { a: { type: 'tile' } },
+            viewportBounds: {
+                southWest: { lat: 1.5, lng: 1.5 },
+                northEast: { lat: 2, lng: 2 },
+            },
+            zoom: null,
+            layerBounds: {
+                a: [
+                    [0, 0],
+                    [1, 1],
+                ],
+            },
+        })
+        expect(result).toHaveLength(1)
+    })
+
+    // Same geometry as above, but on a vector layer: its bounds come from
+    // real rendered geometry, so they stay a hard edge — no padding.
+    test('drops a vector layer at the same geometry a padded raster would keep', () => {
+        const layers = [baseLayer({ id: 'a' })]
+        const result = filterLayersForExportView(layers, {
+            layerConfigs: { a: { type: 'vector' } },
+            viewportBounds: {
+                southWest: { lat: 1.5, lng: 1.5 },
+                northEast: { lat: 2, lng: 2 },
+            },
+            zoom: null,
+            layerBounds: {
+                a: [
+                    [0, 0],
+                    [1, 1],
+                ],
+            },
+        })
+        expect(result).toEqual([])
+    })
+
+    // A footprint with ~zero span (e.g. a point-like layer) still gets the
+    // 0.5° minimum pad per side, not 100% of a ~0 span (which would pad by
+    // ~0 and behave like no padding at all).
+    test('applies the 0.5 degree minimum pad to a footprint with near-zero span', () => {
+        const layers = [baseLayer({ id: 'a' })]
+        const result = filterLayersForExportView(layers, {
+            layerConfigs: { a: { type: 'tile' } },
+            viewportBounds: {
+                southWest: { lat: 10.3, lng: 10.3 },
+                northEast: { lat: 10.6, lng: 10.6 },
+            },
+            zoom: null,
+            layerBounds: {
+                a: [
+                    [10, 10],
+                    [10, 10],
+                ],
+            },
+        })
+        expect(result).toHaveLength(1)
+    })
+
+    // Padding a wide-but-not-whole-world footprint can itself push its span
+    // past 360°; that reuses boundsIntersect's whole-world guard and keeps
+    // the layer regardless of the viewport's longitude.
+    test('keeps a non-vector layer whose padded footprint wraps past 360 degrees of longitude', () => {
+        const layers = [baseLayer({ id: 'a' })]
+        const result = filterLayersForExportView(layers, {
+            layerConfigs: { a: { type: 'tile' } },
+            viewportBounds: {
+                southWest: { lat: -5, lng: 170 },
+                northEast: { lat: 5, lng: 175 },
+            },
+            zoom: null,
+            layerBounds: {
+                a: [
+                    [-5, -100],
+                    [5, 100],
+                ],
+            },
+        })
+        expect(result).toHaveLength(1)
+    })
+
     test('a layer with no bounds entry is kept even with a known viewport', () => {
         const layers = [baseLayer({ id: 'a' })]
         const result = filterLayersForExportView(layers, {
@@ -239,5 +355,40 @@ describe('filterLayersForExportView', () => {
             layerBounds: { a: null },
         })
         expect(result).toHaveLength(1)
+    })
+
+    test('logs the dropped layers when filtering empties a non-empty layer set', () => {
+        const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+        const layers = [baseLayer({ id: 'a', title: 'Only layer', opacity: 0 })]
+        const result = filterLayersForExportView(layers, {
+            layerConfigs: null,
+            viewportBounds: null,
+            zoom: null,
+            layerBounds: null,
+        })
+        expect(result).toEqual([])
+        expect(infoSpy).toHaveBeenCalledTimes(1)
+        expect(infoSpy.mock.calls[0][1]).toEqual(
+            expect.arrayContaining([expect.stringContaining('Only layer')]),
+        )
+        infoSpy.mockRestore()
+    })
+
+    test('does not log when nothing was filtered out, or when there was nothing to filter', () => {
+        const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+        filterLayersForExportView([baseLayer({ id: 'a' })], {
+            layerConfigs: null,
+            viewportBounds: null,
+            zoom: null,
+            layerBounds: null,
+        })
+        filterLayersForExportView([], {
+            layerConfigs: null,
+            viewportBounds: null,
+            zoom: null,
+            layerBounds: null,
+        })
+        expect(infoSpy).not.toHaveBeenCalled()
+        infoSpy.mockRestore()
     })
 })

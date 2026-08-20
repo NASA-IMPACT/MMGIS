@@ -6,6 +6,17 @@ import type { Layer } from './types'
 // excludes a layer only on positive evidence; a missing or null signal always
 // means keep, since an export with an extra row is far less wrong than one
 // that silently drops a layer core couldn't answer for.
+//
+// A layer's config `boundingBox`/`layers:getBounds` footprint is authoritative
+// for a vector layer — it comes from the actual rendered geometry. For every
+// other type (tile, cog, image, ...) it's advisory metadata a mission author
+// wrote down, not a render clip: a raster commonly paints well outside its
+// declared bbox (live-observed: a COG painting ~40% of its footprint span
+// past the declared edge). Excluding a raster needs the viewport to miss even
+// a generously padded version of that box — see padFootprint. The zoom gate
+// is vector-only too, mirroring core's enforceVisibilityCutoffs (Layers_.js),
+// which never zoom-gates non-vector layers because they overzoom and keep
+// painting past their configured maxZoom.
 
 const normalizeLng = (lng: number): number =>
     (((lng + 180) % 360) + 360) % 360 - 180
@@ -27,6 +38,23 @@ const segmentsOverlap = (a: [number, number], b: [number, number]): boolean =>
     a[0] <= b[1] && b[0] <= a[1]
 
 const clampLat = (lat: number): number => Math.max(-90, Math.min(90, lat))
+
+// Expands a raster-ish layer's declared footprint before it's tested against
+// the viewport: each axis grows by 100% of that axis's own span on each
+// side (so a box triples in size along that axis), with a 0.5° minimum pad
+// per side for a footprint whose span is zero or tiny. Longitude is padded
+// on the raw (unnormalized) west/east pair — a padded span >= 360 falls out
+// to boundsIntersect's existing whole-world guard, and latitude is clamped
+// to ±90 inside boundsIntersect itself.
+const padFootprint = (bounds: LayerBounds): LayerBounds => {
+    const [[south, west], [north, east]] = bounds
+    const latPad = Math.max(north - south, 0.5)
+    const lngPad = Math.max(east - west, 0.5)
+    return [
+        [south - latPad, west - lngPad],
+        [north + latPad, east + lngPad],
+    ]
+}
 
 /**
  * Whether a layer's bounds provably intersect the viewport. Handles a
@@ -78,6 +106,10 @@ export const boundsIntersect = (
  * there's no restriction. Only the config's own declared maxZoom gates the
  * max side — never an engine-derived value like maxNativeZoom, which lets
  * tile layers overzoom past their configured maxZoom for viewing.
+ *
+ * This is the range calculation only — enforceVisibilityCutoffs applies it
+ * exclusively to `type === 'vector'` layers, so the caller (filterLayersForExportView)
+ * gates on that before calling this, rather than this function checking it.
  */
 export const isWithinConfiguredZoomRange = (
     layerConfig: LayerConfig | null | undefined,
@@ -118,33 +150,65 @@ export type ExportViewSignals = {
 
 /**
  * Drops layers the export shouldn't show a legend row for: fully transparent
- * (opacity 0), zoomed out of their configured range, or provably off-screen.
- * Any signal this needs that core couldn't answer — no viewport, no zoom, no
- * bounds for that layer — leaves the corresponding check a no-op rather than
- * excluding the layer.
+ * (opacity 0), a vector layer zoomed out of its configured range, or a layer
+ * provably off-screen. Any signal this needs that core couldn't answer — no
+ * viewport, no zoom, no bounds for that layer — leaves the corresponding
+ * check a no-op rather than excluding the layer.
+ *
+ * The zoom gate and the strictness of the bounds check both depend on the
+ * layer's type: only a vector layer is zoom-gated at all (matching core's
+ * enforceVisibilityCutoffs), and only a vector layer's bounds are tested as
+ * a hard edge — every other type's declared footprint is advisory, so it's
+ * padded generously (padFootprint) before the same intersection test.
  */
 export const filterLayersForExportView = (
     layers: Layer[],
     { layerConfigs, viewportBounds, zoom, layerBounds }: ExportViewSignals,
-): Layer[] =>
-    layers.filter((layer) => {
-        if (layer.opacity === 0) return false
+): Layer[] => {
+    const dropped: string[] = []
+
+    const kept = layers.filter((layer) => {
+        const layerConfig = layerConfigs?.[layer.id]
+        const isVector = layerConfig?.type === 'vector'
+
+        if (layer.opacity === 0) {
+            dropped.push(`"${layer.title}" (opacity 0)`)
+            return false
+        }
 
         if (
+            isVector &&
             zoom != null &&
-            !isWithinConfiguredZoomRange(layerConfigs?.[layer.id], zoom)
+            !isWithinConfiguredZoomRange(layerConfig, zoom)
         ) {
+            dropped.push(`"${layer.title}" (outside configured zoom range at zoom ${zoom})`)
             return false
         }
 
         const bounds = layerBounds?.[layer.id]
-        if (
-            viewportBounds != null &&
-            bounds != null &&
-            !boundsIntersect(viewportBounds, bounds)
-        ) {
-            return false
+        if (viewportBounds != null && bounds != null) {
+            const testBounds = isVector ? bounds : padFootprint(bounds)
+            if (!boundsIntersect(viewportBounds, testBounds)) {
+                dropped.push(
+                    `"${layer.title}" (${isVector ? 'bounds' : 'padded footprint'} outside the viewport)`,
+                )
+                return false
+            }
         }
 
         return true
     })
+
+    // The fail-open contract (getExportLegendModel just renders no band when
+    // rows end up empty) otherwise leaves no trace of why — log the one case
+    // that actually did the emptying: this filter itself dropped every
+    // candidate layer.
+    if (layers.length > 0 && kept.length === 0) {
+        console.info(
+            '[export legend] every layer was filtered out of the export view:',
+            dropped,
+        )
+    }
+
+    return kept
+}
