@@ -612,11 +612,9 @@ const AOITool = {
 
         const bbox = featureBounds(feature)
         if (bbox && api?.request && api?.on && api?.off) {
-            // This popup is pending from here on, before the camera is even
-            // read: reading it is asynchronous, and a teardown or a superseding
-            // selection during that hop has to drop this popup rather than let
-            // it open later. `disarm` is filled in only if the show ends up
-            // waiting on the camera.
+            // Pending from here on, before the camera is even read: a teardown
+            // or a superseding selection during that async hop must drop this
+            // popup. `disarm` is filled in only if the show waits on the camera.
             let disarm = null
             const cancel = () => disarm?.()
             this._pendingPopup = cancel
@@ -625,9 +623,8 @@ const AOITool = {
             // fitBounds has framed the selection, its centroid is on-screen and
             // needs no fallback anchor.
             const settled = (unmovedView) => {
-                // Only the pending show that is still current may fire, so a
-                // moveend, the fallback timer and a rejected fitBounds arbitrate
-                // to one popup, and a superseded selection opens none at all.
+                // Only the still-current show may fire: moveend, the fallback
+                // timer and a rejected fitBounds arbitrate to one popup.
                 if (this._pendingPopup !== cancel) return
                 this._cancelPendingPopup()
                 showPopup(unmovedView)
@@ -641,18 +638,15 @@ const AOITool = {
                     if (this._pendingPopup !== cancel) return
                     const fit = selectionFitBounds(bbox, view)
                     if (!fit) {
-                        // The camera stays put, so no moveend is coming and
-                        // there is nothing to wait for: open the popup now,
-                        // anchored so it cannot land off-screen.
+                        // The camera stays put, so no moveend is coming:
+                        // open the popup now.
                         settled(view)
                         return
                     }
-                    // Defer the popup to the next `map:moveend`, whichever
-                    // movement produces it. Normally that is the fit below, and
-                    // the popup opens at the framed centroid rather than
-                    // tracking through the move; a camera already gliding to a
-                    // stop can end first and open it early, which MapPopup_
-                    // then re-anchors as the fit runs.
+                    // Defer the popup to the next `map:moveend`, so it opens
+                    // at the framed centroid instead of tracking through the
+                    // fit. A camera already gliding can end first and open it
+                    // early; MapPopup_ re-anchors it as the fit runs.
                     //
                     // Subscribing before the fit is requested is load-bearing:
                     // `mmgisAPI.request` runs its provider synchronously, and a
@@ -660,13 +654,11 @@ const AOITool = {
                     // call, so a listener added afterwards would miss it and
                     // leave the popup to the fallback timer.
                     //
-                    // `map:moveend` hands its listener a view state
-                    // ({ longitude, latitude, zoom }), not a ViewBounds, so this
-                    // wrapper drops that payload rather than pass it on.
+                    // `map:moveend` hands its listener a view state, not a
+                    // ViewBounds, so drop the payload rather than pass it on.
                     const oneShot = () => settled()
-                    // Safety net: if no moveend fires (e.g. an engine that skips
-                    // the event on a programmatic fit), show the popup after a
-                    // short timeout anyway.
+                    // Safety net: an engine that skips moveend on a
+                    // programmatic fit still gets its popup.
                     const timer = setTimeout(oneShot, 1500)
                     api.on('map:moveend', oneShot)
                     disarm = () => {
@@ -676,17 +668,16 @@ const AOITool = {
 
                     api.request('map:fitBounds', fit).catch((err) => {
                         console.warn('[AOI] fitBounds failed', err)
-                        // The fit never happened, so the view read a moment ago
-                        // is still the one on screen: anchor against it.
+                        // The fit never happened, so the view read above is
+                        // still the one on screen: anchor against it.
                         settled(view)
                     })
                 })
                 .catch((err) => {
                     console.warn('[AOI] selection camera step failed', err)
-                    // Nothing can open this popup any more, so the pending
-                    // slot has to be released — but only while it is still
-                    // this chain's, since a superseding selection that took
-                    // it owns its own show from that moment on.
+                    // Nothing can open this popup any more, so release the
+                    // pending slot — but only while it is still this chain's;
+                    // a superseding selection owns its own show.
                     if (this._pendingPopup === cancel) this._cancelPendingPopup()
                 })
         } else {
