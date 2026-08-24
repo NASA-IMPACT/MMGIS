@@ -1,19 +1,18 @@
-/* Chart plugin — scoped under .chart-tool-host / .chart-tool.
- * Every literal lives in theme.css; this file references var(--chart-*) only.
+/* Chart plugin — scoped under the .chart-tool root only.
+ *
+ * Every value resolves against the global design tokens exported by
+ * src/styles/_theme-export.scss as :root --theme-* custom properties; the
+ * literal after each is the horizon value, used only when no theme bundle is
+ * loaded. Theming itself comes from the per-theme bundles at dist/<theme>.css,
+ * loaded at runtime — there is no Sass theme coupling here.
+ *
+ * The type steps carry the panel's hierarchy: 3xs (12px) labels a value, 2xs
+ * (14px) is body copy and the values themselves, sm (16px) is the panel title,
+ * and lg (~22px) is the headline mean each card leads with.
+ *
+ * The panel owns its own placement and chrome — the tool spans whatever it is
+ * given.
  */
-
-.chart-tool-host {
-    position: fixed;
-    top: 70px;
-    right: 16px;
-    width: 372px;
-    max-height: calc(100vh - 90px);
-    overflow: hidden;
-    z-index: 1003;
-    border-radius: var(--chart-radius-md);
-    box-shadow: var(--chart-shadow-pop);
-    pointer-events: auto;
-}
 
 .chart-tool {
     box-sizing: border-box;
@@ -21,35 +20,47 @@
     flex-direction: column;
     height: 100%;
     width: 100%;
-    background: var(--chart-bg);
-    color: var(--chart-fg);
-    font-family: var(--chart-font-body);
-    font-size: var(--chart-font-size-md);
+    background: var(--theme-color-white, #ffffff);
+    color: var(--theme-color-ink, #17171b);
+    font-family: var(--theme-font-body, 'Public Sans', system-ui, sans-serif);
+    font-size: var(--theme-font-size-2xs, 14px);
 }
 
 .chart-tool * {
     box-sizing: border-box;
 }
 
+/* Core's global `*:focus { outline: none }` strips the native ring, so every
+ * focusable control in the plugin restores one here. */
+.chart-tool button:focus-visible,
+.chart-tool [tabindex]:focus-visible {
+    outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
+    outline-offset: -2px;
+}
+
+/* The one rule in the panel, separating the title bar from the body. */
 .chart-tool__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--chart-space-3) var(--chart-space-4);
-    border-bottom: 1px solid var(--chart-border);
+    gap: var(--theme-spacing-1, 8px);
+    flex-shrink: 0;
+    padding: var(--theme-spacing-205, 20px) var(--theme-spacing-2, 16px);
+    border-bottom: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #e3e3e3);
 }
 
 .chart-tool__title {
     margin: 0;
     display: inline-flex;
     align-items: center;
-    gap: var(--chart-space-2);
-    font-size: var(--chart-font-size-lg);
-    font-weight: 600;
+    gap: var(--theme-spacing-1, 8px);
+    font-size: var(--theme-font-size-sm, 16px);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    line-height: 1.6;
 }
 
 .chart-tool__title-icon {
-    color: var(--chart-accent);
+    color: var(--theme-color-primary, #1c67e3);
     font-size: 16px;
     line-height: 1;
 }
@@ -57,61 +68,53 @@
 .chart-tool__close {
     background: none;
     border: 0;
-    color: var(--chart-fg-muted);
+    color: var(--theme-color-base-dark, #58585b);
     font-size: 18px;
     line-height: 1;
     cursor: pointer;
-    padding: var(--chart-space-1);
+    padding: var(--theme-spacing-05, 4px);
+    transition: color 0.12s ease;
 }
 
 .chart-tool__close:hover {
-    color: var(--chart-fg);
+    color: var(--theme-color-ink, #17171b);
 }
 
 .chart-tool__body {
     flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
     overflow-y: auto;
-    padding: var(--chart-space-4);
+    padding: var(--theme-spacing-2, 16px);
     display: flex;
     flex-direction: column;
-    gap: var(--chart-space-3);
+    gap: var(--theme-spacing-105, 12px);
 }
 
 .chart-tool__placeholder {
     margin: 0;
-    color: var(--chart-fg-muted);
-    font-size: var(--chart-font-size-sm);
+    color: var(--theme-color-base-dark, #58585b);
+    font-size: var(--theme-font-size-2xs, 14px);
+    line-height: 1.6;
     text-align: center;
-    padding: var(--chart-space-5) var(--chart-space-3);
+    padding: var(--theme-spacing-3, 24px) var(--theme-spacing-105, 12px);
 }
 
-.chart-tool__exit {
-    width: 100%;
-    padding: var(--chart-space-2) var(--chart-space-3);
-    border: 1px solid var(--chart-border);
-    border-radius: var(--chart-radius-sm);
-    background: var(--chart-bg);
-    color: var(--chart-fg);
-    cursor: pointer;
-    font: inherit;
-    font-weight: 600;
-}
-
-.chart-tool__exit:hover {
-    background: var(--chart-bg-muted);
-}
-
+/* One card per (layer, asset): an outlined block rather than a filled one, so
+ * a column of them reads as a list instead of a stack of panels. */
 .chart-tool__card {
-    border: 1px solid var(--chart-border);
-    border-radius: var(--chart-radius-md);
-    padding: var(--chart-space-3);
+    border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #e3e3e3);
+    border-radius: var(--theme-radius-sm, 2px);
+    padding: var(--theme-spacing-105, 12px);
     display: flex;
     flex-direction: column;
-    gap: var(--chart-space-3);
+    gap: var(--theme-spacing-105, 12px);
 }
 
+/* A layer with no statistics to show is filled instead of outlined, sinking it
+ * below the cards that carry results. */
 .chart-tool__card--empty {
-    background: var(--chart-bg-muted);
+    background: var(--theme-color-base-lightest, #f6f6f6);
 }
 
 .chart-tool__card-header {
@@ -122,20 +125,20 @@
 
 .chart-tool__card-title {
     margin: 0;
-    font-size: var(--chart-font-size-md);
-    font-weight: 600;
+    font-size: var(--theme-font-size-2xs, 14px);
+    font-weight: var(--theme-font-weight-semibold, 600);
 }
 
 .chart-tool__card-subtitle {
-    color: var(--chart-fg-muted);
-    font-family: var(--chart-font-mono);
-    font-size: var(--chart-font-size-sm);
+    color: var(--theme-color-base-dark, #58585b);
+    font-family: var(--theme-font-mono, 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: var(--theme-font-size-3xs, 12px);
 }
 
 .chart-tool__card-empty {
     margin: 0;
-    color: var(--chart-fg-muted);
-    font-size: var(--chart-font-size-sm);
+    color: var(--theme-color-base-dark, #58585b);
+    font-size: var(--theme-font-size-2xs, 14px);
     font-style: italic;
 }
 
@@ -146,19 +149,19 @@
 }
 
 .chart-tool__headline-label {
-    color: var(--chart-fg-muted);
-    font-size: var(--chart-font-size-sm);
+    color: var(--theme-color-base-dark, #58585b);
+    font-size: var(--theme-font-size-3xs, 12px);
 }
 
 .chart-tool__headline-value {
-    font-size: var(--chart-font-size-xl);
-    font-weight: 600;
+    font-size: var(--theme-font-size-lg, 22px);
+    font-weight: var(--theme-font-weight-semibold, 600);
     line-height: 1.1;
 }
 
 .chart-tool__headline-meta {
-    color: var(--chart-fg-muted);
-    font-size: var(--chart-font-size-sm);
+    color: var(--theme-color-base-dark, #58585b);
+    font-size: var(--theme-font-size-3xs, 12px);
 }
 
 .chart-tool__histogram {
@@ -170,24 +173,25 @@
     margin: 0;
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
-    gap: var(--chart-space-2);
+    gap: var(--theme-spacing-1, 8px);
 }
 
 .chart-tool__stat {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
 }
 
 .chart-tool__stat-label {
     margin: 0;
-    color: var(--chart-fg-muted);
-    font-size: var(--chart-font-size-sm);
+    color: var(--theme-color-base-dark, #58585b);
+    font-size: var(--theme-font-size-3xs, 12px);
 }
 
 .chart-tool__stat-value {
     margin: 0;
-    font-family: var(--chart-font-mono);
-    font-size: var(--chart-font-size-sm);
-    font-weight: 600;
+    font-family: var(--theme-font-mono, 'DM Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: var(--theme-font-size-2xs, 14px);
+    font-weight: var(--theme-font-weight-semibold, 600);
 }

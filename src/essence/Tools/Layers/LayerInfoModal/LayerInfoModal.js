@@ -1,14 +1,14 @@
 import $ from 'jquery'
 import L_ from '../../../Basics/Layers_/Layers_'
 import Modal from '../../../Ancillary/Modal'
-import showdown from 'showdown'
+import {
+    renderMarkdown,
+    MARKDOWN_CLASS,
+} from '../../../Basics/Markdown_/Markdown_'
 
 import './LayerInfoModal.css'
 
-showdown.setFlavor('github')
-
 const LayerInfo = {
-    converter: new showdown.Converter(),
     open: function (layerName) {
         const layer = L_.layers.data[layerName]
 
@@ -61,8 +61,8 @@ const LayerInfo = {
                                 ].join('\n') : '',
                         
                         `<div id='LayerInfoModalDescription'>`,
-                            `<div id='LayerInfoModalDescriptionContent'>`,
-                                layer.description ? LayerInfo.converter.makeHtml(layer.description) : `<div class='LayerInfoModalNone'>No Description</div>`,
+                            `<div id='LayerInfoModalDescriptionContent' class='${MARKDOWN_CLASS}'>`,
+                                renderMarkdown(layer.description) || `<div class='LayerInfoModalNone'>No Description</div>`,
                             `</div>`,
                         `</div>`,
                         `<div id='LayerInfoModalInnerUUID'>${layer.uuid}</div>`,

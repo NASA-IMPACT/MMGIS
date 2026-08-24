@@ -10,8 +10,16 @@ import {
     type TransitionInterpolator,
 } from '@deck.gl/core'
 import { GeoJsonLayer, BitmapLayer, PointCloudLayer, ScatterplotLayer } from '@deck.gl/layers'
-import { TileLayer, Tile3DLayer, MVTLayer } from '@deck.gl/geo-layers'
+// _WMSLayer is experimental (underscore prefix): deck.gl gives no semver
+// guarantee, so re-verify WMS rendering on every deck.gl upgrade. It also
+// behaves unlike the tile layers — one whole-viewport GetMap request per view
+// change instead of per-tile fetches.
+import { TileLayer, Tile3DLayer, MVTLayer, _WMSLayer as WMSLayer } from '@deck.gl/geo-layers'
 import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
+// Transitive dep of @deck.gl/geo-layers (same experimental WMS family as
+// _WMSLayer) — import the same (hoisted) copy the WMSLayer uses so its
+// `data instanceof ImageSource` check holds.
+import { WMSImageSource } from '@loaders.gl/wms'
 import { color as parseColor } from 'd3'
 
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
@@ -168,10 +176,112 @@ function getPropValue(object: unknown, path: string | undefined): unknown {
         )
 }
 
+/** The part of a fetch Response that {@link isImageTileResponse} reads. */
+interface TileResponseLike {
+    ok: boolean
+    headers: { get(name: string): string | null }
+}
+
+/**
+ * True when a tile response carries image bytes.
+ *
+ * Tile servers signal an absent tile inconsistently. Some answer 404, but a
+ * STAC-backed raster service fronted by a CDN answers 200 with its HTML
+ * browser page when asked for a timestamp it holds no item for. The content
+ * type is therefore the reliable test; the status code alone is not.
+ */
+export function isImageTileResponse(response: TileResponseLike): boolean {
+    if (!response.ok) return false
+    const contentType = response.headers.get('content-type') ?? ''
+    return contentType.toLowerCase().startsWith('image/')
+}
+
+/**
+ * Fetches one raster tile, resolving to null for anything that is not an
+ * image so an absent tile is drawn as absent rather than handed to the
+ * decoder as a texture.
+ *
+ * `premultiplyAlpha: 'none'` mirrors the ImageLoader options deck.gl registers
+ * for its own tile pipeline, so alpha is composited identically either way.
+ */
+async function fetchImageTile(
+    url?: string | null,
+    signal?: AbortSignal
+): Promise<ImageBitmap | null> {
+    if (!url) return null
+    const response = await fetch(url, signal ? { signal } : undefined)
+    if (!isImageTileResponse(response)) return null
+    return await createImageBitmap(await response.blob(), {
+        premultiplyAlpha: 'none',
+    })
+}
+
+/**
+ * Split a full WMS url into its service endpoint and LAYERS list. Mirrors the
+ * param parsing Leaflet's WMSColorFilter does, so a single layer url renders
+ * the same way in both engines.
+ */
+// Per-request params the engine computes per viewport (or props we set
+// explicitly) — forwarding stale pasted values would corrupt every request.
+// TILED is a GeoServer cache directive expecting grid-aligned tile requests;
+// WMSLayer issues one whole-viewport GetMap, which a cache grid rejects.
+const WMS_MANAGED_KEYS = new Set([
+    'service',
+    'request',
+    'layers',
+    'bbox',
+    'width',
+    'height',
+    'srs',
+    'crs',
+    'tiled',
+])
+// Standard GetMap params loaders.gl accepts as typed wmsParameters (it handles
+// version-specific encoding itself, e.g. SRS= for 1.1.1 vs CRS= for 1.3.0).
+const WMS_STANDARD_KEYS = new Set([
+    'version',
+    'format',
+    'transparent',
+    'styles',
+    'time',
+    'elevation',
+])
+
+// The base URL must be split from its query string: loaders.gl appends
+// '?SERVICE=WMS&...' to it blindly, so a leftover '?' would malform every
+// request. LAYERS becomes the layers prop; recognized GetMap params become
+// wmsParameters; everything else (API keys, vendor params) is preserved as
+// vendorParameters.
+function parseWmsUrl(url: string): {
+    base: string
+    layers: string[]
+    wmsParameters: Record<string, unknown>
+    vendorParameters: Record<string, unknown>
+} {
+    const qIdx = url.indexOf('?')
+    const base = qIdx === -1 ? url : url.slice(0, qIdx)
+    const search = qIdx === -1 ? '' : url.slice(qIdx + 1)
+    let layersVal = ''
+    const wmsParameters: Record<string, unknown> = {}
+    const vendorParameters: Record<string, unknown> = {}
+    for (const [key, val] of new URLSearchParams(search)) {
+        const lower = key.toLowerCase()
+        if (lower === 'layers') {
+            layersVal = val
+        } else if (WMS_STANDARD_KEYS.has(lower)) {
+            wmsParameters[lower] = lower === 'transparent' ? val.toLowerCase() === 'true' : val
+        } else if (!WMS_MANAGED_KEYS.has(lower)) {
+            vendorParameters[key] = val
+        }
+    }
+    const layers = layersVal ? layersVal.split(',').filter(Boolean) : []
+    return { base, layers, wmsParameters, vendorParameters }
+}
+
 /**
  * Construct a deck.gl layer from a {@link LayerOptions} spec.
- * Supports `'tile'` (TileLayer + BitmapLayer), `'vector'` (GeoJsonLayer),
- * and `'pointcloud'` (PointCloudLayer).
+ * Supports `'tile'` (TileLayer + BitmapLayer, or WMSLayer when tileformat is
+ * 'wms'), `'vector'` (GeoJsonLayer), and `'pointcloud'` (PointCloudLayer).
  * DeckGL class names (e.g. `'GeoJsonLayer'`) are automatically normalised
  * via {@link toCanonicalLayerType}. Use `nativeOptions` for deck.gl-specific props.
  *
@@ -183,6 +293,29 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
         case 'tile': {
             const o = options as TileLayerOptions
             const tileElevation = Number(o.tileElevation)
+
+            // WMS can't be a {z}/{x}/{y} template — the GetMap BBOX is computed
+            // per view. Route to deck.gl's WMSLayer, parsing the service URL and
+            // LAYERS out of the full WMS url (same params Leaflet reads).
+            if (o.tileformat === 'wms') {
+                const { base, layers, wmsParameters, vendorParameters } =
+                    parseWmsUrl(o.url)
+                return new WMSLayer({
+                    id,
+                    // A pre-built source (instead of the base-URL string) is the
+                    // only channel WMSLayer offers for forwarding the pasted
+                    // URL's GetMap/vendor params on every request.
+                    data: new WMSImageSource(base, {
+                        wms: { wmsParameters, vendorParameters },
+                    } as ConstructorParameters<typeof WMSImageSource>[1]),
+                    serviceType: 'wms',
+                    layers,
+                    srs: 'EPSG:3857',
+                    opacity: o.opacity ?? 1,
+                    ...(o.nativeOptions ?? {}),
+                }) as unknown as Layer
+            }
+
             return new TileLayer({
                 id,
                 data: o.url,
@@ -190,7 +323,18 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 minZoom: o.minZoom,
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
+                getTileData: (tile: { url?: string | null; signal?: AbortSignal }) =>
+                    fetchImageTile(tile.url, tile.signal),
+                onTileError: (error: Error) => {
+                    console.warn(
+                        `DeckGL tile request failed for layer '${id}':`,
+                        error?.message ?? error
+                    )
+                },
                 renderSubLayers: (props: Record<string, unknown>) => {
+                    // deck.gl still renders sublayers for a tile that failed or
+                    // resolved empty, so a tile carrying no image draws nothing.
+                    if (props.data == null) return null
                     const bbox = (props.tile as { bbox: { west: number; south: number; east: number; north: number } }).bbox
                     const bounds = Number.isFinite(tileElevation)
                         ? [
@@ -466,3 +610,5 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             )
     }
 }
+
+export { buildDeckCOGLayer } from './DeckCOGLayer'

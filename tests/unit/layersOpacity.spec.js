@@ -12,14 +12,15 @@ const { default: L_ } = await import(
 )
 
 /**
- * L_.setLayerOpacity dispatches on who owns the layer object, not on the
- * layer's configured type: under a non-Leaflet engine the registry holds a mix
- * of engine-owned layers (vector, tile, vectortile) and Leaflet-built ones
- * (velocity, model, data, image, video). Engine-owned layers are immutable in
- * deck.gl, so the facade returns a replacement the registry must adopt.
+ * L_.setLayerOpacity dispatches on which API the layer object answers to, not
+ * on the layer's configured type: under a non-Leaflet engine the registry holds
+ * a mix of facade-managed layers (vector, tile, vectortile) and Leaflet-built
+ * ones (velocity, model, data, image, video). Facade-managed layers are
+ * immutable in deck.gl, so the facade returns a replacement the registry must
+ * adopt.
  */
 
-// A deck.gl Layer stands in as any engine-owned object: it has `props`, never
+// A deck.gl Layer stands in as any facade-managed object: it has `props`, never
 // `options`, and cannot be mutated in place.
 const makeEngineLayer = (id, opacity) => ({ id, props: { opacity } })
 
@@ -55,7 +56,7 @@ describe('L_.setLayerOpacity engine dispatch', () => {
         L_.Map_ = null
     })
 
-    test('engine-owned layer is routed through the facade', () => {
+    test('facade-managed layer is routed through the facade', () => {
         const setLayerOpacity = vi.fn(() => makeEngineLayer('vec', 0.4))
         setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)
         const original = makeEngineLayer('vec', 1)
@@ -123,7 +124,7 @@ describe('L_.setLayerOpacity engine dispatch', () => {
         expect(leafletLayer.options.opacity).toBe(0.3)
     })
 
-    test('an engine-owned layer is left alone before Map_ is initialized', () => {
+    test('a facade-managed layer is left alone before Map_ is initialized', () => {
         L_.Map_ = null
         L_.layers.layer.vec = makeEngineLayer('vec', 1)
 
@@ -161,7 +162,7 @@ describe('L_.getLayerOpacity engine dispatch', () => {
         L_.Map_ = null
     })
 
-    test('reads an engine-owned layer from the registry', () => {
+    test('reads a facade-managed layer from the registry', () => {
         setEngine(MAP_ENGINE.DECKGL, () => undefined)
         L_.layers.layer.vec = makeEngineLayer('vec', 1)
         L_.layers.opacity.vec = 0.25

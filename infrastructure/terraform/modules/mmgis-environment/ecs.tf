@@ -10,6 +10,12 @@ locals {
   # DB_PASS comes straight from the RDS-managed master secret ({username,password}
   # JSON) — the ONLY place the password exists. The other connection values are
   # not secrets; they ride as plain environment (below).
+  #
+  # Kept alongside DB_SECRET_ARN deliberately: the app now PREFERS the runtime
+  # fetch (DB_SECRET_ARN) so long-running tasks track rotation, but this once-at-
+  # launch injection stays as the boot-time value for the short-lived init-db
+  # step and as full-mode symmetry. secrets[] resolves only at task launch, so it
+  # is exactly what goes stale on rotation — the runtime fetch is what fixes that.
   db_pass_secret = {
     name       = "DB_PASS"
     value_from = "${aws_db_instance.this.master_user_secret[0].secret_arn}:password::"
@@ -26,6 +32,13 @@ locals {
     # missing, so any name would work; `postgres` keeps the app DB and the
     # maintenance DB the same on the fresh instances this module builds.
     { name = "DB_NAME", value = "postgres" },
+    # The ARN of the RDS-managed master secret — an identifier, not a secret,
+    # so it rides as plain environment. The app reads it at connection time to
+    # fetch the current password from Secrets Manager (via the task role), so
+    # long-running tasks track RDS rotation instead of freezing the once-at-
+    # launch DB_PASS injection below. Unset in full/local mode, where the app
+    # keeps using DB_PASS unchanged.
+    { name = "DB_SECRET_ARN", value = aws_db_instance.this.master_user_secret[0].secret_arn },
   ]
 
   admin_secrets = [
