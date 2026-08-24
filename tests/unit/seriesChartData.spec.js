@@ -14,7 +14,6 @@ const THEME = {
     palette: ['#111111', '#222222'],
     gridColor: '#dddddd',
     textColor: '#555555',
-    surface: '#eeeeee',
 }
 
 const DAY = 24 * 60 * 60 * 1000
@@ -52,6 +51,12 @@ describe('seriesChart chartData', () => {
         test('reads timezone-less ISO datetimes as UTC, not viewer-local', () => {
             expect(toTimePoints([{ x: '2017-12-31T00:00:00', y: 1 }])).toEqual([
                 { x: Date.parse('2017-12-31T00:00:00Z'), y: 1 },
+            ])
+        })
+
+        test('reads space-separated timezone-less datetimes as UTC too', () => {
+            expect(toTimePoints([{ x: '2017-12-31 06:30:00', y: 1 }])).toEqual([
+                { x: Date.parse('2017-12-31T06:30:00Z'), y: 1 },
             ])
         })
     })
@@ -251,6 +256,48 @@ describe('seriesChart chartData', () => {
             expect(opt.legend.selected).toEqual({ S1: false, S2: true })
         })
 
+        test('six-figure point counts build without arg-spread overflow', () => {
+            const points = Array.from({ length: 200000 }, (_, i) => ({
+                x: i * 60000,
+                y: i % 100,
+            }))
+            const opt = buildChartOption(
+                payloadWith([{ id: 'big', label: 'Big', points }]),
+                THEME,
+            )
+            expect(opt.series[0].data).toHaveLength(200000)
+            expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
+        })
+
+        test('tick granularity follows the visible variable, not the union', () => {
+            const hourly = series({
+                points: [
+                    { x: '2026-03-04T00:00:00Z', y: 1 },
+                    { x: '2026-03-05T00:00:00Z', y: 2 },
+                ],
+            })
+            const multiYear = series({
+                id: 's2',
+                label: 'S2',
+                points: [
+                    { x: '2020-01-01T00:00:00Z', y: 1 },
+                    { x: '2026-01-01T00:00:00Z', y: 2 },
+                ],
+            })
+            const t = Date.parse('2026-03-04T14:30:00Z')
+            const shortVisible = buildChartOption(
+                payloadWith([hourly, multiYear]),
+                THEME,
+            )
+            expect(shortVisible.xAxis.axisLabel.formatter(t)).toBe('14:30')
+            const longVisible = buildChartOption(
+                payloadWith([hourly, multiYear]),
+                THEME,
+                'S2',
+            )
+            expect(longVisible.xAxis.axisLabel.formatter(t)).toBe('Mar 2026')
+        })
+
         test('no in-canvas toolbox: reset zoom lives in the card header', () => {
             const opt = buildChartOption(payloadWith([series()]), THEME)
             expect(opt.toolbox).toBeUndefined()
@@ -270,21 +317,16 @@ describe('seriesChart chartData', () => {
 
     describe('buildVariableCardOption', () => {
         const series = (over = {}) => ({
-            id: over.id ?? 's1',
-            label: over.label ?? 'S1',
+            id: 's1',
+            label: 'S1',
             points: [
                 { x: '2026-01-01T00:00:00Z', y: 1 },
                 { x: '2026-01-02T00:00:00Z', y: 2 },
             ],
             ...over,
         })
-        const card = (s, over = {}) =>
-            buildVariableCardOption(
-                s,
-                { ...payloadWith([s]), ...over },
-                THEME,
-                over.index ?? 0,
-            )
+        const card = (s, index = 0) =>
+            buildVariableCardOption(s, payloadWith([s]), THEME, index)
 
         test('single clean series: no legend, no symbols, no gridlines', () => {
             const opt = card(series())
@@ -336,6 +378,16 @@ describe('seriesChart chartData', () => {
             ])
         })
 
+        test('six-figure point counts build without arg-spread overflow', () => {
+            const points = Array.from({ length: 200000 }, (_, i) => ({
+                x: i * 60000,
+                y: i % 100,
+            }))
+            const opt = card(series({ points }))
+            expect(opt.series[0].data).toHaveLength(200000)
+            expect(typeof opt.xAxis.axisLabel.formatter).toBe('function')
+        })
+
         test('category cards use the variable’s own labels', () => {
             const s = series({
                 points: [
@@ -382,6 +434,15 @@ describe('seriesChart chartData', () => {
                 'x,"PM2.5, ""fine"""',
                 '"a,b",1',
             ])
+        })
+
+        test('fields with lone carriage returns are quoted', () => {
+            const csv = seriesToCsv({
+                id: 's',
+                label: 'a\rb',
+                points: [{ x: 1, y: 1 }],
+            })
+            expect(csv.split('\n')[0]).toBe('x,"a\rb"')
         })
     })
 
