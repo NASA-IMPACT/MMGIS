@@ -30,7 +30,11 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { Map as MaplibreGLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import type { IMapEngine, ComparisonConfig } from '../IMapEngine'
+import type { 
+    IMapEngine, 
+    ComparisonConfig, 
+    MapScreenshotResult 
+} from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
 import type { MapEngineType } from '../types/engine'
 import type { LatLng, LatLngLike, BoundsLike, PointLike } from '../types/geometry'
@@ -50,7 +54,6 @@ import type {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from '../types/events'
 
 import {
@@ -73,7 +76,12 @@ import {
     TerraDrawCircleMode,
 } from 'terra-draw'
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
-import { extractVerticesFromGeometry } from './DrawingHelpers'
+import {
+    committedVerticesFromChange,
+    drawModeKeyEvents,
+    drawStyles,
+    validateDrawnLineString,
+} from './DrawingHelpers'
 
 /**
  * Minimal API surface that is identical between mapbox-gl and maplibre-gl `Map` instances.
@@ -124,12 +132,75 @@ interface BasemapInstance {
     ): unknown
     /** Restrict panning to the given bounding box. Pass `null` to remove the constraint. */
     setMaxBounds(bounds: [[number, number], [number, number]] | null): unknown
-    /** Register a map event listener. */
+    /** Register a map event listener (e.g. `'load'`, `'move'`, `'moveend'`). */
     on(type: string, handler: (...args: unknown[]) => void): unknown
+    /** Register a one-shot map event listener that auto-removes after firing once. */
+    once(type: string, handler: (...args: unknown[]) => void): unknown
     /** Remove a previously registered map event listener. */
     off(type: string, handler: (...args: unknown[]) => void): unknown
     /** Recalculate the map size from its container element. */
     resize(): void
+    /** Switch the map to a different style URL at runtime. */
+    setStyle(styleUrl: string): unknown
+    /** Return the style layer with the given id, or `undefined` if it is not in the style. */
+    getLayer(id: string): unknown
+    /** Return the WebGL canvas element the base map renders into. */
+    getCanvas(): HTMLCanvasElement
+    /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
+    triggerRepaint(): void
+}
+
+/**
+ * How long {@link DeckGLAdapter.captureScreenshot} waits for the basemap's
+ * `render` event before rejecting. Generous enough for a slow first frame,
+ * short enough that a dead map fails fast.
+ */
+const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
+
+/**
+ * Prefix on the MapLibre layers terra-draw renders the in-progress drawing
+ * into. Passed to `TerraDrawMapLibreGLAdapter` explicitly, so this file sets
+ * the ids rather than inheriting whatever the library defaults to.
+ */
+const TERRA_DRAW_PREFIX = 'td'
+
+/**
+ * Bottom of the terra-draw stack: its MapLibre adapter registers the polygon
+ * fill layer first.
+ */
+const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
+
+/**
+ * Sort rank for a layer that was never given an explicit z-index.
+ *
+ * Every layer of the configured mission stack is ranked through
+ * {@link DeckGLAdapter.setLayerZIndex} as it is added, so the unranked layers
+ * are the ones added on top of that stack afterwards — plugin overlays such as
+ * a selection highlight. Ranking them above every assigned index keeps them
+ * there.
+ */
+const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
+
+function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
+    return new Promise((resolve, reject) => {
+        if (typeof canvas.toBlob !== 'function') {
+            reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob is unavailable'))
+            return
+        }
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                reject(new Error('[DeckGLAdapter] captureScreenshot: canvas.toBlob returned null'))
+                return
+            }
+            resolve({
+                blob,
+                mimeType: 'image/png',
+                extension: 'png',
+                width: canvas.width,
+                height: canvas.height,
+            })
+        }, 'image/png')
+    })
 }
 
 /**
@@ -280,6 +351,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
+     * Re-push layers once the basemap style has loaded.
+     *
+     * deck.gl's interleaved `resolveLayers()` silently drops any layers set via
+     * `setProps` before `map.style._loaded` is true. Layers added during MMGIS
+     * startup (which runs synchronously right after `init`, while the style is
+     * still fetching) are therefore never inserted — the map shows only the
+     * basemap until some later `setProps` runs post-load. This flush is that
+     * post-load `setProps`, re-inserting everything buffered in `_layers`.
+     */
+    private _onBasemapLoad = (): void => {
+        this._syncLayers()
+    }
+
+    /**
      * Create and mount the map inside the element identified by `options.containerId`.
      *
      * Returns `void` (synchronous) for standalone mode and MapLibre overlay mode.
@@ -329,13 +414,17 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * The adapter must not be used again after this call.
      */
     destroy(): void {
+        // End a live session the normal way, while its listeners are still
+        // attached, so its initiator hears `drawcancel` and stops driving a
+        // session that is about to have no engine.
+        this.disableDrawing()
+
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
             this._terraDrawListeners = []
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
-        this._drawingShape = null
 
         this._comparisonEnabled = false
         this._destroyComparisonCanvases()
@@ -344,6 +433,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             if (this._basemap) {
                 this._basemap.off('move', this._onBasemapMove)
                 this._basemap.off('moveend', this._onBasemapMoveEnd)
+                this._basemap.off('load', this._onBasemapLoad)
                 if (this._overlay) {
                     this._overlay.finalize()
                     this._basemap.removeControl(this._overlay as unknown as object)
@@ -398,8 +488,88 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return this._basemap
     }
 
+    /**
+     * Switch the basemap to a different style URL.
+     *
+     * Loading a style replaces every layer on the map, terra-draw's included,
+     * and terra-draw does not register its layers again. So a live drawing
+     * session is ended before the swap. That emits `drawcancel`, which tells
+     * consumers the session is over, and it lets {@link _syncLayers} drop the
+     * terra-draw anchor while the layers it points at are still in the style.
+     */
+    setBasemapStyle(styleUrl: string): boolean {
+        if (!this._basemap) return false
+        this.disableDrawing()
+        this._basemap.setStyle(styleUrl)
+        return true
+    }
+
     getContainer(): HTMLElement {
         return this._container
+    }
+
+    /**
+     * Capture the current map view as a PNG Blob screenshot result.
+     *
+     * WebGL clears its drawing buffer once the browser presents a frame, so
+     * `canvas.toDataURL()` only returns pixels if the read happens before
+     * that clear. Rather than paying the per-frame cost of creating the GL
+     * context with `preserveDrawingBuffer: true`, we capture on demand:
+     * overlay mode reads the shared (interleaved) canvas inside a
+     * `once('render')` handler after `triggerRepaint()` — the render event
+     * fires before the browser presents/clears the buffer; standalone mode
+     * reads right after `deck.redraw(reason)`, which draws synchronously in
+     * deck.gl v9, so the buffer is still valid within the same task.
+     *
+     * Captures only the GL canvas: HTML overlays/markers added via
+     * {@link addOverlay} are separate DOM nodes and are not included.
+     */
+    captureScreenshot(): Promise<MapScreenshotResult> {
+        return new Promise<MapScreenshotResult>((resolve, reject) => {
+            try {
+                if (this._isOverlayMode && this._basemap) {
+                    const basemap = this._basemap
+                    const onRender = () => {
+                        clearTimeout(timeout)
+                        canvasToPngScreenshot(basemap.getCanvas()).then(
+                            resolve,
+                            reject
+                        )
+                    }
+                    const timeout = setTimeout(() => {
+                        // Unhook, or the listener stays armed to fire a wasted
+                        // capture on some later render (e.g. backgrounded tab).
+                        basemap.off('render', onRender)
+                        reject(
+                            new Error(
+                                '[DeckGLAdapter] captureScreenshot: timed out waiting for the basemap render event'
+                            )
+                        )
+                    }, SCREENSHOT_RENDER_TIMEOUT_MS)
+                    basemap.once('render', onRender)
+                    basemap.triggerRepaint()
+                    return
+                }
+
+                const deck = this._deck
+                if (!deck) {
+                    reject(new Error('[DeckGLAdapter] captureScreenshot: no active map to capture'))
+                    return
+                }
+                deck.redraw('screenshot')
+                const canvas = (deck as unknown as { getCanvas?: () => HTMLCanvasElement })
+                    .getCanvas?.()
+                if (!canvas) {
+                    reject(
+                        new Error('[DeckGLAdapter] captureScreenshot: deck canvas unavailable')
+                    )
+                    return
+                }
+                canvasToPngScreenshot(canvas).then(resolve, reject)
+            } catch (err) {
+                reject(err as Error)
+            }
+        })
     }
 
     /**
@@ -528,10 +698,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Returns the current visible geographic bounds.
+     * Returns the geographic bounds currently visible.
      *
-     * - Overlay mode: delegated directly to the basemap's `getBounds()`.
-     * - Standalone mode: derived by unprojecting the container corners via `WebMercatorViewport`.
+     * - Overlay mode: handed straight to the basemap's `getBounds()`.
+     * - Standalone mode: all four container corners are unprojected through
+     *   `WebMercatorViewport`, and the answer is the smallest north-up box
+     *   around those four points.
+     *
+     * All four corners are read because the map can be rotated — drag-rotate
+     * is enabled, and the view state carries bearing and pitch — so a corner
+     * of the screen is not a corner of the compass. Past 90° of bearing the
+     * bottom-left pixel unprojects north-east of the top-right one. Taking the
+     * min and max across every corner keeps south below north and west below
+     * east at any angle, and covers the whole rotated rectangle rather than
+     * just its diagonal.
      */
     getBounds(): BoundsLike {
         if (this._isOverlayMode) {
@@ -545,11 +725,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
         const vp = makeViewport(this._viewState, this._container)
         const { offsetWidth: w, offsetHeight: h } = this._container
-        const [west, south] = vp.unproject([0, h]) as [number, number]
-        const [east, north] = vp.unproject([w, 0]) as [number, number]
+        const corners: [number, number][] = [
+            [0, 0],
+            [w, 0],
+            [w, h],
+            [0, h],
+        ]
+        const unprojected = corners.map((c) => vp.unproject(c) as [number, number])
+        const lngs = unprojected.map(([lng]) => lng)
+        const lats = unprojected.map(([, lat]) => lat)
         return {
-            southWest: { lat: south, lng: west },
-            northEast: { lat: north, lng: east },
+            southWest: { lat: Math.min(...lats), lng: Math.min(...lngs) },
+            northEast: { lat: Math.max(...lats), lng: Math.max(...lngs) },
         }
     }
 
@@ -791,6 +978,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const updated = existing.clone({
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
+            ...(options.url !== undefined ? { data: options.url } : {}),
         }) as Layer
         this._layers.set(id, updated)
         this._syncLayers()
@@ -810,6 +998,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the end of the layers array so deck.gl renders it on top.
+     * The move lasts only until the next z-index re-sort, which puts the layer
+     * back at its assigned index — or on top, if it has none.
      */
     bringToFront(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -822,6 +1012,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the start of the layers array so deck.gl renders it below all others.
+     * The move lasts only until the next z-index re-sort, which puts the layer
+     * back at its assigned index — or on top, if it has none.
      */
     bringToBack(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -832,8 +1024,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._syncLayers()
     }
 
-    setLayerOpacity(layer: Layer | string, opacity: number): void {
-        this.updateLayer(layer, { opacity })
+    /**
+     * Set a layer's opacity and return the instance carrying it. deck.gl layers
+     * are immutable, so the caller must replace its reference with the result.
+     *
+     * A layer on the map goes through {@link updateLayer}, which re-syncs the
+     * render list. One that is off the map is cloned instead, so it comes back
+     * at the requested opacity when it is added. A reference that is neither
+     * on the map nor a clonable layer instance (an unknown id, or a registry
+     * value that never became a layer) yields no replacement.
+     */
+    setLayerOpacity(layer: Layer | string, opacity: number): Layer | undefined {
+        const id = resolveLayerId(layer)
+        if (this._layers.has(id)) return this.updateLayer(id, { opacity })
+        if (typeof (layer as Layer)?.clone !== 'function') return undefined
+        return (layer as Layer).clone({ opacity }) as Layer
     }
 
     /**
@@ -869,21 +1074,39 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._emitEvent(eventName, data)
     }
 
-    private _ensureTerraDraw(options: DrawingOptions): TerraDraw | null {
+    private _ensureTerraDraw(): TerraDraw | null {
         if (this._terraDraw) return this._terraDraw
         if (!this._isOverlayMode || !this._basemap) return null
 
-        const finishKey = 'Enter'
-        const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
+        // The drawing is rendered in the theme's accent, at the stroke width
+        // a committed shape is drawn with; terra-draw's own defaults supply
+        // the opacities.
+        const styles = drawStyles()
 
         const td = new TerraDraw({
-            adapter: new TerraDrawMapLibreGLAdapter({ map: this._basemap as any }),
+            adapter: new TerraDrawMapLibreGLAdapter({
+                map: this._basemap as any,
+                prefixId: TERRA_DRAW_PREFIX,
+            }),
             modes: [
-                new TerraDrawPointMode(),
-                new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawPolygonMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawRectangleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawCircleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawPointMode({ styles: styles.point }),
+                new TerraDrawLineStringMode({
+                    keyEvents: drawModeKeyEvents('linestring'),
+                    validation: validateDrawnLineString,
+                    styles: styles.linestring,
+                }),
+                new TerraDrawPolygonMode({
+                    keyEvents: drawModeKeyEvents('polygon'),
+                    styles: styles.polygon,
+                }),
+                new TerraDrawRectangleMode({
+                    keyEvents: drawModeKeyEvents('rectangle'),
+                    styles: styles.rectangle,
+                }),
+                new TerraDrawCircleMode({
+                    keyEvents: drawModeKeyEvents('circle'),
+                    styles: styles.circle,
+                }),
             ],
         })
 
@@ -902,13 +1125,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         const onChange = (ids: any[], type: string) => {
             if (type !== 'create' && type !== 'update') return
-            if (!this._drawingShape) return
-            const lastId = ids[ids.length - 1]
-            const snap = td.getSnapshotFeature(lastId)
-            if (!snap) return
-            const vertices = extractVerticesFromGeometry(snap.geometry as GeoJSON.Geometry)
-            if (!vertices) return
-            this._emitEvent('drawvertex', { shape: this._drawingShape, vertices })
+            const shape = this._drawingShape
+            if (!shape) return
+            const vertices = committedVerticesFromChange(shape, ids, (id) =>
+                td.getSnapshotFeature(id)
+            )
+            if (vertices) this._emitEvent('drawvertex', { shape, vertices })
         }
 
         td.on('finish', onFinish)
@@ -922,12 +1144,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return td
     }
 
-    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+    enableDrawing(shape: DrawShape): void {
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
-        const td = this._ensureTerraDraw(options)
+        const td = this._ensureTerraDraw()
         if (!td) {
             throw new Error(
                 '[DeckGLAdapter] enableDrawing requires overlay mode ' +
@@ -939,7 +1161,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
+        this._syncLayers()
         this._emitEvent('drawstart', { shape })
+    }
+
+    /** The element terra-draw's MapLibre adapter attaches its listeners to. */
+    private _drawEventElement(): HTMLElement | null {
+        return (this._basemap as any)?.getCanvas?.() ?? null
     }
 
     /**
@@ -957,6 +1185,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
+        this._syncLayers()
         return shape
     }
 
@@ -969,16 +1198,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * terra-draw modes commit on `Enter` via their `keyEvents.finish` binding.
      * There's no programmatic-finish API yet (see
      * https://github.com/JamesLMilner/terra-draw), so we dispatch a synthetic
-     * keydown to the map container — the mode's keyboard handler picks it up
-     * and emits `finish` if the geometry is valid. If it isn't (e.g. polygon
-     * with <3 vertices), the dispatch is a no-op and we fall through to
-     * cancel.
+     * keyup on the map canvas — the element terra-draw listens on. The mode
+     * emits `finish` if the geometry is valid, which ends the session; if it
+     * isn't (e.g. polygon with <3 vertices), the dispatch is a no-op and the
+     * session is left untouched. Rectangle and circle bind no finish key at
+     * all (see {@link drawModeKeyEvents}), so they only ever finish on their
+     * second click.
      */
-    finishDrawing(): void {
-        if (!this._drawingShape || !this._terraDraw) return
-        const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
-        this._container?.dispatchEvent(evt)
-        if (this._drawingShape) this.disableDrawing()
+    finishDrawing(): boolean {
+        if (!this._drawingShape || !this._terraDraw) return false
+        this._drawEventElement()?.dispatchEvent(
+            new KeyboardEvent('keyup', { key: 'Enter' })
+        )
+        return !this.isDrawing()
     }
 
     isDrawing(): boolean {
@@ -1231,6 +1463,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _initStandaloneMode(): void {
         this._deck = new Deck({
             parent: this._container,
+            // No preserveDrawingBuffer needed: captureScreenshot() reads the
+            // canvas synchronously after deck.redraw(), before the browser
+            // presents (and clears) the drawing buffer.
             width: '100%',
             height: '100%',
             controller: true,
@@ -1246,10 +1481,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             onClick: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureClickHandler?.(pickInfoToResult(info))
+                this._emitClick(info)
             },
             onHover: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureHoverHandler?.(pickInfoToResult(info))
+                this._emitMouseMove(info)
             },
         } as any)
     }
@@ -1300,6 +1537,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             minZoom: this._minZoom,
             maxZoom: this._maxZoom,
             projection: 'mercator',
+            // No preserveDrawingBuffer needed: captureScreenshot() reads the
+            // canvas inside a once('render') handler, in the same frame the
+            // map draws — before the drawing buffer is presented and cleared.
         }
 
         if (basemap.provider === 'mapbox' && basemap.accessToken) {
@@ -1315,10 +1555,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             onClick: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureClickHandler?.(pickInfoToResult(info))
+                this._emitClick(info)
             },
             onHover: (info: PickingInfo) => {
                 if (this._drawingShape) return
                 this._featureHoverHandler?.(pickInfoToResult(info))
+                this._emitMouseMove(info)
             },
         })
 
@@ -1330,6 +1572,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         this._basemap.on('move', this._onBasemapMove)
         this._basemap.on('moveend', this._onBasemapMoveEnd)
+        this._basemap.on('load', this._onBasemapLoad)
     }
 
     /**
@@ -1377,20 +1620,43 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // data layers are hidden and rendered in the side canvases instead.
         const layers = this._comparisonEnabled ? [] : [...this._layers.values()]
         if (this._isOverlayMode) {
-            this._overlay?.setProps({ layers })
+            this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })
         } else {
             this._deckSetProps({ layers })
         }
     }
 
     /**
+     * While a terra-draw session is running, return a clone of every deck
+     * layer carrying a `beforeId` that points at terra-draw's bottom-most
+     * MapLibre layer, which keeps the whole drawing above the deck layers.
+     *
+     * Without that `beforeId`, the interleaved overlay's `resolveLayers()`
+     * lifts the deck layers back to the top of the style on every `styledata`
+     * event and buries the in-progress drawing.
+     *
+     * `resolveLayers()` passes the anchor straight to `map.addLayer`, which
+     * refuses to insert before a layer that is not in the style. So the anchor
+     * is only applied while terra-draw's layers are actually registered.
+     */
+    private _anchorBelowDrawing(layers: Layer[]): Layer[] {
+        if (!this._drawingShape) return layers
+        if (!this._basemap?.getLayer(TERRA_DRAW_BOTTOM_LAYER_ID)) return layers
+        return layers.map((layer) => layer.clone({ beforeId: TERRA_DRAW_BOTTOM_LAYER_ID } as any))
+    }
+
+    /**
      * Re-order the layer Map by ascending z-index so `_syncLayers` sends them in the
      * correct draw order (lower z-index = rendered first = behind).
+     *
+     * A layer with no assigned z-index ranks {@link UNRANKED_Z_INDEX}, which
+     * holds it above the mission layer stack. The sort is stable, so several
+     * such layers also keep their order relative to each other.
      */
     private _sortLayersByZIndex(): void {
+        const rank = (id: string) => this._layerZIndices.get(id) ?? UNRANKED_Z_INDEX
         const entries = [...this._layers.entries()].sort(
-            ([aId], [bId]) =>
-                (this._layerZIndices.get(aId) ?? 0) - (this._layerZIndices.get(bId) ?? 0)
+            ([aId], [bId]) => rank(aId) - rank(bId)
         )
         this._layers = new Map(entries)
     }
@@ -1415,6 +1681,34 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _emitEvent(name: string, data?: unknown): void {
         this._eventListeners.get(name)?.forEach((h) => h(data as PickingInfo))
+    }
+
+    private _emitClick(info: PickingInfo): void {
+        if (!info?.coordinate) return
+        this._eventListeners.get('click')?.forEach(
+            (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
+        )
+    }
+
+    private _emitMouseMove(info: PickingInfo): void {
+        if (!info?.coordinate) return
+        this._eventListeners.get('mousemove')?.forEach(
+            (h) => h(this._buildNormalizedPointerEvent(info) as unknown as PickingInfo)
+        )
+    }
+
+    private _buildNormalizedPointerEvent(info: PickingInfo): Record<string, unknown> {
+        const lat = info.coordinate![1]
+        const lng = info.coordinate![0]
+        return {
+            lat,
+            lng,
+            latlng: { lat, lng },
+            containerPoint:
+                info.x != null && info.y != null
+                    ? { x: info.x, y: info.y }
+                    : undefined,
+        }
     }
 }
 

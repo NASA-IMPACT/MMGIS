@@ -1,0 +1,1148 @@
+name: Infrastructure deploy engine
+
+# The shared infrastructure engine: one implementation of "converge an
+# environment's infrastructure", called by every environment's trigger
+# workflow. Reusable only (`on: workflow_call`).
+#
+# ── Invariants for anyone editing this file ──────────────────────────────────
+# - The job below MUST keep `environment: ${{ inputs.environment }}`, and
+#   callers MUST pass `secrets: inherit`. The binding is what makes GitHub mint
+#   the environment-form OIDC subject `mmgis-terraform-apply-<env>`'s trust
+#   policy accepts, and what makes the environment-scoped configuration
+#   resolve; a caller cannot supply it, because `environment:` is not settable
+#   through `workflow_call` inputs. Losing either half surfaces as a cryptic
+#   AssumeRole failure.
+# - IAC_TFVARS is written verbatim to `ci.auto.tfvars.json`, which OUTRANKS the
+#   `TF_VAR_*` values this workflow computes per run. Never add `greenfield` or
+#   a live fact to it — that would override discovery and disable the module's
+#   guards.
+# - The discovery probe is duplicated verbatim in the re-discovery step below
+#   and adapted in `iac-plan.yml`. Change all three together.
+#
+# Run anatomy, modes, phases, and the image sandwich:
+# docs/infrastructure/pipelines.md#a-deploy-run-step-by-step, with
+# docs/infrastructure/aws-environments.md#building-an-environment-takes-two-phases
+# and #images-and-task-definitions. The five Environment-scoped settings:
+# infrastructure/README.md#configuration-contract.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: >-
+          GitHub Environment name. Also selects the terraform root at
+          infrastructure/terraform/environments/<environment>.
+        required: true
+        type: string
+      mode:
+        description: |-
+          apply — two-phase converge (the real thing).
+          plan  — plan only, change nothing (the plan-only dispatch path;
+                  exercised before an environment's first real apply).
+          read  — init and read the state outputs only; no plan, no apply, no
+                  AWS describes (app-only merges still need the six names).
+        required: false
+        type: string
+        default: apply
+      deployed_image:
+        description: >-
+          Override the discovered image. Empty means "use whatever the live
+          service is serving". Unused by the development trigger; the
+          production trigger exposes it as a dispatch-only escape hatch
+          for when a live service's image cannot be discovered. It moves only
+          what this converge feeds the task-definition families — on any run
+          that deploys, the app engine still builds and rolls the trigger
+          commit's own image.
+        required: false
+        type: string
+        default: ""
+    outputs:
+      aws_region:
+        description: Region the environment lives in.
+        value: ${{ jobs.converge.outputs.aws_region }}
+      ecr_repository:
+        description: ECR repository name for the environment's image.
+        value: ${{ jobs.converge.outputs.ecr_repository }}
+      ecs_cluster:
+        description: ECS cluster name.
+        value: ${{ jobs.converge.outputs.ecs_cluster }}
+      ecs_service:
+        description: Express Mode gateway service name.
+        value: ${{ jobs.converge.outputs.ecs_service }}
+      admin_task_family:
+        description: Task-definition family for the admin container.
+        value: ${{ jobs.converge.outputs.admin_task_family }}
+      publish_task_family:
+        description: Task-definition family the backend RunTasks for publishes.
+        value: ${{ jobs.converge.outputs.publish_task_family }}
+
+jobs:
+  converge:
+    name: Infrastructure (${{ inputs.environment }}, ${{ inputs.mode }})
+    runs-on: ubuntu-latest
+    # THE load-bearing line — see the header comment. Do not remove it to "let
+    # the caller decide"; the caller cannot.
+    environment: ${{ inputs.environment }}
+    permissions:
+      # OIDC token for aws-actions/configure-aws-credentials.
+      id-token: write
+      contents: read
+    # No `concurrency:` here on purpose: serialisation must span the composed
+    # run (infra + app), so the group belongs to the calling trigger. A group on
+    # this job would let the app engine of one run overlap the infra engine of
+    # the next.
+    env:
+      TF_ROOT: infrastructure/terraform/environments/${{ inputs.environment }}
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.terraform-plugin-cache
+    outputs:
+      aws_region: ${{ steps.outputs.outputs.aws_region }}
+      ecr_repository: ${{ steps.outputs.outputs.ecr_repository }}
+      ecs_cluster: ${{ steps.outputs.outputs.ecs_cluster }}
+      ecs_service: ${{ steps.outputs.outputs.ecs_service }}
+      admin_task_family: ${{ steps.outputs.outputs.admin_task_family }}
+      publish_task_family: ${{ steps.outputs.outputs.publish_task_family }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Cheap, credential-free validation first: a bad mode or a typo'd
+      # environment should read as exactly that, not as a terraform "no
+      # configuration files" or a cryptic AssumeRole failure ten steps later.
+      - name: Validate inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          case "$MODE" in
+            apply | plan | read) ;;
+            *)
+              echo "Unknown mode '$MODE'. Valid modes: apply, plan, read." >&2
+              exit 1
+              ;;
+          esac
+
+          # The environment name doubles as the terraform root directory name,
+          # so this also catches an environment that has no root yet.
+          if [ ! -d "$TF_ROOT" ]; then
+            echo "No terraform root at '$TF_ROOT' for environment '$ENVIRONMENT'." >&2
+            exit 1
+          fi
+
+          echo "Environment '$ENVIRONMENT', mode '$MODE', root '$TF_ROOT'."
+
+      # Pure bash, no AWS calls: name every missing value at once so an
+      # unconfigured environment is one copy-pasteable list of settings to fill
+      # in, rather than a sequence of one-at-a-time failures.
+      - name: Resolve configuration
+        id: config
+        env:
+          ROLE_ARN: ${{ secrets.IAC_APPLY_ROLE_ARN }}
+          REGION: ${{ vars.IAC_AWS_REGION }}
+          BUCKET: ${{ vars.IAC_TFSTATE_BUCKET }}
+          TFVARS_JSON: ${{ vars.IAC_TFVARS }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -o pipefail
+
+          MISSING=""
+          note_missing() {
+            MISSING="${MISSING:+$MISSING, }$1"
+          }
+
+          [ -n "$ROLE_ARN" ] || note_missing "IAC_APPLY_ROLE_ARN (secret)"
+          [ -n "$REGION" ] || note_missing "IAC_AWS_REGION (variable)"
+          [ -n "$BUCKET" ] || note_missing "IAC_TFSTATE_BUCKET (variable)"
+
+          if [ -z "$TFVARS_JSON" ]; then
+            note_missing "IAC_TFVARS (variable)"
+          elif ! printf '%s' "$TFVARS_JSON" | jq -e 'type == "object"' >/dev/null 2>&1; then
+            # Set but unusable is a different problem from unset, and calling it
+            # "not configured yet" would hide a typo forever. It must be a JSON
+            # *object* — terraform reads `*.auto.tfvars.json` as a map of
+            # variable names to values, so a bare scalar or array parses here
+            # and explodes at apply time.
+            note_missing "IAC_TFVARS (variable; set but not a JSON object)"
+          elif printf '%s' "$TFVARS_JSON" | jq -e '
+              keys - ["vpc_id", "private_subnet_ids", "rds_ca_bundle_base64",
+                      "permissions_boundary", "region"] | length > 0
+            ' >/dev/null 2>&1; then
+            # The object is written to ci.auto.tfvars.json, and auto-tfvars
+            # OUTRANK the TF_VAR_* values this workflow computes per run — a
+            # greenfield or deployed_image/express_* key here would silently
+            # override discovery and disable the module's empty-fact guards
+            # on every future run. Unknown keys are refused, not ignored.
+            note_missing "IAC_TFVARS (variable; carries keys outside the contract — allowed: vpc_id / private_subnet_ids / rds_ca_bundle_base64 / permissions_boundary / optionally region)"
+          fi
+
+          # Red, not green: unlike the pull-request plan preview (iac-plan.yml), which
+          # degrades to a friendly comment while bootstrap is pending, a deploy
+          # that cannot configure itself has failed. There is nothing to wait
+          # for and nothing was deployed.
+          if [ -n "$MISSING" ]; then
+            {
+              echo "Environment '$ENVIRONMENT' is missing required configuration:"
+              printf '%s\n' "$MISSING" | tr ',' '\n' | sed 's/^[[:space:]]*//'
+              echo ""
+              echo "These are GitHub Environment-scoped secrets and variables."
+              echo "Each value is documented in the configuration contract in infrastructure/README.md."
+            } >&2
+            exit 1
+          fi
+
+          echo "All required configuration is present."
+
+      # Providers are large and identical across environments; the committed
+      # .terraform.lock.hcl files make the key exact. A cache miss only costs a
+      # full provider download — it is never a failure. The cache only actually
+      # saves that download if the lock files carry `linux_amd64` `h1:` hashes.
+      - name: Cache Terraform providers
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TF_PLUGIN_CACHE_DIR }}
+          key: tf-providers-${{ runner.os }}-${{ hashFiles('infrastructure/terraform/**/.terraform.lock.hcl') }}
+          restore-keys: |
+            tf-providers-${{ runner.os }}-
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          # Pinned for reproducibility, and matched to the plan preview so a
+          # reviewed plan and the apply that follows it come from the same
+          # binary. Satisfies the roots' `required_version = ">= 1.11.0"`.
+          terraform_version: "1.12.2"
+          # The wrapper rewrites terraform's stdout, which mangles the output
+          # this workflow parses and the plan text it publishes.
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.IAC_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.IAC_AWS_REGION }}
+
+      - name: Terraform init
+        id: init
+        env:
+          REGION: ${{ vars.IAC_AWS_REGION }}
+          BUCKET: ${{ vars.IAC_TFSTATE_BUCKET }}
+          TFVARS_JSON: ${{ vars.IAC_TFVARS }}
+        run: |
+          set -o pipefail
+
+          # Terraform will not create the plugin cache directory itself.
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+
+          # terraform auto-loads *.auto.tfvars.json from the root directory, so
+          # the required no-default variables (vpc_id, private_subnet_ids,
+          # rds_ca_bundle_base64, permissions_boundary) arrive without a
+          # -var-file flag. jq normalises whatever formatting the variable
+          # happens to carry.
+          #
+          # The region is merged in because the root's `var.region` defaults to
+          # us-west-2 and the provider reads that variable, not the AWS_REGION
+          # the credentials action exports — injecting it keeps the provider
+          # working in the same region the state bucket lives in. An explicit
+          # `region` key in IAC_TFVARS still wins.
+          printf '%s' "$TFVARS_JSON" \
+            | jq --arg region "$REGION" '{region: $region} + .' \
+            > "$TF_ROOT/ci.auto.tfvars.json"
+
+          # The backend commits key/encrypt/use_lockfile; bucket and region are
+          # account-specific and supplied here.
+          echo "::group::terraform init"
+          rc=0
+          terraform -chdir="$TF_ROOT" init \
+            -input=false \
+            -no-color \
+            -backend-config="bucket=$BUCKET" \
+            -backend-config="region=$REGION" || rc=$?
+          echo "::endgroup::"
+          exit "$rc"
+
+      # Everything the apply needs to know about the LIVE environment, read
+      # before touching it. Skipped in read mode, which exists precisely to
+      # avoid describing anything.
+      #
+      # Two AWS calls, because the values live in two places:
+      #   describe-express-gateway-service -> newest activeConfiguration gives
+      #     the serving image and its serviceRevisionArn (the response carries
+      #     no load-balancer information at all);
+      #   describe-service-revisions      -> that revision's
+      #     ecsManagedResources.ingressPaths[] gives the on.aws endpoint and
+      #     the ECS-managed internal ALB ARN.
+      - name: Discover the live environment
+        id: discover
+        if: inputs.mode != 'read'
+        env:
+          IMAGE_OVERRIDE: ${{ inputs.deployed_image }}
+        run: |
+          set -o pipefail
+
+          # The probe below is duplicated verbatim (minus these comments) in
+          # the post-apply re-discovery step, and, adapted to
+          # report-instead-of-exit error handling, in iac-plan.yml's preview
+          # probe. If you change one, change the others. Deliberately
+          # duplicated rather than factored into a committed script: a shell
+          # file in the repo would be a second thing to keep in step with the
+          # workflow, and a workflow cannot share a step body with itself —
+          # the comments explaining each call live on this copy.
+          IMAGE=""
+          ALB_ARN=""
+          ENDPOINT=""
+          HAVE_SERVICE="false"
+          CF_IN_STATE=""
+
+          probe() {
+            IMAGE=""
+            ALB_ARN=""
+            ENDPOINT=""
+            HAVE_SERVICE="false"
+            CF_IN_STATE=""
+
+            # Read the WHOLE output set in one call, and fail on a nonzero exit
+            # rather than swallowing it. `terraform output -json` returns `{}`
+            # with exit 0 for empty state, so a nonzero exit is a backend
+            # problem (S3 hiccup, expired credentials, a wrong bucket) — never
+            # greenfield. The distinction is the point: "greenfield" here means
+            # "apply the placeholder image and empty CloudFront inputs", and
+            # doing that against a live environment because of a transient S3
+            # error would break publishes and destroy the front door.
+            local outputs_json="" names_json="" rc=0
+            outputs_json=$(terraform -chdir="$TF_ROOT" output -json 2>/tmp/tf-output.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              cat /tmp/tf-output.err >&2
+              echo "terraform output failed (exit $rc); refusing to read a failed state read as greenfield." >&2
+              exit 1
+            fi
+
+            # The root also exports admin_distribution_id, null until the
+            # CloudFront phase has applied. A non-empty value is state's own
+            # word that this environment already has a front door — the
+            # CloudFront guard below relies on it.
+            CF_IN_STATE=$(printf '%s' "$outputs_json" | jq -r '.admin_distribution_id.value // ""')
+
+            # An absent (or null) workflow_variables output means nothing has
+            # ever been applied here. Greenfield, not an error.
+            names_json=$(printf '%s' "$outputs_json" | jq -c '.workflow_variables.value // empty')
+            if [ -z "$names_json" ]; then
+              echo "No workflow_variables in state — greenfield environment."
+              return 0
+            fi
+
+            local cluster service
+            cluster=$(printf '%s' "$names_json" | jq -r '.ECS_CLUSTER // ""')
+            service=$(printf '%s' "$names_json" | jq -r '.ECS_SERVICE // ""')
+            if [ -z "$cluster" ] || [ -z "$service" ]; then
+              echo "State has no cluster/service names yet — treating as greenfield."
+              return 0
+            fi
+
+            # describe-services distinguishes the two "no live service" shapes:
+            # a missing SERVICE exits 0 and reports the name under .failures[]
+            # (reason MISSING) with .services empty; a missing CLUSTER exits
+            # nonzero with ClusterNotFoundException. Both mean "state exists but
+            # the service does not" — a partially built environment, which the
+            # apply below is exactly the fix for. Any OTHER failure (throttling,
+            # a permissions gap, a region typo) must fail the run rather than be
+            # silently read as greenfield, because greenfield means "apply the
+            # placeholder image".
+            local services_json rc=0
+            services_json=$(aws ecs describe-services \
+              --cluster "$cluster" \
+              --services "$service" \
+              --output json 2>/tmp/describe-services.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              if grep -q 'ClusterNotFoundException' /tmp/describe-services.err; then
+                echo "Cluster '$cluster' does not exist yet — no live service."
+                return 0
+              fi
+              cat /tmp/describe-services.err >&2
+              echo "aws ecs describe-services failed (exit $rc)." >&2
+              exit 1
+            fi
+
+            local service_arn
+            service_arn=$(printf '%s' "$services_json" | jq -r '.services[0].serviceArn // ""')
+            if [ -z "$service_arn" ]; then
+              echo "Service '$service' is not present in cluster '$cluster' — no live service."
+              return 0
+            fi
+            HAVE_SERVICE="true"
+            echo "Live service: $service_arn"
+
+            local egs_json newest rev_arn
+            egs_json=$(aws ecs describe-express-gateway-service \
+              --service-arn "$service_arn" \
+              --output json) || exit 1
+
+            # Old and new configurations are listed side by side while a
+            # rollout drains, so "what is the service serving" is the NEWEST by
+            # createdAt, not the first entry.
+            newest=$(printf '%s' "$egs_json" \
+              | jq -c '[.service.activeConfigurations[]?] | sort_by(.createdAt) | last // {}')
+            IMAGE=$(printf '%s' "$newest" | jq -r '.primaryContainer.image // ""')
+            rev_arn=$(printf '%s' "$newest" | jq -r '.serviceRevisionArn // ""')
+
+            if [ -z "$rev_arn" ]; then
+              echo "No active service revision yet — no load-balancer values to discover."
+              return 0
+            fi
+
+            # The ALB ARN is only on the service revision. Pick the ingress
+            # path that actually carries a load balancer; the public/other
+            # paths have none.
+            local rev_json lb_path
+            rev_json=$(aws ecs describe-service-revisions \
+              --service-revision-arns "$rev_arn" \
+              --output json) || exit 1
+            lb_path=$(printf '%s' "$rev_json" \
+              | jq -c '[.serviceRevisions[0].ecsManagedResources.ingressPaths[]?
+                        | select(.loadBalancer.arn != null)] | first // {}')
+
+            ALB_ARN=$(printf '%s' "$lb_path" | jq -r '.loadBalancer.arn // ""')
+            ENDPOINT=$(printf '%s' "$lb_path" | jq -r '.endpoint // ""')
+
+            # The module wants a bare host for the CloudFront origin.
+            ENDPOINT="${ENDPOINT#https://}"
+            ENDPOINT="${ENDPOINT#http://}"
+            ENDPOINT="${ENDPOINT%/}"
+
+            # The pair is all-or-nothing: the module builds CloudFront only
+            # when both are set. Blank both so a partial read means "no
+            # CloudFront this run", which a later run completes — never a
+            # half-built front door.
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; then
+              ALB_ARN=""
+              ENDPOINT=""
+            fi
+
+            return 0
+          }
+
+          probe
+
+          # Explicit override wins over whatever the service happens to be
+          # serving (the production trigger's dispatch-time escape hatch for
+          # an undiscoverable live image — see the input's description).
+          # Applied after the probe so the phase-2 values are still
+          # discovered.
+          if [ -n "$IMAGE_OVERRIDE" ]; then
+            IMAGE="$IMAGE_OVERRIDE"
+            echo "Using the caller-supplied image override."
+          fi
+
+          # The placeholder trap: applying with an empty deployed_image
+          # re-registers BOTH task-definition families against the module's
+          # `:latest` placeholder, which does not exist in ECR. That is the
+          # correct greenfield behaviour and a silent breakage against a live
+          # environment — the publish family's latest revision is what the
+          # backend RunTasks, so publishes would start failing with no rollout
+          # to blame. Refuse instead of guessing.
+          if [ "$HAVE_SERVICE" = "true" ] && [ -z "$IMAGE" ]; then
+            {
+              echo "A live service exists but no image could be resolved for it."
+              echo "Refusing to apply the placeholder image against a live environment:"
+              echo "it would point the admin and publish task-definition families at an"
+              echo "image tag that does not exist in ECR."
+              echo "Investigate the service's activeConfigurations, or pass deployed_image"
+              echo "explicitly."
+            } >&2
+            exit 1
+          fi
+
+          # The same trap on the CloudFront side. Empty phase-2 values are
+          # greenfield's normal shape, but a distribution id in state says this
+          # environment's front door already exists — and applying with either
+          # value missing flips `enable_cloudfront` off, DESTROYING the
+          # distribution and its VPC origin. That is not recoverable by
+          # re-running: a recreated distribution comes back on a NEW
+          # cloudfront.net domain, so every bookmark and every published
+          # dashboard URL changes. Refuse instead of guessing.
+          if [ -n "$CF_IN_STATE" ] && { [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; }; then
+            {
+              echo "State says this environment's CloudFront distribution exists"
+              echo "($CF_IN_STATE), but discovery could not resolve both Express"
+              echo "values: alb='$ALB_ARN' endpoint='$ENDPOINT'."
+              echo "Refusing to apply: it would destroy the distribution and its VPC"
+              echo "origin (a recreate later returns on a NEW CloudFront domain)."
+              echo "Investigate the service's newest active configuration and its"
+              echo "service revision, then re-run."
+            } >&2
+            exit 1
+          fi
+
+          # Greenfield, decided AFTER the guards. The guards verify the image
+          # whenever a live service exists and the Express pair whenever state
+          # holds a CloudFront distribution, so an emptiness that survives them
+          # is verified-absent in exactly those cases; the one unguarded shape —
+          # service live, no CloudFront in state, the pair not readable off the
+          # revision yet — is blessed greenfield. Its worst case: CloudFront
+          # stays unbuilt this run until a later run re-discovers both values.
+          # The flag is what makes the empties legal to the module
+          # (var.greenfield); with all three facts present it is false and
+          # relaxes nothing.
+          GREENFIELD="false"
+          if [ -z "$IMAGE" ] || [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; then
+            GREENFIELD="true"
+          fi
+
+          {
+            echo "image=$IMAGE"
+            echo "alb_arn=$ALB_ARN"
+            echo "endpoint=$ENDPOINT"
+            echo "have_service=$HAVE_SERVICE"
+            echo "greenfield=$GREENFIELD"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' cloudfront='$CF_IN_STATE' greenfield='$GREENFIELD'"
+
+      # Plan mode changes nothing. It is how an environment gets reviewed before
+      # its first real apply, and how a human previews a converge from the
+      # dispatch UI.
+      - name: Terraform plan
+        id: plan
+        if: inputs.mode == 'plan'
+        env:
+          # Every apply and every plan passes the FULL known set. A plan that
+          # omitted the phase-2 values would show CloudFront being destroyed and
+          # panic the reviewer over nothing.
+          TF_VAR_deployed_image: ${{ steps.discover.outputs.image }}
+          TF_VAR_express_internal_alb_arn: ${{ steps.discover.outputs.alb_arn }}
+          TF_VAR_express_onaws_endpoint: ${{ steps.discover.outputs.endpoint }}
+          TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -o pipefail
+
+          # -lock=false here ONLY: a preview must never take or wait on the
+          # state lock, so it can never block or contend with a real apply.
+          # Applies below deliberately take the lock.
+          # -detailed-exitcode: 0 = no changes, 2 = changes, anything else =
+          # error. Both 0 and 2 are successful previews.
+          echo "::group::terraform plan"
+          rc=0
+          terraform -chdir="$TF_ROOT" plan \
+            -input=false \
+            -no-color \
+            -lock=false \
+            -detailed-exitcode 2>&1 | tee plan.txt || rc=$?
+          echo "::endgroup::"
+
+          case "$rc" in
+            0) SUMMARY="No changes. Infrastructure matches the configuration." ;;
+            2)
+              # Expect an ~80-resource all-creates listing the first time an
+              # environment is planned. That is the whole environment being
+              # proposed, not a bug.
+              SUMMARY=$(grep -E '^Plan: ' plan.txt | tail -1 || true)
+              [ -n "$SUMMARY" ] || SUMMARY="Changes detected — see the plan below."
+              ;;
+            *)
+              echo "Terraform plan failed (exit $rc)." >&2
+              exit 1
+              ;;
+          esac
+
+          # 60000 bytes leaves room for the wrapper around the plan text inside
+          # the step summary; the run log above is never truncated.
+          head -c 60000 plan.txt > plan-trimmed.txt
+          PLAN_BYTES=$(wc -c < plan.txt)
+          RUN_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          {
+            echo "## Terraform plan — \`$ENVIRONMENT\`"
+            echo ""
+            echo "**$SUMMARY**"
+            echo ""
+            echo "<details>"
+            echo "<summary>Show plan</summary>"
+            echo ""
+            echo '```text'
+            cat plan-trimmed.txt
+            echo ""
+            echo '```'
+            echo ""
+            if [ "$PLAN_BYTES" -gt 60000 ]; then
+              echo "… (truncated — full plan in the [run log]($RUN_URL))"
+              echo ""
+            fi
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Phase 1. In steady state this is the ONLY apply: discovery already
+      # supplied the phase-2 values, so the configuration converges completely
+      # here and the phase-2 step below finds nothing left to do. Phase 2 earns
+      # its keep on greenfield, and on the rare run where the ECS-managed ALB
+      # actually changed.
+      #
+      # No -lock=false anywhere in an apply: the state lock is mandatory. The
+      # per-environment concurrency group on the calling trigger already
+      # serialises runs; S3 native locking (`use_lockfile = true`) is the
+      # backstop for everything that group cannot see, such as a hand apply
+      # running at the same time.
+      - name: Terraform apply (phase 1)
+        id: apply1
+        if: inputs.mode == 'apply'
+        env:
+          TF_VAR_deployed_image: ${{ steps.discover.outputs.image }}
+          TF_VAR_express_internal_alb_arn: ${{ steps.discover.outputs.alb_arn }}
+          TF_VAR_express_onaws_endpoint: ${{ steps.discover.outputs.endpoint }}
+          TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
+        run: |
+          set -o pipefail
+
+          echo "::group::terraform apply (phase 1)"
+          rc=0
+          terraform -chdir="$TF_ROOT" apply \
+            -input=false \
+            -no-color \
+            -auto-approve || rc=$?
+          echo "::endgroup::"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "Terraform apply failed (exit $rc)." >&2
+            exit "$rc"
+          fi
+
+      # ── Application-secret bootstrap ───────────────────────────────────────
+      # Phase 1 above created the Secrets Manager secrets as empty shells: name
+      # and policy only, never a value, because a value in the configuration is
+      # a value in the state file. Four of those shells hold credentials only
+      # MMGIS itself consumes, so nobody outside this system has to choose
+      # them — this step fills each one the first time it finds it empty, and
+      # never touches one that already carries a value.
+      #
+      # Two secrets are deliberately absent from the list below.
+      # `mmgis/<env>/mapbox-token` is an external credential: a human sets it
+      # once per environment and CI has no business inventing it. The database
+      # password is the RDS-managed master secret, which nothing here goes
+      # near at all.
+      #
+      # The apply role this job runs under carries secretsmanager:DescribeSecret
+      # and secretsmanager:PutSecretValue on `mmgis/<env>*`, and deliberately no
+      # GetSecretValue anywhere (bootstrap root) — CI can never read a
+      # secret value back. "Is this shell empty?" is therefore answered from
+      # describe-secret METADATA alone, never by reading the value.
+      #
+      # Greenfield: the same phase-1 apply that created these shells also
+      # launched the services whose tasks read them via `valueFrom`. Task
+      # launches in the window before this step lands the values fail; ECS
+      # launch retries self-heal once the values exist. That is expected — do
+      # not add ordering machinery for it.
+      #
+      # No `!cancelled()` guard: if phase 1 failed, the job has already
+      # stopped, which is correct. The shells this step fills only certainly
+      # exist after a SUCCESSFUL phase-1 apply.
+      - name: Bootstrap application secrets
+        id: secrets
+        if: inputs.mode == 'apply'
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          # `-e` is GitHub's own default for run steps (`bash -e {0}`), restated
+          # here because for THIS step it is load-bearing rather than hygiene:
+          # if a `jq` parse of the describe-secret metadata ever failed, the
+          # emptiness variables below would be empty strings, and empty is not
+          # "true" — without -e the decision could fall through to generating
+          # onto a secret whose state was never actually read. With -e the
+          # failed assignment stops the step first. The never-overwrite
+          # guarantee must not hinge on an implicit runner default.
+          set -e -o pipefail
+
+          # Never add `set -x` to this step. Tracing would print the generation
+          # pipeline, and the whole design below is that the value exists
+          # nowhere a trace could reach it.
+
+          # The EFF large wordlist (7,776 words) is downloaded at run time
+          # rather than vendored — a hash pin gives the same integrity as a
+          # committed copy without carrying a 7,776-line data file in the repo,
+          # and this path runs rarely (apply-mode infra runs only, and the
+          # download itself only when a shell actually needs a value; see
+          # ensure_wordlist). The pinned SHA-256 is EFF's published digest,
+          # re-verified against the live URL when this step was written. The
+          # raw file is dice-index TAB word per line; the index column is
+          # stripped after verification.
+          WORDLIST_URL="https://www.eff.org/files/2016/07/18/eff_large_wordlist.txt"
+          WORDLIST_SHA256="addd35536511597a02fa0a9ff1e5284677b8883b83e986e43f15a3db996b903e"
+          WORDLIST_RAW="/tmp/eff-large-wordlist.raw"
+          WORDLIST="/tmp/eff-large-wordlist.txt"
+
+          # Download + verify, lazily: called only when a slot is actually
+          # empty, so a steady-state run (all four populated) never depends on
+          # eff.org being reachable. On failure it fails RED — there is no
+          # fallback to a weaker generator, ever.
+          ensure_wordlist() {
+            [ -s "$WORDLIST" ] && return 0
+
+            rc=0
+            curl -fsSL --retry 3 -o "$WORDLIST_RAW" "$WORDLIST_URL" || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              echo "Could not download the EFF wordlist from $WORDLIST_URL (curl exit $rc)." >&2
+              echo "Likely transient — re-run the workflow. There is deliberately no fallback" >&2
+              echo "to a weaker generator." >&2
+              exit 1
+            fi
+
+            # The hash pin IS the integrity guarantee: it makes the download
+            # exactly as trustworthy as a vendored copy. A mismatch means the
+            # transfer was corrupted or upstream changed — either way, refuse.
+            ACTUAL_SHA256=$(sha256sum "$WORDLIST_RAW" | cut -d' ' -f1)
+            if [ "$ACTUAL_SHA256" != "$WORDLIST_SHA256" ]; then
+              echo "EFF wordlist hash mismatch:" >&2
+              echo "  expected $WORDLIST_SHA256" >&2
+              echo "  actual   $ACTUAL_SHA256" >&2
+              echo "Corrupted transfer (transient? re-run the workflow) or the upstream file" >&2
+              echo "changed. Refusing to generate; never falling back to a weaker generator." >&2
+              exit 1
+            fi
+
+            # Strip the dice-index column: "11111<TAB>abacus" -> "abacus".
+            cut -f2 "$WORDLIST_RAW" > "$WORDLIST"
+
+            # Belt to the hash pin's braces: the generator's entropy claims
+            # assume exactly 7,776 UNIQUE words, so verify that property on the
+            # processed file rather than trust the column-strip blindly.
+            # `|| true` keeps a failure on the friendly error path below
+            # instead of dying inside the command substitution.
+            WORD_COUNT=$(grep . "$WORDLIST" 2>/dev/null | sort -u | wc -l || true)
+            if [ "${WORD_COUNT:-0}" -ne 7776 ]; then
+              echo "Processed wordlist has ${WORD_COUNT:-0} unique words, expected 7776." >&2
+              echo "Generating from it would weaken every passphrase; refusing." >&2
+              exit 1
+            fi
+          }
+
+          : > /tmp/secret-rows.md
+
+          # Word counts, at ~12.925 bits per word:
+          #   session-secret       8 words (~103 bits). A machine-only signing
+          #                        key nobody ever types, so take the extra
+          #                        length for free.
+          #   superadmin-username  3 words. A username, not a secret proper;
+          #                        word-shaped and collision-proof is what
+          #                        matters.
+          #   superadmin-password  6 words (~78 bits).
+          #   dashboards-password  6 words (~78 bits).
+          #
+          # Fed by here-doc rather than a pipe on purpose: a piped `while` runs
+          # in a subshell, where the `exit 1`s below would kill only the
+          # subshell.
+          while read -r suffix words; do
+            [ -n "$suffix" ] || continue
+            secret_id="mmgis/$ENVIRONMENT/$suffix"
+
+            # Any describe failure — including ResourceNotFoundException, which
+            # cannot happen after a successful phase-1 apply — is investigation
+            # territory, never "assume empty". Assuming empty is the one
+            # mistake that could overwrite a live credential.
+            rc=0
+            meta=$(aws secretsmanager describe-secret \
+              --secret-id "$secret_id" \
+              --output json 2>/tmp/describe-secret.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              cat /tmp/describe-secret.err >&2
+              echo "aws secretsmanager describe-secret failed for '$secret_id' (exit $rc)." >&2
+              echo "Phase 1 applied successfully, so this shell must exist. Investigate rather than retry." >&2
+              exit 1
+            fi
+
+            # Near-impossible with the module's 0-day recovery window, but a
+            # put onto a shell that is scheduled for deletion would resurrect
+            # it into a confusing half-state. Fail loud instead of guessing.
+            deleted=$(printf '%s' "$meta" | jq -r '.DeletedDate // empty')
+            if [ -n "$deleted" ]; then
+              echo "'$secret_id' is scheduled for deletion (DeletedDate $deleted)." >&2
+              echo "Restore or recreate it before deploying; this step will not put a value onto it." >&2
+              exit 1
+            fi
+
+            # Emptiness, from metadata only: a secret holds a usable value iff
+            # some version carries the AWSCURRENT stage. `--output json` gives
+            # VersionIdsToStages as {versionId: [stage, ...]}.
+            populated=$(printf '%s' "$meta" \
+              | jq '[.VersionIdsToStages // {} | to_entries[].value[]] | any(. == "AWSCURRENT")')
+            version_count=$(printf '%s' "$meta" | jq '(.VersionIdsToStages // {}) | length')
+
+            if [ "$populated" = "true" ]; then
+              echo "$secret_id: already set — leaving it untouched."
+              printf "| \`%s\` | already set (left untouched) |\n" "$secret_id" >> /tmp/secret-rows.md
+              continue
+            fi
+
+            if [ "$version_count" -ne 0 ]; then
+              # Versions but no AWSCURRENT — an orphaned AWSPENDING, say. This
+              # cannot arise under normal operation (there is no rotation
+              # programme on these secrets), ECS `valueFrom` reads AWSCURRENT
+              # so the app cannot use the secret in this shape anyway, and
+              # putting a fresh value on top would break the never-overwrite
+              # rule while hiding whatever happened. A human investigates.
+              echo "'$secret_id' has $version_count version(s) but none staged AWSCURRENT." >&2
+              echo "Nothing in this system produces that state; resolve it by hand before deploying." >&2
+              exit 1
+            fi
+
+            # Empty shell → generate. The value must never exist in the shell:
+            #   * `shuf --random-source=/dev/urandom -r` draws words WITH
+            #     replacement from a cryptographic seed; `paste -sd- -`
+            #     hyphen-joins them; `tr -d '\n'` strips the trailing newline
+            #     so it does not become part of the stored value.
+            #   * `--secret-string file:///dev/stdin` makes the CLI read the
+            #     value off the pipe, so it is never in a shell variable, never
+            #     in argv (argv is world-readable through /proc on a shared
+            #     runner), never in the environment, and never echoed. That is
+            #     strictly stronger than `::add-mask::`, which would require
+            #     materialising the value in the shell first — exactly what
+            #     this avoids. There is deliberately nothing here to mask.
+            # The VersionId prints to the log on purpose: it is the evidence a
+            # new version appeared, and its absence on a re-run is the evidence
+            # that steady state generates nothing.
+            echo "$secret_id: empty — generating a $words-word passphrase (new version id below)."
+            ensure_wordlist
+            rc=0
+            shuf --random-source=/dev/urandom -rn "$words" "$WORDLIST" \
+              | paste -sd- - \
+              | tr -d '\n' \
+              | aws secretsmanager put-secret-value \
+                  --secret-id "$secret_id" \
+                  --secret-string file:///dev/stdin \
+                  --query VersionId --output text || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              # Under pipefail this exit code can come from ANY stage of the
+              # pipeline, not just the put — and the stages run concurrently,
+              # so in the pathological case (a generator dying mid-stream while
+              # the put still succeeded on what it read) a version MAY exist
+              # holding a short value. Say so, rather than blame the put and
+              # send the operator the wrong way: a populated shell is skipped
+              # forever, so a suspect value must be replaced by hand.
+              echo "Generating or storing the value for '$secret_id' failed (exit $rc)." >&2
+              echo "If this failed attempt did store a version (rare: generator died mid-pipeline" >&2
+              echo "while the put succeeded), treat that value as suspect and put a fresh one by" >&2
+              echo "hand — CI never overwrites a populated shell." >&2
+              exit 1
+            fi
+            printf "| \`%s\` | generated (new version) |\n" "$secret_id" >> /tmp/secret-rows.md
+          done <<'SLOTS'
+          session-secret 8
+          superadmin-username 3
+          superadmin-password 6
+          dashboards-password 6
+          SLOTS
+
+          # Secrets Manager has no conditional put, so probe-then-put carries a
+          # theoretical TOCTOU window. The caller's per-environment concurrency
+          # group already serialises runs, and the worst case — losing the race
+          # to a human setting a value by hand — adds a version rather than
+          # deleting theirs. Noted and accepted.
+
+          # Names only in the summary. Never values.
+          {
+            echo "## Application secrets — \`$ENVIRONMENT\`"
+            echo ""
+            echo "| Secret | Action |"
+            echo "| --- | --- |"
+            cat /tmp/secret-rows.md
+            echo ""
+            echo "\`mmgis/$ENVIRONMENT/mapbox-token\` is excluded — an external credential a human"
+            echo "sets once per environment. The database password is the RDS-managed master"
+            echo "secret and is never touched."
+            echo ""
+            echo "**Superadmin lockout nuance.** The seed credentials only seed the superadmin"
+            echo "while the users table is empty, i.e. on first boot. After that the real"
+            echo "credential is a bcrypt hash in the database, so regenerating"
+            echo "\`superadmin-password\` later diverges the secret from the password that"
+            echo "actually logs in. This matters most in production, where the database"
+            echo "outlives everything else."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Phase 1 is what brings the Express service (and therefore its
+      # ECS-managed ALB) into existence, so on greenfield the phase-2 values
+      # only become discoverable now. Same probe body as the pre-apply
+      # discovery step above, wrapped in a gentle poll — the ALB can take a
+      # couple of minutes to surface on the service revision.
+      - name: Re-discover after apply
+        id: rediscover
+        if: inputs.mode == 'apply'
+        run: |
+          set -o pipefail
+
+          IMAGE=""
+          ALB_ARN=""
+          ENDPOINT=""
+          HAVE_SERVICE="false"
+          CF_IN_STATE=""
+
+          probe() {
+            IMAGE=""
+            ALB_ARN=""
+            ENDPOINT=""
+            HAVE_SERVICE="false"
+            CF_IN_STATE=""
+
+            local outputs_json="" names_json="" rc=0
+            outputs_json=$(terraform -chdir="$TF_ROOT" output -json 2>/tmp/tf-output.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              cat /tmp/tf-output.err >&2
+              echo "terraform output failed (exit $rc); refusing to read a failed state read as greenfield." >&2
+              exit 1
+            fi
+
+            CF_IN_STATE=$(printf '%s' "$outputs_json" | jq -r '.admin_distribution_id.value // ""')
+
+            names_json=$(printf '%s' "$outputs_json" | jq -c '.workflow_variables.value // empty')
+            if [ -z "$names_json" ]; then
+              echo "No workflow_variables in state — greenfield environment."
+              return 0
+            fi
+
+            local cluster service
+            cluster=$(printf '%s' "$names_json" | jq -r '.ECS_CLUSTER // ""')
+            service=$(printf '%s' "$names_json" | jq -r '.ECS_SERVICE // ""')
+            if [ -z "$cluster" ] || [ -z "$service" ]; then
+              echo "State has no cluster/service names yet — treating as greenfield."
+              return 0
+            fi
+
+            local services_json rc=0
+            services_json=$(aws ecs describe-services \
+              --cluster "$cluster" \
+              --services "$service" \
+              --output json 2>/tmp/describe-services.err) || rc=$?
+            if [ "$rc" -ne 0 ]; then
+              if grep -q 'ClusterNotFoundException' /tmp/describe-services.err; then
+                echo "Cluster '$cluster' does not exist yet — no live service."
+                return 0
+              fi
+              cat /tmp/describe-services.err >&2
+              echo "aws ecs describe-services failed (exit $rc)." >&2
+              exit 1
+            fi
+
+            local service_arn
+            service_arn=$(printf '%s' "$services_json" | jq -r '.services[0].serviceArn // ""')
+            if [ -z "$service_arn" ]; then
+              echo "Service '$service' is not present in cluster '$cluster' — no live service."
+              return 0
+            fi
+            HAVE_SERVICE="true"
+            echo "Live service: $service_arn"
+
+            local egs_json newest rev_arn
+            egs_json=$(aws ecs describe-express-gateway-service \
+              --service-arn "$service_arn" \
+              --output json) || exit 1
+
+            newest=$(printf '%s' "$egs_json" \
+              | jq -c '[.service.activeConfigurations[]?] | sort_by(.createdAt) | last // {}')
+            IMAGE=$(printf '%s' "$newest" | jq -r '.primaryContainer.image // ""')
+            rev_arn=$(printf '%s' "$newest" | jq -r '.serviceRevisionArn // ""')
+
+            if [ -z "$rev_arn" ]; then
+              echo "No active service revision yet — no load-balancer values to discover."
+              return 0
+            fi
+
+            local rev_json lb_path
+            rev_json=$(aws ecs describe-service-revisions \
+              --service-revision-arns "$rev_arn" \
+              --output json) || exit 1
+            lb_path=$(printf '%s' "$rev_json" \
+              | jq -c '[.serviceRevisions[0].ecsManagedResources.ingressPaths[]?
+                        | select(.loadBalancer.arn != null)] | first // {}')
+
+            ALB_ARN=$(printf '%s' "$lb_path" | jq -r '.loadBalancer.arn // ""')
+            ENDPOINT=$(printf '%s' "$lb_path" | jq -r '.endpoint // ""')
+
+            ENDPOINT="${ENDPOINT#https://}"
+            ENDPOINT="${ENDPOINT#http://}"
+            ENDPOINT="${ENDPOINT%/}"
+
+            if [ -z "$ALB_ARN" ] || [ -z "$ENDPOINT" ]; then
+              ALB_ARN=""
+              ENDPOINT=""
+            fi
+
+            return 0
+          }
+
+          # Up to 10 attempts, 30 s apart — five minutes of patience for the
+          # ALB to appear on a freshly created service. Giving up is NOT a
+          # failure: the CloudFront half simply stays unbuilt and a later infra
+          # run (any later infrastructure-touching merge, or a manual dispatch)
+          # completes it — an app-only merge runs in read mode and applies
+          # nothing. The environment is still reachable on its on.aws endpoint
+          # meanwhile.
+          for attempt in $(seq 1 10); do
+            probe
+            if [ "$HAVE_SERVICE" != "true" ]; then
+              echo "[$attempt/10] no live service; nothing to wait for."
+              break
+            fi
+            if [ -n "$ALB_ARN" ] && [ -n "$ENDPOINT" ]; then
+              echo "[$attempt/10] load balancer discovered."
+              break
+            fi
+            echo "[$attempt/10] service exists but its load balancer has not surfaced yet."
+            if [ "$attempt" -lt 10 ]; then
+              sleep 30
+            fi
+          done
+
+          {
+            echo "image=$IMAGE"
+            echo "alb_arn=$ALB_ARN"
+            echo "endpoint=$ENDPOINT"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Re-discovered: image='$IMAGE' alb='$ALB_ARN' endpoint='$ENDPOINT' cloudfront='$CF_IN_STATE'"
+
+      # Phase 2 runs only when re-discovery actually learned something phase 1
+      # did not have, and only when it learned BOTH values — endpoint and ALB
+      # ARN. A phase-2 apply with either one empty is never worth doing: the
+      # module builds CloudFront only when both are set, so on greenfield it
+      # would leave the front door unbuilt anyway (better to let a later run
+      # finish the job), and against a live environment it would propose
+      # destroying the distribution. In steady state the condition is false and
+      # this step is visibly skipped, which is the honest reading: nothing
+      # changed. When the values are still unavailable (service provisioning,
+      # greenfield ALB not yet surfaced) it is skipped too — see the
+      # re-discovery step's comment for why that is not a failure.
+      - name: Terraform apply (phase 2 — CloudFront over the discovered ALB)
+        id: apply2
+        if: >-
+          ${{ inputs.mode == 'apply'
+          && steps.rediscover.outputs.endpoint != ''
+          && steps.rediscover.outputs.alb_arn != ''
+          && (steps.rediscover.outputs.endpoint != steps.discover.outputs.endpoint
+          || steps.rediscover.outputs.alb_arn != steps.discover.outputs.alb_arn) }}
+        env:
+          # The image comes from the PRE-apply discovery, deliberately: on
+          # greenfield the post-apply probe now sees the crash-looping
+          # placeholder, and feeding that back would pin both task-definition
+          # families to a tag that does not exist. Phase 2 must not move the
+          # image at all — it re-applies exactly what phase 1 used.
+          TF_VAR_deployed_image: ${{ steps.discover.outputs.image }}
+          TF_VAR_express_internal_alb_arn: ${{ steps.rediscover.outputs.alb_arn }}
+          TF_VAR_express_onaws_endpoint: ${{ steps.rediscover.outputs.endpoint }}
+          # Same vintage as the image: the PRE-apply verdict. On greenfield it
+          # stays true, keeping the deliberately-empty image legal while the
+          # re-discovered values are applied.
+          TF_VAR_greenfield: ${{ steps.discover.outputs.greenfield }}
+        run: |
+          set -o pipefail
+
+          echo "::group::terraform apply (phase 2)"
+          rc=0
+          terraform -chdir="$TF_ROOT" apply \
+            -input=false \
+            -no-color \
+            -auto-approve || rc=$?
+          echo "::endgroup::"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "Terraform apply (phase 2) failed (exit $rc)." >&2
+            exit "$rc"
+          fi
+
+      # The six runtime names are READ out of state here, at run time, and
+      # handed to the caller as workflow outputs. They
+      # are never written back into repository settings, so there is exactly one
+      # source of truth and nothing to keep in sync by hand.
+      #
+      # Runs whenever init succeeded, including after a failed apply — a caller
+      # whose infra job failed is skipped anyway, and having the names in the
+      # log is worth more than a tidy skip.
+      - name: Read the engine outputs
+        id: outputs
+        if: ${{ !cancelled() && steps.init.outcome == 'success' }}
+        run: |
+          set -o pipefail
+
+          # Same discipline as the discovery probes: `terraform output -json`
+          # exits 0 with `{}` on empty state, so a nonzero exit can only be a
+          # backend problem — fail red with the real error rather than emit
+          # empty names and send the caller's app job chasing a misleading
+          # "this environment has never been applied" message.
+          if ! ALL_OUTPUTS=$(terraform -chdir="$TF_ROOT" output -json 2>/tmp/tf-output.err); then
+            cat /tmp/tf-output.err >&2
+            echo "Failed to read terraform outputs from the backend." >&2
+            exit 1
+          fi
+
+          NAMES_JSON=$(printf '%s' "$ALL_OUTPUTS" | jq -c '.workflow_variables.value // empty')
+          if [ -z "$NAMES_JSON" ] || [ "$NAMES_JSON" = "null" ]; then
+            # Empty state and no apply this run — read or plan mode against an
+            # environment that has never been built. Emitting empty strings is
+            # not a failure HERE because this engine did exactly what it was
+            # asked to do; the caller's app job validates non-emptiness and
+            # fails with a message a human can act on.
+            echo "No workflow_variables in state; emitting empty outputs."
+            NAMES_JSON='{}'
+          fi
+
+          {
+            echo "aws_region=$(printf '%s' "$NAMES_JSON" | jq -r '.AWS_REGION // ""')"
+            echo "ecr_repository=$(printf '%s' "$NAMES_JSON" | jq -r '.ECR_REPOSITORY // ""')"
+            echo "ecs_cluster=$(printf '%s' "$NAMES_JSON" | jq -r '.ECS_CLUSTER // ""')"
+            echo "ecs_service=$(printf '%s' "$NAMES_JSON" | jq -r '.ECS_SERVICE // ""')"
+            echo "admin_task_family=$(printf '%s' "$NAMES_JSON" | jq -r '.ADMIN_TASK_FAMILY // ""')"
+            echo "publish_task_family=$(printf '%s' "$NAMES_JSON" | jq -r '.PUBLISH_TASK_FAMILY // ""')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write infrastructure summary
+        if: ${{ !cancelled() }}
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          MODE: ${{ inputs.mode }}
+          APPLIED_IMAGE: ${{ steps.discover.outputs.image }}
+          HAVE_SERVICE: ${{ steps.discover.outputs.have_service }}
+          PHASE1: ${{ steps.apply1.outcome }}
+          PHASE2: ${{ steps.apply2.outcome }}
+          AWS_REGION_OUT: ${{ steps.outputs.outputs.aws_region }}
+          ECR_REPOSITORY_OUT: ${{ steps.outputs.outputs.ecr_repository }}
+          ECS_CLUSTER_OUT: ${{ steps.outputs.outputs.ecs_cluster }}
+          ECS_SERVICE_OUT: ${{ steps.outputs.outputs.ecs_service }}
+          ADMIN_TASK_FAMILY_OUT: ${{ steps.outputs.outputs.admin_task_family }}
+          PUBLISH_TASK_FAMILY_OUT: ${{ steps.outputs.outputs.publish_task_family }}
+        run: |
+          # `outcome` is empty when a step never ran at all (an earlier failure)
+          # and 'skipped' when its condition was false.
+          describe_phase() {
+            case "${1:-}" in
+              success) echo "applied" ;;
+              skipped) echo "skipped" ;;
+              failure) echo "FAILED" ;;
+              "") echo "not reached" ;;
+              *) echo "$1" ;;
+            esac
+          }
+
+          # Read mode skips discovery, so APPLIED_IMAGE and HAVE_SERVICE are
+          # both empty for a reason that has nothing to do with greenfield.
+          if [ "$MODE" = "read" ]; then
+            IMAGE_LINE="untouched (read mode — nothing applied)"
+          elif [ -n "$APPLIED_IMAGE" ]; then
+            IMAGE_LINE="\`$APPLIED_IMAGE\`"
+          elif [ "$HAVE_SERVICE" = "true" ]; then
+            IMAGE_LINE="none resolved"
+          else
+            IMAGE_LINE="placeholder — greenfield (the app phase of this run replaces it)"
+          fi
+
+          {
+            echo "## Infrastructure — \`$ENVIRONMENT\`"
+            echo ""
+            echo "- **Mode:** \`$MODE\`"
+            echo "- **Phase 1 apply:** $(describe_phase "$PHASE1")"
+            echo "- **Phase 2 apply (CloudFront):** $(describe_phase "$PHASE2")"
+            echo "- **Image fed to the task-definition families:** $IMAGE_LINE"
+            echo ""
+            echo "Runtime names read from terraform state:"
+            echo ""
+            echo "| Name | Value |"
+            echo "| --- | --- |"
+            echo "| \`AWS_REGION\` | \`$AWS_REGION_OUT\` |"
+            echo "| \`ECR_REPOSITORY\` | \`$ECR_REPOSITORY_OUT\` |"
+            echo "| \`ECS_CLUSTER\` | \`$ECS_CLUSTER_OUT\` |"
+            echo "| \`ECS_SERVICE\` | \`$ECS_SERVICE_OUT\` |"
+            echo "| \`ADMIN_TASK_FAMILY\` | \`$ADMIN_TASK_FAMILY_OUT\` |"
+            echo "| \`PUBLISH_TASK_FAMILY\` | \`$PUBLISH_TASK_FAMILY_OUT\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

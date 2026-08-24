@@ -895,7 +895,7 @@ All 5 existing communication mechanisms can be migrated to the unified Event Bus
 │                          MIGRATION MAPPING                               │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│  L_.subscribeTimeChange(id, cb)     →  mmgisAPI.on('time:change', cb)   │
+│  L_.subscribeTimeChange(id, cb)     →  mmgisAPI.on('time:changed', cb)  │
 │  L_.subscribeOnLayerToggle(id, cb)  →  mmgisAPI.on('layer:toggle', cb)  │
 │  L_.unsubscribeTimeChange(id)       →  unsubscribe() return value       │
 │                                                                          │
@@ -934,7 +934,7 @@ L_.subscribeTimeChange('MyTool', callback);
 document.dispatchEvent(new CustomEvent('toolChange', { detail }));
 
 // After (same mmgisAPI object, new methods)
-mmgisAPI.on('time:change', callback);
+mmgisAPI.on('time:changed', callback);
 mmgisAPI.emit('tool:change', detail);
 ```
 

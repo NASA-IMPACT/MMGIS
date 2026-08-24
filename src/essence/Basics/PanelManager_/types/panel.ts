@@ -1,5 +1,11 @@
 import { ToolOrientation, ToolMetadata } from '../../ToolController_/types/tool';
-import { PanelPosition, PanelState, PanelLayoutType } from './layout';
+import { 
+    PanelPosition,
+    EdgePanelPosition,
+    FloatPanelPosition,
+    PanelState,
+    PanelLayoutType,    
+} from './layout';
 
 /**
  * Panel size configuration.
@@ -98,7 +104,8 @@ export interface PanelCapabilities {
 
     /**
      * Whether this panel can be resized by the user via drag handles.
-     * Default: false
+     * Default: false. Not supported on floating panels — dragging happens
+     * via move handles instead, so this must be false/omitted there.
      */
     resizable?: boolean;
 
@@ -116,28 +123,15 @@ export interface PanelCapabilities {
 }
 
 /**
- * Complete configuration for a panel region.
- * Defines behavior, constraints, and appearance.
+ * Fields shared by every panel, regardless of whether it's an edge or
+ * floating panel.
  */
-export interface PanelConfig {
+interface BasePanelConfig {
     /** Unique identifier for this panel */
     id: string;
 
     /** Display title for the panel */
     title?: string;
-
-    /** Which region this panel occupies */
-    position: PanelPosition;
-
-    /**
-     * Layout priority for space allocation.
-     * Lower numbers claim viewport space first.
-     * Example: top=0, right=1, bottom=2, left=3
-     */
-    priority: PanelPriority;
-
-    /** How tools are laid out when panel is in 'expanded' state */
-    layoutType: PanelLayoutType;
 
     /** Which states are allowed and what the default state is */
     stateConstraints: PanelStateConstraints;
@@ -167,6 +161,65 @@ export interface PanelConfig {
      */
     panelTools?: string[];
 }
+
+/**
+ * Configuration for an edge panel (top/left/right/bottom).
+ * Edge panels compete for viewport space, so `priority` (stacking/allocation
+ * order) and `layoutType` (how multiple tools are arranged) are required.
+ */
+export interface EdgePanelConfig extends BasePanelConfig {
+    /** Which edge region this panel occupies */
+    position: EdgePanelPosition;
+
+    /**
+     * Layout priority for space allocation.
+     * Lower numbers claim viewport space first.
+     * Example: top=0, right=1, bottom=2, left=3
+     */
+    priority: PanelPriority;
+
+    /** How tools are laid out when panel is in 'expanded' state */
+    layoutType: PanelLayoutType;
+}
+
+/**
+ * Configuration for a floating panel, rendered as an overlay inside the
+ * center map area. Floats don't compete for edge viewport space, so
+ * `priority` and `layoutType` are optional, and drag-resize isn't supported.
+ */
+export interface FloatPanelConfig extends BasePanelConfig {
+    /** Which float zone this panel occupies */
+    position: FloatPanelPosition;
+
+    /**
+     * Not used for float layout/rendering, but still affects fallback tool
+     * assignment: ToolControllerModern_._findPanel picks the first compatible
+     * panel from the combined edge+float priority order, so a low priority
+     * here can out-rank an edge panel for an unassigned tool.
+     */
+    priority?: PanelPriority;
+
+    /** Accepted but inert for floats — _renderFloatRegions always stacks tools regardless of this value */
+    layoutType?: PanelLayoutType;
+
+    /** Floats can't be drag-resized; `resizable` must be false/omitted */
+    capabilities?: Omit<PanelCapabilities, 'resizable'> & { resizable?: false };
+
+    /**
+     * Whether the layout paints no surface for this panel — no background,
+     * border or shadow on the panel, and none on the cards behind its tools.
+     * Tools keep whatever surfaces they draw themselves, so a tool that brings
+     * its own boxes (map controls, for instance) sits directly on the map.
+     * Default: false
+     */
+    transparent?: boolean;
+}
+
+/**
+ * Complete configuration for a panel region.
+ * Defines behavior, constraints, and appearance.
+ */
+export type PanelConfig = EdgePanelConfig | FloatPanelConfig;
 
 /**
  * Runtime state object for an active panel.

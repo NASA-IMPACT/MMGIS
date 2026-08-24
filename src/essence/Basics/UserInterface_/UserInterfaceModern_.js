@@ -118,6 +118,12 @@ const _renderFloatRegions = (floatPanels) => {
                 .attr('id', panel.containerId)
                 .attr('data-panel-state', panel.state)
 
+            // Strips every layout-drawn surface from the panel and its tool cards,
+            // leaving the tools' own boxes sitting directly on the map
+            if (panel.config.transparent) {
+                panelDiv.addClass('ui-panel-transparent')
+            }
+
             const dims = panel.config.dimensions || {}
 
             // Width constraints go on the panel container

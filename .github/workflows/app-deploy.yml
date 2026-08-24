@@ -1,0 +1,294 @@
+name: App deploy engine
+
+# The shared application engine, called by every environment's trigger workflow
+# once the infrastructure engine has converged. Reusable only
+# (`on: workflow_call`). ECS Express Mode owns the ALB, the rollout strategy,
+# and scaling; this workflow defines none of them.
+#
+# ── Invariants for anyone editing this file ──────────────────────────────────
+# - The job below MUST keep `environment: ${{ inputs.environment }}`. That
+#   binding is what makes GitHub mint the environment-form OIDC subject
+#   `mmgis-<env>-github-deploy`'s trust policy accepts; without it every
+#   AssumeRole fails with a cryptic error.
+# - Secrets cannot be `workflow_call` inputs. That is why every environment-
+#   specific NAME arrives as an input but IAC_DEPLOY_ROLE_ARN arrives as a
+#   secret, and why callers MUST pass `secrets: inherit` — the value resolves
+#   against the environment the job below binds.
+#
+# What a run does: docs/infrastructure/pipelines.md#a-deploy-run-step-by-step.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub Environment name; selects the OIDC subject and the environment-scoped secrets.
+        required: true
+        type: string
+      aws_region:
+        description: Region the environment lives in.
+        required: true
+        type: string
+      ecr_repository:
+        description: ECR repository name the image is pushed to.
+        required: true
+        type: string
+      ecs_cluster:
+        description: ECS cluster holding the Express Mode gateway service.
+        required: true
+        type: string
+      ecs_service:
+        description: Express Mode gateway service NAME (resolved to an ARN at run time).
+        required: true
+        type: string
+      admin_task_family:
+        description: Task-definition family for the admin container.
+        required: true
+        type: string
+      publish_task_family:
+        description: Task-definition family the backend RunTasks for publishes.
+        required: true
+        type: string
+
+jobs:
+  deploy:
+    name: App (${{ inputs.environment }})
+    runs-on: ubuntu-latest
+    # THE load-bearing line — see the header comment. Do not remove it to "let
+    # the caller decide"; the caller cannot.
+    environment: ${{ inputs.environment }}
+    permissions:
+      # OIDC token for aws-actions/configure-aws-credentials
+      id-token: write
+      contents: read
+    # No `concurrency:` here on purpose: serialisation must span the composed
+    # run (infra + app), so the group belongs to the calling trigger. A group on
+    # this job would let the app engine of one run overlap the infra engine of
+    # the next.
+    env:
+      # Task-definition family names are region-global, so each environment uses
+      # its own (mmgis-<env>-admin / -publish) to keep a production deploy from
+      # registering a revision development's publish-by-family flow would pick
+      # up. They arrive as inputs and carry no default: a wrong-but-plausible
+      # fallback here would deploy into another environment's families, which
+      # the validation step below forecloses by refusing to run at all without
+      # them.
+      ADMIN_TASK_FAMILY: ${{ inputs.admin_task_family }}
+      PUBLISH_TASK_FAMILY: ${{ inputs.publish_task_family }}
+    steps:
+      # Fail before checkout, before credentials, before anything costs money.
+      # An empty name means the environment's infrastructure has never been
+      # applied (or its `workflow_variables` output is missing), and the
+      # infrastructure engine must run in apply mode first. Without this the
+      # symptom is a bewildering ECR 400 or a describe against an empty cluster
+      # name, twenty minutes into a build.
+      - name: Validate inputs
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+          ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+          ECS_SERVICE: ${{ inputs.ecs_service }}
+        run: |
+          set -o pipefail
+
+          MISSING=""
+          note_missing() {
+            MISSING="${MISSING:+$MISSING, }$1"
+          }
+
+          [ -n "$AWS_REGION" ] || note_missing "aws_region"
+          [ -n "$ECR_REPOSITORY" ] || note_missing "ecr_repository"
+          [ -n "$ECS_CLUSTER" ] || note_missing "ecs_cluster"
+          [ -n "$ECS_SERVICE" ] || note_missing "ecs_service"
+          [ -n "$ADMIN_TASK_FAMILY" ] || note_missing "admin_task_family"
+          [ -n "$PUBLISH_TASK_FAMILY" ] || note_missing "publish_task_family"
+
+          if [ -n "$MISSING" ]; then
+            {
+              echo "Environment '$ENVIRONMENT' was called with empty names:"
+              printf '%s\n' "$MISSING" | tr ',' '\n' | sed 's/^[[:space:]]*//'
+              echo ""
+              echo "These come from the infrastructure engine's outputs, which it"
+              echo "reads from 'terraform output -json workflow_variables'. Empty"
+              echo "means this environment has never been applied, or its state has"
+              echo "no workflow_variables output. Run the infrastructure engine in"
+              echo "apply mode first, then re-run this deploy."
+            } >&2
+            exit 1
+          fi
+
+          echo "Deploying to '$ENVIRONMENT' in $AWS_REGION."
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # The Dockerfile's `npm run build` does NOT run build:themes; the
+      # generated public/ CSS + fonts must exist in the build context
+      # (COPY . .) or themed missions/dashboards render unstyled.
+      - name: Build theme assets
+        run: |
+          npm ci
+          npm run build:themes
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.IAC_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Docker build and push
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+        run: |
+          # Every trigger tags the image with the commit short SHA.
+          VERSION=$(git rev-parse --short HEAD)
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$VERSION
+
+          docker build \
+            --tag $IMAGE_URI \
+            --no-cache \
+            .
+          docker push $IMAGE_URI
+
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_OUTPUT
+
+      # Register new revisions of both families pointing at the new image.
+      # mmgis-publish genuinely needs its revision: the Deployments backend
+      # starts publish jobs with RunTask on the bare family name, which
+      # resolves to the latest revision. mmgis-admin is NOT what the Express
+      # Mode service deploys from (the service carries its own
+      # primary-container definition), but we keep registering it as the
+      # human-auditable source-of-truth the service's primary container —
+      # environment, secrets, logging — is derived from.
+      - name: Register new task-definition revisions
+        id: register
+        env:
+          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+        run: |
+          set -o pipefail
+          register_revision() {
+            local family=$1
+            aws ecs describe-task-definition \
+              --task-definition "$family" \
+              --query taskDefinition \
+              --output json \
+            | jq --arg IMAGE "$IMAGE_URI" '
+                .containerDefinitions[0].image = $IMAGE
+                | del(.taskDefinitionArn, .revision, .status,
+                      .requiresAttributes, .compatibilities,
+                      .registeredAt, .registeredBy, .deregisteredAt)
+              ' > /tmp/$family.json
+            aws ecs register-task-definition \
+              --cli-input-json file:///tmp/$family.json \
+              --query taskDefinition.taskDefinitionArn \
+              --output text
+          }
+
+          ADMIN_TASK_DEF_ARN=$(register_revision "$ADMIN_TASK_FAMILY")
+          PUBLISH_TASK_DEF_ARN=$(register_revision "$PUBLISH_TASK_FAMILY")
+          echo "Registered $ADMIN_TASK_DEF_ARN"
+          echo "Registered $PUBLISH_TASK_DEF_ARN"
+
+      # Express Mode services deploy through their own API: point the
+      # primary container at the new image and AWS rolls it out.
+      # (`update-service --task-definition` does not apply to them.)
+      #
+      # Progress is polled with `describe-express-gateway-service` —
+      # `monitor-...` is a live stream meant for a human terminal, while
+      # describe gives CI a bounded loop with a clean exit code.
+      #
+      # How we know it's DONE: the API has no rolloutState field. A
+      # rollout is complete when statusCode is ACTIVE and every entry in
+      # activeConfigurations[] runs the new image — old and new are
+      # listed side by side until the old one drains away.
+      #
+      # How we know it FAILED: we can't, directly — statusCode is only
+      # ever ACTIVE | DRAINING | INACTIVE, never "failed". A rollout
+      # that can't converge simply never finishes, so the timeout below
+      # is the failure detector, not any status check.
+      - name: Roll the Express Mode gateway service
+        env:
+          ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+          ECS_SERVICE: ${{ inputs.ecs_service }}
+          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+        run: |
+          set -o pipefail
+
+          # ECS_SERVICE is the service NAME; the express-gateway-service
+          # API addresses services by ARN, so resolve it first (an Express
+          # Mode service is still an ECS service in its cluster).
+          SERVICE_ARN=$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --query 'services[0].serviceArn' \
+            --output text)
+          echo "Resolved $ECS_SERVICE -> $SERVICE_ARN"
+
+          # No --cluster here: current CLIs removed it from
+          # update-express-gateway-service (the service ARN fully
+          # qualifies the target).
+          aws ecs update-express-gateway-service \
+            --service-arn "$SERVICE_ARN" \
+            --primary-container "{\"image\": \"$IMAGE_URI\"}"
+
+          # Bounded poll (up to 20 minutes) until the rollout converges:
+          # the service is ACTIVE and the target image is the only one
+          # across the active configurations.
+          IMAGES="(unknown)"
+          for attempt in $(seq 1 80); do
+            # A transient describe failure should cost one attempt, not
+            # the whole rollout step.
+            if ! RESPONSE=$(aws ecs describe-express-gateway-service \
+              --service-arn "$SERVICE_ARN" \
+              --output json); then
+              echo "[$attempt/80] describe failed; retrying" >&2
+              sleep 15
+              continue
+            fi
+            STATUS=$(echo "$RESPONSE" \
+              | jq -r '.service.status.statusCode')
+            IMAGES=$(echo "$RESPONSE" \
+              | jq -r '[.service.activeConfigurations[]?.primaryContainer.image]
+                       | unique | join(", ")')
+            echo "[$attempt/80] status: $STATUS; active images: $IMAGES"
+            if [ "$STATUS" = "ACTIVE" ] && [ "$IMAGES" = "$IMAGE_URI" ]; then
+              echo "Rollout converged on $IMAGE_URI."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Rollout did not converge within 20 minutes; still serving: $IMAGES" >&2
+          exit 1
+
+      # Surface what this deploy shipped in the run summary. Runs even when
+      # the rollout step fails or times out — the image is already in ECR by
+      # then, and recording its URI aids debugging — but only once an image
+      # was actually pushed. The rollout line reports the job status so a
+      # failed rollout is not mistaken for a completed deploy. Only values
+      # CI itself produces appear here — deliberately nothing hand-set (the
+      # admin URL lives in `terraform output admin_url` / the CF console).
+      - name: Write deployment summary
+        if: ${{ !cancelled() && steps.build-image.outputs.IMAGE_URI != '' }}
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          IMAGE_URI: ${{ steps.build-image.outputs.IMAGE_URI }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "## App deployment — \`$ENVIRONMENT\`"
+            echo ""
+            echo "- **Image pushed:** \`$IMAGE_URI\`"
+            echo "- **Rollout:** $JOB_STATUS"
+          } >> "$GITHUB_STEP_SUMMARY"

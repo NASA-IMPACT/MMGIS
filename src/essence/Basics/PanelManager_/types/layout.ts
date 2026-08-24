@@ -1,11 +1,20 @@
 /**
- * Supported panel positions (regions where panels can be placed).
+ * Positions for edge panels (top/left/right/bottom), which claim viewport
+ * space and therefore require a `priority` + `layoutType`.
  */
-export const PANEL_POSITION = {
+const EDGE_POSITION = {
     TOP: 'top',
     LEFT: 'left',
     RIGHT: 'right',
     BOTTOM: 'bottom',
+} as const
+export type EdgePanelPosition = (typeof EDGE_POSITION)[keyof typeof EDGE_POSITION]
+
+/**
+ * Positions for floating panels, which render as overlays inside the center
+ * map area and don't compete for edge viewport space.
+ */
+const FLOAT_POSITION = {
     FLOAT_TOP_LEFT: 'float-top-left',
     FLOAT_TOP_CENTER: 'float-top-center',
     FLOAT_TOP_RIGHT: 'float-top-right',
@@ -13,20 +22,19 @@ export const PANEL_POSITION = {
     FLOAT_BOTTOM_CENTER: 'float-bottom-center',
     FLOAT_BOTTOM_RIGHT: 'float-bottom-right',
 } as const
-export type PanelPosition = (typeof PANEL_POSITION)[keyof typeof PANEL_POSITION]
+export type FloatPanelPosition = (typeof FLOAT_POSITION)[keyof typeof FLOAT_POSITION]
+
+/**
+ * Supported panel positions (regions where panels can be placed).
+ */
+export const PANEL_POSITION = { ...EDGE_POSITION, ...FLOAT_POSITION } as const
+export type PanelPosition = EdgePanelPosition | FloatPanelPosition
 
 /**
  * Set of all float positions for quick membership checks.
  * Float panels render inside the center map area as overlays.
  */
-export const FLOAT_POSITIONS = new Set([
-    PANEL_POSITION.FLOAT_TOP_LEFT,
-    PANEL_POSITION.FLOAT_TOP_CENTER,
-    PANEL_POSITION.FLOAT_TOP_RIGHT,
-    PANEL_POSITION.FLOAT_BOTTOM_LEFT,
-    PANEL_POSITION.FLOAT_BOTTOM_CENTER,
-    PANEL_POSITION.FLOAT_BOTTOM_RIGHT,
-] as const)
+export const FLOAT_POSITIONS = new Set(Object.values(FLOAT_POSITION))
 
 /**
  * Visual states of a panel:

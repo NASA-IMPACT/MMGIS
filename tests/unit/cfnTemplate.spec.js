@@ -1,11 +1,12 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, beforeEach, afterEach, vi } from 'vitest'
 
 // Tests for the per-dashboard CloudFormation template renderer
 // (scripts/lib/cfn-template.js) used by the lean publish flow.
 
 const {
-    STACK_NAME_PREFIX,
+    DEFAULT_STACK_NAME_PREFIX,
     BASIC_AUTH_USER,
+    stackNamePrefix,
     stackNameForDeployment,
     renderAuthFunctionCode,
     renderCfnTemplate,
@@ -14,15 +15,73 @@ const {
 const PASSWORD = 'a-Distinctive-Passw0rd!'
 
 test.describe('stackNameForDeployment', () => {
+    // The default shape only holds when MMGIS_ENVIRONMENT is unset; stub it
+    // away so a machine or CI job that exports it can't fail these spuriously.
+    beforeEach(() => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', '')
+    })
+
+    afterEach(() => {
+        vi.unstubAllEnvs()
+    })
+
     test('encodes the deployment id with the mmgis-dashboard- prefix', () => {
         expect(stackNameForDeployment(12)).toBe('mmgis-dashboard-12')
         expect(stackNameForDeployment('40')).toBe('mmgis-dashboard-40')
-        expect(STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
+        expect(DEFAULT_STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
+        expect(stackNamePrefix()).toBe('mmgis-dashboard-')
     })
 
     test('throws without an id', () => {
         expect(() => stackNameForDeployment(null)).toThrow()
         expect(() => stackNameForDeployment('')).toThrow()
+    })
+})
+
+test.describe('MMGIS_ENVIRONMENT namespacing', () => {
+    afterEach(() => {
+        vi.unstubAllEnvs()
+    })
+
+    test('namespaces the prefix per environment when the var is set', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'development')
+        expect(stackNamePrefix()).toBe('mmgis-development-dashboard-')
+        expect(stackNameForDeployment(12)).toBe('mmgis-development-dashboard-12')
+    })
+
+    test('an empty value falls back to the legacy shared prefix', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', '')
+        expect(stackNamePrefix()).toBe(DEFAULT_STACK_NAME_PREFIX)
+        expect(stackNameForDeployment(12)).toBe('mmgis-dashboard-12')
+    })
+
+    test('still throws without an id', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'development')
+        expect(() => stackNameForDeployment(null)).toThrow()
+        expect(() => stackNameForDeployment('')).toThrow()
+    })
+
+    test('rejects a value the Terraform module would reject', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'Dev_1')
+        expect(() => stackNamePrefix()).toThrow(/MMGIS_ENVIRONMENT/)
+        expect(() => stackNameForDeployment(1)).toThrow(/MMGIS_ENVIRONMENT/)
+    })
+
+    test('rejects a value that does not start with a letter', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', '-development')
+        expect(() => stackNameForDeployment(1)).toThrow(/MMGIS_ENVIRONMENT/)
+    })
+
+    test('rejects a value longer than the S3 bucket-name budget', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'developments')
+        expect(() => stackNamePrefix()).toThrow(/MMGIS_ENVIRONMENT/)
+        expect(() => stackNameForDeployment(1)).toThrow(/MMGIS_ENVIRONMENT/)
+    })
+
+    test('accepts a value at the 11-character cap', () => {
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'development')
+        expect('development'.length).toBe(11)
+        expect(stackNamePrefix()).toBe('mmgis-development-dashboard-')
     })
 })
 

@@ -14,9 +14,16 @@ import {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from './types/events'
 import { MapEngineType } from './types/engine'
+
+export interface MapScreenshotResult {
+    blob: Blob
+    mimeType: 'image/png'
+    extension: 'png'
+    width: number
+    height: number
+}
 
 /**
  * Core map engine contract.
@@ -64,6 +71,18 @@ export interface IMapEngine<
      * Get the DOM container element holding the map.
      */
     getContainer(): HTMLElement
+
+    /**
+     * Capture the current map view as a PNG image.
+     *
+     * Each engine owns the capture strategy for its rendering technology:
+     * - Leaflet rasterizes its DOM/SVG/tile panes with html2canvas.
+     * - deck.gl reads the WebGL canvas directly (the base map's GL context
+     *   when running in interleaved overlay mode), which html2canvas cannot do.
+     *
+     * @returns Resolves to a PNG image Blob plus metadata.
+     */
+    captureScreenshot(): Promise<MapScreenshotResult>
 
     /**
      * Jump to a center and zoom without animation.
@@ -198,8 +217,13 @@ export interface IMapEngine<
 
     /**
      * Set the opacity of a layer.
+     *
+     * Engines with immutable layer objects (deck.gl) return the instance that
+     * carries the new opacity; callers holding a reference to the layer must
+     * replace it with the returned one. Engines that mutate in place (Leaflet)
+     * return nothing.
      */
-    setLayerOpacity(layer: TLayer | string, opacity: number): void
+    setLayerOpacity(layer: TLayer | string, opacity: number): TLayer | void
 
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).
@@ -291,8 +315,16 @@ export interface IMapEngine<
      *   - `drawvertex`   payload: {@link DrawVertexEvent} (committed vertices only)
      *   - `drawcomplete` payload: {@link DrawCompleteEvent}
      *   - `drawcancel`   payload: {@link DrawCancelEvent}
+     *
+     * Keys: an engine binds Enter as a finish key for polygon and linestring
+     * only, on the map element, which hears it while it has focus. Rectangle
+     * and circle bind no finish key — they commit on their second click, and
+     * {@link finishDrawing} returns false for them. No engine binds Escape or
+     * any other key. Whoever starts a drawing owns the keys that end it and
+     * drives the session with {@link finishDrawing} and
+     * {@link disableDrawing}, from wherever its own UI holds focus.
      */
-    enableDrawing(shape: DrawShape, options?: DrawingOptions): void
+    enableDrawing(shape: DrawShape): void
 
     /**
      * End the active drawing session, removing any in-progress preview
@@ -304,15 +336,13 @@ export interface IMapEngine<
     /**
      * Commit the current in-progress drawing as a Feature.
      *
-     * Emits `drawcomplete` when the current vertices form a valid shape and
-     * `drawcancel` when they do not (e.g. polygon with fewer than 3 vertices).
-     * Either way the session ends; isDrawing() returns false afterward.
-     *
-     * This is what plugin "Confirm" buttons should call. Adapters that auto-
-     * finish on a built-in interaction (e.g. polygon double-click) call this
-     * internally too — there is one finalisation path.
+     * When the current vertices form a valid shape, emits `drawcomplete`, ends
+     * the session and returns true. When they do not (e.g. polygon with fewer
+     * than 3 vertices), the drawing is left in progress and it returns false —
+     * finishing early must not discard the user's work. With no session active
+     * it is a no-op that also returns false.
      */
-    finishDrawing(): void
+    finishDrawing(): boolean
 
     /**
      * Whether a drawing session is currently active.

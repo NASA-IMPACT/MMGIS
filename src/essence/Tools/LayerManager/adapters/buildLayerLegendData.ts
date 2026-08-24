@@ -1,3 +1,4 @@
+import type { CogCapabilities } from '../../_shared/adapters/mmgisAPI'
 import type { Layer, LegendType, CategoricalStop, CogData } from '../lib/types'
 
 type MMGISLegendEntry = {
@@ -9,11 +10,9 @@ type MMGISLegendEntry = {
 }
 
 type MMGISLayerConfig = {
-    type?: string
     display_name?: string
     description?: string
     _legend?: MMGISLegendEntry[]
-    cogTransform?: boolean
     currentCogColormap?: string
     cogColormap?: string
     currentCogMin?: number
@@ -21,10 +20,7 @@ type MMGISLayerConfig = {
     currentCogMax?: number
     cogMax?: number
     cogUnits?: string | null
-    titilerUrl?: string | null
 }
-
-const SUPPORTED_COG_TYPES = ['tile', 'image']
 
 const detectLegendType = (legend: MMGISLegendEntry[] | undefined): LegendType => {
     if (!Array.isArray(legend) || legend.length === 0) return 'text'
@@ -64,22 +60,31 @@ const buildCategoricalFields = (legend: MMGISLegendEntry[]): CategoricalStop[] =
             label: String(entry.value || entry.label || ''),
         }))
 
+/**
+ * Shapes one layer's config into the legend model the UI renders.
+ *
+ * `cogCapabilities` comes from core over the request bus and carries two
+ * separate answers: `hasColormap` builds the COG block, so the legend draws
+ * the ramp and its bounds, while `canChangeColormap` decides whether that
+ * block is editable. A layer can have the first without the second.
+ *
+ * `titilerUrl` likewise comes from core, already resolved; null leaves the
+ * ramp swatches with nowhere to load from.
+ */
 export const buildLayerLegendData = (
     layerName: string,
     layerConfig: MMGISLayerConfig,
     opacities: Record<string, number> | null | undefined,
     visible: boolean,
+    cogCapabilities: CogCapabilities | null | undefined,
+    titilerUrl: string | null = null,
 ): Layer => {
     const opacity = opacities?.[layerName] ?? 1
-    const layerType = layerConfig.type
-    const hasColormapSupport =
-        layerType !== undefined &&
-        SUPPORTED_COG_TYPES.includes(layerType) &&
-        layerConfig.cogTransform === true
 
-    const cog: CogData | null = hasColormapSupport
+    const cog: CogData | null = cogCapabilities?.hasColormap
         ? {
               isCog: true,
+              editable: cogCapabilities.canChangeColormap === true,
               colormap: layerConfig.currentCogColormap || layerConfig.cogColormap || 'viridis',
               min: layerConfig.currentCogMin ?? layerConfig.cogMin ?? 0,
               max: layerConfig.currentCogMax ?? layerConfig.cogMax ?? 255,
@@ -87,7 +92,7 @@ export const buildLayerLegendData = (
               defaultMax: layerConfig.cogMax ?? 255,
               defaultColormap: layerConfig.cogColormap || 'viridis',
               units: layerConfig.cogUnits ?? null,
-              titilerUrl: layerConfig.titilerUrl ?? null,
+              titilerUrl,
           }
         : null
 
@@ -103,7 +108,7 @@ export const buildLayerLegendData = (
 
     const legend = layerConfig._legend
     if (!legend || (Array.isArray(legend) && legend.length === 0)) {
-        if (hasColormapSupport && cog) {
+        if (cog) {
             return {
                 ...base,
                 type: 'gradient',
