@@ -127,7 +127,8 @@
         },
         "panelTools": [
           "AOI",
-          "Chart"
+          "Chart",
+          "SeriesChart"
         ],
         "id": "float-analysis",
         "dimensions": {
@@ -277,7 +278,7 @@
       "name": "SeriesChart",
       "icon": "chart-line",
       "js": "SeriesChartTool",
-      "on": false,
+      "on": true,
       "variables": {
         "sources": [
           "fetch-timeseries"

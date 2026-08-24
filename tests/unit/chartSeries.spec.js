@@ -84,6 +84,26 @@ describe('chartSeries contract', () => {
                     ],
                 },
             ],
+            [
+                'duplicate series ids',
+                {
+                    ...validPayload,
+                    series: [
+                        { id: 'a', label: 'A', points: [{ x: 1, y: 1 }] },
+                        { id: 'a', label: 'B', points: [{ x: 1, y: 2 }] },
+                    ],
+                },
+            ],
+            [
+                'duplicate series labels',
+                {
+                    ...validPayload,
+                    series: [
+                        { id: 'a', label: 'Same', points: [{ x: 1, y: 1 }] },
+                        { id: 'b', label: 'Same', points: [{ x: 1, y: 2 }] },
+                    ],
+                },
+            ],
         ])('rejects %s', (_name, payload) => {
             expect(isChartSeriesPayload(payload)).toBe(false)
         })

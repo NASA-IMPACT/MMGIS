@@ -30,30 +30,67 @@ export function SeriesChartPanel({
             )}
             {cards.map(({ chartId, state }) => (
                 <article key={chartId} className="series-chart__card">
-                    {state.status === 'loading' && (
-                        <>
-                            <CardHeader title={state.title ?? 'Loading…'} />
-                            <div className="series-chart__status" aria-live="polite">
-                                <span className="series-chart__spinner" aria-hidden="true" />
-                                Fetching data…
-                            </div>
-                        </>
-                    )}
-                    {state.status === 'error' && (
-                        <>
-                            <CardHeader title={state.title ?? 'Chart'} />
-                            <p className="series-chart__error" role="alert">
-                                {state.message}
-                            </p>
-                        </>
-                    )}
-                    {state.status === 'ready' && (
-                        <ReadyCard payload={state.payload} layout={layout} />
-                    )}
+                    <CardErrorBoundary resetOn={state}>
+                        {state.status === 'loading' && (
+                            <>
+                                <CardHeader title={state.title ?? 'Loading…'} />
+                                <div
+                                    className="series-chart__status"
+                                    aria-live="polite"
+                                >
+                                    <span
+                                        className="series-chart__spinner"
+                                        aria-hidden="true"
+                                    />
+                                    Fetching data…
+                                </div>
+                            </>
+                        )}
+                        {state.status === 'error' && (
+                            <>
+                                <CardHeader title={state.title ?? 'Chart'} />
+                                <p className="series-chart__error" role="alert">
+                                    {state.message}
+                                </p>
+                            </>
+                        )}
+                        {state.status === 'ready' && (
+                            <ReadyCard payload={state.payload} layout={layout} />
+                        )}
+                    </CardErrorBoundary>
                 </article>
             ))}
         </div>
     )
+}
+
+/** One bad payload must cost its own card, not the panel — a render throw
+ *  here would otherwise unmount the whole adapter root. A fresh CardState
+ *  (any new bus event for this chartId) retries the render. */
+export class CardErrorBoundary extends React.Component<
+    { resetOn: unknown; children: React.ReactNode },
+    { error: Error | null }
+> {
+    state: { error: Error | null } = { error: null }
+
+    static getDerivedStateFromError(error: Error) {
+        return { error }
+    }
+
+    componentDidUpdate(prevProps: { resetOn: unknown }) {
+        if (prevProps.resetOn !== this.props.resetOn && this.state.error)
+            this.setState({ error: null })
+    }
+
+    render() {
+        if (this.state.error)
+            return (
+                <p className="series-chart__error" role="alert">
+                    Could not render this chart.
+                </p>
+            )
+        return this.props.children
+    }
 }
 
 function CardHeader({
@@ -161,6 +198,21 @@ function ReadyCard({
     )
 }
 
+/** The palette's [token, fallback] pairs, the single source both color paths
+ *  derive from: themeFromCss resolves them for the chart canvas, PALETTE_VARS
+ *  turns the same list into var() strings for DOM styles — so a variable's
+ *  footer dot and its chart line always land on the same theme color. */
+const PALETTE_TOKENS: Array<[string, string]> = [
+    ['--theme-color-primary', '#005ea2'],
+    ['--theme-color-accent-cool', '#00bde3'],
+    ['--theme-color-accent-warm', '#fa9441'],
+    ['--theme-color-secondary', '#d83933'],
+]
+
+const PALETTE_VARS = PALETTE_TOKENS.map(
+    ([token, fallback]) => `var(${token}, ${fallback})`,
+)
+
 /** Theme colors come from the page's --theme-* custom properties so the chart
  *  follows the active USWDS theme bundle; fallbacks are the USWDS defaults. */
 function themeFromCss(el: HTMLElement): ChartTheme {
@@ -168,15 +220,9 @@ function themeFromCss(el: HTMLElement): ChartTheme {
     const v = (name: string, fallback: string) =>
         styles.getPropertyValue(name).trim() || fallback
     return {
-        palette: [
-            v('--theme-color-primary', '#005ea2'),
-            v('--theme-color-accent-cool', '#00bde3'),
-            v('--theme-color-accent-warm', '#fa9441'),
-            v('--theme-color-secondary', '#d83933'),
-        ],
+        palette: PALETTE_TOKENS.map(([token, fallback]) => v(token, fallback)),
         gridColor: v('--theme-color-base-lighter', '#dfe1e2'),
         textColor: v('--theme-color-base-dark', '#565c65'),
-        surface: v('--theme-color-white', '#ffffff'),
     }
 }
 
@@ -205,6 +251,8 @@ function SeriesCanvas({
         // Single-select legend is the variable picker; rebuild so the preview
         // strip recolors to the picked variable, keeping the zoom range.
         // Re-clicking the active chip would empty the chart — keep it on.
+        // The zoom carries over as slider percentages, not an absolute time
+        // window — identical for same-grid variables, relative otherwise.
         chart.on('legendselectchanged', (e) => {
             const event = e as {
                 name: string
@@ -237,16 +285,6 @@ function SeriesCanvas({
 
     return <div className="series-chart__canvas-wrap" ref={hostRef} />
 }
-
-/** CSS vars (with the same fallbacks) in the order themeFromCss builds its
- *  palette, so a variable's footer dot and its chart line resolve to the
- *  same theme color even when a theme omits a token. */
-const PALETTE_VARS = [
-    'var(--theme-color-primary, #005ea2)',
-    'var(--theme-color-accent-cool, #00bde3)',
-    'var(--theme-color-accent-warm, #fa9441)',
-    'var(--theme-color-secondary, #d83933)',
-]
 
 function downloadCsv(s: ChartSeries) {
     const blob = new Blob([seriesToCsv(s)], { type: 'text/csv;charset=utf-8' })
@@ -330,5 +368,3 @@ function VariableCard({
         </section>
     )
 }
-
-export default SeriesChartPanel

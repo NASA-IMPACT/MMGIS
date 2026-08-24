@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { SeriesChartPanel } from './lib'
-import type { CardState, ChartLayout } from './lib/types'
+import type { CardState, ChartLayout } from './lib'
 import { mmgisOn, mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
@@ -39,12 +39,16 @@ export function MMGISSeriesChartAdapter() {
                 sources?: unknown
                 layout?: unknown
             }>('tool:getVars', PLUGIN_ID)
-            const list = Array.isArray(vars?.sources)
-                ? (vars?.sources ?? []).filter(
-                      (s): s is string => typeof s === 'string' && s !== '',
-                  )
-                : []
-            if (list.length > 0) setSources(list)
+            // A configured array wins even when empty — an explicitly-empty
+            // list means "listen to nothing"; only an unset config keeps the
+            // built-in default.
+            if (Array.isArray(vars?.sources)) {
+                setSources(
+                    vars.sources.filter(
+                        (s): s is string => typeof s === 'string' && s !== '',
+                    ),
+                )
+            }
             if (vars?.layout === 'single' || vars?.layout === 'stacked')
                 setLayout(vars.layout)
         } catch (err) {
@@ -75,8 +79,9 @@ export function MMGISSeriesChartAdapter() {
                     }))
                 }),
                 mmgisOn(events.ready, (p) => {
-                    const payload = (p as { payload?: unknown } | null)?.payload
-                    if (!isChartSeriesPayload(payload)) {
+                    // Flat like the other three messages: the event payload
+                    // IS the ChartSeriesPayload, no envelope.
+                    if (!isChartSeriesPayload(p)) {
                         console.warn(
                             `[SeriesChart] dropped malformed seriesReady from '${sourceId}'`,
                             p,
@@ -85,7 +90,7 @@ export function MMGISSeriesChartAdapter() {
                     }
                     setCards((prev) => ({
                         ...prev,
-                        [payload.chartId]: { status: 'ready', payload },
+                        [p.chartId]: { status: 'ready', payload: p },
                     }))
                 }),
                 mmgisOn(events.error, (p) => {

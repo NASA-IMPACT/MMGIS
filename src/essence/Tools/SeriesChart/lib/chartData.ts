@@ -22,13 +22,15 @@ export interface XyPoint {
 }
 
 /** Timezone-less ISO datetimes (common in OGC feature APIs) are read as UTC —
- *  Date.parse would use the viewer's local zone, shifting points per user. */
-const TZ_LESS_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/
+ *  Date.parse would use the viewer's local zone, shifting points per user.
+ *  Covers both the T-separated form and the space-separated one common from
+ *  Postgres/pandas exports. */
+const TZ_LESS_ISO = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/
 
 /**
  * Converts a series' points for a time axis: ISO datetime → epoch ms,
  * dropping unparseable x values (a bad timestamp shouldn't sink the series).
- * `y: null` gaps pass through — Chart.js breaks the line there.
+ * `y: null` gaps pass through — `connectNulls: false` breaks the line there.
  */
 export function toTimePoints(points: ChartPoint[]): XyPoint[] {
     const out: XyPoint[] = []
@@ -36,7 +38,11 @@ export function toTimePoints(points: ChartPoint[]): XyPoint[] {
         const ms =
             typeof p.x === 'number'
                 ? p.x
-                : Date.parse(TZ_LESS_ISO.test(p.x) ? `${p.x}Z` : p.x)
+                : Date.parse(
+                      TZ_LESS_ISO.test(p.x)
+                          ? `${p.x.replace(' ', 'T')}Z`
+                          : p.x,
+                  )
         if (Number.isNaN(ms)) continue
         out.push({ x: ms, y: p.y })
     }
@@ -158,6 +164,19 @@ function previewSlider(
     }
 }
 
+/** Min/max via a loop — `Math.min(...xs)` overflows the engine's argument
+ *  limit past ~100k points, which real hourly multi-year feeds reach. */
+function extentOf(values: ArrayLike<number>): [number, number] | null {
+    let min = Infinity
+    let max = -Infinity
+    for (let i = 0; i < values.length; i++) {
+        const v = values[i]
+        if (v < min) min = v
+        if (v > max) max = v
+    }
+    return min <= max ? [min, max] : null
+}
+
 type TooltipParam = {
     marker: string
     seriesName: string
@@ -213,6 +232,33 @@ export function buildChartOption(
         },
     ]
 
+    const isCategory = payload.xType === 'category'
+    const isTime = payload.xType === 'time'
+    const series = isCategory
+        ? null
+        : payload.series.map((s, i) => {
+              const points = isTime
+                  ? toTimePoints(s.points)
+                  : toLinearPoints(s.points)
+              return {
+                  ...seriesBase(s, i, theme),
+                  data: points.map((p) => [p.x, p.y]),
+              }
+          })
+    // The axis only ever shows the visible variable (the single-select
+    // legend filters the rest), so tick granularity comes from its extent —
+    // a two-day sensor series paired with a five-year climatology must not
+    // force month-year labels onto 48 hours of data. Union extent is the
+    // fallback for a visible series with no plottable points.
+    const xExtent = series
+        ? (extentOf(
+              series[activeIndex]?.data.map((d) => d[0] as number) ?? [],
+          ) ?? extentOf(series.flatMap((s) => s.data.map((d) => d[0] as number))))
+        : null
+    // The slider's drag labels share this: real dates, not epoch ms.
+    const tickFormat =
+        isTime && xExtent ? makeTimeTickFormat(xExtent[0], xExtent[1]) : null
+
     const common = {
         legend: {
             show: true,
@@ -228,12 +274,12 @@ export function buildChartOption(
         grid: { left: 48, right: 12, top: 32, bottom: 84 },
         dataZoom: [
             { type: 'inside' as const, xAxisIndex: 0 },
-            previewSlider(theme, activeColor, null),
+            previewSlider(theme, activeColor, tickFormat),
         ],
         yAxis,
     }
 
-    if (payload.xType === 'category') {
+    if (series === null) {
         const { labels, rows } = toCategoryData(payload.series)
         return {
             ...common,
@@ -250,28 +296,8 @@ export function buildChartOption(
         }
     }
 
-    const isTime = payload.xType === 'time'
-    const series = payload.series.map((s, i) => {
-        const points = isTime ? toTimePoints(s.points) : toLinearPoints(s.points)
-        return {
-            ...seriesBase(s, i, theme),
-            data: points.map((p) => [p.x, p.y]),
-        }
-    })
-    const xs = series.flatMap((s) => s.data.map((d) => d[0] as number))
-    const tickFormat =
-        isTime && xs.length > 0
-            ? makeTimeTickFormat(Math.min(...xs), Math.max(...xs))
-            : null
-
     return {
         ...common,
-        // Drag labels on the slider show real dates, not epoch ms.
-        dataZoom: common.dataZoom.map((z) =>
-            z.type === 'slider' && tickFormat
-                ? { ...z, labelFormatter: (v: number) => tickFormat(v) }
-                : z,
-        ),
         tooltip: {
             trigger: 'axis' as const,
             axisPointer: { type: 'cross' as const, label: { show: false } },
@@ -320,10 +346,9 @@ export function buildVariableCardOption(
     const xs = category
         ? []
         : (data as Array<[number, number | null]>).map((d) => d[0])
+    const xExtent = extentOf(xs)
     const tickFormat =
-        isTime && xs.length > 0
-            ? makeTimeTickFormat(Math.min(...xs), Math.max(...xs))
-            : null
+        isTime && xExtent ? makeTimeTickFormat(xExtent[0], xExtent[1]) : null
 
     return {
         tooltip: {
@@ -378,7 +403,7 @@ export function buildVariableCardOption(
  */
 export function seriesToCsv(s: ChartSeries): string {
     const esc = (v: string) =>
-        /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+        /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
     const rows = s.points.map((p) => `${esc(String(p.x))},${p.y ?? ''}`)
     return [`x,${esc(s.label)}`, ...rows].join('\n')
 }
