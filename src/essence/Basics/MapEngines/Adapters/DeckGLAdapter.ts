@@ -49,7 +49,6 @@ import type {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from '../types/events'
 
 import {
@@ -72,7 +71,12 @@ import {
     TerraDrawCircleMode,
 } from 'terra-draw'
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
-import { extractVerticesFromGeometry } from './DrawingHelpers'
+import {
+    committedVerticesFromChange,
+    drawModeKeyEvents,
+    drawStyles,
+    validateDrawnLineString,
+} from './DrawingHelpers'
 
 /**
  * Minimal API surface that is identical between mapbox-gl and maplibre-gl `Map` instances.
@@ -129,6 +133,8 @@ interface BasemapInstance {
     resize(): void
     /** Switch the map to a different style URL at runtime. */
     setStyle(styleUrl: string): unknown
+    /** Return the style layer with the given id, or `undefined` if it is not in the style. */
+    getLayer(id: string): unknown
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
@@ -141,6 +147,30 @@ interface BasemapInstance {
  * short enough that a dead map fails fast.
  */
 const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
+
+/**
+ * Prefix on the MapLibre layers terra-draw renders the in-progress drawing
+ * into. Passed to `TerraDrawMapLibreGLAdapter` explicitly, so this file sets
+ * the ids rather than inheriting whatever the library defaults to.
+ */
+const TERRA_DRAW_PREFIX = 'td'
+
+/**
+ * Bottom of the terra-draw stack: its MapLibre adapter registers the polygon
+ * fill layer first.
+ */
+const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
+
+/**
+ * Sort rank for a layer that was never given an explicit z-index.
+ *
+ * Every layer of the configured mission stack is ranked through
+ * {@link DeckGLAdapter.setLayerZIndex} as it is added, so the unranked layers
+ * are the ones added on top of that stack afterwards — plugin overlays such as
+ * a selection highlight. Ranking them above every assigned index keeps them
+ * there.
+ */
+const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
 
 function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
     return new Promise((resolve, reject) => {
@@ -345,13 +375,17 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * The adapter must not be used again after this call.
      */
     destroy(): void {
+        // End a live session the normal way, while its listeners are still
+        // attached, so its initiator hears `drawcancel` and stops driving a
+        // session that is about to have no engine.
+        this.disableDrawing()
+
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
             this._terraDrawListeners = []
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
-        this._drawingShape = null
 
         if (this._isOverlayMode) {
             if (this._basemap) {
@@ -412,8 +446,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return this._basemap
     }
 
+    /**
+     * Switch the basemap to a different style URL.
+     *
+     * Loading a style replaces every layer on the map, terra-draw's included,
+     * and terra-draw does not register its layers again. So a live drawing
+     * session is ended before the swap. That emits `drawcancel`, which tells
+     * consumers the session is over, and it lets {@link _syncLayers} drop the
+     * terra-draw anchor while the layers it points at are still in the style.
+     */
     setBasemapStyle(styleUrl: string): boolean {
         if (!this._basemap) return false
+        this.disableDrawing()
         this._basemap.setStyle(styleUrl)
         return true
     }
@@ -612,10 +656,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Returns the current visible geographic bounds.
+     * Returns the geographic bounds currently visible.
      *
-     * - Overlay mode: delegated directly to the basemap's `getBounds()`.
-     * - Standalone mode: derived by unprojecting the container corners via `WebMercatorViewport`.
+     * - Overlay mode: handed straight to the basemap's `getBounds()`.
+     * - Standalone mode: all four container corners are unprojected through
+     *   `WebMercatorViewport`, and the answer is the smallest north-up box
+     *   around those four points.
+     *
+     * All four corners are read because the map can be rotated — drag-rotate
+     * is enabled, and the view state carries bearing and pitch — so a corner
+     * of the screen is not a corner of the compass. Past 90° of bearing the
+     * bottom-left pixel unprojects north-east of the top-right one. Taking the
+     * min and max across every corner keeps south below north and west below
+     * east at any angle, and covers the whole rotated rectangle rather than
+     * just its diagonal.
      */
     getBounds(): BoundsLike {
         if (this._isOverlayMode) {
@@ -629,11 +683,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
         const vp = makeViewport(this._viewState, this._container)
         const { offsetWidth: w, offsetHeight: h } = this._container
-        const [west, south] = vp.unproject([0, h]) as [number, number]
-        const [east, north] = vp.unproject([w, 0]) as [number, number]
+        const corners: [number, number][] = [
+            [0, 0],
+            [w, 0],
+            [w, h],
+            [0, h],
+        ]
+        const unprojected = corners.map((c) => vp.unproject(c) as [number, number])
+        const lngs = unprojected.map(([lng]) => lng)
+        const lats = unprojected.map(([, lat]) => lat)
         return {
-            southWest: { lat: south, lng: west },
-            northEast: { lat: north, lng: east },
+            southWest: { lat: Math.min(...lats), lng: Math.min(...lngs) },
+            northEast: { lat: Math.max(...lats), lng: Math.max(...lngs) },
         }
     }
 
@@ -891,6 +952,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the end of the layers array so deck.gl renders it on top.
+     * The move lasts only until the next z-index re-sort, which puts the layer
+     * back at its assigned index — or on top, if it has none.
      */
     bringToFront(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -903,6 +966,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the start of the layers array so deck.gl renders it below all others.
+     * The move lasts only until the next z-index re-sort, which puts the layer
+     * back at its assigned index — or on top, if it has none.
      */
     bringToBack(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -963,21 +1028,39 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._emitEvent(eventName, data)
     }
 
-    private _ensureTerraDraw(options: DrawingOptions): TerraDraw | null {
+    private _ensureTerraDraw(): TerraDraw | null {
         if (this._terraDraw) return this._terraDraw
         if (!this._isOverlayMode || !this._basemap) return null
 
-        const finishKey = 'Enter'
-        const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
+        // The drawing is rendered in the theme's accent, at the stroke width
+        // a committed shape is drawn with; terra-draw's own defaults supply
+        // the opacities.
+        const styles = drawStyles()
 
         const td = new TerraDraw({
-            adapter: new TerraDrawMapLibreGLAdapter({ map: this._basemap as any }),
+            adapter: new TerraDrawMapLibreGLAdapter({
+                map: this._basemap as any,
+                prefixId: TERRA_DRAW_PREFIX,
+            }),
             modes: [
-                new TerraDrawPointMode(),
-                new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawPolygonMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawRectangleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawCircleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawPointMode({ styles: styles.point }),
+                new TerraDrawLineStringMode({
+                    keyEvents: drawModeKeyEvents('linestring'),
+                    validation: validateDrawnLineString,
+                    styles: styles.linestring,
+                }),
+                new TerraDrawPolygonMode({
+                    keyEvents: drawModeKeyEvents('polygon'),
+                    styles: styles.polygon,
+                }),
+                new TerraDrawRectangleMode({
+                    keyEvents: drawModeKeyEvents('rectangle'),
+                    styles: styles.rectangle,
+                }),
+                new TerraDrawCircleMode({
+                    keyEvents: drawModeKeyEvents('circle'),
+                    styles: styles.circle,
+                }),
             ],
         })
 
@@ -996,13 +1079,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         const onChange = (ids: any[], type: string) => {
             if (type !== 'create' && type !== 'update') return
-            if (!this._drawingShape) return
-            const lastId = ids[ids.length - 1]
-            const snap = td.getSnapshotFeature(lastId)
-            if (!snap) return
-            const vertices = extractVerticesFromGeometry(snap.geometry as GeoJSON.Geometry)
-            if (!vertices) return
-            this._emitEvent('drawvertex', { shape: this._drawingShape, vertices })
+            const shape = this._drawingShape
+            if (!shape) return
+            const vertices = committedVerticesFromChange(shape, ids, (id) =>
+                td.getSnapshotFeature(id)
+            )
+            if (vertices) this._emitEvent('drawvertex', { shape, vertices })
         }
 
         td.on('finish', onFinish)
@@ -1016,12 +1098,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return td
     }
 
-    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+    enableDrawing(shape: DrawShape): void {
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
-        const td = this._ensureTerraDraw(options)
+        const td = this._ensureTerraDraw()
         if (!td) {
             throw new Error(
                 '[DeckGLAdapter] enableDrawing requires overlay mode ' +
@@ -1033,7 +1115,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
+        this._syncLayers()
         this._emitEvent('drawstart', { shape })
+    }
+
+    /** The element terra-draw's MapLibre adapter attaches its listeners to. */
+    private _drawEventElement(): HTMLElement | null {
+        return (this._basemap as any)?.getCanvas?.() ?? null
     }
 
     /**
@@ -1051,6 +1139,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
+        this._syncLayers()
         return shape
     }
 
@@ -1063,16 +1152,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * terra-draw modes commit on `Enter` via their `keyEvents.finish` binding.
      * There's no programmatic-finish API yet (see
      * https://github.com/JamesLMilner/terra-draw), so we dispatch a synthetic
-     * keydown to the map container — the mode's keyboard handler picks it up
-     * and emits `finish` if the geometry is valid. If it isn't (e.g. polygon
-     * with <3 vertices), the dispatch is a no-op and we fall through to
-     * cancel.
+     * keyup on the map canvas — the element terra-draw listens on. The mode
+     * emits `finish` if the geometry is valid, which ends the session; if it
+     * isn't (e.g. polygon with <3 vertices), the dispatch is a no-op and the
+     * session is left untouched. Rectangle and circle bind no finish key at
+     * all (see {@link drawModeKeyEvents}), so they only ever finish on their
+     * second click.
      */
-    finishDrawing(): void {
-        if (!this._drawingShape || !this._terraDraw) return
-        const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
-        this._container?.dispatchEvent(evt)
-        if (this._drawingShape) this.disableDrawing()
+    finishDrawing(): boolean {
+        if (!this._drawingShape || !this._terraDraw) return false
+        this._drawEventElement()?.dispatchEvent(
+            new KeyboardEvent('keyup', { key: 'Enter' })
+        )
+        return !this.isDrawing()
     }
 
     isDrawing(): boolean {
@@ -1333,20 +1425,43 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // picks up additions, removals, and drawing-order changes.
         const layers = [...this._layers.values()]
         if (this._isOverlayMode) {
-            this._overlay?.setProps({ layers })
+            this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })
         } else {
             this._deckSetProps({ layers })
         }
     }
 
     /**
+     * While a terra-draw session is running, return a clone of every deck
+     * layer carrying a `beforeId` that points at terra-draw's bottom-most
+     * MapLibre layer, which keeps the whole drawing above the deck layers.
+     *
+     * Without that `beforeId`, the interleaved overlay's `resolveLayers()`
+     * lifts the deck layers back to the top of the style on every `styledata`
+     * event and buries the in-progress drawing.
+     *
+     * `resolveLayers()` passes the anchor straight to `map.addLayer`, which
+     * refuses to insert before a layer that is not in the style. So the anchor
+     * is only applied while terra-draw's layers are actually registered.
+     */
+    private _anchorBelowDrawing(layers: Layer[]): Layer[] {
+        if (!this._drawingShape) return layers
+        if (!this._basemap?.getLayer(TERRA_DRAW_BOTTOM_LAYER_ID)) return layers
+        return layers.map((layer) => layer.clone({ beforeId: TERRA_DRAW_BOTTOM_LAYER_ID } as any))
+    }
+
+    /**
      * Re-order the layer Map by ascending z-index so `_syncLayers` sends them in the
      * correct draw order (lower z-index = rendered first = behind).
+     *
+     * A layer with no assigned z-index ranks {@link UNRANKED_Z_INDEX}, which
+     * holds it above the mission layer stack. The sort is stable, so several
+     * such layers also keep their order relative to each other.
      */
     private _sortLayersByZIndex(): void {
+        const rank = (id: string) => this._layerZIndices.get(id) ?? UNRANKED_Z_INDEX
         const entries = [...this._layers.entries()].sort(
-            ([aId], [bId]) =>
-                (this._layerZIndices.get(aId) ?? 0) - (this._layerZIndices.get(bId) ?? 0)
+            ([aId], [bId]) => rank(aId) - rank(bId)
         )
         this._layers = new Map(entries)
     }

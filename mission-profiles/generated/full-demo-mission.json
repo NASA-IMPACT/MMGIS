@@ -70,7 +70,7 @@
     "panels": [
       {
         "position": "left",
-        "priority": 1,
+        "priority": 2,
         "layoutType": "stacked",
         "hasHeader": false,
         "stateConstraints": {
@@ -97,6 +97,56 @@
           "Title",
           "Card"
         ]
+      },
+      {
+        "position": "left",
+        "priority": 0,
+        "layoutType": "stacked",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "capabilities": {
+          "resizable": false,
+          "supportedOrientation": "vertical"
+        },
+        "panelTools": [
+          "LayerFilterThemes"
+        ],
+        "id": "leftmost-panel",
+        "title": "",
+        "dimensions": {
+          "focusedWidth": "",
+          "expandedSize": "62"
+        }
+      },
+      {
+        "position": "left",
+        "priority": 1,
+        "layoutType": "stacked",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "capabilities": {
+          "resizable": false,
+          "supportedOrientation": "vertical"
+        },
+        "panelTools": [
+          "LayerFilter"
+        ],
+        "id": "filter-panel",
+        "title": "",
+        "dimensions": {
+          "focusedWidth": "",
+          "expandedSize": "320"
+        }
       }
     ],
     "floatingPanels": [
@@ -312,6 +362,136 @@
       "metadata": {
         "startHidden": true,
         "modernLayoutSupport": true
+      }
+    },
+    {
+      "name": "LayerFilter",
+      "icon": "filter-outline",
+      "js": "LayerFilterTool",
+      "on": true,
+      "variables": {
+        "themes": [
+          {
+            "id": "need",
+            "title": "Need",
+            "description": "Filter by sector to explore Earth-science datasets relevant to your operational needs.",
+            "filters": [
+              {
+                "id": "sector",
+                "label": "Sector",
+                "property": "sector",
+                "multi": true,
+                "allLabel": "All Sectors"
+              }
+            ]
+          },
+          {
+            "id": "hazard",
+            "title": "Hazard",
+            "description": "Explore datasets by hazard type to understand conditions, impacts, and response context.",
+            "filters": [
+              {
+                "id": "hazard",
+                "label": "Hazard",
+                "property": "hazard",
+                "allLabel": "All Hazards"
+              }
+            ]
+          },
+          {
+            "id": "event",
+            "title": "Event",
+            "description": "Filter the activation catalogue by hazard, location and year.",
+            "catalog": "activations",
+            "filters": [
+              {
+                "id": "hazardType",
+                "label": "Hazard Type",
+                "property": "hazards",
+                "from": "catalog",
+                "allLabel": "All Hazards"
+              },
+              {
+                "id": "location",
+                "label": "Location",
+                "from": "catalog",
+                "type": "geocode",
+                "allLabel": "Search places…"
+              },
+              {
+                "id": "year",
+                "label": "Year",
+                "from": "catalog",
+                "derived": "datetimes",
+                "allLabel": "All Years"
+              },
+              {
+                "id": "activation",
+                "label": "Activation",
+                "from": "catalog",
+                "isEntry": true,
+                "allLabel": "Select an activation",
+                "countLabel": "activations"
+              }
+            ]
+          }
+        ],
+        "catalog": {
+          "type": "FeatureCollection",
+          "features": []
+        },
+        "geocoder": {
+          "url": ""
+        }
+      },
+      "metadata": {
+        "icon": "filter-outline",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+          "left",
+          "right"
+        ],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 320,
+        "height": 0
+      }
+    },
+    {
+      "name": "LayerFilterThemes",
+      "icon": "view-dashboard-outline",
+      "js": "LayerFilterThemesTool",
+      "on": true,
+      "variables": {
+        "defaultThemeId": "need",
+        "themes": [
+          {
+            "id": "need",
+            "label": "Need",
+            "icon": "satellite-variant"
+          },
+          {
+            "id": "hazard",
+            "label": "Hazard",
+            "icon": "flash-outline"
+          },
+          {
+            "id": "event",
+            "label": "Event",
+            "icon": "calendar-outline"
+          }
+        ]
+      },
+      "metadata": {
+        "icon": "view-dashboard-outline",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+          "left"
+        ],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 66,
+        "height": 0
       }
     }
   ],

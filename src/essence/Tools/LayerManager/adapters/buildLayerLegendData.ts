@@ -20,7 +20,6 @@ type MMGISLayerConfig = {
     currentCogMax?: number
     cogMax?: number
     cogUnits?: string | null
-    titilerUrl?: string | null
 }
 
 const detectLegendType = (legend: MMGISLegendEntry[] | undefined): LegendType => {
@@ -68,6 +67,9 @@ const buildCategoricalFields = (legend: MMGISLegendEntry[]): CategoricalStop[] =
  * separate answers: `hasColormap` builds the COG block, so the legend draws
  * the ramp and its bounds, while `canChangeColormap` decides whether that
  * block is editable. A layer can have the first without the second.
+ *
+ * `titilerUrl` likewise comes from core, already resolved; null leaves the
+ * ramp swatches with nowhere to load from.
  */
 export const buildLayerLegendData = (
     layerName: string,
@@ -75,6 +77,7 @@ export const buildLayerLegendData = (
     opacities: Record<string, number> | null | undefined,
     visible: boolean,
     cogCapabilities: CogCapabilities | null | undefined,
+    titilerUrl: string | null = null,
 ): Layer => {
     const opacity = opacities?.[layerName] ?? 1
 
@@ -89,7 +92,7 @@ export const buildLayerLegendData = (
               defaultMax: layerConfig.cogMax ?? 255,
               defaultColormap: layerConfig.cogColormap || 'viridis',
               units: layerConfig.cogUnits ?? null,
-              titilerUrl: layerConfig.titilerUrl ?? null,
+              titilerUrl,
           }
         : null
 

@@ -46,7 +46,12 @@ import {
     TerraDrawCircleMode,
 } from 'terra-draw'
 import { TerraDrawLeafletAdapter } from 'terra-draw-leaflet-adapter'
-import { extractVerticesFromGeometry } from './DrawingHelpers'
+import {
+    committedVerticesFromChange,
+    drawModeKeyEvents,
+    drawStyles,
+    validateDrawnLineString,
+} from './DrawingHelpers'
 import { getMapScreenshot } from './LeafletScreenshot'
 import {
     MapEventHandler,
@@ -55,7 +60,6 @@ import {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from '../types/events'
 import { MapEngineType } from '../types/engine'
 
@@ -292,6 +296,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     destroy(): void {
         if (!this._map) return
 
+        // End a live session the normal way, while its listeners are still
+        // attached, so its initiator hears `drawcancel` and stops driving a
+        // session that is about to have no engine.
+        this.disableDrawing()
+
         this._removeBasemapLayer()
 
         this._eventHandlers.forEach((handler, eventName) => {
@@ -314,7 +323,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
-        this._drawingShape = null
 
         this._detachFeatureClickListener()
         this._detachFeatureHoverListeners()
@@ -929,20 +937,35 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._featureHoverOutListener = null
     }
 
-    private _ensureTerraDraw(options: DrawingOptions): TerraDraw {
+    private _ensureTerraDraw(): TerraDraw {
         if (this._terraDraw) return this._terraDraw
 
-        const finishKey = 'Enter'
-        const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
+        // The drawing is rendered in the theme's accent, at the stroke width
+        // a committed shape is drawn with; terra-draw's own defaults supply
+        // the opacities.
+        const styles = drawStyles()
 
         const td = new TerraDraw({
             adapter: new TerraDrawLeafletAdapter({ lib: L, map: this._map }),
             modes: [
-                new TerraDrawPointMode(),
-                new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawPolygonMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawRectangleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawCircleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawPointMode({ styles: styles.point }),
+                new TerraDrawLineStringMode({
+                    keyEvents: drawModeKeyEvents('linestring'),
+                    validation: validateDrawnLineString,
+                    styles: styles.linestring,
+                }),
+                new TerraDrawPolygonMode({
+                    keyEvents: drawModeKeyEvents('polygon'),
+                    styles: styles.polygon,
+                }),
+                new TerraDrawRectangleMode({
+                    keyEvents: drawModeKeyEvents('rectangle'),
+                    styles: styles.rectangle,
+                }),
+                new TerraDrawCircleMode({
+                    keyEvents: drawModeKeyEvents('circle'),
+                    styles: styles.circle,
+                }),
             ],
         })
 
@@ -961,13 +984,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
         const onChange = (ids: any[], type: string) => {
             if (type !== 'create' && type !== 'update') return
-            if (!this._drawingShape) return
-            const lastId = ids[ids.length - 1]
-            const snap = td.getSnapshotFeature(lastId)
-            if (!snap) return
-            const vertices = extractVerticesFromGeometry(snap.geometry as GeoJSON.Geometry)
-            if (!vertices) return
-            this.emit('drawvertex', { shape: this._drawingShape, vertices })
+            const shape = this._drawingShape
+            if (!shape) return
+            const vertices = committedVerticesFromChange(shape, ids, (id) =>
+                td.getSnapshotFeature(id)
+            )
+            if (vertices) this.emit('drawvertex', { shape, vertices })
         }
 
         td.on('finish', onFinish)
@@ -981,17 +1003,22 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return td
     }
 
-    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+    enableDrawing(shape: DrawShape): void {
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
-        const td = this._ensureTerraDraw(options)
+        const td = this._ensureTerraDraw()
         if (!td.enabled) td.start()
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
         this.emit('drawstart', { shape })
+    }
+
+    /** The element terra-draw's Leaflet adapter attaches its listeners to. */
+    private _drawEventElement(): HTMLElement | null {
+        return this._map?.getContainer?.() ?? null
     }
 
     /**
@@ -1021,16 +1048,19 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * terra-draw modes commit on `Enter` via their `keyEvents.finish` binding.
      * There's no programmatic-finish API yet (see
      * https://github.com/JamesLMilner/terra-draw), so we dispatch a synthetic
-     * keydown to the map container — the mode's keyboard handler picks it up
-     * and emits `finish` if the geometry is valid. If it isn't (e.g. polygon
-     * with <3 vertices), the dispatch is a no-op and we fall through to
-     * cancel.
+     * keyup on the map container — the element terra-draw listens on. The
+     * mode emits `finish` if the geometry is valid, which ends the session; if
+     * it isn't (e.g. polygon with <3 vertices), the dispatch is a no-op and the
+     * session is left untouched. Rectangle and circle bind no finish key at
+     * all (see {@link drawModeKeyEvents}), so they only ever finish on their
+     * second click.
      */
-    finishDrawing(): void {
-        if (!this._drawingShape || !this._terraDraw) return
-        const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
-        this._container?.dispatchEvent(evt)
-        if (this._drawingShape) this.disableDrawing()
+    finishDrawing(): boolean {
+        if (!this._drawingShape || !this._terraDraw) return false
+        this._drawEventElement()?.dispatchEvent(
+            new KeyboardEvent('keyup', { key: 'Enter' })
+        )
+        return !this.isDrawing()
     }
 
     isDrawing(): boolean {

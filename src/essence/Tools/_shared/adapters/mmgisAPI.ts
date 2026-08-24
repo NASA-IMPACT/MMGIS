@@ -135,6 +135,15 @@ export const mmgisGetVisibleLayers = (): Promise<Record<
     return mmgisRequestIfProvided<Record<string, boolean>>('layers:getVisible')
 }
 
+/** Runtime "shown in layer lists" flags, keyed by layer UUID; absent =
+ *  listed, false = hidden (e.g. filtered out by the LayerFilter plugin). */
+export const mmgisGetListedLayers = (): Promise<Record<
+    string,
+    boolean
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, boolean>>('layers:getListed')
+}
+
 /**
  * What a layer's COG colormap supports: `hasColormap` for whether there is a
  * ramp to draw a legend from, `canChangeColormap` for whether that ramp can be
@@ -175,6 +184,62 @@ export const mmgisGetLayerCogCapabilities = (
     return mmgisRequestIfProvided<CogCapabilities>(
         'layers:getCogCapabilities',
         layerUUID,
+    )
+}
+
+/** A geographic extent as `[[south, west], [north, east]]`. */
+export type LayerBounds = [[number, number], [number, number]]
+
+/**
+ * Where a layer sits on the map.
+ *
+ * Null when the layer has no extent core can work out — a vector layer whose
+ * features have not loaded, a raster layer with no configured footprint — and
+ * null against a core that does not register the handler, in which case callers
+ * leave the controls that depend on an extent inert.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat applies.
+ */
+export const mmgisGetLayerBounds = (
+    layerUUID: string,
+): Promise<LayerBounds | null> => {
+    return mmgisRequestIfProvided<LayerBounds>('layers:getBounds', layerUUID)
+}
+
+/**
+ * Moves the map so the given extent fills the view. True when core accepted it;
+ * false against a core without the handler.
+ *
+ * `padding` is in screen pixels. `maxZoom` caps how far in the fit may go,
+ * which matters for a zero-area extent — a single point otherwise resolves to
+ * maximum zoom.
+ */
+export const mmgisFitBounds = async (
+    bounds: LayerBounds,
+    options?: { padding?: number; maxZoom?: number },
+): Promise<boolean> => {
+    const fitted = await mmgisRequestIfProvided<boolean>('map:fitBounds', {
+        bounds,
+        options,
+    })
+    return fitted === true
+}
+
+/**
+ * Where each layer's tiling service lives, keyed by layer UUID, already
+ * resolved through the per-layer and mission-wide overrides core applies. An
+ * entry is null when no service is reachable for that layer.
+ *
+ * Registered as late as mmgisGetLayerConfigs; the same readiness caveat
+ * applies. Null against a core without the handler, in which case callers
+ * have no service to reach.
+ */
+export const mmgisGetTiTilerUrls = (): Promise<Record<
+    string,
+    string | null
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, string | null>>(
+        'layers:getTiTilerUrl',
     )
 }
 
