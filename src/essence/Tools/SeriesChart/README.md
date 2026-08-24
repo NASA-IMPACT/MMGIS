@@ -10,22 +10,29 @@ Defined in [`_shared/types/chartSeries.ts`](../_shared/types/chartSeries.ts).
 A fetcher plugin with id `<id>` emits (names via `seriesEvents('<id>')`):
 
 - `plugin:<id>:seriesLoading` `{ chartId, title? }` → card shows a spinner
-- `plugin:<id>:seriesReady` `{ payload: ChartSeriesPayload }` → card renders the chart
+- `plugin:<id>:seriesReady` `ChartSeriesPayload` → card renders the chart
 - `plugin:<id>:seriesError` `{ chartId, message }` → card shows the message
 - `plugin:<id>:seriesCleared` `{ chartId }` → card is removed
 
+All four messages are flat, with `chartId` at the top level — `seriesReady`'s
+payload is the `ChartSeriesPayload` itself, not wrapped in an envelope.
+
 One card per `chartId`; a new payload with the same `chartId` replaces the
 previous chart. Malformed payloads are dropped with a console warning
-(`isChartSeriesPayload` guard) — they never crash the panel.
+(`isChartSeriesPayload` guard) — they never crash the panel. Series `id`s
+and `label`s must be unique within a payload; duplicates count as malformed
+(the label is what the legend picker, footer, and CSV key on).
 
 Payload capabilities: multiple series per chart, `time`/`linear`/`category`
 x-axes, `y: null` gaps (not interpolated), per-series `line`/`area`/`bar`
-style and color, and per-series `unit` — exactly two distinct units split
-onto left/right y-axes.
+style and color, and per-series `unit`, shown in the card footer chip. One
+variable renders at a time — mixed-unit payloads work by picking (single
+layout) or stacking (stacked layout), never a dual y-axis. The payload's
+`subtitle`, `yLabel`, and `meta` fields are reserved: accepted, not yet
+rendered.
 
-Time axes render on a linear epoch-ms scale with UTC tick/tooltip formatting
-(no Chart.js date-adapter dependency); timezone-less ISO datetimes are read
-as UTC.
+Time axes render on a linear epoch-ms scale with UTC tick/tooltip
+formatting; timezone-less ISO datetimes are read as UTC.
 
 ## Configuration
 
@@ -49,14 +56,14 @@ axis), capped at ~1.5 cards tall with the rest scrolling inside the card.
 ## Smoke test (devtools console)
 
 ```js
-window.mmgisAPI.emit('plugin:fetch-timeseries:seriesReady', { payload: {
+window.mmgisAPI.emit('plugin:fetch-timeseries:seriesReady', {
     chartId: 'demo', title: 'Station 42', xType: 'time',
     series: [{ id: 'no2', label: 'NO₂', points: [
         { x: '2026-01-01T00:00:00Z', y: 1.2 },
         { x: '2026-02-01T00:00:00Z', y: 2.4 },
         { x: '2026-03-01T00:00:00Z', y: 1.8 },
     ] }],
-} })
+})
 ```
 
 See [FetchTimeseries](../FetchTimeseries/README.md) for a working
