@@ -8,6 +8,7 @@ import {
     TemplateError,
     MappingError,
 } from '../../src/essence/Tools/FetchTimeseries/lib/timeseries.ts'
+import { isChartSeriesPayload } from '../../src/essence/Tools/_shared/types/chartSeries.ts'
 
 const FEATURE = {
     id: 'st-42',
@@ -97,11 +98,50 @@ describe('fetchTimeseries lib', () => {
             )
         })
 
-        test('throws TemplateError for lon/lat on non-point geometry', () => {
+        test('lon/lat fall back to the click location when geometry is empty', () => {
+            // Vector-tile / deck.gl click paths synthesize features with an
+            // empty geometry — the event's latlng is what always exists.
+            const bare = { ...FEATURE, geometry: {} }
+            expect(
+                templateUrl('https://x?lon={lon}&lat={lat}', bare, {
+                    lat: 30.3,
+                    lng: -97.7,
+                }),
+            ).toBe('https://x?lon=-97.7&lat=30.3')
+        })
+
+        test('zero coordinates are valid values, not "missing"', () => {
+            const equator = { ...FEATURE, geometry: {} }
+            expect(
+                templateUrl('https://x?lon={lon}&lat={lat}', equator, {
+                    lat: 0,
+                    lng: 0,
+                }),
+            ).toBe('https://x?lon=0&lat=0')
+        })
+
+        test('throws TemplateError for lon/lat with neither geometry nor latlng', () => {
             const poly = { ...FEATURE, geometry: { type: 'Polygon', coordinates: [] } }
             expect(() => templateUrl('https://x?lon={lon}', poly)).toThrow(
                 TemplateError,
             )
+        })
+
+        test('properties placeholders resolve nested dot-paths', () => {
+            const nested = {
+                ...FEATURE,
+                properties: { meta: { code: 'X9' } },
+            }
+            expect(
+                templateUrl('https://x/{properties.meta.code}', nested),
+            ).toBe('https://x/X9')
+        })
+
+        test('throws TemplateError when a placeholder resolves to an object', () => {
+            const nested = { ...FEATURE, properties: { meta: { code: 'X9' } } }
+            expect(() =>
+                templateUrl('https://x/{properties.meta}', nested),
+            ).toThrow(/non-scalar/)
         })
 
         test('throws TemplateError for unknown placeholders', () => {
@@ -235,10 +275,84 @@ describe('fetchTimeseries lib', () => {
 
         test('non-numeric values become null gaps', () => {
             const series = mapResponseSeries(
-                [{ datetime: 'a', value: 'n/a' }],
+                [
+                    { datetime: 'a', value: 'n/a' },
+                    { datetime: 'b', value: 2 },
+                ],
                 { url: 'x' },
             )
-            expect(series[0].points).toEqual([{ x: 'a', y: null }])
+            expect(series[0].points).toEqual([
+                { x: 'a', y: null },
+                { x: 'b', y: 2 },
+            ])
+        })
+
+        test('parallel arrays at the response root need no seriesPath', () => {
+            const series = mapResponseSeries(
+                { times: ['2026-01-01', '2026-01-02'], vals: [1, 2] },
+                { url: 'x', xKey: 'times', yKey: 'vals' },
+            )
+            expect(series[0].points).toEqual([
+                { x: '2026-01-01', y: 1 },
+                { x: '2026-01-02', y: 2 },
+            ])
+        })
+
+        test('parallel arrays resolve dot-path keys', () => {
+            const series = mapResponseSeries(
+                { result: { t: ['2026-01-01'], v: [3] } },
+                { url: 'x', xKey: 'result.t', yKey: 'result.v' },
+            )
+            expect(series[0].points).toEqual([{ x: '2026-01-01', y: 3 }])
+        })
+
+        test('ragged parallel arrays name the length mismatch', () => {
+            expect(() =>
+                mapResponseSeries(
+                    { times: ['a', 'b'], vals: [1] },
+                    { url: 'x', xKey: 'times', yKey: 'vals' },
+                ),
+            ).toThrow(/different lengths/)
+        })
+
+        test('a configured key matching nothing blames the config, not the API', () => {
+            expect(() =>
+                mapResponseSeries(
+                    [{ datetime: '2026-01-01', value: 1 }],
+                    { url: 'x', xKey: 'timestamp_utc' },
+                ),
+            ).toThrow(/Configured xKey 'timestamp_utc'/)
+        })
+
+        test('a populated container is preferred over an empty one', () => {
+            const series = mapResponseSeries(
+                {
+                    data: [],
+                    features: [{ properties: { datetime: 'a', value: 1 } }],
+                },
+                { url: 'x' },
+            )
+            expect(series[0].points).toEqual([{ x: 'a', y: 1 }])
+        })
+
+        test('key auto-detection skips past a leading metadata row', () => {
+            const series = mapResponseSeries(
+                [{ meta: true }, { datetime: 'a', value: 1 }],
+                { url: 'x' },
+            )
+            expect(series[0].points).toEqual([{ x: 'a', y: 1 }])
+        })
+
+        test('all-null values point at yKey instead of an empty plot', () => {
+            expect(() =>
+                mapResponseSeries(
+                    [
+                        { datetime: 'a', value: 'n/a' },
+                        { datetime: 'b', value: null },
+                    ],
+                    { url: 'x' },
+                ),
+            ).toThrow(/no numeric values/)
         })
 
         test.each([
@@ -304,6 +418,81 @@ describe('fetchTimeseries lib', () => {
                 },
                 { id: 'ozone', label: 'Ozone', unit: 'Parts per million' },
             ])
+        })
+
+        test('configured xType passes through; unknown values degrade to time', () => {
+            const base = {
+                chartId: 'c',
+                response: [{ datetime: '2017', value: 1 }],
+                title: 'T',
+                layerDisplayName: 'L',
+                layerName: 'uuid-1',
+            }
+            expect(
+                buildPayload({ ...base, config: { url: 'x', xType: 'linear' } })
+                    .xType,
+            ).toBe('linear')
+            expect(buildPayload({ ...base, config: { url: 'x' } }).xType).toBe(
+                'time',
+            )
+            expect(
+                buildPayload({
+                    ...base,
+                    config: { url: 'x', xType: 'datetime' },
+                }).xType,
+            ).toBe('time')
+        })
+
+        test('a paginated response marks the title as truncated', () => {
+            const payload = buildPayload({
+                chartId: 'c',
+                response: {
+                    numberMatched: 4128,
+                    numberReturned: 2,
+                    features: [
+                        aqsFeature('2017-12-31T00:00:00', 'Ozone', 'ppm', '1', 1),
+                        aqsFeature('2018-12-31T00:00:00', 'Ozone', 'ppm', '2', 2),
+                    ],
+                },
+                config: { url: 'x' },
+                title: 'Station 42',
+                layerDisplayName: 'L',
+                layerName: 'uuid-1',
+            })
+            expect(payload.title).toBe(
+                'Station 42 (first 2 of 4128 points)',
+            )
+        })
+
+        test('a complete response keeps its title untouched', () => {
+            const payload = buildPayload({
+                chartId: 'c',
+                response: AQS_RESPONSE,
+                config: AQS_CONFIG,
+                title: 'Station 42',
+                layerDisplayName: 'L',
+                layerName: 'uuid-1',
+            })
+            expect(payload.title).toBe('Station 42')
+        })
+
+        test('colliding slugs get suffixed ids the chart guard accepts', () => {
+            const payload = buildPayload({
+                chartId: 'c',
+                response: [
+                    { datetime: 'a', value: 1, city: '北京' },
+                    { datetime: 'b', value: 2, city: '上海' },
+                ],
+                config: { url: 'x', groupBy: 'city' },
+                title: 'T',
+                layerDisplayName: 'L',
+                layerName: 'uuid-1',
+            })
+            expect(payload.series.map((s) => s.id)).toEqual([
+                'series',
+                'series-2',
+            ])
+            expect(isChartSeriesPayload(payload)).toBe(true)
         })
 
         test('series label falls back to the layer display name', () => {

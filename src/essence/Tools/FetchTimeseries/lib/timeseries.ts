@@ -19,7 +19,12 @@ export interface TimeseriesConfig {
     titleProp?: string
     /** Series label (default: the layer's display name). */
     label?: string
+    /** Reserved: carried on the payload but not rendered by SeriesChart. */
     yLabel?: string
+    /** x-axis interpretation (default 'time'). With 'time', x values must be
+     *  ISO datetime strings or epoch milliseconds; 'linear' charts plain
+     *  numbers (e.g. a year column); 'category' charts discrete labels. */
+    xType?: 'time' | 'linear' | 'category'
     /** Dot-path to the point array in the response (default: auto-detect,
      *  including GeoJSON FeatureCollections via their `features` array). */
     seriesPath?: string
@@ -65,8 +70,19 @@ export class TemplateError extends Error {}
  * Substitutes feature values into the URL template. Values are URL-encoded.
  * An unresolvable placeholder throws TemplateError naming it — an eligible
  * layer with a bad template is a visible error, not a silent no-op.
+ * Braces are placeholder syntax; a literal `{`/`}` in the URL (e.g. CQL2
+ * filters) is not supported.
+ *
+ * `{lon}`/`{lat}` prefer the feature's own Point coordinates but fall back
+ * to the click location — the vector-tile and deck.gl click paths hand over
+ * features with empty geometry, so the event's latlng is the coordinate
+ * source that always exists.
  */
-export function templateUrl(template: string, feature: FeatureLike): string {
+export function templateUrl(
+    template: string,
+    feature: FeatureLike,
+    latlng?: { lat: number; lng: number } | null,
+): string {
     return template.replace(/{([^}]+)}/g, (whole, rawKey: string) => {
         const key = rawKey.trim()
         let value: unknown
@@ -79,9 +95,16 @@ export function templateUrl(template: string, feature: FeatureLike): string {
                     : null
             value = Array.isArray(coords)
                 ? coords[key === 'lon' ? 0 : 1]
-                : undefined
+                : latlng != null
+                  ? key === 'lon'
+                      ? latlng.lng
+                      : latlng.lat
+                  : undefined
         } else if (key.startsWith('properties.')) {
-            value = feature.properties?.[key.slice('properties.'.length)]
+            value = dotGet(
+                feature.properties,
+                key.slice('properties.'.length),
+            )
         } else {
             throw new TemplateError(
                 `Unsupported placeholder {${key}} in timeseries URL`,
@@ -90,6 +113,11 @@ export function templateUrl(template: string, feature: FeatureLike): string {
         if (value == null || value === '') {
             throw new TemplateError(
                 `Timeseries URL needs {${key}} but the clicked feature has no such value`,
+            )
+        }
+        if (typeof value === 'object') {
+            throw new TemplateError(
+                `Timeseries URL {${key}} resolved to a non-scalar value`,
             )
         }
         return encodeURIComponent(String(value))
@@ -146,28 +174,45 @@ function findContainer(response: unknown, seriesPath?: string): unknown {
     if (seriesPath) return dotGet(response, seriesPath)
     if (Array.isArray(response)) return response
     if (isRecord(response)) {
+        // Prefer a populated container — an empty `data: []` next to a
+        // populated `features` array must not shadow it.
+        let empty: unknown
         for (const key of CONTAINER_KEYS) {
-            if (Array.isArray(response[key])) return response[key]
+            const candidate = response[key]
+            if (Array.isArray(candidate)) {
+                if (candidate.length > 0) return candidate
+                if (empty === undefined) empty = candidate
+            }
         }
+        if (empty !== undefined) return empty
+        // No array container: the record itself may hold parallel arrays
+        // named by xKey/yKey (the documented shape) — let that branch try.
+        return response
     }
     return undefined
 }
 
+/** How many leading items auto-detection probes for keys — enough to skip
+ *  past a metadata row or two without scanning a huge response twice. */
+const KEY_SAMPLE_LIMIT = 25
+
 /** Resolves a point key as a dot-path; auto-detection probes candidates at
- *  the item's top level and one level down under `properties.` — the latter
- *  makes GeoJSON observation features work with zero config. */
+ *  each sample's top level and one level down under `properties.` — the
+ *  latter makes GeoJSON observation features work with zero config. */
 function pickKey(
-    sample: Record<string, unknown>,
+    samples: Array<Record<string, unknown>>,
     configured: string | undefined,
     candidates: string[],
 ): string | null {
     if (configured) return configured
-    for (const key of candidates) {
-        if (key in sample) return key
-    }
-    if (isRecord(sample.properties)) {
+    for (const sample of samples) {
         for (const key of candidates) {
-            if (key in sample.properties) return `properties.${key}`
+            if (key in sample) return key
+        }
+        if (isRecord(sample.properties)) {
+            for (const key of candidates) {
+                if (key in sample.properties) return `properties.${key}`
+            }
         }
     }
     return null
@@ -197,8 +242,8 @@ export interface MappedSeries {
  *    auto-detected, including under `properties.`), found directly, under a
  *    common container key (`data`, `features`, …), or at `seriesPath`;
  *    `groupBy` splits it into one series per distinct value;
- *  - parallel arrays: a container object whose `xKey`/`yKey` name two
- *    equal-length arrays.
+ *  - parallel arrays: an object whose `xKey`/`yKey` dot-paths name two
+ *    equal-length arrays — the response root itself or `seriesPath`.
  * Unusable shapes throw MappingError with a user-facing message.
  */
 export function mapResponseSeries(
@@ -212,12 +257,25 @@ export function mapResponseSeries(
         if (objects.length === 0) {
             throw new MappingError('No data points in the response')
         }
-        const xKey = pickKey(objects[0], config.xKey, X_KEYS)
-        const yKey = pickKey(objects[0], config.yKey, Y_KEYS)
+        const samples = objects.slice(0, KEY_SAMPLE_LIMIT)
+        const xKey = pickKey(samples, config.xKey, X_KEYS)
+        const yKey = pickKey(samples, config.yKey, Y_KEYS)
         if (xKey == null || yKey == null) {
             throw new MappingError(
                 'Could not find time/value keys in the response — set xKey/yKey in the layer timeseries config',
             )
+        }
+        // A configured key that matches nothing is a config problem, and must
+        // not masquerade as the API returning no data.
+        for (const [name, key] of [
+            ['xKey', config.xKey],
+            ['yKey', config.yKey],
+        ] as const) {
+            if (key && !objects.some((o) => dotGetLoose(o, key) !== undefined)) {
+                throw new MappingError(
+                    `Configured ${name} '${key}' matches nothing in the response — check the layer timeseries config`,
+                )
+            }
         }
         const groups = new Map<string, MappedSeries>()
         for (const item of objects) {
@@ -246,13 +304,25 @@ export function mapResponseSeries(
         if (series.length === 0) {
             throw new MappingError('No data points in the response')
         }
+        // All-null values would render an empty plot with no explanation —
+        // point at the value key instead.
+        if (series.every((g) => g.points.every((p) => p.y === null))) {
+            throw new MappingError(
+                'The response contained no numeric values — check yKey in the layer timeseries config',
+            )
+        }
         return series
     }
 
     if (isRecord(container) && config.xKey && config.yKey) {
-        const xs = container[config.xKey]
-        const ys = container[config.yKey]
-        if (Array.isArray(xs) && Array.isArray(ys) && xs.length === ys.length) {
+        const xs = dotGet(container, config.xKey)
+        const ys = dotGet(container, config.yKey)
+        if (Array.isArray(xs) && Array.isArray(ys)) {
+            if (xs.length !== ys.length) {
+                throw new MappingError(
+                    `The xKey/yKey arrays have different lengths (${xs.length} vs ${ys.length}) — check the layer timeseries config`,
+                )
+            }
             const points: ChartPoint[] = []
             for (let i = 0; i < xs.length; i++) {
                 const x = xs[i]
@@ -272,6 +342,21 @@ function slug(value: string): string {
     return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
+/** OGC feature APIs page by default (often 10 items); a silently truncated
+ *  chart presented as the complete record is a data-integrity failure, so
+ *  the title carries a "first N of M" notice when the response says more
+ *  matched than it returned. */
+function truncationNote(response: unknown, pointCount: number): string | null {
+    if (!isRecord(response)) return null
+    const matched = response.numberMatched
+    if (typeof matched !== 'number') return null
+    const returned =
+        typeof response.numberReturned === 'number'
+            ? response.numberReturned
+            : pointCount
+    return matched > returned ? `first ${returned} of ${matched} points` : null
+}
+
 /** The full seriesReady payload for one fetched feature. One series per
  *  groupBy value (e.g. per measured parameter); ungrouped responses yield a
  *  single series labeled from config or the layer. */
@@ -285,21 +370,38 @@ export function buildPayload(args: {
     featureId?: string | number
 }): ChartSeriesPayload {
     const mapped = mapResponseSeries(args.response, args.config)
+    const pointCount = mapped.reduce((n, m) => n + m.points.length, 0)
+    const note = truncationNote(args.response, pointCount)
+    // The chart guard rejects unknown xType values outright (spinner would
+    // strand), so an unrecognized config value degrades to the default.
+    const xType =
+        args.config.xType === 'linear' || args.config.xType === 'category'
+            ? args.config.xType
+            : 'time'
+    // Slugged group keys can collide (e.g. two all-non-ASCII parameter
+    // names) and the chart rejects duplicate ids — suffix them apart.
+    const usedIds = new Set<string>()
     return {
         chartId: args.chartId,
-        title: args.title,
+        title: note ? `${args.title} (${note})` : args.title,
         subtitle: args.layerDisplayName,
-        xType: 'time',
+        xType,
         yLabel: args.config.yLabel,
-        series: mapped.map((m) => ({
-            id: m.key === '' ? 'timeseries' : slug(m.key) || 'series',
-            label:
-                m.key !== ''
-                    ? m.key
-                    : args.config.label || args.layerDisplayName,
-            unit: m.unit,
-            points: m.points,
-        })),
+        series: mapped.map((m) => {
+            const base = m.key === '' ? 'timeseries' : slug(m.key) || 'series'
+            let id = base
+            for (let n = 2; usedIds.has(id); n++) id = `${base}-${n}`
+            usedIds.add(id)
+            return {
+                id,
+                label:
+                    m.key !== ''
+                        ? m.key
+                        : args.config.label || args.layerDisplayName,
+                unit: m.unit,
+                points: m.points,
+            }
+        }),
         meta: {
             sourcePlugin: 'fetch-timeseries',
             layerName: args.layerName,
