@@ -244,7 +244,7 @@ export const processExpression = (expression) => {
  * settings the user has configured, without requiring a per-tile middleware.
  * Params already in the URL win; fields only fill in what's missing.
  *
- * This mirrors `applyCogFieldsToUrl` in `src/essence/Basics/Layers_/cogUrlUtils.ts`.
+ * This mirrors `applyCogFieldsToUrl` in `src/essence/Basics/Layers_/tileUrlUtils.ts`.
  * We keep a local copy because configure is a separate app and can't import
  * from the main src tree without a shared-package setup.
  * @param {object} layer - Layer config object

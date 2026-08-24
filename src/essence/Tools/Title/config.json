@@ -1,4 +1,10 @@
 {
+    "defaults": {
+        "variables": {
+            "showLogo": true,
+            "showTitleText": true
+        }
+    },
     "name": "Title",
     "description": "Display mission icon and title from the mission config file.",
     "descriptionFull": {

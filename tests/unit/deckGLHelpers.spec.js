@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from 'vitest'
 import {
     resolveLatLng,
     resolveBounds,
@@ -8,8 +8,14 @@ import {
     pickInfoToResult,
     buildDeckLayer,
     hexToRgba,
-    DECKGL_TYPE_ALIAS,
+    isImageTileResponse,
 } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
+
+const tileResponse = (ok, status, contentType) => ({
+    ok,
+    status,
+    headers: { get: () => contentType },
+})
 
 test.describe('DeckGLHelpers', () => {
     test.describe('resolveLatLng', () => {
@@ -110,6 +116,28 @@ test.describe('DeckGLHelpers', () => {
         })
     })
 
+    test.describe('isImageTileResponse', () => {
+        test('accepts a response carrying image bytes', () => {
+            expect(isImageTileResponse(tileResponse(true, 200, 'image/png'))).toBe(true)
+            expect(isImageTileResponse(tileResponse(true, 200, 'image/jpeg;charset=binary'))).toBe(true)
+            expect(isImageTileResponse(tileResponse(true, 200, 'IMAGE/PNG'))).toBe(true)
+        })
+
+        test('rejects an error body served with a 200, as tile servers do for a missing timestamp', () => {
+            expect(isImageTileResponse(tileResponse(true, 200, 'text/html'))).toBe(false)
+            expect(isImageTileResponse(tileResponse(true, 200, 'application/json'))).toBe(false)
+        })
+
+        test('rejects a failed request', () => {
+            expect(isImageTileResponse(tileResponse(false, 404, 'image/png'))).toBe(false)
+            expect(isImageTileResponse(tileResponse(false, 500, 'text/html'))).toBe(false)
+        })
+
+        test('rejects a response with no content type', () => {
+            expect(isImageTileResponse(tileResponse(true, 200, null))).toBe(false)
+        })
+    })
+
     test.describe('buildDeckLayer', () => {
         test('throws for unsupported layer type', () => {
             expect(() => buildDeckLayer('id', { type: 'unsupported' })).toThrow(
@@ -152,6 +180,39 @@ test.describe('DeckGLHelpers', () => {
                 url: 'https://example.com/tiles/{z}/{x}/{y}.png',
             })
             expect(layer.id).toBe('tile-2')
+        })
+
+        test.describe('missing tiles', () => {
+            const tileLayer = () =>
+                buildDeckLayer('tile-missing', {
+                    type: 'tile',
+                    url: 'https://example.com/tiles/{z}/{x}/{y}.png',
+                })
+
+            const tileProps = (data) => ({
+                data,
+                tile: {
+                    index: { z: 1, x: 0, y: 0 },
+                    bbox: { west: 0, south: 0, east: 10, north: 10 },
+                },
+            })
+
+            test('renders nothing for a tile that carried no image', () => {
+                const renderSubLayers = tileLayer().props.renderSubLayers
+                expect(renderSubLayers(tileProps(null))).toBeNull()
+                expect(renderSubLayers(tileProps(undefined))).toBeNull()
+            })
+
+            test('renders a BitmapLayer for a tile that decoded', () => {
+                const image = { width: 256, height: 256 }
+                const sublayer = tileLayer().props.renderSubLayers(tileProps(image))
+                expect(sublayer).not.toBeNull()
+                expect(sublayer.props.image).toBe(image)
+            })
+
+            test('reports tile failures through onTileError', () => {
+                expect(typeof tileLayer().props.onTileError).toBe('function')
+            })
         })
 
         test('creates a GeoJsonLayer for vector type', () => {
@@ -217,6 +278,41 @@ test.describe('DeckGLHelpers', () => {
             })
             expect(layer.id).toBe('t3d-2')
         })
+
+        // Layer opacity is carried by the deck.gl `opacity` prop on every type,
+        // so setLayerOpacity has a single prop to update after construction.
+        test.each([
+            ['tile', { url: 'https://example.com/{z}/{x}/{y}.png' }],
+            ['vector', { geojson: { type: 'FeatureCollection', features: [] } }],
+            ['vectortile', { url: 'https://example.com/{z}/{x}/{y}.mvt' }],
+            ['scatterplot', { data: [{ position: [0, 0] }] }],
+            ['tile3d', { url: 'https://example.com/tileset.json' }],
+            ['pointcloud', { url: '/data/cloud.las' }],
+        ])('%s layer carries the opacity prop', (type, options) => {
+            const layer = buildDeckLayer(`op-${type}`, { type, opacity: 0.35, ...options })
+            expect(layer.props.opacity).toBe(0.35)
+        })
+
+        test('opacity defaults to 1 when not supplied', () => {
+            const layer = buildDeckLayer('op-default', {
+                type: 'vector',
+                geojson: { type: 'FeatureCollection', features: [] },
+            })
+            expect(layer.props.opacity).toBe(1)
+        })
+
+        test('vector layer opacity is independent of style.opacity', () => {
+            // style.opacity is the configured stroke alpha; layer opacity is a
+            // separate multiplier. Baking one into the other double-applies it.
+            const layer = buildDeckLayer('op-vec-style', {
+                type: 'vector',
+                geojson: { type: 'FeatureCollection', features: [] },
+                opacity: 0.5,
+                style: { color: '#ff0000', opacity: 1 },
+            })
+            expect(layer.props.opacity).toBe(0.5)
+            expect(layer.props.getLineColor).toEqual([255, 0, 0, 255])
+        })
     })
 
     test.describe('hexToRgba', () => {
@@ -262,42 +358,6 @@ test.describe('DeckGLHelpers', () => {
 
         test('parses CSS named color "red"', () => {
             expect(hexToRgba('red')).toEqual([255, 0, 0, 255])
-        })
-    })
-
-    test.describe('DECKGL_TYPE_ALIAS', () => {
-        test('GeoJsonLayer maps to vector', () => {
-            expect(DECKGL_TYPE_ALIAS['GeoJsonLayer']).toBe('vector')
-        })
-
-        test('ScatterplotLayer maps to scatterplot', () => {
-            expect(DECKGL_TYPE_ALIAS['ScatterplotLayer']).toBe('scatterplot')
-        })
-
-        test('TileLayer maps to tile', () => {
-            expect(DECKGL_TYPE_ALIAS['TileLayer']).toBe('tile')
-        })
-
-        test('BitmapLayer maps to tile', () => {
-            expect(DECKGL_TYPE_ALIAS['BitmapLayer']).toBe('tile')
-        })
-
-        test('Tile3DLayer maps to tile3d', () => {
-            expect(DECKGL_TYPE_ALIAS['Tile3DLayer']).toBe('tile3d')
-        })
-
-        test('PointCloudLayer maps to pointcloud', () => {
-            expect(DECKGL_TYPE_ALIAS['PointCloudLayer']).toBe('pointcloud')
-        })
-
-        test('MVTLayer maps to vectortile', () => {
-            expect(DECKGL_TYPE_ALIAS['MVTLayer']).toBe('vectortile')
-        })
-
-        test('all values are lowercase strings', () => {
-            for (const [key, value] of Object.entries(DECKGL_TYPE_ALIAS)) {
-                expect(value).toBe(value.toLowerCase(), `${key} alias value should be lowercase`)
-            }
         })
     })
 })

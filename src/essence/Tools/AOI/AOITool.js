@@ -25,8 +25,8 @@
  *
  *   Requests:
  *     - map:createLayer / map:removeLayer
- *     - map:fitBounds
- *     - map:enableDrawing / map:finishDrawing / map:disableDrawing
+ *     - map:getBounds / map:fitBounds
+ *     - map:enableDrawing / map:disableDrawing / map:finishDrawing
  *     - map:addOverlay / map:removeOverlay
 
  * AOIComponent.tsx and AOITooltip.tsx must stay MMGIS-agnostic.
@@ -45,6 +45,8 @@ import {
     parseShapefileBuffer,
     featureCentroid,
     featureBounds,
+    selectionFitBounds,
+    selectionTooltipAnchor,
 } from './aoiHelpers'
 import { loadBoundaries } from './aoiBoundaryLoader'
 
@@ -56,19 +58,40 @@ const SELECTION_LAYER_ID = 'aoi:selection'
 const INSPECT_BOUNDARIES_LAYER_ID = 'aoi:inspect-boundaries'
 const TOOLTIP_OVERLAY_ID = 'aoi:tooltip'
 
+// ── Draw-session keys ──────────────────────────────────────────────────────────
+// Components with these roles handle Escape themselves — a dialog, menu,
+// listbox or combobox closes on it — so a key pressed anywhere inside one of
+// them is theirs, not the drawing session's.
+const KEY_OWNING_ROLE_SELECTOR =
+    '[role="dialog"],[role="menu"],[role="listbox"],[role="combobox"]'
+
 // ── Styles ─────────────────────────────────────────────────────────────────────
-const SELECTION_STYLE = {
-    color: '#005ea2',
-    weight: 3,
-    fillColor: '#005ea2',
-    fillOpacity: 0.25,
+// The map is handed concrete colors: these end up on SVG presentation
+// attributes, which do not resolve var(). So a token is read off :root and
+// passed by value — and read at the moment a layer is drawn, not at module
+// load, since the theme bundle is fetched at runtime and may not have applied
+// yet when this file is first evaluated.
+const themeToken = (name, fallback) => {
+    if (typeof window === 'undefined' || !window.getComputedStyle) return fallback
+    const value = window
+        .getComputedStyle(document.documentElement)
+        .getPropertyValue(name)
+        .trim()
+    return value || fallback
 }
 
-const INSPECT_STYLE = {
-    color: '#137480',
-    weight: 1,
-    fillColor: '#137480',
-    fillOpacity: 0.06,
+// The chosen area, in the accent the panel uses for a selected control.
+const selectionStyle = () => {
+    const color = themeToken('--theme-color-primary', '#1c67e3')
+    return { color, weight: 2, fillColor: color, fillOpacity: 0.25 }
+}
+
+// The boundaries offered for picking: the same accent a step lighter, and far
+// thinner, so the mesh reads as a guide under the selection rather than
+// competing with it.
+const inspectStyle = () => {
+    const color = themeToken('--theme-color-primary-light', '#288bff')
+    return { color, weight: 1, fillColor: color, fillOpacity: 0.06 }
 }
 
 const initialState = () => ({
@@ -114,6 +137,7 @@ const AOITool = {
     _cleanups: [],
     _api: null,
     _analysisErrorTimeout: null,
+    _drawKeyHandler: null,
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -157,7 +181,7 @@ const AOITool = {
                 this._cleanups.push(typeof off === 'function' ? off : () => { })
             }
             subscribe('tool:change',       () => this._clearSelection())
-            subscribe('map:drawstart',     (e) => this._onDrawStart(e))
+            subscribe('map:drawstart',     () => this._onDrawStart())
             subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
@@ -202,6 +226,7 @@ const AOITool = {
         }
 
         // Fire-and-forget: cancel any active drawing session via the bus.
+        this._removeDrawKeys()
         window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
 
         this._removeSelectionLayer()
@@ -307,8 +332,6 @@ const AOITool = {
                 isDrawing: this._state.isDrawing,
                 drawVerticesCount: this._state.drawVerticesCount,
                 onDrawShapeChange: (drawShape) => this._onDrawShapeChange(drawShape),
-                onDrawConfirm: () => this._onDrawConfirm(),
-                onDrawCancel: () => this._onDrawCancel(),
 
                 uploadStatus: this._state.uploadStatus,
                 uploadError: this._state.uploadError,
@@ -367,24 +390,49 @@ const AOITool = {
 
     _onDrawShapeChange(shape) {
         this._setState({ drawShape: shape, drawVerticesCount: 0 })
-        window.mmgisAPI?.request?.('map:enableDrawing', {
-            shape,
-            options: { style: SELECTION_STYLE },
-        }).catch((err) => console.warn('[AOI] enableDrawing failed', err))
-    },
-
-    _onDrawConfirm() {
-        window.mmgisAPI?.request?.('map:finishDrawing')
-            .catch((err) => console.warn('[AOI] finishDrawing failed', err))
-    },
-
-    _onDrawCancel() {
-        window.mmgisAPI?.request?.('map:disableDrawing')
-            .catch((err) => console.warn('[AOI] disableDrawing failed', err))
+        window.mmgisAPI?.request?.('map:enableDrawing', { shape })
+            .catch((err) => console.warn('[AOI] enableDrawing failed', err))
     },
 
     _onDrawStart() {
+        this._installDrawKeys()
         this._setState({ isDrawing: true, drawVerticesCount: 0 })
+    },
+
+    /**
+     * Enter and Escape belong to the session this plugin started, and the panel
+     * hints promise both from anywhere. The engine only hears keys while the
+     * map element has focus, so listen on the document for as long as the
+     * session lasts and drive it over the bus. Keys typed into a field are the
+     * field's, and so are keys pressed inside a component that closes on
+     * Escape (see {@link KEY_OWNING_ROLE_SELECTOR}).
+     */
+    _installDrawKeys() {
+        if (this._drawKeyHandler) return
+        this._drawKeyHandler = (evt) => {
+            if (evt.repeat) return
+            const target = evt.target
+            const tag = target?.tagName
+            if (
+                target?.isContentEditable ||
+                tag === 'INPUT' ||
+                tag === 'TEXTAREA' ||
+                tag === 'SELECT' ||
+                target?.closest?.(KEY_OWNING_ROLE_SELECTOR)
+            ) return
+            if (evt.key === 'Escape') {
+                window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
+            } else if (evt.key === 'Enter') {
+                window.mmgisAPI?.request?.('map:finishDrawing').catch(() => { })
+            }
+        }
+        document.addEventListener('keydown', this._drawKeyHandler)
+    },
+
+    _removeDrawKeys() {
+        if (!this._drawKeyHandler) return
+        document.removeEventListener('keydown', this._drawKeyHandler)
+        this._drawKeyHandler = null
     },
 
     _onDrawVertex(e) {
@@ -393,6 +441,7 @@ const AOITool = {
     },
 
     _onDrawComplete(e) {
+        this._removeDrawKeys()
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
         const feature = e?.feature
         if (!feature) return
@@ -403,6 +452,7 @@ const AOITool = {
     },
 
     _onDrawCancelEvent() {
+        this._removeDrawKeys()
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
     },
 
@@ -433,7 +483,7 @@ const AOITool = {
                     type: 'FeatureCollection',
                     features,
                 },
-                style: INSPECT_STYLE,
+                style: inspectStyle(),
                 interactive: true,
             }))
             .catch((err) => console.warn('[AOI] failed to show inspect boundaries', err))
@@ -518,7 +568,7 @@ const AOITool = {
             id: SELECTION_LAYER_ID,
             type: 'vector',
             geojson: { type: 'FeatureCollection', features: [feature] },
-            style: SELECTION_STYLE,
+            style: selectionStyle(),
             interactive: false,
         }).catch((err) => console.warn('[AOI] failed to add selection layer', err))
 
@@ -526,42 +576,61 @@ const AOITool = {
         this._api?.emit('areaDrawn', { feature, source })
 
         const c = featureCentroid(feature)
-        const showTooltip = () => {
+        // `view` keeps the tooltip on-screen when the camera does not move; omit
+        // it once the camera has been fitted to the selection.
+        const showTooltip = (view) => {
             if (c) {
                 this._showTooltip({
                     label,
-                    latlng: { lat: c[1], lng: c[0] },
+                    latlng: selectionTooltipAnchor({ lat: c[1], lng: c[0] }, view),
                     analyzeEnabled: true,
                 })
             }
         }
 
         const bbox = featureBounds(feature)
-        if (bbox && api?.on && api?.off) {
-            // Defer the tooltip until the fitBounds animation settles so it
-            // mounts at the final centroid pixel instead of flickering through
-            // intermediate positions during the camera move.
-            let fallback
-            const oneShot = () => {
-                api.off('map:moveend', oneShot)
-                clearTimeout(fallback)
-                showTooltip()
-            }
-            api.on('map:moveend', oneShot)
-            // Belt-and-braces: if no moveend fires (e.g. already at target view),
-            // show the tooltip after a short timeout anyway.
-            fallback = setTimeout(oneShot, 1500)
+        if (bbox && api?.request && api?.on && api?.off) {
+            // Leave the camera alone unless the selection extends beyond the
+            // current view; then fit its extent minimally (selectionFitBounds).
+            api.request('map:getBounds')
+                .catch(() => null)
+                .then((view) => {
+                    const fit = selectionFitBounds(bbox, view)
+                    if (!fit) {
+                        showTooltip(view)
+                        return
+                    }
+                    // Defer the tooltip until the fitBounds animation settles so it
+                    // mounts at the final centroid pixel instead of flickering through
+                    // intermediate positions during the camera move.
+                    let fallback
+                    // Pass a view here only when the camera never moved. Once
+                    // fitBounds has framed the selection, its centroid is
+                    // on-screen and needs no fallback anchor.
+                    const settle = (unmovedView) => {
+                        api.off('map:moveend', oneShot)
+                        clearTimeout(fallback)
+                        showTooltip(unmovedView)
+                    }
+                    // `map:moveend` hands its listener a view state
+                    // ({ longitude, latitude, zoom }), not a ViewBounds. This
+                    // wrapper drops that payload so `settle` is called with no
+                    // view at all.
+                    const oneShot = () => settle()
+                    api.on('map:moveend', oneShot)
+                    // Safety net: if no moveend fires (e.g. an engine that
+                    // skips the event on a programmatic fit), show the tooltip
+                    // after a short timeout anyway.
+                    fallback = setTimeout(oneShot, 1500)
 
-            api.request('map:fitBounds', {
-                bounds: [
-                    { lat: bbox[1], lng: bbox[0] },
-                    { lat: bbox[3], lng: bbox[2] },
-                ],
-                options: { padding: 120, maxZoom: 5 },
-            }).catch((err) => {
-                console.warn('[AOI] fitBounds failed', err)
-                oneShot()
-            })
+                    api.request('map:fitBounds', fit).catch((err) => {
+                        console.warn('[AOI] fitBounds failed', err)
+                        settle(view)
+                    })
+                })
+                .catch((err) =>
+                    console.warn('[AOI] selection camera step failed', err)
+                )
         } else {
             showTooltip()
         }

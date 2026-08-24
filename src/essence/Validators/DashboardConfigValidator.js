@@ -236,6 +236,14 @@ function validatePanelConfig(panel, index, isFloat = false) {
         errors.push(`${prefix}: "hasHeader" must be a boolean`)
     }
 
+    // Transparency only makes sense over the map. Edge panels claim viewport space
+    // and, in the compact layout style, have no map behind them at all.
+    if (panel.transparent !== undefined && typeof panel.transparent !== 'boolean') {
+        errors.push(`${prefix}: "transparent" must be a boolean`)
+    } else if (!isFloatPosition && panel.transparent === true) {
+        errors.push(`${prefix}: "transparent" is only supported on floating panels`)
+    }
+
     // Validate stateConstraints
     if (!panel.stateConstraints || typeof panel.stateConstraints !== 'object') {
         errors.push(`${prefix}: Must have a "stateConstraints" object`)
@@ -294,6 +302,8 @@ function validatePanelConfig(panel, index, isFloat = false) {
 
         if (cap.resizable !== undefined && typeof cap.resizable !== 'boolean') {
             errors.push(`${prefix}.capabilities: "resizable" must be a boolean`)
+        } else if (isFloatPosition && cap.resizable === true) {
+            errors.push(`${prefix}.capabilities: "resizable" is not supported on floating panels`)
         }
 
         let minSize, maxSize

@@ -60,7 +60,8 @@
 /* Base Panel Styling */
 .ui-panel {
     background: var(--theme-color-white, #ffffff);
-    box-shadow: 0 4px 6px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     margin: var(--theme-spacing-1, 0.5rem);
@@ -126,6 +127,20 @@
 /* Tool Cards - Base Styles (shared by stacked and tabbed) */
 .ui-tool-card {
     background-color: var(--theme-color-white, #ffffff);
+}
+
+/* Cards fill the panel where they stack vertically. Top/bottom regions lay
+   them out in a row, so there they keep their intrinsic width. */
+.ui-region-left .ui-tool-card,
+.ui-region-right .ui-tool-card,
+.ui-panel-body-tabbed .ui-tool-card {
+    width: 100%;
+}
+
+/* A lone tool in a horizontal region still fills it. */
+.ui-region-top .ui-panel-body > .ui-tool-card:only-child,
+.ui-region-bottom .ui-panel-body > .ui-tool-card:only-child {
+    width: 100%;
 }
 
 /* Stacked Tool Cards (default clickable cards in panel body) */
@@ -479,7 +494,6 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
 .ui-modern-grid.ui-layout-compact .ui-panel {
     margin: 0;
     border-radius: 0;
-    border: none;
 }
 
 /* ============================================
@@ -570,4 +584,29 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     flex-shrink: 0;
     padding: 2px;
     overflow: hidden;
+}
+
+/* ============================================
+   TRANSPARENT PANELS
+   ============================================ */
+
+/* A transparent panel is a bare container: the layout paints no surface for it
+   and none for the cards behind its tools, so a tool that draws its own boxes
+   (map controls, for instance) sits directly on the map. Tools keep whatever
+   surfaces they draw themselves. */
+.ui-panel-transparent,
+.ui-panel-transparent .ui-tool-card {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+/* Tool content routinely opens dropdowns past the panel bounds, and there is no
+   panel surface left for them to be clipped against. Outranks the overflow and
+   radius rules above, which are keyed on .ui-float-panel .ui-tool-card. */
+.ui-modern-grid .ui-float-panel.ui-panel-transparent,
+.ui-modern-grid .ui-float-panel.ui-panel-transparent .ui-float-panel-body,
+.ui-modern-grid .ui-float-panel.ui-panel-transparent .ui-tool-card {
+    overflow: visible;
+    border-radius: 0;
 }

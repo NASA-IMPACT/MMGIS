@@ -1,0 +1,122 @@
+/* Shared typography for rendered markdown.
+   Applied wherever the Markdown component or renderMarkdown's output lands, so
+   authored text reads the same on every surface that defines the theme tokens.
+   Colors, spacing, and fonts come from the theme tokens in
+   src/styles/_theme-export.scss.
+   Core sets no heading font-size — each surface scales headings to its own
+   type scale, so no surface has to out-specify a default to do it. */
+
+.mmgis-markdown > :first-child {
+    margin-top: 0;
+}
+.mmgis-markdown > :last-child {
+    margin-bottom: 0;
+}
+
+.mmgis-markdown p,
+.mmgis-markdown ul,
+.mmgis-markdown ol,
+.mmgis-markdown blockquote,
+.mmgis-markdown pre,
+.mmgis-markdown table {
+    margin: 0 0 var(--theme-spacing-1);
+}
+
+.mmgis-markdown h1,
+.mmgis-markdown h2,
+.mmgis-markdown h3,
+.mmgis-markdown h4,
+.mmgis-markdown h5,
+.mmgis-markdown h6 {
+    margin: var(--theme-spacing-105) 0 var(--theme-spacing-05);
+    font-weight: var(--theme-font-weight-semibold);
+    line-height: var(--theme-line-height-3);
+    color: var(--theme-color-ink);
+}
+
+.mmgis-markdown strong {
+    font-weight: var(--theme-font-weight-semibold);
+    color: var(--theme-color-ink);
+}
+
+.mmgis-markdown a {
+    color: var(--theme-color-primary);
+    text-decoration: underline;
+}
+
+.mmgis-markdown del {
+    color: var(--theme-color-base);
+}
+
+.mmgis-markdown blockquote {
+    padding-left: var(--theme-spacing-1);
+    border-left: 2px solid var(--theme-color-base-lighter);
+    color: var(--theme-color-base);
+}
+
+.mmgis-markdown hr {
+    margin: var(--theme-spacing-1) 0;
+    border: none;
+    border-top: 1px solid var(--theme-color-base-lighter);
+}
+
+.mmgis-markdown ul,
+.mmgis-markdown ol {
+    padding-left: var(--theme-spacing-105);
+}
+
+.mmgis-markdown li {
+    margin: 0 0 calc(var(--theme-spacing-05) * 0.5);
+    line-height: var(--theme-line-height-5);
+}
+
+.mmgis-markdown code {
+    padding: 0 3px;
+    background: var(--theme-color-base-lightest);
+    border: 1px solid var(--theme-color-base-lighter);
+    color: var(--theme-color-ink);
+    font-family: var(--theme-font-mono);
+    /* Relative so inline code tracks whatever size the surface sets; the
+       theme font-size tokens are rem and would break out of a small panel. */
+    font-size: 0.92em;
+}
+
+.mmgis-markdown pre {
+    padding: var(--theme-spacing-1);
+    background: var(--theme-color-base-lightest);
+    border: 1px solid var(--theme-color-base-lighter);
+    overflow-x: auto;
+}
+
+.mmgis-markdown pre code {
+    padding: 0;
+    background: none;
+    border: none;
+    color: inherit;
+}
+
+.mmgis-markdown img {
+    max-width: 100%;
+}
+
+.mmgis-markdown table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.mmgis-markdown th,
+.mmgis-markdown td {
+    padding: 3px var(--theme-spacing-1);
+    border: 1px solid var(--theme-color-base-lighter);
+    text-align: left;
+    vertical-align: top;
+}
+
+.mmgis-markdown th {
+    background: var(--theme-color-base-lightest);
+    font-weight: var(--theme-font-weight-semibold);
+    color: var(--theme-color-ink);
+    /* Header cells hold their text on one line, so a wide table overflows its
+       container to be scrolled rather than wrapping headers to several rows. */
+    white-space: nowrap;
+}

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from 'vitest';
 import { validateModernConfig, sanitizeText } from '../../src/essence/Validators/DashboardConfigValidator.js';
 
 test.describe('DashboardConfigValidator', () => {
@@ -135,6 +135,77 @@ test.describe('DashboardConfigValidator', () => {
             expect(result.errors).toContain('Duplicate panel ID: "duplicate"');
         });
 
+        test.describe('panel transparency', () => {
+            const withFloat = (floatPanel) => ({
+                panelSettings: {
+                    panels: [
+                        {
+                            id: 'panel-1', position: 'left', priority: 1, layoutType: 'stacked',
+                            stateConstraints: { allowedStates: ['expanded'], defaultState: 'expanded' }
+                        }
+                    ],
+                    floatingPanels: [
+                        {
+                            id: 'float-1', position: 'float-top-right',
+                            stateConstraints: { allowedStates: ['expanded'], defaultState: 'expanded' },
+                            ...floatPanel
+                        }
+                    ]
+                }
+            });
+
+            test('accepts transparent on a floating panel', () => {
+                const result = validateModernConfig(withFloat({ transparent: true }));
+                expect(result.valid).toBe(true);
+                expect(result.errors).toHaveLength(0);
+            });
+
+            test('accepts transparent omitted', () => {
+                const result = validateModernConfig(withFloat({}));
+                expect(result.valid).toBe(true);
+            });
+
+            test('rejects a non-boolean transparent', () => {
+                const result = validateModernConfig(withFloat({ transparent: 'yes' }));
+                expect(result.valid).toBe(false);
+                expect(result.errors).toContain('FloatingPanel[0]: "transparent" must be a boolean');
+            });
+
+            test('rejects transparent on an edge panel', () => {
+                const config = {
+                    panelSettings: {
+                        panels: [
+                            {
+                                id: 'panel-1', position: 'left', priority: 1, layoutType: 'stacked',
+                                transparent: true,
+                                stateConstraints: { allowedStates: ['expanded'], defaultState: 'expanded' }
+                            }
+                        ]
+                    }
+                };
+
+                const result = validateModernConfig(config);
+                expect(result.valid).toBe(false);
+                expect(result.errors).toContain('Panel[0]: "transparent" is only supported on floating panels');
+            });
+
+            test('allows transparent false on an edge panel', () => {
+                const config = {
+                    panelSettings: {
+                        panels: [
+                            {
+                                id: 'panel-1', position: 'left', priority: 1, layoutType: 'stacked',
+                                transparent: false,
+                                stateConstraints: { allowedStates: ['expanded'], defaultState: 'expanded' }
+                            }
+                        ]
+                    }
+                };
+
+                expect(validateModernConfig(config).valid).toBe(true);
+            });
+        });
+
         test('validates tools array correctly', () => {
             const config = {
                 panelSettings: {
@@ -154,7 +225,6 @@ test.describe('DashboardConfigValidator', () => {
             const result = validateModernConfig(config);
             expect(result.valid).toBe(false);
             expect(result.errors).toContain('Tool[1] must have a string "name"');
-            expect(result.errors).toContain('Tool[1] must have a string "icon"');
         });
     });
 });

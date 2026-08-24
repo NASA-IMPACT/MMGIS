@@ -10,6 +10,8 @@
 // Import panel types from the source of truth
 import type {
     PanelConfig,
+    EdgePanelConfig,
+    FloatPanelConfig,
     PanelStateConstraints,
     PanelCapabilities,
     PanelDimensions,
@@ -18,6 +20,8 @@ import type {
 // Re-export them for consumers of this module
 export type {
     PanelConfig,
+    EdgePanelConfig,
+    FloatPanelConfig,
     PanelStateConstraints,
     PanelCapabilities,
     PanelDimensions,

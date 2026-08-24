@@ -410,15 +410,20 @@ const ToolControllerModern_ = {
             return false
         }
 
-        try {
-            const { toolInstance, toolName, toolId } = loadedTools.get(targetId)
+        const { toolInstance, toolName, toolId } = loadedTools.get(targetId)
+        let destroyed = true
 
+        try {
             // Call destroy() if available
             if (typeof toolInstance.destroy === 'function') {
                 toolInstance.destroy()
             }
-
-            // Remove from tracking
+        } catch (error) {
+            logger.error(`Error destroying tool in container "${targetId}":`, error)
+            destroyed = false
+        } finally {
+            // Always remove from tracking, even if destroy() threw, so a
+            // misbehaving plugin can't leave stale/zombie lifecycle state
             loadedTools.delete(targetId)
 
             // Clean up reverse lookup and hidden state
@@ -426,14 +431,13 @@ const ToolControllerModern_ = {
                 toolIdToTargetId.delete(toolId)
                 hiddenTools.delete(toolId)
             }
-
-            logger.debug(`Destroyed tool "${toolName}" from container "${targetId}"`)
-
-            return true
-        } catch (error) {
-            logger.error(`Error destroying tool in container "${targetId}":`, error)
-            return false
         }
+
+        if (destroyed) {
+            logger.debug(`Destroyed tool "${toolName}" from container "${targetId}"`)
+        }
+
+        return destroyed
     },
 
     /**
@@ -631,16 +635,15 @@ const ToolControllerModern_ = {
     },
 
     /**
-     * Check if a plugin is currently hidden via hidePlugin/startHidden (loaded but not visible).
-     * Returns false for a plugin that was never loaded or is currently unloaded/deferred
-     * (startUnloaded, or unloadPlugin) — those are also visually hidden but are reported
-     * via isPluginLoaded()===false instead. Check both to fully reason about visibility.
+     * Check if a plugin is currently hidden from view — via hidePlugin/startHidden
+     * (loaded but not visible), or because it's deferred/unloaded (startUnloaded,
+     * or unloadPlugin)
      *
      * @param {string} pluginId - Tool ID
      * @returns {boolean}
      */
     isPluginHidden: function (pluginId) {
-        return hiddenTools.has(pluginId)
+        return hiddenTools.has(pluginId) || deferredTools.has(pluginId)
     }
 }
 
