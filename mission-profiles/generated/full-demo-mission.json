@@ -307,8 +307,12 @@
     {
       "name": "FetchTimeseries",
       "js": "FetchTimeseriesTool",
-      "on": false,
-      "variables": {}
+      "on": true,
+      "variables": {},
+      "metadata": {
+        "startHidden": true,
+        "modernLayoutSupport": true
+      }
     }
   ],
   "layers": [

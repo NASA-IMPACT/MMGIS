@@ -4,7 +4,7 @@
     },
     "description": "Background plugin that fetches a clicked vector feature's time series (URL templated from the layer's variables.timeseries config) and publishes it as chart-series events for the SeriesChart plugin. No UI panel.",
     "descriptionFull": {
-        "title": "Listens to feature:click. When the clicked feature's layer carries a variables.timeseries block, builds the fetch URL from the feature ({id}, {properties.<key>}, {lon}, {lat} placeholders), fetches it, and emits plugin:fetch-timeseries:seriesLoading/seriesReady/seriesError/seriesCleared. Layers without the block are ignored. Layer config example shown below.",
+        "title": "Listens to feature:click. When the clicked feature's layer carries a variables.timeseries block, builds the fetch URL from the feature ({properties.<key>}, {lon}/{lat} — falling back to the clicked location — and {id} placeholders), fetches it, and emits plugin:fetch-timeseries:seriesLoading/seriesReady/seriesError, plus seriesCleared on tool teardown. Layers without the block are ignored. Layer config example shown below.",
         "example": {
             "variables": {
                 "timeseries": {
@@ -19,6 +19,10 @@
     "hasVars": false,
     "name": "FetchTimeseries",
     "separatedTool": false,
+    "metadata": {
+        "startHidden": true,
+        "modernLayoutSupport": true
+    },
     "paths": {
         "FetchTimeseriesTool": "essence/Tools/FetchTimeseries/FetchTimeseriesTool"
     },
