@@ -7,17 +7,26 @@
  *   - feature:click   { feature, layerName, latlng, pixel }
  *
  * Emits (full names, consumed by SeriesChart via the shared contract in
- * _shared/types/chartSeries.ts):
+ * _shared/types/chartSeries.ts — all four messages are flat):
  *   - plugin:fetch-timeseries:seriesLoading  { chartId, title }
- *   - plugin:fetch-timeseries:seriesReady    { payload: ChartSeriesPayload }
+ *   - plugin:fetch-timeseries:seriesReady    ChartSeriesPayload
  *   - plugin:fetch-timeseries:seriesError    { chartId, message }
+ *   - plugin:fetch-timeseries:seriesCleared  { chartId } (on destroy)
+ *
+ * 'fetch-timeseries' is the kebab-case plugin id used in event names (the
+ * convention the chart-series contract adopts, like FetchStats); it is
+ * distinct from the core tool name 'FetchTimeseries'.
  *
  * A layer opts in via `variables.timeseries` (see lib/timeseries.ts). Clicks
  * on features of layers without that block do nothing chart-wise; a new click
  * replaces the chart (one chartId).
  */
 
-import { mmgisOn, mmgisEmit, mmgisRequest } from '../_shared/adapters/mmgisAPI'
+import {
+    mmgisOn,
+    mmgisEmit,
+    mmgisGetLayerConfig,
+} from '../_shared/adapters/mmgisAPI'
 import { seriesEvents } from '../_shared/types/chartSeries'
 import {
     getTimeseriesConfig,
@@ -32,6 +41,9 @@ import {
 const PLUGIN_ID = 'fetch-timeseries'
 const CHART_ID = 'vector-timeseries'
 const EVENTS = seriesEvents(PLUGIN_ID)
+/** A stalled connection must not strand the chart's spinner — the only other
+ *  way out of a hung fetch is the user clicking something else. */
+const FETCH_TIMEOUT_MS = 30000
 
 interface FeatureClickPayload {
     feature?: FeatureLike | null
@@ -55,7 +67,15 @@ const FetchTimeseriesTool = {
         if (this.made) return
         this._cleanups.push(
             mmgisOn('feature:click', (payload) => {
-                void this._onFeatureClick(payload as FeatureClickPayload)
+                // The handler is async; an unexpected throw must surface as
+                // a logged warning, never an unhandled rejection.
+                this._onFeatureClick(payload as FeatureClickPayload).catch(
+                    (err) =>
+                        console.warn(
+                            '[FetchTimeseries] click handling failed',
+                            err,
+                        ),
+                )
             }),
         )
         this.made = true
@@ -66,6 +86,9 @@ const FetchTimeseriesTool = {
         this._abort = null
         this._cleanups.forEach((off) => off())
         this._cleanups = []
+        // The data source is going away: remove its card rather than strand
+        // a spinner (the aborted fetch resolves silently) or a stale chart.
+        if (this.made) mmgisEmit(EVENTS.cleared, { chartId: CHART_ID })
         this.made = false
     },
 
@@ -78,10 +101,9 @@ const FetchTimeseriesTool = {
         const layerName = payload?.layerName
         if (feature == null || layerName == null) return
 
-        const layerConfig = await mmgisRequest<Record<string, unknown>>(
-            'layers:getConfig',
-            layerName,
-        )
+        // hasHandler-guarded: during mission load/reload the provider isn't
+        // registered yet and this resolves null — the click is a no-op.
+        const layerConfig = await mmgisGetLayerConfig(layerName)
         const config = getTimeseriesConfig(layerConfig)
         // Layers without a timeseries block do nothing — no fetch, no
         // cleared chart, no error.
@@ -101,7 +123,7 @@ const FetchTimeseriesTool = {
 
         let url: string
         try {
-            url = templateUrl(config.url, feature)
+            url = templateUrl(config.url, feature, payload?.latlng)
         } catch (err) {
             if (err instanceof TemplateError) {
                 mmgisEmit(EVENTS.error, { chartId: CHART_ID, message: err.message })
@@ -110,6 +132,13 @@ const FetchTimeseriesTool = {
             throw err
         }
 
+        // The timeout aborts the same controller a superseding click would;
+        // the flag is what tells the two apart in the catch below.
+        let timedOut = false
+        const timer = window.setTimeout(() => {
+            timedOut = true
+            abort.abort()
+        }, FETCH_TIMEOUT_MS)
         try {
             // Prefer GeoJSON: content-negotiating APIs (tipg) serve flat rows
             // for bare application/json; servers that don't negotiate ignore
@@ -120,6 +149,7 @@ const FetchTimeseriesTool = {
                     Accept: 'application/geo+json, application/json;q=0.9, */*;q=0.8',
                 },
             })
+            if (abort.signal.aborted && !timedOut) return
             if (!resp.ok) {
                 mmgisEmit(EVENTS.error, {
                     chartId: CHART_ID,
@@ -128,7 +158,7 @@ const FetchTimeseriesTool = {
                 return
             }
             const body: unknown = await resp.json()
-            if (abort.signal.aborted) return
+            if (abort.signal.aborted && !timedOut) return
             const chartPayload = buildPayload({
                 chartId: CHART_ID,
                 response: body,
@@ -138,17 +168,22 @@ const FetchTimeseriesTool = {
                 layerName,
                 featureId: feature.id,
             })
-            mmgisEmit(EVENTS.ready, { payload: chartPayload })
+            mmgisEmit(EVENTS.ready, chartPayload)
         } catch (err) {
-            if (abort.signal.aborted) return // superseded or cleared — silent
+            // Superseded or torn down — silent; a timeout abort must speak.
+            if (abort.signal.aborted && !timedOut) return
             const message =
                 err instanceof MappingError
                     ? err.message
-                    : 'Could not load data for this feature'
+                    : timedOut
+                      ? 'Request timed out'
+                      : 'Could not load data for this feature'
             if (!(err instanceof MappingError)) {
                 console.warn('[FetchTimeseries] fetch failed', err)
             }
             mmgisEmit(EVENTS.error, { chartId: CHART_ID, message })
+        } finally {
+            window.clearTimeout(timer)
         }
     },
 }

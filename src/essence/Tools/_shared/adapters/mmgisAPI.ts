@@ -114,6 +114,18 @@ export const mmgisGetLayerConfigs = (): Promise<Record<
     )
 }
 
+/**
+ * One layer's config by UUID (core also resolves display names). Registered
+ * as late as mmgisGetLayerConfigs — null during mission boot/reload or
+ * against a core without the handler; callers treat that as "layer unknown
+ * yet" rather than an error.
+ */
+export const mmgisGetLayerConfig = (
+    layerUUID: string,
+): Promise<LayerConfig | null> => {
+    return mmgisRequestIfProvided<LayerConfig>('layers:getConfig', layerUUID)
+}
+
 /** Per-layer visibility, keyed by layer UUID. Registered as late as
  *  mmgisGetLayerConfigs; the same readiness caveat applies. */
 export const mmgisGetVisibleLayers = (): Promise<Record<
