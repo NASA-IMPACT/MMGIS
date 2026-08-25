@@ -22,8 +22,18 @@ export type LayerConfig = {
     display_name?: string
     time?: {
         enabled?: boolean
+        /** A concrete ISO datetime, or a policy string ("now",
+         *  "now - P1D") — resolve with _shared/time/layerTimePolicy. */
         dataStartTime?: string
         dataEndTime?: string
+        /** The data's time step as an ISO-8601 duration (VEDA's
+         *  dashboard:time_interval, e.g. "P1D"). Carried fact — consumers
+         *  needing discrete steps follow veda-ui: step from the dataset's
+         *  start. */
+        interval?: string
+        /** Regular cadence vs sporadic acquisitions (VEDA's
+         *  dashboard:is_periodic). */
+        isPeriodic?: boolean
         [key: string]: unknown
     }
     [key: string]: unknown

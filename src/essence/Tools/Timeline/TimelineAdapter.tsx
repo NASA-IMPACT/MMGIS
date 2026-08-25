@@ -22,6 +22,7 @@ import {
     type LayerTimeData
 } from './lib'
 import { stepTime, clampDate } from './lib/utils/timeUtils'
+import { resolveTimePolicy } from '../_shared/time/layerTimePolicy'
 import './Timeline.css'
 
 /** The wire shape of both 'time:changeRequested' and 'time:changed'. */
@@ -190,18 +191,17 @@ export const TimelineAdapter: React.FC = () => {
                 if (layer.time && layer.time.enabled) {
                     const timeConfig = layer.time
 
-                    if (timeConfig.dataStartTime) {
-                        const parsedStart = new Date(timeConfig.dataStartTime)
-                        if (!isNaN(parsedStart.getTime())) {
-                            start = parsedStart
-                        }
-                    }
-                    if (timeConfig.dataEndTime) {
-                        const parsedEnd = timeConfig.dataEndTime === 'now' ? new Date() : new Date(timeConfig.dataEndTime)
-                        if (!isNaN(parsedEnd.getTime())) {
-                            end = parsedEnd
-                        }
-                    }
+                    // Data times may be concrete datetimes or policies
+                    // ("now", "now - P1D") — the shared resolver evaluates
+                    // both; null means unset/unparseable, keep the fallback.
+                    const resolvedStart = resolveTimePolicy(
+                        timeConfig.dataStartTime
+                    )
+                    if (resolvedStart != null) start = new Date(resolvedStart)
+                    const resolvedEnd = resolveTimePolicy(
+                        timeConfig.dataEndTime
+                    )
+                    if (resolvedEnd != null) end = new Date(resolvedEnd)
 
                     // Time-enabled layers stand out in the theme's secondary colour
                     color = 'var(--theme-color-secondary, #c91b6e)'
