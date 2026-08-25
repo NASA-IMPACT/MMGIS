@@ -18,6 +18,13 @@ export type LayerManagerPanelProps = {
     onZoomToLayer?: LayerLegendListProps['onZoomToLayer']
     canZoomToLayer?: LayerLegendListProps['canZoomToLayer']
     onCompareLayer?: LayerLegendListProps['onCompareLayer']
+    /**
+     * Reveal the host's "add layer from URL" surface. The panel owns no such
+     * form of its own — the host decides what the button opens. The button is
+     * left out entirely when no handler is given.
+     */
+    onAddLayer?: () => void
+    addLayerLabel?: string
 }
 
 export function LayerManagerPanel({
@@ -32,9 +39,27 @@ export function LayerManagerPanel({
     onZoomToLayer,
     canZoomToLayer,
     onCompareLayer,
+    onAddLayer,
+    addLayerLabel = 'Add layer from URL',
 }: LayerManagerPanelProps) {
     return (
         <div className="blocks-layer-manager">
+            {onAddLayer && (
+                <div className="blocks-layer-manager__header">
+                    <button
+                        type="button"
+                        className="blocks-layer-manager__add-layer"
+                        onClick={onAddLayer}
+                        title={addLayerLabel}
+                    >
+                        <span
+                            className="blocks-layer-manager__add-layer-icon"
+                            aria-hidden="true"
+                        />
+                        <span>{addLayerLabel}</span>
+                    </button>
+                </div>
+            )}
             <div className="blocks-layer-manager__content">
                 {loading ? (
                     <div className="blocks-layer-manager__loading">

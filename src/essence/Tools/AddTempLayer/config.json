@@ -12,14 +12,6 @@
     },
     "metadata": {
         "icon": "add",
-        "compatiblePositions": [
-            "float-top-left",
-            "float-top-center",
-            "float-top-right",
-            "float-bottom-left",
-            "float-bottom-center",
-            "float-bottom-right"
-        ],
         "preferredPosition": "float-top-right",
         "startHidden": true,
         "modernLayoutSupport": true

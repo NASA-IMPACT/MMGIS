@@ -112,6 +112,28 @@ describe('LayerManagerPanel without a host', () => {
         await unmount()
     })
 
+    test('omits the add-layer button unless the host handles it', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[GRADIENT_LAYER]} />,
+        )
+        expect(container.querySelector('.blocks-layer-manager__add-layer')).toBeNull()
+        await unmount()
+    })
+
+    test('reports add-layer clicks through its callback', async () => {
+        const onAddLayer = vi.fn()
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[GRADIENT_LAYER]} onAddLayer={onAddLayer} />,
+        )
+
+        const button = container.querySelector('.blocks-layer-manager__add-layer')!
+        expect(button.textContent).toContain('Add layer from URL')
+        await click(button)
+
+        expect(onAddLayer).toHaveBeenCalledTimes(1)
+        await unmount()
+    })
+
     test('reports visibility changes through its callback', async () => {
         const onVisibilityChange = vi.fn()
         const { container, unmount } = await mount(
