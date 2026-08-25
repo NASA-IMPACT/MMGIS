@@ -5,6 +5,7 @@ import {
     setColormap,
     setRescale,
     zoomToLayer,
+    compareLayer,
 } from '../adapters/handlers.ts'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -259,5 +260,20 @@ test.describe('handlers', () => {
 
         expect(requests).toHaveLength(0)
         warn.mockRestore()
+    })
+
+    // Announced, not called: the layers list names the event and nothing else,
+    // so a mission without the Comparison plugin simply has nobody listening.
+    test('compareLayer announces the layer on the bus', () => {
+        const { emitCalls, requests } = setupMock()
+        compareLayer('layerA')
+
+        expect(emitCalls).toEqual([
+            {
+                event: 'plugin:comparison:startWithLayer',
+                payload: { layerId: 'layerA' },
+            },
+        ])
+        expect(requests).toHaveLength(0)
     })
 })

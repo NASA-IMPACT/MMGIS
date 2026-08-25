@@ -65,6 +65,18 @@ export const zoomToLayer = async (layerId: string): Promise<void> => {
     })
 }
 
+/**
+ * Hands a layer to the Comparison plugin as the first of the two sides it
+ * swipes between.
+ *
+ * Announced on the bus rather than called: the layers list knows nothing about
+ * Comparison beyond the name of the event, and a mission without that plugin
+ * simply has nobody listening.
+ */
+export const compareLayer = (layerId: string): void => {
+    mmgisEmit('plugin:comparison:startWithLayer', { layerId })
+}
+
 export const setColormap = async (layerId: string, colormap: string, refresh: Refresh): Promise<void> => {
     if (!(await canChangeColormap(layerId))) return
     await mmgisRequest('layers:updateConfig', { layerUUID: layerId, updates: { currentCogColormap: colormap } })

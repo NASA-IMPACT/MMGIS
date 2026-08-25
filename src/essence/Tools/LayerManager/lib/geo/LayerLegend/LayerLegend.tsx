@@ -44,6 +44,7 @@ export type LayerLegendProps = {
     onRescaleChange?: (layerId: string, min: number, max: number) => void
     onZoomToLayer?: (layerId: string) => void
     canZoomToLayer?: (layerId: string) => Promise<boolean>
+    onCompareLayer?: (layerId: string) => void
 }
 
 export function LayerLegend({
@@ -56,6 +57,7 @@ export function LayerLegend({
     onRescaleChange,
     onZoomToLayer,
     canZoomToLayer,
+    onCompareLayer,
 }: LayerLegendProps) {
     const {
         id,
@@ -162,6 +164,23 @@ export function LayerLegend({
                     : undefined,
             onSelect: () => onZoomToLayer?.(id),
         },
+        // A comparison shows one layer against another, so the layer has to be
+        // drawn to be one of the two. Offered as inert rather than hidden, so
+        // the way to reach it stays visible on a layer that is switched off.
+        ...(onCompareLayer
+            ? [
+                  {
+                      id: 'compare-layer',
+                      label: 'Compare layer',
+                      icon: 'compare-layer',
+                      disabled: !isVisible,
+                      title: !isVisible
+                          ? 'Turn this layer on to compare it'
+                          : undefined,
+                      onSelect: () => onCompareLayer(id),
+                  } satisfies PopoverMenuItem,
+              ]
+            : []),
     ]
 
     const handleVisibilityToggle = () => {
