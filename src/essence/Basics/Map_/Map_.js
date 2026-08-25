@@ -421,6 +421,8 @@ let Map_ = {
                     (p) => MapComparison.setLeftSide(p)),
                 window.mmgisAPI.provide('map:comparison:setRightSide',
                     (p) => MapComparison.setRightSide(p)),
+                window.mmgisAPI.provide('map:comparison:setLayout',
+                    (p) => MapComparison.setLayout(p)),
                 window.mmgisAPI.provide('map:comparison:setDividerPosition',
                     (p) => MapComparison.setDividerPosition(p)),
                 window.mmgisAPI.provide('map:comparison:getState',

@@ -29,6 +29,18 @@ export default defineConfig({
           new URL("./tests/unit/__mocks__/preTools.js", import.meta.url)
         ),
       },
+      // `Basics/Viewer_/PDFViewer.js` holds JSX in a `.js` file — fine under the
+      // Babel-driven webpack build, but Vite's default `.js` loader will not
+      // parse it. Anything reaching Layers_ pulls it in (Layers_ -> Viewer_ ->
+      // PDFViewer) and would fail import analysis over a file it never uses, so
+      // point it at a hermetic stub. See tests/unit/__mocks__/pdfViewer.js.
+      {
+        // Viewer_ imports it as "./PDFViewer", so match the whole specifier.
+        find: /^.*\/PDFViewer$/,
+        replacement: fileURLToPath(
+          new URL("./tests/unit/__mocks__/pdfViewer.js", import.meta.url)
+        ),
+      },
     ],
   },
   test: {

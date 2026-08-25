@@ -389,9 +389,31 @@ export interface IMapEngine<
      */
     setComparisonDivider?(pos: number): void
 
+    /**
+     * Switch between the two ways the sides can share the viewport. Rebuilds
+     * the rendering surfaces, keeping the layer sets and the divider where
+     * they are. No-op if comparison mode is off.
+     */
+    setComparisonLayout?(layout: ComparisonLayout): void
+
     /** Returns true when comparison mode is currently active. */
     isComparisonEnabled?(): boolean
+
+    /** The layout comparison is currently drawn in. */
+    getComparisonLayout?(): ComparisonLayout
 }
+
+/**
+ * How the two comparison sides share the map viewport.
+ *
+ * - `'swipe'` — one camera, one basemap. Both sides draw the same view and the
+ *   divider wipes between them, so a place is seen under one layer or the
+ *   other.
+ * - `'sideBySide'` — two cameras locked to the same centre and zoom, each with
+ *   its own basemap, in panes that meet at the divider without overlapping. A
+ *   place is seen under both layers at once, once per pane.
+ */
+export type ComparisonLayout = 'swipe' | 'sideBySide'
 
 /** Configuration for {@link IMapEngine.enableComparison}. */
 export interface ComparisonConfig {
@@ -399,4 +421,17 @@ export interface ComparisonConfig {
     leftLayerIds: string[]
     /** deck.gl layer IDs (= MMGIS layer names) to render on the right side. */
     rightLayerIds: string[]
+    /** Defaults to the layout already in effect, or `'swipe'` on first enable. */
+    layout?: ComparisonLayout
+    /**
+     * Layer props to override on the left side only, keyed by layer id — how a
+     * side is drawn from a source the other side does not share, such as a
+     * different date's tiles. Props are engine-level (`data`, `geotiff`); the
+     * engine applies what it is given and never derives them. `id` is not among
+     * them: a clone is paired to its layer by id, and overriding it breaks the
+     * pairing the renderer diffs on.
+     */
+    leftLayerProps?: Record<string, Record<string, unknown>>
+    /** As {@link ComparisonConfig.leftLayerProps}, for the right side. */
+    rightLayerProps?: Record<string, Record<string, unknown>>
 }
