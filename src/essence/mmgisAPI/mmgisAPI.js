@@ -1072,13 +1072,31 @@ var mmgisAPI = {
     off: events.off,
 
     /**
-     * Emit an event to all subscribers
+     * Emit an event to all subscribers. A handler that throws is reported and
+     * skipped, so one bad listener cannot abort the emit.
      * @param {string} event - Event name
      * @param {*} data - Event data to pass to subscribers
      * @example
      * mmgisAPI.emit('layer:toggle', { layerName: 'Terrain', visible: true });
      */
-    emit: events.emit,
+    emit: (event, data) => {
+        const run = (fn, args, label) => {
+            try {
+                fn(...args)
+            } catch (err) {
+                console.error(`[mmgisAPI] ${label} for "${event}" threw:`, err)
+            }
+        }
+        // Dispatching from events.all — mitt's published subscriber map —
+        // rather than through events.emit, so each listener can be isolated.
+        // It restates two of mitt's rules: specific listeners before
+        // wildcards, and wildcards called with (type, data). A mitt upgrade is
+        // a place to re-check both.
+        //
+        // Copy before iterating: a handler may subscribe or unsubscribe mid-emit.
+        ;[...(events.all.get(event) || [])].forEach((fn) => run(fn, [data], 'listener'))
+        ;[...(events.all.get('*') || [])].forEach((fn) => run(fn, [event, data], 'wildcard listener'))
+    },
 
     // ============ REQUEST/RESPONSE API ============
 
