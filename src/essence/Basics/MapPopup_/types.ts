@@ -19,11 +19,25 @@ export interface MapPopupAction {
     label: string
 }
 
+/**
+ * What to show and where. Only the anchor is required: a card is free to be a
+ * heading over two buttons, or a body with none. A request holding neither a
+ * title nor html has nothing to show and is rejected.
+ */
 export interface MapPopupRequest {
-    /** Map coordinate the popup is anchored to. */
+    /**
+     * Map coordinate the popup is anchored to. One outside ±90 lat or ±180
+     * lng is rejected rather than clamped onto the edge of the map.
+     */
     latlng: { lat: number; lng: number }
+    /**
+     * Heading, rendered on the close control's row. Text, never HTML: markup
+     * in a title reaches the card as the characters it was written with, the
+     * same way a button label does. A blank one reads as no title at all.
+     */
+    title?: string
     /** Popup body. Sanitized by the core before it reaches the DOM. */
-    html: string
+    html?: string
     /** Filled button, rendered first in the actions row. */
     primaryAction?: MapPopupAction
     /** Outlined button, rendered last in the actions row. */

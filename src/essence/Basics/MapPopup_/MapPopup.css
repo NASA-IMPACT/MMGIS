@@ -12,13 +12,29 @@
     position: fixed;
     top: 0;
     left: 0;
-    z-index: 999999;
+    /* No stacking level of its own. The card is mounted beside the map
+       container, so following the map in tree order is all it takes to paint
+       over it, while everything the app lays over the map — panels, the layer
+       manager, a modal — claims a level and so goes on painting over the
+       card. */
     box-sizing: border-box;
     /* Shrink to fit the content: the card is placed by a transform, so it has
        no containing block to resolve a percentage width against. */
     width: max-content;
     min-width: 220px;
     max-width: 320px;
+    /* A card is never taller than the viewport it is placed in: nothing
+       scrolls a card that hangs past the bottom edge into view, so its actions
+       row would be out of reach. The 16px matches the margin MapPopup_ keeps
+       between the card and each viewport edge. The column lets the content
+       take whatever room the actions row leaves. */
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 16px);
+    /* The card is placed by a transform, which makes it the containing block
+       for absolutely positioned content, so content that escapes the flow
+       would paint outside the card's border rather than be clipped by it. */
+    overflow: hidden;
     padding: var(--theme-spacing-2, 1rem);
     border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     border-radius: var(--theme-radius-0, 0);
@@ -35,11 +51,37 @@
     box-shadow: 0 25px 50px -12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
 }
 
+/* The heading shares the close control's row, so it keeps the room clear of
+   the control that the body keeps for itself when there is no heading above
+   it. It sits outside the scrolling body, which is what lets a long body
+   slide underneath while the heading stays where it is. */
+.mmgis-map-popup__title {
+    padding-right: var(--theme-spacing-3, 1.5rem);
+    /* An unbreakable token in a heading paints outside the card just as one
+       in the body does. */
+    overflow-wrap: anywhere;
+    font-size: var(--theme-font-size-md, 1rem);
+    font-weight: var(--theme-font-weight-bold, 700);
+    line-height: 1.3;
+}
+
 .mmgis-map-popup__content {
     padding-right: var(--theme-spacing-3, 1.5rem);
     /* A single unbreakable token (a URL, a long feature id) would otherwise
        paint outside the card's border. */
     overflow-wrap: anywhere;
+    /* Body longer than the capped card scrolls here rather than pushing the
+       actions row past the bottom of the card. The zero minimum is what lets
+       this shrink to the room the actions row leaves it. */
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* Under a heading the body is already clear of the close control, so it takes
+   the full width of the card and only the gap the heading leaves it. */
+.mmgis-map-popup__title + .mmgis-map-popup__content {
+    margin-top: var(--theme-spacing-1, 0.5rem);
+    padding-right: 0;
 }
 
 .mmgis-map-popup__close {
@@ -105,7 +147,11 @@
     max-width: 100%;
 }
 
-.mmgis-map-popup__button:focus-visible {
+/* Every control the card can hand focus to draws its own ring: MMGIS resets
+   the user agent's away globally (src/css/mmgis.css), so a control without a
+   ring of its own leaves a keyboard user with no idea where they are. */
+.mmgis-map-popup__button:focus-visible,
+.mmgis-map-popup__close:focus-visible {
     outline: 3px solid var(--theme-color-primary-light, #73b3e7);
 }
 

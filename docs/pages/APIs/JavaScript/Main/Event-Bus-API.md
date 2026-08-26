@@ -399,7 +399,8 @@ const api = window.mmgisAPI.forPlugin('crater-info')
 // Pending until the popup closes — hold onto it rather than blocking on it.
 const outcome = api.request('map:showPopup', {
     latlng: { lat: 45, lng: -120 }, // anchor, tracked as the map moves
-    html: '<strong>Crater A</strong><p>Diameter: 12 km</p>', // sanitized by the core
+    title: 'Crater A', // heading, rendered as text on the close control's row
+    html: '<p>Diameter: 12 km</p>', // body, sanitized by the core
     primaryAction: { label: 'Analyze' },
     secondaryAction: { label: 'Cancel' }
 })
@@ -418,6 +419,18 @@ function destroy() {
 }
 ```
 
+The request holds:
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `latlng` | yes | Where the popup is anchored, tracked as the map moves |
+| `title` | no | Heading, rendered as text on the close control's row. Never HTML: markup in a title arrives as the characters it was written with, the same way a button label does |
+| `html` | no | Body, sanitized by the core before it reaches the DOM |
+| `primaryAction` | no | Filled button, first in the actions row |
+| `secondaryAction` | no | Outlined button, last in the actions row |
+
+The anchor is the only field a request always carries. Beyond it a card is a `title`, an `html`, or both — buttons are not content, so a request holding neither has nothing to show and is rejected.
+
 The result is `{ action }`:
 
 | `action` | Meaning |
@@ -429,7 +442,7 @@ The result is `{ action }`:
 
 Ownership decides who may *retract* a popup, never who may open one. A request made through a plugin's handle carries the plugin's id (see Scoped `request` above), and `map:hidePopup` retracts only the popup its own caller opened — answering `false` when the slot holds someone else's popup, or nothing — so it is safe to call blind on teardown. Prefer the handle to a bare `mmgisAPI.request(...)`: an id-less request opens a popup that any other id-less caller can retract.
 
-The request rejects — showing nothing — when it is invalid (`html` must be a string and `latlng` finite numbers) or when the popup could not be mounted. An action renders only when its `label` is a non-empty string; two actions render as equal-width buttons with the primary first, and a lone action takes the primary styling whichever field it arrived in, still answering with its own slot. The popup tracks its anchor as the map pans and hides for the length of the 2D engine's zoom animation, returning once the zoom settles.
+The request rejects — showing nothing — when it is invalid (`latlng` must hold finite numbers in range, `title` and `html` must be strings when given, and one of the two must be there) or when the popup could not be mounted. A title of nothing but whitespace reads as no title, and a card with a title takes its accessible name from it rather than from the generic one a title-less card carries. An action renders only when its `label` is a non-empty string; two actions render as equal-width buttons with the primary first, and a lone action takes the primary styling whichever field it arrived in, still answering with its own slot. The popup tracks its anchor as the map pans and hides for the length of the 2D engine's zoom animation, returning once the zoom settles.
 
 A click elsewhere on the map dismisses the popup at the end of that click's own task: a replacement popup shown in the same task wins, resolving the earlier request with `'closed'`, while one shown after an `await` arrives after the dismissal, so the earlier request resolves `'dismiss'`. Either way the plugin is told, exactly once.
 

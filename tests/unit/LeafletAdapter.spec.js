@@ -791,23 +791,85 @@ test.describe('LeafletAdapter - onFeatureClick', () => {
     })
 })
 
+// ─── on / off ─────────────────────────────────────────────────────────────────
+
+test.describe('LeafletAdapter - on / off', () => {
+
+    // Click subscribers hang off the adapter's own map listener rather than
+    // off Leaflet, so unsubscribing has to take them off that fan-out — handing
+    // the handler back to Leaflet cannot remove a listener Leaflet never had.
+    test('off() stops a click subscriber the adapter fans out to', () => {
+        const { mockMap } = setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        let mapClick = null
+        mockMap.on = (event, cb) => { if (event === 'click') mapClick = cb }
+
+        const clicks = []
+        const handler = (e) => clicks.push(e.latlng)
+        adapter.on('click', handler)
+        mapClick({ latlng: { lat: 1, lng: 2 } })
+
+        adapter.off('click', handler)
+        mapClick({ latlng: { lat: 3, lng: 4 } })
+
+        expect(clicks).toEqual([{ lat: 1, lng: 2 }])
+    })
+})
+
 // ─── the click a drawing ended on ─────────────────────────────────────────────
 
 test.describe('LeafletAdapter - the click a drawing ended on', () => {
 
-    /** Stands in for the map container terra-draw and the guard listen on. */
+    /**
+     * Stands in for the map container terra-draw and the guard listen on.
+     * Removal matches on the capture flag the way the DOM does, so a listener
+     * taken off with the other one stays attached.
+     */
     function makeEventTarget() {
-        const listeners = new Map()
+        const listeners = []
         return {
-            addEventListener: (type, fn) => {
-                if (!listeners.has(type)) listeners.set(type, new Set())
-                listeners.get(type).add(fn)
+            addEventListener: (type, fn, capture = false) => {
+                listeners.push({ type, fn, capture: !!capture })
             },
-            removeEventListener: (type, fn) => {
-                listeners.get(type)?.delete(fn)
+            removeEventListener: (type, fn, capture = false) => {
+                const i = listeners.findIndex(
+                    (l) => l.type === type && l.fn === fn && l.capture === !!capture
+                )
+                if (i !== -1) listeners.splice(i, 1)
             },
             fire: (type) => {
-                listeners.get(type)?.forEach((fn) => fn())
+                listeners
+                    .filter((l) => l.type === type)
+                    .forEach((l) => l.fn())
+            },
+            listenerCount: () => listeners.length,
+        }
+    }
+
+    /** The map's double-click zoom handler, reporting the state it is left in. */
+    function makeDoubleClickZoom() {
+        let enabled = false
+        return {
+            enabled: () => enabled,
+            enable: () => { enabled = true },
+            disable: () => { enabled = false },
+        }
+    }
+
+    /**
+     * Stands in for terra-draw, which turns double-click zoom back on as it
+     * stops the mode — and throws rather than stopping a mode twice, leaving
+     * whatever it stopped the first time in place.
+     */
+    function makeTerraDraw(doubleClickZoom, { started = true } = {}) {
+        return {
+            clear: () => { },
+            stop: () => {
+                if (!started) throw new Error('Mode must be started to be stopped')
+                started = false
+                doubleClickZoom.enable()
             },
         }
     }
@@ -971,23 +1033,90 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         vi.useFakeTimers()
         try {
             const { adapter, mockMap } = setupDrawing()
-            let enabled = false
-            mockMap.doubleClickZoom = {
-                enabled: () => enabled,
-                enable: () => { enabled = true },
-                disable: () => { enabled = false },
-            }
+            const zoom = makeDoubleClickZoom()
+            mockMap.doubleClickZoom = zoom
             // Stopping the mode is what turns it back on, inside _stopDrawing.
-            adapter._terraDraw = {
-                clear: () => { },
-                stop: () => { enabled = true },
-            }
+            adapter._terraDraw = makeTerraDraw(zoom)
 
             adapter._stopDrawing()
-            expect(enabled).toBe(false)
+            expect(zoom.enabled()).toBe(false)
 
             vi.advanceTimersByTime(600)
-            expect(enabled).toBe(true)
+            expect(zoom.enabled()).toBe(true)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // The guard gives double-click zoom back, it does not hand it out: a map
+    // that had it off — the session having ended with terra-draw already
+    // stopped, so nothing turned it on — must still have it off once the
+    // window closes. Enabling regardless would give every deployment that
+    // configures double-click zoom off the behaviour it turned down, from the
+    // user's first drawing to the end of the session.
+    test('leaves double-click zoom off when it was off as the session ended', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, mockMap } = setupDrawing()
+            const zoom = makeDoubleClickZoom()
+            mockMap.doubleClickZoom = zoom
+            adapter._terraDraw = makeTerraDraw(zoom, { started: false })
+
+            adapter.disableDrawing()
+            vi.advanceTimersByTime(600)
+
+            expect(zoom.enabled()).toBe(false)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // Two sessions can end inside one window — a drawing cancelled, another
+    // started and cancelled straight after — and the second arming reads the
+    // handler again to know what to give back. By then the guard is the one
+    // holding double-click zoom down, so what it reads must be the state from
+    // before that: taking its own disable for the map's setting would leave
+    // double-click zoom off for the rest of the session.
+    test('gives back the double-click zoom state from before it held it down', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, mockMap } = setupDrawing()
+            const zoom = makeDoubleClickZoom()
+            mockMap.doubleClickZoom = zoom
+            adapter._terraDraw = makeTerraDraw(zoom)
+
+            adapter.disableDrawing()
+            expect(zoom.enabled()).toBe(false)
+
+            // A second session, ending while the first window is still open.
+            vi.advanceTimersByTime(100)
+            adapter._drawingShape = 'polygon'
+            adapter.disableDrawing()
+
+            vi.advanceTimersByTime(600)
+            expect(zoom.enabled()).toBe(true)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // A mission swap tears the map down mid-drawing, window and all. The guard
+    // has to let go of the container it is watching — a removal that does not
+    // match how it subscribed takes nothing off — and give double-click zoom
+    // back on the way out, since nothing else will now that terra-draw's mode
+    // is already stopped.
+    test('lets go of the container and double-click zoom when the adapter is destroyed', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, mockMap, container } = setupDrawing()
+            const zoom = makeDoubleClickZoom()
+            mockMap.doubleClickZoom = zoom
+            adapter._terraDraw = makeTerraDraw(zoom)
+
+            adapter.destroy()
+
+            expect(container.listenerCount()).toBe(0)
+            expect(zoom.enabled()).toBe(true)
         } finally {
             vi.useRealTimers()
         }

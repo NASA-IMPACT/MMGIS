@@ -6,6 +6,57 @@ import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/Deck
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
 import { drawModeKeyEvents } from '../../src/essence/Basics/MapEngines/Adapters/DrawingHelpers.ts'
 
+// Both init() branches build their engine through a real constructor, so the
+// props they wire the adapter's handlers into can only be read back off that
+// constructor. jsdom has no WebGL, so the constructors are replaced — and only
+// they are: everything else the adapter imports alongside them stays real.
+const constructed = vi.hoisted(() => ({ deck: [], overlay: [] }))
+
+vi.mock('@deck.gl/core', async (importOriginal) => {
+    const actual = await importOriginal()
+    class MockDeck {
+        constructor(props) {
+            constructed.deck.push(props)
+        }
+        setProps() {}
+        redraw() {}
+        finalize() {}
+    }
+    return { ...actual, Deck: MockDeck }
+})
+
+vi.mock('@deck.gl/mapbox', async (importOriginal) => {
+    const actual = await importOriginal()
+    class MockMapboxOverlay {
+        constructor(props) {
+            constructed.overlay.push(props)
+        }
+        setProps() {}
+        finalize() {}
+    }
+    return { ...actual, MapboxOverlay: MockMapboxOverlay }
+})
+
+vi.mock('maplibre-gl', async (importOriginal) => {
+    const actual = await importOriginal()
+    class MockMap {
+        constructor() {
+            this._canvas = document.createElement('canvas')
+        }
+        addControl() {}
+        removeControl() {}
+        on() {}
+        off() {}
+        once() {}
+        setMaxBounds() {}
+        remove() {}
+        getCanvas() {
+            return this._canvas
+        }
+    }
+    return { ...actual, Map: MockMap }
+})
+
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
     const adapter = new DeckGLAdapter()
     adapter._viewState = { longitude, latitude, zoom, bearing: 0, pitch: 0 }
@@ -962,6 +1013,138 @@ test.describe('DeckGLAdapter', () => {
             adapter.panTo({ lat: 20, lng: 10 }, { duration: 400 })
 
             expect(events).toEqual([])
+        })
+    })
+
+    // The props the engine is constructed with are where the adapter's handlers
+    // are connected to deck's input. Calling those handlers directly, as the
+    // tests above do, says nothing about which function deck ends up calling,
+    // and each mode wires its own copy.
+    test.describe('constructed engine props', () => {
+        const CONTAINER_ID = 'deckgl-init'
+        const MAPLIBRE_BASEMAP = {
+            provider: 'maplibre',
+            style: 'https://example.com/style.json',
+        }
+
+        // A deck pick, whose `coordinate` is in [lng, lat] order.
+        const pickAt = (lng, lat) => ({ coordinate: [lng, lat], x: 12, y: 34 })
+
+        // Run the real init() path and hand back the props of whichever engine
+        // it built: deck's own in standalone mode, the MapboxOverlay's in
+        // overlay mode.
+        function initAdapter(basemap) {
+            constructed.deck.length = 0
+            constructed.overlay.length = 0
+            let container = document.getElementById(CONTAINER_ID)
+            if (!container) {
+                container = document.createElement('div')
+                container.id = CONTAINER_ID
+                document.body.appendChild(container)
+            }
+            const adapter = new DeckGLAdapter()
+            adapter.init({
+                containerId: CONTAINER_ID,
+                center: { lat: 40, lng: -120 },
+                zoom: 5,
+                ...(basemap ? { basemap } : {}),
+            })
+            return {
+                adapter,
+                props: basemap ? constructed.overlay[0] : constructed.deck[0],
+            }
+        }
+
+        for (const [mode, basemap] of [
+            ['standalone', null],
+            ['overlay', MAPLIBRE_BASEMAP],
+        ]) {
+            test(`${mode} mode reports the clicks deck picks`, () => {
+                const { adapter, props } = initAdapter(basemap)
+                const clicks = []
+                const picks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+                adapter.onFeatureClick((result) => picks.push(result))
+
+                props.onClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+                expect(picks).toHaveLength(1)
+            })
+
+            test(`${mode} mode holds back the clicks a drawing takes as vertices`, () => {
+                const { adapter, props } = initAdapter(basemap)
+                const clicks = []
+                const picks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+                adapter.onFeatureClick((result) => picks.push(result))
+                adapter._drawingShape = 'polygon'
+
+                props.onClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([])
+                expect(picks).toEqual([])
+            })
+        }
+
+        // The click a drawing ended on lands after the session is already over,
+        // so the finish guard is the only thing left that can recognise it.
+        // Ending the session is what arms that guard.
+        test('overlay mode holds back the click a drawing ended on', () => {
+            const { adapter, props } = initAdapter(MAPLIBRE_BASEMAP)
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+            adapter._drawingShape = 'rectangle'
+            adapter._stopDrawing()
+
+            props.onClick(pickAt(-120, 40))
+
+            expect(clicks).toEqual([])
+        })
+
+        // Standalone deck has no basemap canvas for a session to end on, so the
+        // guard is armed the way a finish arms it and the click delivered
+        // behind it.
+        test('standalone mode holds back the click a drawing ended on', () => {
+            const { adapter, props } = initAdapter(null)
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+            adapter._drawEndClick.arm(document.createElement('canvas'))
+
+            props.onClick(pickAt(-120, 40))
+
+            expect(clicks).toEqual([])
+        })
+
+        // A drag or a wheel zoom reaches the adapter only through deck's own
+        // onViewStateChange. An anchored consumer follows the gesture by the
+        // `move` emitted from there; with only `moveend` to go on it would sit
+        // at the old anchor for the whole gesture and jump at the end.
+        test('standalone mode reports an interactive camera change while it happens', () => {
+            const { adapter, props } = initAdapter(null)
+            const events = []
+            adapter.on('move', (state) => events.push(['move', { ...state }]))
+            adapter.on('moveend', (state) => events.push(['moveend', { ...state }]))
+            const viewState = {
+                longitude: 10,
+                latitude: 20,
+                zoom: 6,
+                bearing: 45,
+                pitch: 30,
+            }
+
+            props.onViewStateChange({ viewState })
+
+            expect(events.map(([name]) => name)).toEqual(['move', 'moveend'])
+            expect(events[0][1]).toEqual(viewState)
+            // Anchored consumers read bearing and pitch off the adapter, so the
+            // gesture has to have been synced there before `move` goes out.
+            expect(adapter.getViewState()).toEqual({
+                center: { lat: 20, lng: 10 },
+                zoom: 6,
+                bearing: 45,
+                pitch: 30,
+            })
         })
     })
 

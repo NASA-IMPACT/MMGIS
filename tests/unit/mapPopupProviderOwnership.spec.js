@@ -110,4 +110,26 @@ describe('the popup providers Map_ registers', () => {
         expect(cardCount()).toBe(0)
         expect(outcome).toEqual({ action: 'closed' })
     })
+
+    test('drop the popup when the map it is anchored to is re-initialised', async () => {
+        const inspect = mmgisAPI.forPlugin('inspect')
+
+        let outcome = null
+        inspect.request('map:showPopup', popupRequest).then((result) => {
+            outcome = result
+        })
+        await flush()
+        expect(cardCount()).toBe(1)
+
+        // Switching missions re-runs `Map_.init`, which destroys the engine the
+        // card is anchored to and its subscriptions along with it. The card is
+        // hosted on `document.body`, so nothing else takes it down: it has to
+        // leave with the map rather than hang over the new one, and the plugin
+        // still waiting on its show request has to hear that it is gone.
+        Map_.init(() => {})
+        expect(cardCount()).toBe(0)
+
+        await flush()
+        expect(outcome).toEqual({ action: 'closed' })
+    })
 })
