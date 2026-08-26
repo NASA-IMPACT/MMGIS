@@ -123,14 +123,6 @@ function bboxArea(feature) {
     return (b[2] - b[0]) * (b[3] - b[1])
 }
 
-/** Render a label as text inside the popup's html field. */
-function escapeHtml(s) {
-    return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-}
-
 const AOITool = {
     // height:0 + width:0 makes ToolController_ collapse the docked side rail to 0px.
     height: 0,
@@ -712,6 +704,12 @@ const AOITool = {
      * Ask core for the analyze/cancel popup at a feature centroid. The request
      * is data only — core owns the DOM, the styling and the lifecycle — and it
      * answers with how the popup closed.
+     *
+     * The selection's label travels as the popup's title, which core renders
+     * as text and names the card by: the card announces the area it is about
+     * rather than a generic popup, and markup in a label is nothing this
+     * plugin has to escape. A title over the two buttons is the whole card,
+     * so there is no body to send.
      */
     _showPopup(label, latlng) {
         // Through AOI's own handle, which stamps the request with AOI's id —
@@ -720,7 +718,7 @@ const AOITool = {
         this._api
             ?.request('map:showPopup', {
                 latlng,
-                html: `<strong>${escapeHtml(label)}</strong>`,
+                title: label,
                 secondaryAction: { label: 'Cancel' },
                 primaryAction: { label: 'Analyze area' },
             })

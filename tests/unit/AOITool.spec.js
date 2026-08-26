@@ -181,7 +181,7 @@ describe('AOITool popup requests', () => {
         expect(shows).toHaveLength(1)
         const payload = shows[0].payload
         expect(payload.latlng).toEqual({ lat: 5, lng: 5 })
-        expect(payload.html).toBe('<strong>Alabama</strong>')
+        expect(payload.title).toBe('Alabama')
         // Labels only: the outcome comes back on the request's promise, so the
         // plugin names no events for core to broadcast.
         expect(payload.primaryAction).toEqual({ label: 'Analyze area' })
@@ -204,18 +204,27 @@ describe('AOITool popup requests', () => {
         expect(api.namesOf('map:hidePopup')).toHaveLength(1)
         const shows = api.namesOf('map:showPopup')
         expect(shows).toHaveLength(1)
-        expect(shows[0].payload.html).toBe('<strong>Alaska</strong>')
+        expect(shows[0].payload.title).toBe('Alaska')
         expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(0)
         expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE })
     })
 
-    test('escapes markup in the label', async () => {
+    test('hands a label holding markup to core as it was written', async () => {
         AOITool._applySelection(SQUARE, 'upload', 'Smith & <b>Sons</b>')
         await flush()
         api.emit('map:moveend')
 
-        const { html } = api.namesOf('map:showPopup')[0].payload
-        expect(html).toBe('<strong>Smith &amp; &lt;b&gt;Sons&lt;/b&gt;</strong>')
+        // Core renders a title as text, so escaping one here would put the
+        // escapes themselves on the card.
+        const { title } = api.namesOf('map:showPopup')[0].payload
+        expect(title).toBe('Smith & <b>Sons</b>')
+    })
+
+    test('sends no body: the card is the title over the two buttons', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+
+        const { payload } = api.namesOf('map:showPopup')[0]
+        expect('html' in payload).toBe(false)
     })
 })
 
@@ -344,7 +353,7 @@ describe('AOITool popup lifecycle', () => {
 
         const shows = api.namesOf('map:showPopup')
         expect(shows).toHaveLength(1)
-        expect(shows[0].payload.html).toBe('<strong>Alaska</strong>')
+        expect(shows[0].payload.title).toBe('Alaska')
         expect(shows[0].payload.latlng).toEqual({ lat: 25, lng: 25 })
     })
 
@@ -430,7 +439,7 @@ describe('AOITool popup lifecycle', () => {
         await flush()
         const shows = api.namesOf('map:showPopup')
         expect(shows).toHaveLength(1)
-        expect(shows[0].payload.html).toBe('<strong>Alaska</strong>')
+        expect(shows[0].payload.title).toBe('Alaska')
     })
 
     test('a selection already in view opens its popup without waiting on the camera', async () => {
