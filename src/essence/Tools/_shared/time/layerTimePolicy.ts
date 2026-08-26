@@ -9,10 +9,7 @@
  *
  * "now" resolves to the raw current moment, never rounded — matching
  * veda-ui, which normalizes an ongoing (null-ended) STAC domain to the
- * current datetime as-is. A layer's granularity (`time.interval`) and
- * periodicity (`time.isPeriodic`) are carried facts for consumers that
- * need discrete time steps; per veda-ui those step from the dataset's
- * start, so they are no business of this resolver.
+ * current datetime as-is.
  *
  * This is the single resolver every consumer calls; nobody hand-rolls
  * `=== 'now'` checks.
