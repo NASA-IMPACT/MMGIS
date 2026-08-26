@@ -428,7 +428,12 @@
                 ],
                 "start_datetime": "2026-06-26T00:00:00Z",
                 "end_datetime": "2026-07-14T00:00:00Z",
-                "layers": []
+                "layers": [
+                  {
+                    "key": "nisar-gunw",
+                    "defaultOn": true
+                  }
+                ]
               }
             },
             {
@@ -735,6 +740,62 @@
         ],
         "hazard": [
           "Wildfire"
+        ]
+      }
+    },
+    {
+      "name": "NISAR Displacement (GUNW)",
+      "uuid": "79d1b630-f7b5-48c2-aec9-4a127209b4df",
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=gunw&bidx=1&nodata=-9999&rescale=-40,40&resampling=bilinear&colormap_name=rdylbu_r&datetime={starttime}/{endtime}",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "boundingBox": [
+        -70.050557,
+        8.987945,
+        -64.722905,
+        11.555504
+      ],
+      "throughTileServer": false,
+      "cogTransform": false,
+      "cogResampling": "bilinear",
+      "cogColormap": "rdylbu_r",
+      "cogMin": -40,
+      "cogMax": 40,
+      "cogUnits": "cm",
+      "description": "**NISAR Displacement (GUNW)** — geocoded unwrapped interferogram giving ground displacement in centimetres along the radar line of sight. Shows where the ground actually moved, and how far, defining rupture extent.",
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "start": "2026-06-13T00:00:00Z",
+        "end": "2026-06-30T00:00:00Z",
+        "dataStartTime": "2026-06-13T00:00:00Z",
+        "dataEndTime": "2026-06-30T00:00:00Z"
+      },
+      "variables": {
+        "legendOrientation": "vertical"
+      },
+      "properties": {
+        "key": "nisar-gunw",
+        "sector": [
+          "Public Safety"
+        ],
+        "hazard": [
+          "Earthquake"
         ]
       }
     }
