@@ -259,6 +259,78 @@ test.describe('DeckGLHelpers', () => {
             expect(layer.props.pointRadiusUnits).toBe('pixels')
         })
 
+        test('reads vectortile point radius from style.radiusProp', () => {
+            const layer = buildDeckLayer('mvt-4', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { radius: 5, radiusProp: 'size' },
+            })
+            expect(layer.props.getPointRadius({ properties: { size: 12 } })).toBe(12)
+            // Falls back to style.radius when the feature lacks the property.
+            expect(layer.props.getPointRadius({ properties: {} })).toBe(5)
+        })
+
+        test('reads vectortile line width from style.weightProp', () => {
+            const layer = buildDeckLayer('mvt-5', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { weight: 2, weightProp: 'w' },
+            })
+            expect(layer.props.getLineWidth({ properties: { w: 7 } })).toBe(7)
+            expect(layer.props.getLineWidth({ properties: {} })).toBe(2)
+        })
+
+        test('reads vectortile fill colour from style.fillColorProp', () => {
+            const layer = buildDeckLayer('mvt-6', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#000000', fillOpacity: 1, fillColorProp: 'c' },
+            })
+            expect(
+                layer.props.getFillColor({ properties: { c: '#ff0000' } })
+            ).toEqual([255, 0, 0, 255])
+            expect(layer.props.getFillColor({ properties: {} })).toEqual([0, 0, 0, 255])
+        })
+
+        test('reads vectortile line colour from style.colorProp', () => {
+            const layer = buildDeckLayer('mvt-7', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { color: '#000000', opacity: 1, colorProp: 'c' },
+            })
+            expect(
+                layer.props.getLineColor({ properties: { c: '#00ff00' } })
+            ).toEqual([0, 255, 0, 255])
+        })
+
+        test('reads vectortile opacities from their *Prop fields', () => {
+            const layer = buildDeckLayer('mvt-8', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: {
+                    fillColor: '#ff0000',
+                    fillOpacityProp: 'fo',
+                    color: '#0000ff',
+                    opacityProp: 'o',
+                },
+            })
+            expect(layer.props.getFillColor({ properties: { fo: 0.5 } })[3]).toBe(128)
+            expect(layer.props.getLineColor({ properties: { o: 0.5 } })[3]).toBe(128)
+        })
+
+        test('keeps vectortile style accessors static when no *Prop is set', () => {
+            const layer = buildDeckLayer('mvt-9', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { radius: 5, weight: 2 },
+            })
+            // Constants, not functions — deck.gl skips per-feature evaluation.
+            expect(typeof layer.props.getPointRadius).toBe('number')
+            expect(typeof layer.props.getLineWidth).toBe('number')
+            expect(Array.isArray(layer.props.getFillColor)).toBe(true)
+            expect(Array.isArray(layer.props.getLineColor)).toBe(true)
+        })
+
         test('creates a ScatterplotLayer for scatterplot type', () => {
             const layer = buildDeckLayer('scatter-1', {
                 type: 'scatterplot',
