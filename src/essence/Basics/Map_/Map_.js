@@ -751,12 +751,6 @@ let Map_ = {
             if (typeof cb === 'function') cb()
             return true
         }
-
-        // Find the layer in the render order and rebuild it. makeLayer already
-        // dispatches on layer type, so refreshing does not need to know what
-        // kind of layer this is. It used to rebuild only `vector` layers and
-        // fall out of this loop for everything else, returning without doing
-        // anything and without invoking the callback.
         for (var i = L_._layersOrdered.length - 1; i >= 0; i--) {
             if (
                 L_.layers.data[L_._layersOrdered[i]] &&
