@@ -279,6 +279,97 @@ function parseWmsUrl(url: string): {
 }
 
 /**
+ * Resolve the per-feature style accessors shared by the `vector` and
+ * `vectortile` layers.
+ *
+ * Each `*Prop` field in a layer's style names the feature property to read a
+ * value from, and the matching flat field is the fallback for features that do
+ * not carry that property. When no `*Prop` is configured the accessor is
+ * returned as a plain constant, so deck.gl skips per-feature evaluation.
+ */
+function resolveStyleAccessors(style: Record<string, unknown>) {
+    const staticFillColor = hexToRgba(
+        style.fillColor as string | undefined,
+        style.fillOpacity !== undefined ? Number(style.fillOpacity) : 0.8,
+        [0, 120, 255, 200]
+    )
+    const staticLineColor = hexToRgba(
+        style.color as string | undefined,
+        style.opacity !== undefined ? Number(style.opacity) : 1,
+        [255, 255, 255, 220]
+    )
+    const staticLineWidth = style.weight !== undefined ? Number(style.weight) : 1
+    const staticPointRadius = style.radius !== undefined ? Number(style.radius) : 6
+
+    const fillColorProp = style.fillColorProp as string | undefined
+    const fillOpacityProp = style.fillOpacityProp as string | undefined
+    const colorProp = style.colorProp as string | undefined
+    const opacityProp = style.opacityProp as string | undefined
+    const weightProp = style.weightProp as string | undefined
+    const radiusProp = style.radiusProp as string | undefined
+
+    const getFillColor =
+        fillColorProp || fillOpacityProp
+            ? (feature: Record<string, unknown>) => {
+                  const hexVal = fillColorProp
+                      ? (getPropValue(feature, fillColorProp) as string | undefined)
+                      : undefined
+                  const alphaVal = fillOpacityProp
+                      ? getPropValue(feature, fillOpacityProp)
+                      : undefined
+                  if (hexVal === undefined && alphaVal === undefined) return staticFillColor
+                  return hexToRgba(
+                      hexVal ?? (style.fillColor as string | undefined),
+                      alphaVal !== undefined
+                          ? Number(alphaVal)
+                          : style.fillOpacity !== undefined
+                            ? Number(style.fillOpacity)
+                            : 0.8,
+                      staticFillColor
+                  )
+              }
+            : staticFillColor
+
+    const getLineColor =
+        colorProp || opacityProp
+            ? (feature: Record<string, unknown>) => {
+                  const hexVal = colorProp
+                      ? (getPropValue(feature, colorProp) as string | undefined)
+                      : undefined
+                  const alphaVal = opacityProp
+                      ? getPropValue(feature, opacityProp)
+                      : undefined
+                  if (hexVal === undefined && alphaVal === undefined) return staticLineColor
+                  return hexToRgba(
+                      hexVal ?? (style.color as string | undefined),
+                      alphaVal !== undefined
+                          ? Number(alphaVal)
+                          : style.opacity !== undefined
+                            ? Number(style.opacity)
+                            : 1,
+                      staticLineColor
+                  )
+              }
+            : staticLineColor
+
+    const getLineWidth = weightProp
+        ? (feature: Record<string, unknown>) => {
+              const v = getPropValue(feature, weightProp)
+              return v !== undefined ? Number(v) : staticLineWidth
+          }
+        : staticLineWidth
+
+    const getPointRadius = radiusProp
+        ? (feature: Record<string, unknown>) => {
+              const v = getPropValue(feature, radiusProp)
+              return v !== undefined ? Number(v) : staticPointRadius
+          }
+        : staticPointRadius
+
+    return { getFillColor, getLineColor, getLineWidth, getPointRadius }
+}
+
+/**
  * Construct a deck.gl layer from a {@link LayerOptions} spec.
  * Supports `'tile'` (TileLayer + BitmapLayer, or WMSLayer when tileformat is
  * 'wms'), `'vector'` (GeoJsonLayer), and `'pointcloud'` (PointCloudLayer).
@@ -362,83 +453,8 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     ? (o.style as Record<string, unknown>)
                     : {}
 
-            const staticFillColor = hexToRgba(
-                style.fillColor as string | undefined,
-                style.fillOpacity !== undefined ? Number(style.fillOpacity) : 0.8,
-                [0, 120, 255, 200]
-            )
-            const staticLineColor = hexToRgba(
-                style.color as string | undefined,
-                style.opacity !== undefined ? Number(style.opacity) : 1,
-                [255, 255, 255, 220]
-            )
-            const staticLineWidth = style.weight !== undefined ? Number(style.weight) : 1
-            const staticPointRadius = style.radius !== undefined ? Number(style.radius) : 6
-
-            const fillColorProp = style.fillColorProp as string | undefined
-            const fillOpacityProp = style.fillOpacityProp as string | undefined
-            const colorProp = style.colorProp as string | undefined
-            const opacityProp = style.opacityProp as string | undefined
-            const weightProp = style.weightProp as string | undefined
-            const radiusProp = style.radiusProp as string | undefined
-
-            const getFillColor =
-                fillColorProp || fillOpacityProp
-                    ? (feature: Record<string, unknown>) => {
-                          const hexVal = fillColorProp
-                              ? (getPropValue(feature, fillColorProp) as string | undefined)
-                              : undefined
-                          const alphaVal = fillOpacityProp
-                              ? getPropValue(feature, fillOpacityProp)
-                              : undefined
-                          if (hexVal === undefined && alphaVal === undefined) return staticFillColor
-                          return hexToRgba(
-                              hexVal ?? (style.fillColor as string | undefined),
-                              alphaVal !== undefined
-                                  ? Number(alphaVal)
-                                  : style.fillOpacity !== undefined
-                                    ? Number(style.fillOpacity)
-                                    : 0.8,
-                              staticFillColor
-                          )
-                      }
-                    : staticFillColor
-
-            const getLineColor =
-                colorProp || opacityProp
-                    ? (feature: Record<string, unknown>) => {
-                          const hexVal = colorProp
-                              ? (getPropValue(feature, colorProp) as string | undefined)
-                              : undefined
-                          const alphaVal = opacityProp
-                              ? getPropValue(feature, opacityProp)
-                              : undefined
-                          if (hexVal === undefined && alphaVal === undefined) return staticLineColor
-                          return hexToRgba(
-                              hexVal ?? (style.color as string | undefined),
-                              alphaVal !== undefined
-                                  ? Number(alphaVal)
-                                  : style.opacity !== undefined
-                                    ? Number(style.opacity)
-                                    : 1,
-                              staticLineColor
-                          )
-                      }
-                    : staticLineColor
-
-            const getLineWidth = weightProp
-                ? (feature: Record<string, unknown>) => {
-                      const v = getPropValue(feature, weightProp)
-                      return v !== undefined ? Number(v) : staticLineWidth
-                  }
-                : staticLineWidth
-
-            const getPointRadius = radiusProp
-                ? (feature: Record<string, unknown>) => {
-                      const v = getPropValue(feature, radiusProp)
-                      return v !== undefined ? Number(v) : staticPointRadius
-                  }
-                : staticPointRadius
+            const { getFillColor, getLineColor, getLineWidth, getPointRadius } =
+                resolveStyleAccessors(style)
 
             const markerIcon = o.variables?.markerIcon
             const iconUrl = markerIcon?.iconUrl
