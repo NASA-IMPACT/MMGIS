@@ -32,6 +32,7 @@ import CloseIcon from "@mui/icons-material/Close";
 import PrecisionManufacturingIcon from "@mui/icons-material/PrecisionManufacturing";
 
 import { setConfiguration, setSnackBarText } from "./ConfigureStore";
+import VedaStacSource from "../components/VedaStacSource/VedaStacSource";
 import UploadField from "./components/UploadField";
 import {
   getIn,
@@ -558,6 +559,19 @@ const getComponent = (
         </div>
       );
     case "button":
+      if (com.action === "tile-veda-stac-source") {
+        // Self-contained button + dialog; fills the layer's fields itself.
+        // The tooltip lives on the button inside, not wrapped here — the
+        // dialog renders within this subtree, so a wrapper tooltip would
+        // re-trigger over the open dialog (portal event bubbling).
+        return (
+          <VedaStacSource
+            layer={layer}
+            updateConfiguration={updateConfiguration}
+            tooltip={com.description || ""}
+          />
+        );
+      }
       inner = (
         <Button
           className={c.button}
