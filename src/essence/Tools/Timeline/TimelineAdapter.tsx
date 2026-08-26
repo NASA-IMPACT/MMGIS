@@ -290,6 +290,18 @@ export const TimelineAdapter: React.FC = () => {
         [commitTime]
     )
 
+    /**
+     * Hands the comparison of two dates over to the Comparison plugin.
+     *
+     * Announced on the bus rather than called: the timeline knows nothing about
+     * Comparison beyond the name of the event, and a mission without that
+     * plugin simply has nobody listening — the action still draws, and clicking
+     * it goes nowhere rather than breaking the timeline.
+     */
+    const handleCompareClick = useCallback(() => {
+        mmgisEmit('plugin:comparison:startWithDates')
+    }, [])
+
     // Live time while the scrubber is dragged: the header date follows along,
     // but nothing is emitted until the drag is released.
     const handleCurrentTimePreview = useCallback((newTime: Date) => {
@@ -379,6 +391,7 @@ export const TimelineAdapter: React.FC = () => {
                         endTime={endTime}
                         timeMode={timeMode}
                         onDateChange={handleCurrentTimeChange}
+                        onCompareClick={handleCompareClick}
                     />
                 </div>
                 <div className="timeline-header-center">

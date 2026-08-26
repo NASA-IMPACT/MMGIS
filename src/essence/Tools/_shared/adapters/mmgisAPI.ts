@@ -237,6 +237,28 @@ export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
 }
 
 /**
+ * The time window's opening instant as an ISO string. Null both when core has
+ * no such handler and when the mission's timeline is enabled but not yet
+ * seeded, so callers that need to tell those apart ask mmgisIsTimeEnabled.
+ *
+ * TimeControl registers this during mission load, after tools can mount; drive
+ * the first call with useMMGISHandlerReady rather than requesting at mount.
+ */
+export const mmgisGetTimeStart = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getStart')
+}
+
+/** The time window's closing instant; same null cases as mmgisGetTimeStart. */
+export const mmgisGetTimeEnd = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getEnd')
+}
+
+/** Where the timeline currently sits; same null cases as mmgisGetTimeStart. */
+export const mmgisGetTimeCurrent = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getCurrent')
+}
+
+/**
  * Copies text to the clipboard via core's app:copyText handler; true on
  * success. Against cores that predate the handler — including ones whose
  * direct copyText method carried a legacy execCommand path this plugin no
