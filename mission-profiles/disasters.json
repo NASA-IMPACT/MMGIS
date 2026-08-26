@@ -13,7 +13,8 @@
     "FetchStats",
     "ShareExport",
     "LayerFilterThemes",
-    "LayerFilter"
+    "LayerFilter",
+    "Timeline"
   ],
   "overrides": {
     "Title": {
@@ -362,6 +363,25 @@
             "Card",
             "AddTempLayer"
           ]
+        },
+        {
+          "position": "bottom",
+          "priority": 3,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false
+          },
+          "panelTools": [
+            "TimelineTool"
+          ],
+          "id": "bottom"
         }
       ],
       "floatingPanels": [
@@ -399,7 +419,7 @@
     },
     "time": {
       "enabled": true,
-      "visible": false,
+      "visible": true,
       "format": "YYYY-MM-DDTHH:mm:ss[Z]",
       "initiallyOpen": false,
       "liveByDefault": false,
