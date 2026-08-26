@@ -1,0 +1,365 @@
+{
+  "name": "disasters",
+  "description": "NASA Disasters learning portal: the two GAIA gridded building-exposure collections from the VEDA disasters STAC, filtered by Need and Hazard.",
+  "output": "mission-profiles/generated/disasters-mission.json",
+  "tools": "all",
+  "exclude": [],
+  "on": [
+    "Title",
+    "LayerManager",
+    "AOI",
+    "Card",
+    "Chart",
+    "FetchStats",
+    "ShareExport",
+    "LayerFilterThemes",
+    "LayerFilter"
+  ],
+  "overrides": {
+    "Title": {
+      "variables": {
+        "showTitleText": false,
+        "actionButtonLink": "core:loadPlugin:AOITool",
+        "actionButtonText": "Analyze Area"
+      }
+    },
+    "LayerFilterThemes": {
+      "variables": {
+        "togglePanelId": "left-tools-panel",
+        "themes": [
+          {
+            "id": "need",
+            "label": "Need",
+            "icon": "satellite-variant"
+          },
+          {
+            "id": "hazard",
+            "label": "Hazard",
+            "icon": "flash-outline"
+          }
+        ],
+        "defaultThemeId": "need"
+      }
+    },
+    "LayerFilter": {
+      "variables": {
+        "themes": [
+          {
+            "id": "need",
+            "title": "Need",
+            "description": "Filter by sector to explore Earth-science datasets relevant to your operational needs.",
+            "filters": [
+              {
+                "id": "sector",
+                "label": "Sector",
+                "property": "sector",
+                "multi": true,
+                "allLabel": "All Sectors"
+              }
+            ]
+          },
+          {
+            "id": "hazard",
+            "title": "Hazard",
+            "description": "Explore datasets by hazard type to understand conditions, impacts, and response context.",
+            "filters": [
+              {
+                "id": "hazard",
+                "label": "Hazard",
+                "property": "hazard",
+                "allLabel": "All Hazards"
+              }
+            ]
+          }
+        ],
+        "catalog": {
+          "type": "FeatureCollection",
+          "features": []
+        }
+      }
+    }
+  },
+  "scaffold": {
+    "msv": {
+      "mission": "disasters_learning_portal",
+      "missionFolderName": "disasters_learning_portal",
+      "site": "",
+      "masterdb": false,
+      "view": [
+        39,
+        -98,
+        4
+      ],
+      "radius": {
+        "major": 6371008,
+        "minor": 6371008
+      },
+      "mapscale": "",
+      "mapEngine": "deckgl",
+      "mode": "modern",
+      "basemap": {
+        "provider": "maplibre",
+        "style": "https://tiles.openfreemap.org/styles/positron",
+        "accessToken": ""
+      },
+      "theme": "disasters"
+    },
+    "projection": {
+      "custom": false,
+      "epsg": "",
+      "proj": "",
+      "globeproj": "webmercator",
+      "xmlpath": "",
+      "bounds": [
+        "",
+        "",
+        "",
+        ""
+      ],
+      "origin": [
+        "",
+        ""
+      ],
+      "reszoomlevel": "",
+      "resunitsperpixel": ""
+    },
+    "look": {
+      "pagename": "Disasters",
+      "minimalist": false,
+      "topbar": true,
+      "toolbar": true,
+      "scalebar": true,
+      "coordinates": true,
+      "zoomcontrol": false,
+      "graticule": false,
+      "miscellaneous": true,
+      "bodycolor": "",
+      "topbarcolor": "",
+      "toolbarcolor": "",
+      "mapcolor": "",
+      "swap": true,
+      "copylink": true,
+      "screenshot": true,
+      "fullscreen": true,
+      "help": true,
+      "logourl": "https://visualization-tool-prototype.netlify.app/nasa-disasters-logo.svg",
+      "helpurl": "",
+      "mapLogoUrl": "",
+      "mapLogoLink": ""
+    },
+    "panelSettings": {
+      "panels": [
+        {
+          "id": "left-themes",
+          "position": "left",
+          "priority": 0,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false
+          },
+          "panelTools": [
+            "LayerFilterThemes"
+          ],
+          "dimensions": {
+            "iconifiedSize": 66,
+            "expandedSize": "66"
+          }
+        },
+        {
+          "position": "left",
+          "priority": 1,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded",
+              "collapsed"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false
+          },
+          "panelTools": [
+            "Title",
+            "LayerFilter",
+            "Card",
+            "LayerManager"
+          ],
+          "id": "left-tools-panel",
+          "dimensions": {
+            "iconifiedSize": 40,
+            "expandedSize": 368
+          },
+          "pinnedTools": [
+            "Title",
+            "Card",
+            "AddTempLayer"
+          ]
+        }
+      ],
+      "floatingPanels": [
+        {
+          "position": "float-top-right",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "collapsed",
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "panelTools": [
+            "MapControlTool",
+            "AddTempLayerTool",
+            "AOITool",
+            "ChartTool"
+          ],
+          "id": "float-top-right",
+          "dimensions": {
+            "maxWidth": "",
+            "defaultWidth": "320px",
+            "minWidth": "325px"
+          },
+          "transparent": true
+        }
+      ],
+      "layoutStyle": "compact"
+    },
+    "panels": {
+      "viewer": true,
+      "map": true,
+      "globe": true
+    },
+    "time": {
+      "enabled": false,
+      "visible": false,
+      "format": "YYYY-MM-DDTHH:mm:ss[Z]",
+      "initiallyOpen": false,
+      "liveByDefault": false,
+      "initialstart": "2012-01-19T00:00:00Z",
+      "initialend": "2026-08-12T00:00:00Z",
+      "initialwindowstart": null,
+      "initialwindowend": null
+    },
+    "layers": [
+      {
+        "name": "GAIA Building Exposure (Total)",
+        "uuid": "30f57de9-d010-4e76-b87c-097420646fc4",
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/gaia-total-composite/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=total&bidx=1&colormap=%5B%5B%5B0%2C25000%5D%2C%5B63%2C42%2C107%2C255%5D%5D%2C%5B%5B25000%2C50000%5D%2C%5B62%2C134%2C158%2C255%5D%5D%2C%5B%5B50000%2C75000%5D%2C%5B115%2C192%2C195%2C255%5D%5D%2C%5B%5B75000%2C100000%5D%2C%5B195%2C224%2C156%2C255%5D%5D%2C%5B%5B100000%2C150000%5D%2C%5B247%2C233%2C156%2C255%5D%5D%2C%5B%5B150000%2C300000%5D%2C%5B243%2C197%2C86%2C255%5D%5D%2C%5B%5B300000%2C450000%5D%2C%5B231%2C142%2C65%2C255%5D%5D%2C%5B%5B450000%2C10000000%5D%2C%5B207%2C73%2C49%2C255%5D%5D%5D&resampling=nearest&nodata=0",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "boundingBox": [
+          -180,
+          -85.05,
+          180,
+          85.05
+        ],
+        "throughTileServer": false,
+        "cogResampling": "nearest",
+        "cogExpressionEditable": false,
+        "cogTransform": false,
+        "description": "**GAIA Gridded Building Exposure [Total]** — gridded total building exposure, global, January 2025 composite.",
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "time": {
+          "enabled": false,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2025-01-01T00:00:00Z",
+          "end": "2025-01-31T00:00:00Z"
+        },
+        "variables": {
+          "legendOrientation": "vertical"
+        },
+        "properties": {
+          "key": "gaia-total",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Wildfire",
+            "Storm",
+            "Flood",
+            "Landslide",
+            "Earthquake"
+          ]
+        }
+      },
+      {
+        "name": "GAIA Building Exposure (Wood)",
+        "uuid": "54099f0c-188c-4635-a09a-ef044a0ce44a",
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/gaia-wood-composite/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=wood&bidx=1&colormap=%5B%5B%5B0%2C25000%5D%2C%5B63%2C42%2C107%2C255%5D%5D%2C%5B%5B25000%2C50000%5D%2C%5B62%2C134%2C158%2C255%5D%5D%2C%5B%5B50000%2C75000%5D%2C%5B115%2C192%2C195%2C255%5D%5D%2C%5B%5B75000%2C100000%5D%2C%5B195%2C224%2C156%2C255%5D%5D%2C%5B%5B100000%2C150000%5D%2C%5B247%2C233%2C156%2C255%5D%5D%2C%5B%5B150000%2C300000%5D%2C%5B243%2C197%2C86%2C255%5D%5D%2C%5B%5B300000%2C450000%5D%2C%5B231%2C142%2C65%2C255%5D%5D%2C%5B%5B450000%2C10000000%5D%2C%5B207%2C73%2C49%2C255%5D%5D%5D&resampling=nearest&nodata=0",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "boundingBox": [
+          -140.14,
+          24.52,
+          -56.57,
+          49.38
+        ],
+        "throughTileServer": false,
+        "cogResampling": "nearest",
+        "cogExpressionEditable": false,
+        "cogTransform": false,
+        "description": "**GAIA Gridded Building Exposure [Wood]** — gridded wood-construction building exposure, CONUS, January 2025 composite.",
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "time": {
+          "enabled": false,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2025-01-01T00:00:00Z",
+          "end": "2025-01-31T00:00:00Z"
+        },
+        "variables": {
+          "legendOrientation": "vertical"
+        },
+        "properties": {
+          "key": "gaia-wood",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Wildfire",
+            "Storm",
+            "Flood",
+            "Landslide",
+            "Earthquake"
+          ]
+        }
+      }
+    ]
+  }
+}
