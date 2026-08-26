@@ -135,7 +135,16 @@
                 ],
                 "start_datetime": "2025-01-10T00:00:00Z",
                 "end_datetime": "2025-01-31T00:00:00Z",
-                "layers": []
+                "layers": [
+                  {
+                    "key": "opera-dist-s1",
+                    "defaultOn": true
+                  },
+                  {
+                    "key": "s2-swir",
+                    "defaultOn": false
+                  }
+                ]
               }
             },
             {
@@ -502,6 +511,108 @@
             "Flood",
             "Landslide",
             "Earthquake"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical"
+        },
+        "name": "OPERA Surface Disturbance (DIST-S1)",
+        "uuid": "f154c768-c8e7-4b23-a783-1ec458bdbb20",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/opera-distalert-s1-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=dist-s1&bidx=1&nodata=255&colormap=%7B%220%22%3A%5B255%2C255%2C255%2C255%5D%2C%221%22%3A%5B255%2C153%2C153%2C255%5D%2C%222%22%3A%5B227%2C26%2C28%2C255%5D%7D&datetime={starttime}/{endtime}",
+        "boundingBox": [
+          -118.828125,
+          33.94336,
+          -117.94921875,
+          34.379713
+        ],
+        "description": "**OPERA Surface Disturbance (DIST-S1)** — 30 m surface-disturbance classification from Sentinel-1 C-band SAR. Radar penetrates smoke and images at night, so it maps disturbance while optical sensors are still blind.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2025-01-09T00:00:00Z",
+          "end": "2025-01-09T23:59:59Z",
+          "dataStartTime": "2025-01-09T00:00:00Z",
+          "dataEndTime": "2025-01-09T23:59:59Z"
+        },
+        "properties": {
+          "key": "opera-dist-s1",
+          "sector": [
+            "Public Safety"
+          ],
+          "hazard": [
+            "Wildfire"
+          ]
+        }
+      },
+      {
+        "sublayers": [],
+        "type": "TileLayer",
+        "visibility": false,
+        "sourceType": "url",
+        "tileformat": "wmts",
+        "controlled": false,
+        "initialOpacity": 1,
+        "minZoom": 0,
+        "maxNativeZoom": 20,
+        "maxZoom": 20,
+        "throughTileServer": false,
+        "cogTransform": false,
+        "style": {
+          "brightness": 1,
+          "contrast": 1,
+          "saturation": 1,
+          "blend": "none"
+        },
+        "variables": {
+          "legendOrientation": "vertical"
+        },
+        "name": "Sentinel-2 SWIR",
+        "uuid": "107a6a84-7738-4060-a900-c2514a11dce5",
+        "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-swir-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=swir&bidx=1&bidx=2&bidx=3&resampling=nearest&datetime={starttime}/{endtime}",
+        "boundingBox": [
+          -118.95,
+          33.7,
+          -117.65,
+          34.55
+        ],
+        "description": "**Sentinel-2 SWIR** — shortwave-infrared composite. Burn scars read brown against unburned vegetation, separating burned ground from smoke and cloud.",
+        "time": {
+          "enabled": true,
+          "type": "global",
+          "format": "%Y-%m-%dT%H:%M:%SZ",
+          "start": "2025-01-10T00:00:00Z",
+          "end": "2025-01-31T00:00:00Z",
+          "dataStartTime": "2025-01-10T00:00:00Z",
+          "dataEndTime": "2025-01-31T00:00:00Z"
+        },
+        "properties": {
+          "key": "s2-swir",
+          "sector": [
+            "Public Health"
+          ],
+          "hazard": [
+            "Wildfire"
           ]
         }
       }
