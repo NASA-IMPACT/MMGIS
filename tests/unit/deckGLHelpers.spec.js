@@ -247,6 +247,18 @@ test.describe('DeckGLHelpers', () => {
             expect(layer.id).toBe('mvt-2')
         })
 
+        test('gives vectortile points a pixel radius from style.radius', () => {
+            const layer = buildDeckLayer('mvt-3', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { radius: 5 },
+            })
+            // Without these, MVT points inherit deck.gl's 1-metre default and
+            // render sub-pixel at every practical zoom.
+            expect(layer.props.getPointRadius).toBe(5)
+            expect(layer.props.pointRadiusUnits).toBe('pixels')
+        })
+
         test('creates a ScatterplotLayer for scatterplot type', () => {
             const layer = buildDeckLayer('scatter-1', {
                 type: 'scatterplot',
