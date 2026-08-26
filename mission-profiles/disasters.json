@@ -1,6 +1,6 @@
 {
   "name": "disasters",
-  "description": "NASA Disasters learning portal: the two GAIA gridded building-exposure collections from the VEDA disasters STAC, filtered by Need and Hazard.",
+  "description": "NASA Disasters learning portal: the two GAIA gridded building-exposure collections from the VEDA disasters STAC, browsable by Hazard and by Event activation.",
   "output": "mission-profiles/generated/disasters-mission.json",
   "tools": "all",
   "exclude": [],
@@ -28,36 +28,22 @@
         "togglePanelId": "left-tools-panel",
         "themes": [
           {
-            "id": "need",
-            "label": "Need",
-            "icon": "satellite-variant"
-          },
-          {
             "id": "hazard",
             "label": "Hazard",
             "icon": "flash-outline"
+          },
+          {
+            "id": "event",
+            "label": "Event",
+            "icon": "calendar-outline"
           }
         ],
-        "defaultThemeId": "need"
+        "defaultThemeId": "hazard"
       }
     },
     "LayerFilter": {
       "variables": {
         "themes": [
-          {
-            "id": "need",
-            "title": "Need",
-            "description": "Filter by sector to explore Earth-science datasets relevant to your operational needs.",
-            "filters": [
-              {
-                "id": "sector",
-                "label": "Sector",
-                "property": "sector",
-                "multi": true,
-                "allLabel": "All Sectors"
-              }
-            ]
-          },
           {
             "id": "hazard",
             "title": "Hazard",
@@ -70,11 +56,170 @@
                 "allLabel": "All Hazards"
               }
             ]
+          },
+          {
+            "id": "event",
+            "title": "Event",
+            "description": "Filter the activation catalogue by hazard, location and year.",
+            "catalog": "activations",
+            "filters": [
+              {
+                "id": "hazardType",
+                "label": "Hazard Type",
+                "property": "hazards",
+                "from": "catalog",
+                "allLabel": "All Hazards"
+              },
+              {
+                "id": "location",
+                "label": "Location",
+                "from": "catalog",
+                "type": "geocode",
+                "allLabel": "Search places…"
+              },
+              {
+                "id": "year",
+                "label": "Year",
+                "from": "catalog",
+                "derived": "datetimes",
+                "allLabel": "All Years"
+              },
+              {
+                "id": "activation",
+                "label": "Activation",
+                "from": "catalog",
+                "isEntry": true,
+                "allLabel": "Select an activation",
+                "countLabel": "activations"
+              }
+            ]
           }
         ],
         "catalog": {
           "type": "FeatureCollection",
-          "features": []
+          "features": [
+            {
+              "type": "Feature",
+              "id": "202501_Fire_CA",
+              "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                  [
+                    [
+                      -118.95,
+                      33.7
+                    ],
+                    [
+                      -117.65,
+                      33.7
+                    ],
+                    [
+                      -117.65,
+                      34.55
+                    ],
+                    [
+                      -118.95,
+                      34.55
+                    ],
+                    [
+                      -118.95,
+                      33.7
+                    ]
+                  ]
+                ]
+              },
+              "properties": {
+                "title": "California Wildfires January 2025",
+                "hazards": [
+                  "Fire"
+                ],
+                "start_datetime": "2025-01-10T00:00:00Z",
+                "end_datetime": "2025-01-31T00:00:00Z",
+                "layers": []
+              }
+            },
+            {
+              "type": "Feature",
+              "id": "202606_Earthquake_Venezuela",
+              "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                  [
+                    [
+                      -68.45,
+                      9.85
+                    ],
+                    [
+                      -66.45,
+                      9.85
+                    ],
+                    [
+                      -66.45,
+                      10.95
+                    ],
+                    [
+                      -68.45,
+                      10.95
+                    ],
+                    [
+                      -68.45,
+                      9.85
+                    ]
+                  ]
+                ]
+              },
+              "properties": {
+                "title": "Venezuela Earthquake June 2026",
+                "hazards": [
+                  "Earthquake"
+                ],
+                "start_datetime": "2026-06-26T00:00:00Z",
+                "end_datetime": "2026-07-14T00:00:00Z",
+                "layers": []
+              }
+            },
+            {
+              "type": "Feature",
+              "id": "202604_Typhoon_Sinlaku",
+              "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                  [
+                    [
+                      144.55,
+                      13.15
+                    ],
+                    [
+                      146.15,
+                      13.15
+                    ],
+                    [
+                      146.15,
+                      15.45
+                    ],
+                    [
+                      144.55,
+                      15.45
+                    ],
+                    [
+                      144.55,
+                      13.15
+                    ]
+                  ]
+                ]
+              },
+              "properties": {
+                "title": "Typhoon Sinlaku April 2026",
+                "hazards": [
+                  "Tropical Cyclone",
+                  "Flood"
+                ],
+                "start_datetime": "2026-04-14T00:00:00Z",
+                "end_datetime": "2026-04-29T00:00:00Z",
+                "layers": []
+              }
+            }
+          ]
         }
       }
     }
