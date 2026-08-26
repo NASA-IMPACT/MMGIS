@@ -501,6 +501,12 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 o.style && typeof o.style === 'object' && !Array.isArray(o.style)
                     ? (o.style as Record<string, unknown>)
                     : {}
+            // The layer configuration UI offers vector tile layers the same
+            // per-feature style fields as vector layers, so resolve them the
+            // same way.
+            const { getFillColor, getLineColor, getLineWidth, getPointRadius } =
+                resolveStyleAccessors(style)
+
             return new MVTLayer({
                 id,
                 data: o.url,
@@ -508,25 +514,15 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
                 pickable: o.interactive ?? true,
-                getFillColor: hexToRgba(
-                    style.fillColor as string | undefined,
-                    style.fillOpacity !== undefined ? Number(style.fillOpacity) : 0.8,
-                    [0, 120, 255, 200]
-                ),
-                getLineColor: hexToRgba(
-                    style.color as string | undefined,
-                    style.opacity !== undefined ? Number(style.opacity) : 1,
-                    [255, 255, 255, 220]
-                ),
-                getLineWidth: style.weight !== undefined ? Number(style.weight) : 1,
+                getFillColor,
+                getLineColor,
+                getLineWidth,
                 lineWidthUnits: 'pixels',
+                getPointRadius,
                 // deck.gl defaults point radius to 1 *metre*, which is
                 // sub-pixel at every practical zoom and leaves a point tileset
                 // invisible. Line width above already pins its unit; points
-                // were missed. style.radius is in pixels, as the 'vector' case
-                // and the layer configuration UI both treat it.
-                getPointRadius:
-                    style.radius !== undefined ? Number(style.radius) : 6,
+                // were missed.
                 pointRadiusUnits: 'pixels',
                 ...(o.nativeOptions ?? {}),
             } as ConstructorParameters<typeof MVTLayer>[0]) as unknown as Layer
