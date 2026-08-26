@@ -504,6 +504,14 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 ),
                 getLineWidth: style.weight !== undefined ? Number(style.weight) : 1,
                 lineWidthUnits: 'pixels',
+                // deck.gl defaults point radius to 1 *metre*, which is
+                // sub-pixel at every practical zoom and leaves a point tileset
+                // invisible. Line width above already pins its unit; points
+                // were missed. style.radius is in pixels, as the 'vector' case
+                // and the layer configuration UI both treat it.
+                getPointRadius:
+                    style.radius !== undefined ? Number(style.radius) : 6,
+                pointRadiusUnits: 'pixels',
                 ...(o.nativeOptions ?? {}),
             } as ConstructorParameters<typeof MVTLayer>[0]) as unknown as Layer
         }
