@@ -398,7 +398,7 @@
       "globe": true
     },
     "time": {
-      "enabled": false,
+      "enabled": true,
       "visible": false,
       "format": "YYYY-MM-DDTHH:mm:ss[Z]",
       "initiallyOpen": false,
@@ -606,10 +606,10 @@
           "enabled": true,
           "type": "global",
           "format": "%Y-%m-%dT%H:%M:%SZ",
-          "start": "2025-01-10T00:00:00Z",
-          "end": "2025-01-31T00:00:00Z",
-          "dataStartTime": "2025-01-10T00:00:00Z",
-          "dataEndTime": "2025-01-31T00:00:00Z"
+          "start": "2023-07-20T00:00:00Z",
+          "end": "2026-01-29T00:00:00Z",
+          "dataStartTime": "2023-07-20T00:00:00Z",
+          "dataEndTime": "2026-01-29T00:00:00Z"
         },
         "properties": {
           "key": "s2-swir",
