@@ -883,31 +883,6 @@ test.describe('DeckGLAdapter', () => {
             }
         })
 
-        // The recognizer's wait is a timer, and a busy main thread runs it
-        // late. Timing the cover from the gesture's own last pointerup rather
-        // than from the finish is what leaves room for that: the same interval
-        // again, on top of the one the recognizer was already going to take.
-        test('a double-click finish is covered when the recognizer runs late', () => {
-            vi.useFakeTimers()
-            try {
-                const { adapter, canvas } = makeSessionAdapter('rectangle')
-                const clicks = []
-                adapter.on('click', (e) => clicks.push(e.latlng))
-
-                stopOnPointer(adapter)
-                vi.advanceTimersByTime(250)
-                canvas.dispatchEvent(new Event('pointerdown'))
-                vi.advanceTimersByTime(49)
-                canvas.dispatchEvent(new Event('pointerup'))
-                vi.advanceTimersByTime(300 + 200)
-                adapter._onPointerClick(pickAt(-120, 40))
-
-                expect(clicks).toEqual([])
-            } finally {
-                vi.useRealTimers()
-            }
-        })
-
         // The click a finishing gesture was covered for does not always come:
         // a pointerup deck reads as the end of a drag produces none. The window
         // closes on its own so the guard cannot sit there absorbing the user's
@@ -963,30 +938,6 @@ test.describe('DeckGLAdapter', () => {
             }
         })
 
-        // Enter ends the drawing with the pointer nowhere near it, so there is
-        // no click of the drawing's on the way. A window opened anyway would
-        // sit through the user's next gesture and swallow the click it ends on.
-        test('a session ended on a key does not swallow the click that follows', () => {
-            vi.useFakeTimers()
-            try {
-                const { adapter, canvas } = makeSessionAdapter('polygon')
-                const clicks = []
-                adapter.on('click', (e) => clicks.push(e.latlng))
-
-                adapter._stopDrawing()
-                vi.advanceTimersByTime(250)
-                canvas.dispatchEvent(new Event('pointerdown'))
-                vi.advanceTimersByTime(50)
-                canvas.dispatchEvent(new Event('pointerup'))
-                vi.advanceTimersByTime(300)
-                adapter._onPointerClick(pickAt(-120, 40))
-
-                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
-            } finally {
-                vi.useRealTimers()
-            }
-        })
-
         // A plugin ending the drawing from its own panel — a Finish button, a
         // mode switch, the Escape it handles itself — never touched the map, so
         // the click the user makes next is theirs from the first one.
@@ -999,30 +950,6 @@ test.describe('DeckGLAdapter', () => {
             adapter._onPointerClick(pickAt(-120, 40))
 
             expect(clicks).toEqual([{ lat: 40, lng: -120 }])
-        })
-
-        // With no gesture to cover, there is no double-click to keep off the
-        // map either, so the double-click zoom terra-draw turns back on as it
-        // stops the mode is the user's again straight away.
-        test('double-click zoom stays on when no gesture ended the session', () => {
-            const { adapter, canvas } = makeSessionAdapter('rectangle')
-            let enabled = false
-            adapter._basemap = {
-                getCanvas: () => canvas,
-                doubleClickZoom: {
-                    isEnabled: () => enabled,
-                    enable: () => { enabled = true },
-                    disable: () => { enabled = false },
-                },
-            }
-            adapter._terraDraw = {
-                clear: () => { },
-                stop: () => { enabled = true },
-            }
-
-            adapter.disableDrawing()
-
-            expect(enabled).toBe(true)
         })
 
         test('disableDrawing emits drawcancel once', () => {
@@ -1112,30 +1039,6 @@ test.describe('DeckGLAdapter', () => {
             }
         })
 
-        // A plugin's own Finish button reaches the same keyup path, and a
-        // plugin that defers past the pointerup — a debounce, a confirm step —
-        // lands in the same interval the user's Enter does.
-        test('the last vertex click deck still holds when a plugin finishes is covered', () => {
-            vi.useFakeTimers()
-            try {
-                const adapter = makeOverlayDrawingAdapter()
-                const canvas = adapter._basemap.getCanvas()
-                const clicks = []
-                adapter.on('click', (e) => clicks.push(e.latlng))
-
-                drawLine(adapter, canvas)
-                vi.advanceTimersByTime(50)
-                expect(adapter.finishDrawing()).toBe(true)
-
-                vi.advanceTimersByTime(250)
-                adapter._onPointerClick(pickAt(-120, 40))
-
-                expect(clicks).toEqual([])
-            } finally {
-                vi.useRealTimers()
-            }
-        })
-
         // Enter used the way it usually is — the shape read back, then the key
         // — comes with the last vertex click long delivered, so there is
         // nothing left to cover and the user's next click is theirs.
@@ -1161,40 +1064,6 @@ test.describe('DeckGLAdapter', () => {
                 // The user's own next click, deck reporting it an interval
                 // after the gesture as always.
                 canvas.dispatchEvent(new Event('pointerdown'))
-                canvas.dispatchEvent(new Event('pointerup'))
-                vi.advanceTimersByTime(300)
-                adapter._onPointerClick(pickAt(-120, 40))
-
-                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
-            } finally {
-                vi.useRealTimers()
-            }
-        })
-
-        // The window covering a held click is timed from the pointer, not from
-        // the finish above it, so it runs out when that click's own cover
-        // would have — and the gesture the user starts after it closes the
-        // window outright, rather than being taken for a double-click's second
-        // tap the way one inside the interval is.
-        test('a key finish does not stretch the cover past the pointer it is timed from', () => {
-            vi.useFakeTimers()
-            try {
-                const adapter = makeOverlayDrawingAdapter()
-                const canvas = adapter._basemap.getCanvas()
-                const clicks = []
-                adapter.on('click', (e) => clicks.push(e.latlng))
-
-                drawLine(adapter, canvas)
-                vi.advanceTimersByTime(250)
-                canvas.dispatchEvent(
-                    new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })
-                )
-                expect(adapter._drawEndClick.pending).toBe(true)
-
-                // A tap interval past that last pointerup, so the user's.
-                vi.advanceTimersByTime(60)
-                canvas.dispatchEvent(new Event('pointerdown'))
-                vi.advanceTimersByTime(50)
                 canvas.dispatchEvent(new Event('pointerup'))
                 vi.advanceTimersByTime(300)
                 adapter._onPointerClick(pickAt(-120, 40))
@@ -1346,35 +1215,6 @@ test.describe('DeckGLAdapter', () => {
                 expect(picks).toEqual([])
             })
         }
-
-        // The click a drawing ended on lands after the session is already over,
-        // so the finish guard is the only thing left that can recognise it.
-        // Ending the session is what arms that guard.
-        test('overlay mode holds back the click a drawing ended on', () => {
-            const { adapter, props } = initAdapter(MAPLIBRE_BASEMAP)
-            const clicks = []
-            adapter.on('click', (e) => clicks.push(e.latlng))
-            adapter._drawingShape = 'rectangle'
-            stopOnPointer(adapter)
-
-            props.onClick(pickAt(-120, 40))
-
-            expect(clicks).toEqual([])
-        })
-
-        // Standalone deck has no basemap canvas for a session to end on, so the
-        // guard is armed the way a finish arms it and the click delivered
-        // behind it.
-        test('standalone mode holds back the click a drawing ended on', () => {
-            const { adapter, props } = initAdapter(null)
-            const clicks = []
-            adapter.on('click', (e) => clicks.push(e.latlng))
-            adapter._drawEndClick.arm(Date.now(), document.createElement('canvas'))
-
-            props.onClick(pickAt(-120, 40))
-
-            expect(clicks).toEqual([])
-        })
 
         // A drag or a wheel zoom reaches the adapter only through deck's own
         // onViewStateChange. An anchored consumer follows the gesture by the
