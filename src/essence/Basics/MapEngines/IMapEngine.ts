@@ -361,7 +361,12 @@ export interface IMapEngine<
      * prior overlay first.
      *
      * @deprecated Superseded by the `map:showPopup` provider, whose request is
-     * serializable and whose card paints above the panel layer.
+     * serializable — a description of a card rather than a `mount` callback,
+     * which is what lets it cross a sandbox boundary — and whose card the core
+     * owns whole: it sanitizes the content, renders the chrome around it,
+     * holds focus inside it, and answers the request with how the popup
+     * closed. An overlay positions a node and leaves everything in it, and
+     * every question of how it closes, to its caller.
      */
     addOverlay(options: OverlayOptions): void
 

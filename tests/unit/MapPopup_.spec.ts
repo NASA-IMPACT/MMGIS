@@ -1248,6 +1248,10 @@ describe('MapPopup_', () => {
                 'repeatdur',
                 'restart',
             ]
+            // Three presentation attributes are required outright as well as
+            // by derivation: the card carries them at any version of the
+            // range, while an install at its low end resolves a curated set
+            // that does not yet name them.
             const expected = curated('svg')
                 .filter((attr) => !smil.includes(attr))
                 .concat('dominant-baseline', 'pointer-events', 'vector-effect')

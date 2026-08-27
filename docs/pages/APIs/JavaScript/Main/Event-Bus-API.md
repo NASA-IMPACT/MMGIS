@@ -363,6 +363,7 @@ window.mmgisAPI.on('legend:made', ({ layerName, legendData }) => {
 | `panels:changed` | `{ panels }` | Fired whenever the panel layout changes — a panel registered or unregistered, changed state, lost a tool, or was resized — and once with an empty listing when the layout is torn down |
 | `plugins:changed` | `{ plugins }` | Fired whenever a plugin is shown, hidden, loaded or unloaded by command, once after a batch of plugins loads with the layout, and once with an empty listing when the layout is torn down |
 | `plugins:destroyed` | `{ pluginId }` | Fired as one plugin's instance is torn down — unloaded by command, replaced in its container, or cleared along with every other plugin when the layout re-renders |
+| `plugins:allDestroyed` | `{ pluginIds }` | Fired once after a full teardown — the layout re-rendering, or the UI going down — naming every plugin instance that was destroyed. Not fired when nothing was loaded |
 
 `panels` carries the same listing [`panels:getAll`](#panel-and-plugin-providers)
 returns, and `plugins` the same listing `plugins:getAll` returns, so there is
@@ -393,11 +394,15 @@ A component that seeds from `panels:getAll` and also subscribes to
 `panels:changed` must guard the seed so it cannot overwrite state an event
 has already delivered — the request can resolve after a later event lands.
 
-`plugins:destroyed` reports the teardown itself rather than the listing that
-results from it, and it is how core services learn to release what a plugin
-was holding. The map popup is one: any popup on screen closes when a plugin is
-destroyed, whichever plugin that was, because there is a single popup slot and
-a popup that outlives its plugin has no one left to answer to. A teardown a
+`plugins:destroyed` and `plugins:allDestroyed` report the teardown itself
+rather than the listing that results from it. The collective signal is the
+one a core service releases shared resources on — the map popup, for one,
+closes there — because with every plugin destroyed the resource's owner is
+among them and no surviving plugin pays for the release. A single plugin's
+teardown releases nothing centrally: the plugin hands back what it borrowed
+in its own `destroy()`, and `pluginId` names the tool the controller
+destroyed, which is not the identity the plugin spoke to services with, so a
+listener cannot match the event to what the plugin was holding. A teardown a
 command asked for is followed by `plugins:changed` carrying the new listing.
 
 ### WebSocket Events
@@ -498,7 +503,7 @@ Ownership decides who may *retract* a popup, never who may open one. A request m
 
 The request rejects — showing nothing — when it is invalid (`latlng` must hold finite numbers in range, `title` and `html` must be strings when given, and one of the two must be there) or when the popup could not be mounted. A title of nothing but whitespace reads as no title, and a card with a title takes its accessible name from it rather than from the generic one a title-less card carries. An action renders only when its `label` is a non-empty string; two actions render as equal-width buttons with the primary first, and a lone action takes the primary styling whichever field it arrived in, still answering with its own slot. The popup tracks its anchor as the map pans and hides for the length of the 2D engine's zoom animation, returning once the zoom settles.
 
-A click elsewhere on the map dismisses the popup at the end of that click's own task: a replacement popup shown in the same task wins, resolving the earlier request with `'closed'`, while one shown after an `await` arrives after the dismissal, so the earlier request resolves `'dismiss'`. Either way the plugin is told, exactly once.
+A click elsewhere on the map dismisses the popup on the task after that click, and which side of it a replacement lands on is what decides the earlier request. Shown in the click's own task — or after an `await` that settles within it — the replacement wins and the earlier request resolves `'closed'`. Shown from a later task, such as a timer or an `await` on a real round trip, it arrives after the dismissal and the earlier request resolves `'dismiss'`. Either way the plugin is told, exactly once.
 
 **What a card may hold**
 
