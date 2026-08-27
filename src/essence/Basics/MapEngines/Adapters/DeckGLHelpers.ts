@@ -157,16 +157,29 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
 }
 
 /**
+ * The bag a feature's property names are looked up against: a GeoJSON
+ * feature's `.properties`, or a plain data record read directly.
+ * @param object - GeoJSON feature or plain data record.
+ * @returns Null when there is nothing to read properties from.
+ */
+function featureProperties(object: unknown): Record<string, unknown> | null {
+    if (object == null || typeof object !== 'object') return null
+    return (
+        (object as { properties?: Record<string, unknown> }).properties ??
+        (object as Record<string, unknown>)
+    )
+}
+
+/**
  * Reads a nested value from a GeoJSON feature or plain object by dot-notation path.
  * Checks `.properties` first, then the object itself.
  * @param object - GeoJSON feature or plain data record.
  * @param path - Dot-notation key path, e.g. `"meta.score"`.
  */
 function getPropValue(object: unknown, path: string | undefined): unknown {
-    if (!path || object == null || typeof object !== 'object') return undefined
-    const source =
-        (object as { properties?: Record<string, unknown> }).properties ??
-        (object as Record<string, unknown>)
+    if (!path) return undefined
+    const source = featureProperties(object)
+    if (source == null) return undefined
     return path
         .split('.')
         .reduce(
@@ -278,15 +291,6 @@ function parseWmsUrl(url: string): {
     }
     const layers = layersVal ? layersVal.split(',').filter(Boolean) : []
     return { base, layers, wmsParameters, vendorParameters }
-}
-
-/** The properties bag a legend's property names are looked up against. */
-function featureProperties(feature: unknown): Record<string, unknown> | null {
-    if (feature == null || typeof feature !== 'object') return null
-    return (
-        (feature as { properties?: Record<string, unknown> }).properties ??
-        (feature as Record<string, unknown>)
-    )
 }
 
 /**
