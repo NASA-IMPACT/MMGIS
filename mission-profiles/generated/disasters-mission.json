@@ -406,6 +406,10 @@
                   {
                     "key": "s2-swir",
                     "defaultOn": false
+                  },
+                  {
+                    "key": "s1-dmg",
+                    "defaultOn": true
                   }
                 ]
               }
@@ -781,6 +785,57 @@
         "key": "s2-swir",
         "sector": [
           "Public Health"
+        ],
+        "hazard": [
+          "Wildfire"
+        ]
+      }
+    },
+    {
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "throughTileServer": false,
+      "cogTransform": false,
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "variables": {
+        "legendOrientation": "vertical"
+      },
+      "name": "Sentinel-1 Likely Damaged Areas",
+      "uuid": "2db3fe61-f031-4a6e-89a2-33bfe1ca4389",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-dmgassessment-daily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=damage&bidx=1&nodata=0&colormap=%7B%221%22%3A%5B255%2C0%2C0%2C255%5D%7D&resampling=nearest&datetime={starttime}/{endtime}",
+      "boundingBox": [
+        -119.276147,
+        33.556388,
+        -117.564677,
+        34.769113
+      ],
+      "description": "**Sentinel-1 Likely Damaged Areas** — damage proxy map derived from Sentinel-1 C-band SAR coherence loss. Flags built structures likely damaged or destroyed, mapped through smoke and cloud in the days after the fire front passes.",
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "start": "2025-01-09T00:00:00Z",
+        "end": "2025-01-21T23:59:59Z",
+        "dataStartTime": "2025-01-09T00:00:00Z",
+        "dataEndTime": "2025-01-21T23:59:59Z"
+      },
+      "properties": {
+        "key": "s1-dmg",
+        "sector": [
+          "Public Safety"
         ],
         "hazard": [
           "Wildfire"
