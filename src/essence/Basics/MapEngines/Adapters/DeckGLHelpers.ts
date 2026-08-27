@@ -305,8 +305,11 @@ function parseWmsUrl(url: string): {
  * `legendData` is the layer's legend, which doubles as a style specification
  * (see LegendStyle). Its colours outrank both the `*Prop` and the flat fields,
  * matching the precedence the Leaflet vector path has always applied. It is
- * compiled here, once per layer build, because these accessors run per feature
- * per frame. A legend that specifies no styling leaves the constants intact.
+ * compiled here, once per layer build, because deck.gl re-runs an accessor
+ * over every feature whenever it regenerates that attribute - on a data
+ * change, on an updateTrigger change, and for each newly loaded tile - so
+ * anything hoistable belongs outside the accessor. A legend that specifies no
+ * styling leaves the constants intact.
  */
 function resolveStyleAccessors(
     style: Record<string, unknown>,
