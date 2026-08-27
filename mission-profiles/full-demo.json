@@ -25,6 +25,7 @@
     "Card",
     "Chart",
     "FetchStats",
+    "SeriesChart",
     "ShareExport",
     "LayerFilterThemes",
     "LayerFilter"
@@ -226,7 +227,8 @@
           },
           "panelTools": [
             "AOI",
-            "Chart"
+            "Chart",
+            "SeriesChart"
           ],
           "id": "float-analysis",
           "dimensions": {

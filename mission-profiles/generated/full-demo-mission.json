@@ -177,7 +177,8 @@
         },
         "panelTools": [
           "AOI",
-          "Chart"
+          "Chart",
+          "SeriesChart"
         ],
         "id": "float-analysis",
         "dimensions": {
@@ -322,6 +323,30 @@
       "js": "ChartTool",
       "on": true,
       "variables": {}
+    },
+    {
+      "name": "SeriesChart",
+      "icon": "chart-line",
+      "js": "SeriesChartTool",
+      "on": true,
+      "variables": {
+        "sources": [
+          "fetch-timeseries"
+        ],
+        "layout": "single"
+      },
+      "metadata": {
+        "icon": "chart-line",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+          "left",
+          "right"
+        ],
+        "preferredPosition": "right",
+        "modernLayoutSupport": true,
+        "width": 400,
+        "height": 0
+      }
     },
     {
       "name": "FetchStats",

@@ -1,0 +1,57 @@
+{
+    "defaults": {
+        "variables": {
+            "sources": ["fetch-timeseries"],
+            "layout": "single"
+        }
+    },
+    "defaultIcon": "chart-line",
+    "description": "Generic chart panel: renders time/line charts published by fetcher plugins over the mmgisAPI Event Bus.",
+    "descriptionFull": {
+        "title": "Subscribes to plugin:<source>:seriesLoading/seriesReady/seriesError/seriesCleared for each plugin id listed in variables.sources and renders one chart card per chartId. Knows nothing about data sources — any plugin emitting the shared chart-series payload (src/essence/Tools/_shared/types/chartSeries.ts) can drive it, e.g. FetchTimeseries for vector feature time series.",
+        "example": {
+            "sources": ["fetch-timeseries"]
+        }
+    },
+    "hasVars": true,
+    "name": "SeriesChart",
+    "toolbarPriority": 7,
+    "width": 400,
+    "height": 0,
+    "paths": {
+        "SeriesChartTool": "essence/Tools/SeriesChart/SeriesChartTool"
+    },
+    "metadata": {
+        "icon": "chart-line",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": ["left", "right"],
+        "preferredPosition": "right",
+        "modernLayoutSupport": true,
+        "width": 400,
+        "height": 0
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.sources",
+                        "name": "Source plugins (JSON array)",
+                        "description": "Plugin ids whose series events this chart renders, e.g. [\"fetch-timeseries\"]. Adding a new fetcher plugin here wires it to this chart with no code change.",
+                        "type": "json",
+                        "width": 8,
+                        "height": "120px"
+                    },
+                    {
+                        "field": "variables.layout",
+                        "name": "Chart layout",
+                        "description": "single: all variables share one chart, the legend picks the visible one, and the card header has a reset-zoom button. stacked: one card per variable, each zooming independently. Both layouts have the preview zoom strip, the footer chip, and a Download CSV link.",
+                        "type": "dropdown",
+                        "width": 4,
+                        "options": ["single", "stacked"]
+                    }
+                ]
+            }
+        ]
+    }
+}
