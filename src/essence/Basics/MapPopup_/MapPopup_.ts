@@ -35,14 +35,18 @@ const XLINK_NAMESPACE = 'http://www.w3.org/1999/xlink'
  * them a Tab actually reaches is {@link focusStops}' to settle: an element the
  * selector names can still be hidden, or held out of the sequence.
  *
- * The one control named here is `button`, and it is always the card's own
- * chrome — the close control and the action buttons {@link buildPopupCard}
- * makes. Nothing a plugin writes contributes one: the sanitizer drops
- * `button`, `input`, `select` and `textarea` along with their contents.
+ * The controls are named for both sides of the card. The chrome contributes
+ * the close control and the action buttons {@link buildPopupCard} makes, and a
+ * plugin's markup may contribute any of them: form controls reach a card as
+ * inert content, and a field this list did not name is a field a Tab would
+ * walk out of the dialog through.
  */
 const FOCUS_STOP = [
     'a[href]',
     'button:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
     'details > summary:first-of-type',
     'audio[controls]',
     'video[controls]',
@@ -50,596 +54,37 @@ const FOCUS_STOP = [
 ].join(', ')
 
 /**
- * What plugin content is allowed to be.
+ * How plugin content is sanitized before it reaches a card: DOMPurify's own
+ * defaults, and two deliberate divergences from them.
  *
- * Named outright rather than subtracted from what DOMPurify passes by default,
- * because the two lists answer different questions. DOMPurify's asks whether
- * markup is safe HTML, and by that measure `form`, `input`, `button`, `select`
- * and `canvas` all pass. A card asks something narrower — whether the markup is
- * something a card can be — and the difference between the two answers is not a
- * set anyone can hold in their head well enough to subtract. Stating the whole
- * of it here makes the card's contract readable in one place, and an
- * `ALLOWED_TAGS` of its own is the form DOMPurify offers for that: it replaces
- * the library's list rather than extending it.
+ * The defaults are the whole of the security answer. They are curated upstream,
+ * against markup a card's author would never think of, and kept current by the
+ * one dependency that ships sanitizer-bypass fixes — which is why `dompurify`
+ * floats on a caret range rather than an exact pin, an exact one being what
+ * would hold the app on a known-bypassable release. What a card adds to them is
+ * only what the shape of a card asks for.
  *
- * The bargain is that an author owns the inside of their card and nothing
- * else. Text, structure, media, formulae and the SVG drawing set are
- * theirs, and so is a stylesheet of their own, which is safe to hand them
- * because the content is mounted in a shadow root, see {@link buildContent}.
- * What reaches past the card is not theirs: no frames, no plugins, and none of
- * the attributes — `popover` above all — that lift content into the top layer,
- * where neither the card's clipping nor its paint containment can follow.
- *
- * Form controls go for a different reason. A `<form>` sits inside a card
- * perfectly well; what it cannot do is be of any use there. The card answers
- * its request with which button was pressed and nothing else, and the content
- * itself has no script, so nothing the contract offers carries a control's
- * value back out — a field in a card is an input nobody can collect. Rendering
- * one would promise the user an interaction the card cannot honour.
- */
-const ALLOWED_TAGS = [
-    // Text and structure. `details` and `summary` earn their place twice over:
-    // they are the only disclosure widget HTML offers that needs no script.
-    'a',
-    'abbr',
-    'address',
-    'article',
-    'aside',
-    'b',
-    'bdi',
-    'bdo',
-    'blockquote',
-    'br',
-    'caption',
-    'cite',
-    'code',
-    'col',
-    'colgroup',
-    'data',
-    'dd',
-    'del',
-    'details',
-    'dfn',
-    'div',
-    'dl',
-    'dt',
-    'em',
-    'figcaption',
-    'figure',
-    'footer',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'header',
-    'hgroup',
-    'hr',
-    'i',
-    'ins',
-    'kbd',
-    'li',
-    'main',
-    'mark',
-    'meter',
-    'nav',
-    'ol',
-    'p',
-    'pre',
-    'progress',
-    'q',
-    'rp',
-    'rt',
-    'ruby',
-    's',
-    'samp',
-    'section',
-    'small',
-    'span',
-    'strong',
-    'sub',
-    'summary',
-    'sup',
-    'table',
-    'tbody',
-    'td',
-    'tfoot',
-    'th',
-    'thead',
-    'time',
-    'tr',
-    'u',
-    'ul',
-    'var',
-    'wbr',
-    // Media. `canvas` is missing on purpose: it paints only from script, and
-    // the contract has no script to offer, so a card that asked for one would
-    // get a blank rectangle and no explanation.
-    'img',
-    'picture',
-    'source',
-    'video',
-    'audio',
-    'track',
-    // The author's own stylesheet.
-    'style',
-    // Static SVG: DOMPurify's own tag list less the SMIL animation elements,
-    // the deprecated font, glyph and text-reference machinery, `symbol`, and
-    // four HTML attribute names DOMPurify carries in its tag list by mistake.
-    // `symbol` goes because `use` is a tag DOMPurify itself declines to pass,
-    // so nothing in a card could place one; note that what a `<symbol>` holds
-    // is then hoisted into the drawing rather than dropped along with it.
-    'svg',
-    'g',
-    'defs',
-    'desc',
-    'title',
-    'metadata',
-    'switch',
-    'view',
-    'circle',
-    'ellipse',
-    'line',
-    'path',
-    'polygon',
-    'polyline',
-    'rect',
-    'text',
-    'textpath',
-    'tspan',
-    'image',
-    'lineargradient',
-    'radialgradient',
-    'stop',
-    'pattern',
-    'clippath',
-    'mask',
-    'marker',
-    'filter',
-    'feblend',
-    'fecolormatrix',
-    'fecomponenttransfer',
-    'fecomposite',
-    'feconvolvematrix',
-    'fediffuselighting',
-    'fedisplacementmap',
-    'fedistantlight',
-    'fedropshadow',
-    'feflood',
-    'fefunca',
-    'fefuncb',
-    'fefuncg',
-    'fefuncr',
-    'fegaussianblur',
-    'feimage',
-    'femerge',
-    'femergenode',
-    'femorphology',
-    'feoffset',
-    'fepointlight',
-    'fespecularlighting',
-    'fespotlight',
-    'fetile',
-    'feturbulence',
-    // MathML, DOMPurify's curated set. Inert markup, and the difference
-    // between a rendered formula and its operands run together on one line.
-    'math',
-    'menclose',
-    'merror',
-    'mfenced',
-    'mfrac',
-    'mglyph',
-    'mi',
-    'mlabeledtr',
-    'mmultiscripts',
-    'mn',
-    'mo',
-    'mover',
-    'mpadded',
-    'mphantom',
-    'mprescripts',
-    'mroot',
-    'mrow',
-    'ms',
-    'mspace',
-    'msqrt',
-    'mstyle',
-    'msub',
-    'msubsup',
-    'msup',
-    'mtable',
-    'mtd',
-    'mtext',
-    'mtr',
-    'munder',
-    'munderover',
-]
-
-/**
- * The HTML attributes a card may carry, curated by hand because DOMPurify's
- * own HTML set is drawn for a wider brief than a popup: `popover`, which lifts
- * content into the top layer, is the one this list exists to keep out.
- *
- * What a card can be is the tag lists' to decide, not this one's. DOMPurify
- * takes a single flat `ALLOWED_ATTR` with no notion of namespace, so an
- * attribute left out here still reaches an HTML element if {@link SVG_ATTR}
- * carries it — `name`, `method` and `tabindex` all do. They are inert, the
- * elements that would read them being gone, and `tabindex` is in fact where
- * {@link FOCUS_STOP}'s `[tabindex]` finds anything to match.
- *
- * `target` and `rel` are absent because the card writes them itself, see
- * {@link sendLinksToTheirOwnTab}, and `alt`, `kind`, `srclang` and `label`
- * are present because leaving them out would cost a screen reader the only
- * description an image or a text track has.
- */
-const HTML_ATTR = [
-    'alt',
-    'autoplay',
-    'cite',
-    'class',
-    'colspan',
-    'controls',
-    'datetime',
-    'decoding',
-    'default',
-    'dir',
-    'headers',
-    'height',
-    'high',
-    'href',
-    'hreflang',
-    'id',
-    'kind',
-    'label',
-    'lang',
-    'loading',
-    'loop',
-    'low',
-    'max',
-    'media',
-    'min',
-    'muted',
-    'open',
-    'optimum',
-    'playsinline',
-    'poster',
-    'preload',
-    'reversed',
-    'role',
-    'rowspan',
-    'scope',
-    'sizes',
-    'span',
-    'src',
-    'srclang',
-    'srcset',
-    'start',
-    'style',
-    'title',
-    'translate',
-    'type',
-    'value',
-    'width',
-]
-
-/**
- * The SVG attributes a card may carry: DOMPurify's own curated set, less the
- * SMIL timing attributes.
- *
- * Taken from the library rather than written out from memory, because writing
- * it out from memory is how `flood-color` goes missing and four of the filter
- * primitives quietly render nothing. The spec re-derives this list from the
- * installed DOMPurify and fails when that set holds an attribute this list
- * does not, so an upgrade that widens the curated set stops here for a
- * decision instead of drifting past unnoticed.
- *
- * The SMIL attributes go because none of the elements that read them —
- * `animate`, `set`, `animateTransform` — is a tag a card may hold, so they
- * describe an animation that could never run.
- */
-const SVG_ATTR = [
-    'accent-height',
-    'alignment-baseline',
-    'amplitude',
-    'ascent',
-    'azimuth',
-    'basefrequency',
-    'baseline-shift',
-    'bias',
-    'class',
-    'clip',
-    'clippathunits',
-    'clip-path',
-    'clip-rule',
-    'color',
-    'color-interpolation',
-    'color-interpolation-filters',
-    'color-profile',
-    'color-rendering',
-    'cx',
-    'cy',
-    'd',
-    'dx',
-    'dy',
-    'diffuseconstant',
-    'direction',
-    'display',
-    'divisor',
-    'edgemode',
-    'elevation',
-    'exponent',
-    'fill',
-    'fill-opacity',
-    'fill-rule',
-    'filter',
-    'filterunits',
-    'flood-color',
-    'flood-opacity',
-    'font-family',
-    'font-size',
-    'font-size-adjust',
-    'font-stretch',
-    'font-style',
-    'font-variant',
-    'font-weight',
-    'fx',
-    'fy',
-    'g1',
-    'g2',
-    'glyph-name',
-    'glyphref',
-    'gradientunits',
-    'gradienttransform',
-    'height',
-    'href',
-    'id',
-    'image-rendering',
-    'in',
-    'in2',
-    'intercept',
-    'k',
-    'k1',
-    'k2',
-    'k3',
-    'k4',
-    'kerning',
-    'lang',
-    'lengthadjust',
-    'letter-spacing',
-    'kernelmatrix',
-    'kernelunitlength',
-    'lighting-color',
-    'local',
-    'marker-end',
-    'marker-mid',
-    'marker-start',
-    'markerheight',
-    'markerunits',
-    'markerwidth',
-    'maskcontentunits',
-    'maskunits',
-    'mask',
-    'mask-type',
-    'media',
-    'method',
-    'mode',
-    'name',
-    'numoctaves',
-    'offset',
-    'operator',
-    'opacity',
-    'order',
-    'orient',
-    'orientation',
-    'overflow',
-    'paint-order',
-    'path',
-    'pathlength',
-    'patterncontentunits',
-    'patterntransform',
-    'patternunits',
-    'points',
-    'preservealpha',
-    'preserveaspectratio',
-    'primitiveunits',
-    'r',
-    'rx',
-    'ry',
-    'radius',
-    'refx',
-    'refy',
-    'result',
-    'rotate',
-    'scale',
-    'seed',
-    'shape-rendering',
-    'slope',
-    'specularconstant',
-    'specularexponent',
-    'spreadmethod',
-    'startoffset',
-    'stddeviation',
-    'stitchtiles',
-    'stop-color',
-    'stop-opacity',
-    'stroke-dasharray',
-    'stroke-dashoffset',
-    'stroke-linecap',
-    'stroke-linejoin',
-    'stroke-miterlimit',
-    'stroke-opacity',
-    'stroke',
-    'stroke-width',
-    'style',
-    'surfacescale',
-    'systemlanguage',
-    'tabindex',
-    'tablevalues',
-    'targetx',
-    'targety',
-    'transform',
-    'transform-origin',
-    'text-anchor',
-    'text-decoration',
-    'text-orientation',
-    'text-rendering',
-    'textlength',
-    'type',
-    'u1',
-    'u2',
-    'unicode',
-    'values',
-    'viewbox',
-    'visibility',
-    'version',
-    'vert-adv-y',
-    'vert-origin-x',
-    'vert-origin-y',
-    'width',
-    'word-spacing',
-    'wrap',
-    'writing-mode',
-    'xchannelselector',
-    'ychannelselector',
-    'x',
-    'x1',
-    'x2',
-    'xmlns',
-    'y',
-    'y1',
-    'y2',
-    'z',
-    'zoomandpan',
-    'dominant-baseline',
-    'pointer-events',
-    'vector-effect',
-]
-
-/** The MathML attributes a card may carry: DOMPurify's curated set, whole. */
-const MATHML_ATTR = [
-    'accent',
-    'accentunder',
-    'align',
-    'bevelled',
-    'close',
-    'columnalign',
-    'columnlines',
-    'columnspacing',
-    'columnspan',
-    'denomalign',
-    'depth',
-    'dir',
-    'display',
-    'displaystyle',
-    'encoding',
-    'fence',
-    'frame',
-    'height',
-    'href',
-    'id',
-    'largeop',
-    'length',
-    'linethickness',
-    'lquote',
-    'lspace',
-    'mathbackground',
-    'mathcolor',
-    'mathsize',
-    'mathvariant',
-    'maxsize',
-    'minsize',
-    'movablelimits',
-    'notation',
-    'numalign',
-    'open',
-    'rowalign',
-    'rowlines',
-    'rowspacing',
-    'rowspan',
-    'rspace',
-    'rquote',
-    'scriptlevel',
-    'scriptminsize',
-    'scriptsizemultiplier',
-    'selection',
-    'separator',
-    'separators',
-    'stretchy',
-    'subscriptshift',
-    'supscriptshift',
-    'symmetric',
-    'voffset',
-    'width',
-    'xmlns',
-]
-
-/**
- * The namespaced attributes a card may carry: DOMPurify's curated set, whole.
- * `xlink:href` is the one that matters — it is where SVG 1.1 content, which is
- * most of the SVG a drawing tool exports, keeps a link's target.
- */
-const XML_ATTR = [
-    'xlink:href',
-    'xml:id',
-    'xlink:title',
-    'xml:space',
-    'xmlns:xlink',
-]
-
-/**
- * How plugin content is sanitized before it reaches a card.
- *
- * `FORCE_BODY` keeps a leading `<style>` where the author put it: the HTML
- * parser hoists a stylesheet that opens a document into the head, and
- * DOMPurify returns the body, so without it the one place an author is most
- * likely to write their stylesheet is the one place it would vanish from.
- *
- * `ADD_FORBID_CONTENTS` rather than `FORBID_CONTENTS`, because the latter
- * replaces DOMPurify's own list instead of extending it. That list is what
- * keeps a refused element's text from spilling into the card as prose, and
- * `script` is the entry that matters: replace the list and a card renders the
- * source of the very script it just threw away.
- *
- * What is added to it are the form controls, `canvas`, and the embedding
- * elements. DOMPurify takes a forbidden element's children with it, and for
- * these that is the point — the children are a control's own options and
- * labels, or fallback for an embed that is not going to happen, and none of it
- * is content a card should render on its own. Naming a general container would
- * be a different matter: an author who wrapped their card in a `<form>` would
- * get a blank popup and no reason why.
- *
- * `ADD_FORBID_CONTENTS` and the attribute lists above lean on the library's
- * insides rather than its API, and `dompurify` still floats on a caret range,
- * because the one dependency that ships sanitizer-bypass fixes is the one an
- * exact pin would hold on a known-bypassable release. What keeps the insides
- * from moving underneath this config unnoticed is the spec: it re-derives the
- * attribute sets from `node_modules/dompurify/src/attrs.ts` — published in
- * the package, though no version promise covers it — so an install that
- * shifts them fails the suite for a person to re-curate. The exposure left is
- * DOMPurify's own `FORBID_CONTENTS` default, which is all
- * `ADD_FORBID_CONTENTS` means anything against: the library treats additions
- * to it as hardening, and losing an entry would cost a card spilled text the
- * sanitizer passed, not markup.
+ * The bargain the defaults leave is that an author owns the inside of their
+ * card and nothing else. Form controls and a `<canvas>` reach a card as inert
+ * content: the contract carries no script, so nothing reads a field back or
+ * paints a canvas, and a `<form>` that tries to submit is stopped at the click
+ * by {@link guardNavigation}. What must not reach past the card is the top
+ * layer, which is what the `FORBID_ATTR` below is for.
  */
 export const POPUP_SANITIZE_CONFIG = {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR: [...HTML_ATTR, ...SVG_ATTR, ...MATHML_ATTR, ...XML_ATTR],
-    ADD_FORBID_CONTENTS: [
-        'button',
-        'canvas',
-        'datalist',
-        'embed',
-        'iframe',
-        'input',
-        'object',
-        'optgroup',
-        'option',
-        'select',
-        'textarea',
-    ],
-    ALLOW_ARIA_ATTR: true,
-    ALLOW_DATA_ATTR: true,
+    // DOMPurify's defaults strip `<style>` whole, tag and rules alike. An
+    // author's own stylesheet is the point of mounting content in a shadow
+    // root, where the rules reach the card's content and stop there, so it is
+    // added back — see {@link buildContent}.
+    ADD_TAGS: ['style'],
+    // The one default-passed capability a card cannot contain: a popover
+    // promotes itself into the browser's top layer, above the app's panels and
+    // out of reach of both the card's clipping and its paint containment.
+    FORBID_ATTR: ['popover', 'popovertarget'],
+    // Keeps a leading `<style>` where the author wrote it: the HTML parser
+    // hoists a stylesheet that opens a document into the head, and DOMPurify
+    // returns the body, so without this the one place an author is most likely
+    // to write their stylesheet is the one place it would vanish from.
     FORCE_BODY: true,
 }
 
@@ -798,15 +243,18 @@ function sendLinksToTheirOwnTab(content: DocumentFragment): void {
 
 /**
  * Refuse, at the moment of the click, anything that would navigate the app
- * away — a link the walk above did not reach, a form the sanitizer somehow
- * left standing.
+ * away — a link the walk above did not reach, and the submit of a form.
  *
- * A backstop rather than the mechanism: the walk is what makes links behave,
- * and this is what catches the case the walk did not see. It runs in the
- * capture phase on the shadow root, which is where an event inside the
- * content can still be read for what it really targeted; `submit` does not
- * cross a shadow boundary at all, so a listener on the host would never see
- * one.
+ * For links this is a backstop: the walk is what makes them behave, and this
+ * catches the case the walk did not see. For a submit it is the mechanism. A
+ * `<form>` reaches a card whole, `action` and all, and submitting one would
+ * navigate the app away as surely as a link; refusing it here is what leaves
+ * the controls inside inert rather than dangerous.
+ *
+ * It runs in the capture phase on the shadow root, which is where an event
+ * inside the content can still be read for what it really targeted; `submit`
+ * does not cross a shadow boundary at all, so a listener on the host would
+ * never see one.
  */
 function guardNavigation(event: Event): void {
     if (event.type === 'submit') {
@@ -998,8 +446,8 @@ function isTabStop(element: Element): boolean {
  * ends of this list: an element the keyboard skips, sitting last in the
  * markup, would hold the last place while the Tab that reached the real last
  * stop walked straight out of the card. Content hides its own markup often
- * enough to make this ordinary — a closed `<details>` is on the allow-list,
- * and so is a stylesheet that can `display: none` anything at all.
+ * enough to make this ordinary — a closed `<details>` reaches a card, and so
+ * does a stylesheet that can `display: none` anything at all.
  *
  * Tab order is read as document order, which a positive `tabindex` inside the
  * content would reorder. Following it would mean reimplementing sequential
