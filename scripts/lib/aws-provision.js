@@ -15,6 +15,7 @@ const path = require("path");
 const {
   CloudFormationClient,
   CreateStackCommand,
+  UpdateStackCommand,
   DescribeStacksCommand,
   DeleteStackCommand,
 } = require("@aws-sdk/client-cloudformation");
@@ -61,8 +62,21 @@ const TERMINAL_STACK_STATUSES = [
   "DELETE_COMPLETE",
   "DELETE_FAILED",
   "UPDATE_COMPLETE",
+  // Where an update with rollback disabled leaves a stack. Terminal and
+  // permanently stuck: only a ContinueUpdateRollback or a delete moves it,
+  // so waiting on it can only ever burn the timeout.
+  "UPDATE_FAILED",
   "UPDATE_ROLLBACK_COMPLETE",
   "UPDATE_ROLLBACK_FAILED",
+];
+
+// Resting statuses a publish can pick up and reuse as-is. The create-side
+// ROLLBACK_COMPLETE and CREATE_FAILED are deliberately absent — a stack that
+// failed on the way up can only be deleted (see publish-static.js).
+const REUSABLE_STACK_STATUSES = [
+  "CREATE_COMPLETE",
+  "UPDATE_COMPLETE",
+  "UPDATE_ROLLBACK_COMPLETE",
 ];
 
 async function createStack({ stackName, templateBody }) {
@@ -76,6 +90,93 @@ async function createStack({ stackName, templateBody }) {
     })
   );
   return resp.StackId;
+}
+
+// Applies the current template to an existing stack. Returns true when an
+// update started, false when CloudFormation reports there is nothing to
+// change. The no-op arrives as a ValidationError, the SAME error name
+// DescribeStacks uses for "stack does not exist" — so match on the message.
+async function updateStack({ stackName, templateBody }) {
+  const { cfn } = getClients();
+  try {
+    await cfn.send(
+      new UpdateStackCommand({
+        StackName: stackName,
+        TemplateBody: templateBody,
+        Tags: [{ Key: "mmgis:deployment", Value: stackName }],
+      })
+    );
+    return true;
+  } catch (err) {
+    if (
+      err.name === "ValidationError" &&
+      (err.message || "").indexOf("No updates are to be performed") !== -1
+    )
+      return false;
+    throw err;
+  }
+}
+
+// True for the ValidationError CloudFormation raises when the stack is
+// already busy with someone else's operation ("Stack:arn:... is in
+// UPDATE_IN_PROGRESS state and can not be updated."). Two republish clicks
+// start two ECS tasks and the loser lands here — a race to wait out, not a
+// failure. Same error NAME as the no-op and the does-not-exist cases, so
+// again the message is the only discriminator.
+function isStackBusyError(err) {
+  return (
+    err != null &&
+    err.name === "ValidationError" &&
+    (err.message || "").indexOf("state and can not be updated") !== -1
+  );
+}
+
+// The status an in-flight stack operation settles at, for a caller that
+// finds a stack mid-operation and wants to wait it out. A rollback settles
+// at UPDATE_ROLLBACK_COMPLETE: waiting for UPDATE_COMPLETE from an in-flight
+// rollback can only ever throw, even though a stack resting at
+// UPDATE_ROLLBACK_COMPLETE is perfectly reusable. A status that is already
+// terminal maps to whatever its family settles at; waitForStack() checks
+// terminal statuses first, so a stuck one (UPDATE_FAILED) still throws.
+function settleStatusFor(stackStatus) {
+  if (stackStatus.indexOf("UPDATE_ROLLBACK_") === 0)
+    return "UPDATE_ROLLBACK_COMPLETE";
+  if (stackStatus.indexOf("UPDATE_") === 0) return "UPDATE_COMPLETE";
+  return "CREATE_COMPLETE";
+}
+
+// The wait this run needs, from the action and the stack it found (or did
+// not). Pure: the caller makes the AWS calls. `mode` says what to do —
+//   create - no stack yet: CreateStack, then wait
+//   reuse  - resting at a reusable status: no wait at all
+//   settle - mid-operation: wait out whatever is running
+//   update - UpdateStack, then wait for it to converge
+// and `wait` is the waitForStack() argument bag (null for "reuse").
+function planStackWait({ action, existing }) {
+  if (action === "update")
+    return {
+      mode: "update",
+      wait: {
+        desiredStatus: "UPDATE_COMPLETE",
+        // See waitForStack: the read that proves the update landed is the
+        // one whose LastUpdatedTime is newer than this.
+        prior: {
+          status: existing.StackStatus,
+          lastUpdatedTime: existing.LastUpdatedTime,
+        },
+      },
+    };
+  if (existing == null)
+    return {
+      mode: "create",
+      wait: { desiredStatus: "CREATE_COMPLETE", prior: null },
+    };
+  if (REUSABLE_STACK_STATUSES.indexOf(existing.StackStatus) !== -1)
+    return { mode: "reuse", wait: null };
+  return {
+    mode: "settle",
+    wait: { desiredStatus: settleStatusFor(existing.StackStatus), prior: null },
+  };
 }
 
 // Returns the Stack object, or null when the stack does not exist.
@@ -97,31 +198,63 @@ async function describeStack({ stackName }) {
   }
 }
 
+// True when a stack's LastUpdatedTime has moved past the one observed
+// before the operation. Absent-then-present counts: CloudFormation only
+// returns the field once a stack has been updated at least once.
+function lastUpdatedAdvanced(current, prior) {
+  if (current == null) return false;
+  if (prior == null) return true;
+  return new Date(current).getTime() > new Date(prior).getTime();
+}
+
 // Polls DescribeStacks until the stack reaches a terminal status.
 // Resolves with the Stack object on success; throws on failure statuses,
 // disappearance, or timeout.
+//
+// `prior` is the { status, lastUpdatedTime } read immediately BEFORE the
+// operation being waited on (pass it after an UpdateStack; the create path
+// has nothing to pass). DescribeStacks is eventually consistent, so an early
+// poll can still return the pre-operation state — and when that status IS
+// `desiredStatus` (the ordinary republish of a stack resting at
+// UPDATE_COMPLETE) status equality alone would resolve on a stack that has
+// not started converging. A read is stale only while it matches `prior` on
+// BOTH fields: an advanced LastUpdatedTime is positive proof this operation
+// landed, so no transition has to be caught mid-flight.
 async function waitForStack({
   stackName,
   desiredStatus = "CREATE_COMPLETE",
+  prior = null,
   pollIntervalMs = 15000,
   timeoutMs = 30 * 60 * 1000,
 }) {
   const startedAt = Date.now();
+  // CloudFormation usually puts the failure reason on the IN_PROGRESS
+  // rollback status and leaves the terminal one empty, so remember the last
+  // reason seen rather than reading only the status we throw on.
+  let lastReason = null;
   for (;;) {
     const stack = await describeStack({ stackName });
     if (stack == null)
       throw new Error(
         `Stack '${stackName}' does not exist (deleted or never created)`
       );
-    if (stack.StackStatus === desiredStatus) return stack;
-    if (TERMINAL_STACK_STATUSES.indexOf(stack.StackStatus) !== -1)
-      throw new Error(
-        `Stack '${stackName}' reached terminal status '${stack.StackStatus}'` +
-          (stack.StackStatusReason ? `: ${stack.StackStatusReason}` : "")
-      );
+    const stale =
+      prior != null &&
+      stack.StackStatus === prior.status &&
+      !lastUpdatedAdvanced(stack.LastUpdatedTime, prior.lastUpdatedTime);
+    if (!stale) {
+      if (stack.StackStatusReason) lastReason = stack.StackStatusReason;
+      if (stack.StackStatus === desiredStatus) return stack;
+      if (TERMINAL_STACK_STATUSES.indexOf(stack.StackStatus) !== -1)
+        throw new Error(
+          `Stack '${stackName}' reached terminal status '${stack.StackStatus}'` +
+            (lastReason ? `: ${lastReason}` : "")
+        );
+    }
     if (Date.now() - startedAt > timeoutMs)
       throw new Error(
-        `Timed out waiting for stack '${stackName}' to reach '${desiredStatus}' (last status '${stack.StackStatus}')`
+        `Timed out waiting for stack '${stackName}' to reach '${desiredStatus}' (last status '${stack.StackStatus}')` +
+          (lastReason ? `: ${lastReason}` : "")
       );
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
@@ -427,6 +560,10 @@ module.exports = {
   setClients,
   TERMINAL_STACK_STATUSES,
   createStack,
+  updateStack,
+  isStackBusyError,
+  settleStatusFor,
+  planStackWait,
   describeStack,
   waitForStack,
   getStackOutputs,

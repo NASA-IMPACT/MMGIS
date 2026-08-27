@@ -171,4 +171,21 @@ test.describe('renderCfnTemplate', () => {
             'DistributionId',
         ])
     })
+
+    test('logical IDs and bucket anonymity are pinned (replacement mints a new domain)', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        // Renaming a logical ID (or naming the bucket) makes UpdateStack REPLACE
+        // the resource: a replaced distribution gets a new *.cloudfront.net
+        // domain, the one thing a published dashboard must never change.
+        expect(Object.keys(template.Resources).sort()).toEqual([
+            'DashboardAuthFunction',
+            'DashboardBucket',
+            'DashboardBucketPolicy',
+            'DashboardDistribution',
+            'DashboardOriginAccessControl',
+        ])
+        expect(
+            template.Resources.DashboardBucket.Properties
+        ).not.toHaveProperty('BucketName')
+    })
 })

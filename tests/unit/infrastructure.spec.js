@@ -70,7 +70,26 @@ function statementBySid(roleJson, sid) {
     return statement
 }
 
-test.describe('infrastructure/ JSON recipes', () => {
+// Extracts one statement block out of a Terraform source file: from its
+// `Sid = "..."` line to the line that closes the statement object. Policy
+// statements sit at a fixed indent in these files (six spaces inside the
+// jsonencode'd Statement list), so their closing brace is the first
+// `      },` after the Sid — nested blocks (Condition) close deeper.
+// Scoping an assertion to this slice proves the action lives INSIDE that
+// specific statement, and therefore under its Resource; a whole-file
+// toContain would also pass with the action in an unrelated statement.
+function sliceTerraformStatement(source, sid) {
+    const marker = new RegExp(`Sid\\s*=\\s*"${sid}"`).exec(source)
+    expect(marker, `Sid '${sid}' found`).toBeTruthy()
+    const start = marker.index
+    const close = /\n {6}\},?(\n|$)/.exec(source.slice(start))
+    expect(close, `statement '${sid}' closes`).toBeTruthy()
+    return source.slice(start, start + close.index)
+}
+
+// The JSON recipes and their Terraform counterparts are checked together:
+// several of these invariants only hold if every layer agrees.
+test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
     test('every infrastructure JSON file parses', () => {
         for (const file of JSON_FILES) {
             expect(() => readJson(file), `${file} parses`).not.toThrow()
@@ -501,6 +520,53 @@ test.describe('infrastructure/ JSON recipes', () => {
                     allows.includes(`"${service}:*"`),
                 `boundary caps ${action}`
             ).toBe(true)
+        }
+    })
+
+    // Republish converges an existing dashboard stack in place, and
+    // waitForStack() polls DescribeStacks until it settles (see
+    // aws-provision.js). Every layer that can deny an action — the publish
+    // task role, the Terraform module, the permissions boundary — has to
+    // allow every one of these, or a republish fails as an AccessDenied at
+    // publish time. The role and the module split CloudFront by resource type
+    // (distribution, function and origin-access-control statements); the
+    // boundary caps all of CloudFront in one DashboardCloudFront statement,
+    // hence the two Sids.
+    //
+    // The origin-access-control pair covers a template edit that changes the
+    // OAC: CloudFormation reads the existing config before it replaces it, so
+    // an UpdateStack that touches the resource needs both the read and the
+    // write, and a role holding only create/read/delete would fail mid-update
+    // and roll the stack back.
+    // [publish-role + module Sid, boundary Sid, action]
+    const CONVERGE_GRANTS = [
+        ['DashboardStackLifecycle', 'DashboardStacks', 'cloudformation:UpdateStack'],
+        ['DashboardAuthFunctionLifecycle', 'DashboardCloudFront', 'cloudfront:UpdateFunction'],
+        ['DashboardDistributionLifecycle', 'DashboardCloudFront', 'cloudfront:GetDistributionConfig'],
+        ['DashboardOriginAccessControlLifecycle', 'DashboardCloudFront', 'cloudfront:GetOriginAccessControlConfig'],
+        ['DashboardOriginAccessControlLifecycle', 'DashboardCloudFront', 'cloudfront:UpdateOriginAccessControl'],
+    ]
+
+    test('every IAM layer grants the republish converge actions', () => {
+        const publishRole = readJson('iam/publish-task-role.json')
+        const iamTf = readTfModuleFile('iam.tf')
+        const boundary = fs.readFileSync(
+            path.join(INFRA, 'terraform', 'bootstrap', 'boundary.tf'),
+            'utf8'
+        )
+        for (const [sid, boundarySid, action] of CONVERGE_GRANTS) {
+            expect(
+                statementBySid(publishRole, sid).Action,
+                `publish task role '${sid}' allows ${action}`
+            ).toContain(action)
+            expect(
+                sliceTerraformStatement(iamTf, sid),
+                `terraform module '${sid}' allows ${action}`
+            ).toContain(`"${action}"`)
+            expect(
+                sliceTerraformStatement(boundary, boundarySid),
+                `boundary '${boundarySid}' caps ${action}`
+            ).toContain(`"${action}"`)
         }
     })
 })

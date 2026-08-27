@@ -7,14 +7,20 @@
  * Driven by environment:
  *   MMGIS_DEPLOYMENT_ID     - the deployments row to publish (required)
  *   MMGIS_DEPLOYMENT_ACTION - "publish" (default) creates the CloudFormation
- *                       stack first; "update" reuses the existing stack
- *                       and just re-bakes + re-uploads (same URL).
+ *                       stack when none exists yet, or waits for an existing
+ *                       one to settle (a previous attempt may have created
+ *                       it, or an earlier "update" may still be converging
+ *                       it); "update" converges an existing stack's
+ *                       infrastructure to the current template via
+ *                       UpdateStack — including re-baking the current
+ *                       dashboards password into the auth Function — then
+ *                       re-bakes + re-uploads the bundle (same URL).
  *
  * Flow: read the mission config from Postgres → apply bake guards → bake
  * via bakeStaticConfig → build themes + static webpack bundle
- * (SERVER=static) → CreateStack + poll to CREATE_COMPLETE
- * (publish only) → same-key copy the mission's assets from the shared
- * admin bucket → upload the bundle → mark the row `published`.
+ * (SERVER=static) → CreateStack/UpdateStack + poll to the terminal status
+ * → same-key copy the mission's assets from the shared admin bucket →
+ * upload the bundle → mark the row `published`.
  * Any failure marks the row `failed` with last_error.
  */
 
@@ -35,6 +41,17 @@ const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
 
 const { requireEnv } = provision;
+
+// A stack that failed on the way UP can only be deleted, never reused or
+// updated. CREATE_FAILED is where this codebase's own createStack leaves a
+// failed first publish (OnFailure: "DO_NOTHING"); the ROLLBACK_* pair is
+// where an out-of-band operator create leaves one, and ROLLBACK_IN_PROGRESS
+// gets the same guidance as the ROLLBACK_COMPLETE it is on its way to.
+const UNUSABLE_STACK_STATUSES = [
+  "CREATE_FAILED",
+  "ROLLBACK_COMPLETE",
+  "ROLLBACK_IN_PROGRESS",
+];
 
 function log(message) {
   console.log(`[publish-static] ${message}`);
@@ -132,32 +149,83 @@ async function main() {
       SERVER: "static",
     });
 
-    // 3. Provision (publish) or look up (update) the dashboard stack
+    // 3. Provision (publish) or converge (update) the dashboard stack
+    const templateBody = renderCfnTemplate({
+      password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
+    });
+    // Idempotent re-run: a previous attempt may have created the stack (or a
+    // prior update converged it) — reuse it instead of dying on
+    // CloudFormation's AlreadyExistsException.
+    const existing = await provision.describeStack({ stackName });
+    if (
+      existing != null &&
+      UNUSABLE_STACK_STATUSES.indexOf(existing.StackStatus) !== -1
+    )
+      throw new Error(
+        `Stack '${stackName}' is in ${existing.StackStatus} and cannot be used — ` +
+          "delete the deployment and publish it again (this mints a new URL)"
+      );
     let stack;
     if (ACTION === "publish") {
-      // Idempotent re-run: a previous attempt may have created the stack
-      // and failed later (e.g. mid-upload) — reuse it instead of dying on
-      // CloudFormation's AlreadyExistsException.
-      const existing = await provision.describeStack({ stackName });
-      if (existing == null) {
-        const templateBody = renderCfnTemplate({
-          password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
-        });
+      const plan = provision.planStackWait({ action: ACTION, existing });
+      if (plan.mode === "create") {
         log(`Creating stack '${stackName}'...`);
         await provision.createStack({ stackName, templateBody });
-      } else {
+        stack = await provision.waitForStack({ stackName, ...plan.wait });
+      } else if (plan.mode === "reuse") {
         log(
           `Stack '${stackName}' already exists (${existing.StackStatus}); skipping CreateStack.`
         );
+        stack = existing;
+      } else {
+        log(
+          `Stack '${stackName}' already exists (${existing.StackStatus}); waiting for it to settle.`
+        );
+        stack = await provision.waitForStack({ stackName, ...plan.wait });
       }
-      stack = await provision.waitForStack({ stackName });
       log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     } else {
-      stack = await provision.describeStack({ stackName });
-      if (stack == null)
+      if (existing == null)
         throw new Error(
           `Stack '${stackName}' does not exist — publish before updating`
         );
+      log(
+        `Converging stack '${stackName}' to the current template — this ` +
+          "re-bakes the current dashboards password into the auth Function."
+      );
+      const plan = provision.planStackWait({ action: ACTION, existing });
+      let updating = false;
+      let waited = null;
+      try {
+        updating = await provision.updateStack({ stackName, templateBody });
+      } catch (err) {
+        if (!provision.isStackBusyError(err)) throw err;
+        // Two republish clicks start two ECS tasks, and CloudFormation
+        // rejects the loser's UpdateStack outright. The winner is converging
+        // the same template, so wait that operation out instead of failing
+        // the row, then fall through to the upload — a double republish stays
+        // harmlessly last-write-wins.
+        log(
+          `Stack '${stackName}' is already being updated by another task; waiting for that update to settle.`
+        );
+        const current =
+          (await provision.describeStack({ stackName })) || existing;
+        waited = await provision.waitForStack({
+          stackName,
+          desiredStatus: provision.settleStatusFor(current.StackStatus),
+        });
+      }
+      if (updating) {
+        log(`Updating stack '${stackName}'...`);
+        waited = await provision.waitForStack({ stackName, ...plan.wait });
+      }
+      if (waited != null) {
+        stack = waited;
+        log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
+      } else {
+        stack = existing;
+        log(`Stack '${stackName}' is already up to date.`);
+      }
     }
     const outputs = provision.getStackOutputs(stack);
     const bucket = outputs.BucketName;
