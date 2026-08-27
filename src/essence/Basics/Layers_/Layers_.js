@@ -35,8 +35,12 @@ let _providerCleanups = []
  * colormap but bakes it in at construction — so they are reported separately
  * rather than collapsed into one verdict.
  *
+ * `deckRaster` names which renderer paints the layer. That decides which ramps
+ * may be offered for it: the client-side renderer can only paint the ramps
+ * bundled with the app, while a tile server may serve ramps of its own.
+ *
  * @param {string} uuid - A key of `L_.layers.data`.
- * @returns {{hasColormap: boolean, canChangeColormap: boolean}}
+ * @returns {{hasColormap: boolean, canChangeColormap: boolean, deckRaster: boolean}}
  */
 function cogCapabilitiesFor(uuid) {
     const layerObj = L_.layers.data[uuid]
@@ -57,6 +61,7 @@ function cogCapabilitiesFor(uuid) {
         hasColormap: hasCogColormap(layerObj),
         canChangeColormap:
             supportsCogTransform(layerObj, sourceUrl) || deckRaster,
+        deckRaster,
     }
 }
 

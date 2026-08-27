@@ -170,9 +170,9 @@ describe('layers:getCogCapabilities provider', () => {
         loadLayers()
 
         expect(providers['layers:getCogCapabilities']()).toEqual({
-            [DISPLACEMENT]: { hasColormap: true, canChangeColormap: true },
-            [BASEMAP]: { hasColormap: false, canChangeColormap: false },
-            [BOUNDARIES]: { hasColormap: false, canChangeColormap: false },
+            [DISPLACEMENT]: { hasColormap: true, canChangeColormap: true, deckRaster: false },
+            [BASEMAP]: { hasColormap: false, canChangeColormap: false, deckRaster: false },
+            [BOUNDARIES]: { hasColormap: false, canChangeColormap: false, deckRaster: false },
         })
     })
 
@@ -181,7 +181,7 @@ describe('layers:getCogCapabilities provider', () => {
         L_.layers.data = { [uuid]: cogLayer('image') }
 
         expect(providers['layers:getCogCapabilities']()).toEqual({
-            [uuid]: { hasColormap: true, canChangeColormap: false },
+            [uuid]: { hasColormap: true, canChangeColormap: false, deckRaster: false },
         })
     })
 
@@ -189,7 +189,7 @@ describe('layers:getCogCapabilities provider', () => {
     // a caller holding either identifier has to get the same answer.
     test('answers for a single layer by uuid or by display name', () => {
         loadLayers()
-        const expected = { hasColormap: true, canChangeColormap: true }
+        const expected = { hasColormap: true, canChangeColormap: true, deckRaster: false }
 
         expect(providers['layers:getCogCapabilities'](DISPLACEMENT)).toEqual(expected)
         expect(providers['layers:getCogCapabilities']('Displacement')).toEqual(expected)
@@ -226,6 +226,7 @@ describe('layers:getCogCapabilities provider', () => {
             expect(providers['layers:getCogCapabilities'](uuid)).toEqual({
                 hasColormap: true,
                 canChangeColormap: true,
+                deckRaster: true,
             })
         })
 
@@ -234,8 +235,28 @@ describe('layers:getCogCapabilities provider', () => {
             expect(providers['layers:getCogCapabilities'](uuid)).toEqual({
                 hasColormap: true,
                 canChangeColormap: false,
+                deckRaster: false,
             })
         })
+
+        // Which renderer paints a layer decides which ramps may be offered for
+        // it: the client-side one can only paint the ramps bundled with the
+        // app, while a tile server may serve ramps of its own. Reporting the
+        // renderer is what lets a picker offer exactly what will really paint.
+        test('reports the client-side renderer in a deck.gl mission', () => {
+            setEngine('deckgl')
+            expect(providers['layers:getCogCapabilities'](uuid).deckRaster).toBe(true)
+        })
+
+        test('reports no client-side renderer in a leaflet mission', () => {
+            setEngine('leaflet')
+            expect(providers['layers:getCogCapabilities'](uuid).deckRaster).toBe(false)
+        })
+    })
+
+    test('reports no client-side renderer for a tile-server COG layer', () => {
+        loadLayers()
+        expect(providers['layers:getCogCapabilities'](DISPLACEMENT).deckRaster).toBe(false)
     })
 
     test('answers null for a layer it has never heard of', () => {
@@ -265,12 +286,14 @@ describe('layers:getCogCapabilities provider', () => {
         expect(providers['layers:getCogCapabilities'](uuid)).toEqual({
             hasColormap: true,
             canChangeColormap: false,
+            deckRaster: false,
         })
 
         L_.layers.data[uuid].currentTileLevel = 'fine'
         expect(providers['layers:getCogCapabilities'](uuid)).toEqual({
             hasColormap: true,
             canChangeColormap: true,
+            deckRaster: false,
         })
     })
 
