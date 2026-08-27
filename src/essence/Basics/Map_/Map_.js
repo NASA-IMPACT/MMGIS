@@ -1689,6 +1689,9 @@ async function makeTileLayer(layerObj, mapContext = null) {
             minZoom: parseInt(layerObj.minZoom),
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
+            // The same bounds Leaflet uses, so a layer scoped to a footprint
+            // stops requesting tiles outside it on either engine.
+            bounds: bb,
             tileElevation,
             nativeOptions:
                 tileFormat === 'wms'

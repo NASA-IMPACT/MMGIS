@@ -62,6 +62,53 @@ export function resolveBounds(bounds: BoundsLike): [[number, number], [number, n
     return [[sw.lng, sw.lat], [ne.lng, ne.lat]]
 }
 
+/**
+ * A layer's bounds as deck.gl's `extent`: [minX, minY, maxX, maxY] in lng/lat.
+ *
+ * Null when the bounds are absent or not finite, which leaves the layer
+ * unbounded — the same behaviour as before an extent was passed at all.
+ */
+export function resolveExtent(
+    bounds: BoundsLike | null | undefined
+): [number, number, number, number] | null {
+    if (bounds == null) return null
+    let west: number, south: number, east: number, north: number
+    try {
+        // Leaflet's LatLngBounds exposes corners as getSouthWest()/getNorthEast()
+        // methods rather than the plain properties resolveBounds reads, and the
+        // tile path hands one straight over. Unwrap it to the plain shape first.
+        const source = bounds as {
+            getSouthWest?: () => unknown
+            getNorthEast?: () => unknown
+        }
+        const normalized =
+            typeof source.getSouthWest === 'function' &&
+            typeof source.getNorthEast === 'function'
+                ? {
+                      southWest: source.getSouthWest(),
+                      northEast: source.getNorthEast(),
+                  }
+                : bounds
+        const [[w, s], [e, n]] = resolveBounds(normalized as BoundsLike)
+        west = w
+        south = s
+        east = e
+        north = n
+    } catch {
+        return null
+    }
+    if (![west, south, east, north].every((v) => typeof v === 'number' && Number.isFinite(v))) {
+        return null
+    }
+    // Callers may hand these over in either order; deck.gl wants min then max.
+    return [
+        Math.min(west, east),
+        Math.min(south, north),
+        Math.max(west, east),
+        Math.max(south, north),
+    ]
+}
+
 /** Normalises PointLike to {x, y}. */
 export function resolvePoint(point: PointLike): { x: number; y: number } {
     if (Array.isArray(point)) return { x: point[0], y: point[1] }
@@ -316,6 +363,13 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 }) as unknown as Layer
             }
 
+            // Without an extent deck.gl requests the full tile pyramid, so a
+            // layer covering one footprint still fetches tiles well outside it.
+            // Those come back empty at best, and from a single-item raster
+            // endpoint as an error, so bounding the request is what keeps a
+            // scoped layer from generating failed requests on every pan.
+            const extent = resolveExtent(o.bounds)
+
             return new TileLayer({
                 id,
                 data: o.url,
@@ -323,6 +377,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 minZoom: o.minZoom,
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
+                ...(extent ? { extent } : {}),
                 getTileData: (tile: { url?: string | null; signal?: AbortSignal }) =>
                     fetchImageTile(tile.url, tile.signal),
                 onTileError: (error: Error) => {
