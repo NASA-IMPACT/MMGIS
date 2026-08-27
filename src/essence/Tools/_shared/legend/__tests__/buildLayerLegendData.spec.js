@@ -215,8 +215,9 @@ test.describe('buildLayerLegendData', () => {
         expect(buildLayerLegendData('layer11', cfg, null, true, undefined).cog).toBeNull()
     })
 
-    // A purely numeric value must never invent a unit out of its own digits
-    // (the old [\d.]+\s*(.+) regex backtracked into '-0.1' and captured '1').
+    // A purely numeric value must never invent a unit out of its own digits:
+    // an unanchored numeric match backtracks into '-0.1' and reads '1' as the
+    // unit.
     test('derives no unit from a negative decimal value', () => {
         const legend = [
             { shape: 'continuous', color: '#000000', value: '-0.1' },
@@ -251,5 +252,125 @@ test.describe('buildLayerLegendData', () => {
         ]
         const result = buildLayerLegendData('layer16', { _legend: legend }, null, true, NO_COG)
         expect(result.unit).toBeNull()
+    })
+
+    // The mixed form documented in docs/pages/Tools/Legend/Legend.md: runs of
+    // discreet/continuous entries interleaved with individually shaped
+    // circle/square/rect ones, all labelled with words. Deciding the type from
+    // the first entry's shape alone would make the whole thing one gradient,
+    // labelled with two of those words as its bounds.
+    test('renders a mixed shape legend as swatches, not one gradient', () => {
+        const legend = [
+            { color: 'purple', shape: 'discreet', value: 'This' },
+            { color: 'cyan', shape: 'discreet', value: 'is' },
+            { color: 'purple', shape: 'continuous', value: 'what' },
+            { color: 'pink', shape: 'circle', value: 'csv' },
+            { color: 'crimson', shape: 'square', value: 'possibly' },
+            { color: 'indigo', shape: 'rect', value: 'contain' },
+        ]
+        const result = buildLayerLegendData('layer18', { _legend: legend }, null, true, NO_COG)
+        expect(result.type).toBe('categorical')
+        expect(result.categoricalStops.map((s) => s.label)).toEqual([
+            'This', 'is', 'what', 'csv', 'possibly', 'contain',
+        ])
+        expect(result.stops).toBeUndefined()
+    })
+
+    // Every entry is a scale shape, but the values are words — there is no
+    // range to draw, so the bar would be labelled with two stray words.
+    test('renders a scale legend with word values as swatches', () => {
+        const legend = [
+            { color: 'purple', shape: 'discreet', value: 'low' },
+            { color: 'red', shape: 'discreet', value: 'high' },
+        ]
+        const result = buildLayerLegendData('layer19', { _legend: legend }, null, true, NO_COG)
+        expect(result.type).toBe('categorical')
+        expect(result.min).toBeUndefined()
+        expect(result.max).toBeUndefined()
+    })
+
+    // Binned labels parse to a number followed by the rest of the bin, which
+    // is not a unit — '0.5-1.0 m' must not yield the unit '-1.0 m'.
+    test('renders binned scale labels as swatches rather than inventing a unit', () => {
+        const legend = [
+            { color: '#111111', shape: 'discreet', value: '0.0-0.5 m' },
+            { color: '#222222', shape: 'discreet', value: '0.5-1.0 m' },
+        ]
+        const result = buildLayerLegendData('layer20', { _legend: legend }, null, true, NO_COG)
+        expect(result.type).toBe('categorical')
+        expect(result.unit).toBeUndefined()
+        expect(result.categoricalStops.map((s) => s.label)).toEqual([
+            '0.0-0.5 m',
+            '0.5-1.0 m',
+        ])
+    })
+
+    // The gradient path filters hidden entries the same way the categorical
+    // one does; an author-hidden nodata colour is not a ramp stop, and its
+    // value is not a bound.
+    test('filters hidden entries out of a gradient ramp', () => {
+        const legend = [
+            { shape: 'continuous', color: '#000000', value: '0 m' },
+            { shape: 'continuous', color: '#ffffff', value: '100 m' },
+            { shape: 'continuous', color: '#ff00ff', value: '-9999 m', hideFromLegend: true },
+        ]
+        const result = buildLayerLegendData('layer21', { _legend: legend }, null, true, NO_COG)
+        expect(result.type).toBe('gradient')
+        expect(result.stops).toEqual(['#000000', '#ffffff'])
+        expect(result.min).toBe(0)
+        expect(result.max).toBe(100)
+    })
+
+    // Every entry hidden leaves nothing to draw — the layer falls through to
+    // whatever the cog block offers, exactly as an absent legend does.
+    test('an all-hidden legend is treated as no legend', () => {
+        const legend = [
+            { color: '#ff0000', value: 'water', hideFromLegend: true },
+        ]
+        expect(
+            buildLayerLegendData('layer22', { _legend: legend }, null, true, NO_COG).type,
+        ).toBe('none')
+    })
+
+    // A class keyed 0 is a real label, so the fallback to `label` has to test
+    // for undefined rather than for truthiness.
+    test('keeps a categorical value of 0 as its label', () => {
+        const legend = [
+            { color: '#ff0000', value: 0 },
+            { color: '#00ff00', value: 1 },
+        ]
+        const result = buildLayerLegendData('layer23', { _legend: legend }, null, true, NO_COG)
+        expect(result.categoricalStops).toEqual([
+            { color: '#ff0000', label: '0' },
+            { color: '#00ff00', label: '1' },
+        ])
+    })
+
+    test('falls back to the label when an entry has no value', () => {
+        const legend = [{ color: '#ff0000', label: 'water' }]
+        const result = buildLayerLegendData('layer24', { _legend: legend }, null, true, NO_COG)
+        expect(result.categoricalStops).toEqual([
+            { color: '#ff0000', label: 'water' },
+        ])
+    })
+
+    // An unrescaled raster has no bounds to report; 0 and 255 would print on
+    // the export as an authoritative range the layer was never rescaled to.
+    test('leaves COG bounds null when the mission configures none', () => {
+        const result = buildLayerLegendData(
+            'layer25', { cogColormap: 'viridis' }, null, true, EDITABLE_COG,
+        )
+        expect(result.cog?.min).toBeNull()
+        expect(result.cog?.max).toBeNull()
+        expect(result.type).toBe('gradient')
+        expect(result.min).toBeNull()
+        expect(result.max).toBeNull()
+    })
+
+    test('keeps configured COG bounds as they are', () => {
+        const cfg = { cogColormap: 'viridis', cogMin: -2, cogMax: 6 }
+        const result = buildLayerLegendData('layer26', cfg, null, true, EDITABLE_COG)
+        expect(result.cog?.min).toBe(-2)
+        expect(result.cog?.max).toBe(6)
     })
 })

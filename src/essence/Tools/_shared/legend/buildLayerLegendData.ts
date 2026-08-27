@@ -1,5 +1,5 @@
 import type { CogCapabilities } from '../adapters/mmgisAPI'
-import type { Layer, LegendType, CategoricalStop, CogData } from './types'
+import type { Layer, CategoricalStop, CogData } from './types'
 
 type MMGISLegendEntry = {
     shape?: string
@@ -27,53 +27,78 @@ type MMGISLayerConfig = {
     cogUnits?: string | null
 }
 
-const detectLegendType = (legend: MMGISLegendEntry[] | undefined): LegendType => {
-    if (!Array.isArray(legend) || legend.length === 0) return 'text'
-    const first = legend[0]
-    if (first.shape === 'continuous' || first.shape === 'discreet') return 'gradient'
-    if (first.color && first.value !== undefined) return 'categorical'
-    return 'text'
+const SCALE_SHAPES = ['continuous', 'discreet']
+
+type NumericValue = { number: number; unit: string }
+
+const NUMERIC_PREFIX = /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/
+
+/**
+ * Reads a legend value as a number plus an optional trailing unit
+ * (`'0.5 ppm'` -> 0.5 + 'ppm'). Null for anything that is not a plain number:
+ * a word (`'example'`), or a binned label (`'0.5-1.0 m'`) whose remainder
+ * reads as another number rather than as a unit.
+ */
+const parseNumericValue = (
+    value: string | number | undefined,
+): NumericValue | null => {
+    const str = String(value ?? '').trim()
+    const match = str.match(NUMERIC_PREFIX)
+    if (!match) return null
+    const unit = str.slice(match[0].length).trim()
+    if (/^[+\-.\d]/.test(unit)) return null
+    return { number: parseFloat(match[0]), unit }
 }
 
-const buildGradientFields = (legend: MMGISLegendEntry[]) => {
-    const stops = legend.map((entry) => entry.color || '')
-    const values = legend.map((entry) => {
-        const parsed = parseFloat(String(entry.value))
-        return isNaN(parsed) ? entry.value : parsed
-    })
-    const numericValues = values.filter((v): v is number => typeof v === 'number')
-    const min = numericValues.length > 0
-        ? Math.min(...numericValues)
-        : (values[values.length - 1] as number)
-    const max = numericValues.length > 0
-        ? Math.max(...numericValues)
-        : (values[0] as number)
-    let unit: { label: string } | null = null
-    const firstVal = legend[0]?.value
-    if (firstVal !== undefined) {
-        const str = String(firstVal)
-        // Anchored so the numeric prefix is matched greedily from the start
-        // (no backtracking into it) — the unit is whatever's left after
-        // that prefix, so a purely numeric value like '-0.1' or '10' yields
-        // no unit instead of a digit-eating regex inventing one from it.
-        const numericPrefix = str.match(
-            /^[+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/
-        )
-        if (numericPrefix) {
-            const remainder = str.slice(numericPrefix[0].length).trim()
-            if (remainder.length > 0) unit = { label: remainder }
-        }
+/**
+ * The numbers and shared unit behind a run of scale entries, or null when the
+ * run is not one honest numeric scale: some value is not a number, or the
+ * entries disagree on their unit (which is what a set of binned labels looks
+ * like once each bin's remainder is read as a unit).
+ */
+const readScaleValues = (
+    entries: MMGISLegendEntry[],
+): { numbers: number[]; unit: string | null } | null => {
+    const parsed = entries.map((entry) => parseNumericValue(entry.value))
+    if (parsed.some((value) => value === null)) return null
+    const values = parsed as NumericValue[]
+    const units = new Set(values.map((value) => value.unit))
+    if (units.size > 1) return null
+    const [unit] = [...units]
+    return { numbers: values.map((value) => value.number), unit: unit || null }
+}
+
+/**
+ * A gradient bar can only stand in for a legend that is one uninterrupted
+ * numeric scale. A legend that mixes scale runs with individually shaped
+ * entries — the form LegendTool renders as a mix of bars and swatches — or one
+ * whose scale values are words or bins, draws as labelled swatches instead of
+ * a ramp whose bounds would be read off non-numeric text.
+ */
+const readGradient = (entries: MMGISLegendEntry[]) => {
+    if (!entries.every((entry) => SCALE_SHAPES.includes(entry.shape ?? '')))
+        return null
+    const values = readScaleValues(entries)
+    if (!values) return null
+    return {
+        stops: entries.map((entry) => entry.color || ''),
+        min: Math.min(...values.numbers),
+        max: Math.max(...values.numbers),
+        unit: values.unit ? { label: values.unit } : null,
     }
-    return { stops, min, max, unit }
 }
 
-const buildCategoricalFields = (legend: MMGISLegendEntry[]): CategoricalStop[] =>
-    legend
-        .filter((entry) => !entry.hideFromLegend)
-        .map((entry) => ({
-            color: entry.color || '',
-            label: String(entry.value || entry.label || ''),
-        }))
+const hasSwatch = (entry: MMGISLegendEntry): boolean =>
+    Boolean(entry.color) &&
+    (entry.value !== undefined || entry.label !== undefined)
+
+const buildCategoricalFields = (
+    entries: MMGISLegendEntry[],
+): CategoricalStop[] =>
+    entries.map((entry) => ({
+        color: entry.color || '',
+        label: String(entry.value ?? entry.label ?? ''),
+    }))
 
 /**
  * Shapes one layer's config into the legend model the UI renders.
@@ -101,8 +126,11 @@ export const buildLayerLegendData = (
               isCog: true,
               editable: cogCapabilities.canChangeColormap === true,
               colormap: layerConfig.currentCogColormap || layerConfig.cogColormap || 'viridis',
-              min: layerConfig.currentCogMin ?? layerConfig.cogMin ?? 0,
-              max: layerConfig.currentCogMax ?? layerConfig.cogMax ?? 255,
+              // A bound nobody configured stays null: printing an
+              // invented 0/255 on an export reads as an authoritative
+              // range the raster was never rescaled to.
+              min: layerConfig.currentCogMin ?? layerConfig.cogMin ?? null,
+              max: layerConfig.currentCogMax ?? layerConfig.cogMax ?? null,
               defaultMin: layerConfig.cogMin ?? 0,
               defaultMax: layerConfig.cogMax ?? 255,
               defaultColormap: layerConfig.cogColormap || 'viridis',
@@ -132,7 +160,10 @@ export const buildLayerLegendData = (
         layerConfig._legendAutoGenerated === true && cog
             ? undefined
             : layerConfig._legend
-    if (!legend || (Array.isArray(legend) && legend.length === 0)) {
+    const entries = Array.isArray(legend)
+        ? legend.filter((entry) => entry.hideFromLegend !== true)
+        : []
+    if (entries.length === 0) {
         if (cog) {
             return {
                 ...base,
@@ -146,16 +177,13 @@ export const buildLayerLegendData = (
         return base
     }
 
-    const legendType = detectLegendType(legend)
-    if (legendType === 'gradient') {
-        const { stops, min, max, unit } = buildGradientFields(legend)
-        return { ...base, type: 'gradient', stops, min, max, unit }
-    }
-    if (legendType === 'categorical') {
+    const gradient = readGradient(entries)
+    if (gradient) return { ...base, type: 'gradient', ...gradient }
+    if (entries.some(hasSwatch)) {
         return {
             ...base,
             type: 'categorical',
-            categoricalStops: buildCategoricalFields(legend),
+            categoricalStops: buildCategoricalFields(entries),
         }
     }
     return { ...base, type: 'text' }
