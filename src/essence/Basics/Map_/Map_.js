@@ -440,7 +440,11 @@ let Map_ = {
                 })
             }
 
-            Map_.map.addEventListener('click', clearOnMapClick)
+            // Through the engine rather than the native map, so this inherits
+            // the adapter's guard against reporting the click a drawing ended
+            // on. Subscribing on the L.Map directly would let a finished
+            // drawing deselect the user's active feature.
+            this.engine.on('click', clearOnMapClick)
         } else {
             this.engine.on('moveend', function () {
                 L_.enforceVisibilityCutoffs()
@@ -2602,9 +2606,13 @@ function clearOnMapClick(event) {
                 } else if ('getBounds' in layer) {
                     // Use the pixel bounds because longitude/latitude conversions for bounds
                     // may be odd in the case of polar projections
+                    // L.Bounds only accepts an L.Point or an [x, y] pair; the
+                    // engine reports the click's layer point as plain
+                    // {x, y}, which it would take for a bounds and throw on.
                     if (
                         layer._pxBounds &&
-                        layer._pxBounds.contains(event.layerPoint)
+                        event.layerPoint &&
+                        layer._pxBounds.contains(L.point(event.layerPoint))
                     ) {
                         return true
                     }

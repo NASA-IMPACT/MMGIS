@@ -73,7 +73,9 @@ import {
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
 import {
     committedVerticesFromChange,
+    DrawEndClickGuard,
     drawModeKeyEvents,
+    DrawPointerWatch,
     drawStyles,
     validateDrawnLineString,
 } from './DrawingHelpers'
@@ -276,6 +278,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _drawingShape: DrawShape | null = null
     private _terraDraw: TerraDraw | null = null
     private _terraDrawListeners: Array<() => void> = []
+    private _drawEndClick = new DrawEndClickGuard()
+    private _drawPointers = new DrawPointerWatch()
 
     /** Registry of anchored HTML overlays (id -> teardown function). */
     private _overlays = new Map<string, () => void>()
@@ -379,6 +383,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // attached, so its initiator hears `drawcancel` and stops driving a
         // session that is about to have no engine.
         this.disableDrawing()
+
+        this._drawEndClick.dispose()
+        this._drawPointers.stop()
 
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
@@ -1115,6 +1122,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
+        this._drawPointers.start()
         this._syncLayers()
         this._emitEvent('drawstart', { shape })
     }
@@ -1139,6 +1147,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
+        // The drawing's clicks may still be on their way here: deck's
+        // recognizers hold each one back a tap interval to see whether a
+        // double-click is coming, so both the click that ended the session and
+        // the one that placed its last vertex can arrive after this. The watch
+        // is what knows which of those is still owed. Armed after terra-draw
+        // has stopped, because stopping is what turns double-click zoom back
+        // on for the guard to hold back again.
+        this._drawEndClick.arm(
+            this._drawPointers.pendingClickFrom,
+            this._drawEventElement(),
+            (this._basemap as any)?.doubleClickZoom
+        )
+        this._drawPointers.stop()
         this._syncLayers()
         return shape
     }
@@ -1281,17 +1302,26 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._deckSetProps({ viewState: clamped })
                 this._emitEvent('moveend', clamped)
             },
-            onClick: (info: PickingInfo) => {
-                if (this._drawingShape) return
-                this._featureClickHandler?.(pickInfoToResult(info))
-                this._emitClick(info)
-            },
-            onHover: (info: PickingInfo) => {
-                if (this._drawingShape) return
-                this._featureHoverHandler?.(pickInfoToResult(info))
-                this._emitMouseMove(info)
-            },
+            onClick: this._onPointerClick,
+            onHover: this._onPointerHover,
         } as any)
+    }
+
+    /**
+     * Report a click deck picked, unless the drawing session owns it: the ones
+     * terra-draw is taking as vertices, and the ones deck was still holding as
+     * the session ended (see {@link DrawEndClickGuard}).
+     */
+    private _onPointerClick = (info: PickingInfo): void => {
+        if (this._drawingShape || this._drawEndClick.pending) return
+        this._featureClickHandler?.(pickInfoToResult(info))
+        this._emitClick(info)
+    }
+
+    private _onPointerHover = (info: PickingInfo): void => {
+        if (this._drawingShape) return
+        this._featureHoverHandler?.(pickInfoToResult(info))
+        this._emitMouseMove(info)
     }
 
     /**
@@ -1355,16 +1385,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._overlay = new MapboxOverlay({
             interleaved: true,
             layers: [],
-            onClick: (info: PickingInfo) => {
-                if (this._drawingShape) return
-                this._featureClickHandler?.(pickInfoToResult(info))
-                this._emitClick(info)
-            },
-            onHover: (info: PickingInfo) => {
-                if (this._drawingShape) return
-                this._featureHoverHandler?.(pickInfoToResult(info))
-                this._emitMouseMove(info)
-            },
+            onClick: this._onPointerClick,
+            onHover: this._onPointerHover,
         })
 
         this._basemap.addControl(this._overlay as unknown as object)
