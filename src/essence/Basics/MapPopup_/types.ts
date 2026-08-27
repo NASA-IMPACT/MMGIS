@@ -37,13 +37,13 @@ export interface MapPopupRequest {
      */
     title?: string
     /**
-     * Popup body. Sanitized by the core against an allow-list before it
+     * Popup body. Sanitized by the core with DOMPurify's defaults before it
      * reaches the DOM, and mounted in a shadow root, which is what lets it
      * carry a `<style>` of its own: an author styles the inside of their card
-     * however they like without restyling the app around it. Everything that
-     * reaches past the card is refused — frames, plugins, form controls — and
-     * a link that goes anywhere opens in a tab of its own rather than
-     * navigating the app away.
+     * however they like without restyling the app around it. What an author
+     * owns is the inside of the card and nothing past it — nothing may reach
+     * the browser's top layer, and a link that goes anywhere opens in a tab of
+     * its own rather than navigating the app away.
      */
     html?: string
     /** Filled button, rendered first in the actions row. */
