@@ -288,7 +288,8 @@
       "on": true,
       "variables": {
         "exportPng": true,
-        "exportPdf": true
+        "exportPdf": true,
+        "includeLegend": true
       },
       "metadata": {
         "icon": "share-variant",
