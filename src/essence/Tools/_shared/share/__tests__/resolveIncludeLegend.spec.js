@@ -3,10 +3,9 @@ import { resolveIncludeLegend } from '../resolveIncludeLegend.ts'
 
 // Shared by two consumers — MMGISShareExportAdapter.tsx and
 // MMGISMapControlAdapter.tsx both toggle the export legend band through this
-// one function, so a single suite here covers both call sites. Before this
-// fix, ShareExport used `!== false` while MapControl used a wider falsy set;
-// unifying on the wider set means a Configure-persisted 'false'/0/'0' string
-// disables the band in both places.
+// one function, so a single suite here covers both call sites. The rule has
+// to cover every form Configure persists an unchecked checkbox as, or a saved
+// 'false'/0/'0' string leaves the band on.
 
 test.describe('resolveIncludeLegend', () => {
     test('defaults on when no vars are set', () => {

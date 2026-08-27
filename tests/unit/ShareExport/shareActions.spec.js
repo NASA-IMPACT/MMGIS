@@ -12,6 +12,7 @@ import {
     mmgisWriteCoordinateURL,
     mmgisGetMapScreenshot,
     mmgisGetViewState,
+    mmgisGetCurrentTimeFormatted,
 } from '../../../src/essence/Tools/_shared/adapters/mmgisAPI.ts'
 
 // Issue #144 - the adapter must call the right plugin-API methods and package
@@ -83,6 +84,7 @@ test.describe('bus wiring of the shared-client wrappers', () => {
             'map:getScreenshot': screenshot,
             'map:getViewState': viewState,
             'app:copyText': true,
+            'time:getCurrentFormatted': '2024-01-01T00:00:00Z',
         })
         window.mmgisAPI = api
         try {
@@ -92,11 +94,15 @@ test.describe('bus wiring of the shared-client wrappers', () => {
             await expect(mmgisGetMapScreenshot()).resolves.toBe(screenshot)
             await expect(mmgisGetViewState()).resolves.toBe(viewState)
             await expect(mmgisCopyText('hello')).resolves.toBe(true)
+            await expect(mmgisGetCurrentTimeFormatted()).resolves.toBe(
+                '2024-01-01T00:00:00Z',
+            )
             expect(requests.map((r) => r.name)).toEqual([
                 'map:writeCoordinateURL',
                 'map:getScreenshot',
                 'map:getViewState',
                 'app:copyText',
+                'time:getCurrentFormatted',
             ])
             expect(requests[3].params).toBe('hello')
         } finally {
@@ -122,6 +128,7 @@ test.describe('bus wiring of the shared-client wrappers', () => {
             await expect(mmgisWriteCoordinateURL()).resolves.toBe(null)
             await expect(mmgisGetMapScreenshot()).resolves.toBe(null)
             await expect(mmgisGetViewState()).resolves.toBe(null)
+            await expect(mmgisGetCurrentTimeFormatted()).resolves.toBe(null)
             // hasHandler said no, so request() must never have been risked.
             expect(requests).toEqual([])
         } finally {

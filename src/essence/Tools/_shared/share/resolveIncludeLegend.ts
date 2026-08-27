@@ -1,9 +1,7 @@
 // Whether the legend band is appended to a PNG/PDF export. Shared by the
-// ShareExport and MapControl adapters, which previously each resolved this
-// with a different truthiness rule (`!== false` vs. an explicit
-// false/'false'/0/'0' set) — Configure's checkbox field can persist any of
-// those forms, so the two disagreed on a saved 'false' string. This is the
-// wider rule (MapControl's original), so both consumers now agree.
+// ShareExport and MapControl adapters so the two can't disagree. Configure's
+// checkbox field persists an unchecked box as any of false, 'false', 0 or
+// '0', so all four read as off.
 
 export type IncludeLegendVars = { includeLegend?: unknown }
 
