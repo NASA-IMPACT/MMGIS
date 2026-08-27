@@ -5,6 +5,7 @@ import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
+import { toolCanonicalId } from '../ToolController_/ToolMetadataUtils'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
 import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
@@ -2637,9 +2638,16 @@ const L_ = {
     getToolVars: function (toolName, withVarsFromLayers, showWarnings) {
         let vars = {}
         for (var i = 0; i < L_.tools.length; i++) {
+            // Matched on the id the tool is known by everywhere else — the same
+            // one the controller mints its bus handle under — so a tool whose
+            // declared id is not its lowercased name is still reachable. The
+            // lowercased configured name stays as a fallback for callers that
+            // ask by display name instead.
+            var canonicalId = toolCanonicalId(L_.tools[i])
             if (
-                L_.tools[i].hasOwnProperty('name') &&
-                L_.tools[i].name.toLowerCase() == toolName &&
+                (canonicalId === toolName ||
+                    (L_.tools[i].hasOwnProperty('name') &&
+                        L_.tools[i].name.toLowerCase() == toolName)) &&
                 L_.tools[i].hasOwnProperty('variables')
             ) {
                 vars = L_.tools[i].variables

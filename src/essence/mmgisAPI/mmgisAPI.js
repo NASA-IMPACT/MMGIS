@@ -1058,11 +1058,13 @@ var mmgisAPI = {
         const prefix = `plugin:${pluginId}:`
         const cleanups = []
 
-        // getToolVars lowercases the configured tool name but not the one it is
-        // asked for, so the lookup has to arrive lowercased or a plugin whose
-        // id carries any capitals reads an empty configuration. It also answers
-        // a miss with a truthy `{__noVars: true}` sentinel, which has to become
-        // a plain empty object or a plugin reads the sentinel as its config.
+        // getToolVars matches a canonical tool id first and falls back to the
+        // lowercased configured name. The lowercasing here is only for that
+        // fallback — canonical ids are lowercase by construction, so they pass
+        // through untouched — and without it a caller asking by a display name
+        // that carries capitals reads an empty configuration. getToolVars also
+        // answers a miss with a truthy `{__noVars: true}` sentinel, which has
+        // to become a plain empty object or a plugin reads it as its config.
         const varsKey = String(pluginId).toLowerCase()
         const readVars = () => {
             const vars = L_.getToolVars(varsKey)

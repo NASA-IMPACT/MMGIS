@@ -519,6 +519,41 @@ export function getValidIconClass(iconClass, toolId) {
 }
 
 /**
+ * The canonical id a configured tool entry resolves to.
+ *
+ * Two identities, deliberately kept apart. `js` names the binding in the
+ * generated tool registry — it is only ever used to reach the class. The id
+ * this returns names the tool everywhere else: on the bus, in the modern
+ * controller's registries, in the DOM, in teardown events, and as the key a
+ * tool's configured variables are looked up under. `toolIds` carries the id
+ * each tool declares; a binding the registry doesn't know falls back to the
+ * same derivation the build applies, so both sides land on one id. An entry
+ * with no module at all is named after itself.
+ *
+ * The own-property check is load-bearing rather than belt-and-braces: the
+ * build assembles its map on a null prototype, but it reaches here as JSON and
+ * a plain object literal inherits from Object.prototype again. Without the
+ * check, a config naming 'constructor' or 'toString' reads a function as its
+ * id, which sanitizes to the empty string and takes the whole config map down
+ * with it.
+ *
+ * Every branch lowercases, so a canonical id is lowercase by construction.
+ *
+ * @param {Object} toolConfig - Tool configuration entry, read for { js, name }
+ * @returns {string} Canonical tool id
+ */
+export function toolCanonicalId(toolConfig) {
+    const toolModule = (toolConfig && toolConfig.js) || ''
+    if (toolModule) {
+        return Object.prototype.hasOwnProperty.call(toolIds, toolModule)
+            ? toolIds[toolModule]
+            : toolModule.replace(/Tool$/, '').toLowerCase()
+    }
+    const toolName = (toolConfig && toolConfig.name) || 'Unknown'
+    return toolName.toLowerCase().replace(/\s+/g, '-')
+}
+
+/**
  * Generate tool metadata from tool configuration
  * Consolidates metadata from both root-level (legacy) and nested metadata object.
  * Nested metadata takes precedence over root-level for backward compatibility.
@@ -529,26 +564,8 @@ export function getValidIconClass(iconClass, toolId) {
 export function generateToolMetadata(toolConfig) {
     const toolName = toolConfig.name || 'Unknown'
 
-    // Two identities, deliberately kept apart. `module` names the binding in
-    // the generated tool registry — it is only ever used to reach the class.
-    // `id` names the tool everywhere else: on the bus, in the modern
-    // controller's registries, in the DOM and in teardown events. `toolIds`
-    // carries the id each tool declares; a binding the registry doesn't know
-    // falls back to the same derivation the build applies, so both sides land
-    // on one id. An entry with no module at all is named after itself.
-    //
-    // The own-property check is load-bearing rather than belt-and-braces: the
-    // build assembles its map on a null prototype, but it reaches here as JSON
-    // and a plain object literal inherits from Object.prototype again. Without
-    // the check, a config naming 'constructor' or 'toString' reads a function
-    // as its id, which sanitizes to the empty string and takes the whole
-    // config map down with it.
     const toolModule = toolConfig.js || ''
-    const toolId = toolModule
-        ? Object.prototype.hasOwnProperty.call(toolIds, toolModule)
-            ? toolIds[toolModule]
-            : toolModule.replace(/Tool$/, '').toLowerCase()
-        : toolName.toLowerCase().replace(/\s+/g, '-')
+    const toolId = toolCanonicalId(toolConfig)
 
     // Read metadata from nested object (preferred location)
     const declaredMetadata = toolConfig.metadata || {}
