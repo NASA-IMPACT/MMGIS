@@ -14,13 +14,17 @@
  *
  * The work is split in two so callers can pay the grouping and sorting cost
  * once: `compileLegendStyle` digests the legend into ramps and lookup tables,
- * and `resolveLegendStyle` — the half that runs per feature, and on deck.gl
- * per feature per frame — does lookup and interpolation only.
+ * and `resolveLegendStyle` — the half that runs once per feature, whenever a
+ * renderer styles it — does lookup and interpolation only.
  *
- * Both halves are pure. Resolution returns colours rather than writing them
- * anywhere, because a shared mutable slot leaks one feature's colour into the
- * next feature's fallback.
+ * Both halves are pure, and neither touches the DOM: colours are parsed with
+ * d3-color rather than by measuring a throwaway element, so this module works
+ * under plain Node and adds no layout work to the render path. Resolution
+ * returns colours rather than writing them anywhere, because a shared mutable
+ * slot leaks one feature's colour into the next feature's fallback.
  */
+
+import { color as parseColor } from 'd3'
 
 /** A single legend row, as authored in the layer config or a legend CSV. */
 export interface LegendStyleEntry {
@@ -80,9 +84,8 @@ function interpolateColor(
     // Ensure factor is between 0 and 1
     factor = Math.max(0, Math.min(1, factor))
 
-    // Convert colors to RGB if they're hex
-    const rgb1 = hexToRgb(color1) || parseRgb(color1) || parseCSSColor(color1)
-    const rgb2 = hexToRgb(color2) || parseRgb(color2) || parseCSSColor(color2)
+    const rgb1 = colorToRgb(color1)
+    const rgb2 = colorToRgb(color2)
 
     if (!rgb1 || !rgb2) return color1 // Fallback if color parsing fails
 
@@ -144,71 +147,34 @@ function interpolateMultipleColors(
     return colorStops[colorStops.length - 1].color
 }
 
-// Helper function to convert hex color to RGB
-function hexToRgb(hex: string): Rgb | null {
-    if (!hex || typeof hex !== 'string') return null
-
-    // Remove # if present
-    hex = hex.replace('#', '')
-
-    // Handle 3-character hex
-    if (hex.length === 3) {
-        hex = hex
-            .split('')
-            .map((char) => char + char)
-            .join('')
-    }
-
-    if (hex.length !== 6) return null
-
-    const r = parseInt(hex.substr(0, 2), 16)
-    const g = parseInt(hex.substr(2, 2), 16)
-    const b = parseInt(hex.substr(4, 2), 16)
-
-    return isNaN(r) || isNaN(g) || isNaN(b) ? null : { r, g, b }
-}
-
-// Helper function to parse rgb() color strings
-function parseRgb(color: string): Rgb | null {
+/**
+ * Parse any CSS colour string a legend might carry - `#rgb`, `#rrggbb`,
+ * `rgb()`, `rgba()`, `hsl()`, a named colour - into RGB components.
+ *
+ * d3-color does the work, so this stays pure: the previous implementation
+ * fell back to appending a probe element to `document.body` and reading its
+ * computed style, which needed a DOM and forced a layout for every named
+ * colour it parsed.
+ *
+ * @returns Null when the string is not a colour, so callers can fall back.
+ */
+function colorToRgb(color: string): Rgb | null {
     if (!color || typeof color !== 'string') return null
 
-    const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-    if (!match) return null
+    // Legends are sometimes authored with a bare hex triplet. The previous
+    // hex parser stripped an optional '#', so accept that spelling still.
+    const trimmed = color.trim()
+    const normalised = /^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(trimmed)
+        ? `#${trimmed}`
+        : trimmed
 
-    return {
-        r: parseInt(match[1]),
-        g: parseInt(match[2]),
-        b: parseInt(match[3]),
-    }
-}
+    const parsed = parseColor(normalised)
+    if (!parsed) return null
 
-// Helper function to parse CSS color strings to RGB using browser's built-in capability
-function parseCSSColor(color: string): Rgb | null {
-    if (!color || typeof color !== 'string') return null
+    const { r, g, b } = parsed.rgb()
+    if (isNaN(r) || isNaN(g) || isNaN(b)) return null
 
-    // Use a temporary element to parse the color
-    const tempElem = document.createElement('div')
-    tempElem.style.color = color
-
-    // Append to body temporarily to get computed style
-    document.body.appendChild(tempElem)
-    const computedColor = window.getComputedStyle(tempElem).color
-    document.body.removeChild(tempElem)
-
-    // If the browser couldn't parse it, computed color will be empty
-    if (!computedColor || computedColor === '') return null
-
-    // Try to parse rgb() or rgba() format
-    const rgbMatch = computedColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
-    if (rgbMatch) {
-        return {
-            r: parseInt(rgbMatch[1]),
-            g: parseInt(rgbMatch[2]),
-            b: parseInt(rgbMatch[3]),
-        }
-    }
-
-    return null
+    return { r: Math.round(r), g: Math.round(g), b: Math.round(b) }
 }
 
 /**

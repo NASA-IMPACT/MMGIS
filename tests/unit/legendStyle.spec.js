@@ -158,6 +158,41 @@ test.describe('LegendStyle', () => {
         })
     })
 
+    test.describe('colour parsing', () => {
+        const rampOf = (low, high) => [
+            { ...ramp()[0], color: low },
+            { ...ramp()[1], color: high },
+        ]
+
+        test.each([
+            ['hex', '#000000', '#ffffff'],
+            ['shorthand hex', '#000', '#fff'],
+            ['bare hex', '000000', 'ffffff'],
+            ['rgb()', 'rgb(0, 0, 0)', 'rgb(255, 255, 255)'],
+            ['named', 'black', 'white'],
+            ['hsl()', 'hsl(0, 0%, 0%)', 'hsl(0, 0%, 100%)'],
+        ])('interpolates %s stops', (_label, low, high) => {
+            expect(resolve(rampOf(low, high), { co2: 420 }).fillColor).toBe(
+                'rgb(128, 128, 128)'
+            )
+        })
+
+        test('ignores the alpha channel of an rgba() stop, as it always has', () => {
+            expect(
+                resolve(rampOf('rgba(0, 0, 0, 0.5)', '#ffffff'), { co2: 420 })
+                    .fillColor
+            ).toBe('rgb(128, 128, 128)')
+        })
+
+        test('falls back to the other stop when a colour will not parse', () => {
+            // The DOM-based parser this replaced resolved an unparseable
+            // string to black, quietly ramping towards a colour nobody wrote.
+            expect(
+                resolve(rampOf('notacolour', '#ffffff'), { co2: 420 }).fillColor
+            ).toBe('notacolour')
+        })
+    })
+
     test.describe('fallbacks', () => {
         test('returns null when the feature lacks the property', () => {
             expect(resolve(ramp(), { other: 420 })).toBe(null)
