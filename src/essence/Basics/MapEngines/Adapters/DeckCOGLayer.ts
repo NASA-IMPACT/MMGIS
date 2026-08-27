@@ -395,6 +395,48 @@ function makeRenderTile(opts: {
 // ---------------------------------------------------------------------------
 
 /**
+ * The complete prop bag for a client-side COG layer, derived from current
+ * config. Creation and every refresh go through this one function so a
+ * colormap default can never be computed two different ways.
+ */
+export function deckCOGProps(
+    id: string,
+    options: {
+        rawCogUrl: string
+        layerObj: Record<string, any>
+        opacity?: number
+    }
+): Record<string, any> {
+    const l = options.layerObj
+    const colormapName = (l.currentCogColormap ?? l.cogColormap ?? 'viridis') as string
+    const rescaleMin = Number(l.currentCogMin ?? l.cogMin ?? 0)
+    const rescaleMax = Number(l.currentCogMax ?? l.cogMax ?? 1)
+    const nodata = l.cogNoData != null ? Number(l.cogNoData) : null
+    const minZoom = parseInt(l.minZoom)
+    const maxZoom = parseInt(l.maxZoom)
+
+    return {
+        id,
+        geotiff: options.rawCogUrl,
+        opacity: options.opacity ?? 1,
+        ...(Number.isFinite(minZoom) ? { minZoom } : {}),
+        ...(Number.isFinite(maxZoom) ? { maxZoom } : {}),
+        // Supplying getTileData + renderTile together makes COGLayer._parseGeoTIFF
+        // skip its default inferRenderPipeline, which throws for float COGs
+        // ('non-unsigned integers not yet supported').
+        getTileData: (image: any, opts: any) =>
+            cogGetTileData(image, { ...opts, noDataOverride: nodata }),
+        renderTile: makeRenderTile({ colormapName, rescaleMin, rescaleMax }),
+        updateTriggers: {
+            // Re-runs renderTile for already-loaded tiles (no refetch) when the
+            // colormap or rescale range changes. Nodata needs no trigger: it
+            // comes from the file's GDAL_NODATA tag, fixed for a given URL.
+            renderTile: [colormapName, rescaleMin, rescaleMax],
+        },
+    }
+}
+
+/**
  * Build the client-side COG layer for the deck.gl engine's makeTileLayer path.
  *
  * A plain `COGLayer` — the colormap/rescale behaviour rides on the
@@ -414,34 +456,5 @@ export function buildDeckCOGLayer(
         opacity?: number
     }
 ): Layer {
-    const l = options.layerObj
-    const colormapName = (l.currentCogColormap ?? l.cogColormap ?? 'viridis') as string
-    const rescaleMin = Number(l.currentCogMin ?? l.cogMin ?? 0)
-    const rescaleMax = Number(l.currentCogMax ?? l.cogMax ?? 1)
-    const nodata = l.cogNoData != null ? Number(l.cogNoData) : null
-    // Derived here rather than passed by callers so every rebuild path
-    // (creation, colormap/rescale refresh, time reload) keeps the same limits.
-    const minZoom = parseInt(l.minZoom)
-    const maxZoom = parseInt(l.maxZoom)
-
-    return new COGLayer<TileData>({
-        id,
-        geotiff: options.rawCogUrl,
-        opacity: options.opacity ?? 1,
-        ...(Number.isFinite(minZoom) ? { minZoom } : {}),
-        ...(Number.isFinite(maxZoom) ? { maxZoom } : {}),
-        // Supplying getTileData + renderTile together makes COGLayer._parseGeoTIFF
-        // skip its default inferRenderPipeline, which throws for float COGs
-        // ('non-unsigned integers not yet supported').
-        // The config nodata (if any) overrides the file's GDAL_NODATA.
-        getTileData: (image, opts) =>
-            cogGetTileData(image, { ...opts, noDataOverride: nodata }),
-        renderTile: makeRenderTile({ colormapName, rescaleMin, rescaleMax }),
-        updateTriggers: {
-            // Re-runs renderTile for already-loaded tiles (no refetch) when the
-            // colormap or rescale range changes. Nodata needs no trigger: it
-            // comes from the file's GDAL_NODATA tag, fixed for a given URL.
-            renderTile: [colormapName, rescaleMin, rescaleMax],
-        },
-    }) as unknown as Layer
+    return new COGLayer<TileData>(deckCOGProps(id, options) as any) as unknown as Layer
 }
