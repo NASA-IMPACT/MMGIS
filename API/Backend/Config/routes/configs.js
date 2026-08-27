@@ -274,7 +274,7 @@ function add(req, res, next, cb) {
 
   // If a config is provided, merge it over the template. The template acts
   // only as fallback defaults: posted arrays replace the template's arrays
-  // rather than concatenating with them (issue #194).
+  // rather than concatenating with them.
   if (req.body.config) {
     configTemplate = mergeConfigWithTemplate(configTemplate, req.body.config);
   }
