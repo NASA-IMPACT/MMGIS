@@ -218,9 +218,21 @@ export interface IMapEngine<
      *
      * Called by the module that owns the layer kind, at creation — never by an
      * adapter, which stays layer-type-agnostic. The engine invokes it with the
-     * live instance; return a replacement (deck.gl) or mutate in place and
-     * return nothing (Leaflet). The engine reconciles either way and remains
-     * the owner, so the function must not retain the instance.
+     * live instance and remains its owner, so the function must not retain it.
+     *
+     * What a refresher does with that instance differs per engine, because the
+     * two engines' layers do:
+     * - **deck.gl** — layers are immutable, so a refresher returns a
+     *   replacement and the engine adopts it. Returning nothing means "nothing
+     *   to apply" and the engine keeps what it holds.
+     * - **Leaflet** — layers are mutable and already on the map, so a
+     *   refresher mutates in place. Any value it returns is IGNORED: adopting
+     *   one into the registry without also swapping the layer on the map would
+     *   leave the two disagreeing, so the adapter does not try.
+     *
+     * The signature keeps `TLayer | void` because this interface is generic
+     * over whichever engine is in play; the Leaflet adapter narrows its own
+     * parameter to a void-returning function.
      */
     setLayerRefresher(
         id: string,

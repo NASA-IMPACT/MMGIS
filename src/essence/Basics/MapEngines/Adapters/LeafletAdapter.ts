@@ -88,8 +88,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      */
     private _layers: Map<string, any> = new Map()
 
-    /** Per-layer refresh hooks, keyed the same way as {@link _layers}. */
-    private _refreshers: Map<string, (layer: any, ctx: RefreshContext) => any> = new Map()
+    /**
+     * Per-layer refresh hooks, keyed the same way as {@link _layers}. They
+     * mutate in place and return nothing — see {@link setLayerRefresher}.
+     */
+    private _refreshers: Map<string, (layer: any, ctx: RefreshContext) => void> = new Map()
 
     /**
      * Registry of markers by ID
@@ -767,9 +770,16 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._layers.set(id, layer)
     }
 
+    /**
+     * A Leaflet refresher mutates the layer in place — the instance is already
+     * on the map, so there is nothing for this adapter to swap. The narrowed
+     * `void` return says so at the type level: {@link refreshLayer} discards
+     * whatever a refresher returns rather than half-reconciling it into the
+     * registry while the map still shows the old instance.
+     */
     setLayerRefresher(
         id: string,
-        refresh: ((layer: any, ctx: RefreshContext) => any) | null
+        refresh: ((layer: any, ctx: RefreshContext) => void) | null
     ): void {
         if (refresh == null) this._refreshers.delete(id)
         else this._refreshers.set(id, refresh)
@@ -779,6 +789,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         const layer = this._layers.get(id)
         if (!layer) return false
 
+        // Return value deliberately ignored — see setLayerRefresher above.
         const refresh = this._refreshers.get(id)
         if (refresh) {
             refresh(layer, {
