@@ -1734,6 +1734,34 @@ async function makeTileLayer(layerObj, mapContext = null) {
                               ),
                       },
         })
+
+        // A plain deck tile layer takes one static URL, so the per-tile params
+        // Leaflet adds in getTileUrl have to be baked in on every refresh too.
+        // Registered here, on the domain side, because compileTileUrl is not
+        // generic — it branches on MMGIS service prefixes (stac-collection,
+        // COG, titiler-url) and injects COG fields. An adapter must not know
+        // any of that; it only knows it has a function to call.
+        // Guarded to the main map for the same reason registerLayer below is:
+        // Map_.engine is always the MAIN map's engine, so a non-default ctx
+        // would collide with the main map's entry under the same uuid.
+        if (ctx.default === true) {
+            Map_.engine.setLayerRefresher(
+                layerObj.name,
+                (layer, refreshCtx) => {
+                    // No source URL, or one that compiles to nothing: return
+                    // nothing so the engine keeps the instance it holds.
+                    // Handing deck an empty url would blank the layer.
+                    if (refreshCtx.url == null) return
+                    const compiled = compileTileUrl(
+                        refreshCtx.url,
+                        refreshCtx.tileOptions ?? {}
+                    )
+                    if (!compiled) return
+                    return layer.clone({ data: compiled })
+                }
+            )
+        }
+
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
         return

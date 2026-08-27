@@ -42,7 +42,6 @@ import type {
     BasemapOptions,
 } from '../types/view'
 import type { LayerOptions, OverlayOptions, RefreshContext } from '../types/layers'
-import { compileTileUrl } from '../../Layers_/tileUrlUtils'
 import type {
     MapEventHandler,
     MapEventOptions,
@@ -964,26 +963,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const existing = this._layers.get(id)
         if (!existing) return false
 
+        // No fallback: how a layer recomputes itself is layer-kind knowledge,
+        // and this adapter has none. The module that owns the kind registers a
+        // refresher at creation (see Map_.makeTileLayer); a held layer without
+        // one has no way to refresh, exactly as in the Leaflet adapter.
         const refresh = this._refreshers.get(id)
-        let next: Layer | void
-        if (refresh) {
-            next = refresh(existing, {
-                url: ctx.url,
-                tileOptions: ctx.tileOptions,
-                force: ctx.force,
-            })
-        } else {
-            // Plain tile layers take one static URL, so the per-tile params
-            // Leaflet would add are baked in here.
-            if (ctx.url == null) return false
-            const compiled = compileTileUrl(ctx.url, ctx.tileOptions ?? {})
-            // A layer with no resolvable service URL compiles to nothing;
-            // handing that to deck would blank it.
-            if (!compiled) return false
-            next = existing.clone({ data: compiled }) as Layer
-        }
+        if (!refresh) return false
 
-        // A refresher that mutated in place returns nothing; keep what we hold.
+        const next = refresh(existing, {
+            url: ctx.url,
+            tileOptions: ctx.tileOptions,
+            force: ctx.force,
+        })
+
+        // A refresher with nothing to apply returns nothing; keep what we hold.
         if (next) this._layers.set(id, next)
         this._syncLayers()
         return true
