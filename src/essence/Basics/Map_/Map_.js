@@ -401,17 +401,21 @@ let Map_ = {
             // opened against a previous mission's map never outlives it.
             _providerCleanups.push(() => MapPopup_.hide())
 
+            // A tool's teardown names the popup owner it takes with it, and
+            // the close is owner-gated, so a surviving plugin's card is
+            // untouched.
+            _providerCleanups.push(
+                window.mmgisAPI.on('plugins:destroyed', (e) =>
+                    MapPopup_.hideForCaller(e?.pluginId)
+                )
+            )
+
             // A full layout teardown — a re-render, or the UI going down
             // whole — never passes through the map, so the map hears about it
-            // here and empties the popup slot; the request resolves 'closed',
-            // which already means the popup went away without the user acting
-            // on it. Only the collective signal is answered, because then the
-            // popup's owner is among the destroyed and closing wrongs no one.
-            // A single plugin's teardown is not: retracting a card is its
-            // plugin's own duty in destroy() — safe for it, since core
-            // retracts a popup only for the caller that opened it — and a
-            // blanket close here would take a surviving plugin's card with
-            // it.
+            // here and empties the popup slot outright; with every plugin gone
+            // the popup's owner is among the destroyed and closing wrongs no
+            // one. The request resolves 'closed', which already means the
+            // popup went away without the user acting on it.
             _providerCleanups.push(
                 window.mmgisAPI.on('plugins:allDestroyed', () =>
                     MapPopup_.hide()

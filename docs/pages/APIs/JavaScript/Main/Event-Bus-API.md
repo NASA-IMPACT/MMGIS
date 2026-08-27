@@ -395,15 +395,14 @@ A component that seeds from `panels:getAll` and also subscribes to
 has already delivered — the request can resolve after a later event lands.
 
 `plugins:destroyed` and `plugins:allDestroyed` report the teardown itself
-rather than the listing that results from it. The collective signal is the
-one a core service releases shared resources on — the map popup, for one,
-closes there — because with every plugin destroyed the resource's owner is
-among them and no surviving plugin pays for the release. A single plugin's
-teardown releases nothing centrally: the plugin hands back what it borrowed
-in its own `destroy()`, and `pluginId` names the tool the controller
-destroyed, which is not the identity the plugin spoke to services with, so a
-listener cannot match the event to what the plugin was holding. A teardown a
-command asked for is followed by `plugins:changed` carrying the new listing.
+rather than the listing that results from it. Both are signals a core service
+releases shared resources on — the map popup, for one, closes there.
+`pluginId` is the identity the departing plugin spoke to services under, so a
+release matched against it reaches only what that plugin held and a surviving
+plugin's stays put. The collective signal releases outright, because with
+every plugin destroyed the resource's owner is among them and no surviving
+plugin pays for the release. A teardown a command asked for is followed by
+`plugins:changed` carrying the new listing.
 
 ### WebSocket Events
 

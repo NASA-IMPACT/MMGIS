@@ -136,30 +136,29 @@ describe('a tool being torn down', () => {
         )
     }
 
-    // A layout re-render destroys every tool without going near `Map_.init`,
-    // which is the only other place a popup is ever dropped. The popup's owner
-    // is among the destroyed by construction — here it is the very tool whose
-    // destroy() hands nothing back — so core closing the slot wrongs no one.
-    test('a full teardown takes the popup with it and answers its request', async () => {
+    test('takes its own card with it and answers its request', async () => {
         loadTool('fake', 'FakeTool', 'fake-target')
         const { outcome, settled } = await showPopupAs('fake')
         expect(cardCount()).toBe(1)
 
-        ToolControllerModern_.destroyAllTools()
+        // FakeTool's destroy() hands nothing back, so the card only goes if
+        // core reads the teardown announcement: it names the id the popup is
+        // owned by, which is all a close needs to be aimed rather than blanket.
+        expect(ToolControllerModern_.unloadPlugin('fake')).toBe(true)
 
+        await flush()
         expect(cardCount()).toBe(0)
         await settled
         expect(outcome.result).toEqual({ action: 'closed' })
     })
 
-    test("one tool unloading leaves another plugin's card standing", async () => {
+    test("leaves another plugin's card standing", async () => {
         loadTool('fake', 'FakeTool', 'fake-target')
 
         // Deliberately someone else's popup: 'crater-info' is not the plugin
-        // being unloaded, and it is alive to stand behind its card. A blanket
-        // close on a neighbour's teardown would cost it that card, so the
-        // announcement naming the plugin that went away is what a listener has
-        // to match against before it closes anything.
+        // being unloaded, and it is alive to stand behind its card. The close
+        // is owner-gated, so the id the announcement carries reaches only the
+        // departing plugin's own popup.
         const { outcome } = await showPopupAs('crater-info')
         expect(cardCount()).toBe(1)
 
@@ -173,14 +172,15 @@ describe('a tool being torn down', () => {
         await mmgisAPI.forPlugin('crater-info').request('map:hidePopup')
     })
 
-    test('a plugin retracting in destroy() takes its own card with it', async () => {
+    test('may retract its own card in destroy() before core does', async () => {
         loadTool('retracting', 'RetractingTool', 'retracting-target')
         const { outcome, settled } = await showPopupAs('retracting')
         expect(cardCount()).toBe(1)
 
-        // Unloading one plugin runs its destroy(), where a well-behaved
-        // plugin hands the popup slot back itself — safely, because core
-        // retracts a popup only for the caller that opened it.
+        // Unloading one plugin runs its destroy() first, where this plugin
+        // hands the popup slot back itself — safely, because core retracts a
+        // popup only for the caller that opened it. The teardown announcement
+        // that follows finds an empty slot and leaves it empty.
         expect(ToolControllerModern_.unloadPlugin('retracting')).toBe(true)
 
         await flush()
@@ -189,21 +189,23 @@ describe('a tool being torn down', () => {
         expect(outcome.result).toEqual({ action: 'closed' })
     })
 
-    test('a card its own plugin failed to retract stands after the unload', async () => {
+    // A layout re-render destroys every tool without going near `Map_.init`,
+    // which is the only other place a popup is ever dropped. With every plugin
+    // gone the popup's owner is among the departed whether or not the slot is
+    // held by one of them, so the collective signal empties it outright.
+    test('a full teardown takes a popup no plugin claims with it', async () => {
         loadTool('fake', 'FakeTool', 'fake-target')
-        const { outcome } = await showPopupAs('fake')
+
+        // 'crater-info' is nobody the sweep names, so only the collective
+        // signal can account for this card going away.
+        const { outcome, settled } = await showPopupAs('crater-info')
         expect(cardCount()).toBe(1)
 
-        // FakeTool's destroy() hands nothing back. Core leaves the card
-        // standing rather than guess at its owner: the user can still dismiss
-        // it, and closing on every unload is what cost bystanders theirs.
-        expect(ToolControllerModern_.unloadPlugin('fake')).toBe(true)
+        ToolControllerModern_.destroyAllTools()
 
-        await flush()
-        expect(cardCount()).toBe(1)
-        expect(outcome.result).toBeNull()
-
-        await mmgisAPI.forPlugin('fake').request('map:hidePopup')
+        expect(cardCount()).toBe(0)
+        await settled
+        expect(outcome.result).toEqual({ action: 'closed' })
     })
 
     test('leaves the map alone when there was no tool to destroy', async () => {
