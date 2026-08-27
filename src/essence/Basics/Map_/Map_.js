@@ -1373,6 +1373,12 @@ async function makeVectorLayer(
                         opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
                         style: layerObj.style || {},
                         variables: layerObj.variables || {},
+                        // The legend doubles as a style specification, so
+                        // the engine needs it to colour features by property
+                        // value. A layer legended from a `legend:` CSV path
+                        // fetches it after the layer is built, so that layer
+                        // gets no legend styling until it is next rebuilt.
+                        legend: L_.layers.data[layerObj.name]?._legend,
                         interactive: true,
                     }
                 )
@@ -1907,6 +1913,9 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             maxNativeZoom: parseInt(layerObj.maxNativeZoom),
             maxZoom: parseInt(layerObj.maxZoom),
             style: layerObj.style || {},
+            // The legend doubles as a style specification; see makeVectorLayer
+            // for the caveat on legends fetched from a `legend:` CSV path.
+            legend: L_.layers.data[layerObj.name]?._legend,
             interactive: true,
             nativeOptions: {
                 autoHighlight: layerObj.style?.hoverHighlight === true,
