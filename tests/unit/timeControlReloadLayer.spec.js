@@ -201,4 +201,31 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         expect(refreshLayer).not.toHaveBeenCalled()
         expect(Map_.refreshLayer).toHaveBeenCalled()
     })
+
+    // refreshLayer returns false specifically to say it had no layer to
+    // refresh. Dropping that leaves the time change silently unapplied and
+    // stale tiles on screen with nothing to explain them.
+    test('warns by name when the engine had no layer to refresh', async () => {
+        refreshLayer.mockReturnValueOnce(false)
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const layer = makeNO2Layer('TileLayer')
+        registerDeckLayer(layer)
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(warn.mock.calls[0][0]).toContain('NO2 Monthly')
+        warn.mockRestore()
+    })
+
+    test('stays quiet when the engine refreshed the layer', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const layer = makeNO2Layer('TileLayer')
+        registerDeckLayer(layer)
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(warn).not.toHaveBeenCalled()
+        warn.mockRestore()
+    })
 })

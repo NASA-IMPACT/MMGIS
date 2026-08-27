@@ -409,11 +409,19 @@ var TimeControl = {
                     // The engine decides whether this means mutating,
                     // cloning or rebuilding; the layer's registered refresher
                     // supplies the how for kinds that need one.
-                    Map_.engine.refreshLayer(layer.name, {
+                    const refreshed = Map_.engine?.refreshLayer(layer.name, {
                         url: resolvedUrl,
                         tileOptions,
                         force: forceRequery === true,
                     })
+                    // false means the engine had nothing to refresh — the
+                    // layer was never registered with it, or it has no way to
+                    // recompute it. The time change is then silently lost, so
+                    // say so rather than leaving stale tiles unexplained.
+                    if (refreshed === false)
+                        console.warn(
+                            `TimeControl.reloadLayer: the map engine had no layer to refresh for '${layer.name}'; its time change was not applied.`
+                        )
                 }
             }
         } else if (layer.type == 'velocity') {

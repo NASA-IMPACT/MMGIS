@@ -1793,8 +1793,10 @@ async function makeTileLayer(layerObj, mapContext = null) {
     // Guarded to the main map: Map_.engine is always the MAIN map's engine, so
     // registering a layer built for a secondary ctx (its own map/registry)
     // would collide with the main map's entry under the same uuid.
+    // Optional: the deck branch above is entered only `if (Map_.engine && ...)`,
+    // so this tail is reached precisely when Map_.engine may be missing.
     if (ctx.default === true) {
-        Map_.engine.registerLayer(
+        Map_.engine?.registerLayer(
             layerObj.name,
             ctx.layerRegistry.layer[layerObj.name]
         )
