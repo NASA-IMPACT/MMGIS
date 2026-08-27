@@ -26,9 +26,15 @@
 
 import { color as parseColor } from 'd3'
 
-/** A single legend row, as authored in the layer config or a legend CSV. */
+/**
+ * A single legend row, as authored in the layer config or a legend CSV.
+ *
+ * A CSV legend reaches here through `F_.csvToJSON`, which assigns every cell
+ * as a raw string, so the fields below hold `'true'` where an inline JSON
+ * legend holds `true`, and `'30'` where it holds `30`.
+ */
 export interface LegendStyleEntry {
-    styleMatching?: boolean
+    styleMatching?: boolean | string
     propertyName?: string
     propertyValue?: unknown
     shape?: string
@@ -178,6 +184,23 @@ function colorToRgb(color: string): Rgb | null {
 }
 
 /**
+ * Whether a legend row opts into style matching.
+ *
+ * An inline legend carries a real boolean here, but a legend parsed from CSV
+ * carries the cell text, and the string `'false'` is truthy - so a row that
+ * plainly opts out would otherwise style features anyway.
+ */
+function isStyleMatching(value: unknown): boolean {
+    if (typeof value === 'string') {
+        const normalised = value.trim().toLowerCase()
+        return (
+            normalised !== '' && normalised !== 'false' && normalised !== '0'
+        )
+    }
+    return Boolean(value)
+}
+
+/**
  * Digest a layer's legend into the form {@link resolveLegendStyle} consumes.
  *
  * Everything that does not depend on a feature — which entries participate,
@@ -200,7 +223,7 @@ export function compileLegendStyle(
     for (const entry of legendData as LegendStyleEntry[]) {
         if (
             !entry ||
-            !entry.styleMatching ||
+            !isStyleMatching(entry.styleMatching) ||
             !entry.propertyName ||
             entry.propertyValue === undefined
         )
@@ -286,10 +309,18 @@ export function resolveLegendStyle(
     for (const group of compiled) {
         const featureValue = properties[group.propertyName]
 
-        // A non-numeric or missing value cannot be placed on the ramp, so the
-        // feature falls through to exact matching and then to the layer's
-        // configured style rather than drawing black or vanishing.
-        if (typeof featureValue === 'number' && group.ramp) {
+        // A missing, non-numeric or NaN value cannot be placed on the ramp, so
+        // the feature falls through to exact matching and then to the layer's
+        // configured style rather than drawing black or vanishing. NaN needs
+        // saying separately because `typeof NaN` is 'number': left on the ramp
+        // it normalises to NaN, brackets against no stop, and falls out of the
+        // interpolator holding the ramp's top colour, so a null-sentinel
+        // measurement would draw as the maximum of the scale.
+        if (
+            typeof featureValue === 'number' &&
+            !Number.isNaN(featureValue) &&
+            group.ramp
+        ) {
             // The first property whose ramp is live owns the feature: no later
             // legend property is consulted, even when the ramp yields nothing.
             return resolveRamp(group.ramp, featureValue)

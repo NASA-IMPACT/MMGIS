@@ -109,6 +109,23 @@ test.describe('LegendStyle', () => {
             )
         })
 
+        test('resolves a ramp carrying duplicate stop values', () => {
+            const legend = [
+                { ...ramp()[0], propertyValue: '0', color: '#000000' },
+                { ...ramp()[0], propertyValue: '50', color: '#ff0000' },
+                { ...ramp()[0], propertyValue: '50', color: '#00ff00' },
+                { ...ramp()[0], propertyValue: '100', color: '#ffffff' },
+            ]
+            // Two stops share a position. The first bracket that contains the
+            // value wins, so the duplicate resolves to the earlier of the two
+            // rather than blending them or producing nothing.
+            expect(resolve(legend, { co2: 50 }).fillColor).toBe('rgb(255, 0, 0)')
+            expect(resolve(legend, { co2: 25 }).fillColor).toBe('rgb(128, 0, 0)')
+            expect(resolve(legend, { co2: 75 }).fillColor).toBe(
+                'rgb(128, 255, 128)'
+            )
+        })
+
         test('sorts stops by numeric value regardless of legend order', () => {
             const reversed = [ramp()[1], ramp()[0]]
             expect(resolve(reversed, { co2: 400 }).fillColor).toBe('#000000')
@@ -203,9 +220,89 @@ test.describe('LegendStyle', () => {
             expect(resolve(ramp(), { co2: null })).toBe(null)
         })
 
+        test('treats NaN as non-numeric rather than as the ramp maximum', () => {
+            // typeof NaN is 'number', so NaN used to reach the interpolator,
+            // bracket against no stop and fall out of it holding the top
+            // colour - a null-sentinel measurement drawn as the scale maximum.
+            expect(resolve(ramp(), { co2: NaN })).toBe(null)
+        })
+
+        test('clamps an infinite value to the ends, as any out-of-range value', () => {
+            expect(resolve(ramp(), { co2: Infinity }).fillColor).toBe('#ffffff')
+            expect(resolve(ramp(), { co2: -Infinity }).fillColor).toBe('#000000')
+        })
+
         test('returns null for absent properties', () => {
             expect(resolve(ramp(), null)).toBe(null)
             expect(resolve(ramp(), undefined)).toBe(null)
+        })
+    })
+
+    test.describe('malformed and inert legends', () => {
+        test('returns null for an empty legend array', () => {
+            expect(compileLegendStyle([])).toBe(null)
+        })
+
+        test('returns null for an image-URL legend', () => {
+            // A layer can point `_legend` at an image instead of rows; the
+            // Legend tool renders it directly and there is nothing to match.
+            expect(compileLegendStyle('legend.png')).toBe(null)
+        })
+
+        test('skips malformed rows instead of throwing on them', () => {
+            // The inlined implementation this replaced read .styleMatching off
+            // every row and threw a TypeError on a null one.
+            const legend = [null, undefined, 'nonsense', 42, ...ramp()]
+            expect(() => compileLegendStyle(legend)).not.toThrow()
+            expect(resolve(legend, { co2: 420 }).fillColor).toBe(
+                'rgb(128, 128, 128)'
+            )
+        })
+
+        test('ignores rows with no propertyName or no propertyValue', () => {
+            expect(
+                compileLegendStyle([
+                    { styleMatching: true, propertyValue: '400', color: '#f00' },
+                    { styleMatching: true, propertyName: 'co2', color: '#f00' },
+                ])
+            ).toBe(null)
+        })
+    })
+
+    test.describe('styleMatching authored as CSV text', () => {
+        // F_.csvToJSON assigns every cell as a raw string, so these rows are
+        // what a legend: CSV path actually produces.
+        const csvRow = (styleMatching) => [
+            {
+                shape: 'circle',
+                color: '#ff0000',
+                strokecolor: '#000000',
+                value: 'High',
+                propertyName: 'temperature',
+                propertyValue: '30',
+                styleMatching,
+            },
+        ]
+
+        test("honours the string 'true'", () => {
+            expect(resolve(csvRow('true'), { temperature: 30 })).toEqual({
+                fillColor: '#ff0000',
+                color: '#000000',
+            })
+        })
+
+        test("does not style on the string 'false'", () => {
+            // Every non-empty string is truthy, so an unguarded check would
+            // have styled features from a row that opts out.
+            expect(compileLegendStyle(csvRow('false'))).toBe(null)
+            expect(compileLegendStyle(csvRow('FALSE'))).toBe(null)
+            expect(compileLegendStyle(csvRow('0'))).toBe(null)
+            expect(compileLegendStyle(csvRow(''))).toBe(null)
+        })
+
+        test('still honours a real boolean', () => {
+            expect(compileLegendStyle(csvRow(true))).not.toBe(null)
+            expect(compileLegendStyle(csvRow(false))).toBe(null)
         })
     })
 
