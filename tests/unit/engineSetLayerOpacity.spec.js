@@ -90,4 +90,23 @@ describe('DeckGLAdapter.setLayerOpacity', () => {
         expect(adapter.setLayerOpacity('nope', 0.5)).toBeUndefined()
         expect(adapter.getLayers()).toHaveLength(0)
     })
+
+    // deck.gl has no separate fill channel at this level — a single `opacity`
+    // prop covers stroke and fill together — so options.fillOpacity is
+    // accepted (matching IMapEngine's signature) but subsumed by `opacity`
+    // rather than applied on its own. Pinned so a future change that starts
+    // honouring it separately has to update this test rather than slip
+    // through silently.
+    test('accepts a third argument and still applies opacity, not a separate fill value', () => {
+        const adapter = new DeckGLAdapter()
+        adapter.addLayer(makeDeckLayer('l1', { opacity: 1 }))
+
+        expect(
+            adapter.setLayerOpacity('l1', 0.5, { fillOpacity: 0.1 })
+        ).toBeUndefined()
+
+        const held = adapter.getLayers().find((l) => l.id === 'l1')
+        expect(held.props.opacity).toBe(0.5)
+        expect(held.props.fillOpacity).toBeUndefined()
+    })
 })

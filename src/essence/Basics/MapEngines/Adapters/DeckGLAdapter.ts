@@ -1037,8 +1037,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * that never became a layer) is a no-op here — `L_.layers.opacity[name]`
      * is always written by the caller, and layer creation reads it, so it
      * picks up the opacity when it is built or re-added.
+     *
+     * `options.fillOpacity` is accepted to satisfy {@link IMapEngine}, not
+     * applied separately: deck.gl's single `opacity` prop already scales a
+     * layer's stroke and fill together at draw time, so there is no separate
+     * fill channel to target at this level the way Leaflet's `setStyle` has
+     * one. The value is subsumed by `opacity` rather than ignored — a caller
+     * that computed it is not silently overridden, there is just nothing
+     * further for this adapter to do with it.
      */
-    setLayerOpacity(layer: Layer | string, opacity: number): void {
+    setLayerOpacity(
+        layer: Layer | string,
+        opacity: number,
+        options?: { fillOpacity?: number }
+    ): void {
         const id = resolveLayerId(layer)
         if (this._layers.has(id)) this.updateLayer(id, { opacity })
     }

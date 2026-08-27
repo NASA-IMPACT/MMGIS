@@ -260,9 +260,19 @@ export interface IMapEngine<
      * whatever the change requires — mutating it (Leaflet) or replacing the one
      * it holds (deck.gl). Callers never adopt a replacement.
      *
+     * The two engines do not honour `fillOpacity` uniformly — this is a real
+     * per-engine difference, not an oversight:
+     * - Leaflet applies it to the fill of layers that paint one separately
+     *   from their stroke (`setStyle`'s `fillOpacity`).
+     * - deck.gl has no separate fill channel at this level: its single
+     *   `opacity` prop scales stroke and fill together at draw time, so the
+     *   value is accepted (to satisfy this signature) and subsumed by
+     *   `opacity` rather than applied on its own.
+     *
      * @param options.fillOpacity - The fill opacity to apply to layers that
-     * paint one. Scaling policy belongs to the caller, so this is an absolute
-     * value, never a factor the adapter multiplies. Defaults to `opacity`.
+     * paint one separately from their stroke. Scaling policy belongs to the
+     * caller, so this is an absolute value, never a factor the adapter
+     * multiplies. Defaults to `opacity`. See per-engine note above.
      */
     setLayerOpacity(
         layer: TLayer | string,
