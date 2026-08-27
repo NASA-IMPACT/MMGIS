@@ -24,37 +24,21 @@ function recorder(name) {
 // wrote, or it says only what the plugin wanted core to believe.
 test.describe('the caller a request arrives with', () => {
 
-    test('is the id of the handle the request went through', async () => {
-        const calls = recorder('test:stamped')
-
-        await mmgisAPI.forPlugin('aoi').request('test:stamped', { a: 1 })
-
-        expect(calls).toEqual([{ data: { a: 1 }, caller: 'aoi' }])
-    })
-
-    // `map:hidePopup` takes no payload at all, and the caller still has to
-    // reach the provider — it is the only thing that call carries.
-    test('reaches a provider that was sent no payload', async () => {
-        const calls = recorder('test:payloadless')
-
-        await mmgisAPI.forPlugin('aoi').request('test:payloadless')
-
-        expect(calls).toEqual([{ data: undefined, caller: 'aoi' }])
-    })
-
     // Travelling beside the payload rather than inside it is what lets a
-    // payload of any shape through unchanged — there is nothing to spread a
-    // field into, and nothing of the author's to overwrite.
-    test('leaves a payload that is not an object alone', async () => {
-        const calls = recorder('test:scalar')
+    // payload of any shape through unchanged — an object, a scalar, or none
+    // at all, the way `map:hidePopup` sends nothing but its caller.
+    test('is the id of the handle the request went through, beside any payload', async () => {
+        const calls = recorder('test:stamped')
         const api = mmgisAPI.forPlugin('aoi')
 
-        await api.request('test:scalar', 'some text')
-        await api.request('test:scalar', [1, 2, 3])
+        await api.request('test:stamped', { a: 1 })
+        await api.request('test:stamped', 'some text')
+        await api.request('test:stamped')
 
         expect(calls).toEqual([
+            { data: { a: 1 }, caller: 'aoi' },
             { data: 'some text', caller: 'aoi' },
-            { data: [1, 2, 3], caller: 'aoi' },
+            { data: undefined, caller: 'aoi' },
         ])
     })
 

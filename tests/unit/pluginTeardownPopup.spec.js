@@ -35,15 +35,12 @@ const { default: ToolControllerModern_ } = await import(
 )
 
 /**
- * Tearing tools down is announced on the bus and answered by whoever holds a
- * resource a tool could have taken — today the map popup, which core closes
- * only when every tool went down together, because only then is the popup's
- * owner certainly among the destroyed. One tool going is its own business:
- * the plugin retracts its own card in destroy(), and a popup someone else
- * still stands behind is left alone. Neither side names the other, so pinning
- * them apart would prove nothing: this spec runs the real controller into the
- * real bus into the real popup service, and lets only the map engine be a
- * stand-in.
+ * The popup service run the way the app runs it: the real controller and the
+ * real bus into the real providers `Map_.init` registers, with only the map
+ * engine a stand-in. Ownership is decided in `MapPopup_` and stamped by
+ * `mmgisAPI`, but it only works because `Map_.init` hands the caller from one
+ * to the other — and teardown is announced on the bus with neither side naming
+ * the other — so the joins are what these specs pin.
  */
 
 /** Enough of an IMapEngine for `Map_.init` to finish and a popup to mount. */
@@ -97,38 +94,38 @@ async function showPopupAs(pluginId) {
     return { outcome, settled }
 }
 
-describe('a tool being torn down', () => {
-    beforeAll(() => {
-        // Map_ captured `window.L` at import; init writes onto it.
-        window.L.DomEvent = { fakeStop: () => {} }
-        window.mmgisAPI = mmgisAPI
+beforeAll(() => {
+    // Map_ captured `window.L` at import; init writes onto it.
+    window.L.DomEvent = { fakeStop: () => {} }
+    window.mmgisAPI = mmgisAPI
 
-        L_.configData = { msv: { mapEngine: 'stub' }, look: {} }
-        L_.layers = { data: {}, layer: {}, dataFlat: [], nameToUUID: {} }
-        L_.view = [0, 0, 5]
-        L_.FUTURES = { mapView: null }
-        L_.UserInterface_ = { isMobile: true }
+    L_.configData = { msv: { mapEngine: 'stub' }, look: {} }
+    L_.layers = { data: {}, layer: {}, dataFlat: [], nameToUUID: {} }
+    L_.view = [0, 0, 5]
+    L_.FUTURES = { mapView: null }
+    L_.UserInterface_ = { isMobile: true }
 
-        class StubAdapter {
-            constructor() {
-                return makeStubEngine()
-            }
+    class StubAdapter {
+        constructor() {
+            return makeStubEngine()
         }
-        mapEngineRegistry.register('stub', StubAdapter)
+    }
+    mapEngineRegistry.register('stub', StubAdapter)
 
-        Map_.init(() => {})
-    })
+    Map_.init(() => {})
+})
 
+afterAll(() => {
+    delete window.mmgisAPI
+})
+
+describe('a tool being torn down', () => {
     afterEach(() => {
         // loadedTools and the lifecycle registries are module-level singletons,
         // so a tool one test leaves loaded is a tool the next test inherits.
         ToolControllerModern_.destroyAllTools()
         document.getElementById('fake-target')?.remove()
         document.getElementById('retracting-target')?.remove()
-    })
-
-    afterAll(() => {
-        delete window.mmgisAPI
     })
 
     function loadTool(toolId, targetId) {
@@ -221,5 +218,56 @@ describe('a tool being torn down', () => {
         expect(outcome.result).toBeNull()
 
         await mmgisAPI.forPlugin('crater-info').request('map:hidePopup')
+    })
+})
+
+describe('the popup providers Map_ registers', () => {
+    test('answer a retract only for the plugin whose popup is showing', async () => {
+        const aoi = mmgisAPI.forPlugin('aoi')
+        const draw = mmgisAPI.forPlugin('draw')
+
+        let outcome = null
+        const shown = aoi
+            .request('map:showPopup', popupRequest)
+            .then((result) => {
+                outcome = result
+            })
+        await flush()
+        expect(cardCount()).toBe(1)
+
+        // Someone else's retract finds a popup that is not theirs.
+        await expect(draw.request('map:hidePopup')).resolves.toBe(false)
+        await flush()
+        expect(cardCount()).toBe(1)
+        expect(outcome).toBeNull()
+
+        // The plugin that opened it gets its popup back, and its still-pending
+        // show request is told how the popup went away.
+        await expect(aoi.request('map:hidePopup')).resolves.toBe(true)
+        await shown
+        expect(cardCount()).toBe(0)
+        expect(outcome).toEqual({ action: 'closed' })
+    })
+
+    test('drop the popup when the map it is anchored to is re-initialised', async () => {
+        const inspect = mmgisAPI.forPlugin('inspect')
+
+        let outcome = null
+        inspect.request('map:showPopup', popupRequest).then((result) => {
+            outcome = result
+        })
+        await flush()
+        expect(cardCount()).toBe(1)
+
+        // Switching missions re-runs `Map_.init`, which destroys the engine the
+        // card is anchored to and its subscriptions along with it. The card is
+        // hosted on `document.body`, so nothing else takes it down: it has to
+        // leave with the map rather than hang over the new one, and the plugin
+        // still waiting on its show request has to hear that it is gone.
+        Map_.init(() => {})
+        expect(cardCount()).toBe(0)
+
+        await flush()
+        expect(outcome).toEqual({ action: 'closed' })
     })
 })
