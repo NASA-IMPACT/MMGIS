@@ -16,12 +16,16 @@ type Result = {
  *
  * `enabled` lets a caller defer the request — the picker uses it to hold off
  * until a swatch scrolls into view.
+ *
+ * `localColormaps` short-circuits the request for a ramp the app can paint
+ * itself, which is most of them.
  */
 export const useColormapColors = (
     colormapName: string | null | undefined,
     reversed: boolean,
     titilerUrl?: string | null,
     enabled = true,
+    localColormaps?: Record<string, string[]> | null,
 ): Result => {
     const [colors, setColors] = useState<string[] | null>(null)
     const [loading, setLoading] = useState(false)
@@ -38,7 +42,7 @@ export const useColormapColors = (
         }
         let cancelled = false
         setLoading(true)
-        fetchColormapColors(base, titilerUrl).then((resolved) => {
+        fetchColormapColors(base, titilerUrl, localColormaps).then((resolved) => {
             if (cancelled) return
             setColors(resolved)
             setLoading(false)
@@ -46,7 +50,7 @@ export const useColormapColors = (
         return () => {
             cancelled = true
         }
-    }, [base, titilerUrl, enabled])
+    }, [base, titilerUrl, enabled, localColormaps])
 
     return {
         colors: colors && reversed ? [...colors].reverse() : colors,

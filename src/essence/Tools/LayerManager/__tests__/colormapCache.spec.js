@@ -96,3 +96,41 @@ test.describe('fetchColormapColors', () => {
         expect(global.fetch).not.toHaveBeenCalled()
     })
 })
+
+/**
+ * Ramps the app can paint itself need no service. The table arrives as data
+ * from core — lib never reaches into the evaluator — and takes precedence over
+ * the network so a swatch shows what the renderer will actually paint.
+ */
+test.describe('fetchColormapColors with a local ramp table', () => {
+    const LOCAL = { viridis: ['rgba(68, 1, 84, 1)', 'rgba(253, 231, 37, 1)'] }
+
+    test('resolves a local ramp without touching the network', async () => {
+        global.fetch = vi.fn()
+        expect(await fetchColormapColors('viridis', BASE, LOCAL)).toEqual(LOCAL.viridis)
+        expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    test('resolves a local ramp even with no service configured', async () => {
+        global.fetch = vi.fn()
+        expect(await fetchColormapColors('viridis', null, LOCAL)).toEqual(LOCAL.viridis)
+        expect(global.fetch).not.toHaveBeenCalled()
+    })
+
+    // A deployment may register ramps of its own that the bundled evaluator
+    // has never heard of; those stay the service's to resolve.
+    test('falls back to the service for a ramp the table lacks', async () => {
+        global.fetch = vi.fn(async () => okResponse(VIRIDIS))
+        expect(await fetchColormapColors('nlcd', BASE, LOCAL)).toEqual([
+            'rgba(68, 1, 84, 1)',
+            'rgba(253, 231, 37, 1)',
+        ])
+        expect(global.fetch).toHaveBeenCalledWith(`${BASE}/colorMaps/nlcd`)
+    })
+
+    test('is null for a ramp neither the table nor any service can supply', async () => {
+        global.fetch = vi.fn()
+        expect(await fetchColormapColors('nlcd', null, LOCAL)).toBe(null)
+        expect(global.fetch).not.toHaveBeenCalled()
+    })
+})

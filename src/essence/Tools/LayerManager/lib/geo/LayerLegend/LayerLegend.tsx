@@ -392,6 +392,8 @@ export function LayerLegend({
                         max={cog.max}
                         units={cog.units}
                         titilerUrl={cog.titilerUrl}
+                        localColormaps={cog.localColormaps}
+                        deckRaster={cog.deckRaster}
                         onColormapChange={onColormapChange}
                         onRescaleChange={onRescaleChange}
                     />

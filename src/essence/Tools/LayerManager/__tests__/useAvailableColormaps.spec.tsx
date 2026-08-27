@@ -87,3 +87,65 @@ describe('useAvailableColormaps', () => {
         await unmount()
     })
 })
+
+/**
+ * Which ramps may be offered follows which renderer paints the layer. The
+ * client-side renderer can only paint the ramps bundled with the app, so
+ * offering a service's extra ramps there would advertise a choice that
+ * silently renders as the fallback ramp instead.
+ */
+describe('useAvailableColormaps for a locally-rendered layer', () => {
+    const LOCAL = ['inferno', 'viridis']
+
+    test('offers only the local ramps, without asking a service', async () => {
+        global.fetch = vi.fn() as never
+        const { result, unmount } = await mountHook(() =>
+            useAvailableColormaps(BASE, LOCAL, true),
+        )
+
+        expect(global.fetch).not.toHaveBeenCalled()
+        expect(result.current.colormaps).toEqual(['inferno', 'viridis'])
+        expect(result.current.loading).toBe(false)
+        await unmount()
+    })
+
+    // A tile-server-rendered layer can paint whatever that server registers,
+    // so its extras belong in the list alongside the bundled ramps.
+    test('unions local ramps with the service list for a server-rendered layer', async () => {
+        global.fetch = vi.fn(async () => okResponse(NAMES)) as never
+        const { result, unmount } = await mountHook(() =>
+            useAvailableColormaps(BASE, LOCAL, false),
+        )
+
+        expect(result.current.colormaps).toEqual([
+            'accent',
+            'inferno',
+            'viridis',
+            'viridis_r',
+        ])
+        await unmount()
+    })
+
+    test('still offers the local ramps when a server-rendered layer has no service', async () => {
+        global.fetch = vi.fn() as never
+        const { result, unmount } = await mountHook(() =>
+            useAvailableColormaps(null, LOCAL, false),
+        )
+
+        expect(global.fetch).not.toHaveBeenCalled()
+        expect(result.current.colormaps).toEqual(['inferno', 'viridis'])
+        await unmount()
+    })
+
+    // The bundled ramps are the floor: an unreachable service degrades the
+    // list rather than emptying it.
+    test('keeps the local ramps when the service errors', async () => {
+        global.fetch = vi.fn(async () => ({ ok: false, status: 503 })) as never
+        const { result, unmount } = await mountHook(() =>
+            useAvailableColormaps(BASE, LOCAL, false),
+        )
+
+        expect(result.current.colormaps).toEqual(['inferno', 'viridis'])
+        await unmount()
+    })
+})

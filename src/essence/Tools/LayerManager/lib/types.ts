@@ -18,6 +18,17 @@ export type CogData = {
   defaultColormap: string
   units: string | null
   titilerUrl: string | null
+  /**
+   * Ramps the app can paint without a service, as name -> ordered CSS colors.
+   * Supplied as data by core: lib never reaches into the colormap evaluator.
+   */
+  localColormaps: Record<string, string[]> | null
+  /**
+   * Whether the client-side renderer paints this layer. It can only paint the
+   * ramps in `localColormaps`, so a picker must not offer a service's extras
+   * for such a layer — they would silently render as the fallback ramp.
+   */
+  deckRaster: boolean
 }
 
 export type Layer = {

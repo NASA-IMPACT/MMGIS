@@ -16,9 +16,16 @@ const rgb = (name, x, reverse = false) => {
 }
 
 describe('listLocalColormapNames', () => {
-    test('reports every ramp the evaluator knows, forward only', () => {
+    // Lowercase is how a tiling service names its ramps, and the UI's label
+    // and apply paths already assume it. Emitting the evaluator's own mixed
+    // casing would render "RdBu" where the service path renders "Rdbu".
+    test('reports every ramp the evaluator knows, lowercased and forward only', () => {
         const names = listLocalColormapNames()
-        expect(names).toEqual([...Object.keys(colormapData)].sort((a, b) => a.localeCompare(b)))
+        expect(names).toEqual(
+            Object.keys(colormapData)
+                .map((n) => n.toLowerCase())
+                .sort((a, b) => a.localeCompare(b))
+        )
         expect(names.some((n) => n.endsWith('_r'))).toBe(false)
     })
 })
@@ -69,6 +76,12 @@ describe('buildLocalColormapTable', () => {
         const table = buildLocalColormapTable()
         expect(Object.keys(table).sort()).toEqual(listLocalColormapNames().sort())
         expect(table.viridis).toEqual(getLocalColormapColors('viridis'))
+    })
+
+    // Consumers look ramps up by the lowercased name the UI carries, so a
+    // mixed-case ramp has to be reachable under that spelling.
+    test('keys a mixed-case ramp by its lowercased name', () => {
+        expect(buildLocalColormapTable().rdbu).toEqual(getLocalColormapColors('RdBu'))
     })
 
     test('returns the same memoized table rather than rebuilding it', () => {

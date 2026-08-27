@@ -170,3 +170,40 @@ test.describe('buildLayerLegendData', () => {
         expect(buildLayerLegendData('layer11', cfg, null, true, undefined).cog).toBeNull()
     })
 })
+
+/**
+ * The ramps the app can paint itself cross the plugin boundary as data: lib
+ * never reaches into core's evaluator. Alongside them travels which renderer
+ * paints the layer, which decides whether a service's extra ramps may be
+ * offered for it.
+ */
+test.describe('buildLayerLegendData local colormaps', () => {
+    const DECK_COG = { hasColormap: true, canChangeColormap: true, deckRaster: true }
+    const TABLE = { viridis: ['rgba(68, 1, 84, 1)'] }
+
+    test('carries the local ramp table onto the COG block', () => {
+        const result = buildLayerLegendData(
+            'layerL1', { cogColormap: 'viridis' }, null, true, EDITABLE_COG, null, TABLE,
+        )
+        expect(result.cog?.localColormaps).toEqual(TABLE)
+    })
+
+    test('reports the client-side renderer from the capability', () => {
+        const cfg = { cogColormap: 'viridis' }
+        expect(
+            buildLayerLegendData('layerL2', cfg, null, true, DECK_COG, null, TABLE).cog?.deckRaster,
+        ).toBe(true)
+        expect(
+            buildLayerLegendData('layerL3', cfg, null, true, EDITABLE_COG, null, TABLE).cog
+                ?.deckRaster,
+        ).toBe(false)
+    })
+
+    // Core supplies the table; an older caller that does not is not a reason
+    // to drop the COG block.
+    test('leaves the table null when none is supplied', () => {
+        const result = buildLayerLegendData('layerL4', { cogColormap: 'viridis' }, null, true, EDITABLE_COG)
+        expect(result.cog?.localColormaps).toBeNull()
+        expect(result.cog?.deckRaster).toBe(false)
+    })
+})

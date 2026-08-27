@@ -47,9 +47,18 @@ export function hasLocalColormap(name: string | null | undefined): boolean {
     return resolveLocalColormap(name) != null
 }
 
-/** Every ramp the evaluator defines, alphabetized, forward directions only. */
+/**
+ * Every ramp the evaluator defines, alphabetized, forward directions only.
+ *
+ * Lowercased because that is how a tiling service names its ramps, and the
+ * label and apply paths downstream already assume it. Emitting the evaluator's
+ * own mixed casing would render "RdBu" where the service path renders "Rdbu".
+ * The evaluator's 107 names stay distinct when lowercased.
+ */
 export function listLocalColormapNames(): string[] {
-    return Object.keys(entries).sort((a, b) => a.localeCompare(b))
+    return Object.keys(entries)
+        .map((name) => name.toLowerCase())
+        .sort((a, b) => a.localeCompare(b))
 }
 
 /**

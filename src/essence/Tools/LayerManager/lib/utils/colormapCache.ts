@@ -19,13 +19,25 @@ export const resolveTiTilerBase = (titilerUrl?: string | null): string | null =>
  * TiTiler deployments serving different definitions of the same ramp name
  * don't collide. Failures resolve to null rather than rejecting — a swatch
  * that can't load should render blank, not tear down the list.
+ *
+ * `localColormaps` carries the ramps the app can paint itself, supplied as
+ * data by core (lib never reaches into the evaluator). It wins over the
+ * service: those ramps need no network, and resolving them here is what makes
+ * a swatch agree with what the renderer actually paints. Ramps missing from it
+ * — a deployment's own registrations — still fall through to the service.
  */
 export const fetchColormapColors = (
     name: string,
     titilerUrl?: string | null,
+    localColormaps?: Record<string, string[]> | null,
 ): Promise<string[] | null> => {
+    if (!name) return Promise.resolve(null)
+
+    const local = localColormaps?.[name]
+    if (local) return Promise.resolve(local)
+
     const baseUrl = resolveTiTilerBase(titilerUrl)
-    if (baseUrl == null || !name) return Promise.resolve(null)
+    if (baseUrl == null) return Promise.resolve(null)
 
     const key = `${baseUrl}|${name}`
     const cached = cache.get(key)

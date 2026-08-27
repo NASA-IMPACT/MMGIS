@@ -70,6 +70,11 @@ const buildCategoricalFields = (legend: MMGISLegendEntry[]): CategoricalStop[] =
  *
  * `titilerUrl` likewise comes from core, already resolved; null leaves the
  * ramp swatches with nowhere to load from.
+ *
+ * `localColormaps` carries the ramps the app can paint itself, as data rather
+ * than an import: lib never reaches into core's colormap evaluator. Paired
+ * with the capability's `deckRaster`, it lets a picker offer exactly the ramps
+ * the layer's own renderer can produce.
  */
 export const buildLayerLegendData = (
     layerName: string,
@@ -78,6 +83,7 @@ export const buildLayerLegendData = (
     visible: boolean,
     cogCapabilities: CogCapabilities | null | undefined,
     titilerUrl: string | null = null,
+    localColormaps: Record<string, string[]> | null = null,
 ): Layer => {
     const opacity = opacities?.[layerName] ?? 1
 
@@ -93,6 +99,8 @@ export const buildLayerLegendData = (
               defaultColormap: layerConfig.cogColormap || 'viridis',
               units: layerConfig.cogUnits ?? null,
               titilerUrl,
+              localColormaps,
+              deckRaster: cogCapabilities.deckRaster === true,
           }
         : null
 
