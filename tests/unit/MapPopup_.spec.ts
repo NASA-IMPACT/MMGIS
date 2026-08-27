@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import MapPopup_ from '../../src/essence/Basics/MapPopup_/MapPopup_'
+import MapPopup_, {
+    POPUP_SANITIZE_CONFIG,
+} from '../../src/essence/Basics/MapPopup_/MapPopup_'
 import type {
     MapPopupRequest,
     MapPopupResult,
@@ -134,7 +136,19 @@ const title = () =>
     document.querySelector<HTMLElement>('.mmgis-map-popup__title')
 const content = () =>
     document.querySelector<HTMLElement>('.mmgis-map-popup__content')
+/** The shadow root the plugin's own markup is mounted in. */
+const contentRoot = () => content()!.shadowRoot!
+/** That markup as the sanitizer and the link walk left it. */
+const body = () => contentRoot().innerHTML
+/**
+ * Everything on the card as text. The plugin's markup sits in a shadow root,
+ * which the card's own `textContent` does not reach into.
+ */
+const cardText = () =>
+    card().textContent! + (content() ? contentRoot().textContent : '')
 const buttons = () => document.querySelectorAll('.mmgis-map-popup__button')
+/** Where MapPopup_ parks a card that has nowhere on screen to be. */
+const PARKED = 'translate(-100000px, -100000px)'
 /** Give the card a real size; jsdom reports every element as 0x0. */
 const sizeCard = (width: number, height: number) => {
     card().getBoundingClientRect = () => ({ width, height }) as DOMRect
@@ -180,8 +194,8 @@ describe('MapPopup_', () => {
         })
 
         expect(popups()).toHaveLength(1)
-        expect(content()!.innerHTML).toContain('Crater A')
-        expect(content()!.innerHTML).not.toContain('script')
+        expect(body()).toContain('Crater A')
+        expect(body()).not.toContain('script')
 
         // The request is answered only once the popup closes.
         await nextTick()
@@ -323,7 +337,7 @@ describe('MapPopup_', () => {
             show(bus, engine, { html: '<p>Crater A</p>' })
 
             expect(title()).toBeNull()
-            expect(content()!.innerHTML).toContain('Crater A')
+            expect(body()).toContain('Crater A')
             expect(card().firstElementChild).toBe(
                 document.querySelector('.mmgis-map-popup__close')
             )
@@ -387,8 +401,8 @@ describe('MapPopup_', () => {
         })
     })
 
-    // The card is a group, and a group with a generic name tells a screen
-    // reader user nothing about which popup they have landed in.
+    // A dialog with a generic name tells a screen reader user nothing about
+    // which popup they have landed in.
     describe('what the card is called', () => {
         it('takes its name from the title when there is one', () => {
             show(bus, engine, { title: 'Drawn rectangle' })
@@ -398,7 +412,7 @@ describe('MapPopup_', () => {
             // The heading is the name, so the generic one would only compete
             // with it.
             expect(card().getAttribute('aria-label')).toBeNull()
-            expect(card().getAttribute('role')).toBe('group')
+            expect(card().getAttribute('role')).toBe('dialog')
         })
 
         it('falls back to the generic name when there is no title', () => {
@@ -406,7 +420,7 @@ describe('MapPopup_', () => {
 
             expect(card().getAttribute('aria-label')).toBe('Map popup')
             expect(card().getAttribute('aria-labelledby')).toBeNull()
-            expect(card().getAttribute('role')).toBe('group')
+            expect(card().getAttribute('role')).toBe('dialog')
         })
 
         it('never names a card after the heading of the one before it', () => {
@@ -468,7 +482,7 @@ describe('MapPopup_', () => {
 
         await nextTick()
         expect(popups()).toHaveLength(1)
-        expect(card().textContent).toContain('Second')
+        expect(cardText()).toContain('Second')
         // The replacement closed the first popup, so the pending dismissal
         // finds it already gone.
         expect(first).toEqual(['closed'])
@@ -499,7 +513,7 @@ describe('MapPopup_', () => {
 
         await nextTick()
         expect(popups()).toHaveLength(1)
-        expect(card().textContent).toContain('Second')
+        expect(cardText()).toContain('Second')
         expect(first).toEqual(['closed'])
         expect(second).toEqual([])
     })
@@ -510,7 +524,7 @@ describe('MapPopup_', () => {
 
         await nextTick()
         expect(popups()).toHaveLength(1)
-        expect(card().textContent).toContain('Second')
+        expect(cardText()).toContain('Second')
         expect(first).toEqual(['closed'])
         expect(second).toEqual([])
         expect(bus.emitted).toEqual([])
@@ -654,24 +668,22 @@ describe('MapPopup_', () => {
         // No longer held to the 8px viewport margin, the card rides off with
         // the anchor: centred on -20, its left edge lands past the window.
         expect(card().style.transform).toBe('translate(-120px, 138px)')
-        expect(card().style.visibility).toBe('visible')
     })
 
-    it('hides the card once it no longer overlaps the map, and brings it back', () => {
+    it('parks the card once it no longer overlaps the map, and brings it back', () => {
         engine = makeEngine({ point: { x: -20, y: 200 }, containerLeft: 0 })
         show(bus, engine)
         sizeCard(200, 100)
         engine.fire('move')
-        expect(card().style.visibility).toBe('visible')
+        expect(card().style.transform).toBe('translate(-120px, 138px)')
 
         // Far enough left that the card's right edge clears the map's left.
         engine.setPoint({ x: -140, y: 200 })
         engine.fire('move')
-        expect(card().style.visibility).toBe('hidden')
+        expect(card().style.transform).toBe(PARKED)
 
         engine.setPoint({ x: 300, y: 200 })
         engine.fire('move')
-        expect(card().style.visibility).toBe('visible')
         expect(card().style.transform).toBe('translate(200px, 138px)')
     })
 
@@ -684,15 +696,14 @@ describe('MapPopup_', () => {
 
         // Anchored 10px under a 600px tall map, the card still lies over it.
         expect(card().style.transform).toBe('translate(300px, 498px)')
-        expect(card().style.visibility).toBe('visible')
 
         engine.setPoint({ x: 300, y: 720 })
         engine.fire('move')
 
-        expect(card().style.visibility).toBe('hidden')
+        expect(card().style.transform).toBe(PARKED)
     })
 
-    it('hides a card that has cleared the map while still on screen', () => {
+    it('parks a card that has cleared the map while still on screen', () => {
         // Panels are docked around the map, so the map container is not the
         // window. The card belongs to the map: spanning 40 to 240 it is well
         // inside a 1024px viewport, but the map starts at 300.
@@ -706,7 +717,7 @@ describe('MapPopup_', () => {
 
         engine.fire('move')
 
-        expect(card().style.visibility).toBe('hidden')
+        expect(card().style.transform).toBe(PARKED)
     })
 
     it('clamps a card whose anchor sits exactly on the map edge', () => {
@@ -719,35 +730,71 @@ describe('MapPopup_', () => {
         // The anchor is still on the map, so the card is kept whole and on
         // screen, at the 8px margin, exactly as one further in would be.
         expect(card().style.transform).toBe('translate(8px, 138px)')
-        expect(card().style.visibility).toBe('visible')
     })
 
-    it('stays hidden until the anchor can be projected', () => {
+    it('stays parked until the anchor can be projected', () => {
         engine.engine.latLngToContainerPoint = () => {
             throw new Error('the engine has no view yet')
         }
         show(bus, engine)
-        expect(card().style.visibility).toBe('hidden')
+        expect(card().style.transform).toBe(PARKED)
 
         engine.engine.latLngToContainerPoint = () => ({ x: 300, y: 200 })
+        sizeCard(200, 100)
         engine.fire('move')
 
-        expect(card().style.visibility).toBe('visible')
+        expect(card().style.transform).toBe('translate(300px, 138px)')
     })
 
-    it('blanks the card while the engine animates a zoom and places it again after', () => {
+    it('parks a card whose anchor stops being projectable', () => {
+        // The map is torn down while the popup is open, so the projection
+        // that placed the card a moment ago now throws.
+        show(bus, engine)
+        sizeCard(200, 100)
+        engine.fire('move')
+        expect(card().style.transform).toBe('translate(300px, 138px)')
+
+        engine.engine.latLngToContainerPoint = () => {
+            throw new Error('the container is gone')
+        }
+        engine.fire('move')
+
+        expect(card().style.transform).toBe(PARKED)
+        expect(card().style.visibility).toBe('')
+    })
+
+    it('parks the card while the engine animates a zoom and places it again after', () => {
         // Leaflet emits no move while its zoom animation runs, so the card
         // would otherwise hang at the pre-zoom position and jump at the end.
         show(bus, engine)
         sizeCard(200, 100)
-        expect(card().style.visibility).toBe('visible')
+        engine.fire('move')
+        expect(card().style.transform).toBe('translate(300px, 138px)')
 
         engine.fire('zoomstart')
-        expect(card().style.visibility).toBe('hidden')
+        expect(card().style.transform).toBe(PARKED)
 
         engine.fire('zoomend')
-        expect(card().style.visibility).toBe('visible')
         expect(card().style.transform).toBe('translate(300px, 138px)')
+    })
+
+    // A card that hides by going invisible is not hidden at all: content is
+    // free to set `visibility: visible` on itself and paint straight through
+    // the card's hiding, whether the card is mid-zoom, off the map, or waiting
+    // for a projection. Parking is a hide content cannot undo, and unlike
+    // `display: none` it leaves the card a box for `_reposition` to measure.
+    it('parks the card rather than blanking it', () => {
+        engine = makeEngine({ point: { x: -400, y: 200 }, containerLeft: 0 })
+        show(bus, engine)
+        sizeCard(200, 100)
+
+        engine.fire('move')
+
+        expect(card().style.transform).toBe(PARKED)
+        expect(card().style.visibility).toBe('')
+        // Still a box, so the placement that brings it back has something to
+        // measure.
+        expect(card().getBoundingClientRect().width).toBe(200)
     })
 
     it('unsubscribes from the engine and the window when hidden', async () => {
@@ -880,7 +927,7 @@ describe('MapPopup_', () => {
 
         expect(invalid).toEqual([INVALID_REQUEST])
         expect(popups()).toHaveLength(1)
-        expect(card().textContent).toContain('Crater A')
+        expect(cardText()).toContain('Crater A')
         expect(outcome).toEqual([])
     })
 
@@ -958,11 +1005,664 @@ describe('MapPopup_', () => {
             expect(first).toEqual(['closed'])
             expect(second).toEqual([])
             expect(popups()).toHaveLength(1)
-            expect(card().textContent).toContain('Draw')
+            expect(cardText()).toContain('Draw')
             // The replacement is the new owner, and the old one cannot take
             // the slot back.
             expect(MapPopup_.hideForCaller('aoi')).toBe(false)
             expect(MapPopup_.hideForCaller('draw')).toBe(true)
+        })
+    })
+
+    // What an author may write inside their card, and what the core refuses on
+    // the way in. Every assertion here reads the markup the sanitizer produced
+    // rather than what it renders as: jsdom applies no stylesheet and lays
+    // nothing out, so a test that asked what the content looked like would
+    // pass on content that had never been filtered at all.
+    describe('what a card is allowed to hold', () => {
+        it('mounts the plugin markup in a shadow root of its own', () => {
+            show(bus, engine, { html: '<p>Crater A</p>' })
+
+            // Nothing in the card's own tree, so a stylesheet the author
+            // writes styles their content and stops there.
+            expect(content()!.innerHTML).toBe('')
+            expect(contentRoot().mode).toBe('open')
+            expect(body()).toContain('<p>Crater A</p>')
+        })
+
+        it("keeps a stylesheet the author opens their content with", () => {
+            // The parser hoists a stylesheet that opens a document into the
+            // head, and the head is not what the sanitizer returns, so without
+            // asking for the body the one place an author is most likely to
+            // write their stylesheet is the one place it would vanish from.
+            show(bus, engine, {
+                html: '<style>@keyframes pulse { to { opacity: 0.5 } } .dot:hover { color: red }</style><p class="dot">Crater A</p>',
+            })
+
+            expect(body()).toContain('@keyframes pulse')
+            expect(body()).toContain('.dot:hover')
+        })
+
+        it('keeps a stylesheet nested inside svg, where it reaches nothing', () => {
+            // `style` is on the allow-list, and the allow-list is the whole of
+            // the decision: DOMPurify keeps the element wherever it is
+            // written, nested in an `<svg>` as readily as at the top of the
+            // card, and drops it from both at once when the allow-list stops
+            // naming it. The shadow root is what makes it safe to keep.
+            show(bus, engine, {
+                html: '<svg><style>.mmgis-map-popup { contain: none }</style></svg>',
+            })
+
+            expect(body()).toContain('<style>')
+            expect(document.querySelector('.mmgis-map-popup style')).toBeNull()
+        })
+
+        it('refuses form controls and takes their labels with them', () => {
+            show(bus, engine, {
+                html: '<p>Pick one</p><button>Press me</button><select><option>Only</option></select><input value="x"><textarea>Type</textarea>',
+            })
+
+            expect(body()).toContain('Pick one')
+            expect(body()).not.toContain('Press me')
+            expect(body()).not.toContain('Only')
+            expect(body()).not.toContain('Type')
+            expect(body()).not.toContain('<button')
+            expect(body()).not.toContain('<input')
+        })
+
+        it('keeps the prose of an author who wrapped their card in a form', () => {
+            // The tags whose contents go with them are leaves. Name a
+            // container and DOMPurify takes the container's children too, so
+            // this card would come back blank with nothing to explain it.
+            show(bus, engine, {
+                html: '<form><p>Crater A</p></form>',
+            })
+
+            expect(body()).toContain('Crater A')
+            expect(body()).not.toContain('<form')
+        })
+
+        it('never spills the text of a tag whose contents are not markup', () => {
+            // DOMPurify keeps its own list of those tags, and a config that
+            // named its additions outright would replace that list rather than
+            // extend it, leaving the raw text of an `xmp` to read as prose.
+            show(bus, engine, {
+                html: '<p>Crater A</p><xmp>rm -rf /</xmp>',
+            })
+
+            expect(body()).toContain('Crater A')
+            expect(body()).not.toContain('rm -rf')
+        })
+
+        it('refuses what would reach past the card', () => {
+            show(bus, engine, {
+                html: '<iframe src="https://evil.test"></iframe><object data="x"></object><embed src="x"><canvas width="10"></canvas><p popover>Crater A</p>',
+            })
+
+            expect(body()).not.toContain('iframe')
+            expect(body()).not.toContain('object')
+            expect(body()).not.toContain('embed')
+            // A canvas paints only from script, and the contract has no script
+            // to offer, so it would only ever come back blank.
+            expect(body()).not.toContain('canvas')
+            // The top layer is out of reach of the card's clipping.
+            expect(body()).not.toContain('popover')
+            expect(body()).toContain('Crater A')
+        })
+
+        it('refuses script, handlers, and urls that run something', () => {
+            show(bus, engine, {
+                html: '<p onclick="alert(1)">Crater A</p><script>alert(2)</script><a href="javascript:alert(3)">go</a><img src=x onerror="alert(4)">',
+            })
+
+            expect(body()).not.toContain('onclick')
+            expect(body()).not.toContain('alert')
+            expect(body()).not.toContain('javascript:')
+        })
+
+        it('keeps static svg whole, filter primitives included', () => {
+            show(bus, engine, {
+                html: '<svg viewBox="0 0 10 10"><title>Rose</title><desc>A compass rose</desc><defs><linearGradient id="g"><stop offset="0" stop-color="#000"/></linearGradient><filter id="f"><feFlood flood-color="#fff" flood-opacity="0.5"/><feDropShadow dx="1" dy="1"/><feGaussianBlur stdDeviation="2"/></filter><clipPath id="c"><rect width="4" height="4"/></clipPath></defs><g clip-path="url(#c)"><path d="M0 0 L10 10" vector-effect="non-scaling-stroke" pointer-events="none"/><text dominant-baseline="middle">N</text></g></svg>',
+            })
+
+            const markup = body()
+            // `flood-color` is the one a hand-written list drops, and four of
+            // the filter primitives render nothing without it.
+            expect(markup).toContain('flood-color="#fff"')
+            expect(markup).toContain('vector-effect="non-scaling-stroke"')
+            expect(markup).toContain('dominant-baseline="middle"')
+            expect(markup).toContain('pointer-events="none"')
+            expect(markup).toContain('<title>Rose</title>')
+            expect(markup).toContain('A compass rose')
+            expect(markup).toContain('stdDeviation="2"')
+            expect(markup).toContain('viewBox="0 0 10 10"')
+        })
+
+        it('refuses the svg elements that only animate, and the pair that needs one another', () => {
+            show(bus, engine, {
+                html: '<svg><rect><animate attributeName="x" dur="1s" to="10"/><set attributeName="y" to="4"/></rect><symbol id="s"><circle r="2"/></symbol><use href="https://evil.test/x.svg#a"/></svg>',
+            })
+
+            const markup = body()
+            expect(markup).not.toContain('animate')
+            expect(markup).not.toContain('attributeName')
+            expect(markup).not.toContain('<set')
+            // A symbol paints nothing without a use to place it, so neither
+            // one is worth the reach the other would need.
+            expect(markup).not.toContain('symbol')
+            expect(markup).not.toContain('<use')
+        })
+
+        it('keeps the attributes whose absence would garble the content', () => {
+            show(bus, engine, {
+                html: '<img src="a.png" alt="Crater A from orbit"><video controls poster="p.jpg"><track kind="captions" srclang="en" label="English" src="c.vtt"></video><blockquote cite="https://example.test"><p>Quoted</p></blockquote><time datetime="2026-01-01">New Year</time><table><tr><td colspan="2" rowspan="3">Cell</td></tr></table>',
+            })
+
+            const markup = body()
+            expect(markup).toContain('alt="Crater A from orbit"')
+            expect(markup).toContain('kind="captions"')
+            expect(markup).toContain('srclang="en"')
+            expect(markup).toContain('label="English"')
+            expect(markup).toContain('cite="https://example.test"')
+            expect(markup).toContain('datetime="2026-01-01"')
+            expect(markup).toContain('colspan="2"')
+            expect(markup).toContain('rowspan="3"')
+        })
+
+        it('keeps the only disclosure widget that needs no script', () => {
+            show(bus, engine, {
+                html: '<details open><summary>Measurements</summary><p>41.4 m</p></details>',
+            })
+
+            expect(body()).toContain('<details open="">')
+            expect(body()).toContain('<summary>Measurements</summary>')
+        })
+
+        it('keeps inert markup that would otherwise run its own text together', () => {
+            show(bus, engine, {
+                html: '<p>A<sub>1</sub><wbr>B <del>old</del><ins>new</ins> <bdi>עברית</bdi><hr><ruby>漢<rt>kan</rt></ruby><progress value="3" max="10"></progress><meter value="4" min="0" max="10"></meter></p><math><mfrac><mi>a</mi><mn>2</mn></mfrac></math>',
+            })
+
+            const markup = body()
+            expect(markup).toContain('<wbr>')
+            expect(markup).toContain('<del>old</del>')
+            expect(markup).toContain('<ins>new</ins>')
+            expect(markup).toContain('<bdi>')
+            expect(markup).toContain('<hr>')
+            expect(markup).toContain('<rt>kan</rt>')
+            expect(markup).toContain('<progress value="3" max="10">')
+            expect(markup).toContain('<meter')
+            expect(markup).toContain('<mfrac>')
+        })
+
+        it('keeps the hooks an author styles and scripts nothing with', () => {
+            show(bus, engine, {
+                html: '<p id="a" class="b" data-feature="crater-a" role="note" aria-label="Crater A" style="color: red">Crater A</p>',
+            })
+
+            const markup = body()
+            expect(markup).toContain('id="a"')
+            expect(markup).toContain('class="b"')
+            expect(markup).toContain('data-feature="crater-a"')
+            expect(markup).toContain('role="note"')
+            expect(markup).toContain('aria-label="Crater A"')
+            expect(markup).toContain('style="color: red"')
+        })
+
+        it('holds its svg attributes to the ones DOMPurify curates', () => {
+            // Written out by hand, this list loses `flood-color` and four
+            // filter primitives quietly stop rendering. Derived from the
+            // installed library instead, and pinned here so an upgrade that
+            // moves the set fails loudly rather than silently.
+            const attrs = readFileSync(
+                'node_modules/dompurify/src/attrs.ts',
+                'utf8'
+            )
+            const curated = (name: string): string[] =>
+                attrs
+                    .match(
+                        new RegExp(
+                            `export const ${name} = freeze\\(\\[([\\s\\S]*?)\\]`
+                        )
+                    )![1]
+                    .split(',')
+                    .map((entry) => entry.trim().replace(/^'|'$/g, ''))
+                    .filter(Boolean)
+            // The SMIL timing attributes go: none of the elements that read
+            // them is a tag a card may hold.
+            const smil = [
+                'accumulate',
+                'additive',
+                'attributename',
+                'attributetype',
+                'begin',
+                'by',
+                'dur',
+                'end',
+                'keypoints',
+                'keysplines',
+                'keytimes',
+                'max',
+                'min',
+                'origin',
+                'repeatcount',
+                'repeatdur',
+                'restart',
+            ]
+            const expected = curated('svg')
+                .filter((attr) => !smil.includes(attr))
+                .concat('dominant-baseline', 'pointer-events', 'vector-effect')
+
+            const allowed = new Set(POPUP_SANITIZE_CONFIG.ALLOWED_ATTR)
+            expect(expected.filter((attr) => !allowed.has(attr))).toEqual([])
+            expect(curated('mathMl').filter((attr) => !allowed.has(attr))).toEqual([])
+            expect(curated('xml').filter((attr) => !allowed.has(attr))).toEqual([])
+            // The subtraction is real: an attribute only SMIL reads is gone,
+            // save the two `<meter>` and `<progress>` need for themselves.
+            expect(allowed.has('attributename')).toBe(false)
+            expect(allowed.has('repeatcount')).toBe(false)
+            expect(allowed.has('keytimes')).toBe(false)
+        })
+    })
+
+    // A link inside a card navigates the whole app away by default, taking the
+    // map, the session, and every other plugin with it.
+    describe('where a link in a card goes', () => {
+        const link = () => contentRoot().querySelector('a')!
+
+        it('sends a link that goes anywhere to a tab of its own', () => {
+            show(bus, engine, {
+                html: '<a href="https://example.test/crater">Crater A</a>',
+            })
+
+            expect(link().getAttribute('target')).toBe('_blank')
+            expect(link().getAttribute('rel')).toBe('noopener noreferrer')
+        })
+
+        it('overrides a target the author asked for', () => {
+            // Stripping the target would make this worse, not better: the link
+            // would then navigate in place.
+            show(bus, engine, {
+                html: '<a href="https://example.test" target="_self">Crater A</a>',
+            })
+
+            expect(link().getAttribute('target')).toBe('_blank')
+        })
+
+        it('leaves a jump within the content alone', () => {
+            // A bare fragment resolves inside the shadow root, so it reaches
+            // neither the app's ids nor anywhere off the page.
+            show(bus, engine, {
+                html: '<a href="#details">More</a><p id="details">41.4 m</p>',
+            })
+
+            expect(link().getAttribute('target')).toBeNull()
+            expect(link().getAttribute('rel')).toBeNull()
+        })
+
+        it('sends a link with nothing in its href out too', () => {
+            // An empty `href` resolves to the document the app is running in,
+            // so following one reloads the app the card opened over.
+            show(bus, engine, { html: '<a href="">Reload</a>' })
+
+            expect(link().getAttribute('target')).toBe('_blank')
+            expect(link().getAttribute('rel')).toBe('noopener noreferrer')
+        })
+
+        it('sends an svg link out the same way', () => {
+            show(bus, engine, {
+                html: '<svg><a xlink:href="https://example.test"><rect width="4" height="4"/></a></svg>',
+            })
+
+            expect(link().getAttribute('target')).toBe('_blank')
+            expect(link().getAttribute('rel')).toBe('noopener noreferrer')
+        })
+
+        it('refuses at the click anything that would still navigate in place', () => {
+            const open = vi
+                .spyOn(window, 'open')
+                .mockImplementation(() => null)
+            show(bus, engine, { html: '<a href="https://example.test">go</a>' })
+            // Whatever put it back — a mutation the walk never saw — the click
+            // is the last place to catch it.
+            link().removeAttribute('target')
+
+            const click = new MouseEvent('click', {
+                bubbles: true,
+                composed: true,
+                cancelable: true,
+            })
+            link().dispatchEvent(click)
+
+            expect(click.defaultPrevented).toBe(true)
+            expect(open).toHaveBeenCalledWith(
+                'https://example.test',
+                '_blank',
+                'noopener,noreferrer'
+            )
+            open.mockRestore()
+        })
+
+        it('refuses at the click a link with nothing in its href', () => {
+            const open = vi
+                .spyOn(window, 'open')
+                .mockImplementation(() => null)
+            show(bus, engine, { html: '<a href="">Reload</a>' })
+            link().removeAttribute('target')
+
+            const click = new MouseEvent('click', {
+                bubbles: true,
+                composed: true,
+                cancelable: true,
+            })
+            link().dispatchEvent(click)
+
+            expect(click.defaultPrevented).toBe(true)
+            open.mockRestore()
+        })
+
+        it('lets a jump within the content through', () => {
+            const open = vi
+                .spyOn(window, 'open')
+                .mockImplementation(() => null)
+            show(bus, engine, { html: '<a href="#details">More</a>' })
+
+            const click = new MouseEvent('click', {
+                bubbles: true,
+                composed: true,
+                cancelable: true,
+            })
+            link().dispatchEvent(click)
+
+            expect(click.defaultPrevented).toBe(false)
+            expect(open).not.toHaveBeenCalled()
+            open.mockRestore()
+        })
+
+        it('refuses a submit outright', () => {
+            // The sanitizer leaves no form standing, so nothing should ever
+            // raise one. This is what happens if something does.
+            show(bus, engine, { html: '<p>Crater A</p>' })
+
+            const submit = new Event('submit', {
+                bubbles: true,
+                composed: true,
+                cancelable: true,
+            })
+            contentRoot().querySelector('p')!.dispatchEvent(submit)
+
+            expect(submit.defaultPrevented).toBe(true)
+        })
+    })
+
+    // The popup is a dialog: focus moves into it when it opens, stays there
+    // while it is open, and goes back where it came from when it closes.
+    describe('the card as a dialog', () => {
+        /**
+         * Where focus really is. The document names the shadow host, and the
+         * host names what is focused within it.
+         */
+        const deepActive = (): Element | null => {
+            let active = document.activeElement
+            while (active?.shadowRoot?.activeElement) {
+                active = active.shadowRoot.activeElement
+            }
+            return active
+        }
+        const press = (key: string, shiftKey = false): KeyboardEvent => {
+            const event = new KeyboardEvent('keydown', {
+                key,
+                shiftKey,
+                bubbles: true,
+                composed: true,
+                cancelable: true,
+            })
+            deepActive()!.dispatchEvent(event)
+            return event
+        }
+        const closeButton = () =>
+            document.querySelector<HTMLElement>('.mmgis-map-popup__close')!
+
+        it('names itself as a dialog the keyboard is working in', () => {
+            show(bus, engine, { title: 'Drawn rectangle' })
+
+            expect(card().getAttribute('role')).toBe('dialog')
+            // No `aria-modal`, which would say the app behind the card is
+            // unavailable. Nothing out there is inert and no barrier covers
+            // it, so a pointer reaches all of it.
+            expect(card().getAttribute('aria-modal')).toBeNull()
+            // Focusable, but never a Tab stop of its own.
+            expect(card().tabIndex).toBe(-1)
+        })
+
+        it('moves focus onto the card, which announces it by name', () => {
+            const opener = document.createElement('button')
+            document.body.appendChild(opener)
+            opener.focus()
+
+            show(bus, engine, { title: 'Drawn rectangle' })
+
+            // The card rather than a control inside it, so what is read first
+            // is the card's own name and not "Close, button".
+            expect(document.activeElement).toBe(card())
+        })
+
+        it('closes on Escape and answers as a dismissal', async () => {
+            const outcome = show(bus, engine, { html: '<p>Crater A</p>' })
+            // The app closes its own things on Escape too, and the innermost
+            // thing open is the one the key was meant for.
+            const alsoListening: string[] = []
+            const app = () => alsoListening.push('app')
+            document.body.addEventListener('keydown', app)
+
+            press('Escape')
+            await nextTick()
+            document.body.removeEventListener('keydown', app)
+
+            expect(alsoListening).toEqual([])
+            expect(popups()).toHaveLength(0)
+            expect(outcome).toEqual(['dismiss'])
+        })
+
+        it('wraps a Tab from the last stop back to the first', () => {
+            show(bus, engine, {
+                html: '<a href="https://example.test">Crater A</a>',
+                primaryAction: { label: 'Analyze' },
+            })
+            ;(buttons()[0] as HTMLElement).focus()
+
+            const tab = press('Tab')
+
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(closeButton())
+        })
+
+        it('wraps a Shift+Tab from the first stop round to the last', () => {
+            show(bus, engine, {
+                html: '<a href="https://example.test">Crater A</a>',
+                primaryAction: { label: 'Analyze' },
+            })
+            closeButton().focus()
+
+            const tab = press('Tab', true)
+
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(buttons()[0])
+        })
+
+        it('wraps a Shift+Tab off the card itself round to the last stop', () => {
+            // Where focus starts, so this is the first Shift+Tab of every
+            // popup a keyboard user opens.
+            show(bus, engine, {
+                html: '<p>Crater A</p>',
+                primaryAction: { label: 'Analyze' },
+            })
+
+            const tab = press('Tab', true)
+
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(buttons()[0])
+        })
+
+        it('counts the plugin own controls among the stops, in their place', () => {
+            // Sequential focus navigation moves through a shadow tree as
+            // though its contents sat where the host does, so a trap that read
+            // the card's light DOM alone would put its last stop ahead of the
+            // plugin's links and let a Tab out of the dialog from there.
+            show(bus, engine, {
+                html: '<a href="https://a.test">One</a><a href="https://b.test">Two</a>',
+            })
+            const links = Array.from(contentRoot().querySelectorAll('a'))
+
+            closeButton().focus()
+            expect(press('Tab').defaultPrevented).toBe(false)
+
+            links[1].focus()
+            const tab = press('Tab')
+
+            // The second link is the card's last stop, there being no actions
+            // row after it, so the wrap happens there.
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(closeButton())
+        })
+
+        // What a Tab reaches, which is not everything the card's focus-stop
+        // selector names. jsdom moves no focus of its own for a synthetic Tab,
+        // so these pin the trap's own reckoning — which stops it counted, and
+        // where it sent focus — and not the browser's answer to the key.
+        // Whether focus stays in the card is a real browser's to answer.
+        it('passes over a stop a closed disclosure is holding', () => {
+            show(bus, engine, {
+                html: '<a href="https://a.test">One</a><details><summary>More</summary><a href="https://b.test">Inside</a></details>',
+            })
+            const summary = contentRoot().querySelector('summary')!
+
+            summary.focus()
+            const tab = press('Tab')
+
+            // The summary is the last stop, the link the disclosure is holding
+            // being no stop at all, so the wrap happens on the summary.
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(closeButton())
+        })
+
+        it('wraps back onto a stop rather than into a closed disclosure', () => {
+            show(bus, engine, {
+                html: '<a href="https://a.test">One</a><details><summary>More</summary><a href="https://b.test">Inside</a></details>',
+            })
+            const summary = contentRoot().querySelector('summary')!
+
+            closeButton().focus()
+            const tab = press('Tab', true)
+
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(summary)
+        })
+
+        it("passes over a stop the author's styles have taken off the page", () => {
+            // A card carries its author's own styles, so anything in it can be
+            // hidden and stay in the markup.
+            show(bus, engine, {
+                html: '<a href="https://a.test">One</a><a href="https://b.test" style="display: none">Gone</a>',
+            })
+            const one = contentRoot().querySelector('a')!
+
+            one.focus()
+            const tab = press('Tab')
+
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(closeButton())
+        })
+
+        it("passes over a stop the author's styles have made invisible", () => {
+            show(bus, engine, {
+                html: '<a href="https://a.test">One</a><a href="https://b.test" style="visibility: hidden">Gone</a>',
+            })
+            const one = contentRoot().querySelector('a')!
+
+            one.focus()
+            const tab = press('Tab')
+
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(closeButton())
+        })
+
+        it('passes over a stop a negative tabindex has taken out', () => {
+            // `-1` is the only value the selector can spell; every other
+            // negative one means the same thing.
+            show(bus, engine, {
+                html: '<a href="https://a.test">One</a><div tabindex="-2">Reachable by pointer only</div>',
+            })
+            const one = contentRoot().querySelector('a')!
+
+            one.focus()
+            const tab = press('Tab')
+
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(closeButton())
+        })
+
+        it('keeps focus on a card that has nothing to hand it to', () => {
+            // A card of nothing but prose still holds the keyboard.
+            show(bus, engine, { title: 'Drawn rectangle', html: undefined })
+            card().removeChild(closeButton())
+
+            const tab = press('Tab')
+
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(card())
+        })
+
+        it('gives focus back to whatever had it when the popup opened', async () => {
+            const opener = document.createElement('button')
+            document.body.appendChild(opener)
+            opener.focus()
+
+            const outcome = show(bus, engine, { html: '<p>Crater A</p>' })
+            expect(document.activeElement).toBe(card())
+            closeButton().dispatchEvent(new MouseEvent('click'))
+            await nextTick()
+
+            expect(document.activeElement).toBe(opener)
+            expect(outcome).toEqual(['dismiss'])
+        })
+
+        it('gives focus back across a run of popups replacing one another', () => {
+            const opener = document.createElement('button')
+            document.body.appendChild(opener)
+            opener.focus()
+
+            show(bus, engine, { html: '<p>First</p>' })
+            show(bus, engine, { html: '<p>Second</p>' })
+            MapPopup_.hide()
+
+            expect(document.activeElement).toBe(opener)
+        })
+
+        it('leaves a user who moved focus themselves where they went', () => {
+            // There is no click barrier over the rest of the app, so a pointer
+            // is free to go anywhere while a popup is open.
+            const opener = document.createElement('button')
+            const elsewhere = document.createElement('button')
+            document.body.append(opener, elsewhere)
+            opener.focus()
+
+            show(bus, engine, { html: '<p>Crater A</p>' })
+            elsewhere.focus()
+            MapPopup_.hide()
+
+            expect(document.activeElement).toBe(elsewhere)
+        })
+
+        it('does not reach for an opener that has since left the document', () => {
+            const opener = document.createElement('button')
+            document.body.appendChild(opener)
+            opener.focus()
+
+            show(bus, engine, { html: '<p>Crater A</p>' })
+            opener.remove()
+            MapPopup_.hide()
+
+            expect(popups()).toHaveLength(0)
         })
     })
 
@@ -1072,9 +1772,17 @@ describe('MapPopup_', () => {
             )
         })
 
-        it('claims no stacking level of its own', () => {
-            // The card rises no higher than the map it is mounted beside, so
-            // the panels the app lays over the map paint over the card too.
+        it('holds content that positions itself out of the flow', () => {
+            // Paint containment lays a plugin's `position: fixed` content out
+            // against the card and clips it there, rather than against the
+            // viewport it would otherwise cover whole.
+            expect(declarations('.mmgis-map-popup')).toContain('contain: paint')
+        })
+
+        it('claims a stacking context but no level of its own', () => {
+            // Containment makes the card a stacking context, but at
+            // `z-index: auto` it still paints where tree order puts it, so the
+            // panels the app lays over the map paint over the card too.
             expect(declarations('.mmgis-map-popup')).not.toContain('z-index')
         })
 

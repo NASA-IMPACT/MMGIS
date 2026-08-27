@@ -177,8 +177,80 @@ export interface DoubleClickZoomHandler {
 }
 
 /**
- * Tells an engine that the clicks still to arrive ended a drawing, so they are
- * not reported as map clicks.
+ * Where a drawing session's pointer is, for the sake of the clicks the engine
+ * has yet to deliver from it.
+ *
+ * terra-draw drives its modes from `pointerdown`, `pointerup` and `keyup`
+ * listeners on the map element and emits `finish` synchronously from inside
+ * them, so a session that the user clicked or double-clicked to an end ends
+ * inside a pointer event, and one they pressed Enter for does not. Two things
+ * make that dependable. The capture phase runs from the root down, so a
+ * listener on `window` sees a pointer before terra-draw's own listeners on the
+ * map element do, whatever order those went on in. And an event's `eventPhase`
+ * is `NONE` exactly while it is not being dispatched, so the end of a gesture
+ * needs no bookkeeping of its own.
+ *
+ * The gesture being over is not the end of the story, though, which is why the
+ * last pointerup is timed as well as watched — see {@link pendingClickFrom}.
+ */
+export class DrawPointerWatch {
+    private _event: Event | null = null
+    private _lastPointerUpAt = 0
+
+    private readonly _onPointer = (event: Event): void => {
+        this._event = event
+        if (event.type === 'pointerup') this._lastPointerUpAt = Date.now()
+    }
+
+    /** Watch for as long as a drawing session is live. Starting twice is safe. */
+    start(): void {
+        if (typeof window === 'undefined') return
+        window.addEventListener('pointerdown', this._onPointer, true)
+        window.addEventListener('pointerup', this._onPointer, true)
+    }
+
+    /** Stop watching, and let go of the last gesture. */
+    stop(): void {
+        this._event = null
+        this._lastPointerUpAt = 0
+        if (typeof window === 'undefined') return
+        window.removeEventListener('pointerdown', this._onPointer, true)
+        window.removeEventListener('pointerup', this._onPointer, true)
+    }
+
+    /** Whether a pointer of a gesture on the map is being dispatched now. */
+    private get _inGesture(): boolean {
+        return this._event !== null && this._event.eventPhase !== Event.NONE
+    }
+
+    /**
+     * The pointer a click the engine still owes this session would be timed
+     * from, or null when it owes none.
+     *
+     * A pointer being dispatched right now is one: terra-draw commits from
+     * inside it, and the engine turns the same gesture into a click only
+     * afterwards. So is a pointerup {@link TAP_INTERVAL_MS} ago or less, even
+     * though the session is ending on something else. deck holds every click
+     * for that interval to see whether a double-click is coming, so the click
+     * that placed the final vertex is still in its hands when Enter — or a
+     * plugin that deferred past the pointerup — ends the session under it, and
+     * lands once the drawing is over.
+     *
+     * A pointerup any older has had its click delivered already, on either
+     * engine. A session ended with the pointer that idle — Enter pressed while
+     * reading the shape back, a plugin's own button — leaves nothing on the
+     * way, and covering it would only swallow the next click the user makes.
+     */
+    get pendingClickFrom(): number | null {
+        if (this._inGesture) return Date.now()
+        const at = this._lastPointerUpAt
+        return at > 0 && Date.now() - at <= TAP_INTERVAL_MS ? at : null
+    }
+}
+
+/**
+ * Tells an engine that the clicks still to arrive belong to the drawing that
+ * just ended, so they are not reported as map clicks.
  *
  * terra-draw commits a shape on `pointerup` and the engine hears about the same
  * gesture's clicks only afterwards: Leaflet on the native `click` that follows,
@@ -195,15 +267,25 @@ export interface DoubleClickZoomHandler {
  * the `onClick` deck maps its `dblclick` recognizer onto. So the guard absorbs
  * by time rather than by count:
  *
- * - A pointerdown within {@link TAP_INTERVAL_MS} of the finish may still be
- *   that second tap, so the window stays open.
+ * - A pointerdown within {@link TAP_INTERVAL_MS} of the pointer the window is
+ *   timed from may still be that second tap, so the window stays open.
  * - A pointerdown any later cannot be, which makes it the user starting a
  *   gesture of their own, and the window closes there and then.
  * - Every pointerup inside the window re-opens it for {@link CLICK_SETTLE_MS},
  *   which is how long the engine may take to turn that pointer into a click.
  *
- * The window also closes on its own, so a session that ended without a click at
- * all — Enter, Escape, a mode switch — cannot leave the guard absorbing.
+ * The finish is not always what the window is timed from. Enter, or a plugin
+ * that deferred past the pointerup, can end a session while deck is still
+ * holding the click that placed the final vertex, and that click lands with the
+ * drawing over exactly as a finishing one would. Timing from the pointer rather
+ * than from the finish is what covers it without stretching the window: the
+ * click is no later for the session having ended above it.
+ *
+ * A session that ends with no pointer that recent has no click of its own on
+ * the way, so it opens no window at all: waiting there would swallow the first
+ * click the user makes afterwards. The window a gesture does open closes on its
+ * own too, so a finishing click the engine never delivers cannot leave the
+ * guard absorbing either.
  */
 export class DrawEndClickGuard {
     private _armedAt = 0
@@ -224,9 +306,13 @@ export class DrawEndClickGuard {
     }
 
     /**
-     * Cover the clicks that may still arrive from the gesture that just ended a
-     * drawing session.
+     * Cover the clicks the engine may still deliver from the gesture a drawing
+     * session leaves behind.
      *
+     * @param pointerAt The pointer the clicks belong to, as
+     * {@link DrawPointerWatch.pendingClickFrom} timed it, or null when the
+     * session leaves no click behind — then no window opens and whatever the
+     * user does next is theirs.
      * @param element The element the engine's pointer events reach. Without one
      * the guard stays open: an engine with no map cannot be delivering clicks.
      * @param doubleClickZoom The map's double-click zoom handler, when it has
@@ -236,9 +322,11 @@ export class DrawEndClickGuard {
      * the state captured to restore is the one terra-draw left behind.
      */
     arm(
+        pointerAt: number | null,
         element: HTMLElement | null,
         doubleClickZoom?: DoubleClickZoomHandler | null
     ): void {
+        if (pointerAt === null) return
         if (!element) return
         if (element !== this._element) {
             this.dispose()
@@ -246,8 +334,8 @@ export class DrawEndClickGuard {
             element.addEventListener('pointerdown', this._onPointerDown, true)
             element.addEventListener('pointerup', this._onPointerUp, true)
         }
-        this._armedAt = Date.now()
-        this._openFor(CLICK_SETTLE_MS)
+        this._armedAt = pointerAt
+        this._openFor(pointerAt + CLICK_SETTLE_MS - Date.now())
         this._suspendDoubleClickZoom(doubleClickZoom)
     }
 

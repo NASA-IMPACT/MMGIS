@@ -875,6 +875,20 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     }
 
     /**
+     * End a drawing session the way a click on the map does. terra-draw commits
+     * from inside the pointerup, so the adapter's pointer watch is looking at
+     * that very event as the session ends — which is what tells the guard a
+     * click of the drawing's is still to come.
+     */
+    function stopOnPointer(adapter) {
+        adapter._drawPointers.start()
+        const stop = () => adapter._stopDrawing()
+        window.addEventListener('pointerup', stop)
+        window.dispatchEvent(new Event('pointerup'))
+        window.removeEventListener('pointerup', stop)
+    }
+
+    /**
      * An adapter mid-rectangle, with the map's click subscribers captured so a
      * spec can deliver the click itself.
      */
@@ -948,7 +962,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     test('is not reported as a map click', () => {
         const { adapter, clicks, picks, click } = setupDrawing()
 
-        adapter._stopDrawing()
+        stopOnPointer(adapter)
         click()
 
         expect(clicks).toEqual([])
@@ -963,7 +977,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         try {
             const { adapter, container, clicks, picks, click } = setupDrawing()
 
-            adapter._stopDrawing()
+            stopOnPointer(adapter)
             vi.advanceTimersByTime(400)
             container.fire('pointerdown')
             container.fire('pointerup')
@@ -988,7 +1002,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
 
             // Tap 1: terra-draw commits on its pointerup, and the native click
             // that follows is the one the guard was first written for.
-            adapter._stopDrawing()
+            stopOnPointer(adapter)
             click()
 
             // Tap 2, inside the 300ms tap interval that makes the pair a
@@ -1006,15 +1020,16 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         }
     })
 
-    // A session can end with no click at all — Enter, Escape, a mode switch —
-    // and then no pointer arrives to close the window. It closes on its own so
-    // the guard cannot sit there absorbing the user's clicks indefinitely.
+    // The click a finishing gesture was covered for does not always come: a
+    // pointerup Leaflet reads as the end of a drag produces none. The window
+    // closes on its own so the guard cannot sit there absorbing the user's
+    // clicks indefinitely.
     test('stops swallowing once the finish window has passed', () => {
         vi.useFakeTimers()
         try {
             const { adapter, clicks, picks, click } = setupDrawing()
 
-            adapter._stopDrawing()
+            stopOnPointer(adapter)
             vi.advanceTimersByTime(600)
             click()
 
@@ -1038,7 +1053,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
             // Stopping the mode is what turns it back on, inside _stopDrawing.
             adapter._terraDraw = makeTerraDraw(zoom)
 
-            adapter._stopDrawing()
+            stopOnPointer(adapter)
             expect(zoom.enabled()).toBe(false)
 
             vi.advanceTimersByTime(600)
@@ -1062,7 +1077,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
             mockMap.doubleClickZoom = zoom
             adapter._terraDraw = makeTerraDraw(zoom, { started: false })
 
-            adapter.disableDrawing()
+            stopOnPointer(adapter)
             vi.advanceTimersByTime(600)
 
             expect(zoom.enabled()).toBe(false)
@@ -1085,13 +1100,13 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
             mockMap.doubleClickZoom = zoom
             adapter._terraDraw = makeTerraDraw(zoom)
 
-            adapter.disableDrawing()
+            stopOnPointer(adapter)
             expect(zoom.enabled()).toBe(false)
 
             // A second session, ending while the first window is still open.
             vi.advanceTimersByTime(100)
             adapter._drawingShape = 'polygon'
-            adapter.disableDrawing()
+            stopOnPointer(adapter)
 
             vi.advanceTimersByTime(600)
             expect(zoom.enabled()).toBe(true)
@@ -1100,7 +1115,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         }
     })
 
-    // A mission swap tears the map down mid-drawing, window and all. The guard
+    // A mission swap tears the map down with a window still open. The guard
     // has to let go of the container it is watching — a removal that does not
     // match how it subscribed takes nothing off — and give double-click zoom
     // back on the way out, since nothing else will now that terra-draw's mode
@@ -1113,6 +1128,10 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
             mockMap.doubleClickZoom = zoom
             adapter._terraDraw = makeTerraDraw(zoom)
 
+            stopOnPointer(adapter)
+            expect(container.listenerCount()).toBe(2)
+            expect(zoom.enabled()).toBe(false)
+
             adapter.destroy()
 
             expect(container.listenerCount()).toBe(0)
@@ -1120,6 +1139,103 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         } finally {
             vi.useRealTimers()
         }
+    })
+
+    // Enter ends the drawing with the pointer nowhere near it, so there is no
+    // click of the drawing's on the way. A window opened anyway would sit
+    // through the user's next gesture and swallow the click it ends on.
+    test('a session ended on a key does not swallow the click that follows', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, container, clicks, picks, click } = setupDrawing()
+
+            adapter._stopDrawing()
+            vi.advanceTimersByTime(250)
+            container.fire('pointerdown')
+            vi.advanceTimersByTime(50)
+            container.fire('pointerup')
+            click()
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            expect(picks).toHaveLength(1)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // Leaflet delivers the click that placed a vertex on the spot, so by the
+    // time a key or a plugin ends the session that click has been and gone —
+    // dropped by the session check, since the drawing was still live. The
+    // guard's window is timed from the pointer all the same, which is what
+    // makes the rule one rule across both engines rather than deck's alone.
+    test('a key pressed under the last vertex click leaves the guard covering it', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, clicks, picks, click } = setupDrawing()
+            adapter._drawPointers.start()
+            window.dispatchEvent(new Event('pointerup'))
+
+            vi.advanceTimersByTime(100)
+            adapter._stopDrawing()
+            click()
+
+            expect(clicks).toEqual([])
+            expect(picks).toEqual([])
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // Enter used the way it usually is — the shape read back, then the key —
+    // comes a tap interval or more after the last vertex, by which time no
+    // engine can still be holding that click. Waiting for one would swallow
+    // the first click the user makes next.
+    test('a key pressed with the pointer idle does not swallow the click that follows', () => {
+        vi.useFakeTimers()
+        try {
+            const { adapter, container, clicks, picks, click } = setupDrawing()
+            adapter._drawPointers.start()
+            window.dispatchEvent(new Event('pointerup'))
+
+            vi.advanceTimersByTime(400)
+            adapter._stopDrawing()
+
+            container.fire('pointerdown')
+            container.fire('pointerup')
+            click()
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            expect(picks).toHaveLength(1)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // A plugin ending the drawing from its own panel — a Finish button, a
+    // mode switch, the Escape it handles itself — never touched the map, so
+    // the click the user makes next is theirs from the first one.
+    test('a session a plugin ended does not swallow the click that follows', () => {
+        const { adapter, clicks, picks, click } = setupDrawing()
+
+        adapter.disableDrawing()
+        click()
+
+        expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        expect(picks).toHaveLength(1)
+    })
+
+    // With no gesture to cover, there is no double-click to keep off the map
+    // either, so the double-click zoom terra-draw turns back on as it stops
+    // the mode is the user's again straight away.
+    test('leaves double-click zoom on when no gesture ended the session', () => {
+        const { adapter, mockMap } = setupDrawing()
+        const zoom = makeDoubleClickZoom()
+        mockMap.doubleClickZoom = zoom
+        adapter._terraDraw = makeTerraDraw(zoom)
+
+        adapter.disableDrawing()
+
+        expect(zoom.enabled()).toBe(true)
     })
 })
 

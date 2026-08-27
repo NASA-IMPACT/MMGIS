@@ -58,6 +58,28 @@ test.describe('the caller a request arrives with', () => {
         ])
     })
 
+    // The id is the reason the third argument became an object: the sandbox
+    // bridge wants a per-request timeout in the same slot, and a number handed
+    // to a positional caller would quietly become the popup's owner.
+    test('travels in the options object a request made by hand can also fill', async () => {
+        const calls = recorder('test:options')
+
+        await mmgisAPI.request('test:options', { a: 1 }, { caller: 'aoi' })
+
+        expect(calls).toEqual([{ data: { a: 1 }, caller: 'aoi' }])
+    })
+
+    // Reading a stray id as no caller at all would hand back the very failure
+    // the options object exists to prevent, with nothing said about it.
+    test('is refused, not ignored, when passed positionally', async () => {
+        const calls = recorder('test:positional')
+
+        await expect(mmgisAPI.request('test:positional', { a: 1 }, 'aoi'))
+            .rejects.toThrow(/options must be an object/)
+
+        expect(calls).toEqual([])
+    })
+
     test('is absent for a request made without a handle', async () => {
         const calls = recorder('test:anonymous')
 
