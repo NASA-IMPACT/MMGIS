@@ -1034,24 +1034,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * the instance the engine holds via {@link updateLayer}, which re-syncs
      * the render list.
      *
-     * A layer the engine does not hold (an unknown id, or a registry value
-     * that never became a layer) is a no-op here — `L_.layers.opacity[name]`
-     * is always written by the caller, and layer creation reads it, so it
-     * picks up the opacity when it is built or re-added.
+     * Two cases are a no-op: an id the engine does not hold (an unknown id,
+     * or a registry value that never became a layer), and a native Leaflet
+     * layer — MMGIS still builds `data`, `image`, `video` and `velocity`
+     * layers with Leaflet under the deck.gl engine, and such a layer carries
+     * no `id` to be found by. Either way `L_.layers.opacity[name]` is written
+     * by the caller regardless, and layer creation reads it, so the opacity
+     * is picked up when the layer is next built or re-added.
      *
-     * So is a native Leaflet layer, which reaches here because MMGIS still
-     * builds `data`, `image`, `video` and `velocity` layers with Leaflet under
-     * the deck.gl engine and hands every registry entry to the active engine.
-     * It carries no `id`, so it is not found; and if it ever were registered,
-     * {@link updateLayer} declines a value it cannot clone.
-     *
-     * `options.fillOpacity` is accepted to satisfy {@link IMapEngine}, not
+     * `options.fillOpacity` is accepted to satisfy {@link IMapEngine} but not
      * applied separately: deck.gl's single `opacity` prop already scales a
      * layer's stroke and fill together at draw time, so there is no separate
-     * fill channel to target at this level the way Leaflet's `setStyle` has
-     * one. The value is subsumed by `opacity` rather than ignored — a caller
-     * that computed it is not silently overridden, there is just nothing
-     * further for this adapter to do with it.
+     * fill channel to target here.
      */
     setLayerOpacity(
         layer: Layer | string,

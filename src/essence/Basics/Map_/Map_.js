@@ -1674,18 +1674,15 @@ async function makeTileLayer(layerObj, mapContext = null) {
             // Map_.engine is always the MAIN map's engine. A non-default ctx
             // targets a different map with its own registry, so registering
             // into Map_.engine here would collide with the main map's entry
-            // under the same uuid. Guard to the main path only; the deckRaster
-            // classification above and the buildDeckCOGLayer call are not
-            // similarly guarded today (pre-existing, out of scope here).
+            // under the same uuid. Guarded to the main path only.
             if (ctx.default === true) {
-                // The layer kind supplies how it rebuilds; the engine executes it.
-                // Registered here because this is where the deckRaster
-                // classification already happened.
+                // The layer kind supplies how it rebuilds; the engine executes
+                // it. Registered here because this is where the deckRaster
+                // classification happens.
                 //
-                // A refresher but no registerLayer, the opposite of the
-                // Leaflet tail below: a deck layer already carries its own id
-                // and the engine adopts it when the layer is added, so there
-                // is nothing to register. Only the refresher is missing.
+                // No registerLayer call here, unlike the Leaflet tail below:
+                // a deck layer already carries its own id and the engine
+                // adopts it when added, so only the refresher is missing.
                 Map_.engine.setLayerRefresher(
                     layerObj.name,
                     makeDeckCOGRefresher(layerObj.name, layerObj)
@@ -1793,13 +1790,11 @@ async function makeTileLayer(layerObj, mapContext = null) {
     })
 
     // The engine addresses layers by id; a Leaflet layer MMGIS built itself
-    // carries none until it is registered. Without this, refreshLayer cannot
-    // find it and time reload silently stops working.
-    // Guarded to the main map: Map_.engine is always the MAIN map's engine, so
-    // registering a layer built for a secondary ctx (its own map/registry)
-    // would collide with the main map's entry under the same uuid.
-    // Optional: the deck branch above is entered only `if (Map_.engine && ...)`,
-    // so this tail is reached precisely when Map_.engine may be missing.
+    // carries none until registered, so without this refreshLayer cannot find
+    // it and time reload silently stops working. Guarded to the main map: a
+    // secondary ctx has its own map/registry, and registering here would
+    // collide with the main map's entry under the same uuid. The `?.` is
+    // needed because only the deck branch above assumes Map_.engine is set.
     if (ctx.default === true) {
         Map_.engine?.registerLayer(
             layerObj.name,

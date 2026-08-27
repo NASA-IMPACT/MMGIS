@@ -636,11 +636,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     /**
      * Whether the layer is currently on the map.
      *
-     * Both forms ask the map, never the registry. `_layers` stopped being an
-     * answer on its own once {@link registerLayer} began holding every
-     * MMGIS-built tile layer whether or not it is on the map — reading it here
-     * would make `hasLayer(id)` and `hasLayer(layerObject)` disagree, and
-     * mmgisAPI's `map:hasLayer` exposes this answer publicly.
+     * Both forms ask the map, never the registry: `_layers` holds every
+     * MMGIS-built tile layer whether or not it is on the map, so membership
+     * there does not answer "is it on the map". `hasLayer(id)` and
+     * `hasLayer(layerObject)` must not disagree, because mmgisAPI's
+     * `map:hasLayer` exposes this answer publicly.
      */
     hasLayer(layer: any | string): boolean {
         const leafletLayer =
@@ -786,10 +786,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
     /**
      * A Leaflet refresher mutates the layer in place — the instance is already
-     * on the map, so there is nothing for this adapter to swap. The narrowed
-     * `void` return says so at the type level: {@link refreshLayer} discards
-     * whatever a refresher returns rather than half-reconciling it into the
-     * registry while the map still shows the old instance.
+     * on the map, so there is nothing for this adapter to swap. Its `void`
+     * return type reflects that: {@link refreshLayer} discards whatever a
+     * refresher returns, because adopting one into the registry without also
+     * swapping the layer on the map would leave the two disagreeing.
      */
     setLayerRefresher(
         id: string,

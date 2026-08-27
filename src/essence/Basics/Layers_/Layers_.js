@@ -2210,9 +2210,9 @@ const L_ = {
                 ? parseFloat(L_.layers.data[name].style.fillOpacity)
                 : 1
 
-        // Recorded first: the registry is now the sole source of truth for a
+        // Recorded first: the registry is the sole source of truth for a
         // layer's opacity (getLayerOpacity reads it, and layer creation seeds
-        // itself from it). If an attachment below threw, a write down here
+        // itself from it). If an attachment below throws, a write down here
         // would be skipped along with the marker pass and the layer would come
         // back at the wrong opacity.
         L_.layers.opacity[name] = newOpacity
@@ -2272,7 +2272,7 @@ const L_ = {
     getLayerOpacity: function (name) {
         // A layer that was never built has no opacity to report. Everything
         // else reads the registry, which is authoritative for both engines —
-        // Leaflet layer options are no longer mirrored and can be stale.
+        // layer options are not a source of opacity.
         if (L_.layers.layer[name] == null) return 0
         return L_.layers.opacity[name] ?? 1
     },

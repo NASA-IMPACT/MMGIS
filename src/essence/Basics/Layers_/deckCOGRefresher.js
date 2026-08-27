@@ -23,9 +23,9 @@ import L_ from './Layers_'
 export function makeDeckCOGRefresher(uuid, layerObj) {
     return (layer) => {
         // Looked up per call rather than captured, so this stays a derivation
-        // of current config. Every writer mutates the entry in place today,
-        // which would hide a captured reference right up until one replaces
-        // the entry instead.
+        // of current config: every writer mutates the entry in place, but a
+        // captured reference would go stale if a future write replaced the
+        // entry outright instead of mutating it.
         const config = L_.layers.data[uuid] ?? layerObj
         return layer.clone(
             deckCOGProps(uuid, {
