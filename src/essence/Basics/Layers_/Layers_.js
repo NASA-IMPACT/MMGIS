@@ -2230,6 +2230,14 @@ const L_ = {
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
         let l = L_.layers.layer[name]
 
+        // The configured fill opacity is the factor the slider scales; read it
+        // from config rather than caching it on the layer, so there is one
+        // source of truth.
+        const configuredFill =
+            L_.layers.data[name]?.style?.fillOpacity != null
+                ? parseFloat(L_.layers.data[name].style.fillOpacity)
+                : 1
+
         // Facade-managed layers go through the IMapEngine facade, which owns
         // the instance and applies the change itself (mutating it in place,
         // or replacing the one it holds). They have no attachments and no
@@ -2243,17 +2251,12 @@ const L_ = {
             // (`false`) or an aggregate array — falls through to the registry
             // write below, which is the value the engine reads when it builds
             // or re-adds the layer.
-            if (l.options.initialFillOpacity == null)
-                l.options.initialFillOpacity =
-                    L_.layers.data[name]?.style?.fillOpacity != null
-                        ? parseFloat(L_.layers.data[name].style.fillOpacity)
-                        : 1
             try {
                 l.setOpacity(newOpacity)
             } catch (error) {
                 l.setStyle({
                     opacity: newOpacity,
-                    fillOpacity: newOpacity * l.options.initialFillOpacity,
+                    fillOpacity: newOpacity * configuredFill,
                 })
             }
             $(`.leafletMarkerShape_${F_.getSafeName(name)}`).css({
@@ -2273,8 +2276,7 @@ const L_ = {
                         } catch (error) {
                             try {
                                 let opacity = newOpacity
-                                let fillOpacity =
-                                    newOpacity * l.options.initialFillOpacity
+                                let fillOpacity = newOpacity * configuredFill
                                 if (sub === 'uncertainty_ellipses') {
                                     opacity = opacity * 0.8
                                     fillOpacity = fillOpacity * 0.25
@@ -2295,19 +2297,6 @@ const L_ = {
                     }
                 }
             }
-
-            try {
-                l.options.fillOpacity =
-                    newOpacity * l.options.initialFillOpacity
-                l.options.opacity = newOpacity
-                l.options.style.fillOpacity =
-                    newOpacity * l.options.initialFillOpacity
-                l.options.style.opacity = newOpacity
-            } catch (error) {
-                l.options.fillOpacity =
-                    newOpacity * l.options.initialFillOpacity
-                l.options.opacity = newOpacity
-            }
         }
         L_.layers.opacity[name] = newOpacity
 
@@ -2316,21 +2305,11 @@ const L_ = {
         }
     },
     getLayerOpacity: function (name) {
-        var l = L_.layers.layer[name]
-
-        if (l == null) return 0
-
-        // Facade-managed layer objects carry no Leaflet `options`; the registry
-        // is the authority on their opacity.
-        if (requiresEngineFacade(l)) return L_.layers.opacity[name] ?? 1
-
-        var opacity
-        try {
-            opacity = l.options?.style.opacity
-        } catch (error) {
-            opacity = l.options?.opacity
-        }
-        return opacity
+        // A layer that was never built has no opacity to report. Everything
+        // else reads the registry, which is authoritative for both engines —
+        // Leaflet layer options are no longer mirrored and can be stale.
+        if (L_.layers.layer[name] == null) return 0
+        return L_.layers.opacity[name] ?? 1
     },
     setLayerFilter: function (name, filter, value) {
         // Clear
