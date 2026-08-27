@@ -333,8 +333,10 @@ let Map_ = {
                 ),
                 // Retracting a popup resolves its own request with
                 // `{ action: 'closed' }`, so whoever opened it learns it is
-                // gone. Only the caller that opened it can: anyone else's
-                // hide finds a popup that is not theirs and answers false.
+                // gone. A hide reaches only a popup of the caller's own;
+                // anyone else's finds a popup that is not theirs and answers
+                // false. A plugin's id is its alone, while "no caller" is one
+                // identity shared by everyone without a handle.
                 window.mmgisAPI.provide('map:hidePopup', (payload, caller) =>
                     MapPopup_.hideForCaller(caller)
                 ),
@@ -399,17 +401,21 @@ let Map_ = {
             // opened against a previous mission's map never outlives it.
             _providerCleanups.push(() => MapPopup_.hide())
 
-            // A plugin torn down mid-mission — one unloaded on command, or all
-            // of them when the layout re-renders — never passes through the
-            // map, so the map hears about it here and empties the popup slot.
-            // Which plugin left is not worth working out: there is one slot,
-            // and a popup outliving its plugin holds it while showing content
-            // nothing is left to stand behind. Closing it costs at most a
-            // bystander's popup, whose request then resolves 'closed' —
-            // already the outcome for a popup that goes away without the user
-            // acting on it.
+            // A full layout teardown — a re-render, or the UI going down
+            // whole — never passes through the map, so the map hears about it
+            // here and empties the popup slot; the request resolves 'closed',
+            // which already means the popup went away without the user acting
+            // on it. Only the collective signal is answered, because then the
+            // popup's owner is among the destroyed and closing wrongs no one.
+            // A single plugin's teardown is not: retracting a card is its
+            // plugin's own duty in destroy() — safe for it, since core
+            // retracts a popup only for the caller that opened it — and a
+            // blanket close here would take a surviving plugin's card with
+            // it.
             _providerCleanups.push(
-                window.mmgisAPI.on('plugins:destroyed', () => MapPopup_.hide())
+                window.mmgisAPI.on('plugins:allDestroyed', () =>
+                    MapPopup_.hide()
+                )
             )
 
             // Engine event re-emits — translate adapter events onto the bus
@@ -473,9 +479,8 @@ let Map_ = {
 
             // Through the engine rather than the native map, so this inherits
             // the adapter's guard against reporting the click a drawing ended
-            // on — deck.gl's branch reaches the same code through the `on`
-            // shim above. Subscribing on the L.Map directly would let a
-            // finished drawing deselect the user's active feature.
+            // on. Subscribing on the L.Map directly would let a finished
+            // drawing deselect the user's active feature.
             this.engine.on('click', clearOnMapClick)
         } else {
             this.engine.on('moveend', function () {

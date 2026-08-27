@@ -144,9 +144,10 @@ export function validateDrawnLineString(
  * their `interval: 300` and `posThreshold: 10` defaults alone (mjolnir.js
  * `hammerjs/recognizers/tap`, `@deck.gl/core` `RECOGNIZERS`). Two taps are one
  * double-click when their pointerups fall inside that interval and within those
- * ten pixels; and because deck wires each of the two recognizers to require the
- * other's failure, whichever of them wins waits a further interval after the
- * pointerup before it emits.
+ * ten pixels. Only `click` is wired to require the other's failure, and that is
+ * what makes it the late one: with a failure to wait on, it holds its tap for a
+ * further interval after the pointerup before emitting, where `dblclick`, which
+ * waits on nothing, emits on the second pointerup itself.
  */
 const TAP_INTERVAL_MS = 300
 
@@ -254,7 +255,7 @@ export class DrawPointerWatch {
  *
  * terra-draw commits a shape on `pointerup` and the engine hears about the same
  * gesture's clicks only afterwards: Leaflet on the native `click` that follows,
- * deck.gl a tap interval later, since its recognizers wait to see whether a
+ * deck.gl a tap interval later, since its `click` waits to see whether a
  * double-click is coming. Both land after the session has ended, so an engine's
  * "am I drawing?" check no longer covers them, and reporting them hands every
  * consumer a map click the user never made — one that arrives after

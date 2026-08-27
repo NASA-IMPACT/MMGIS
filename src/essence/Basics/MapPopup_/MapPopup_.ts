@@ -35,8 +35,10 @@ const XLINK_NAMESPACE = 'http://www.w3.org/1999/xlink'
  * them a Tab actually reaches is {@link focusStops}' to settle: an element the
  * selector names can still be hidden, or held out of the sequence.
  *
- * Nothing a form contributes appears here: the sanitizer refuses form controls
- * outright, so no card can hold one.
+ * The one control named here is `button`, and it is always the card's own
+ * chrome — the close control and the action buttons {@link buildPopupCard}
+ * makes. Nothing a plugin writes contributes one: the sanitizer drops
+ * `button`, `input`, `select` and `textarea` along with their contents.
  */
 const FOCUS_STOP = [
     'a[href]',
@@ -50,18 +52,30 @@ const FOCUS_STOP = [
 /**
  * What plugin content is allowed to be.
  *
- * An allow-list rather than a denylist, so a tag DOMPurify learns to pass in
- * some later release reaches a card blocked rather than allowed — which is
- * also why the dependency is pinned to an exact version rather than a range.
+ * Named outright rather than subtracted from what DOMPurify passes by default,
+ * because the two lists answer different questions. DOMPurify's asks whether
+ * markup is safe HTML, and by that measure `form`, `input`, `button`, `select`
+ * and `canvas` all pass. A card asks something narrower — whether the markup is
+ * something a card can be — and the difference between the two answers is not a
+ * set anyone can hold in their head well enough to subtract. Stating the whole
+ * of it here makes the card's contract readable in one place, and an
+ * `ALLOWED_TAGS` of its own is the form DOMPurify offers for that: it replaces
+ * the library's list rather than extending it.
  *
  * The bargain is that an author owns the inside of their card and nothing
- * else. Text, structure, media, formulae and the whole of static SVG are
+ * else. Text, structure, media, formulae and the SVG drawing set are
  * theirs, and so is a stylesheet of their own, which is safe to hand them
  * because the content is mounted in a shadow root, see {@link buildContent}.
- * What reaches past the card is not theirs: no frames, no plugins, no form
- * controls, and none of the attributes — `popover` above all — that lift
- * content into the top layer, where neither the card's clipping nor its paint
- * containment can follow.
+ * What reaches past the card is not theirs: no frames, no plugins, and none of
+ * the attributes — `popover` above all — that lift content into the top layer,
+ * where neither the card's clipping nor its paint containment can follow.
+ *
+ * Form controls go for a different reason. A `<form>` sits inside a card
+ * perfectly well; what it cannot do is be of any use there. The card answers
+ * its request with which button was pressed and nothing else, and the content
+ * itself has no script, so nothing the contract offers carries a control's
+ * value back out — a field in a card is an input nobody can collect. Rendering
+ * one would promise the user an interaction the card cannot honour.
  */
 const ALLOWED_TAGS = [
     // Text and structure. `details` and `summary` earn their place twice over:
@@ -151,9 +165,11 @@ const ALLOWED_TAGS = [
     // The author's own stylesheet.
     'style',
     // Static SVG: DOMPurify's own tag list less the SMIL animation elements,
-    // the deprecated font and glyph machinery, and `symbol`. A `<symbol>`
-    // paints nothing without a `<use>` to place it, and `use` is a tag
-    // DOMPurify itself declines to pass, so the pair leaves together.
+    // the deprecated font, glyph and text-reference machinery, `symbol`, and
+    // four HTML attribute names DOMPurify carries in its tag list by mistake.
+    // `symbol` goes because `use` is a tag DOMPurify itself declines to pass,
+    // so nothing in a card could place one; note that what a `<symbol>` holds
+    // is then hoisted into the drawing rather than dropped along with it.
     'svg',
     'g',
     'defs',
@@ -242,8 +258,15 @@ const ALLOWED_TAGS = [
 
 /**
  * The HTML attributes a card may carry, curated by hand because DOMPurify's
- * own HTML set is drawn for a wider brief than a popup: it passes `popover`
- * and the form attributes, neither of which belongs in a card.
+ * own HTML set is drawn for a wider brief than a popup: `popover`, which lifts
+ * content into the top layer, is the one this list exists to keep out.
+ *
+ * What a card can be is the tag lists' to decide, not this one's. DOMPurify
+ * takes a single flat `ALLOWED_ATTR` with no notion of namespace, so an
+ * attribute left out here still reaches an HTML element if {@link SVG_ATTR}
+ * carries it — `name`, `method` and `tabindex` all do. They are inert, the
+ * elements that would read them being gone, and `tabindex` is in fact where
+ * {@link FOCUS_STOP}'s `[tabindex]` finds anything to match.
  *
  * `target` and `rel` are absent because the card writes them itself, see
  * {@link sendLinksToTheirOwnTab}, and `alt`, `kind`, `srclang` and `label`
@@ -302,13 +325,14 @@ const HTML_ATTR = [
 
 /**
  * The SVG attributes a card may carry: DOMPurify's own curated set, less the
- * SMIL timing attributes, plus three presentation attributes it does not
- * carry.
+ * SMIL timing attributes.
  *
  * Taken from the library rather than written out from memory, because writing
  * it out from memory is how `flood-color` goes missing and four of the filter
  * primitives quietly render nothing. The spec re-derives this list from the
- * installed DOMPurify and fails when the two drift apart.
+ * installed DOMPurify and fails when that set holds an attribute this list
+ * does not, so an upgrade that widens the curated set stops here for a
+ * decision instead of drifting past unnoticed.
  *
  * The SMIL attributes go because none of the elements that read them —
  * `animate`, `set`, `animateTransform` — is a tag a card may hold, so they
@@ -458,6 +482,7 @@ const SVG_ATTR = [
     'transform-origin',
     'text-anchor',
     'text-decoration',
+    'text-orientation',
     'text-rendering',
     'textlength',
     'type',
@@ -571,12 +596,31 @@ const XML_ATTR = [
  * likely to write their stylesheet is the one place it would vanish from.
  *
  * `ADD_FORBID_CONTENTS` rather than `FORBID_CONTENTS`, because the latter
- * replaces DOMPurify's own list instead of extending it, and the list holds
- * the tags whose text is not markup — `xmp`, `noscript` — whose contents would
- * then spill into the card as prose. Every tag added to it is a leaf: name a
- * container and DOMPurify takes the container's children with it, so an author
- * who wrapped their card in a `<form>` would get a blank popup and no reason
- * why.
+ * replaces DOMPurify's own list instead of extending it. That list is what
+ * keeps a refused element's text from spilling into the card as prose, and
+ * `script` is the entry that matters: replace the list and a card renders the
+ * source of the very script it just threw away.
+ *
+ * What is added to it are the form controls, `canvas`, and the embedding
+ * elements. DOMPurify takes a forbidden element's children with it, and for
+ * these that is the point — the children are a control's own options and
+ * labels, or fallback for an embed that is not going to happen, and none of it
+ * is content a card should render on its own. Naming a general container would
+ * be a different matter: an author who wrapped their card in a `<form>` would
+ * get a blank popup and no reason why.
+ *
+ * `ADD_FORBID_CONTENTS` and the attribute lists above lean on the library's
+ * insides rather than its API, and `dompurify` still floats on a caret range,
+ * because the one dependency that ships sanitizer-bypass fixes is the one an
+ * exact pin would hold on a known-bypassable release. What keeps the insides
+ * from moving underneath this config unnoticed is the spec: it re-derives the
+ * attribute sets from `node_modules/dompurify/src/attrs.ts` — published in
+ * the package, though no version promise covers it — so an install that
+ * shifts them fails the suite for a person to re-curate. The exposure left is
+ * DOMPurify's own `FORBID_CONTENTS` default, which is all
+ * `ADD_FORBID_CONTENTS` means anything against: the library treats additions
+ * to it as hardening, and losing an entry would cost a card spilled text the
+ * sanitizer passed, not markup.
  */
 export const POPUP_SANITIZE_CONFIG = {
     ALLOWED_TAGS,
