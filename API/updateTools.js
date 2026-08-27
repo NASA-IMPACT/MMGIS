@@ -4,6 +4,49 @@ const path = require("path");
 const logger = require("./logger");
 const { isLean } = require("./Backend/Utils/deploymentMode");
 
+const TOOL_ID_SHAPE = /^[a-z][a-z0-9-]*$/;
+
+// Module binding (paths key) -> canonical tool id. The binding names the
+// import; the id will name the tool everywhere else — on the bus, in the
+// modern controller's registries, and in teardown events. generateToolMetadata
+// (src/essence/Basics/ToolController_/ToolMetadataUtils.js) still derives its
+// own id and can disagree with this map ("fetchstats" vs "fetch-stats"); the
+// two are reconciled where the controller consumes toolIds.
+//
+// A manifest declares its id top-level; an id that is present must be a string
+// matching TOOL_ID_SHAPE, so it is safe as a bus namespace. Tools that omit the
+// field fall back to an id derived from the binding, which is already
+// constrained to a JS identifier — legacy helper bindings (ShadeTool_Manager,
+// ViewshedTool_Algorithm, ...) carry an underscore the declared shape does not
+// allow, so derived ids are exempt from the shape check. Ids are unique across
+// tools; a tool's own bindings share its declared id without colliding.
+function buildToolIds(tools) {
+  const ids = Object.create(null);
+  const owners = Object.create(null);
+  for (const t in tools) {
+    const declared = tools[t].id;
+    if (
+      "id" in tools[t] &&
+      (typeof declared !== "string" || !TOOL_ID_SHAPE.test(declared))
+    )
+      throw new Error(
+        `Tool "${t}" declares invalid id ${JSON.stringify(
+          declared
+        )} (must match ${TOOL_ID_SHAPE})`
+      );
+    for (const p in tools[t].paths) {
+      const id = declared || p.replace(/Tool$/, "").toLowerCase();
+      if (owners[id] && owners[id] !== t)
+        throw new Error(
+          `Duplicate tool id "${id}" declared by "${owners[id]}" and "${t}"`
+        );
+      owners[id] = t;
+      ids[p] = id;
+    }
+  }
+  return ids;
+}
+
 function updateTools() {
   let tools = {};
 
@@ -189,6 +232,9 @@ function updateTools() {
   toolConfigs += `export const toolModules = ${JSON.stringify(
     toolModules
   ).replace(/"/g, "")}\n`;
+  toolConfigs += `export const toolIds = ${JSON.stringify(
+    buildToolIds(tools)
+  )}\n`;
   toolConfigs += `export const testModules = ${JSON.stringify(
     testModules
   ).replace(/"/g, "")}\n`;
@@ -383,4 +429,9 @@ function updateComponents() {
     }
 }
 
-module.exports = { updateTools, updateComponents, bakeStaticConfig };
+module.exports = {
+  updateTools,
+  updateComponents,
+  bakeStaticConfig,
+  buildToolIds,
+};

@@ -6,6 +6,7 @@
     },
     "hasVars": false,
     "name": "AddTempLayer",
+    "id": "addtemplayer",
     "toolbarPriority": 6,
     "paths": {
         "AddTempLayerTool": "essence/Tools/AddTempLayer/AddTempLayerTool"

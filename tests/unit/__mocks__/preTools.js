@@ -9,4 +9,5 @@
 export const Kinds = {}
 export const toolConfigs = {}
 export const toolModules = {}
+export const toolIds = {}
 export const testModules = {}

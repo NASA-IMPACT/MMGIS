@@ -6,6 +6,7 @@
     },
     "hasVars": true,
     "name": "MapControl",
+    "id": "mapcontrol",
     "toolbarPriority": 5,
     "paths": {
         "MapControlTool": "essence/Tools/MapControl/MapControlTool"

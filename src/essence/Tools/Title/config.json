@@ -6,6 +6,7 @@
         }
     },
     "name": "Title",
+    "id": "title",
     "description": "Display mission icon and title from the mission config file.",
     "descriptionFull": {
         "title": "Title Tool",

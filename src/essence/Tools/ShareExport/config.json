@@ -16,6 +16,7 @@
     },
     "hasVars": true,
     "name": "ShareExport",
+    "id": "shareexport",
     "toolbarPriority": 3,
     "paths": {
         "ShareExportTool": "essence/Tools/ShareExport/ShareExportTool"

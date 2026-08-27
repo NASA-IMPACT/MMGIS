@@ -16,6 +16,7 @@
     },
     "hasVars": true,
     "name": "LayerManager",
+    "id": "layermanager",
     "toolbarPriority": 2,
     "width": 320,
     "height": 0,

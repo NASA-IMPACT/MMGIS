@@ -1,5 +1,6 @@
 {
     "name": "Timeline",
+    "id": "timeline",
     "description": "Interactive timeline visualization for navigating temporal data with zoom and layer visibility controls",
     "defaultIcon": "timeline",
     "hasVars": true,

@@ -19,6 +19,7 @@
     },
     "hasVars": true,
     "name": "Card",
+    "id": "card",
     "toolbarPriority": 3,
     "width": 368,
     "height": 0,
