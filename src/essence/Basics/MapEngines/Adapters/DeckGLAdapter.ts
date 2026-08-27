@@ -928,11 +928,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /**
      * Clone the existing layer with overridden props. deck.gl detects the same
      * `id` and updates GPU resources incrementally.
+     *
+     * A held value that is not a clonable deck layer is a no-op. Under the
+     * deck.gl engine MMGIS still builds `data`, `image`, `video` and
+     * `velocity` layers as native Leaflet objects — ENGINE_LAYER_SUPPORT has
+     * no deck builder for them — and callers hand every registry entry to the
+     * active engine. Such an object has no `clone`, so this declines rather
+     * than throwing `existing.clone is not a function`.
      */
     updateLayer(layer: Layer | string, options: Partial<LayerOptions>): Layer {
         const id = resolveLayerId(layer)
         const existing = this._layers.get(id)
         if (!existing) return existing as unknown as Layer
+        if (typeof existing.clone !== 'function') return existing
         const updated = existing.clone({
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
@@ -1031,6 +1039,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * is always written by the caller, and layer creation reads it, so it
      * picks up the opacity when it is built or re-added.
      *
+     * So is a native Leaflet layer, which reaches here because MMGIS still
+     * builds `data`, `image`, `video` and `velocity` layers with Leaflet under
+     * the deck.gl engine and hands every registry entry to the active engine.
+     * It carries no `id`, so it is not found; and if it ever were registered,
+     * {@link updateLayer} declines a value it cannot clone.
+     *
      * `options.fillOpacity` is accepted to satisfy {@link IMapEngine}, not
      * applied separately: deck.gl's single `opacity` prop already scales a
      * layer's stroke and fill together at draw time, so there is no separate
@@ -1045,7 +1059,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         options?: { fillOpacity?: number }
     ): void {
         const id = resolveLayerId(layer)
-        if (this._layers.has(id)) this.updateLayer(id, { opacity })
+        const existing = this._layers.get(id)
+        if (typeof existing?.clone === 'function') this.updateLayer(id, { opacity })
     }
 
     /**

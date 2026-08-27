@@ -91,6 +91,42 @@ describe('DeckGLAdapter.setLayerOpacity', () => {
         expect(adapter.getLayers()).toHaveLength(0)
     })
 
+    /**
+     * Under the deck.gl engine MMGIS still builds `data`, `image`, `video`
+     * and `velocity` layers as native Leaflet objects — ENGINE_LAYER_SUPPORT
+     * has no deck builder for them — and L_.setLayerOpacity hands every
+     * registry entry to the active engine without inspecting its shape. So a
+     * Leaflet object does reach this adapter, and must not blow it up.
+     */
+    describe('given a native Leaflet layer', () => {
+        test('is a no-op passed by object, and does not throw', () => {
+            const adapter = new DeckGLAdapter()
+            const velocity = makeTileish()
+
+            expect(adapter.setLayerOpacity(velocity, 0.3)).toBeUndefined()
+            // Not dimmed here: a Leaflet object carries no deck `id`, so the
+            // engine never held it. L_.layers.opacity keeps the value.
+            expect(velocity.opacity).toBe(null)
+            expect(adapter.getLayers()).toHaveLength(0)
+        })
+
+        test('is a no-op even once the engine holds one, and does not throw', () => {
+            const adapter = new DeckGLAdapter()
+            const velocity = makeTileish()
+            // addLayer keys off layer.id, which a Leaflet object lacks, so the
+            // entry lands under `undefined`. Reproduced rather than endorsed —
+            // what this pins is that reaching such an entry cannot throw
+            // `existing.clone is not a function`.
+            adapter.addLayer(velocity)
+
+            expect(adapter.setLayerOpacity(velocity, 0.3)).toBeUndefined()
+            expect(velocity.opacity).toBe(null)
+            expect(() =>
+                adapter.updateLayer(velocity, { opacity: 0.3 })
+            ).not.toThrow()
+        })
+    })
+
     // deck.gl has no separate fill channel at this level — a single `opacity`
     // prop covers stroke and fill together — so options.fillOpacity is
     // accepted (matching IMapEngine's signature) but subsumed by `opacity`
