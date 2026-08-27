@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
-import MapPopup_, {
-    POPUP_SANITIZE_CONFIG,
-} from '../../src/essence/Basics/MapPopup_/MapPopup_'
+import MapPopup_ from '../../src/essence/Basics/MapPopup_/MapPopup_'
 import type {
     MapPopupRequest,
     MapPopupResult,
@@ -827,34 +825,27 @@ describe('MapPopup_', () => {
             expect(body()).toContain('.dot:hover')
         })
 
-        it('refuses form controls and takes their labels with them', () => {
+        it('renders a form and its controls as inert content', () => {
+            // Nothing reads a control back — the contract carries no script,
+            // and the card answers with which button was pressed and nothing
+            // else — so a field is markup like any other, and a card built
+            // around one comes back whole rather than blank.
             show(bus, engine, {
-                html: '<p>Pick one</p><button>Press me</button><select><option>Only</option></select><input value="x"><textarea>Type</textarea>',
+                html: '<form action="https://evil.test"><p>Pick one</p><button>Press me</button><select><option>Only</option></select><input value="x"><textarea>Type</textarea></form><canvas width="10"></canvas>',
             })
 
+            expect(body()).toContain('<form')
             expect(body()).toContain('Pick one')
-            expect(body()).not.toContain('Press me')
-            expect(body()).not.toContain('Only')
-            expect(body()).not.toContain('Type')
-            expect(body()).not.toContain('<button')
-            expect(body()).not.toContain('<input')
-        })
-
-        it('keeps the prose of an author who wrapped their card in a form', () => {
-            // The tags whose contents go with them are leaves. Name a
-            // container and DOMPurify takes the container's children too, so
-            // this card would come back blank with nothing to explain it.
-            show(bus, engine, {
-                html: '<form><p>Crater A</p></form>',
-            })
-
-            expect(body()).toContain('Crater A')
-            expect(body()).not.toContain('<form')
+            expect(body()).toContain('<button')
+            expect(body()).toContain('<input')
+            expect(body()).toContain('Only')
+            expect(body()).toContain('Type')
+            expect(body()).toContain('<canvas')
         })
 
         it('never spills the text of a tag whose contents are not markup', () => {
-            // DOMPurify keeps its own list of those tags, and a config that
-            // named its additions outright would replace that list rather than
+            // DOMPurify keeps its own list of those tags, and naming a
+            // `FORBID_CONTENTS` of our own would replace that list rather than
             // extend it, leaving the raw text of an `xmp` to read as prose.
             show(bus, engine, {
                 html: '<p>Crater A</p><xmp>rm -rf /</xmp>',
@@ -864,19 +855,29 @@ describe('MapPopup_', () => {
             expect(body()).not.toContain('rm -rf')
         })
 
-        it('refuses what would reach past the card', () => {
+        it('refuses what would put content in the top layer', () => {
+            // A popover promotes itself above the app's panels, where neither
+            // the card's clipping nor its paint containment can follow. It is
+            // the one thing DOMPurify passes that a card cannot contain.
             show(bus, engine, {
-                html: '<iframe src="https://evil.test"></iframe><object data="x"></object><embed src="x"><canvas width="10"></canvas><p popover>Crater A</p>',
+                html: '<button popovertarget="p">Open</button><div id="p" popover>Top layer</div><p>Crater A</p>',
+            })
+
+            expect(body()).not.toContain('popover')
+            expect(body()).toContain('Crater A')
+        })
+
+        it('refuses what would reach past the card', () => {
+            // DOMPurify's defaults answer this one; the assertions are here so
+            // an upgrade that stopped answering it is a failure and not a
+            // surprise in the field.
+            show(bus, engine, {
+                html: '<iframe src="https://evil.test"></iframe><object data="x"></object><embed src="x"><p>Crater A</p>',
             })
 
             expect(body()).not.toContain('iframe')
             expect(body()).not.toContain('object')
             expect(body()).not.toContain('embed')
-            // A canvas paints only from script, and the contract has no script
-            // to offer, so it would only ever come back blank.
-            expect(body()).not.toContain('canvas')
-            // The top layer is out of reach of the card's clipping.
-            expect(body()).not.toContain('popover')
             expect(body()).toContain('Crater A')
         })
 
@@ -896,8 +897,6 @@ describe('MapPopup_', () => {
             })
 
             let markup = body()
-            // `flood-color` is the one a hand-written list drops, and four of
-            // the filter primitives render nothing without it.
             expect(markup).toContain('flood-color="#fff"')
             expect(markup).toContain('vector-effect="non-scaling-stroke"')
             expect(markup).toContain('dominant-baseline="middle"')
@@ -906,22 +905,19 @@ describe('MapPopup_', () => {
             expect(markup).toContain('viewBox="0 0 10 10"')
 
             show(bus, engine, {
-                html: '<svg><rect><animate attributeName="x" dur="1s" to="10"/><set attributeName="y" to="4"/></rect><symbol id="s"><circle r="2"/></symbol><use href="https://evil.test/x.svg#a"/></svg>',
+                html: '<svg><rect><animate attributeName="x" dur="1s" to="10"/><set attributeName="y" to="4"/></rect></svg>',
             })
 
             markup = body()
             expect(markup).not.toContain('animate')
             expect(markup).not.toContain('attributeName')
             expect(markup).not.toContain('<set')
-            // A symbol paints nothing without a use to place it, so neither
-            // one is worth the reach the other would need.
-            expect(markup).not.toContain('symbol')
-            expect(markup).not.toContain('<use')
         })
 
         it('keeps the inert markup and the attributes an author needs', () => {
-            // Representative, not exhaustive: the attribute lists themselves
-            // are pinned against DOMPurify below.
+            // Representative rather than exhaustive: what a card may carry is
+            // DOMPurify's own curated answer, and this is the part of it the
+            // popup's own contract would notice the loss of.
             show(bus, engine, {
                 html: '<img src="a.png" alt="Crater A from orbit"><video controls><track kind="captions" srclang="en" label="English" src="c.vtt"></video><p id="a" class="b" data-feature="crater-a" role="note" aria-label="Crater A" style="color: red">A<sub>1</sub> <del>old</del><ins>new</ins></p><math><mfrac><mi>a</mi><mn>2</mn></mfrac></math><table><tr><td colspan="2">Cell</td></tr></table>',
             })
@@ -937,64 +933,6 @@ describe('MapPopup_', () => {
             expect(markup).toContain('colspan="2"')
         })
 
-        it('holds its svg attributes to the ones DOMPurify curates', () => {
-            // Written out by hand, this list loses `flood-color` and four
-            // filter primitives quietly stop rendering. Derived from the
-            // installed library instead, and pinned here so an upgrade that
-            // moves the set fails loudly rather than silently.
-            const attrs = readFileSync(
-                'node_modules/dompurify/src/attrs.ts',
-                'utf8'
-            )
-            const curated = (name: string): string[] =>
-                attrs
-                    .match(
-                        new RegExp(
-                            `export const ${name} = freeze\\(\\[([\\s\\S]*?)\\]`
-                        )
-                    )![1]
-                    .split(',')
-                    .map((entry) => entry.trim().replace(/^'|'$/g, ''))
-                    .filter(Boolean)
-            // The SMIL timing attributes go: none of the elements that read
-            // them is a tag a card may hold.
-            const smil = [
-                'accumulate',
-                'additive',
-                'attributename',
-                'attributetype',
-                'begin',
-                'by',
-                'dur',
-                'end',
-                'keypoints',
-                'keysplines',
-                'keytimes',
-                'max',
-                'min',
-                'origin',
-                'repeatcount',
-                'repeatdur',
-                'restart',
-            ]
-            // Three presentation attributes are required outright as well as
-            // by derivation: the card carries them at any version of the
-            // range, while an install at its low end resolves a curated set
-            // that does not yet name them.
-            const expected = curated('svg')
-                .filter((attr) => !smil.includes(attr))
-                .concat('dominant-baseline', 'pointer-events', 'vector-effect')
-
-            const allowed = new Set(POPUP_SANITIZE_CONFIG.ALLOWED_ATTR)
-            expect(expected.filter((attr) => !allowed.has(attr))).toEqual([])
-            expect(curated('mathMl').filter((attr) => !allowed.has(attr))).toEqual([])
-            expect(curated('xml').filter((attr) => !allowed.has(attr))).toEqual([])
-            // The subtraction is real: an attribute only SMIL reads is gone,
-            // save the two `<meter>` and `<progress>` need for themselves.
-            expect(allowed.has('attributename')).toBe(false)
-            expect(allowed.has('repeatcount')).toBe(false)
-            expect(allowed.has('keytimes')).toBe(false)
-        })
     })
 
     // A link inside a card navigates the whole app away by default, taking the
@@ -1058,16 +996,18 @@ describe('MapPopup_', () => {
         })
 
         it('refuses a submit outright', () => {
-            // The sanitizer leaves no form standing, so nothing should ever
-            // raise one. This is what happens if something does.
-            show(bus, engine, { html: '<p>Crater A</p>' })
+            // A form reaches the card whole, `action` and all, so the guard is
+            // what keeps the controls inside it inert rather than dangerous.
+            show(bus, engine, {
+                html: '<form action="https://evil.test"><input name="q"><button type="submit">Go</button></form>',
+            })
 
             const submit = new Event('submit', {
                 bubbles: true,
                 composed: true,
                 cancelable: true,
             })
-            contentRoot().querySelector('p')!.dispatchEvent(submit)
+            contentRoot().querySelector('form')!.dispatchEvent(submit)
 
             expect(submit.defaultPrevented).toBe(true)
         })
@@ -1169,6 +1109,26 @@ describe('MapPopup_', () => {
 
             // The second link is the card's last stop, there being no actions
             // row after it, so the wrap happens there.
+            expect(tab.defaultPrevented).toBe(true)
+            expect(deepActive()).toBe(closeButton())
+        })
+
+        it("counts the form controls in the plugin's own markup", () => {
+            // A card may hold a field, so a trap that named only the chrome's
+            // buttons would let a Tab out of the dialog through one.
+            show(bus, engine, {
+                html: '<input name="q"><textarea name="notes"></textarea><input name="off" disabled>',
+            })
+            const field = contentRoot().querySelector('input')!
+            const notes = contentRoot().querySelector('textarea')!
+
+            field.focus()
+            expect(press('Tab').defaultPrevented).toBe(false)
+
+            // The disabled field is no stop, so the textarea is the card's
+            // last one and the wrap happens there.
+            notes.focus()
+            const tab = press('Tab')
             expect(tab.defaultPrevented).toBe(true)
             expect(deepActive()).toBe(closeButton())
         })
