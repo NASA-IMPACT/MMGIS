@@ -1,5 +1,4 @@
 // Holds all layer data
-import { buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
@@ -15,7 +14,6 @@ import {
 } from './tileLayerSource'
 import {
     buildTileUrlOptions,
-    compileTileUrl,
     cogSourceType,
     hasCogColormap,
     shouldUseDeckRaster,
@@ -186,12 +184,7 @@ function layerBoundsFor(uuid) {
 }
 
 /**
- * Rebuilds a facade-managed raster tile layer around a freshly compiled URL.
- *
- * A Leaflet tile layer recompiles its URL per tile from `this.options`, so its
- * `refresh()` only has to merge the caller's overrides into those options. A
- * facade-managed layer wraps one static URL instead, so the overrides are
- * compiled in here.
+ * Refreshes a raster tile layer through the map engine's per-layer refresher.
  *
  * Resolution order — source, then time replacements, then tile-URL options —
  * is the one layer creation and time-driven reloads use, so all three agree on
@@ -204,9 +197,9 @@ function layerBoundsFor(uuid) {
  * @param {string} uuid - Layer UUID, already resolved.
  * @param {object} [updateOptions] - Tile-URL option overrides, the keys
  * buildTileUrlOptions produces. These win over the layer config.
- * @returns {Promise<boolean>} Whether the engine took a new URL.
+ * @returns {Promise<boolean>} Whether the engine had a layer to refresh.
  */
-async function refreshEngineFacadeTileLayer(uuid, updateOptions) {
+async function refreshTileLayer(uuid, updateOptions) {
     const layerObj = L_.layers.data[uuid]
     // Only raster tiles carry a compiled tile URL. The other facade-managed
     // types (vector, vectortile, pointcloud) reload through their own paths.
@@ -228,17 +221,13 @@ async function refreshEngineFacadeTileLayer(uuid, updateOptions) {
             ...(updateOptions || {}),
         }
 
-        // A layer with no resolvable service URL compiles to nothing. Handing
-        // that to the engine would blank it, so leave the existing one alone.
-        const nextUrl = compileTileUrl(sourceUrl, tileOptions)
-        if (!nextUrl) return false
-
-        const updated = L_.Map_.engine.updateLayer(uuid, { url: nextUrl })
-        // deck.gl layers are immutable, so the registry adopts the replacement.
-        // The engine returns nothing for a layer it does not hold.
-        if (updated == null) return false
-        L_.layers.layer[uuid] = updated
-        return true
+        // Leaflet recompiles per tile from tileOptions; deck.gl bakes them in.
+        // Neither is this caller's business.
+        return L_.Map_.engine.refreshLayer(uuid, {
+            url: sourceUrl,
+            tileOptions,
+            force: false,
+        })
     } catch (err) {
         console.error(`layers:refresh failed for "${uuid}"`, err)
         return false
@@ -433,36 +422,7 @@ const L_ = {
                 }),
                 window.mmgisAPI.provide('layers:refresh', async ({ layerUUID, options }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
-                    const layerObj = L_.layers.data[uuid]
-                    // Deck.gl deckRaster COG branch: rebuild the layer with updated
-                    // current* values and re-register it so deck.gl diffs in place.
-                    if (
-                        L_.Map_ &&
-                        L_.Map_.engine &&
-                        L_.Map_.engine.engineType === 'deckgl' &&
-                        layerObj &&
-                        layerObj.cogRendererMode === 'deckRaster'
-                    ) {
-                        // The existing layer's geotiff prop is the already
-                        // resolved (and time-substituted) file URL; fall back
-                        // to getUrl only if the instance is unavailable.
-                        const existing = L_.layers.layer[uuid]
-                        const rawCogUrl =
-                            (existing && existing.props && existing.props.geotiff) ||
-                            L_.getUrl(layerObj.type, layerObj.url, layerObj)
-                        L_.rebuildDeckCOGLayer(layerObj, rawCogUrl)
-                        return true
-                    }
-                    // Leaflet fallback — unchanged existing path.
-                    const tileLayer = L_.layers.layer[uuid]
-                    if (tileLayer && typeof tileLayer.refresh === 'function') {
-                        tileLayer.refresh(null, false, options || {})
-                        return true
-                    }
-                    // A facade-managed layer has no Leaflet refresh() to call.
-                    if (requiresEngineFacade(tileLayer))
-                        return refreshEngineFacadeTileLayer(uuid, options)
-                    return false
+                    return refreshTileLayer(uuid, options)
                 }),
                 window.mmgisAPI.provide('layers:updateConfig', ({ layerUUID, updates }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
@@ -737,30 +697,6 @@ const L_ = {
             }
             return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
         }
-    },
-    /**
-     * The single build-and-register path for every client-side deck COG
-     * update (colormap/rescale refresh, time reload). Rebuilds the layer
-     * from its current config and swaps it in by id — deck.gl diffs the new
-     * instance against the old one, so cached tiles are kept and only what
-     * updateTriggers name is recomputed.
-     * @param {object} layerObj - Layer config (L_.layers.data entry).
-     * @param {string} rawCogUrl - Bare, time-substituted .tif URL
-     *                             (resolveDeckCOGFileUrl, or the existing
-     *                             layer's geotiff prop).
-     */
-    rebuildDeckCOGLayer: function (layerObj, rawCogUrl) {
-        const uuid = L_.asLayerUUID(layerObj.name)
-        const rebuilt = buildDeckCOGLayer(uuid, {
-            rawCogUrl,
-            layerObj,
-            opacity: L_.layers.opacity[uuid] ?? 1,
-        })
-        L_.layers.layer[uuid] = rebuilt
-        // addLayer registers by id in the adapter's registry then syncs, so
-        // deck.gl diffs and re-renders in place.
-        L_.Map_.engine.addLayer(rebuilt)
-        return rebuilt
     },
     getUrl: function (type, url, layerData) {
         let wasCOG = false

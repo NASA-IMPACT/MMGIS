@@ -10,15 +10,16 @@ import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
  * makeTileLayer too but stay on the refresh path — see issue #230.
  */
 
-const updateLayer = vi.fn()
-const rebuildDeckCOGLayer = vi.fn()
+const refreshLayer = vi.fn(() => true)
 
 vi.mock('../../src/essence/Basics/Map_/Map_', () => ({
     default: {
         engine: {
             engineType: MAP_ENGINE.DECKGL,
-            updateLayer: (...args) => updateLayer(...args),
+            refreshLayer: (...args) => refreshLayer(...args),
         },
+        // A distinct, pre-existing Map_-level path (not Map_.engine.refreshLayer)
+        // used by the non-raster fallback below. Out of scope for this task.
         refreshLayer: vi.fn(async () => true),
     },
 }))
@@ -35,7 +36,6 @@ vi.mock('../../src/essence/Basics/Layers_/Layers_', () => ({
         getUrl: (type, url) => (url.startsWith('COG:') ? url.slice(4) : url),
         transformStacUrl: (url) => url,
         timeFilterVectorLayer: vi.fn(),
-        rebuildDeckCOGLayer: (...args) => rebuildDeckCOGLayer(...args),
     },
 }))
 
@@ -73,8 +73,7 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
     // layer registry start clean for each case rather than carrying state.
     beforeEach(async () => {
         vi.resetModules()
-        updateLayer.mockClear()
-        rebuildDeckCOGLayer.mockClear()
+        refreshLayer.mockClear()
         TimeControl = (await import('../../src/essence/Basics/TimeControl_/TimeControl'))
             .default
         Map_ = (await import('../../src/essence/Basics/Map_/Map_')).default
@@ -88,19 +87,24 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         L_.layers.on[layer.name] = true
     }
 
+    // The call site hands the engine the uncompiled tile source URL plus
+    // tileOptions — the {time} substitution is the engine's job now (deck.gl
+    // bakes it in via compileTileUrl; Leaflet recompiles it per tile), so
+    // what's asserted here is that the *formatted* time reaches ctx via
+    // tileOptions, not that ctx.url already has it substituted.
     test.each([['tile'], ['TileLayer'], ['BitmapLayer']])(
-        'substitutes {time} into the tile URL for a %s layer',
+        'passes the formatted time for a %s layer without pre-compiling the URL',
         async (type) => {
             const layer = makeNO2Layer(type)
             registerDeckLayer(layer)
 
             await TimeControl.reloadLayer(layer)
 
-            expect(updateLayer).toHaveBeenCalledTimes(1)
-            const [name, options] = updateLayer.mock.calls[0]
+            expect(refreshLayer).toHaveBeenCalledTimes(1)
+            const [name, ctx] = refreshLayer.mock.calls[0]
             expect(name).toBe('NO2 Monthly')
-            expect(options.url).toContain('OMI_trno2_0.10x0.10_202206_Col3_V4.nc')
-            expect(options.url).not.toContain('{time}')
+            expect(ctx.url).toContain('{time}')
+            expect(ctx.tileOptions.time).toBe('202206')
         }
     )
 
@@ -116,14 +120,16 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
 
             await TimeControl.reloadLayer(layer)
 
-            expect(updateLayer).not.toHaveBeenCalled()
+            expect(refreshLayer).not.toHaveBeenCalled()
             expect(Map_.refreshLayer).toHaveBeenCalled()
         }
     )
 
     // A colormap picked in the Layer Manager lives on the config as
     // `currentCogColormap`. A time change recompiles the URL from the config
-    // alone, so the pick has to survive that recompile.
+    // alone, so the pick has to survive that recompile. The call site no
+    // longer bakes tileOptions into the URL itself — the engine's registered
+    // refresher does that — so the pick travels through ctx.tileOptions.
     test('keeps a user-picked colormap when the time changes', async () => {
         const layer = {
             name: 'CO2 Concentration',
@@ -140,10 +146,10 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
 
         await TimeControl.reloadLayer(layer)
 
-        expect(updateLayer).toHaveBeenCalledTimes(1)
-        const [, options] = updateLayer.mock.calls[0]
-        expect(options.url).toContain('colormap_name=magma')
-        expect(options.url).not.toContain('viridis')
+        expect(refreshLayer).toHaveBeenCalledTimes(1)
+        const [, ctx] = refreshLayer.mock.calls[0]
+        expect(ctx.tileOptions.currentCogColormap).toBe('magma')
+        expect(ctx.url).not.toContain('colormap_name')
     })
 
     test('leaves the layer config URL unmutated so the next reload re-substitutes', async () => {
@@ -156,31 +162,28 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         expect(layer.url).toBe(originalUrl)
     })
 
-    test('rebuilds a deckRaster COG layer from its time-substituted file URL', async () => {
-        const layer = {
-            name: 'CO2 COG',
-            type: 'tile',
-            url: 'COG:https://example.com/cogs/co2_{time}.tif',
-            cogRendererMode: 'deckRaster',
-            cogTransform: true,
-            minZoom: '2',
-            maxZoom: '10',
-            controlled: false,
-            time: { ...timeConfig },
-        }
-        registerDeckLayer(layer)
+    // The point of this test: a deckRaster COG config and a plain tile config
+    // differ only in `cogRendererMode`. If the call site still branched on
+    // that (or on engine/renderer type) to decide how to update the layer,
+    // the two calls would differ in shape. They must not — the registered
+    // refresher, not the call site, owns "how".
+    test('a deckRaster layer takes the same call as a plain tile layer', async () => {
+        const plain = makeNO2Layer('tile')
+        registerDeckLayer(plain)
+        await TimeControl.reloadLayer(plain)
+        const plainCall = refreshLayer.mock.calls[0]
 
-        await TimeControl.reloadLayer(layer)
+        refreshLayer.mockClear()
 
-        // The TiTiler tiles URL is meaningless to the client-side renderer —
-        // a clone({url}) is silently ignored by COGLayer (it reads `geotiff`).
-        // The rebuild itself is L_.rebuildDeckCOGLayer's job (the single
-        // build-and-register path); TimeControl supplies the substituted URL.
-        expect(updateLayer).not.toHaveBeenCalled()
-        expect(rebuildDeckCOGLayer).toHaveBeenCalledTimes(1)
-        const [rebuiltLayerObj, rawCogUrl] = rebuildDeckCOGLayer.mock.calls[0]
-        expect(rebuiltLayerObj).toBe(layer)
-        expect(rawCogUrl).toBe('https://example.com/cogs/co2_202206.tif')
+        // Differs only in how it renders — the call site must not notice.
+        const cog = { ...makeNO2Layer('tile'), cogRendererMode: 'deckRaster' }
+        registerDeckLayer(cog)
+        await TimeControl.reloadLayer(cog)
+
+        expect(refreshLayer).toHaveBeenCalledTimes(1)
+        expect(Object.keys(refreshLayer.mock.calls[0][1]).sort()).toEqual(
+            Object.keys(plainCall[1]).sort()
+        )
     })
 
     test('a vector tile layer takes the refresh path, not the tile pipeline', async () => {
@@ -195,7 +198,7 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
 
         await TimeControl.reloadLayer(layer)
 
-        expect(updateLayer).not.toHaveBeenCalled()
+        expect(refreshLayer).not.toHaveBeenCalled()
         expect(Map_.refreshLayer).toHaveBeenCalled()
     })
 })
