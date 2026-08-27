@@ -41,7 +41,8 @@ import type {
     MapInitOptions,
     BasemapOptions,
 } from '../types/view'
-import type { LayerOptions, OverlayOptions } from '../types/layers'
+import type { LayerOptions, OverlayOptions, RefreshContext } from '../types/layers'
+import { compileTileUrl } from '../../Layers_/tileUrlUtils'
 import type {
     MapEventHandler,
     MapEventOptions,
@@ -266,6 +267,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _maxBounds: BoundsLike | null = null
 
     private _layers = new Map<string, Layer>()
+    /** Per-layer refresh hooks, keyed by layer id. */
+    private _refreshers = new Map<string, (layer: Layer, ctx: RefreshContext) => Layer | void>()
     private _layerZIndices = new Map<string, number>()
     private _layerIdCounter = 0
 
@@ -415,6 +418,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._overlays.clear()
 
         this._layers.clear()
+        this._refreshers.clear()
         this._layerZIndices.clear()
         this._eventListeners.clear()
         this._featureClickHandler = null
@@ -918,6 +922,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const id = resolveLayerId(layer)
         this._layers.delete(id)
         this._layerZIndices.delete(id)
+        this._refreshers.delete(id)
         this._syncLayers()
     }
 
@@ -937,6 +942,51 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._layers.set(id, updated)
         this._syncLayers()
         return updated
+    }
+
+    registerLayer(id: string, layer: Layer): void {
+        // For deck.gl, holding a layer is rendering it — there is no
+        // "registered but not on the map" state. Keyed by the caller's id
+        // rather than layer.id so the two can never drift apart.
+        this._layers.set(id, layer)
+        this._syncLayers()
+    }
+
+    setLayerRefresher(
+        id: string,
+        refresh: ((layer: Layer, ctx: RefreshContext) => Layer | void) | null
+    ): void {
+        if (refresh == null) this._refreshers.delete(id)
+        else this._refreshers.set(id, refresh)
+    }
+
+    refreshLayer(id: string, ctx: RefreshContext = {}): boolean {
+        const existing = this._layers.get(id)
+        if (!existing) return false
+
+        const refresh = this._refreshers.get(id)
+        let next: Layer | void
+        if (refresh) {
+            next = refresh(existing, {
+                url: ctx.url,
+                tileOptions: ctx.tileOptions,
+                force: ctx.force,
+            })
+        } else {
+            // Plain tile layers take one static URL, so the per-tile params
+            // Leaflet would add are baked in here.
+            if (ctx.url == null) return false
+            const compiled = compileTileUrl(ctx.url, ctx.tileOptions ?? {})
+            // A layer with no resolvable service URL compiles to nothing;
+            // handing that to deck would blank it.
+            if (!compiled) return false
+            next = existing.clone({ data: compiled }) as Layer
+        }
+
+        // A refresher that mutated in place returns nothing; keep what we hold.
+        if (next) this._layers.set(id, next)
+        this._syncLayers()
+        return true
     }
 
     /**

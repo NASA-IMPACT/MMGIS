@@ -29,6 +29,7 @@ import {
     TileLayerOptions,
     MarkerOptions,
     OverlayOptions,
+    RefreshContext,
 } from '../types/layers'
 import { IMapEngineMarkers } from '../IMapEngineMarkers'
 import {
@@ -86,6 +87,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Registry of layers by ID
      */
     private _layers: Map<string, any> = new Map()
+
+    /** Per-layer refresh hooks, keyed the same way as {@link _layers}. */
+    private _refreshers: Map<string, (layer: any, ctx: RefreshContext) => any> = new Map()
 
     /**
      * Registry of markers by ID
@@ -328,6 +332,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._detachFeatureHoverListeners()
 
         this._layers.clear()
+        this._refreshers.clear()
         this._markers.clear()
 
         this._map.remove()
@@ -697,6 +702,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             if (leafletLayer) {
                 this._map.removeLayer(leafletLayer)
                 this._layers.delete(layer)
+                this._refreshers.delete(layer)
             }
         } else {
             this._map.removeLayer(layer)
@@ -752,6 +758,43 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
 
         return leafletLayer
+    }
+
+    registerLayer(id: string, layer: any): void {
+        // resolveLeafletLayerId reads _mmgisId, so stamp it: the layer must be
+        // findable by object as well as by id.
+        if (layer != null && typeof layer === 'object') layer._mmgisId = id
+        this._layers.set(id, layer)
+    }
+
+    setLayerRefresher(
+        id: string,
+        refresh: ((layer: any, ctx: RefreshContext) => any) | null
+    ): void {
+        if (refresh == null) this._refreshers.delete(id)
+        else this._refreshers.set(id, refresh)
+    }
+
+    refreshLayer(id: string, ctx: RefreshContext = {}): boolean {
+        const layer = this._layers.get(id)
+        if (!layer) return false
+
+        const refresh = this._refreshers.get(id)
+        if (refresh) {
+            refresh(layer, {
+                url: ctx.url,
+                tileOptions: ctx.tileOptions,
+                force: ctx.force,
+            })
+            return true
+        }
+
+        // A Leaflet tile layer recompiles its URL per tile from this.options,
+        // which is what refresh() merges tileOptions into — that is why Leaflet
+        // keeps its tile cache where deck.gl cannot.
+        if (typeof layer.refresh !== 'function') return false
+        layer.refresh(ctx.url, ctx.force === true, ctx.tileOptions)
+        return true
     }
 
     setLayerZIndex(layer: any | string, zIndex: number): void {

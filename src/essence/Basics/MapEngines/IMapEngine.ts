@@ -6,7 +6,7 @@ import {
     FitBoundsOptions,
     MapInitOptions,
 } from './types/view'
-import { LayerOptions, OverlayOptions } from './types/layers'
+import { LayerOptions, OverlayOptions, RefreshContext } from './types/layers'
 import {
     MapEventHandler,
     MapEventOptions,
@@ -199,6 +199,42 @@ export interface IMapEngine<
      * Update properties on an existing layer (opacity, style, etc).
      */
     updateLayer(layer: TLayer | string, options: Partial<LayerOptions>): TLayer
+
+    /**
+     * Take ownership of an externally-built native layer under `id`, so
+     * id-addressed methods can find it. Does not change what is on the map —
+     * `addLayer` still does that.
+     *
+     * Leaflet needs this because MMGIS builds its tile layers itself and hands
+     * them to `addLayer` as native objects, which carry no id. deck.gl layers
+     * already carry `id`, so its implementation delegates to `addLayer`.
+     */
+    registerLayer(id: string, layer: TLayer): void
+
+    /**
+     * Register how one layer recomputes itself, or pass null to clear.
+     *
+     * Called by the module that owns the layer kind, at creation — never by an
+     * adapter, which stays layer-type-agnostic. The engine invokes it with the
+     * live instance; return a replacement (deck.gl) or mutate in place and
+     * return nothing (Leaflet). The engine reconciles either way and remains
+     * the owner, so the function must not retain the instance.
+     */
+    setLayerRefresher(
+        id: string,
+        refresh: ((layer: TLayer, ctx: RefreshContext) => TLayer | void) | null
+    ): void
+
+    /**
+     * Re-render a layer from its current configuration.
+     *
+     * The single update entry point for time changes, colormap/rescale changes
+     * and any other "your config moved, redraw" event. Callers never branch on
+     * the active engine or renderer.
+     *
+     * @returns Whether the engine had a layer to refresh.
+     */
+    refreshLayer(id: string, ctx?: RefreshContext): boolean
 
     /**
      * Set the z index of a layer to control draw order.
