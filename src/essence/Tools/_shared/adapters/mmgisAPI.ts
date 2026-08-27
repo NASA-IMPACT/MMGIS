@@ -231,43 +231,6 @@ export const mmgisGetTiTilerUrls = (): Promise<Record<
     )
 }
 
-/** A geographic viewport extent, as returned by the map engine's getBounds(). */
-export type MapBounds = {
-    southWest: { lat: number; lng: number }
-    northEast: { lat: number; lng: number }
-}
-
-/**
- * The current map viewport. Null against a core that does not register the
- * handler, in which case callers treat the viewport as unknown rather than
- * assuming a value.
- */
-export const mmgisGetMapBounds = (): Promise<MapBounds | null> => {
-    return mmgisRequestIfProvided<MapBounds>('map:getBounds')
-}
-
-/**
- * The current zoom level, which may be fractional. Null against a core that
- * does not register the handler.
- */
-export const mmgisGetMapZoom = (): Promise<number | null> => {
-    return mmgisRequestIfProvided<number>('map:getZoom')
-}
-
-/**
- * Every layer's bounds in one call, keyed by layer UUID; an entry is null
- * when core has no extent for that layer. The whole map is null against a
- * core that does not register the handler.
- */
-export const mmgisGetAllLayerBounds = (): Promise<Record<
-    string,
-    LayerBounds | null
-> | null> => {
-    return mmgisRequestIfProvided<Record<string, LayerBounds | null>>(
-        'layers:getBounds',
-    )
-}
-
 /** Whether the mission has time enabled at all. */
 export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')

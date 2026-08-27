@@ -6,9 +6,6 @@ import {
     mmgisIsTimeEnabled,
     mmgisGetCurrentTimeFormatted,
     mmgisGetLayerConfigs,
-    mmgisGetMapBounds,
-    mmgisGetMapZoom,
-    mmgisGetAllLayerBounds,
 } from '../adapters/mmgisAPI'
 import type { Layer, CategoricalStop } from './types'
 
@@ -71,38 +68,21 @@ export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
     // layerConfigs is fetched once here and threaded into
     // getVisibleLayersWithLegends below, rather than each independently
     // requesting layers:getAllConfigs from core.
-    const [
-        layerConfigs,
-        viewState,
-        timeEnabled,
-        formattedTime,
-        viewportBounds,
-        zoom,
-        layerBounds,
-    ] = await Promise.all([
-        mmgisGetLayerConfigs(),
-        mmgisGetViewState(),
-        mmgisIsTimeEnabled(),
-        mmgisGetCurrentTimeFormatted(),
-        mmgisGetMapBounds(),
-        mmgisGetMapZoom(),
-        mmgisGetAllLayerBounds(),
-    ])
+    const [layerConfigs, viewState, timeEnabled, formattedTime] =
+        await Promise.all([
+            mmgisGetLayerConfigs(),
+            mmgisGetViewState(),
+            mmgisIsTimeEnabled(),
+            mmgisGetCurrentTimeFormatted(),
+        ])
     const layers = await getVisibleLayersWithLegends({
         showOnlyVisible: true,
         layerConfigs,
     })
-    // Narrows the toggled-on layers down to ones actually visible in the
-    // current viewport — panel/LayerManager listings stay unfiltered; this
-    // is export-only. Any signal core couldn't answer (no viewport, no
-    // zoom, no bounds for a layer) keeps that layer rather than dropping it.
-    const inViewLayers = filterLayersForExportView(layers, {
-        layerConfigs,
-        viewportBounds,
-        zoom,
-        layerBounds,
-    })
-    const rows = (await Promise.all(inViewLayers.map(toRow))).filter(
+    // Drops the layers that paint nothing (opacity 0); panel/LayerManager
+    // listings stay unfiltered, so this is export-only.
+    const legendLayers = filterLayersForExportView(layers)
+    const rows = (await Promise.all(legendLayers.map(toRow))).filter(
         (row): row is ExportLegendRow => row !== null,
     )
     return {

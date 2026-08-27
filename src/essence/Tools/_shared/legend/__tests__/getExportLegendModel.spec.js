@@ -6,14 +6,14 @@ vi.mock('../getVisibleLayersWithLegends', () => ({
 vi.mock('../resolveColormapColors', () => ({
     resolveColormapColors: vi.fn(),
 }))
+// Only the handlers the model actually reaches for are mocked, so importing
+// it would fail loudly if it started requesting anything else — the viewport,
+// the zoom, or the blocking whole-mission layers:getBounds sweep among them.
 vi.mock('../../adapters/mmgisAPI', () => ({
     mmgisGetViewState: vi.fn(),
     mmgisIsTimeEnabled: vi.fn(),
     mmgisGetCurrentTimeFormatted: vi.fn(),
     mmgisGetLayerConfigs: vi.fn(),
-    mmgisGetMapBounds: vi.fn(),
-    mmgisGetMapZoom: vi.fn(),
-    mmgisGetAllLayerBounds: vi.fn(),
 }))
 
 import { getVisibleLayersWithLegends } from '../getVisibleLayersWithLegends'
@@ -23,9 +23,6 @@ import {
     mmgisIsTimeEnabled,
     mmgisGetCurrentTimeFormatted,
     mmgisGetLayerConfigs,
-    mmgisGetMapBounds,
-    mmgisGetMapZoom,
-    mmgisGetAllLayerBounds,
 } from '../../adapters/mmgisAPI'
 import { getExportLegendModel } from '../getExportLegendModel'
 
@@ -47,9 +44,6 @@ beforeEach(() => {
     vi.mocked(mmgisIsTimeEnabled).mockReset()
     vi.mocked(mmgisGetCurrentTimeFormatted).mockReset()
     vi.mocked(mmgisGetLayerConfigs).mockReset()
-    vi.mocked(mmgisGetMapBounds).mockReset()
-    vi.mocked(mmgisGetMapZoom).mockReset()
-    vi.mocked(mmgisGetAllLayerBounds).mockReset()
     vi.mocked(mmgisGetViewState).mockResolvedValue({
         missionName: 'Test Mission',
         time: null,
@@ -58,13 +52,7 @@ beforeEach(() => {
     })
     vi.mocked(mmgisIsTimeEnabled).mockResolvedValue(false)
     vi.mocked(mmgisGetCurrentTimeFormatted).mockResolvedValue(null)
-    // No view-filtering signals by default: every test above this filter's
-    // introduction exercises rows unfiltered by view, so leaving these null
-    // (core couldn't answer) keeps every layer through filterLayersForExportView.
     vi.mocked(mmgisGetLayerConfigs).mockResolvedValue(null)
-    vi.mocked(mmgisGetMapBounds).mockResolvedValue(null)
-    vi.mocked(mmgisGetMapZoom).mockResolvedValue(null)
-    vi.mocked(mmgisGetAllLayerBounds).mockResolvedValue(null)
 })
 
 describe('getExportLegendModel', () => {
@@ -313,51 +301,65 @@ describe('getExportLegendModel', () => {
         )
     })
 
-    describe('view-aware filtering', () => {
+    // A toggled-on layer gets a row. A configured boundingBox says nothing
+    // reliable about where a layer paints — a collection mosaic paints
+    // wherever its collection has data while its declared bbox describes one
+    // granule, and a vector layer's deck.gl path reports that same configured
+    // box — so no footprint, of any layer type, keeps a row out.
+    describe('which layers get a row', () => {
         const twoLayers = [
             baseLayer({
-                id: 'in-view',
-                title: 'In view',
+                id: 'near',
+                title: 'Near',
                 type: 'gradient',
                 stops: ['#a', '#b'],
             }),
             baseLayer({
-                id: 'out-of-view',
-                title: 'Out of view',
+                id: 'far',
+                title: 'Far',
                 type: 'gradient',
                 stops: ['#a', '#b'],
             }),
         ]
 
-        test('drops a layer whose bounds provably sit outside the viewport', async () => {
+        test('keeps a raster layer whose configured bounding box is nowhere near the map', async () => {
             vi.mocked(getVisibleLayersWithLegends).mockResolvedValue(twoLayers)
-            vi.mocked(mmgisGetMapBounds).mockResolvedValue({
-                southWest: { lat: -10, lng: -10 },
-                northEast: { lat: 10, lng: 10 },
-            })
-            vi.mocked(mmgisGetAllLayerBounds).mockResolvedValue({
-                'in-view': [
-                    [-5, -5],
-                    [5, 5],
-                ],
-                'out-of-view': [
-                    [40, 40],
-                    [50, 50],
-                ],
+            vi.mocked(mmgisGetLayerConfigs).mockResolvedValue({
+                near: { type: 'tile', boundingBox: [-58, -35, -53, -30] },
+                // One granule over Nicaragua, on a mosaic painting over Uruguay.
+                far: { type: 'tile', boundingBox: [-87, 11, -83, 15] },
             })
             const model = await getExportLegendModel()
-            expect(model.rows.map((r) => r.title)).toEqual(['In view'])
+            expect(model.rows.map((r) => r.title)).toEqual(['Near', 'Far'])
         })
 
-        test('keeps every layer when core answers none of the view signals', async () => {
+        test('keeps a vector layer whose configured bounding box is nowhere near the map', async () => {
             vi.mocked(getVisibleLayersWithLegends).mockResolvedValue(twoLayers)
-            // mmgisGetMapBounds/mmgisGetAllLayerBounds/mmgisGetMapZoom/
-            // mmgisGetLayerConfigs already default to null in beforeEach.
+            vi.mocked(mmgisGetLayerConfigs).mockResolvedValue({
+                near: { type: 'vector', boundingBox: [-58, -35, -53, -30] },
+                far: { type: 'vector', boundingBox: [-87, 11, -83, 15] },
+            })
             const model = await getExportLegendModel()
-            expect(model.rows.map((r) => r.title)).toEqual([
-                'In view',
-                'Out of view',
+            expect(model.rows.map((r) => r.title)).toEqual(['Near', 'Far'])
+        })
+
+        test('keeps a layer configured well outside the current zoom range', async () => {
+            vi.mocked(getVisibleLayersWithLegends).mockResolvedValue(twoLayers)
+            vi.mocked(mmgisGetLayerConfigs).mockResolvedValue({
+                near: { type: 'vector' },
+                far: { type: 'vector', minZoom: 18, maxZoom: 20 },
+            })
+            const model = await getExportLegendModel()
+            expect(model.rows.map((r) => r.title)).toEqual(['Near', 'Far'])
+        })
+
+        test('omits a fully transparent layer', async () => {
+            vi.mocked(getVisibleLayersWithLegends).mockResolvedValue([
+                twoLayers[0],
+                { ...twoLayers[1], opacity: 0 },
             ])
+            const model = await getExportLegendModel()
+            expect(model.rows.map((r) => r.title)).toEqual(['Near'])
         })
     })
 })
