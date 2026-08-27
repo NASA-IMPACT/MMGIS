@@ -4,6 +4,7 @@ import { setVersions } from "./HomeSlice";
 import { makeStyles } from "@mui/styles";
 
 import { calls } from "../../../core/calls";
+import { isLeanMode } from "../../../core/capabilities";
 import { downloadObject } from "../../../core/utils";
 import Maker from "../../../core/Maker";
 import { setSnackBarText, setModal } from "../../../core/ConfigureStore";
@@ -163,16 +164,18 @@ export default function Home() {
                 <UploadIcon fontSize="medium" />
               </IconButton>
             </Tooltip>
-            <Tooltip title={"Clone Mission"} placement="bottom" arrow>
-              <IconButton
-                className={c.cloneIcon}
-                title="Clone"
-                aria-label="clone"
-                onClick={handleClone}
-              >
-                <ContentCopyIcon fontSize="medium" />
-              </IconButton>
-            </Tooltip>
+            {!isLeanMode() ? (
+              <Tooltip title={"Clone Mission"} placement="bottom" arrow>
+                <IconButton
+                  className={c.cloneIcon}
+                  title="Clone"
+                  aria-label="clone"
+                  onClick={handleClone}
+                >
+                  <ContentCopyIcon fontSize="medium" />
+                </IconButton>
+              </Tooltip>
+            ) : null}
             <Tooltip title={"Delete Mission"} placement="bottom" arrow>
               <IconButton
                 className={c.deleteIcon}

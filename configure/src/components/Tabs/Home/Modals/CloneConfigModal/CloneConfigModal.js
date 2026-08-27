@@ -235,7 +235,7 @@ const CloneConfigModal = (props) => {
       (res) => {
         dispatch(
           setSnackBarText({
-            text: `Failed to clone this mission.`,
+            text: res?.message || "Failed to clone this mission.",
             severity: "error",
           })
         );

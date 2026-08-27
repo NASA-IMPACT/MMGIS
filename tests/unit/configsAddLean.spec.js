@@ -1,7 +1,6 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 import express from 'express'
 import fs from 'fs'
-import http from 'http'
 import Module from 'module'
 
 // Tests for the mission-create path of the Config /add route
@@ -11,18 +10,22 @@ import Module from 'module'
 // unconditionally mkdir's ./Missions/<name>. In lean mode there is no local
 // Missions/ filesystem, so the mkdir throws ENOENT — the row is already
 // committed while the endpoint reports "Failed to create new mission." The
-// fix gates the directory creation on full mode (isLean() === false).
+// fix gates the directory creation on full mode (isFull()).
 //
 // The route resolves the deployment mode through
 // API/Backend/Utils/deploymentMode.js, which reads the env once at load, so
 // each test sets the env and re-requires the router under a fresh module
 // cache (same pattern as deploymentMode.spec.js / uploadRouterS3.spec.js).
 // The Sequelize Config model is mocked so no test touches a database, and
-// fs.mkdirSync/existsSync are spied so no test touches disk.
+// fs.mkdirSync is spied so no test touches disk.
 
 const MODE_PATH = '../../API/Backend/Utils/deploymentMode.js'
 const ROUTER_PATH = '../../API/Backend/Config/routes/configs.js'
 const MODEL_PATH = '../../API/Backend/Config/models/config.js'
+
+// Env the router reads at load. Saved/restored around every test (same
+// pattern as uploadRouterS3.spec.js).
+const ENV_KEYS = ['MMGIS_DEPLOYMENT_MODE', 'HIDE_CONFIG']
 
 // Shared state the stub model reads/writes so each test can drive findOne's
 // answer and inspect the rows create() received.
@@ -50,6 +53,11 @@ function installModelStub() {
 function freshRouter(mode) {
     if (mode === undefined) delete process.env.MMGIS_DEPLOYMENT_MODE
     else process.env.MMGIS_DEPLOYMENT_MODE = mode
+    // configs.js only mounts /add when HIDE_CONFIG != 'true'. Pin it to a
+    // non-'true' value (not just delete it: the router re-runs dotenv on
+    // load, and dotenv only fills in vars that are unset, so a real .env
+    // with HIDE_CONFIG=true would otherwise hide the route from every test).
+    process.env.HIDE_CONFIG = 'false'
     installModelStub()
     delete require.cache[require.resolve(MODE_PATH)]
     delete require.cache[require.resolve(ROUTER_PATH)]
@@ -87,50 +95,39 @@ function missionsMkdirs(spy) {
         .filter((p) => typeof p === 'string' && p.startsWith('./Missions/'))
 }
 
-function postAdd(base, body) {
-    const payload = Buffer.from(JSON.stringify(body))
-    return new Promise((resolve, reject) => {
-        const req = http.request(
-            `${base}/api/configure/add`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Content-Length': payload.length,
-                },
-            },
-            (res) => {
-                let data = ''
-                res.on('data', (chunk) => (data += chunk))
-                res.on('end', () =>
-                    resolve({ status: res.statusCode, body: JSON.parse(data) })
-                )
-            }
-        )
-        req.on('error', reject)
-        req.end(payload)
+async function postAdd(base, body) {
+    const res = await fetch(`${base}/api/configure/add`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
     })
+    const text = await res.text()
+    try {
+        return { status: res.status, body: JSON.parse(text) }
+    } catch (err) {
+        throw new Error(`Non-JSON response (status ${res.status}): ${text}`)
+    }
 }
 
 test.describe('config /add mission-directory creation gating', () => {
-    let savedMode
+    const savedEnv = {}
     let mkdirSpy
-    let existsSpy
 
     beforeEach(() => {
-        savedMode = process.env.MMGIS_DEPLOYMENT_MODE
+        ENV_KEYS.forEach((key) => {
+            savedEnv[key] = process.env[key]
+        })
         state.existing = null
         state.created = []
-        // Never write to disk: existsSync returns false so full mode enters
-        // the create-dirs branch, and mkdirSync is a recorded no-op.
-        existsSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false)
+        // Never write to disk: mkdirSync is a recorded no-op.
         mkdirSpy = vi.spyOn(fs, 'mkdirSync').mockImplementation(() => {})
     })
 
     afterEach(() => {
-        if (savedMode === undefined) delete process.env.MMGIS_DEPLOYMENT_MODE
-        else process.env.MMGIS_DEPLOYMENT_MODE = savedMode
-        existsSpy.mockRestore()
+        ENV_KEYS.forEach((key) => {
+            if (savedEnv[key] === undefined) delete process.env[key]
+            else process.env[key] = savedEnv[key]
+        })
         mkdirSpy.mockRestore()
         delete require.cache[require.resolve(MODE_PATH)]
         delete require.cache[require.resolve(ROUTER_PATH)]

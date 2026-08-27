@@ -46,7 +46,7 @@ const websocket = require("../../../websocket.js");
 const WebSocket = require("isomorphic-ws");
 
 const fs = require("fs");
-const { isLean } = require("../../Utils/deploymentMode");
+const { isFull } = require("../../Utils/deploymentMode");
 const deepmerge = require("deepmerge");
 const mergeConfigWithTemplate = require("../mergeConfigWithTemplate");
 
@@ -248,6 +248,28 @@ router.get("/get", function (req, res, next) {
 });
 
 function add(req, res, next, cb) {
+  req.body = req.body || {};
+
+  // Validate the mission name before it is used anywhere below.
+  // Fix validation logic: use OR conditions instead of AND
+  if (
+    typeof req.body.mission !== "string" ||
+    req.body.mission.length === 0 ||
+    req.body.mission !==
+      req.body.mission.replace(
+        /[`~!@#$%^&*()|+\-=?;:'",.<>\{\}\[\]\\\/]/gi,
+        ""
+      ) ||
+    !isNaN(req.body.mission[0]) ||
+    req.body.mission.includes("../") ||
+    req.body.mission.includes("..\\")
+  ) {
+    logger("error", "Attempted to add bad mission name.", req.originalUrl, req);
+    if (cb) cb({ status: "failure", message: "Bad mission name." });
+    else res.send({ status: "failure", message: "Bad mission name." });
+    return;
+  }
+
   let configTemplate = JSON.parse(JSON.stringify(config_template));
 
   // If a config is provided, merge it over the template. The template acts
@@ -257,26 +279,19 @@ function add(req, res, next, cb) {
     configTemplate = mergeConfigWithTemplate(configTemplate, req.body.config);
   }
 
+  // A posted config can clobber msv (e.g. msv: null survives the merge);
+  // make sure it's an object before writing the mission name into it.
+  if (
+    configTemplate.msv == null ||
+    typeof configTemplate.msv !== "object" ||
+    Array.isArray(configTemplate.msv)
+  ) {
+    configTemplate.msv = {};
+  }
+
   configTemplate.msv.mission = req.body.mission;
   // Set missionFolderName to match the mission name by default
   configTemplate.msv.missionFolderName = req.body.mission;
-
-  // Fix validation logic: use OR conditions instead of AND
-  if (
-    req.body.mission !==
-      req.body.mission.replace(
-        /[`~!@#$%^&*()|+\-=?;:'",.<>\{\}\[\]\\\/]/gi,
-        ""
-      ) ||
-    req.body.mission.length === 0 ||
-    !isNaN(req.body.mission[0]) ||
-    req.body.mission.includes("../") ||
-    req.body.mission.includes("..\\")
-  ) {
-    logger("error", "Attempted to add bad mission name.", req.originalUrl, req);
-    res.send({ status: "failure", message: "Bad mission name." });
-    return;
-  }
 
   let newConfig = {
     mission: req.body.mission,
@@ -298,19 +313,31 @@ function add(req, res, next, cb) {
             // a local Missions/ filesystem, so skip creating the directory tree.
             if (
               (req.body.makedir === true || req.body.makedir === "true") &&
-              !isLean()
+              isFull()
             ) {
-              let dir = "./Missions/" + created.mission;
-              if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir);
-                let dir2 = dir + "/Layers";
-                if (!fs.existsSync(dir2)) {
-                  fs.mkdirSync(dir2);
-                }
-                let dir3 = dir + "/Data";
-                if (!fs.existsSync(dir3)) {
-                  fs.mkdirSync(dir3);
-                }
+              const dir = "./Missions/" + created.mission;
+              try {
+                fs.mkdirSync(dir, { recursive: true });
+                fs.mkdirSync(dir + "/Layers", { recursive: true });
+                fs.mkdirSync(dir + "/Data", { recursive: true });
+              } catch (err) {
+                logger(
+                  "error",
+                  "Created mission '" +
+                    created.mission +
+                    "' but failed to create its Missions/ directories.",
+                  req.originalUrl,
+                  req,
+                  err
+                );
+                const failure = {
+                  status: "failure",
+                  message:
+                    "The mission's configuration was created, but its Missions/ directories could not be.",
+                };
+                if (cb) cb(failure);
+                else res.send(failure);
+                return null;
               }
             }
 
@@ -744,6 +771,15 @@ function relativizePaths(config, mission) {
 //hasPaths
 if (fullAccess)
   router.post("/clone", function (req, res, next) {
+    // Cloning runs a script over the local Missions/ filesystem, which lean
+    // mode (object-storage-backed) does not have.
+    if (!isFull()) {
+      res.send({
+        status: "failure",
+        message: "Cloning missions is unavailable in lean mode.",
+      });
+      return;
+    }
     req.query.full = true;
     req.query.mission = req.body.existingMission;
 
@@ -764,7 +800,36 @@ if (fullAccess)
             encodeURIComponent(req.body.cloneMission),
           ],
           function (error, stdout, stderr) {
-            stdout = JSON.parse(stdout);
+            if (error) {
+              logger(
+                "error",
+                "Failed to clone mission.",
+                req.originalUrl,
+                req,
+                error
+              );
+              res.send({
+                status: "failure",
+                message: "Failed to clone mission.",
+              });
+              return;
+            }
+            try {
+              stdout = JSON.parse(stdout);
+            } catch (parseErr) {
+              logger(
+                "error",
+                "Failed to parse mission clone script output.",
+                req.originalUrl,
+                req,
+                parseErr
+              );
+              res.send({
+                status: "failure",
+                message: "Failed to clone mission.",
+              });
+              return;
+            }
             if (stdout.status == "success") {
               add(req, res, next, function (r2) {
                 if (r2.status == "success") {
