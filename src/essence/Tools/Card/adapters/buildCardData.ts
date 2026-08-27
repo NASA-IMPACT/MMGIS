@@ -8,16 +8,43 @@ export type RawCard = {
     linkUrl?: string
 }
 
+// Matches the lean-mode upload writer's own key shape exactly:
+// "assets/<mission>/<subdir>/uploads/<file>" (see
+// API/Backend/Upload/uploadRouter.js) — two path segments between "assets/"
+// and "/uploads/", not just "contains /uploads/ somewhere". This declassifies
+// lookalikes such as "assets/uploads/x.png" (a plugin whose own subdir is
+// literally "assets"), which falls through to the mission-relative branch
+// instead of being misread as the writer's shape.
+//
+// Mirrored by ASSETS_UPLOAD_KEY in configure/src/core/upload.js, which
+// classifies the same stored values for the CMS's preview. The two live in
+// separate bundles (app and Configure SPA) so they cannot share a module;
+// tests/unit/uploadPreviewSrc.spec.js fails if they diverge.
+const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
+
 // Resolves a stored card image value to a renderable URL.
 // Mission-relative paths (e.g. "CardPlugin/uploads/a.png") are prefixed with
-// the mission path (e.g. "Missions/MSL/"); absolute/data/root-relative URLs
-// pass through unchanged.
+// the mission path (e.g. "Missions/MSL/"); absolute/data URLs pass through
+// unchanged. Values matching ASSETS_UPLOAD_KEY above — e.g.
+// "assets/MSL/CardPlugin/uploads/a.png" — are relative to the dashboard's
+// own root rather than the mission, so they are returned relative to the
+// document base instead of being mission-prefixed — correct both in a
+// published dashboard (whose entry URL always ends in "/") and in admin mode
+// (which serves from the origin root). A legacy rooted "/assets/..." value
+// is rebased to that same slash-less shape before the test. Anything else —
+// including an "assets/" value that doesn't match the writer's shape — falls
+// through: an already-rooted path passes through unchanged, and everything
+// else is treated as mission-relative.
 export function resolveImageUrl(
     image: string | undefined | null,
     missionPath: string | null,
 ): string {
     if (!image) return ''
-    if (/^(https?:|data:|\/)/i.test(image)) return image
+    if (/^(https?:|data:)/i.test(image)) return image
+    const rooted = image.startsWith('/')
+    const rebased = rooted ? image.slice(1) : image
+    if (ASSETS_UPLOAD_KEY.test(rebased)) return rebased
+    if (rooted) return image
     return (missionPath || '') + image
 }
 

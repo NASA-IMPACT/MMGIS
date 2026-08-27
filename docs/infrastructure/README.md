@@ -57,6 +57,7 @@ The Terraform is split into two roots, so that different access permissions can 
 | [aws-environments.md](aws-environments.md) | What exists in AWS per environment, how the module builds it, and where the app's secrets and images come from |
 | [pipelines.md](pipelines.md) | What happens on a PR, on a merge to `development`, and on a merge to `production` — the shared workflows, run modes, approval gates, and rollback |
 | [identity.md](identity.md) | Why any of those API calls are permitted — how CI authenticates to AWS without stored keys, and what stops it from granting itself more access |
+| [serving-a-dashboard-from-your-domain.md](serving-a-dashboard-from-your-domain.md) | What a customer's CloudFront must do to serve a published dashboard from a path on their own domain — the entire integration contract |
 
 Reading order for a newcomer: environments, then pipelines, then identity.
 

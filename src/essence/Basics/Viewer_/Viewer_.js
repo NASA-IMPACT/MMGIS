@@ -15,6 +15,17 @@ import './Viewer_.css'
 
 let L = window.L
 
+// Resolves a relative viewer asset (master image, model texture) under the
+// active mission. A static build is served from the document's own directory,
+// which may sit under a customer path prefix, so the mission path stays
+// relative; the full app serves these from get_profile, four levels down from
+// the mmgis dir.
+function missionRelativeAssetPath(relativePath) {
+    return isStaticBuild()
+        ? L_.missionPath + relativePath
+        : '../../../../' + L_.missionPath + relativePath
+}
+
 var Viewer_ = {
     wasInitialized: false,
     viewer: $('#viewer'),
@@ -305,10 +316,8 @@ var Viewer_ = {
         if (o.hasOwnProperty('master') && o.master != null) {
             this.masterImg = o.master
             //Check if it's absolute or relative
-            //../../../../ is from get_profile to mmgis dir
             if (!F_.isUrlAbsolute(this.masterImg))
-                this.masterImg =
-                    '../../../../' + L_.missionPath + this.masterImg
+                this.masterImg = missionRelativeAssetPath(this.masterImg)
         } else this.masterImg = null
 
         if (o.isModel) {
@@ -331,7 +340,7 @@ var Viewer_ = {
 
             let textureURL = o.texture
             if (!F_.isUrlAbsolute(textureURL))
-                textureURL = '../../../../' + L_.missionPath + textureURL
+                textureURL = missionRelativeAssetPath(textureURL)
 
             window.onresize = this.modelviewer.resize
             Viewer_.toolBarLoading.css('opacity', '1')
