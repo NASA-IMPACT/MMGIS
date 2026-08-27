@@ -3,6 +3,7 @@ import {
     evaluate_cmap,
     data as colormapData,
 } from '../../src/external/js-colormaps/js-colormaps.js'
+import { buildColormapLUT } from '../../src/essence/Basics/MapEngines/Adapters/colormapLUT.ts'
 import {
     listLocalColormapNames,
     hasLocalColormap,
@@ -58,12 +59,30 @@ describe('getLocalColormapColors', () => {
         expect(reversed[0]).toBe(forward[forward.length - 1])
     })
 
-    // A qualitative ramp carries a fixed palette. Resampling it at the
-    // interpolated ramp's resolution would repeat entries unevenly and paint
-    // bands of the wrong width, so it must emit exactly its own colors.
-    test('emits a discrete ramp at its own length, not the sample count', () => {
+    // The swatch and the GPU both stand for the same rendered pixels, so they
+    // have to be sampled identically. A qualitative ramp emitted at its own
+    // palette length would blend smoothly across its colours, where the GPU
+    // paints — and a tile server returns — hard bands of equal width.
+    test('samples a discrete ramp exactly as the GPU lookup table does', () => {
         const colors = getLocalColormapColors('Accent')
-        expect(colors).toHaveLength(colormapData.Accent.colors.length)
+        const lut = buildColormapLUT('Accent')
+
+        expect(colors).toHaveLength(256)
+        const fromLut = (i) =>
+            `rgba(${lut[i * 4]}, ${lut[i * 4 + 1]}, ${lut[i * 4 + 2]}, 1)`
+        expect(colors).toEqual(Array.from({ length: 256 }, (_, i) => fromLut(i)))
+        // Eight colours, each held for a run rather than blended between.
+        expect(new Set(colors).size).toBe(colormapData.Accent.colors.length)
+    })
+
+    test('samples an interpolated ramp exactly as the GPU lookup table does', () => {
+        const colors = getLocalColormapColors('viridis')
+        const lut = buildColormapLUT('viridis')
+
+        expect(colors).toHaveLength(256)
+        expect(colors[128]).toBe(
+            `rgba(${lut[128 * 4]}, ${lut[128 * 4 + 1]}, ${lut[128 * 4 + 2]}, 1)`
+        )
     })
 
     test('returns null for a name the evaluator does not define', () => {

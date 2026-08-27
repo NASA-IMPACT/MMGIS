@@ -172,38 +172,31 @@ test.describe('buildLayerLegendData', () => {
 })
 
 /**
- * The ramps the app can paint itself cross the plugin boundary as data: lib
- * never reaches into core's evaluator. Alongside them travels which renderer
- * paints the layer, which decides whether a service's extra ramps may be
- * offered for it.
+ * A layer's ramps come from whatever paints it, so the table only travels for
+ * a layer the app renders itself. A tile-server-rendered layer keeps resolving
+ * ramps from that service: it defines them, and it is what paints the pixels a
+ * swatch stands for.
  */
 test.describe('buildLayerLegendData local colormaps', () => {
     const DECK_COG = { hasColormap: true, canChangeColormap: true, deckRaster: true }
     const TABLE = { viridis: ['rgba(68, 1, 84, 1)'] }
 
-    test('carries the local ramp table onto the COG block', () => {
+    test('carries the table for a client-side rendered layer', () => {
         const result = buildLayerLegendData(
-            'layerL1', { cogColormap: 'viridis' }, null, true, EDITABLE_COG, null, TABLE,
+            'layerL1', { cogColormap: 'viridis' }, null, true, DECK_COG, null, TABLE,
         )
         expect(result.cog?.localColormaps).toEqual(TABLE)
     })
 
-    test('reports the client-side renderer from the capability', () => {
-        const cfg = { cogColormap: 'viridis' }
-        expect(
-            buildLayerLegendData('layerL2', cfg, null, true, DECK_COG, null, TABLE).cog?.deckRaster,
-        ).toBe(true)
-        expect(
-            buildLayerLegendData('layerL3', cfg, null, true, EDITABLE_COG, null, TABLE).cog
-                ?.deckRaster,
-        ).toBe(false)
+    test('withholds the table from a tile-server rendered layer', () => {
+        const result = buildLayerLegendData(
+            'layerL2', { cogColormap: 'viridis' }, null, true, EDITABLE_COG, null, TABLE,
+        )
+        expect(result.cog?.localColormaps).toBeNull()
     })
 
-    // Core supplies the table; an older caller that does not is not a reason
-    // to drop the COG block.
     test('leaves the table null when none is supplied', () => {
-        const result = buildLayerLegendData('layerL4', { cogColormap: 'viridis' }, null, true, EDITABLE_COG)
+        const result = buildLayerLegendData('layerL3', { cogColormap: 'viridis' }, null, true, DECK_COG)
         expect(result.cog?.localColormaps).toBeNull()
-        expect(result.cog?.deckRaster).toBe(false)
     })
 })

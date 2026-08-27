@@ -27,10 +27,11 @@ export type ColorRampPickerProps = {
     max: number
     units?: string | null
     titilerUrl?: string | null
-    /** Ramps the app can paint itself, as name -> ordered CSS colors. */
+    /**
+     * Ramps the app can paint itself, as name -> ordered CSS colors. Present
+     * only for a layer the app renders, and then the whole ramp vocabulary.
+     */
     localColormaps?: Record<string, string[]> | null
-    /** Whether the client-side renderer paints this layer. */
-    deckRaster?: boolean
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
 }
@@ -51,7 +52,6 @@ export function ColorRampPicker({
     units,
     titilerUrl,
     localColormaps,
-    deckRaster = false,
     onColormapChange,
     onRescaleChange,
 }: ColorRampPickerProps) {
@@ -81,7 +81,7 @@ export function ColorRampPicker({
     const {
         colormaps: availableColormaps,
         loading: colormapsLoading,
-    } = useAvailableColormaps(titilerUrl, localRampNames, deckRaster)
+    } = useAvailableColormaps(titilerUrl, localRampNames)
 
     // The service reports each ramp twice, forward and reversed; direction is
     // the toggle's job, so only the forward names are listed.

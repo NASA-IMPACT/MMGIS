@@ -14,8 +14,11 @@ import {
     data as colormapData,
 } from '../../../external/js-colormaps/js-colormaps.js'
 
-/** Samples per interpolated ramp, matching the length TiTiler's payload carries. */
-const INTERPOLATED_SAMPLES = 256
+/**
+ * Samples per ramp. Matches both the GPU lookup table's resolution and the
+ * length a tiling service's payload carries, so all three agree.
+ */
+const SAMPLES = 256
 
 const REVERSED_SUFFIX = /_r$/i
 
@@ -62,13 +65,16 @@ export function listLocalColormapNames(): string[] {
 }
 
 /**
- * One ramp's ordered CSS colours, in the shape the TiTiler fetch used to
- * return so gradient rendering is unchanged.
+ * One ramp's ordered CSS colours — the same 256 samples `buildColormapLUT`
+ * uploads to the GPU, so a swatch cannot disagree with the pixels it stands
+ * for. It is also the shape a tiling service returns, which reports even a
+ * qualitative ramp as 256 entries rather than its palette length.
  *
- * A qualitative ramp emits exactly its own palette: `evaluate_cmap` buckets
- * such a ramp into `colors.length` bands, so sampling it at the interpolated
- * resolution would repeat entries at uneven widths and paint the wrong bands.
- * Each band is sampled at its midpoint to land inside it.
+ * Every ramp is sampled uniformly, qualitative ones included: `evaluate_cmap`
+ * buckets those itself, so uniform sampling reproduces their hard bands.
+ * Emitting a qualitative ramp at its own palette length instead would leave
+ * the gradient blending smoothly between its colours, which is neither what
+ * the GPU paints nor what a tile server serves.
  */
 export function getLocalColormapColors(
     name: string | null | undefined
@@ -76,16 +82,10 @@ export function getLocalColormapColors(
     const resolved = resolveLocalColormap(name)
     if (resolved == null) return null
 
-    const entry = entries[resolved.name]
-    const count = entry.interpolate ? INTERPOLATED_SAMPLES : entry.colors.length
-    const positionOf = entry.interpolate
-        ? (i: number) => i / (count - 1)
-        : (i: number) => (i + 0.5) / count
-
     const colors: string[] = []
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < SAMPLES; i++) {
         const [r, g, b] = evaluate_cmap(
-            positionOf(i),
+            i / (SAMPLES - 1),
             resolved.name,
             resolved.reverse
         )

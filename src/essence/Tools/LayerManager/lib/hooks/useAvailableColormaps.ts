@@ -22,24 +22,20 @@ const byRampThenDirection = (a: string, b: string): number => {
  * obtained at all, which callers surface as "ramps unavailable" rather than an
  * empty list.
  *
- * `localColormaps` names the ramps the app can paint itself, supplied as data
- * by core. `deckRaster` says the layer is painted by that client-side renderer
- * — and then those ramps are the whole list, because a service's extra ramps
- * would be offered but silently render as the fallback. A server-rendered
- * layer gets both, since its tile server can paint whatever it registers.
- *
- * Whenever local ramps are known they are also the floor: an unreachable
- * service degrades the list rather than emptying it.
+ * A ramp list comes from whatever paints the layer. `localColormaps` is
+ * supplied by core only for a layer the app renders itself, and is then the
+ * whole list: a service's ramps are defined by that service, may differ from
+ * what this renderer paints, and its extras cannot be painted here at all.
+ * A server-rendered layer is handed none, and keeps asking its service.
  */
 export const useAvailableColormaps = (
     titilerUrl: string | null = null,
     localColormaps: string[] | null = null,
-    deckRaster = false,
 ): Result => {
     const local = localColormaps?.length ? localColormaps : null
     // A locally-rendered layer never consults the service, so there is no base
     // URL to resolve and nothing to wait for.
-    const baseUrl = local && deckRaster ? null : resolveTiTilerBase(titilerUrl)
+    const baseUrl = local ? null : resolveTiTilerBase(titilerUrl)
     const localSorted = local ? [...local].sort(byRampThenDirection) : null
     const [colormaps, setColormaps] = useState<string[] | null>(localSorted)
     // A reachable service is presumed to be loading from the first render,
@@ -67,18 +63,15 @@ export const useAvailableColormaps = (
                 if (cancelled) return
                 const colormapList = parseColormapList(data)
                 if (colormapList == null) {
-                    setColormaps(localSorted)
+                    setColormaps(null)
                     return
                 }
-                const merged = local
-                    ? [...new Set([...local, ...colormapList])]
-                    : [...colormapList]
-                setColormaps(merged.sort(byRampThenDirection))
+                setColormaps([...colormapList].sort(byRampThenDirection))
             } catch (err) {
                 if (!cancelled) {
                     console.warn('Failed to fetch available colormaps:', err)
                     setError(err as Error)
-                    setColormaps(localSorted)
+                    setColormaps(null)
                 }
             } finally {
                 if (!cancelled) setLoading(false)

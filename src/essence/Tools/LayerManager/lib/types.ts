@@ -20,15 +20,12 @@ export type CogData = {
   titilerUrl: string | null
   /**
    * Ramps the app can paint without a service, as name -> ordered CSS colors.
-   * Supplied as data by core: lib never reaches into the colormap evaluator.
+   * Supplied as data by core (lib never reaches into the colormap evaluator),
+   * and only for a layer the app renders itself — for which it is then the
+   * whole ramp vocabulary. Null means this layer's ramps belong to its tiling
+   * service, which defines them and paints the pixels they stand for.
    */
   localColormaps: Record<string, string[]> | null
-  /**
-   * Whether the client-side renderer paints this layer. It can only paint the
-   * ramps in `localColormaps`, so a picker must not offer a service's extras
-   * for such a layer — they would silently render as the fallback ramp.
-   */
-  deckRaster: boolean
 }
 
 export type Layer = {

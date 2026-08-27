@@ -72,9 +72,11 @@ const buildCategoricalFields = (legend: MMGISLegendEntry[]): CategoricalStop[] =
  * ramp swatches with nowhere to load from.
  *
  * `localColormaps` carries the ramps the app can paint itself, as data rather
- * than an import: lib never reaches into core's colormap evaluator. Paired
- * with the capability's `deckRaster`, it lets a picker offer exactly the ramps
- * the layer's own renderer can produce.
+ * than an import: lib never reaches into core's colormap evaluator. It travels
+ * only for a layer the app renders itself, and is then that layer's whole ramp
+ * vocabulary. A tile-server rendered layer is withheld it and keeps resolving
+ * ramps from its service — the service defines them, and it is what paints the
+ * pixels a swatch stands for.
  */
 export const buildLayerLegendData = (
     layerName: string,
@@ -99,8 +101,8 @@ export const buildLayerLegendData = (
               defaultColormap: layerConfig.cogColormap || 'viridis',
               units: layerConfig.cogUnits ?? null,
               titilerUrl,
-              localColormaps,
-              deckRaster: cogCapabilities.deckRaster === true,
+              localColormaps:
+                  cogCapabilities.deckRaster === true ? localColormaps : null,
           }
         : null
 

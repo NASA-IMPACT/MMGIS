@@ -44,7 +44,6 @@ const editableCogLayer = (): Layer => ({
         units: 'm',
         titilerUrl: null,
         localColormaps: null,
-        deckRaster: false,
     },
 })
 
