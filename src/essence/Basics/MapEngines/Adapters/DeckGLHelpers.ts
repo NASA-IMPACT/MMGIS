@@ -22,6 +22,8 @@ import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
 import { WMSImageSource } from '@loaders.gl/wms'
 import { color as parseColor } from 'd3'
 
+import { compileLegendStyle, resolveLegendStyle } from '../../Layers_/LegendStyle'
+
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
 import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions, VectorTileLayerOptions, PointCloudLayerOptions } from '../types/layers'
 import type { FeaturePickResult } from '../types/events'
@@ -278,6 +280,15 @@ function parseWmsUrl(url: string): {
     return { base, layers, wmsParameters, vendorParameters }
 }
 
+/** The properties bag a legend's property names are looked up against. */
+function featureProperties(feature: unknown): Record<string, unknown> | null {
+    if (feature == null || typeof feature !== 'object') return null
+    return (
+        (feature as { properties?: Record<string, unknown> }).properties ??
+        (feature as Record<string, unknown>)
+    )
+}
+
 /**
  * Resolve the per-feature style accessors shared by the `vector` and
  * `vectortile` layers.
@@ -286,8 +297,19 @@ function parseWmsUrl(url: string): {
  * value from, and the matching flat field is the fallback for features that do
  * not carry that property. When no `*Prop` is configured the accessor is
  * returned as a plain constant, so deck.gl skips per-feature evaluation.
+ *
+ * `legendData` is the layer's legend, which doubles as a style specification
+ * (see LegendStyle). Its colours outrank both the `*Prop` and the flat fields,
+ * matching the precedence the Leaflet vector path has always applied. It is
+ * compiled here, once per layer build, because these accessors run per feature
+ * per frame. A legend that specifies no styling leaves the constants intact.
  */
-function resolveStyleAccessors(style: Record<string, unknown>) {
+function resolveStyleAccessors(
+    style: Record<string, unknown>,
+    legendData?: unknown
+) {
+    const legend = compileLegendStyle(legendData)
+
     const staticFillColor = hexToRgba(
         style.fillColor as string | undefined,
         style.fillOpacity !== undefined ? Number(style.fillOpacity) : 0.8,
@@ -309,17 +331,25 @@ function resolveStyleAccessors(style: Record<string, unknown>) {
     const radiusProp = style.radiusProp as string | undefined
 
     const getFillColor =
-        fillColorProp || fillOpacityProp
+        fillColorProp || fillOpacityProp || legend
             ? (feature: Record<string, unknown>) => {
+                  // A feature the legend does not cover — no such property,
+                  // or a non-numeric value — resolves to undefined here and
+                  // drops through to the *Prop and flat colours below, so it
+                  // keeps the layer's fixed colour rather than drawing black.
+                  const legendVal = legend
+                      ? resolveLegendStyle(legend, featureProperties(feature))?.fillColor
+                      : undefined
                   const hexVal = fillColorProp
                       ? (getPropValue(feature, fillColorProp) as string | undefined)
                       : undefined
                   const alphaVal = fillOpacityProp
                       ? getPropValue(feature, fillOpacityProp)
                       : undefined
-                  if (hexVal === undefined && alphaVal === undefined) return staticFillColor
+                  if (legendVal === undefined && hexVal === undefined && alphaVal === undefined)
+                      return staticFillColor
                   return hexToRgba(
-                      hexVal ?? (style.fillColor as string | undefined),
+                      legendVal ?? hexVal ?? (style.fillColor as string | undefined),
                       alphaVal !== undefined
                           ? Number(alphaVal)
                           : style.fillOpacity !== undefined
@@ -331,17 +361,21 @@ function resolveStyleAccessors(style: Record<string, unknown>) {
             : staticFillColor
 
     const getLineColor =
-        colorProp || opacityProp
+        colorProp || opacityProp || legend
             ? (feature: Record<string, unknown>) => {
+                  const legendVal = legend
+                      ? resolveLegendStyle(legend, featureProperties(feature))?.color
+                      : undefined
                   const hexVal = colorProp
                       ? (getPropValue(feature, colorProp) as string | undefined)
                       : undefined
                   const alphaVal = opacityProp
                       ? getPropValue(feature, opacityProp)
                       : undefined
-                  if (hexVal === undefined && alphaVal === undefined) return staticLineColor
+                  if (legendVal === undefined && hexVal === undefined && alphaVal === undefined)
+                      return staticLineColor
                   return hexToRgba(
-                      hexVal ?? (style.color as string | undefined),
+                      legendVal ?? hexVal ?? (style.color as string | undefined),
                       alphaVal !== undefined
                           ? Number(alphaVal)
                           : style.opacity !== undefined
@@ -472,7 +506,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     : {}
 
             const { getFillColor, getLineColor, getLineWidth, getPointRadius } =
-                resolveStyleAccessors(style)
+                resolveStyleAccessors(style, o.legend)
 
             const markerIcon = o.variables?.markerIcon
             const iconUrl = markerIcon?.iconUrl
@@ -528,7 +562,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 getLineWidth,
                 getPointRadius,
                 readsFeatureProperties,
-            } = resolveStyleAccessors(style)
+            } = resolveStyleAccessors(style, o.legend)
 
             return new MVTLayer({
                 id,

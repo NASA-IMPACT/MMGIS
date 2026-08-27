@@ -16,6 +16,13 @@ export interface LayerOptions {
     interactive?: boolean
     visible?: boolean
     style?: Record<string, unknown>
+    /**
+     * The layer's legend rows (`L_.layers.data[<layer>]._legend`). Rows flagged
+     * `styleMatching` double as a style specification, colouring each feature
+     * from one of its property values; see LegendStyle. With no legend, or none
+     * carrying such rows, the engine styles from `style` alone.
+     */
+    legend?: unknown
     metadata?: Record<string, unknown>
 }
 

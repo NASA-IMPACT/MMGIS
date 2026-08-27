@@ -331,6 +331,116 @@ test.describe('DeckGLHelpers', () => {
             expect(Array.isArray(layer.props.getLineColor)).toBe(true)
         })
 
+        // Legend styling (issue #345): a legend's styleMatching entries colour
+        // features from a property value, and the deck.gl engine has to honour
+        // the same configuration the Leaflet vector path always has.
+        const co2Ramp = [
+            {
+                styleMatching: true,
+                propertyName: 'co2',
+                propertyValue: '400',
+                shape: 'continuous',
+                color: '#000000',
+            },
+            {
+                styleMatching: true,
+                propertyName: 'co2',
+                propertyValue: '440',
+                shape: 'continuous',
+                color: '#ffffff',
+            },
+        ]
+
+        const rampedLayer = (id, type, extra = {}) =>
+            buildDeckLayer(id, {
+                type,
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                geojson: { type: 'FeatureCollection', features: [] },
+                style: {
+                    fillColor: '#00ff00',
+                    fillOpacity: 1,
+                    color: '#00ff00',
+                    opacity: 1,
+                    ...extra,
+                },
+                legend: co2Ramp,
+            })
+
+        test.each([['vectortile'], ['vector']])(
+            'ramps %s fill and line colour across a numeric property',
+            (type) => {
+                const layer = rampedLayer(`legend-ramp-${type}`, type)
+                const feature = { properties: { co2: 420 } }
+                // Midway between the black and white stops. Interpolation
+                // yields an rgb() string, which has to survive the conversion
+                // to a deck.gl RGBA tuple.
+                expect(layer.props.getFillColor(feature)).toEqual([128, 128, 128, 255])
+                expect(layer.props.getLineColor(feature)).toEqual([128, 128, 128, 255])
+            }
+        )
+
+        test.each([['vectortile'], ['vector']])(
+            'clamps %s values outside the ramp to the end colours',
+            (type) => {
+                const layer = rampedLayer(`legend-clamp-${type}`, type)
+                expect(layer.props.getFillColor({ properties: { co2: -50 } })).toEqual([0, 0, 0, 255])
+                expect(layer.props.getFillColor({ properties: { co2: 9000 } })).toEqual([255, 255, 255, 255])
+            }
+        )
+
+        test.each([['vectortile'], ['vector']])(
+            'falls %s features off the ramp back to the fixed colour',
+            (type) => {
+                const layer = rampedLayer(`legend-fallback-${type}`, type)
+                // Neither invisible nor black: the layer's own fillColor.
+                expect(layer.props.getFillColor({ properties: {} })).toEqual([0, 255, 0, 255])
+                expect(layer.props.getFillColor({ properties: { co2: 'high' } })).toEqual([0, 255, 0, 255])
+                expect(layer.props.getLineColor({ properties: { co2: null } })).toEqual([0, 255, 0, 255])
+            }
+        )
+
+        test('lets legend colours outrank the *Prop colours', () => {
+            const layer = rampedLayer('legend-precedence', 'vectortile', {
+                fillColorProp: 'c',
+            })
+            expect(
+                layer.props.getFillColor({ properties: { co2: 400, c: '#ff0000' } })
+            ).toEqual([0, 0, 0, 255])
+            // With no ramp value the *Prop colour is still read.
+            expect(
+                layer.props.getFillColor({ properties: { c: '#ff0000' } })
+            ).toEqual([255, 0, 0, 255])
+        })
+
+        test('keeps the layer opacity when a legend supplies the colour', () => {
+            const layer = rampedLayer('legend-opacity', 'vectortile', {
+                fillOpacity: 0.5,
+            })
+            expect(layer.props.getFillColor({ properties: { co2: 400 } })[3]).toBe(128)
+        })
+
+        test('applies a discrete legend by exact property value', () => {
+            const layer = buildDeckLayer('legend-discrete', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#00ff00', fillOpacity: 1 },
+                legend: [
+                    {
+                        styleMatching: true,
+                        propertyName: 'kind',
+                        propertyValue: 'station',
+                        color: '#ff0000',
+                    },
+                ],
+            })
+            expect(
+                layer.props.getFillColor({ properties: { kind: 'station' } })
+            ).toEqual([255, 0, 0, 255])
+            expect(
+                layer.props.getFillColor({ properties: { kind: 'buoy' } })
+            ).toEqual([0, 255, 0, 255])
+        })
+
         // deck.gl decodes vector tiles into a binary form by default. Verified
         // against @loaders.gl/gis and deck.gl 9.3.7: a numeric property is
         // hoisted into one tile-wide typed array covering every feature, zero
@@ -386,6 +496,19 @@ test.describe('DeckGLHelpers', () => {
                 nativeOptions: { binary: true },
             })
             expect(overridden.props.binary).toBe(true)
+        })
+
+        test('keeps colour accessors static when the legend styles nothing', () => {
+            const layer = buildDeckLayer('legend-none', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#00ff00' },
+                // A plain display legend: no styleMatching entries.
+                legend: [{ color: '#ff0000', value: 'Stations' }],
+            })
+            // Constants, not functions — deck.gl skips per-feature evaluation.
+            expect(Array.isArray(layer.props.getFillColor)).toBe(true)
+            expect(Array.isArray(layer.props.getLineColor)).toBe(true)
         })
 
         test('creates a ScatterplotLayer for scatterplot type', () => {
