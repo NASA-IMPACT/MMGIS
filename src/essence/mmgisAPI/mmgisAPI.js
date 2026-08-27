@@ -7,6 +7,7 @@ import Login from '../Ancillary/Login/Login'
 import LegendTool from '../Tools/Legend/LegendTool.js'
 import { PANEL_STATE } from '../Basics/PanelManager_/types/layout'
 import mitt from 'mitt'
+import { registerCoreProviders } from './providers'
 
 import $ from 'jquery'
 
@@ -557,8 +558,7 @@ var mmgisAPI_ = {
                 return false
             }
             if (panel.state !== PANEL_STATE.COLLAPSED) return true
-            mmgisAPI_._panelManager.togglePanelCollapsed(panelId)
-            return true
+            return mmgisAPI_._panelManager.showPanel(panelId).ok
         } catch (e) {
             console.warn('[mmgisAPI] showPanel failed:', e)
             return false
@@ -589,8 +589,15 @@ var mmgisAPI_ = {
             return false
         }
         try {
-            mmgisAPI_._panelManager.togglePanelCollapsed(panelId)
-            return true
+            const panel = mmgisAPI_._panelManager.getPanelState(panelId)
+            if (!panel) {
+                console.warn(`[mmgisAPI] togglePanel: panel "${panelId}" not found`)
+                return false
+            }
+            const result = panel.state === PANEL_STATE.COLLAPSED
+                ? mmgisAPI_._panelManager.showPanel(panelId)
+                : mmgisAPI_._panelManager.setPanelState(panelId, PANEL_STATE.COLLAPSED)
+            return result.ok
         } catch (e) {
             console.warn('[mmgisAPI] togglePanel failed:', e)
             return false
@@ -1212,5 +1219,10 @@ mmgisAPI.provide('app:copyText', (text) =>
     // than clobber the user's clipboard with a coerced 'undefined'.
     typeof text === 'string' ? mmgisAPI_.copyText(text) : Promise.resolve(false)
 )
+
+registerCoreProviders(mmgisAPI, {
+    getPanelManager: () => mmgisAPI_._panelManager,
+    getPluginController: () => mmgisAPI_._pluginController,
+})
 
 export { mmgisAPI_, mmgisAPI }

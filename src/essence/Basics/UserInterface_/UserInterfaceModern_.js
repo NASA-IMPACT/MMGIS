@@ -251,7 +251,7 @@ const UserInterfaceModern_ = {
         }
 
         if (!cleanupLayoutListener) {
-            cleanupLayoutListener = mmgisAPI.on('mmgis-panel-layout-changed', this.syncDOMState.bind(this))
+            cleanupLayoutListener = mmgisAPI.on('panels:changed', this.syncDOMState.bind(this))
         }
 
         // Set up ResizeObserver to dispatch resize events when the center map area changes size
@@ -562,16 +562,7 @@ const UserInterfaceModern_ = {
             logger.debug(`Loading ${toolLoadQueue.length} queued tools`)
             const queue = toolLoadQueue;
             toolLoadQueue = [] // Clear the queue
-            setTimeout(() => {
-                queue.forEach(loadFn => {
-                    try {
-                        loadFn()
-                    } catch (error) {
-                        logger.error('Failed to load tool:', error)
-                        // Continue loading other tools even if one fails
-                    }
-                })
-            }, 0)
+            setTimeout(() => ToolControllerModern_.runLoadQueue(queue), 0)
         }
 
         this.attachResizeEvents()
