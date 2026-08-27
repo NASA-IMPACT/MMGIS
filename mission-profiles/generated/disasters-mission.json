@@ -157,7 +157,8 @@
         "panelTools": [
           "MapControlTool",
           "AddTempLayerTool",
-          "AOITool"
+          "AOITool",
+          "ChartTool"
         ],
         "id": "float-top-right",
         "dimensions": {
@@ -166,27 +167,6 @@
           "minWidth": "325px"
         },
         "transparent": true
-      },
-      {
-        "position": "float-top-right",
-        "hasHeader": false,
-        "stateConstraints": {
-          "allowedStates": [
-            "collapsed",
-            "expanded"
-          ],
-          "defaultState": "expanded"
-        },
-        "panelTools": [
-          "ChartTool"
-        ],
-        "id": "float-top-right-analysis",
-        "dimensions": {
-          "maxWidth": "",
-          "defaultWidth": "320px",
-          "minWidth": "325px"
-        },
-        "transparent": false
       }
     ],
     "layoutStyle": "compact"

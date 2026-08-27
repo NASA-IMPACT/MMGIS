@@ -622,3 +622,17 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     overflow: visible;
     border-radius: 0;
 }
+
+/* Visible overflow above means this panel's body cannot be the scroll
+   container, so a tool with more content than the zone has room for has to
+   bound and scroll itself — and it can only do that if its card is allowed to
+   give up height.
+
+   Which cards actually give way is settled by flex's own automatic minimum
+   rather than anything named here: a card keeps min-height auto, so it cannot
+   shrink below its content's intrinsic minimum. A tool that scrolls internally
+   reports almost none, so it yields; one that does not — map controls, say —
+   reports its full height and stays rigid. */
+.ui-modern-grid .ui-float-panel.ui-panel-transparent .ui-tool-card {
+    flex-shrink: 1;
+}
