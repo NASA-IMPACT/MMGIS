@@ -261,3 +261,122 @@ test.describe('handlers', () => {
         warn.mockRestore()
     })
 })
+
+// --- Switching a layer on brings it into view ------------------------------
+// A layer whose data sits outside the viewport draws correctly but looks
+// broken, so toggling it on moves the map — unless it already overlaps what
+// the user is looking at, where moving would be a nuisance.
+
+import { normalizeMapBounds, boundsIntersect } from '../adapters/handlers.ts'
+
+const VENEZUELA = [
+    [8.98, -70.05],
+    [11.55, -64.72],
+]
+const CONUS_VIEW = {
+    southWest: { lat: 24, lng: -125 },
+    northEast: { lat: 50, lng: -66 },
+}
+const VENEZUELA_VIEW = {
+    southWest: { lat: 8, lng: -71 },
+    northEast: { lat: 12, lng: -64 },
+}
+
+const toggleOn = (mapBounds, layerBounds = VENEZUELA) => ({
+    'layers:toggle': true,
+    'layers:getBounds': layerBounds,
+    'map:getBounds': mapBounds,
+    'map:fitBounds': true,
+})
+
+test('toggling a layer on moves the map when its data is off-screen', async () => {
+    const { requests } = setupMock(toggleOn(CONUS_VIEW))
+    await toggleVisibility('layerA')
+    const fit = requests.find((r) => r.name === 'map:fitBounds')
+    expect(fit).toBeDefined()
+    expect(fit.params.bounds).toEqual(VENEZUELA)
+    expect(fit.params.options.padding).toBe(ZOOM_TO_LAYER_PADDING)
+})
+
+test('toggling a layer on leaves the map alone when it already overlaps the view', async () => {
+    const { requests } = setupMock(toggleOn(VENEZUELA_VIEW))
+    await toggleVisibility('layerA')
+    expect(requests.find((r) => r.name === 'map:fitBounds')).toBeUndefined()
+})
+
+test('switching a layer OFF never moves the map', async () => {
+    const { requests } = setupMock({ ...toggleOn(CONUS_VIEW), 'layers:toggle': false })
+    await toggleVisibility('layerA')
+    expect(requests.find((r) => r.name === 'map:fitBounds')).toBeUndefined()
+})
+
+test('a layer with no extent is left alone rather than guessed at', async () => {
+    const { requests } = setupMock(toggleOn(CONUS_VIEW, null))
+    await toggleVisibility('layerA')
+    expect(requests.find((r) => r.name === 'map:fitBounds')).toBeUndefined()
+})
+
+// An unknown viewport is not grounds for moving the map.
+test('an unreadable viewport leaves the map alone', async () => {
+    const { requests } = setupMock(toggleOn({ nonsense: true }))
+    await toggleVisibility('layerA')
+    expect(requests.find((r) => r.name === 'map:fitBounds')).toBeUndefined()
+})
+
+test('the visibility event still fires regardless of any move', async () => {
+    const emits = []
+    setupMock(toggleOn(CONUS_VIEW), emits)
+    await toggleVisibility('layerA')
+    expect(emits).toContainEqual({
+        event: 'layer:visibilityChange',
+        payload: { layerName: 'layerA', visible: true },
+    })
+})
+
+test('normalizeMapBounds reads the Leaflet adapter shape', () => {
+    expect(normalizeMapBounds(CONUS_VIEW)).toEqual([
+        [24, -125],
+        [50, -66],
+    ])
+})
+
+// deck.gl's adapter returns Leaflet-style accessors instead of plain corners.
+test('normalizeMapBounds reads the deck.gl accessor shape', () => {
+    expect(
+        normalizeMapBounds({
+            getSouthWest: () => ({ lat: 24, lng: -125 }),
+            getNorthEast: () => ({ lat: 50, lng: -66 }),
+        }),
+    ).toEqual([
+        [24, -125],
+        [50, -66],
+    ])
+})
+
+test('normalizeMapBounds reads a corner tuple', () => {
+    expect(
+        normalizeMapBounds([
+            [24, -125],
+            [50, -66],
+        ]),
+    ).toEqual([
+        [24, -125],
+        [50, -66],
+    ])
+})
+
+test.each([
+    ['null', null],
+    ['a non-object', 'nope'],
+    ['missing corners', { southWest: { lat: 1, lng: 2 } }],
+    ['non-numeric corners', { southWest: { lat: 'a', lng: 'b' }, northEast: { lat: 1, lng: 2 } }],
+])('normalizeMapBounds returns null for %s', (_label, raw) => {
+    expect(normalizeMapBounds(raw)).toBeNull()
+})
+
+test('boundsIntersect is true for overlap and false for disjoint extents', () => {
+    expect(boundsIntersect(VENEZUELA, [[8, -71], [12, -64]])).toBe(true)
+    expect(boundsIntersect(VENEZUELA, [[24, -125], [50, -66]])).toBe(false)
+    // Touching edges count as overlapping — nothing to reveal.
+    expect(boundsIntersect([[0, 0], [10, 10]], [[10, 10], [20, 20]])).toBe(true)
+})
