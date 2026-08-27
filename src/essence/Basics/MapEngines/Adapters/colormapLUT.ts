@@ -2,7 +2,7 @@
 // reusing MMGIS's existing js-colormaps evaluator so the client-side render
 // and the TiTiler render agree (including matplotlib `_r` reversed variants).
 import { evaluate_cmap, data as colormapData } from '../../../../external/js-colormaps/js-colormaps.js'
-import { isReversedColormap, findColormapKey } from '../../../Tools/_shared/legend/colormaps'
+import { isReversedColormap, findColormapKey } from '../../Colormaps/colormapNaming'
 
 const FALLBACK = 'viridis'
 

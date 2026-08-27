@@ -1,9 +1,21 @@
-// Colormap naming, list parsing, and rescale validation.
+// Colormap list parsing, gradient building, and rescale validation, on top of
+// the core-owned naming primitives.
 //
 // TiTiler encodes a ramp's direction in its name: `viridis` is the forward
 // ramp, `viridis_r` the reversed one, and `/colorMaps` reports both. The UI
-// treats direction as a separate toggle rather than two list entries, so these
-// helpers split a name into (base, reversed) and recombine it on apply.
+// treats direction as a separate toggle rather than two list entries, so the
+// naming helpers split a name into (base, reversed) and this module recombines
+// it on apply. Those helpers live in core (Basics/Colormaps/colormapNaming),
+// which the raster renderer resolves its own names through; re-exporting them
+// here keeps one source of truth without core reaching into a plugin
+// directory for it.
+import {
+    isReversedColormap,
+    getBaseColormapName,
+    findColormapKey,
+} from '../../../Basics/Colormaps/colormapNaming'
+
+export { isReversedColormap, getBaseColormapName, findColormapKey }
 
 export type ColormapListResponse = {
     // TiTiler <= 0.22 reports a flat array of names under `colorMaps`.
@@ -11,33 +23,6 @@ export type ColormapListResponse = {
     // Later releases spell the key `colormaps` and carry each ramp as an
     // object holding its name and links.
     colormaps?: unknown
-}
-
-const REVERSED_SUFFIX = /_r$/i
-
-export const isReversedColormap = (name: string | null | undefined): boolean =>
-    typeof name === 'string' && REVERSED_SUFFIX.test(name)
-
-export const getBaseColormapName = (name: string | null | undefined): string => {
-    if (!name) return ''
-    return name.replace(REVERSED_SUFFIX, '')
-}
-
-/**
- * Case-insensitively matches a colormap name (optionally `_r`-suffixed)
- * against a set of canonical keys, returning the key's original casing. The
- * client-side js-colormaps evaluator (used by both the export legend and the
- * deckRaster renderer) keys its bundled ramps by their published casing
- * (e.g. `RdBu`), so a lowercased comparison is needed either way — shared
- * here so the two lookups can't drift apart.
- */
-export const findColormapKey = (
-    name: string | null | undefined,
-    keys: string[],
-): string | null => {
-    const base = getBaseColormapName(name).toLowerCase()
-    if (!base) return null
-    return keys.find((k) => k.toLowerCase() === base) ?? null
 }
 
 /** Recombine a base ramp name with a direction into the name TiTiler expects. */
