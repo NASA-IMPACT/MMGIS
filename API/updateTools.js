@@ -7,11 +7,12 @@ const { isLean } = require("./Backend/Utils/deploymentMode");
 const TOOL_ID_SHAPE = /^[a-z][a-z0-9-]*$/;
 
 // Module binding (paths key) -> canonical tool id. The binding names the
-// import; the id will name the tool everywhere else — on the bus, in the
-// modern controller's registries, and in teardown events. generateToolMetadata
-// (src/essence/Basics/ToolController_/ToolMetadataUtils.js) still derives its
-// own id and can disagree with this map ("fetchstats" vs "fetch-stats"); the
-// two are reconciled where the controller consumes toolIds.
+// import; the id names the tool everywhere else — on the bus, in the modern
+// controller's registries, and in teardown events. generateToolMetadata
+// (src/essence/Basics/ToolController_/ToolMetadataUtils.js) reads this map to
+// resolve a config's `js` binding to its id, and falls back to the same
+// derivation applied below for a binding the map doesn't carry, so the build
+// and the frontend never disagree about what a tool is called.
 //
 // A manifest declares its id top-level; an id that is present must be a string
 // matching TOOL_ID_SHAPE, so it is safe as a bus namespace. Tools that omit the

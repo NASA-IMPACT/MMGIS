@@ -35,8 +35,8 @@ describe('resolveAction', () => {
     })
 
     test('maps a plugin action to a pluginId request', async () => {
-        await resolveAction('plugins:show:DrawTool')
-        expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'DrawTool' })
+        await resolveAction('plugins:show:draw')
+        expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'draw' })
     })
 
     test('preserves colons inside a target', async () => {

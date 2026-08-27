@@ -8,7 +8,8 @@ const logger = createLogger('ToolControllerModern')
 
 // --- Module-Level State ---
 /**
- * Map of loaded tool instances: targetId -> { toolInstance, toolName, toolId, toolMetadata }
+ * Map of loaded tool instances:
+ * targetId -> { toolInstance, toolName, toolId, toolMetadata, targetId, api }
  */
 const loadedTools = new Map()
 
@@ -148,10 +149,17 @@ const ToolControllerModern_ = {
         tools.forEach(toolConfig => {
             const toolMetadata = generateToolMetadata(toolConfig)
 
-            // Store by ID (primary key)
-            if (toolConfigMap.has(toolMetadata.id)) {
-                logger.warn(`Duplicate tool ID detected: ${toolMetadata.id} - skipping duplicate tool`)
-                return
+            // Store by ID (primary key). The id is the tool's identity on the
+            // bus, in the DOM and in teardown events, so two tools claiming it
+            // is a broken mission config rather than something to work around:
+            // whichever lost the race would be missing from the layout with
+            // only a console line to say why, while the other answered for it.
+            const claimed = toolConfigMap.get(toolMetadata.id)
+            if (claimed) {
+                throw new Error(
+                    `[ToolControllerModern] Duplicate tool id "${toolMetadata.id}": ` +
+                    `"${claimed.metadata.name}" and "${toolMetadata.name}" both claim it`
+                )
             }
             toolConfigMap.set(toolMetadata.id, { config: toolConfig, metadata: toolMetadata })
 
@@ -304,7 +312,8 @@ const ToolControllerModern_ = {
      * Load and instantiate a tool in a specific target container
      *
      * @param {Object} toolMetadata - Tool metadata object
-     * @param {string} toolMetadata.id - Tool identifier (e.g., 'TitleTool')
+     * @param {string} toolMetadata.id - Canonical tool id (e.g., 'title')
+     * @param {string} toolMetadata.module - Registry binding (e.g., 'TitleTool')
      * @param {string} toolMetadata.name - Tool display name (e.g., 'Title')
      * @param {string} targetId - DOM element ID where tool should render
      * @returns {Object|null} Tool instance or null if failed
@@ -333,13 +342,27 @@ const ToolControllerModern_ = {
             return null
         }
 
+        // Held outside the try so a load that throws part-way can hand back
+        // whatever it had already taken.
+        let ToolClass = null
+        let api = null
+        let tracked = false
+
         try {
-            // Find the tool module in pre/tools.js exports
-            const ToolClass = toolModules[toolMetadata.id]
+            // The class is reached by the module binding; everything else about
+            // this tool is keyed by its canonical id. The own-property check is
+            // what makes a binding named after something on Object.prototype
+            // ('constructor', 'toString') miss: a bare lookup would hand back
+            // the inherited member, and the controller would stamp the tool's
+            // handle onto it and enter a phantom into the registries instead of
+            // reporting a module it cannot find.
+            ToolClass = Object.prototype.hasOwnProperty.call(toolModules, toolMetadata.module)
+                ? toolModules[toolMetadata.module]
+                : null
 
             if (!ToolClass) {
                 logger.error(
-                    `Tool module "${toolMetadata.id}" not found in toolModules.`,
+                    `Tool module "${toolMetadata.module}" (id "${toolMetadata.id}") not found in toolModules.`,
                     'Available tools:',
                     Object.keys(toolModules)
                 )
@@ -356,6 +379,13 @@ const ToolControllerModern_ = {
                 )
                 this.destroyTool(targetId)
             }
+
+            // Mint the tool's bus handle before it can run any of its own code,
+            // so initialize()/make() already have somewhere to hang providers
+            // and events. Whoever hands the handle out owns taking it back, so
+            // it is kept alongside the instance for destroyTool to release.
+            api = mmgisAPI.forPlugin(toolMetadata.id)
+            ToolClass.api = api
 
             // Initialize tool if it has an initialize method
             if (typeof ToolClass.initialize === 'function') {
@@ -375,8 +405,10 @@ const ToolControllerModern_ = {
                 toolName: toolMetadata.name,
                 toolId: toolMetadata.id,
                 toolMetadata: toolMetadata,
-                targetId: targetId
+                targetId: targetId,
+                api: api
             })
+            tracked = true
 
             // Register reverse lookup (toolId -> targetId) for show/hide/unload by toolId
             toolIdToTargetId.set(toolMetadata.id, targetId)
@@ -396,6 +428,16 @@ const ToolControllerModern_ = {
             return ToolClass
         } catch (error) {
             logger.error(`Failed to load tool "${toolMetadata.name}":`, error)
+
+            // The handle is minted before the tool runs any of its own code, so
+            // a load that got that far and then threw is holding registrations
+            // nothing else can reach: the instance was never tracked, so no
+            // destroyTool will ever come for it and its providers would answer
+            // for a tool that isn't there for the rest of the session.
+            if (api && !tracked) {
+                api.release()
+                if (ToolClass && ToolClass.api === api) ToolClass.api = null
+            }
             return null
         }
     },
@@ -404,18 +446,22 @@ const ToolControllerModern_ = {
      * Destroy a tool instance in a specific container
      *
      * @param {string} targetId - DOM element ID of the tool container
-     * @returns {boolean} True if destroyed successfully
+     * @returns {boolean} True if destroyed successfully. False covers both a
+     * tool whose own destroy() threw and a bus handle whose release did — in
+     * either case the lifecycle registries are still cleared, but something the
+     * tool held was not given back.
      */
     destroyTool: function (targetId) {
         if (!loadedTools.has(targetId)) {
             return false
         }
 
-        const { toolInstance, toolName, toolId } = loadedTools.get(targetId)
+        const { toolInstance, toolName, toolId, api } = loadedTools.get(targetId)
         let destroyed = true
 
         try {
-            // Call destroy() if available
+            // Call destroy() if available. It runs before the handle is taken
+            // back, so a tool can still speak to core while shutting down.
             if (typeof toolInstance.destroy === 'function') {
                 toolInstance.destroy()
             }
@@ -432,17 +478,35 @@ const ToolControllerModern_ = {
                 toolIdToTargetId.delete(toolId)
                 hiddenTools.delete(toolId)
             }
+
+            // Hand back what the minted handle registered — last, and guarded.
+            // A release drains its cleanups one at a time, so one that throws
+            // abandons the rest: whatever it had not reached yet stays on the
+            // bus, answering under `plugin:{id}:*` for a tool that is gone.
+            // That leak is the cost, and containing it here is what keeps it
+            // from also stranding the registries above (already consistent by
+            // this point) or swallowing the teardown announcement below. The
+            // instance is a module singleton, so its `api` is only cleared
+            // while it still points at this load's handle — a reload that
+            // already minted a fresh one keeps it.
+            if (api) {
+                try {
+                    api.release()
+                } catch (error) {
+                    logger.error(`Error releasing the bus handle for "${toolId}":`, error)
+                    destroyed = false
+                }
+                if (toolInstance.api === api) toolInstance.api = null
+            }
         }
 
-        // The teardown is announced on the bus rather than by any direct
-        // call, which is what keeps this controller from knowing anything
-        // about the services plugins reach for. It is an announcement, not a
-        // release: whatever the tool borrowed from core — the map popup, for
-        // one — its own destroy() hands back, because `pluginId` here is the
-        // controller's tool id, not the identity the tool spoke to core
-        // services with, so no listener could match this event to what the
-        // tool was holding. A listener releasing a shared resource on it
-        // would take a surviving plugin's with it.
+        // The teardown is announced on the bus rather than by any direct call,
+        // which is what keeps this controller from knowing anything about the
+        // services plugins reach for. `pluginId` is the tool's bus identity —
+        // the id its handle was minted with, the one it speaks to core
+        // services under — so a service holding a resource for this plugin can
+        // match the announcement to what it holds and let go of it, while a
+        // surviving plugin's stays untouched.
         mmgisAPI.emit('plugins:destroyed', Object.freeze({ pluginId: toolId }))
 
         if (destroyed) {
@@ -553,7 +617,7 @@ const ToolControllerModern_ = {
      * Show a plugin that was hidden via hidePlugin or startHidden config.
      * The plugin must already be loaded — its instance and state are preserved.
      *
-     * @param {string} pluginId - Tool ID (e.g., 'TitleTool')
+     * @param {string} pluginId - Canonical tool id (e.g., 'title')
      * @returns {boolean} True if shown successfully, false if not found
      */
     showPlugin: function (pluginId) {

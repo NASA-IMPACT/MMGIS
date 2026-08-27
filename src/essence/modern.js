@@ -225,7 +225,21 @@ class ModernInterface {
 
         // Assign tools to panels based on configuration
         const tools = this.configData?.tools || []
-        ToolControllerModern_.assignToolsToPanels(tools)
+        try {
+            ToolControllerModern_.assignToolsToPanels(tools)
+        } catch (error) {
+            // A mission config the controller refuses outright — two tools
+            // claiming one id, for one. There is no catch between here and the
+            // async init that called render(), and by this point the loading
+            // screen has been dismissed and the container emptied, so letting
+            // it propagate leaves the user a blank page and puts the only
+            // explanation in the console. Stop here and say so on screen
+            // instead: a layout built from a config core rejected would be
+            // missing tools with nothing to indicate why.
+            console.error('[Modern Interface] Tool assignment failed:', error)
+            this._renderFatalError(error.message || String(error))
+            return
+        }
 
         // Get all panels from PanelManager, already sorted by priority
         const activePanels = PanelManager_.getAllPanelsByPriority()
@@ -285,8 +299,57 @@ class ModernInterface {
                 total: panelsConfig.length,
                 failed: failedPanels.length,
                 failures: failedPanels
-            })        
+            })
         }
+    }
+
+    /**
+     * Replace the interface with a legible message when init cannot continue.
+     *
+     * render() dismisses the loading screen and empties #main-container before
+     * it does anything that can fail, so a fatal error with nothing to catch it
+     * shows a blank white page. This is the floor under that: text on screen
+     * saying what went wrong.
+     *
+     * The message can quote names taken from the mission config, so it goes in
+     * with .text() rather than as markup. Colours come from the theme where the
+     * theme is available, with literal fallbacks so the message stays readable
+     * on a failure path that may have run before any of it applied.
+     *
+     * @param {string} message - What went wrong, shown as-is
+     * @private
+     */
+    _renderFatalError(message) {
+        const container = $('#main-container')
+        container.stop(true, true).empty().css({ opacity: 1, filter: 'blur(0px)' })
+
+        container.append(
+            $('<div></div>')
+                .attr('id', 'modern-fatal-error')
+                .css({
+                    width: '100%',
+                    height: '100%',
+                    display: 'flex',
+                    'flex-direction': 'column',
+                    'justify-content': 'center',
+                    'align-items': 'center',
+                    padding: '32px',
+                    'text-align': 'center',
+                    background: 'var(--color-k, #16191d)',
+                    color: 'var(--color-a, #e6e6e6)',
+                    'font-family': 'sans-serif'
+                })
+                .append(
+                    $('<h1></h1>')
+                        .css({ 'font-size': '20px', margin: '0 0 12px' })
+                        .text('MMGIS could not start')
+                )
+                .append(
+                    $('<p></p>')
+                        .css({ 'font-size': '14px', margin: 0, 'max-width': '640px' })
+                        .text(message)
+                )
+        )
     }
 
     /**

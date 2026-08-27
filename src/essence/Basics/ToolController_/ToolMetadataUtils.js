@@ -3,6 +3,7 @@
  */
 
 import DOMPurify from 'dompurify'
+import { toolIds } from '../../../pre/tools'
 import { TOOL_ORIENTATION } from './types/tool'
 import { PANEL_POSITION } from '../PanelManager_/types/layout'
 import { createLogger } from '../Logger_/Logger_'
@@ -204,6 +205,11 @@ export function sanitizeToolMetadata(metadata) {
     // Sanitize critical string fields that are used in DOM
     sanitized.id = sanitizeValue(metadata.id, 'id')
     sanitized.name = sanitizeValue(metadata.name, 'text')
+    // Only carried when the config named a module; metadata built by hand for
+    // a tool that has no registry binding has nothing to sanitize here.
+    if (metadata.module !== undefined) {
+        sanitized.module = sanitizeValue(metadata.module, 'id')
+    }
     sanitized.icon = getValidIconClass(metadata.icon, sanitized.id)
 
     // Verify critical fields didn't become empty
@@ -522,7 +528,27 @@ export function getValidIconClass(iconClass, toolId) {
  */
 export function generateToolMetadata(toolConfig) {
     const toolName = toolConfig.name || 'Unknown'
-    const toolId = toolConfig.js || toolName.toLowerCase().replace(/\s+/g, '-')
+
+    // Two identities, deliberately kept apart. `module` names the binding in
+    // the generated tool registry — it is only ever used to reach the class.
+    // `id` names the tool everywhere else: on the bus, in the modern
+    // controller's registries, in the DOM and in teardown events. `toolIds`
+    // carries the id each tool declares; a binding the registry doesn't know
+    // falls back to the same derivation the build applies, so both sides land
+    // on one id. An entry with no module at all is named after itself.
+    //
+    // The own-property check is load-bearing rather than belt-and-braces: the
+    // build assembles its map on a null prototype, but it reaches here as JSON
+    // and a plain object literal inherits from Object.prototype again. Without
+    // the check, a config naming 'constructor' or 'toString' reads a function
+    // as its id, which sanitizes to the empty string and takes the whole
+    // config map down with it.
+    const toolModule = toolConfig.js || ''
+    const toolId = toolModule
+        ? Object.prototype.hasOwnProperty.call(toolIds, toolModule)
+            ? toolIds[toolModule]
+            : toolModule.replace(/Tool$/, '').toLowerCase()
+        : toolName.toLowerCase().replace(/\s+/g, '-')
 
     // Read metadata from nested object (preferred location)
     const declaredMetadata = toolConfig.metadata || {}
@@ -531,6 +557,7 @@ export function generateToolMetadata(toolConfig) {
     // Nested metadata takes precedence
     const rawMetadata = {
         id: toolId,
+        module: toolModule,
         name: toolName,
         // Icon can be at root as 'defaultIcon' (legacy) or in metadata as 'icon'
         icon: declaredMetadata.icon || toolConfig.icon || toolConfig.defaultIcon || 'cog',

@@ -1,8 +1,10 @@
 import { test, expect, beforeEach, afterEach, vi } from 'vitest'
 vi.mock('../../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
 // Reaching 'hidden' from 'unloaded' loads the plugin first, and loadPlugin
-// looks tool ids up in the real registry; stand in a minimal module.
+// reaches its class through the module binding in the real registry; stand in
+// a minimal module.
 vi.mock('../../../src/pre/tools', () => ({
+    toolIds: {},
     toolModules: { ReconcileTool: { make: () => {}, destroy: () => {} } },
 }))
 
@@ -73,12 +75,13 @@ test('the client subscribes to the plugin event core actually emits', () => {
 
     try {
         ToolControllerModern_.registerDeferred(
-            { id: 'ReconcileTool', name: 'Reconcile' }, 'reconcile-target'
+            { id: 'reconcile', module: 'ReconcileTool', name: 'Reconcile' },
+            'reconcile-target'
         )
-        ToolControllerModern_.setPluginState('ReconcileTool', 'hidden')
+        ToolControllerModern_.setPluginState('reconcile', 'hidden')
 
         expect(seen).toHaveLength(1)
-        expect(seen[0]).toContainEqual({ id: 'ReconcileTool', state: 'hidden' })
+        expect(seen[0]).toContainEqual({ id: 'reconcile', state: 'hidden' })
     } finally {
         off()
         ToolControllerModern_.destroyAllTools()

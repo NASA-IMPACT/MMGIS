@@ -5,20 +5,19 @@ import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vite
 // real viewers, so stub the aggregator to keep Map_'s import chain parseable.
 vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
 
-// The controller resolves tool ids against the real tool registry. Two inert
-// modules cover what a teardown can meet: a tool that hands back nothing, and
-// a tool that retracts its own popup in destroy(), the way a well-behaved
-// plugin does.
+// The controller reaches a tool's class through its module binding in the real
+// tool registry. Two inert modules cover what a teardown can meet: a tool that
+// hands back nothing, and a tool that retracts its own popup in destroy(), the
+// way a well-behaved plugin does — through the handle the controller injected,
+// which is still its to use while destroy() runs.
 vi.mock('../../src/pre/tools', () => ({
+    toolIds: {},
     toolModules: {
         FakeTool: { make: () => {}, destroy: () => {} },
         RetractingTool: {
             make: () => {},
-            destroy: () => {
-                window.mmgisAPI
-                    .forPlugin('RetractingTool')
-                    .request('map:hidePopup')
-                    .catch(() => {})
+            destroy() {
+                this.api.request('map:hidePopup').catch(() => {})
             },
         },
     },
@@ -128,11 +127,13 @@ describe('a tool being torn down', () => {
         document.getElementById('retracting-target')?.remove()
     })
 
-    function loadTool(toolId, targetId) {
+    function loadTool(toolId, toolModule, targetId) {
         const target = document.createElement('div')
         target.id = targetId
         document.body.appendChild(target)
-        ToolControllerModern_.loadTool({ id: toolId, name: toolId }, targetId)
+        ToolControllerModern_.loadTool(
+            { id: toolId, module: toolModule, name: toolModule }, targetId
+        )
     }
 
     // A layout re-render destroys every tool without going near `Map_.init`,
@@ -140,8 +141,8 @@ describe('a tool being torn down', () => {
     // is among the destroyed by construction — here it is the very tool whose
     // destroy() hands nothing back — so core closing the slot wrongs no one.
     test('a full teardown takes the popup with it and answers its request', async () => {
-        loadTool('FakeTool', 'fake-target')
-        const { outcome, settled } = await showPopupAs('FakeTool')
+        loadTool('fake', 'FakeTool', 'fake-target')
+        const { outcome, settled } = await showPopupAs('fake')
         expect(cardCount()).toBe(1)
 
         ToolControllerModern_.destroyAllTools()
@@ -152,17 +153,17 @@ describe('a tool being torn down', () => {
     })
 
     test("one tool unloading leaves another plugin's card standing", async () => {
-        loadTool('FakeTool', 'fake-target')
+        loadTool('fake', 'FakeTool', 'fake-target')
 
-        // Deliberately someone else's popup. The plugin the controller
-        // destroys is announced by its tool id, which is not the identity the
-        // popup's opener spoke with, so core has nothing to match them by —
-        // and a blanket close would cost this bystander its card while its
-        // plugin is alive to stand behind it.
+        // Deliberately someone else's popup: 'crater-info' is not the plugin
+        // being unloaded, and it is alive to stand behind its card. A blanket
+        // close on a neighbour's teardown would cost it that card, so the
+        // announcement naming the plugin that went away is what a listener has
+        // to match against before it closes anything.
         const { outcome } = await showPopupAs('crater-info')
         expect(cardCount()).toBe(1)
 
-        expect(ToolControllerModern_.unloadPlugin('FakeTool')).toBe(true)
+        expect(ToolControllerModern_.unloadPlugin('fake')).toBe(true)
 
         await flush()
         expect(cardCount()).toBe(1)
@@ -173,14 +174,14 @@ describe('a tool being torn down', () => {
     })
 
     test('a plugin retracting in destroy() takes its own card with it', async () => {
-        loadTool('RetractingTool', 'retracting-target')
-        const { outcome, settled } = await showPopupAs('RetractingTool')
+        loadTool('retracting', 'RetractingTool', 'retracting-target')
+        const { outcome, settled } = await showPopupAs('retracting')
         expect(cardCount()).toBe(1)
 
         // Unloading one plugin runs its destroy(), where a well-behaved
         // plugin hands the popup slot back itself — safely, because core
         // retracts a popup only for the caller that opened it.
-        expect(ToolControllerModern_.unloadPlugin('RetractingTool')).toBe(true)
+        expect(ToolControllerModern_.unloadPlugin('retracting')).toBe(true)
 
         await flush()
         expect(cardCount()).toBe(0)
@@ -189,20 +190,20 @@ describe('a tool being torn down', () => {
     })
 
     test('a card its own plugin failed to retract stands after the unload', async () => {
-        loadTool('FakeTool', 'fake-target')
-        const { outcome } = await showPopupAs('FakeTool')
+        loadTool('fake', 'FakeTool', 'fake-target')
+        const { outcome } = await showPopupAs('fake')
         expect(cardCount()).toBe(1)
 
         // FakeTool's destroy() hands nothing back. Core leaves the card
         // standing rather than guess at its owner: the user can still dismiss
         // it, and closing on every unload is what cost bystanders theirs.
-        expect(ToolControllerModern_.unloadPlugin('FakeTool')).toBe(true)
+        expect(ToolControllerModern_.unloadPlugin('fake')).toBe(true)
 
         await flush()
         expect(cardCount()).toBe(1)
         expect(outcome.result).toBeNull()
 
-        await mmgisAPI.forPlugin('FakeTool').request('map:hidePopup')
+        await mmgisAPI.forPlugin('fake').request('map:hidePopup')
     })
 
     test('leaves the map alone when there was no tool to destroy', async () => {
@@ -211,7 +212,7 @@ describe('a tool being torn down', () => {
 
         // Nothing is loaded, so nothing is announced and the popup stands.
         ToolControllerModern_.destroyAllTools()
-        expect(ToolControllerModern_.unloadPlugin('FakeTool')).toBe(false)
+        expect(ToolControllerModern_.unloadPlugin('fake')).toBe(false)
 
         await flush()
         expect(cardCount()).toBe(1)

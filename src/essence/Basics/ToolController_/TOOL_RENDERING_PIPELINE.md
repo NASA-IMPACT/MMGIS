@@ -21,6 +21,8 @@ The validated dashboard configuration declares available UI panels (e.g., left, 
 
 Tools defined in the mission configuration are processed to generate normalized metadata. The `buildToolConfigMap` function parses properties like layout orientation, preferred positions, and custom icons. This step produces a clean `ToolMetadata` object used for capability matching, separating visual logic from core tool behavior.
 
+Metadata carries two names for a tool. `module` is the binding that reaches its class in the generated registry (`src/pre/tools.js`); `id` is its canonical identity — what it is called on the bus, in the controller's registries, in `data-tool` attributes and in teardown events. Two configured tools resolving to the same `id` is a registration error and throws.
+
 ## 4. Tool Assignment
 **Module:** `src/essence/Basics/ToolController_/ToolControllerModern_.js`
 
@@ -42,4 +44,4 @@ The `UserInterfaceModern_.render()` method constructs the physical HTML structur
 
 To prevent DOM race conditions and ensure CSS layout calculations are finalized, the pending `toolLoadQueue` is executed asynchronously using `setTimeout(fn, 0)`.
 
-Once triggered, `ToolControllerModern_.loadTool()` is called for each pending tool. This method locates the tool module, calls its `initialize()` method, and delegates DOM injection by invoking the tool's `make(targetId)` method inside its assigned placeholder container.
+Once triggered, `ToolControllerModern_.loadTool()` is called for each pending tool. This method locates the tool module, mints the tool's plugin-scoped bus handle (`mmgisAPI.forPlugin(id)`) and assigns it to the instance as `api`, calls its `initialize()` method, and delegates DOM injection by invoking the tool's `make(targetId)` method inside its assigned placeholder container. `destroyTool` releases that handle after the tool's own `destroy()` has run, then announces the teardown as `plugins:destroyed` with the tool's canonical id.
