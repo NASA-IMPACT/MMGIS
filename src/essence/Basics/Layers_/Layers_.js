@@ -1,4 +1,5 @@
 // Holds all layer data
+import { compileLegendStyle } from './LegendStyle'
 import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
@@ -7,7 +8,7 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { isRasterTileLayerType } from '../MapEngines/types/engine'
+import { isRasterTileLayerType, MAP_ENGINE } from '../MapEngines/types/engine'
 import {
     getActiveTileLevel,
     getTileLevelUrl,
@@ -691,6 +692,56 @@ const L_ = {
             }
             return `${baseUrl}/collections/${collectionName}/preview?assets=asset${bandsParam}${resamplingParam}`
         }
+    },
+    /**
+     * Layer types whose deck.gl builders read the legend as a style
+     * specification. Others carry a legend purely for display.
+     */
+    _legendStyledTypes: [
+        'vector',
+        'query',
+        'vectortile',
+        'GeoJsonLayer',
+        'MVTLayer',
+    ],
+    /**
+     * Rebuild a layer that was built before its legend arrived.
+     *
+     * A legend given as a `legend:` CSV path is fetched asynchronously, so it
+     * routinely lands after the layer has been made. Leaflet does not care -
+     * it re-reads the legend for every feature it styles - but deck.gl
+     * compiles the legend into the layer's style accessors when the layer is
+     * built, so a layer built without one stays flat forever. Without this the
+     * same configuration would draw a ramp on Leaflet and flat colour on
+     * deck.gl, which issue #345 explicitly rules out.
+     *
+     * Only rebuilds when there is something to gain: the deck.gl engine, a
+     * layer type that reads the legend, a legend that actually specifies
+     * styling rather than just legend rows to display, and a layer that is
+     * already built and on. A layer that is not yet built reads the legend
+     * itself when it is.
+     *
+     * @param {string} name - A key of `L_.layers.data`.
+     */
+    applyLateLegendStyling: function (name) {
+        if (L_.Map_?.engine?.engineType !== MAP_ENGINE.DECKGL) return
+
+        const layerObj = L_.layers.data[name]
+        if (layerObj == null) return
+        if (!L_._legendStyledTypes.includes(layerObj.type)) return
+
+        // A plain display legend compiles to nothing, and most legends are
+        // exactly that. Rebuilding every layer that has one would be a lot of
+        // needless work on every mission load.
+        if (compileLegendStyle(layerObj._legend) == null) return
+
+        // `false` means the layer was never built; refreshLayer would turn it
+        // on as a side effect, so leave anything not currently rendered alone.
+        const built = L_.layers.layer[name]
+        if (!built || typeof built !== 'object') return
+        if (L_.layers.on[name] !== true) return
+
+        L_.Map_.refreshLayer(layerObj)
     },
     getUrl: function (type, url, layerData) {
         let wasCOG = false
@@ -4420,6 +4471,7 @@ async function parseConfig(configData, urlOnLayers) {
                             return function (data) {
                                 data = F_.csvToJSON(data)
                                 L_.layers.data[name]._legend = data
+                                L_.applyLateLegendStyling(name)
                             }
                         })(d[i].name)
                     )
