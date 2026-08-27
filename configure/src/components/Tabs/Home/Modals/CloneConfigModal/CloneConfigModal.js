@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 
 import { calls } from "../../../../../core/calls";
+import { isLeanMode } from "../../../../../core/capabilities";
 
 import {
   setModal,
@@ -206,7 +207,9 @@ const CloneConfigModal = (props) => {
       {
         existingMission: mission,
         cloneMission: newMissionName,
-        hasPaths: hasPaths,
+        // Lean mode has no local Missions/ filesystem — paths are never
+        // relativized there.
+        hasPaths: isLeanMode() ? false : hasPaths,
       },
       (res) => {
         dispatch(
@@ -284,22 +287,26 @@ const CloneConfigModal = (props) => {
         <Typography
           className={c.confirmMessage}
         >{`Enter a new mission name above and click 'Clone' to clone this mission.`}</Typography>
-        <FormGroup className={c.checkbox}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={hasPaths}
-                onChange={(e) => {
-                  setHasPaths(e.target.checked);
-                }}
+        {!isLeanMode() ? (
+          <>
+            <FormGroup className={c.checkbox}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={hasPaths}
+                    onChange={(e) => {
+                      setHasPaths(e.target.checked);
+                    }}
+                  />
+                }
+                label={"Adjust Paths"}
               />
-            }
-            label={"Adjust Paths"}
-          />
-        </FormGroup>
-        <Typography
-          className={c.confirmMessage}
-        >{`Adjust new paths so that they still point to the same data (../{mission})`}</Typography>
+            </FormGroup>
+            <Typography
+              className={c.confirmMessage}
+            >{`Adjust new paths so that they still point to the same data (../{mission})`}</Typography>
+          </>
+        ) : null}
       </DialogContent>
       <DialogActions className={c.dialogActions}>
         <Button className={c.cancel} variant="outlined" onClick={handleClose}>

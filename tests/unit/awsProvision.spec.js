@@ -200,6 +200,46 @@ test.describe('copyPrefix', () => {
             'shared/assets/TestMission/with%20space.png'
         )
     })
+
+    test('re-prefixes the destination keys when destPrefix is given', async () => {
+        const copies = []
+        provision.setClients({
+            s3: mockClient((command) => {
+                const name = command.constructor.name
+                if (name === 'ListObjectsV2Command') {
+                    expect(command.input.Prefix).toBe('assets/OldMission/')
+                    return {
+                        Contents: [
+                            { Key: 'assets/OldMission/look/uploads/logo.png' },
+                            { Key: 'assets/OldMission/CardTool/a.geojson' },
+                        ],
+                        IsTruncated: false,
+                    }
+                }
+                if (name === 'CopyObjectCommand') {
+                    copies.push(command.input)
+                    return {}
+                }
+                throw new Error(`Unexpected command ${name}`)
+            }),
+        })
+        const count = await provision.copyPrefix({
+            sourceBucket: 'shared',
+            destBucket: 'shared',
+            prefix: 'assets/OldMission/',
+            destPrefix: 'assets/NewMission/',
+        })
+        expect(count).toBe(2)
+        // Only the leading prefix is swapped; the rest of the key is kept.
+        expect(copies.map((c) => c.Key)).toEqual([
+            'assets/NewMission/look/uploads/logo.png',
+            'assets/NewMission/CardTool/a.geojson',
+        ])
+        // The source still reads from the old prefix.
+        expect(copies[0].CopySource).toBe(
+            'shared/assets/OldMission/look/uploads/logo.png'
+        )
+    })
 })
 
 test.describe('copyObjectIfExists', () => {
