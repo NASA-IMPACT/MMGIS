@@ -11,8 +11,14 @@ export type CogData = {
      */
     editable: boolean
     colormap: string
-    min: number
-    max: number
+    /**
+     * The rescale bounds currently applied, or null where the mission
+     * configured none — nothing stands in for an unconfigured bound, so a
+     * legend renders it blank rather than inventing a range.
+     */
+    min: number | null
+    max: number | null
+    /** Bounds to reset to, and the seed for the rescale control's fields. */
     defaultMin: number
     defaultMax: number
     defaultColormap: string
@@ -29,8 +35,8 @@ export type Layer = {
     type: LegendType
     // gradient fields
     stops?: string[] | null
-    min?: number
-    max?: number
+    min?: number | null
+    max?: number | null
     unit?: { label: string } | null
     // categorical fields
     categoricalStops?: CategoricalStop[]

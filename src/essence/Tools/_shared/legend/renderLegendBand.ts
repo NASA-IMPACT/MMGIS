@@ -13,6 +13,8 @@ const BAR_WIDTH = 260
 const SWATCH = 12
 const LINE_GAP = 6
 const ROW_GAP = 14
+// Clear space kept between a gradient bar's two bound labels.
+const BOUND_GAP = 10
 const NEUTRAL_RAMP = ['#bdbdbd', '#757575']
 
 const FONT = (px: number, scale: number, weight = '') =>
@@ -124,9 +126,9 @@ const paintRamp = (
         ctx.fillStyle = ramp[0]
     } else {
         const grad = ctx.createLinearGradient(x, y, x + w, y)
-        // A blank stop color (buildGradientFields' `entry.color || ''`) would
-        // throw here and fail the whole band away — fall back to the same
-        // neutral swatch the categorical path uses for a missing color.
+        // A blank stop color (a legend entry with no color) would throw here
+        // and fail the whole band away — fall back to the same neutral swatch
+        // the categorical path uses for a missing color.
         ramp.forEach((color, i) =>
             grad.addColorStop(i / (ramp.length - 1), color || '#bdbdbd'),
         )
@@ -178,10 +180,27 @@ export const drawLegendBand = (
             y += (BAR_HEIGHT + LINE_GAP) * scale
             ctx.fillStyle = '#444444'
             ctx.font = FONT(LABEL_TEXT, scale)
-            ctx.fillText(formatLegendBound(row.min, row.unit), left, y)
-            const maxLabel = formatLegendBound(row.max, row.unit)
+            // Each bound is capped at half the bar less half the gap, so a
+            // long min and a long max are clipped rather than colliding, and
+            // the right-aligned max is clamped to the bar's left edge so it
+            // can never start off-canvas.
+            const boundMaxWidth = Math.max(
+                0,
+                barW / 2 - (BOUND_GAP / 2) * scale,
+            )
+            const minLabel = clipText(
+                ctx,
+                formatLegendBound(row.min, row.unit),
+                boundMaxWidth,
+            )
+            const maxLabel = clipText(
+                ctx,
+                formatLegendBound(row.max, row.unit),
+                boundMaxWidth,
+            )
+            ctx.fillText(minLabel, left, y)
             const maxW = ctx.measureText(maxLabel).width
-            ctx.fillText(maxLabel, left + barW - maxW, y)
+            ctx.fillText(maxLabel, Math.max(left, left + barW - maxW), y)
             y += LABEL_TEXT * scale
         } else {
             ctx.font = FONT(LABEL_TEXT, scale)

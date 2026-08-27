@@ -169,6 +169,110 @@ describe('drawLegendBand', () => {
             '#fff',
         ])
     })
+
+    // A one-color ramp has no interpolation to build. addColorStop's offset
+    // would be i / (length - 1) = NaN, which a real canvas rejects outright,
+    // taking the whole band down with it.
+    test('a single-color ramp fills a solid bar and builds no gradient', () => {
+        const { ctx, fillRectCalls, gradients } = makeCtx()
+        const model = {
+            missionName: null,
+            timeLabel: null,
+            rows: [gradientRow({ colors: ['#ff0000'] })],
+        }
+        expect(() => drawLegendBand(ctx, model, 400, 0, 200, 1)).not.toThrow()
+        expect(gradients).toHaveLength(0)
+        const bar = fillRectCalls.find((c) => c.fillStyle === '#ff0000')
+        expect(bar).toBeDefined()
+        expect(bar.args[2]).toBeGreaterThan(0)
+        expect(bar.args[3]).toBeGreaterThan(0)
+    })
+
+    test('an empty colors array falls back to the neutral ramp', () => {
+        const { ctx, gradients } = makeCtx()
+        const model = {
+            missionName: null,
+            timeLabel: null,
+            rows: [gradientRow({ colors: [] })],
+        }
+        expect(() => drawLegendBand(ctx, model, 400, 0, 200, 1)).not.toThrow()
+        expect(gradients).toHaveLength(1)
+        expect(gradients[0].stops.map((s) => s.color)).toEqual([
+            '#bdbdbd',
+            '#757575',
+        ])
+    })
+
+    // Blank bounds (an unrescaled raster) leave the labels empty rather than
+    // printing an invented range.
+    test('null bounds draw as empty labels', () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const model = {
+            missionName: null,
+            timeLabel: null,
+            rows: [gradientRow({ min: null, max: null, unit: 'm' })],
+        }
+        drawLegendBand(ctx, model, 400, 0, 200, 1)
+        const texts = fillTextCalls.map(({ args: [text] }) => text)
+        expect(texts).toEqual(['Displacement', '', ''])
+    })
+})
+
+describe('drawLegendBand gradient bounds', () => {
+    // Everything after the row title is a bound label: min first, then max.
+    const boundCalls = (fillTextCalls) => fillTextCalls.slice(1)
+
+    test('clips bounds so a long min and max cannot overlap', () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const model = {
+            missionName: null,
+            timeLabel: null,
+            rows: [
+                gradientRow({
+                    min: '0.000000000000123 microseconds per parsec',
+                    max: '9.999999999999876 microseconds per parsec',
+                }),
+            ],
+        }
+        drawLegendBand(ctx, model, 400, 0, 400, 1)
+        const [minCall, maxCall] = boundCalls(fillTextCalls)
+        expect(minCall.args[0].endsWith('\u2026')).toBe(true)
+        expect(maxCall.args[0].endsWith('\u2026')).toBe(true)
+        const minRight =
+            minCall.args[1] + ctx.measureText(minCall.args[0]).width
+        expect(minRight).toBeLessThanOrEqual(maxCall.args[1])
+    })
+
+    test('never starts the max bound left of the bar', () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const model = {
+            missionName: null,
+            timeLabel: null,
+            rows: [gradientRow({ min: 0, max: 'X'.repeat(300) })],
+        }
+        // A band narrower than the bar's nominal width, so the clamp is what
+        // keeps the right-aligned label on canvas.
+        drawLegendBand(ctx, model, 160, 0, 400, 1)
+        const [, maxCall] = boundCalls(fillTextCalls)
+        expect(maxCall.args[1]).toBeGreaterThanOrEqual(16)
+    })
+
+    test('leaves short bounds unclipped, at the bar edges', () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const model = {
+            missionName: null,
+            timeLabel: null,
+            rows: [gradientRow({ min: 2, max: 8, unit: 'K' })],
+        }
+        drawLegendBand(ctx, model, 400, 0, 200, 1)
+        const [minCall, maxCall] = boundCalls(fillTextCalls)
+        expect(minCall.args[0]).toBe('2 K')
+        expect(maxCall.args[0]).toBe('8 K')
+        // PAD (16) for the min; PAD + BAR_WIDTH (260) less the label's own
+        // measured width for the right-aligned max.
+        expect(minCall.args[1]).toBe(16)
+        expect(maxCall.args[1]).toBe(16 + 260 - ctx.measureText('8 K').width)
+    })
 })
 
 describe('drawLegendBand text clipping', () => {

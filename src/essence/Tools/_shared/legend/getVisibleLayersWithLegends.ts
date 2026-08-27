@@ -36,13 +36,26 @@ export const getVisibleLayersWithLegends = async ({
         mmgisGetTiTilerUrls(),
     ])
 
+    // No visibility map means core answered nothing — not that every layer is
+    // off. Reading it as "all hidden" would drop every row and leave the
+    // export with no band at all, so visibility counts as unknown and nothing
+    // is filtered on it.
+    const visibilityKnown = visibleLayers != null
+    if (showOnlyVisible && !visibilityKnown) {
+        console.warn(
+            '[legend] core reported no layer visibility; keeping every layer',
+        )
+    }
+
     const result: Layer[] = []
     for (const layerName of Object.keys(layerConfigs)) {
         const cfg = layerConfigs[layerName]
         if (!cfg) continue
         if (cfg.type === 'header') continue
         if (listed?.[layerName] === false) continue
-        const isVisible = visibleLayers?.[layerName] === true
+        const isVisible = visibilityKnown
+            ? visibleLayers?.[layerName] === true
+            : true
         if (showOnlyVisible && !isVisible) continue
         result.push(
             buildLayerLegendData(
