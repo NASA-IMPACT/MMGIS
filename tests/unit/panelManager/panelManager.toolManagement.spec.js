@@ -214,7 +214,7 @@ test.describe('PanelManager - Tool Management', () => {
             panelManager.removeToolFromPanel('test-panel', 'test-tool')
 
             expect(mock.events.length).toBeGreaterThan(0)
-            expect(mock.events[mock.events.length - 1].type).toBe('mmgis-panel-layout-changed')
+            expect(mock.events[mock.events.length - 1].type).toBe('panels:changed')
             mock.restore()
         })
 

@@ -1,8 +1,9 @@
 import React from 'react'
 import { useCallback, useState } from 'react'
 import { Title } from './lib'
-import { mmgisRequest, mmgisEmit } from '../_shared/adapters/mmgisAPI'
+import { mmgisRequest } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
+import { resolveAction } from '../_shared/actions/resolveAction'
 
 const PLUGIN_ID = 'title'
 const DEFAULT_TITLE = 'MMGIS'
@@ -48,8 +49,8 @@ const INITIAL_STATE: TitleState = {
 /**
  * Bridges MMGIS state to the portable <Title> component. Reads mission branding
  * and tool variables over the mmgisAPI bus, resolves the display props (the
- * title fallback order lives here, not in the core provider), and owns the
- * action-button effect (open a URL, or emit a namespaced bus event).
+ * title fallback order lives here, not in the core provider), and hands the
+ * action button's configured link off to resolveAction.
  */
 export function MMGISTitleAdapter() {
     const [state, setState] = useState<TitleState>(INITIAL_STATE)
@@ -83,29 +84,7 @@ export function MMGISTitleAdapter() {
     useMMGISHandlerReady('tool:getVars', refresh)
 
     const handleActionClick = useCallback(() => {
-        const link = state.actionButtonLink
-        if (!link) return
-        if (link.startsWith('http://') || link.startsWith('https://')) {
-            window.open(link, '_blank', 'noopener,noreferrer')
-            return
-        }
-        // Core commands using the "core:action:target" syntax (e.g. "core:showPlugin:LayersTool")
-        if (link.startsWith('core:')) {
-            const parts = link.substring(5).split(':')
-            const action = parts[0]
-            const target = parts.slice(1).join(':')
-            mmgisEmit(`core:${action}`, { pluginId: target, panelId: target })
-            return
-        }
-
-        // Custom namespaced events (e.g. "LayerManager:someEvent")
-        if (link.indexOf(':') !== -1) {
-            mmgisEmit(link)
-            return
-        }
-
-        // Fallback: simple event under this plugin's namespace (no colons)
-        mmgisEmit(`plugin:${PLUGIN_ID}:${link}`)
+        resolveAction(state.actionButtonLink)
     }, [state.actionButtonLink])
 
     return (

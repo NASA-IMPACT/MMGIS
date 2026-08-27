@@ -358,7 +358,7 @@ class ModernInterface {
      *
      * Performs comprehensive cleanup in the following order:
      * 1. Cleanup the UserInterfaceModern (tools, event listeners, DOM)
-     * 2. Unregisters all panels from PanelManager
+     * 2. Clears all panels from PanelManager
      * 3. Clears layers via L_
      * 4. Clears viewer images
      * 5. Clears map resources
@@ -376,17 +376,10 @@ class ModernInterface {
             UserInterfaceModern_.destroy()
         }
 
-        // Clean up all registered panels
-        const panels = PanelManager_.getAllPanelsByPriority()
-        panels.forEach(panel => {
-            if (PanelManager_.unregisterPanel && typeof PanelManager_.unregisterPanel === 'function') {
-                try {
-                    PanelManager_.unregisterPanel(panel.id)
-                } catch (err) {
-                    console.warn(`[Modern Interface] Failed to unregister panel ${panel.id}:`, err)
-                }
-            }
-        })
+        // Drop all panels
+        if (PanelManager_ && typeof PanelManager_.clear === 'function') {
+            PanelManager_.clear()
+        }
 
         // Clean up layers
         if (L_ && typeof L_.clear === 'function') {

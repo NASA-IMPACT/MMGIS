@@ -27,6 +27,7 @@
  *     - map:getBounds / map:fitBounds
  *     - map:enableDrawing / map:disableDrawing / map:finishDrawing
  *     - map:showPopup      (resolves with how the popup closed) / map:hidePopup
+ *     - plugins:setState
  *
  * AOIComponent.tsx must stay MMGIS-agnostic.
  */
@@ -35,6 +36,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 
 import AOIComponent from './AOIComponent'
+import { mmgisSetPluginState } from '../_shared/adapters/mmgisAPI'
 import {
     buildSearchIndex,
     searchIndex,
@@ -375,7 +377,13 @@ const AOITool = {
     },
 
     _onClose() {
-        window.mmgisAPI?.emit('core:unloadPlugin', { pluginId: 'AOITool' })
+        mmgisSetPluginState('AOITool', 'unloaded')
+            .then((result) => {
+                if (!result.ok) {
+                    console.warn(`[AOI] unload refused: ${result.reason}`)
+                }
+            })
+            .catch((err) => console.warn('[AOI] unload failed', err))
     },
 
     // ── Search mode ────────────────────────────────────────────────────────────
