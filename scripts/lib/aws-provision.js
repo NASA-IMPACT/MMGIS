@@ -353,6 +353,35 @@ function contentTypeForFile(filePath) {
   );
 }
 
+// Cache-Control tier for a published-dashboard object key. The entry page and
+// baked config must revalidate on every request (a fronting cache we cannot
+// invalidate may otherwise pin an old release for a day); two classes are
+// immutable because their names are content-addressed by construction — the
+// webpack output, whose filenames carry a content hash (pinned by
+// tests/unit/webpackHashedOutput.spec.js), and plugin uploads under
+// assets/<mission>/<subdir>/uploads/, which the upload router names
+// crypto.randomUUID() and never overwrites (API/Backend/Upload/uploadRouter.js).
+// Everything else — the keys that really do change in place on republish —
+// falls back to a short TTL.
+function cacheControlForKey(key) {
+  if (
+    key === "index.html" ||
+    key === "build/index.html" ||
+    /^Missions\/[^/]+\/config\.json$/.test(key)
+  )
+    return "no-cache";
+  // The uploads shape mirrors ASSETS_UPLOAD_KEY in
+  // src/essence/Tools/Card/adapters/buildCardData.ts: exactly two segments
+  // between "assets/" and "/uploads/", so a lookalike such as
+  // "assets/uploads/x.png" is not mistaken for the writer's shape.
+  if (
+    /^build\/static\/(js|css|media)\//.test(key) ||
+    /^assets\/[^/]+\/[^/]+\/uploads\//.test(key)
+  )
+    return "public, max-age=31536000, immutable";
+  return "public, max-age=300";
+}
+
 function walkDirectory(dir, baseDir) {
   baseDir = baseDir || dir;
   let files = [];
@@ -377,16 +406,18 @@ async function uploadDirectory({ bucket, dir, prefix = "", concurrency = 8 }) {
   async function worker() {
     while (index < files.length) {
       const file = files[index++];
+      const key = `${prefix}${file.key}`;
       await s3.send(
         new PutObjectCommand({
           Bucket: bucket,
-          Key: `${prefix}${file.key}`,
+          Key: key,
           Body: fs.createReadStream(file.absolute),
           // An explicit length keeps the streaming PUT retryable by the
           // SDK (an unknown-length stream is sent unsigned/non-retryable,
           // so one network blip would fail the whole publish).
           ContentLength: fs.statSync(file.absolute).size,
           ContentType: contentTypeForFile(file.absolute),
+          CacheControl: cacheControlForKey(key),
         })
       );
     }
@@ -407,13 +438,16 @@ async function uploadFile({ bucket, key, filePath }) {
       Body: fs.createReadStream(filePath),
       ContentLength: fs.statSync(filePath).size,
       ContentType: contentTypeForFile(filePath),
+      CacheControl: cacheControlForKey(key),
     })
   );
 }
 
 // Invalidates CloudFront paths so an updated dashboard is served
-// immediately (the distribution caches aggressively; hashed bundle
-// names dodge it but index.html, config.json, and assets do not).
+// immediately. Our own Cache-Control tiers already cover most of it —
+// index.html and config.json revalidate every request, and hashed bundles
+// arrive under new names — so this is what closes the gap for the short-TTL
+// tier and for any edge that ignores those headers.
 async function createInvalidation({ distributionId, paths = ["/*"] }) {
   const { cloudfront } = getClients();
   await cloudfront.send(
@@ -457,6 +491,17 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
           Bucket: destBucket,
           Key: obj.Key,
           CopySource: buildCopySource(sourceBucket, obj.Key),
+          // COPY (the default) cannot set new headers on the copy, so
+          // REPLACE is required to add a Cache-Control the source object
+          // never had — and REPLACE means supplying ContentType too.
+          // REPLACE drops the source's entire metadata set, not just its
+          // Content-Type: Content-Encoding, Content-Disposition and any
+          // x-amz-meta-* are lost unless restated here. Nothing sets those
+          // today (the upload router writes ContentType alone), but a future
+          // gzipped object would have to carry its Content-Encoding across.
+          MetadataDirective: "REPLACE",
+          ContentType: contentTypeForFile(obj.Key),
+          CacheControl: cacheControlForKey(obj.Key),
         })
       );
       copied++;
@@ -478,6 +523,9 @@ async function copyObjectIfExists({ sourceBucket, destBucket, key }) {
         Bucket: destBucket,
         Key: key,
         CopySource: buildCopySource(sourceBucket, key),
+        MetadataDirective: "REPLACE",
+        ContentType: contentTypeForFile(key),
+        CacheControl: cacheControlForKey(key),
       })
     );
     return true;
@@ -607,6 +655,7 @@ module.exports = {
   getStackOutputs,
   deleteStack,
   contentTypeForFile,
+  cacheControlForKey,
   uploadDirectory,
   uploadFile,
   createInvalidation,
