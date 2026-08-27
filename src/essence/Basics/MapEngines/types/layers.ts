@@ -175,7 +175,7 @@ export interface OverlayOptions {
  * `url` is nullable, not merely optional: a source that resolves to nothing —
  * a `COG:` layer with no TiTiler service behind it — yields null, and callers
  * pass it through so the refresher, not the call site, decides what to do
- * with it. Both adapters test `ctx.url == null`.
+ * with it. The domain-side refresher registered in `Map_.makeTileLayer` tests `ctx.url == null`.
  */
 export type RefreshContext = {
     url?: string | null
