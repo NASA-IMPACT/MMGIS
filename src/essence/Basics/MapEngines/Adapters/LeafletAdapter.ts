@@ -633,11 +633,20 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return Array.from(this._layers.values())
     }
 
+    /**
+     * Whether the layer is currently on the map.
+     *
+     * Both forms ask the map, never the registry. `_layers` stopped being an
+     * answer on its own once {@link registerLayer} began holding every
+     * MMGIS-built tile layer whether or not it is on the map — reading it here
+     * would make `hasLayer(id)` and `hasLayer(layerObject)` disagree, and
+     * mmgisAPI's `map:hasLayer` exposes this answer publicly.
+     */
     hasLayer(layer: any | string): boolean {
-        if (typeof layer === 'string') {
-            return this._layers.has(layer)
-        }
-        return this._map.hasLayer(layer)
+        const leafletLayer =
+            typeof layer === 'string' ? this._layers.get(layer) : layer
+        if (!leafletLayer) return false
+        return this._map?.hasLayer(leafletLayer) === true
     }
 
     /**
@@ -708,6 +717,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
                 this._refreshers.delete(layer)
             }
         } else {
+            // Deliberately keeps the registration. Map_.rmNotNull removes
+            // layers by object every time one is toggled off, and a toggled-off
+            // layer still has to be refreshable — TimeControl.reloadLayer's
+            // `evenIfOff` path depends on it. Only the id form, which means
+            // "destroy this layer", drops the entry.
             this._map.removeLayer(layer)
         }
     }
