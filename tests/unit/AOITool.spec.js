@@ -69,7 +69,11 @@ function makeFakeApi() {
             // Snapshot: a handler may unsubscribe itself while dispatching.
             Array.from(listeners.get(event) || []).forEach((h) => h(data))
         },
-        request(name, payload, caller) {
+        // Core's own signature: the caller travels in an options object, and
+        // core refuses a bare id in that slot outright. Recording it unwrapped
+        // is what keeps `requests` reading as a plain caller.
+        request(name, payload, options) {
+            const caller = options?.caller
             requests.push({ name, payload, caller })
             const impl = requestImpl.get(name)
             return Promise.resolve().then(() =>
@@ -88,7 +92,8 @@ function makeFakeApi() {
                 // Unprefixed, and stamped with the plugin's id — the shape
                 // core's handle has, because it is the stamp that decides
                 // whose popup a hide is allowed to reach.
-                request: (name, data) => api.request(name, data, pluginId),
+                request: (name, data) =>
+                    api.request(name, data, { caller: pluginId }),
             }
         },
 

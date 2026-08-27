@@ -165,8 +165,11 @@ test.describe('AOITool._applySelection camera behavior', () => {
     const mockApi = (currentView) => {
         const calls = []
         window.mmgisAPI = {
-            request: vi.fn((name, payload, caller) => {
-                calls.push({ name, payload, caller })
+            // Core's own signature: the caller travels in an options object,
+            // and core refuses a bare id in that slot outright. Recording it
+            // unwrapped is what keeps `calls` reading as a plain caller.
+            request: vi.fn((name, payload, options) => {
+                calls.push({ name, payload, caller: options?.caller })
                 return Promise.resolve(
                     name === 'map:getBounds' ? currentView : undefined
                 )
@@ -180,7 +183,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
             emit: () => { },
             provide: () => () => { },
             request: (name, data) =>
-                window.mmgisAPI.request(name, data, pluginId),
+                window.mmgisAPI.request(name, data, { caller: pluginId }),
         })
         // These specs drive `_applySelection` on its own rather than through
         // `make()`, so hand the tool the handle `make()` would have given it.
@@ -293,6 +296,47 @@ test.describe('AOITool._applySelection camera behavior', () => {
         // the popup; it falls back to the centre of the unchanged view.
         const popup = calls.find((c) => c.name === 'map:showPopup')
         expect(popup?.payload.latlng).toEqual({ lat: 35, lng: -95 })
+    })
+
+    test('drops a fitBounds rejection that lands after a superseding selection', async () => {
+        const calls = mockApi(view)
+        const request = window.mmgisAPI.request
+        // Hold each fit open, so the first selection's rejection can be made to
+        // arrive after the second selection has already replaced it.
+        const rejectFit = []
+        window.mmgisAPI.request = vi.fn((name, payload, options) => {
+            if (name !== 'map:fitBounds') return request(name, payload, options)
+            calls.push({ name, payload, caller: options?.caller })
+            return new Promise((_resolve, reject) => rejectFit.push(reject))
+        })
+
+        AOITool._applySelection(squareFeature(-98, 32, -80, 38), 'search', 'First')
+        await flush()
+        AOITool._applySelection(squareFeature(-98, 20, -80, 45), 'search', 'Second')
+        await flush()
+
+        const [, secondMoveend] = window.mmgisAPI.on.mock.calls[1]
+
+        rejectFit[0](new Error('nope'))
+        await flush()
+
+        // The stale show stays shut: its selection is gone from the map and
+        // from `currentAOI`, so its popup would offer to analyze an area the
+        // user has already replaced.
+        expect(names(calls)).not.toContain('map:showPopup')
+        // And it leaves the current selection's show armed. Disarming that one
+        // is the worse half of the failure: the popup the user is waiting for
+        // never opens at all.
+        expect(window.mmgisAPI.off).not.toHaveBeenCalledWith(
+            'map:moveend',
+            secondMoveend
+        )
+
+        secondMoveend({ longitude: -89, latitude: 32.5, zoom: 5 })
+        const popups = calls.filter((c) => c.name === 'map:showPopup')
+        expect(popups).toHaveLength(1)
+        expect(popups[0].payload.title).toBe('Second')
+        expect(popups[0].payload.latlng).toEqual({ lat: 32.5, lng: -89 })
     })
 
     test('anchors the popup inside the view for an unframeable selection (Alaska)', async () => {
