@@ -412,6 +412,8 @@ export function deckCOGProps(
     const rescaleMin = Number(l.currentCogMin ?? l.cogMin ?? 0)
     const rescaleMax = Number(l.currentCogMax ?? l.cogMax ?? 1)
     const nodata = l.cogNoData != null ? Number(l.cogNoData) : null
+    // Derived here rather than passed by callers so every rebuild path
+    // (creation, colormap/rescale refresh, time reload) keeps the same limits.
     const minZoom = parseInt(l.minZoom)
     const maxZoom = parseInt(l.maxZoom)
 
@@ -424,6 +426,7 @@ export function deckCOGProps(
         // Supplying getTileData + renderTile together makes COGLayer._parseGeoTIFF
         // skip its default inferRenderPipeline, which throws for float COGs
         // ('non-unsigned integers not yet supported').
+        // The config nodata (if any) overrides the file's GDAL_NODATA.
         getTileData: (image: any, opts: any) =>
             cogGetTileData(image, { ...opts, noDataOverride: nodata }),
         renderTile: makeRenderTile({ colormapName, rescaleMin, rescaleMax }),
