@@ -13,7 +13,8 @@ import { mount, click } from '../../_shared/__tests__/reactHarness'
  * permanently unreachable, and does it without an error anyone would notice.
  */
 
-const TOOL_ID = 'AddTempLayerTool'
+/** The plugin's canonical id, as declared in its config.json. */
+const TOOL_ID = 'addtemplayer'
 
 let request: ReturnType<typeof vi.fn>
 let listeners: Record<string, (payload?: unknown) => void>

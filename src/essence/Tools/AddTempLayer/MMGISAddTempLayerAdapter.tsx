@@ -17,7 +17,8 @@ import {
  * (session-only add; lost on reload).
  */
 
-const TOOL_ID = 'AddTempLayerTool'
+/** This plugin's canonical id, as declared in its config.json. */
+const TOOL_ID = 'addtemplayer'
 /** Emit this on the bus (no payload needed) to reveal the form. */
 export const ADD_TEMP_LAYER_SHOW_EVENT = 'addTempLayer:show'
 

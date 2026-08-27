@@ -403,11 +403,13 @@ let Map_ = {
 
             // A tool's teardown names the popup owner it takes with it, and
             // the close is owner-gated, so a surviving plugin's card is
-            // untouched.
+            // untouched. An unnamed teardown is dropped rather than passed on:
+            // "no id" is the anonymous owner's own identity, so it would close
+            // a popup opened without a handle instead of matching nobody.
             _providerCleanups.push(
-                window.mmgisAPI.on('plugins:destroyed', (e) =>
-                    MapPopup_.hideForCaller(e?.pluginId)
-                )
+                window.mmgisAPI.on('plugins:destroyed', (e) => {
+                    if (e?.pluginId != null) MapPopup_.hideForCaller(e.pluginId)
+                })
             )
 
             // A full layout teardown — a re-render, or the UI going down

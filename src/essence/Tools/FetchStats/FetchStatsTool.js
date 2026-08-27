@@ -1,7 +1,10 @@
 /**
  * FetchStats plugin — no-UI background plugin.
  *
- * pluginId: 'fetch-stats'
+ * pluginId: 'fetch-stats' — declared in this plugin's config.json. The tool
+ * controller mints the plugin-scoped bus handle from it and injects it as
+ * `FetchStatsTool.api` before initialize() runs, which is what prefixes the
+ * emits below with `plugin:fetch-stats:`.
  *
  * Listens to:
  *   - plugin:aoi:analysisAOIReady   { feature }
@@ -15,8 +18,6 @@
  *                        Consumers can surface a "toggle on an analysis layer"
  *                        message to the user.
  */
-
-const PLUGIN_ID = 'fetch-stats'
 
 /**
  * Build the statistics POST URL for a layer's `variables.analysis` block.
@@ -44,10 +45,17 @@ const FetchStatsTool = {
 
     make(targetId) {
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
-        this._api =
-            (typeof window !== 'undefined' &&
-                window.mmgisAPI?.forPlugin?.(PLUGIN_ID)) ||
-            {}
+        // The controller minted this tool's bus handle before initialize()
+        // ran. The stand-in mirrors the handle's shape so environments that
+        // mount the tool without one do not crash. Releasing the handle
+        // belongs to the controller, not to destroy().
+        this._api = FetchStatsTool.api || {
+            emit: () => {},
+            provide: () => () => {},
+            request: () => Promise.resolve(undefined),
+            getVars: () => ({}),
+            release: () => {},
+        }
 
         const api = window.mmgisAPI
         if (api?.on) {
@@ -67,6 +75,11 @@ const FetchStatsTool = {
         this._cleanups.forEach((fn) => fn())
         this._cleanups = []
         this.MMGISInterface?.separateFromMMGIS()
+        // A run already in flight is awaiting its network calls and cannot be
+        // cancelled, so dropping the handle is what keeps its remaining
+        // progress and result emits from reaching the bus after the plugin is
+        // gone. The emits below are guarded for exactly this.
+        this._api = null
     },
 
     async _getAnalyzableVisibleLayers() {
@@ -92,11 +105,11 @@ const FetchStatsTool = {
 
         const layers = await this._getAnalyzableVisibleLayers()
         if (!layers.length) {
-            this._api.emit('analysisSkipped', { reason: 'no-eligible-layers' })
+            this._api?.emit('analysisSkipped', { reason: 'no-eligible-layers' })
             return
         }
 
-        this._api.emit('analysisProgress', { done: 0, total: layers.length })
+        this._api?.emit('analysisProgress', { done: 0, total: layers.length })
 
         const body = JSON.stringify({
             type: 'Feature',
@@ -110,13 +123,13 @@ const FetchStatsTool = {
                 const displayName = layer.display_name || layer.name
                 const result = await this._postStatsForLayer(layer, body)
                 done += 1
-                this._api.emit('analysisProgress', { done, total: layers.length })
+                this._api?.emit('analysisProgress', { done, total: layers.length })
                 return [displayName, result]
             })
         )
 
         const analysisData = Object.fromEntries(entries)
-        this._api.emit('analysisReady', { analysisData })
+        this._api?.emit('analysisReady', { analysisData })
     },
 
     async _postStatsForLayer(layer, body) {

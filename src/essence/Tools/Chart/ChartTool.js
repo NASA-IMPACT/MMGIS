@@ -5,7 +5,8 @@
  * `plugin:fetch-stats:analysisReady` and renders the per-layer stats payload
  * via ChartComponent.
  *
- *   pluginId: 'chart'
+ *   pluginId: 'chart' — declared in this plugin's config.json, and the id the
+ *   lifecycle calls below name themselves by.
  *
  *   Listens to (module scope, survives Chart's own mount/unmount):
  *     - plugin:fetch-stats:analysisReady    { analysisData: { [layerName]: <stats|null> } }
@@ -40,7 +41,7 @@ function _onAnalysisReady(payload) {
     // Auto-open the Chart panel. Chart is registered `startUnloaded: true`,
     // so make() hasn't run yet — showPlugin loads it into its existing
     // container and reveals it in one call.
-    mmgisShowPlugin('ChartTool')
+    mmgisShowPlugin('chart')
         .then((result) => {
             if (!result.ok) {
                 console.warn(`[Chart] showPlugin refused: ${result.reason}`)
@@ -130,7 +131,7 @@ const ChartTool = {
     _onClose() {
         // Fully unload (not just hide) so a later analysisReady re-mounts a
         // fresh instance via _onAnalysisReady's showPlugin call.
-        mmgisSetPluginState('ChartTool', 'unloaded')
+        mmgisSetPluginState('chart', 'unloaded')
             .then((result) => {
                 if (!result.ok) {
                     console.warn(`[Chart] unload refused: ${result.reason}`)

@@ -222,6 +222,33 @@ describe('a tool being torn down', () => {
 
         await mmgisAPI.forPlugin('crater-info').request('map:hidePopup')
     })
+
+    // "No id" is the anonymous owner's own identity, not a wildcard, so an
+    // announcement that names nobody would otherwise close exactly the popup
+    // that was opened without a handle.
+    test('an announcement naming no plugin leaves an unowned card standing', async () => {
+        // Opened without a handle on purpose: the sibling helper mints one,
+        // and the card this guards is the one no plugin owns.
+        let outcome = null
+        const settled = mmgisAPI
+            .request('map:showPopup', popupRequest)
+            .then((result) => {
+                outcome = result
+            })
+        await flush()
+        expect(cardCount()).toBe(1)
+
+        mmgisAPI.emit('plugins:destroyed', Object.freeze({}))
+
+        await flush()
+        expect(cardCount()).toBe(1)
+        expect(outcome).toBeNull()
+
+        // The slot is a singleton shared with every other spec in this file.
+        await mmgisAPI.request('map:hidePopup')
+        await settled
+        expect(outcome).toEqual({ action: 'closed' })
+    })
 })
 
 describe('the popup providers Map_ registers', () => {
