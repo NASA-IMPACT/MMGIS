@@ -27,7 +27,8 @@
     "FetchStats",
     "ShareExport",
     "LayerFilterThemes",
-    "LayerFilter"
+    "LayerFilter",
+    "Timeline"
   ],
   "overrides": {
     "Card": {
@@ -196,6 +197,27 @@
             "focusedWidth": "",
             "expandedSize": "320"
           }
+        },
+        {
+          "position": "bottom",
+          "priority": 3,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false,
+            "supportedOrientation": "horizontal",
+            "maxSize": 200
+          },
+          "panelTools": [
+            "TimelineTool"
+          ],
+          "id": "bottom-panel"
         }
       ],
       "floatingPanels": [

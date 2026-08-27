@@ -1,4 +1,7 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "name": "Timeline",
     "description": "Interactive timeline visualization for navigating temporal data with zoom and layer visibility controls",
     "defaultIcon": "timeline",
