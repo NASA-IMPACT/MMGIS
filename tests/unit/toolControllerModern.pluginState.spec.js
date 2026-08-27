@@ -166,3 +166,28 @@ test('a plugin that throws while loading does not stop the batch', () => {
     expect(seen).toHaveLength(1)
     expect(seen[0].plugins).toContainEqual({ id: 'SecondTool', state: 'unloaded' })
 })
+
+test('tearing the layout down broadcasts the empty roster once', () => {
+    document.body.innerHTML += '<div id="second-target"></div>'
+    ToolControllerModern_.loadTool(metadata, 'second-target')
+    ToolControllerModern_.registerDeferred(
+        { id: 'SecondTool', name: 'Second' }, 'second-target'
+    )
+    const seen = listenForChanges()
+
+    ToolControllerModern_.destroyAllTools()
+
+    // Subscribers outlive the layout, so silence here would leave them holding
+    // a roster of plugins that no longer exist.
+    expect(seen).toEqual([{ plugins: [] }])
+    expect(ToolControllerModern_.listPlugins()).toEqual([])
+})
+
+test('tearing down an empty layout says nothing', () => {
+    ToolControllerModern_.destroyAllTools()
+    const seen = listenForChanges()
+
+    ToolControllerModern_.destroyAllTools()
+
+    expect(seen).toEqual([])
+})

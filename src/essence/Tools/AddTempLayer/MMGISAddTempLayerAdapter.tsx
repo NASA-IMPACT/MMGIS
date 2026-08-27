@@ -2,7 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AddTempLayerPanel } from './lib'
 import type { AddTempLayerInput } from './lib'
 import { buildLayerObj } from './adapters/buildLayerObj'
-import { mmgisOn, mmgisRequest } from '../_shared/adapters/mmgisAPI'
+import {
+    mmgisOn,
+    mmgisRequest,
+    mmgisShowPlugin,
+    mmgisHidePlugin,
+} from '../_shared/adapters/mmgisAPI'
 
 /**
  * Bridges the portable AddTempLayerPanel (the "Add layer from URL" form) to
@@ -16,14 +21,25 @@ const TOOL_ID = 'AddTempLayerTool'
 /** Emit this on the bus (no payload needed) to reveal the form. */
 export const ADD_TEMP_LAYER_SHOW_EVENT = 'addTempLayer:show'
 
-// The plugin lifecycle API (modern layout) isn't part of the shared client's
-// Window typing; type the two calls we use locally.
-type PluginLifecycle = {
-    showPlugin?: (id: string) => boolean
-    hidePlugin?: (id: string) => boolean
+/**
+ * Reveal or dismiss this tool through the plugin lifecycle bus, reporting a
+ * refusal rather than dropping it. Nothing else can reveal the form, so a
+ * silent failure here leaves it unreachable.
+ */
+const setVisible = (visible: boolean) => {
+    const command = visible ? mmgisShowPlugin : mmgisHidePlugin
+    const verb = visible ? 'show' : 'hide'
+    // The result is read through a widened shape rather than CommandResult's
+    // own union: this project compiles without strictNullChecks, where a
+    // boolean discriminant does not narrow.
+    command(TOOL_ID)
+        .then((result: { ok: boolean; reason?: string }) => {
+            if (!result.ok) {
+                console.warn(`[AddTempLayer] ${verb} refused: ${result.reason}`)
+            }
+        })
+        .catch((err) => console.warn(`[AddTempLayer] ${verb} failed:`, err))
 }
-const lifecycle = (): PluginLifecycle =>
-    (window as { mmgisAPI?: PluginLifecycle }).mmgisAPI ?? {}
 
 export function MMGISAddTempLayerAdapter() {
     // Engine-reported load failure for the most recently added layer. Layers
@@ -35,7 +51,7 @@ export function MMGISAddTempLayerAdapter() {
     useEffect(
         () =>
             mmgisOn(ADD_TEMP_LAYER_SHOW_EVENT, () => {
-                lifecycle().showPlugin?.(TOOL_ID)
+                setVisible(true)
             }),
         [],
     )
@@ -60,7 +76,7 @@ export function MMGISAddTempLayerAdapter() {
     )
 
     const onClose = useCallback(() => {
-        lifecycle().hidePlugin?.(TOOL_ID)
+        setVisible(false)
     }, [])
 
     const onAddLayer = useCallback((input: AddTempLayerInput) => {

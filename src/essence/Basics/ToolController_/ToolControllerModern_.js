@@ -446,6 +446,7 @@ const ToolControllerModern_ = {
      */
     destroyAllTools: function () {
         const targetIds = Array.from(loadedTools.keys())
+        const hadPlugins = toolIdToTargetId.size > 0 || deferredTools.size > 0
 
         logger.debug(`Destroying ${targetIds.length} loaded tools`)
 
@@ -455,6 +456,8 @@ const ToolControllerModern_ = {
 
         // Clear deferred registry (destroyTool already clears toolIdToTargetId and hiddenTools)
         deferredTools.clear()
+
+        if (hadPlugins) this.notifyPluginsChanged()
     },
 
     /**

@@ -302,6 +302,12 @@ export interface PanelManager {
     unregisterPanel(panelId: string): void;
 
     /**
+     * Drop every panel at once, as a layout teardown does.
+     * Broadcasts the resulting empty layout once rather than once per panel.
+     */
+    clear(): void;
+
+    /**
      * Add a tool to a panel region.
      * Tools are assigned at dashboard creation time.
      * Validates tool compatibility against panel capabilities.
