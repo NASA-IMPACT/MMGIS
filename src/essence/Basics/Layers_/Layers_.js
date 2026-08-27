@@ -6,7 +6,7 @@ import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
+import { isRasterTileLayerType } from '../MapEngines/types/engine'
 import {
     getActiveTileLevel,
     getTileLevelUrl,
@@ -76,35 +76,6 @@ function titilerUrlFor(layerConfig) {
 }
 
 /**
- * True when a registry entry has to be mutated through the IMapEngine facade
- * rather than Leaflet's methods — it has no Leaflet API to call, and under
- * deck.gl a mutation returns a replacement instance for the registry to adopt.
- *
- * Which layer types the facade builds is per-engine, not universal — see
- * ENGINE_LAYER_SUPPORT. Types the active engine has no builder for (velocity,
- * model, data, image and video under deck.gl) stay Leaflet-built, so the
- * registry always holds a mix.
- *
- * Facade-managed entries are identified positively by shape: a deck.gl layer
- * carries deck's `props` (or arrives as a `_deckLayer` wrapper, which
- * `Map_.nativeLayer` unwraps) and never Leaflet's `options`. Anything else in
- * the registry — Leaflet layers, aggregate arrays of them, and the
- * load-failure sentinel (`false`) — takes the Leaflet path.
- *
- * @param {object} layer - A registry entry from `L_.layers.layer`.
- * @returns {boolean}
- */
-function requiresEngineFacade(layer) {
-    return (
-        layer != null &&
-        layer.options == null &&
-        (layer.props != null || layer._deckLayer != null) &&
-        L_.Map_?.engine != null &&
-        L_.Map_.engine.engineType !== MAP_ENGINE.LEAFLET
-    )
-}
-
-/**
  * A layer's geographic extent as `[[south, west], [north, east]]` — the
  * `[LatLngLike, LatLngLike]` pair both map engines normalise — or null when no
  * extent can be worked out.
@@ -141,29 +112,28 @@ function layerBoundsFor(uuid) {
         }
     }
 
-    // A deck.gl layer keeps its features on `props.data` and exposes no
-    // measurement method. Only inline GeoJSON can be measured here — when
-    // `data` is a URL the features live inside deck's loaders, out of reach.
-    if (requiresEngineFacade(layer)) {
-        const data = layer.props?.data ?? layer._deckLayer?.props?.data
-        if (data != null && typeof data === 'object') {
-            // deck accepts a bare array of features as readily as a GeoJSON
-            // object; turf measures only the latter.
-            const geojson = Array.isArray(data)
-                ? { type: 'FeatureCollection', features: data }
-                : data
-            try {
-                const [west, south, east, north] = bbox(geojson)
-                // An empty FeatureCollection measures to infinities.
-                if ([west, south, east, north].every(Number.isFinite)) {
-                    return [
-                        [south, west],
-                        [north, east],
-                    ]
-                }
-            } catch (err) {
-                // Unmeasurable GeoJSON; try the configured footprint.
+    // A deck.gl layer keeps its features on props.data and exposes no
+    // measurement method.
+    const deckData = layer?.props?.data ?? layer?._deckLayer?.props?.data
+    if (deckData != null && typeof deckData === 'object') {
+        // deck accepts a bare array of features as readily as a GeoJSON
+        // object; turf measures only the latter. Only inline GeoJSON can be
+        // measured here — when data is a URL the features live inside deck's
+        // loaders, out of reach.
+        const geojson = Array.isArray(deckData)
+            ? { type: 'FeatureCollection', features: deckData }
+            : deckData
+        try {
+            const [west, south, east, north] = bbox(geojson)
+            // An empty FeatureCollection measures to infinities.
+            if ([west, south, east, north].every(Number.isFinite)) {
+                return [
+                    [south, west],
+                    [north, east],
+                ]
             }
+        } catch (err) {
+            // Unmeasurable GeoJSON; try the configured footprint.
         }
     }
 
@@ -2227,77 +2197,63 @@ const L_ = {
     },
     setLayerOpacity: function (name, newOpacity) {
         newOpacity = parseFloat(newOpacity)
+        // LithoSphere is not a map engine; the globe keeps its own path.
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
-        let l = L_.layers.layer[name]
 
-        // The configured fill opacity is the factor the slider scales; read it
-        // from config rather than caching it on the layer, so there is one
-        // source of truth.
+        const l = L_.layers.layer[name]
+        const engine = L_.Map_?.engine
+
+        // The configured fill opacity is what the slider scales. Read from
+        // config so there is one source of truth.
         const configuredFill =
             L_.layers.data[name]?.style?.fillOpacity != null
                 ? parseFloat(L_.layers.data[name].style.fillOpacity)
                 : 1
 
-        // Facade-managed layers go through the IMapEngine facade, which owns
-        // the instance and applies the change itself (mutating it in place,
-        // or replacing the one it holds). They have no attachments and no
-        // Leaflet marker elements, so the sublayer and CSS passes below do
-        // not apply to them.
-        if (requiresEngineFacade(l)) {
-            L_.Map_.engine.setLayerOpacity(L_.Map_.nativeLayer(l), newOpacity)
-        } else if (l && l.options) {
-            // Leaflet layers only. A registry entry that is neither
-            // facade-managed nor a Leaflet layer — the load failure sentinel
-            // (`false`) or an aggregate array — falls through to the registry
-            // write below, which is the value the engine reads when it builds
-            // or re-adds the layer.
-            try {
-                l.setOpacity(newOpacity)
-            } catch (error) {
-                l.setStyle({
-                    opacity: newOpacity,
-                    fillOpacity: newOpacity * configuredFill,
-                })
-            }
-            $(`.leafletMarkerShape_${F_.getSafeName(name)}`).css({
-                opacity: newOpacity,
+        // An MMGIS layer is a compound — main layer plus attachment
+        // decorations. The caller iterates the parts and asks the engine once
+        // per part; the adapter never learns what an attachment is. Skipped
+        // here: the load-failure sentinel (false) and aggregate arrays,
+        // neither of which is a layer the engine holds.
+        if (engine && l && l !== false && !Array.isArray(l)) {
+            engine.setLayerOpacity(L_.Map_.nativeLayer(l), newOpacity, {
+                fillOpacity: newOpacity * configuredFill,
             })
 
             const sublayers = L_.layers.attachments[name]
-            if (sublayers) {
-                for (let sub in sublayers) {
-                    if (
-                        sublayers[sub] !== false &&
-                        sublayers[sub].layer != null &&
-                        !['models'].includes(sub)
-                    ) {
-                        try {
-                            sublayers[sub].layer.setOpacity(newOpacity)
-                        } catch (error) {
-                            try {
-                                let opacity = newOpacity
-                                let fillOpacity = newOpacity * configuredFill
-                                if (sub === 'uncertainty_ellipses') {
-                                    opacity = opacity * 0.8
-                                    fillOpacity = fillOpacity * 0.25
-                                }
-                                sublayers[sub].layer.setStyle({
-                                    opacity,
-                                    fillOpacity,
-                                })
-                            } catch (error2) {
-                                /*
-                                if (sublayers[sub].layer._layers)
-                                    for (let sl in sublayers[sub].layer
-                                        ._layers) {
-                                    }
-                                    */
-                            }
-                        }
+            for (const sub in sublayers || {}) {
+                const attachment = sublayers[sub]
+                // 'models' render on the globe only — no 2D layer to dim.
+                if (
+                    attachment === false ||
+                    attachment.layer == null ||
+                    ['models'].includes(sub)
+                )
+                    continue
+
+                // Decoration dimming factors are product behaviour, not
+                // engine mechanics, so they are applied here and passed in
+                // as absolute values.
+                const isEllipses = sub === 'uncertainty_ellipses'
+                engine.setLayerOpacity(
+                    attachment.layer,
+                    newOpacity * (isEllipses ? 0.8 : 1),
+                    {
+                        fillOpacity:
+                            newOpacity *
+                            configuredFill *
+                            (isEllipses ? 0.25 : 1),
                     }
-                }
+                )
             }
         }
+
+        // MMGIS marker markup, keyed by layer name and created outside any
+        // engine — product markup, so it stays caller-side.
+        $(`.leafletMarkerShape_${F_.getSafeName(name)}`).css({
+            opacity: newOpacity,
+        })
+
         L_.layers.opacity[name] = newOpacity
 
         if (L_.activeFeature?.layer && L_.activeFeature.layerName === name) {

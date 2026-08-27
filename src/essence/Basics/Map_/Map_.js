@@ -1392,9 +1392,10 @@ async function makeVectorLayer(
             }
 
             // Only Leaflet vector layers reach here — the deck.gl branch above
-            // returns first. Attachments are therefore Leaflet-only, which is
-            // why L_.setLayerOpacity skips its sublayer pass for facade-managed
-            // layers.
+            // returns first. Attachments are therefore Leaflet-only:
+            // L_.layers.attachments has no entry for a deck.gl-built layer, so
+            // L_.setLayerOpacity's per-attachment loop has nothing to iterate
+            // for one.
             ctx.layerRegistry.attachments[layerObj.name] = vl.sublayers
             ctx.layerRegistry.layer[layerObj.name] = vl.layer
 
