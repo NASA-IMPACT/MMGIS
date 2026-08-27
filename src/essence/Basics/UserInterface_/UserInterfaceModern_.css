@@ -521,6 +521,18 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     flex-direction: column;
     gap: var(--ui-float-gap);
     pointer-events: none;
+    /* An overlay zone must never outgrow the map it floats over. Without this a
+       panel holding tall content stretches the zone past the viewport, and every
+       descendant then resolves its height against an unbounded parent — so a
+       panel body set to scroll simply grows instead, and its overflow runs off
+       the bottom of the screen with no way to reach it. */
+    max-height: 100%;
+}
+
+/* Panels may shrink to fit the bounded zone; without this they keep their
+   content height and the clamp above never reaches the scroll container. */
+.ui-float-zone > .ui-panel {
+    min-height: 0;
 }
 
 /* Compact mode has no panel margin, so add outer gap on the zone instead */
