@@ -16,17 +16,24 @@ import L_ from './Layers_'
  * layer's id, so deck.gl diffs it against the old one and cached tiles survive.
  *
  * @param {string} uuid - Layer UUID, also the engine-side layer id.
- * @param {object} layerObj - The live `L_.layers.data` entry, read on each call.
+ * @param {object} layerObj - Fallback config, used only when the registry has
+ *   no `L_.layers.data` entry for `uuid` at call time.
  * @returns {(layer: object) => object} A refresher returning the replacement.
  */
 export function makeDeckCOGRefresher(uuid, layerObj) {
-    return (layer) =>
-        layer.clone(
+    return (layer) => {
+        // Looked up per call rather than captured, so this stays a derivation
+        // of current config. Every writer mutates the entry in place today,
+        // which would hide a captured reference right up until one replaces
+        // the entry instead.
+        const config = L_.layers.data[uuid] ?? layerObj
+        return layer.clone(
             deckCOGProps(uuid, {
-                rawCogUrl: resolveDeckCOGFileUrl(layerObj),
-                layerObj,
+                rawCogUrl: resolveDeckCOGFileUrl(config),
+                layerObj: config,
                 // ?? not ||: an opacity of 0 is a real value, not "default to 1"
                 opacity: L_.layers.opacity[uuid] ?? 1,
             })
         )
+    }
 }

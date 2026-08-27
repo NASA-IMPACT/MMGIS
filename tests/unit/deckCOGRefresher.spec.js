@@ -48,6 +48,32 @@ describe('makeDeckCOGRefresher', () => {
         expect(refresh(makeDeckLayer('l2')).props.opacity).toBe(0.25)
     })
 
+    // Every config writer mutates the L_.layers.data entry in place today, so
+    // capturing the reference happens to work. It stops working the moment one
+    // replaces the entry instead — which is what this simulates.
+    test('reads the live registry entry, not the object captured at creation', () => {
+        const captured = { name: 'l4', url: 'COG:a.tif', cogColormap: 'viridis' }
+        L_.layers.opacity.l4 = 1
+        const refresh = makeDeckCOGRefresher('l4', captured)
+
+        L_.layers.data.l4 = { ...captured, cogColormap: 'plasma' }
+
+        expect(
+            refresh(makeDeckLayer('l4')).props.updateTriggers.renderTile[0]
+        ).toBe('plasma')
+    })
+
+    test('falls back to the given config when the registry has no entry', () => {
+        const layerObj = { name: 'l5', url: 'COG:a.tif', cogColormap: 'magma' }
+        L_.layers.opacity.l5 = 1
+        delete L_.layers.data.l5
+
+        expect(
+            makeDeckCOGRefresher('l5', layerObj)(makeDeckLayer('l5')).props
+                .updateTriggers.renderTile[0]
+        ).toBe('magma')
+    })
+
     test('returns a new instance rather than mutating the old one', () => {
         const layerObj = { name: 'l3', url: 'COG:a.tif' }
         L_.layers.opacity.l3 = 1
