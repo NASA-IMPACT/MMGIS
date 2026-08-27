@@ -818,10 +818,25 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
     }
 
-    setLayerOpacity(layer: any | string, opacity: number): void {
+    setLayerOpacity(
+        layer: any | string,
+        opacity: number,
+        options?: { fillOpacity?: number }
+    ): void {
         const leafletLayer = typeof layer === 'string' ? this._layers.get(layer) : layer
-        if (leafletLayer && typeof leafletLayer.setOpacity === 'function') {
+        if (!leafletLayer) return
+
+        // Tile, image and video layers carry a whole-element opacity; vector
+        // layers have to be re-styled, and paint stroke and fill separately.
+        if (typeof leafletLayer.setOpacity === 'function') {
             leafletLayer.setOpacity(opacity)
+            return
+        }
+        if (typeof leafletLayer.setStyle === 'function') {
+            leafletLayer.setStyle({
+                opacity,
+                fillOpacity: options?.fillOpacity ?? opacity,
+            })
         }
     }
 

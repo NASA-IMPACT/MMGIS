@@ -1029,20 +1029,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Set a layer's opacity and return the instance carrying it. deck.gl layers
-     * are immutable, so the caller must replace its reference with the result.
+     * Set a layer's opacity. deck.gl layers are immutable, so this replaces
+     * the instance the engine holds via {@link updateLayer}, which re-syncs
+     * the render list.
      *
-     * A layer on the map goes through {@link updateLayer}, which re-syncs the
-     * render list. One that is off the map is cloned instead, so it comes back
-     * at the requested opacity when it is added. A reference that is neither
-     * on the map nor a clonable layer instance (an unknown id, or a registry
-     * value that never became a layer) yields no replacement.
+     * A layer the engine does not hold (an unknown id, or a registry value
+     * that never became a layer) is a no-op here — `L_.layers.opacity[name]`
+     * is always written by the caller, and layer creation reads it, so it
+     * picks up the opacity when it is built or re-added.
      */
-    setLayerOpacity(layer: Layer | string, opacity: number): Layer | undefined {
+    setLayerOpacity(layer: Layer | string, opacity: number): void {
         const id = resolveLayerId(layer)
-        if (this._layers.has(id)) return this.updateLayer(id, { opacity })
-        if (typeof (layer as Layer)?.clone !== 'function') return undefined
-        return (layer as Layer).clone({ opacity }) as Layer
+        if (this._layers.has(id)) this.updateLayer(id, { opacity })
     }
 
     /**

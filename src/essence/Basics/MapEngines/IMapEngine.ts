@@ -207,7 +207,9 @@ export interface IMapEngine<
      *
      * Leaflet needs this because MMGIS builds its tile layers itself and hands
      * them to `addLayer` as native objects, which carry no id. deck.gl layers
-     * already carry `id`, so its implementation delegates to `addLayer`.
+     * already carry `id`, but its implementation still keys its registry by
+     * this caller-supplied `id` rather than `layer.id`, so the two can never
+     * drift apart.
      */
     registerLayer(id: string, layer: TLayer): void
 
@@ -252,14 +254,21 @@ export interface IMapEngine<
     bringToBack(layer: TLayer | string): void
 
     /**
-     * Set the opacity of a layer.
+     * Set a layer's opacity.
      *
-     * Engines with immutable layer objects (deck.gl) return the instance that
-     * carries the new opacity; callers holding a reference to the layer must
-     * replace it with the returned one. Engines that mutate in place (Leaflet)
-     * return nothing.
+     * Both engines return nothing: the engine owns the instance and performs
+     * whatever the change requires — mutating it (Leaflet) or replacing the one
+     * it holds (deck.gl). Callers never adopt a replacement.
+     *
+     * @param options.fillOpacity - The fill opacity to apply to layers that
+     * paint one. Scaling policy belongs to the caller, so this is an absolute
+     * value, never a factor the adapter multiplies. Defaults to `opacity`.
      */
-    setLayerOpacity(layer: TLayer | string, opacity: number): TLayer | void
+    setLayerOpacity(
+        layer: TLayer | string,
+        opacity: number,
+        options?: { fillOpacity?: number }
+    ): void
 
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).

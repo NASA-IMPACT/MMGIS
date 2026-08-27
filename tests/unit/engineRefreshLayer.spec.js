@@ -112,15 +112,19 @@ describe('DeckGLAdapter.refreshLayer', () => {
         const adapter = new DeckGLAdapter()
         adapter.addLayer(makeDeckLayer('l1', { data: 'old' }))
 
+        // The url carries a {time} placeholder and tileOptions substitutes it,
+        // so this is only observable if the fallback actually calls
+        // compileTileUrl — a byte-identical url (no placeholder) would pass
+        // even if compileTileUrl were never invoked.
         expect(
             adapter.refreshLayer('l1', {
-                url: 'https://x/{z}/{x}/{y}.png',
-                tileOptions: {},
+                url: 'https://x/{z}/{x}/{y}.png?time={time}',
+                tileOptions: { time: '2024-01-01T00:00:00Z' },
             })
         ).toBe(true)
-        expect(
-            adapter.getLayers().find((l) => l.id === 'l1').props.data
-        ).toBe('https://x/{z}/{x}/{y}.png')
+        const data = adapter.getLayers().find((l) => l.id === 'l1').props.data
+        expect(data).not.toContain('{time}')
+        expect(data).toContain('2024-01-01T00:00:00Z')
     })
 
     test('returns false for an unregistered id', () => {

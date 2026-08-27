@@ -2230,16 +2230,13 @@ const L_ = {
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
         let l = L_.layers.layer[name]
 
-        // Facade-managed layers go through the IMapEngine facade, which may
-        // return a replacement instance for the registry to hold (deck.gl
-        // layers are immutable). They have no attachments and no Leaflet marker
-        // elements, so the sublayer and CSS passes below do not apply to them.
+        // Facade-managed layers go through the IMapEngine facade, which owns
+        // the instance and applies the change itself (mutating it in place,
+        // or replacing the one it holds). They have no attachments and no
+        // Leaflet marker elements, so the sublayer and CSS passes below do
+        // not apply to them.
         if (requiresEngineFacade(l)) {
-            const updated = L_.Map_.engine.setLayerOpacity(
-                L_.Map_.nativeLayer(l),
-                newOpacity
-            )
-            if (updated) L_.layers.layer[name] = updated
+            L_.Map_.engine.setLayerOpacity(L_.Map_.nativeLayer(l), newOpacity)
         } else if (l && l.options) {
             // Leaflet layers only. A registry entry that is neither
             // facade-managed nor a Leaflet layer — the load failure sentinel

@@ -67,28 +67,6 @@ describe('L_.setLayerOpacity engine dispatch', () => {
         expect(setLayerOpacity).toHaveBeenCalledWith(original, 0.4)
     })
 
-    test('the instance returned by the engine replaces the registry entry', () => {
-        const replacement = makeEngineLayer('vec', 0.4)
-        setEngine(MAP_ENGINE.DECKGL, () => replacement)
-        L_.layers.layer.vec = makeEngineLayer('vec', 1)
-
-        L_.setLayerOpacity('vec', 0.4)
-
-        expect(L_.layers.layer.vec).toBe(replacement)
-        expect(L_.layers.opacity.vec).toBe(0.4)
-    })
-
-    test('the registry entry is kept when the engine returns nothing', () => {
-        setEngine(MAP_ENGINE.DECKGL, () => undefined)
-        const original = makeEngineLayer('vec', 1)
-        L_.layers.layer.vec = original
-
-        L_.setLayerOpacity('vec', 0.4)
-
-        expect(L_.layers.layer.vec).toBe(original)
-        expect(L_.layers.opacity.vec).toBe(0.4)
-    })
-
     test('an opacity of 0 reaches the engine rather than being read as unset', () => {
         const setLayerOpacity = vi.fn(() => makeEngineLayer('vec', 0))
         setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)

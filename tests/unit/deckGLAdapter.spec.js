@@ -220,13 +220,14 @@ test.describe('DeckGLAdapter', () => {
             expect(stored.opacity).toBe(0.4)
         })
 
-        test('setLayerOpacity returns the instance carrying the new opacity', () => {
+        test('setLayerOpacity replaces the stored layer and returns nothing', () => {
             const adapter = makeAdapter()
             const original = makeLayer('opacity-layer')
             adapter.addLayer(original)
-            const updated = adapter.setLayerOpacity(original, 0.25)
-            expect(updated.opacity).toBe(0.25)
-            expect(updated).not.toBe(original)
+            expect(adapter.setLayerOpacity(original, 0.25)).toBeUndefined()
+            const stored = adapter.getLayers().find((l) => l.id === 'opacity-layer')
+            expect(stored.opacity).toBe(0.25)
+            expect(stored).not.toBe(original)
             expect(original.opacity).toBeUndefined()
         })
 
@@ -238,11 +239,10 @@ test.describe('DeckGLAdapter', () => {
             expect(stored.opacity).toBe(0)
         })
 
-        test('setLayerOpacity clones an unmounted layer without adding it to the map', () => {
+        test('setLayerOpacity is a no-op for a layer the engine does not hold', () => {
             const adapter = makeAdapter()
             const offMap = makeLayer('hidden-layer')
-            const updated = adapter.setLayerOpacity(offMap, 0.6)
-            expect(updated.opacity).toBe(0.6)
+            expect(adapter.setLayerOpacity(offMap, 0.6)).toBeUndefined()
             expect(adapter.hasLayer('hidden-layer')).toBe(false)
         })
 
@@ -251,7 +251,7 @@ test.describe('DeckGLAdapter', () => {
             expect(adapter.setLayerOpacity('nonexistent', 0.5)).toBeUndefined()
         })
 
-        test('setLayerOpacity on a value with nothing to clone returns undefined without throwing', () => {
+        test('setLayerOpacity on a non-layer value returns undefined without throwing', () => {
             const adapter = makeAdapter()
             expect(() => adapter.setLayerOpacity(false, 0.5)).not.toThrow()
             expect(adapter.setLayerOpacity(false, 0.5)).toBeUndefined()
