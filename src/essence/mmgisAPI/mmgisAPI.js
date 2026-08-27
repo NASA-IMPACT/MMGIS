@@ -941,7 +941,9 @@ var mmgisAPI = {
      * Called as `handler(data, caller)`: `caller` is the id of the plugin
      * whose handle made the request, absent for one made without a handle.
      * A handler registered point-free is handed it too.
-     * @returns {function} - Cleanup function to remove the handler
+     * @returns {function} - Cleanup function to remove the handler. It removes
+     * this registration only: once something else has taken the name over, a
+     * late cleanup leaves the successor alone rather than unregistering it.
      * @example
      * const cleanup = mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter());
      * // Later: cleanup();
@@ -951,7 +953,13 @@ var mmgisAPI = {
             console.warn(`[mmgisAPI] Handler "${name}" is being replaced`)
         }
         handlers.set(name, handler)
-        return () => handlers.delete(name)
+        // Keyed on the handler, not just the name: a tool reloaded under the
+        // same id registers a fresh provider before the old one's cleanup
+        // necessarily runs, and a name-only delete would take the live
+        // successor down with the dead registration.
+        return () => {
+            if (handlers.get(name) === handler) handlers.delete(name)
+        }
     },
 
     /**
@@ -1018,8 +1026,14 @@ var mmgisAPI = {
      * providers answer differently, or not at all, when they cannot tell who
      * is asking. For subscribing (on), use mmgisAPI directly with full paths.
      *
-     * @param {string} pluginId - Unique plugin identifier (e.g., 'draw', 'info', 'layerManager')
-     * @returns {Object} Scoped API with emit, provide, request and getVars methods
+     * @param {string} pluginId - Unique plugin identifier (e.g., 'draw', 'info', 'layers')
+     * @returns {Object} Scoped API with emit, provide, request, getVars and
+     * release methods. `release` unregisters every provider the handle
+     * registered — its own `getVars` and anything put up through its
+     * `provide` — so whoever hands the handle to a tool can take the tool's
+     * registrations back when that tool is destroyed. The handle keeps working
+     * afterwards: anything provided through it after a release is tracked for
+     * the next one.
      * @example
      * const api = mmgisAPI.forPlugin('draw');
      *
@@ -1028,7 +1042,7 @@ var mmgisAPI = {
      * api.emit('featureUpdated', data);             // -> 'plugin:draw:featureUpdated'
      *
      * // Reading this plugin's configured tool variables
-     * const vars = api.getVars();                    // -> L_.getToolVars('draw') || {}
+     * const vars = api.getVars();                    // -> L_.getToolVars('draw'), {} when unconfigured
      *
      * // Requesting (full names, stamped with 'draw' as the caller)
      * api.request('plugin:info:getData');
@@ -1036,20 +1050,39 @@ var mmgisAPI = {
      *
      * // Subscribing (use mmgisAPI directly)
      * mmgisAPI.on('layer:visibilityChange', handler);
+     *
+     * // Handing the registrations back when the tool goes away
+     * api.release();
      */
     forPlugin(pluginId) {
         const prefix = `plugin:${pluginId}:`
+        const cleanups = []
+
+        // getToolVars lowercases the configured tool name but not the one it is
+        // asked for, so the lookup has to arrive lowercased or a plugin whose
+        // id carries any capitals reads an empty configuration. It also answers
+        // a miss with a truthy `{__noVars: true}` sentinel, which has to become
+        // a plain empty object or a plugin reads the sentinel as its config.
+        const varsKey = String(pluginId).toLowerCase()
+        const readVars = () => {
+            const vars = L_.getToolVars(varsKey)
+            return vars && !vars.__noVars ? vars : {}
+        }
 
         // Auto-register this plugin's tool variables as a queryable provider so
         // any consumer (including sandboxed marketplace plugins, where direct
         // method calls aren't possible) can read it via the standard request
         // pattern: `mmgisAPI.request('plugin:{id}:getVars')`. The scoped
         // `getVars()` below is a sync convenience for the plugin's own code.
-        mmgisAPI.provide(`${prefix}getVars`, () => L_.getToolVars(pluginId) || {})
+        cleanups.push(mmgisAPI.provide(`${prefix}getVars`, readVars))
 
         return {
             emit: (event, data) => mmgisAPI.emit(prefix + event, data),
-            provide: (name, handler) => mmgisAPI.provide(prefix + name, handler),
+            provide: (name, handler) => {
+                const off = mmgisAPI.provide(prefix + name, handler)
+                cleanups.push(off)
+                return off
+            },
             // Not prefixed, unlike emit/provide: those name this plugin's own
             // events and handlers, while a request addresses someone else's
             // provider and so takes the full name. The plugin's id rides along
@@ -1057,7 +1090,17 @@ var mmgisAPI = {
             // is how core knows whose popup a `map:hidePopup` may retract.
             request: (name, data) =>
                 mmgisAPI.request(name, data, { caller: pluginId }),
-            getVars: () => L_.getToolVars(pluginId) || {},
+            getVars: readVars,
+            // Unregisters everything this handle registered. Draining the list
+            // rather than iterating it is what makes a second call a no-op, and
+            // leaves the handle usable: a later `provide` refills the list for
+            // the next release. The bare call is safe only because `cleanups`
+            // holds the bus's own handler deletes, which cannot throw; should
+            // it ever collect a plugin's own teardown callback, each entry
+            // needs its own try/catch so one failure cannot strand the rest.
+            release: () => {
+                while (cleanups.length) cleanups.pop()()
+            },
             pluginId,
             prefix,
         }
