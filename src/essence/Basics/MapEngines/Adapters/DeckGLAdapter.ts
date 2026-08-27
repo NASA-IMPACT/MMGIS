@@ -75,6 +75,7 @@ import {
     committedVerticesFromChange,
     DrawEndClickGuard,
     drawModeKeyEvents,
+    DrawPointerWatch,
     drawStyles,
     validateDrawnLineString,
 } from './DrawingHelpers'
@@ -282,6 +283,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _terraDraw: TerraDraw | null = null
     private _terraDrawListeners: Array<() => void> = []
     private _drawEndClick = new DrawEndClickGuard()
+    private _drawPointers = new DrawPointerWatch()
 
     /** Registry of anchored HTML overlays (id -> teardown function). */
     private _overlays = new Map<string, () => void>()
@@ -381,6 +383,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this.disableDrawing()
 
         this._drawEndClick.dispose()
+        this._drawPointers.stop()
 
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
@@ -1119,6 +1122,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
+        this._drawPointers.start()
         this._syncLayers()
         this._emitEvent('drawstart', { shape })
     }
@@ -1143,15 +1147,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
-        // Whichever way the session ended, the clicks that ended it may still
-        // be on their way here — as may the last vertex click, when a plugin or
-        // a key ended the session before deck's recognizer fired. Armed after
-        // terra-draw has stopped, because stopping is what turns double-click
-        // zoom back on for the guard to hold back again.
+        // The drawing's clicks may still be on their way here: deck's
+        // recognizers hold each one back a tap interval to see whether a
+        // double-click is coming, so both the click that ended the session and
+        // the one that placed its last vertex can arrive after this. The watch
+        // is what knows which of those is still owed. Armed after terra-draw
+        // has stopped, because stopping is what turns double-click zoom back
+        // on for the guard to hold back again.
         this._drawEndClick.arm(
+            this._drawPointers.pendingClickFrom,
             this._drawEventElement(),
             (this._basemap as any)?.doubleClickZoom
         )
+        this._drawPointers.stop()
         this._syncLayers()
         return shape
     }
@@ -1302,8 +1310,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Report a click deck picked, unless the drawing session owns it: the ones
-     * terra-draw is taking as vertices, and the one it ended the session on,
-     * which deck delivers only after that (see {@link DrawEndClickGuard}).
+     * terra-draw is taking as vertices, and the ones deck was still holding as
+     * the session ended (see {@link DrawEndClickGuard}).
      */
     private _onPointerClick = (info: PickingInfo): void => {
         if (this._drawingShape || this._drawEndClick.pending) return

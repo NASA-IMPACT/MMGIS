@@ -36,7 +36,15 @@ export interface MapPopupRequest {
      * same way a button label does. A blank one reads as no title at all.
      */
     title?: string
-    /** Popup body. Sanitized by the core before it reaches the DOM. */
+    /**
+     * Popup body. Sanitized by the core against an allow-list before it
+     * reaches the DOM, and mounted in a shadow root, which is what lets it
+     * carry a `<style>` of its own: an author styles the inside of their card
+     * however they like without restyling the app around it. Everything that
+     * reaches past the card is refused — frames, plugins, form controls — and
+     * a link that goes anywhere opens in a tab of its own rather than
+     * navigating the app away.
+     */
     html?: string
     /** Filled button, rendered first in the actions row. */
     primaryAction?: MapPopupAction

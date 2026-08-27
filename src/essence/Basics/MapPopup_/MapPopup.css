@@ -12,9 +12,10 @@
     position: fixed;
     top: 0;
     left: 0;
-    /* No stacking level of its own. The card is mounted beside the map
-       container, so following the map in tree order is all it takes to paint
-       over it, while everything the app lays over the map — panels, the layer
+    /* A stacking context of its own — paint containment makes one — but no
+       level of its own, so the card paints where tree order puts it: after
+       the map container it is mounted beside, which is all covering the map
+       takes, while everything the app lays over the map — panels, the layer
        manager, a modal — claims a level and so goes on painting over the
        card. */
     box-sizing: border-box;
@@ -35,6 +36,14 @@
        for absolutely positioned content, so content that escapes the flow
        would paint outside the card's border rather than be clipped by it. */
     overflow: hidden;
+    /* Paint containment says as a rule what the transform above says only by
+       accident: a plugin's `position: fixed` content is laid out against the
+       card and clipped to it, rather than against the viewport, where an
+       `inset: 0` would spread it over an app the user could then neither read
+       nor click. A card is placed by a transform, and one with nowhere to be
+       is parked by a transform partly for this, so the two overlap — but this
+       is the half of it the card states outright rather than inherits. */
+    contain: paint;
     padding: var(--theme-spacing-2, 1rem);
     border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
     border-radius: var(--theme-radius-0, 0);

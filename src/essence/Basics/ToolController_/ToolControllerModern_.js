@@ -434,6 +434,15 @@ const ToolControllerModern_ = {
             }
         }
 
+        // A tool takes its own DOM with it but not the core resources it asked
+        // for. A map popup, for one, outlives its plugin: it holds the single
+        // popup slot and a pending request the plugin is no longer there to
+        // hear. Core owns those, so core is told the tool is gone and releases
+        // what it holds — announced on the bus rather than called directly,
+        // which is what keeps this controller from knowing anything about the
+        // services plugins reach for.
+        mmgisAPI.emit('plugins:destroyed', Object.freeze({ pluginId: toolId }))
+
         if (destroyed) {
             logger.debug(`Destroyed tool "${toolName}" from container "${targetId}"`)
         }

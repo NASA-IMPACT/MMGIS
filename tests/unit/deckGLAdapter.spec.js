@@ -67,6 +67,68 @@ function makeLayer(id, props = {}) {
     return { id, ...props, clone: (overrides = {}) => makeLayer(id, { ...props, ...overrides }) }
 }
 
+// Just enough of the maplibre Map API for TerraDrawMapLibreGLAdapter to
+// construct, register its layers, place a pointer on the globe, and tear itself
+// down. Registered ids are tracked so getLayer() answers the way a real style
+// would. The map is given a size and put in the document because terra-draw
+// drops a pointer that falls outside the map's own bounds, and because an
+// event only reaches a window listener from a node that is in the page.
+function makeDrawingBasemap() {
+    const canvas = document.createElement('canvas')
+    const container = document.createElement('div')
+    container.appendChild(canvas)
+    document.body.appendChild(container)
+    const bounds = {
+        x: 0, y: 0, left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600,
+    }
+    container.getBoundingClientRect = () => bounds
+    canvas.getBoundingClientRect = () => bounds
+    const styleLayers = new Set()
+    return {
+        getContainer: () => container,
+        getCanvas: () => canvas,
+        project: ({ lng, lat }) => ({ x: lng, y: lat }),
+        unproject: ({ x, y }) => ({ lng: x, lat: y }),
+        dragRotate: { isEnabled: () => true, enable: () => {}, disable: () => {} },
+        dragPan: { isEnabled: () => true, enable: () => {}, disable: () => {} },
+        doubleClickZoom: { enable: () => {}, disable: () => {} },
+        addSource: vi.fn(),
+        addLayer: vi.fn((layer) => styleLayers.add(layer.id)),
+        removeLayer: vi.fn((id) => styleLayers.delete(id)),
+        removeSource: vi.fn(),
+        getLayer: (id) => (styleLayers.has(id) ? { id } : undefined),
+        getSource: () => ({ setData: () => {} }),
+        setStyle: vi.fn(() => styleLayers.clear()),
+        off: vi.fn(),
+        removeControl: vi.fn(),
+        remove: vi.fn(),
+        version: '5.8.0',
+    }
+}
+
+/** An overlay-mode adapter a real terra-draw session can be started on. */
+function makeOverlayDrawingAdapter() {
+    const adapter = makeAdapter()
+    adapter._isOverlayMode = true
+    adapter._basemap = makeDrawingBasemap()
+    adapter._overlay = { setProps: vi.fn(), finalize: vi.fn() }
+    return adapter
+}
+
+/**
+ * End a drawing session the way a click on the map does. terra-draw commits
+ * from inside the pointerup, so the adapter's pointer watch is looking at that
+ * very event as the session ends — which is what tells the guard a click of
+ * the drawing's is still to come.
+ */
+function stopOnPointer(adapter) {
+    adapter._drawPointers.start()
+    const stop = () => adapter._stopDrawing()
+    window.addEventListener('pointerup', stop)
+    window.dispatchEvent(new Event('pointerup'))
+    window.removeEventListener('pointerup', stop)
+}
+
 test.describe('DeckGLAdapter', () => {
     test.describe('engineType', () => {
         test('is deckgl', () => {
@@ -405,48 +467,13 @@ test.describe('DeckGLAdapter', () => {
     test.describe('drawing overlay stacking', () => {
         const ANCHOR_ID = 'td-polygon'
 
-        // Just enough of the maplibre Map API for TerraDrawMapLibreGLAdapter
-        // to construct, register its layers, and tear them down. Registered ids
-        // are tracked so getLayer() answers the way a real style would.
-        function makeDrawingBasemap() {
-            const canvas = document.createElement('canvas')
-            const container = document.createElement('div')
-            const styleLayers = new Set()
-            return {
-                getContainer: () => container,
-                getCanvas: () => canvas,
-                dragRotate: { isEnabled: () => true, enable: () => {}, disable: () => {} },
-                dragPan: { isEnabled: () => true, enable: () => {}, disable: () => {} },
-                doubleClickZoom: { enable: () => {}, disable: () => {} },
-                addSource: vi.fn(),
-                addLayer: vi.fn((layer) => styleLayers.add(layer.id)),
-                removeLayer: vi.fn((id) => styleLayers.delete(id)),
-                removeSource: vi.fn(),
-                getLayer: (id) => (styleLayers.has(id) ? { id } : undefined),
-                getSource: () => ({ setData: () => {} }),
-                setStyle: vi.fn(() => styleLayers.clear()),
-                off: vi.fn(),
-                removeControl: vi.fn(),
-                remove: vi.fn(),
-                version: '5.8.0',
-            }
-        }
-
-        function makeDrawingAdapter() {
-            const adapter = makeAdapter()
-            adapter._isOverlayMode = true
-            adapter._basemap = makeDrawingBasemap()
-            adapter._overlay = { setProps: vi.fn(), finalize: vi.fn() }
-            return adapter
-        }
-
         function lastSyncedLayers(adapter) {
             const calls = adapter._overlay.setProps.mock.calls
             return calls[calls.length - 1][0].layers
         }
 
         test('enableDrawing anchors every deck layer below the terra-draw stack', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.addLayer(makeLayer('raster'))
             adapter.addLayer(makeLayer('vector'))
             adapter.enableDrawing('polygon')
@@ -457,20 +484,20 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('the anchor id matches the bottom-most layer terra-draw registers', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.enableDrawing('polygon')
             expect(adapter._basemap.addLayer.mock.calls[0][0].id).toBe('td-polygon')
         })
 
         test('layers added mid-draw are anchored too', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.enableDrawing('rectangle')
             adapter.addLayer(makeLayer('added-mid-draw'))
             expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([ANCHOR_ID])
         })
 
         test('no anchor is stamped while the terra-draw layers are out of the style', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.addLayer(makeLayer('raster'))
             adapter.enableDrawing('polygon')
             adapter._basemap.getLayer = () => undefined
@@ -482,7 +509,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('setBasemapStyle drops the anchor before the swap wipes the terra-draw layers', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.addLayer(makeLayer('raster'))
             adapter.enableDrawing('polygon')
             adapter.setBasemapStyle('https://example.com/style.json')
@@ -493,7 +520,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('setBasemapStyle cancels the live drawing session', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             const cancels = []
             adapter.on('drawcancel', (e) => cancels.push(e))
             adapter.enableDrawing('polygon')
@@ -503,7 +530,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('destroy cancels the live drawing session', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             const cancels = []
             adapter.on('drawcancel', (e) => cancels.push(e))
             adapter.enableDrawing('polygon')
@@ -512,7 +539,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('disableDrawing drops the anchor', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.addLayer(makeLayer('raster'))
             adapter.enableDrawing('polygon')
             adapter.disableDrawing()
@@ -520,7 +547,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('the layer registry keeps the original un-anchored instances', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             const original = makeLayer('raster')
             adapter.addLayer(original)
             adapter.enableDrawing('polygon')
@@ -760,7 +787,7 @@ test.describe('DeckGLAdapter', () => {
 
             // terra-draw commits on pointerup, and the adapter ends the session
             // there and then — this is what deck calls afterwards.
-            adapter._stopDrawing()
+            stopOnPointer(adapter)
             adapter._onPointerClick(pickAt(-120, 40))
 
             expect(clicks).toEqual([])
@@ -779,7 +806,7 @@ test.describe('DeckGLAdapter', () => {
                 const clicks = []
                 adapter.on('click', (e) => clicks.push(e.latlng))
 
-                adapter._stopDrawing()
+                stopOnPointer(adapter)
                 vi.advanceTimersByTime(400)
                 canvas.dispatchEvent(new Event('pointerdown'))
                 vi.advanceTimersByTime(50)
@@ -812,7 +839,7 @@ test.describe('DeckGLAdapter', () => {
                 // Tap 1's pointerup is where terra-draw commits; the guard's
                 // own listeners only go on from here, so that pointerup is not
                 // one of the events it sees.
-                adapter._stopDrawing()
+                stopOnPointer(adapter)
 
                 // Tap 2, inside the 300ms interval that makes the pair a
                 // double-click.
@@ -842,7 +869,7 @@ test.describe('DeckGLAdapter', () => {
                 const clicks = []
                 adapter.on('click', (e) => clicks.push(e.latlng))
 
-                adapter._stopDrawing()
+                stopOnPointer(adapter)
                 vi.advanceTimersByTime(250)
                 canvas.dispatchEvent(new Event('pointerdown'))
                 vi.advanceTimersByTime(49)
@@ -867,7 +894,7 @@ test.describe('DeckGLAdapter', () => {
                 const clicks = []
                 adapter.on('click', (e) => clicks.push(e.latlng))
 
-                adapter._stopDrawing()
+                stopOnPointer(adapter)
                 vi.advanceTimersByTime(250)
                 canvas.dispatchEvent(new Event('pointerdown'))
                 vi.advanceTimersByTime(49)
@@ -881,10 +908,10 @@ test.describe('DeckGLAdapter', () => {
             }
         })
 
-        // A session can end with no click at all — Enter, Escape, a mode switch
-        // — and then no pointer arrives to close the window. It closes on its
-        // own so the guard cannot sit there absorbing the user's clicks
-        // indefinitely.
+        // The click a finishing gesture was covered for does not always come:
+        // a pointerup deck reads as the end of a drag produces none. The window
+        // closes on its own so the guard cannot sit there absorbing the user's
+        // clicks indefinitely.
         test('the guard stops absorbing once the finish window has passed', () => {
             vi.useFakeTimers()
             try {
@@ -892,7 +919,7 @@ test.describe('DeckGLAdapter', () => {
                 const clicks = []
                 adapter.on('click', (e) => clicks.push(e.latlng))
 
-                adapter._stopDrawing()
+                stopOnPointer(adapter)
                 vi.advanceTimersByTime(600)
                 adapter._onPointerClick(pickAt(-120, 40))
 
@@ -926,7 +953,7 @@ test.describe('DeckGLAdapter', () => {
                     stop: () => { enabled = true },
                 }
 
-                adapter._stopDrawing()
+                stopOnPointer(adapter)
                 expect(enabled).toBe(false)
 
                 vi.advanceTimersByTime(600)
@@ -936,6 +963,68 @@ test.describe('DeckGLAdapter', () => {
             }
         })
 
+        // Enter ends the drawing with the pointer nowhere near it, so there is
+        // no click of the drawing's on the way. A window opened anyway would
+        // sit through the user's next gesture and swallow the click it ends on.
+        test('a session ended on a key does not swallow the click that follows', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter, canvas } = makeSessionAdapter('polygon')
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                adapter._stopDrawing()
+                vi.advanceTimersByTime(250)
+                canvas.dispatchEvent(new Event('pointerdown'))
+                vi.advanceTimersByTime(50)
+                canvas.dispatchEvent(new Event('pointerup'))
+                vi.advanceTimersByTime(300)
+                adapter._onPointerClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // A plugin ending the drawing from its own panel — a Finish button, a
+        // mode switch, the Escape it handles itself — never touched the map, so
+        // the click the user makes next is theirs from the first one.
+        test('a session a plugin ended does not swallow the click that follows', () => {
+            const { adapter } = makeSessionAdapter('polygon')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            adapter.disableDrawing()
+            adapter._onPointerClick(pickAt(-120, 40))
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        })
+
+        // With no gesture to cover, there is no double-click to keep off the
+        // map either, so the double-click zoom terra-draw turns back on as it
+        // stops the mode is the user's again straight away.
+        test('double-click zoom stays on when no gesture ended the session', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            let enabled = false
+            adapter._basemap = {
+                getCanvas: () => canvas,
+                doubleClickZoom: {
+                    isEnabled: () => enabled,
+                    enable: () => { enabled = true },
+                    disable: () => { enabled = false },
+                },
+            }
+            adapter._terraDraw = {
+                clear: () => { },
+                stop: () => { enabled = true },
+            }
+
+            adapter.disableDrawing()
+
+            expect(enabled).toBe(true)
+        })
+
         test('disableDrawing emits drawcancel once', () => {
             const { adapter } = makeDrawingAdapter({ finishes: false })
             const shapes = []
@@ -943,6 +1032,177 @@ test.describe('DeckGLAdapter', () => {
             adapter.disableDrawing()
             adapter.disableDrawing()
             expect(shapes).toEqual(['polygon'])
+        })
+    })
+
+    // Which clicks a finish leaves behind is not something terra-draw says: it
+    // emits `finish` from inside whatever event it is reacting to, and the
+    // pointer that placed the last vertex may be a separate event again. These
+    // drive real terra-draw sessions, so the answer comes from the events the
+    // way it does on a real map.
+    test.describe('drawing - the clicks a finish leaves behind', () => {
+        const pointer = (canvas, type, x, y) =>
+            canvas.dispatchEvent(
+                new PointerEvent(type, {
+                    clientX: x,
+                    clientY: y,
+                    bubbles: true,
+                    isPrimary: true,
+                })
+            )
+
+        /** A two-vertex linestring, one click short of a finish. */
+        const drawLine = (adapter, canvas) => {
+            adapter.enableDrawing('linestring')
+            pointer(canvas, 'pointerdown', 10, 10)
+            pointer(canvas, 'pointerup', 10, 10)
+            pointer(canvas, 'pointermove', 50, 50)
+            pointer(canvas, 'pointerdown', 50, 50)
+            pointer(canvas, 'pointerup', 50, 50)
+        }
+
+        // A deck pick, whose `coordinate` is in [lng, lat] order.
+        const pickAt = (lng, lat) => ({ coordinate: [lng, lat], x: 12, y: 34 })
+
+        // Point mode commits on the pointerup of the click that places it, and
+        // deck reports that click a tap interval later — with the session over.
+        test('a shape finished on a click leaves the guard covering it', () => {
+            const adapter = makeOverlayDrawingAdapter()
+            const canvas = adapter._basemap.getCanvas()
+            const finished = []
+            adapter.on('drawcomplete', (e) => finished.push(e))
+
+            adapter.enableDrawing('point')
+            pointer(canvas, 'pointerdown', 10, 10)
+            pointer(canvas, 'pointerup', 10, 10)
+
+            expect(finished).toHaveLength(1)
+            expect(adapter._drawEndClick.pending).toBe(true)
+        })
+
+        // Enter finishes from a keyup, but deck is still holding the click that
+        // placed the last vertex: it holds every one a tap interval to see
+        // whether a double-click is coming. That click lands with the session
+        // over, and reporting it would dismiss whatever a plugin opened from
+        // the `drawcomplete` the key produced a moment earlier.
+        test('the last vertex click deck still holds when Enter finishes is covered', () => {
+            vi.useFakeTimers()
+            try {
+                const adapter = makeOverlayDrawingAdapter()
+                const canvas = adapter._basemap.getCanvas()
+                const finished = []
+                const clicks = []
+                adapter.on('drawcomplete', (e) => finished.push(e))
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                drawLine(adapter, canvas)
+                vi.advanceTimersByTime(100)
+                canvas.dispatchEvent(
+                    new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })
+                )
+
+                // deck's recognizer, a tap interval after that last pointerup.
+                vi.advanceTimersByTime(200)
+                adapter._onPointerClick(pickAt(-120, 40))
+
+                expect(finished).toHaveLength(1)
+                expect(clicks).toEqual([])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // A plugin's own Finish button reaches the same keyup path, and a
+        // plugin that defers past the pointerup — a debounce, a confirm step —
+        // lands in the same interval the user's Enter does.
+        test('the last vertex click deck still holds when a plugin finishes is covered', () => {
+            vi.useFakeTimers()
+            try {
+                const adapter = makeOverlayDrawingAdapter()
+                const canvas = adapter._basemap.getCanvas()
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                drawLine(adapter, canvas)
+                vi.advanceTimersByTime(50)
+                expect(adapter.finishDrawing()).toBe(true)
+
+                vi.advanceTimersByTime(250)
+                adapter._onPointerClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // Enter used the way it usually is — the shape read back, then the key
+        // — comes with the last vertex click long delivered, so there is
+        // nothing left to cover and the user's next click is theirs.
+        test('a shape finished on Enter with the pointer idle leaves the guard out of the way', () => {
+            vi.useFakeTimers()
+            try {
+                const adapter = makeOverlayDrawingAdapter()
+                const canvas = adapter._basemap.getCanvas()
+                const finished = []
+                const clicks = []
+                adapter.on('drawcomplete', (e) => finished.push(e))
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                drawLine(adapter, canvas)
+                vi.advanceTimersByTime(400)
+                canvas.dispatchEvent(
+                    new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })
+                )
+
+                expect(finished).toHaveLength(1)
+                expect(adapter._drawEndClick.pending).toBe(false)
+
+                // The user's own next click, deck reporting it an interval
+                // after the gesture as always.
+                canvas.dispatchEvent(new Event('pointerdown'))
+                canvas.dispatchEvent(new Event('pointerup'))
+                vi.advanceTimersByTime(300)
+                adapter._onPointerClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // The window covering a held click is timed from the pointer, not from
+        // the finish above it, so it runs out when that click's own cover
+        // would have — and the gesture the user starts after it closes the
+        // window outright, rather than being taken for a double-click's second
+        // tap the way one inside the interval is.
+        test('a key finish does not stretch the cover past the pointer it is timed from', () => {
+            vi.useFakeTimers()
+            try {
+                const adapter = makeOverlayDrawingAdapter()
+                const canvas = adapter._basemap.getCanvas()
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                drawLine(adapter, canvas)
+                vi.advanceTimersByTime(250)
+                canvas.dispatchEvent(
+                    new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })
+                )
+                expect(adapter._drawEndClick.pending).toBe(true)
+
+                // A tap interval past that last pointerup, so the user's.
+                vi.advanceTimersByTime(60)
+                canvas.dispatchEvent(new Event('pointerdown'))
+                vi.advanceTimersByTime(50)
+                canvas.dispatchEvent(new Event('pointerup'))
+                vi.advanceTimersByTime(300)
+                adapter._onPointerClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            } finally {
+                vi.useRealTimers()
+            }
         })
     })
 
@@ -1095,7 +1355,7 @@ test.describe('DeckGLAdapter', () => {
             const clicks = []
             adapter.on('click', (e) => clicks.push(e.latlng))
             adapter._drawingShape = 'rectangle'
-            adapter._stopDrawing()
+            stopOnPointer(adapter)
 
             props.onClick(pickAt(-120, 40))
 
@@ -1109,7 +1369,7 @@ test.describe('DeckGLAdapter', () => {
             const { adapter, props } = initAdapter(null)
             const clicks = []
             adapter.on('click', (e) => clicks.push(e.latlng))
-            adapter._drawEndClick.arm(document.createElement('canvas'))
+            adapter._drawEndClick.arm(Date.now(), document.createElement('canvas'))
 
             props.onClick(pickAt(-120, 40))
 

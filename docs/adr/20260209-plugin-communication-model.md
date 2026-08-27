@@ -650,7 +650,7 @@ class SandboxBridge {
     }
 
     // Request/Response - same API as core
-    async request(name, data, timeout = 5000) {
+    async request(name, data, { timeout = 5000 } = {}) {
         if (!this._canRequest(name)) {
             throw new Error(`Capability denied: ${name}`);
         }
@@ -670,7 +670,7 @@ class SandboxBridge {
 }
 ```
 
-**Note:** The 5s default suits providers that answer promptly, but some requests stay pending by design. `map:showPopup` answers only once the popup closes, which can be minutes of the user reading it. Long-lived requests like it must be exempt from the default timeout — an unbounded class in the bridge, or a caller-supplied `timeout` — otherwise the bridge rejects a request whose popup is still on screen and the plugin handles a failure that never happened.
+**Note:** The 5s default suits providers that answer promptly, but some requests stay pending by design. `map:showPopup` answers only once the popup closes, which can be minutes of the user reading it. Long-lived requests like it must be exempt from the default timeout — an unbounded class in the bridge, or a `timeout` the caller sets in the options object — otherwise the bridge rejects a request whose popup is still on screen and the plugin handles a failure that never happened. The options object is where per-request settings belong on both sides of the boundary: core's `request` takes one already, holding the caller id it stamps, and an object is what keeps a timeout and a caller from competing for the same positional slot.
 
 **Note:** Sandboxed plugins can `provide()` data, but only within a namespaced scope (see [Plugin-to-Plugin Communication](#plugin-to-plugin-communication)). They cannot override core data providers.
 

@@ -399,6 +399,19 @@ let Map_ = {
             // opened against a previous mission's map never outlives it.
             _providerCleanups.push(() => MapPopup_.hide())
 
+            // A plugin torn down mid-mission — one unloaded on command, or all
+            // of them when the layout re-renders — never passes through the
+            // map, so the map hears about it here and empties the popup slot.
+            // Which plugin left is not worth working out: there is one slot,
+            // and a popup outliving its plugin holds it while showing content
+            // nothing is left to stand behind. Closing it costs at most a
+            // bystander's popup, whose request then resolves 'closed' —
+            // already the outcome for a popup that goes away without the user
+            // acting on it.
+            _providerCleanups.push(
+                window.mmgisAPI.on('plugins:destroyed', () => MapPopup_.hide())
+            )
+
             // Engine event re-emits — translate adapter events onto the bus
             const reEmit = (engineEvent, busEvent) => {
                 const handler = (payload) => window.mmgisAPI.emit(busEvent, payload)

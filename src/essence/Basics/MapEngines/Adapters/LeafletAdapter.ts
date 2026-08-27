@@ -50,6 +50,7 @@ import {
     committedVerticesFromChange,
     DrawEndClickGuard,
     drawModeKeyEvents,
+    DrawPointerWatch,
     drawStyles,
     validateDrawnLineString,
 } from './DrawingHelpers'
@@ -138,6 +139,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     private _drawingShape: DrawShape | null = null
     private _terraDrawListeners: Array<() => void> = []
     private _drawEndClick = new DrawEndClickGuard()
+    private _drawPointers = new DrawPointerWatch()
 
     /**
      * Initialize the Leaflet map instance
@@ -333,6 +335,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._overlays.clear()
 
         this._drawEndClick.dispose()
+        this._drawPointers.stop()
 
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
@@ -829,8 +832,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
     /**
      * Report a click Leaflet delivered, unless the drawing session owns it:
-     * the ones terra-draw is taking as vertices, and the one the session ended
-     * on, which arrives after it (see {@link DrawEndClickGuard}). Nothing in
+     * the ones terra-draw is taking as vertices, and the ones that arrive once
+     * the session has ended (see {@link DrawEndClickGuard}). Nothing in
      * Leaflet holds a vertex click back on its own — terra-draw's adapter
      * never stops click propagation — so the session is checked here, at the
      * single point every click the adapter reports passes through, as
@@ -1074,6 +1077,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
+        this._drawPointers.start()
         this.emit('drawstart', { shape })
     }
 
@@ -1097,14 +1101,17 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             try { this._terraDraw.clear() } catch { /* terra-draw mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
-        // Whichever way the session ended, the clicks that ended it reach
-        // Leaflet after this, on the native clicks that follow the pointerups.
-        // Armed after terra-draw has stopped, because stopping is what turns
-        // double-click zoom back on for the guard to hold back again.
+        // The drawing's clicks reach Leaflet after this, on the native clicks
+        // that follow its pointerups; the watch is what knows whether one is
+        // still owed. Armed after terra-draw has stopped, because stopping is
+        // what turns double-click zoom back on for the guard to hold back
+        // again.
         this._drawEndClick.arm(
+            this._drawPointers.pendingClickFrom,
             this._drawEventElement(),
             (this._map as any)?.doubleClickZoom
         )
+        this._drawPointers.stop()
         return shape
     }
 
