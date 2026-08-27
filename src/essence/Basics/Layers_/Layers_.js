@@ -2210,12 +2210,23 @@ const L_ = {
                 ? parseFloat(L_.layers.data[name].style.fillOpacity)
                 : 1
 
+        // Recorded first: the registry is now the sole source of truth for a
+        // layer's opacity (getLayerOpacity reads it, and layer creation seeds
+        // itself from it). If an attachment below threw, a write down here
+        // would be skipped along with the marker pass and the layer would come
+        // back at the wrong opacity.
+        L_.layers.opacity[name] = newOpacity
+
         // An MMGIS layer is a compound — main layer plus attachment
         // decorations. The caller iterates the parts and asks the engine once
         // per part; the adapter never learns what an attachment is. Skipped
         // here: the load-failure sentinel (false) and aggregate arrays,
         // neither of which is a layer the engine holds.
         if (engine && l && l !== false && !Array.isArray(l)) {
+            // nativeLayer unwraps the main layer, whose registry entry may be
+            // a wrapper carrying `._deckLayer` rather than the engine's own
+            // layer. Attachments below are passed raw because they are always
+            // plain Leaflet objects, never wrapped.
             engine.setLayerOpacity(L_.Map_.nativeLayer(l), newOpacity, {
                 fillOpacity: newOpacity * configuredFill,
             })
@@ -2253,8 +2264,6 @@ const L_ = {
         $(`.leafletMarkerShape_${F_.getSafeName(name)}`).css({
             opacity: newOpacity,
         })
-
-        L_.layers.opacity[name] = newOpacity
 
         if (L_.activeFeature?.layer && L_.activeFeature.layerName === name) {
             L_.highlight(L_.activeFeature.layer)

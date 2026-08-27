@@ -129,11 +129,11 @@ describe('DeckGLAdapter.setLayerOpacity', () => {
 
     // deck.gl has no separate fill channel at this level — a single `opacity`
     // prop covers stroke and fill together — so options.fillOpacity is
-    // accepted (matching IMapEngine's signature) but subsumed by `opacity`
-    // rather than applied on its own. Pinned so a future change that starts
-    // honouring it separately has to update this test rather than slip
-    // through silently.
-    test('accepts a third argument and still applies opacity, not a separate fill value', () => {
+    // subsumed by `opacity` rather than applied on its own. Pinned so a future
+    // change that starts honouring it separately has to update this test
+    // rather than slip through silently. (Nothing here pins the parameter's
+    // declaration: JS does not enforce arity and vitest does not typecheck.)
+    test('subsumes a given fillOpacity into opacity, writing no separate fill prop', () => {
         const adapter = new DeckGLAdapter()
         adapter.addLayer(makeDeckLayer('l1', { opacity: 1 }))
 

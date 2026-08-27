@@ -1681,6 +1681,11 @@ async function makeTileLayer(layerObj, mapContext = null) {
                 // The layer kind supplies how it rebuilds; the engine executes it.
                 // Registered here because this is where the deckRaster
                 // classification already happened.
+                //
+                // A refresher but no registerLayer, the opposite of the
+                // Leaflet tail below: a deck layer already carries its own id
+                // and the engine adopts it when the layer is added, so there
+                // is nothing to register. Only the refresher is missing.
                 Map_.engine.setLayerRefresher(
                     layerObj.name,
                     makeDeckCOGRefresher(layerObj.name, layerObj)

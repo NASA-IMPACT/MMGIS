@@ -143,6 +143,20 @@ describe('L_.setLayerOpacity asks the engine per part', () => {
         expect(() => L_.setLayerOpacity('a', 0.5)).not.toThrow()
         expect(L_.layers.opacity.a).toBe(0.5)
     })
+
+    // The registry is the sole source of truth for opacity — getLayerOpacity
+    // reads it and layer creation seeds itself from it — so the write must not
+    // sit behind calls that can throw, such as an attachment's.
+    test('records the opacity even when an engine call throws', () => {
+        const setLayerOpacity = vi.fn(() => {
+            throw new Error('attachment blew up')
+        })
+        setEngine(MAP_ENGINE.LEAFLET, setLayerOpacity)
+        L_.layers.layer.a = makeLeafletLayer()
+
+        expect(() => L_.setLayerOpacity('a', 0.5)).toThrow()
+        expect(L_.layers.opacity.a).toBe(0.5)
+    })
 })
 
 describe('L_.getLayerOpacity reads the registry', () => {
