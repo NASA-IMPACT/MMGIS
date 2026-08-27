@@ -26,6 +26,7 @@ import {
     resolveDeckCOGFileUrl,
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
+import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -1669,6 +1670,21 @@ async function makeTileLayer(layerObj, mapContext = null) {
                 // ?? not ||: an opacity of 0 is a real value, not "default to 1"
                 opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             })
+            // Map_.engine is always the MAIN map's engine. A non-default ctx
+            // targets a different map with its own registry, so registering
+            // into Map_.engine here would collide with the main map's entry
+            // under the same uuid. Guard to the main path only; the deckRaster
+            // classification above and the buildDeckCOGLayer call are not
+            // similarly guarded today (pre-existing, out of scope here).
+            if (ctx.default === true) {
+                // The layer kind supplies how it rebuilds; the engine executes it.
+                // Registered here because this is where the deckRaster
+                // classification already happened.
+                Map_.engine.setLayerRefresher(
+                    layerObj.name,
+                    makeDeckCOGRefresher(layerObj.name, layerObj)
+                )
+            }
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()
             return
@@ -1741,6 +1757,19 @@ async function makeTileLayer(layerObj, mapContext = null) {
         bounds: bb,
         variables: layerObj.variables || {},
     })
+
+    // The engine addresses layers by id; a Leaflet layer MMGIS built itself
+    // carries none until it is registered. Without this, refreshLayer cannot
+    // find it and time reload silently stops working.
+    // Guarded to the main map: Map_.engine is always the MAIN map's engine, so
+    // registering a layer built for a secondary ctx (its own map/registry)
+    // would collide with the main map's entry under the same uuid.
+    if (ctx.default === true) {
+        Map_.engine.registerLayer(
+            layerObj.name,
+            ctx.layerRegistry.layer[layerObj.name]
+        )
+    }
 
     // Add to map
     if (ctx.default != true) {
