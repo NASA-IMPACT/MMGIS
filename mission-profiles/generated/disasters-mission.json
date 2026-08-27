@@ -157,8 +157,7 @@
         "panelTools": [
           "MapControlTool",
           "AddTempLayerTool",
-          "AOITool",
-          "ChartTool"
+          "AOITool"
         ],
         "id": "float-top-right",
         "dimensions": {
@@ -167,6 +166,27 @@
           "minWidth": "325px"
         },
         "transparent": true
+      },
+      {
+        "position": "float-top-right",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "collapsed",
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "panelTools": [
+          "ChartTool"
+        ],
+        "id": "float-top-right-analysis",
+        "dimensions": {
+          "maxWidth": "",
+          "defaultWidth": "320px",
+          "minWidth": "325px"
+        },
+        "transparent": false
       }
     ],
     "layoutStyle": "compact"
@@ -453,7 +473,15 @@
                 "end_datetime": "2026-07-14T00:00:00Z",
                 "layers": [
                   {
-                    "key": "nisar-gunw",
+                    "key": "nisar-gunw-d54",
+                    "defaultOn": true
+                  },
+                  {
+                    "key": "nisar-gunw-jun13",
+                    "defaultOn": true
+                  },
+                  {
+                    "key": "nisar-gunw-a61",
                     "defaultOn": true
                   }
                 ]
@@ -618,7 +646,18 @@
         "end": "2025-01-31T00:00:00Z"
       },
       "variables": {
-        "legendOrientation": "vertical"
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/gaia-total-composite/items/gaia-total-composite-gaia_total_day_2025-01_monthly",
+          "assets": [
+            "total"
+          ],
+          "bidx": [
+            1
+          ],
+          "nodata": 0
+        }
       },
       "properties": {
         "key": "gaia-total",
@@ -673,7 +712,18 @@
         "end": "2025-01-31T00:00:00Z"
       },
       "variables": {
-        "legendOrientation": "vertical"
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/gaia-wood-composite/items/gaia-wood-composite-gaia_low-durability-wood-framed-1_2025-01_monthly",
+          "assets": [
+            "wood"
+          ],
+          "bidx": [
+            1
+          ],
+          "nodata": 0
+        }
       },
       "properties": {
         "key": "gaia-wood",
@@ -709,7 +759,18 @@
         "blend": "none"
       },
       "variables": {
-        "legendOrientation": "vertical"
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/opera-distalert-s1-daily/items/opera-distalert-s1-daily-disturbance_track71_2025-01-09_day",
+          "assets": [
+            "dist-s1"
+          ],
+          "bidx": [
+            1
+          ],
+          "nodata": 255
+        }
       },
       "name": "OPERA Surface Disturbance (DIST-S1)",
       "uuid": "f154c768-c8e7-4b23-a783-1ec458bdbb20",
@@ -760,7 +821,19 @@
         "blend": "none"
       },
       "variables": {
-        "legendOrientation": "vertical"
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel2-swir-daily/items/sentinel2-swir-daily-S2B_MSIL2A_shortwaveInfrared_164439_T16SDF_2026-01-29_day",
+          "assets": [
+            "swir"
+          ],
+          "bidx": [
+            1,
+            2,
+            3
+          ]
+        }
       },
       "name": "Sentinel-2 SWIR",
       "uuid": "107a6a84-7738-4060-a900-c2514a11dce5",
@@ -811,7 +884,18 @@
         "blend": "none"
       },
       "variables": {
-        "legendOrientation": "vertical"
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-dmgassessment-daily/items/sentinel1-dmgassessment-daily-s1_dmgassessment_Jan16_Delivery_LA_damage_v0_2025-01-21_day",
+          "assets": [
+            "damage"
+          ],
+          "bidx": [
+            1
+          ],
+          "nodata": 0
+        }
       },
       "name": "Sentinel-1 Likely Damaged Areas",
       "uuid": "2db3fe61-f031-4a6e-89a2-33bfe1ca4389",
@@ -843,53 +927,183 @@
       }
     },
     {
-      "name": "NISAR Displacement (GUNW)",
-      "uuid": "79d1b630-f7b5-48c2-aec9-4a127209b4df",
       "sublayers": [],
       "type": "TileLayer",
       "visibility": false,
       "sourceType": "url",
-      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=gunw&bidx=1&nodata=-9999&rescale=-40,40&resampling=bilinear&colormap_name=rdylbu_r&datetime={starttime}/{endtime}",
       "tileformat": "wmts",
       "controlled": false,
       "initialOpacity": 1,
       "minZoom": 0,
       "maxNativeZoom": 20,
       "maxZoom": 20,
-      "boundingBox": [
-        -70.050557,
-        8.987945,
-        -64.722905,
-        11.555504
-      ],
       "throughTileServer": false,
       "cogTransform": false,
-      "cogResampling": "bilinear",
-      "cogColormap": "rdylbu_r",
-      "cogMin": -40,
-      "cogMax": 40,
-      "cogUnits": "cm",
-      "description": "**NISAR Displacement (GUNW)** — geocoded unwrapped interferogram giving ground displacement in centimetres along the radar line of sight. Shows where the ground actually moved, and how far, defining rupture extent.",
       "style": {
         "brightness": 1,
         "contrast": 1,
         "saturation": 1,
         "blend": "none"
       },
+      "variables": {
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_D54_GUNW_unw_deIon_deRamp_maskWater_cm_2026-06-17_2026-06-29_day",
+          "assets": [
+            "gunw"
+          ],
+          "bidx": [
+            1
+          ],
+          "nodata": -9999
+        }
+      },
+      "name": "NISAR Displacement — Track D54 (descending)",
+      "uuid": "5a1c9f02-7d64-4f18-9b3e-6c0a2e4d7b81",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_D54_GUNW_unw_deIon_deRamp_maskWater_cm_2026-06-17_2026-06-29_day/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=gunw&bidx=1&nodata=-9999&rescale=-25,25&resampling=bilinear&colormap_name=rdylbu_r",
+      "boundingBox": [
+        -70.050557,
+        9.013243,
+        -67.481667,
+        11.531936
+      ],
+      "description": "**NISAR Displacement — Track D54 (descending)** — line-of-sight ground displacement in cm from a single NISAR GUNW interferogram (2026-06-17 to 2026-06-29). Descending track 54, covering the western half of the activation area. Colour ramp spans ±25 cm; stronger motion saturates.",
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "start": "2026-06-17T00:00:00Z",
+        "end": "2026-06-29T00:00:00Z",
+        "dataStartTime": "2026-06-17T00:00:00Z",
+        "dataEndTime": "2026-06-29T00:00:00Z"
+      },
+      "properties": {
+        "key": "nisar-gunw-d54",
+        "sector": [
+          "Public Safety"
+        ],
+        "hazard": [
+          "Earthquake"
+        ]
+      }
+    },
+    {
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "throughTileServer": false,
+      "cogTransform": false,
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_GUNW_unw_deIon_deRamp_maskWater_cm_2026-06-13_2026-06-25_day",
+          "assets": [
+            "gunw"
+          ],
+          "bidx": [
+            1
+          ],
+          "nodata": -9999
+        }
+      },
+      "name": "NISAR Displacement — Jun 13–25",
+      "uuid": "b47e8d35-2a90-4c6f-8e51-19d3f7c0a624",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_GUNW_unw_deIon_deRamp_maskWater_cm_2026-06-13_2026-06-25_day/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=gunw&bidx=1&nodata=-9999&rescale=-25,25&resampling=bilinear&colormap_name=rdylbu_r",
+      "boundingBox": [
+        -69.528283,
+        8.987945,
+        -66.599966,
+        11.555504
+      ],
+      "description": "**NISAR Displacement — Jun 13–25** — line-of-sight ground displacement in cm from a single NISAR GUNW interferogram (2026-06-13 to 2026-06-25). Central swath spanning the epicentral region, earliest of the three pairs. Colour ramp spans ±25 cm; stronger motion saturates.",
       "time": {
         "enabled": true,
         "type": "global",
         "format": "%Y-%m-%dT%H:%M:%SZ",
         "start": "2026-06-13T00:00:00Z",
-        "end": "2026-06-30T00:00:00Z",
+        "end": "2026-06-25T00:00:00Z",
         "dataStartTime": "2026-06-13T00:00:00Z",
-        "dataEndTime": "2026-06-30T00:00:00Z"
-      },
-      "variables": {
-        "legendOrientation": "vertical"
+        "dataEndTime": "2026-06-25T00:00:00Z"
       },
       "properties": {
-        "key": "nisar-gunw",
+        "key": "nisar-gunw-jun13",
+        "sector": [
+          "Public Safety"
+        ],
+        "hazard": [
+          "Earthquake"
+        ]
+      }
+    },
+    {
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "throughTileServer": false,
+      "cogTransform": false,
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_GUNW_A61_unw_deIon_deRamp_maskWater_cm_clipped_2026-06-18_2026-06-30_day",
+          "assets": [
+            "gunw"
+          ],
+          "bidx": [
+            1
+          ],
+          "nodata": -9999
+        }
+      },
+      "name": "NISAR Displacement — Track A61 (ascending)",
+      "uuid": "c9f3b6a1-4e28-4d70-b5c2-8f61d0e394a7",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/nisar-gunw-composite/items/nisar-gunw-composite-NISAR_GUNW_A61_unw_deIon_deRamp_maskWater_cm_clipped_2026-06-18_2026-06-30_day/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=gunw&bidx=1&nodata=-9999&rescale=-25,25&resampling=bilinear&colormap_name=rdylbu_r",
+      "boundingBox": [
+        -67.182364,
+        9.499985,
+        -64.722905,
+        10.759496
+      ],
+      "description": "**NISAR Displacement — Track A61 (ascending)** — line-of-sight ground displacement in cm from a single NISAR GUNW interferogram (2026-06-18 to 2026-06-30). Ascending track 61, covering the eastern edge of the activation area. Colour ramp spans ±25 cm; stronger motion saturates.",
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "start": "2026-06-18T00:00:00Z",
+        "end": "2026-06-30T00:00:00Z",
+        "dataStartTime": "2026-06-18T00:00:00Z",
+        "dataEndTime": "2026-06-30T00:00:00Z"
+      },
+      "properties": {
+        "key": "nisar-gunw-a61",
         "sector": [
           "Public Safety"
         ],
