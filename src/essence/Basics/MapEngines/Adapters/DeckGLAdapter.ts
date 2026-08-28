@@ -950,16 +950,14 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Clone the existing layer with overridden props. deck.gl detects the same
-     * `id` and updates GPU resources incrementally.
+     * Clone the existing layer with overridden props. deck.gl detects the
+     * same `id` and updates GPU resources incrementally.
      *
-     * A held value that is not a deck.gl layer is declined, with a warning.
-     * That state is invalid — this engine should only ever hold layers it
-     * built — but it is reachable today for layer types this engine has no
-     * builder for, which fall through to being constructed with Leaflet.
-     * Declining keeps the app running; the warning is there so the underlying
-     * mis-construction surfaces instead of presenting as an update that
-     * quietly did nothing.
+     * A held value that is not a deck.gl layer is declined, with a warning,
+     * rather than applied: this engine should only ever hold layers it
+     * built, but layer types it has no builder for fall through to being
+     * built with Leaflet instead. The warning exists so that mis-construction
+     * surfaces, rather than presenting as an update that quietly did nothing.
      */
     updateLayer(layer: Layer | string, options: Partial<LayerOptions>): Layer {
         const id = resolveLayerId(layer)
@@ -1059,18 +1057,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * the instance the engine holds via {@link updateLayer}, which re-syncs
      * the render list.
      *
-     * Two cases are a no-op: an id the engine does not hold (an unknown id,
-     * or a registry value that never became a layer), and a native Leaflet
-     * layer — MMGIS still builds `data`, `image`, `video` and `velocity`
-     * layers with Leaflet under the deck.gl engine, and such a layer carries
-     * no `id` to be found by. Either way `L_.layers.opacity[name]` is written
-     * by the caller regardless, and layer creation reads it, so the opacity
-     * is picked up when the layer is next built or re-added.
+     * A no-op when the engine doesn't hold `id`, or holds a native Leaflet
+     * layer (MMGIS still builds `data`, `image`, `video` and `velocity`
+     * layers with Leaflet under this engine, and those carry no `id` to be
+     * found by). Either way the caller has already written
+     * `L_.layers.opacity[name]`, which layer creation reads, so the opacity
+     * is picked up next time the layer is built or re-added.
      *
-     * `options.fillOpacity` is accepted to satisfy {@link IMapEngine} but not
-     * applied separately: deck.gl's single `opacity` prop already scales a
-     * layer's stroke and fill together at draw time, so there is no separate
-     * fill channel to target here.
+     * `options.fillOpacity` is accepted but not applied separately — see
+     * {@link IMapEngine.setLayerOpacity}.
      */
     setLayerOpacity(
         layer: Layer | string,

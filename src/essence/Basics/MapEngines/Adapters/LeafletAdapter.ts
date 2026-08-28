@@ -785,11 +785,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     }
 
     /**
-     * A Leaflet refresher mutates the layer in place — the instance is already
-     * on the map, so there is nothing for this adapter to swap. Its `void`
-     * return type reflects that: {@link refreshLayer} discards whatever a
-     * refresher returns, because adopting one into the registry without also
-     * swapping the layer on the map would leave the two disagreeing.
+     * Mutates the layer in place; any return value is ignored. See
+     * {@link IMapEngine.setLayerRefresher}.
      */
     setLayerRefresher(
         id: string,

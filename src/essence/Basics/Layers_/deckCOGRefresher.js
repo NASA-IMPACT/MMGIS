@@ -6,18 +6,16 @@ import L_ from './Layers_'
  * How a client-side COG layer recomputes itself, for
  * `IMapEngine.setLayerRefresher`.
  *
- * Lives on the domain side, not in the adapter: it reads mission config and
- * the opacity registry, which adapters must not know about. The engine only
- * knows it has a function to call.
- *
- * Everything is re-derived per call — colormap, rescale, opacity and the
- * time-substituted file URL — so a colormap change, a rescale change and a
- * time change all flow through this one path. The returned instance keeps the
- * layer's id, so deck.gl diffs it against the old one and cached tiles survive.
+ * Lives on the domain side, not the adapter: it reads mission config and the
+ * opacity registry, which adapters must not know about. Colormap, rescale,
+ * opacity and the time-substituted file URL are all re-derived per call, so
+ * one path covers every kind of change. The returned instance keeps the
+ * layer's id, so deck.gl diffs it against the old one and cached tiles
+ * survive.
  *
  * @param {string} uuid - Layer UUID, also the engine-side layer id.
- * @param {object} layerObj - Fallback config, used only when the registry has
- *   no `L_.layers.data` entry for `uuid` at call time.
+ * @param {object} layerObj - Fallback config used when the registry has no
+ *   `L_.layers.data` entry for `uuid`.
  * @returns {(layer: object) => object} A refresher returning the replacement.
  */
 export function makeDeckCOGRefresher(uuid, layerObj) {

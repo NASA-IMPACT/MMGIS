@@ -202,37 +202,30 @@ export interface IMapEngine<
 
     /**
      * Take ownership of an externally-built native layer under `id`, so
-     * id-addressed methods can find it. Does not change what is on the map —
-     * `addLayer` still does that.
+     * id-addressed methods can find it.
      *
-     * Leaflet needs this because MMGIS builds its tile layers itself and hands
-     * them to `addLayer` as native objects, which carry no id. deck.gl layers
-     * already carry `id`, but its implementation still keys its registry by
-     * this caller-supplied `id` rather than `layer.id`, so the two can never
-     * drift apart.
+     * Leaflet holds the layer without changing what is drawn — `addLayer`
+     * still does that separately. deck.gl has no such split: holding a layer
+     * *is* drawing it, since `_layers` is simultaneously its registry and its
+     * render list. That's why callers that want a layer held but not yet
+     * shown may only rely on this method on the Leaflet path.
      */
     registerLayer(id: string, layer: TLayer): void
 
     /**
      * Register how one layer recomputes itself, or pass null to clear.
      *
-     * Called by the module that owns the layer kind, at creation — never by an
-     * adapter, which stays layer-type-agnostic. The engine invokes it with the
-     * live instance and remains its owner, so the function must not retain it.
+     * Called by the module that owns the layer kind, at creation — never by
+     * an adapter, which stays layer-type-agnostic. The engine invokes it with
+     * the live instance and remains its owner; the function must not retain
+     * it.
      *
-     * What a refresher does with that instance differs per engine, because the
-     * two engines' layers do:
-     * - **deck.gl** — layers are immutable, so a refresher returns a
-     *   replacement and the engine adopts it. Returning nothing means "nothing
-     *   to apply" and the engine keeps what it holds.
-     * - **Leaflet** — layers are mutable and already on the map, so a
-     *   refresher mutates in place. Any value it returns is IGNORED: adopting
-     *   one into the registry without also swapping the layer on the map would
-     *   leave the two disagreeing, so the adapter does not try.
-     *
-     * The signature keeps `TLayer | void` because this interface is generic
-     * over whichever engine is in play; the Leaflet adapter narrows its own
-     * parameter to a void-returning function.
+     * deck.gl layers are immutable, so a refresher returns a replacement and
+     * the engine adopts it (returning nothing keeps what's held). Leaflet
+     * layers are mutable and already on the map, so a refresher mutates in
+     * place and any return value is ignored. The signature stays
+     * `TLayer | void` for that reason; the Leaflet adapter narrows its own
+     * parameter to void.
      */
     setLayerRefresher(
         id: string,
@@ -266,25 +259,19 @@ export interface IMapEngine<
     bringToBack(layer: TLayer | string): void
 
     /**
-     * Set a layer's opacity.
+     * Set a layer's opacity. Both engines return nothing — each owns its
+     * instance and applies the change internally: Leaflet mutates in place,
+     * deck.gl replaces the instance it holds. Callers never adopt a
+     * replacement.
      *
-     * Both engines return nothing: the engine owns the instance and performs
-     * whatever the change requires — mutating it (Leaflet) or replacing the one
-     * it holds (deck.gl). Callers never adopt a replacement.
+     * `fillOpacity` is not honoured uniformly, deliberately: Leaflet applies
+     * it to the fill of layers that paint one separately from their stroke
+     * (`setStyle`'s `fillOpacity`). deck.gl has no separate fill channel —
+     * its single `opacity` prop scales stroke and fill together, so the value
+     * is accepted here to satisfy the signature but subsumed into `opacity`.
      *
-     * The two engines do not honour `fillOpacity` uniformly — this is a real
-     * per-engine difference, not an oversight:
-     * - Leaflet applies it to the fill of layers that paint one separately
-     *   from their stroke (`setStyle`'s `fillOpacity`).
-     * - deck.gl has no separate fill channel at this level: its single
-     *   `opacity` prop scales stroke and fill together at draw time, so the
-     *   value is accepted (to satisfy this signature) and subsumed by
-     *   `opacity` rather than applied on its own.
-     *
-     * @param options.fillOpacity - The fill opacity to apply to layers that
-     * paint one separately from their stroke. Scaling policy belongs to the
-     * caller, so this is an absolute value, never a factor the adapter
-     * multiplies. Defaults to `opacity`. See per-engine note above.
+     * @param options.fillOpacity - Absolute fill opacity, not a multiplier.
+     * Defaults to `opacity`. See per-engine note above.
      */
     setLayerOpacity(
         layer: TLayer | string,
