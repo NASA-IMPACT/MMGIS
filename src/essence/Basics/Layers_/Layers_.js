@@ -708,8 +708,8 @@ const L_ = {
      * Rebuild a layer that was built before its legend arrived.
      *
      * A legend given as a `legend:` CSV path is fetched asynchronously, so it
-     * routinely lands after the layer has been made. Leaflet does not care -
-     * it re-reads the legend for every feature it styles - but deck.gl
+     * routinely lands after the layer has been made. Leaflet does not care —
+     * it re-reads the legend for every feature it styles — but deck.gl
      * compiles the legend into the layer's style accessors when the layer is
      * built, so a layer built without one stays flat forever. Without this the
      * same configuration would draw a ramp on Leaflet and flat colour on

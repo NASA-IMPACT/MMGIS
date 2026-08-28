@@ -306,8 +306,8 @@ function parseWmsUrl(url: string): {
  * (see LegendStyle). Its colours outrank both the `*Prop` and the flat fields,
  * matching the precedence the Leaflet vector path has always applied. It is
  * compiled here, once per layer build, because deck.gl re-runs an accessor
- * over every feature whenever it regenerates that attribute - on a data
- * change, on an updateTrigger change, and for each newly loaded tile - so
+ * over every feature whenever it regenerates that attribute — on a data
+ * change, on an updateTrigger change, and for each newly loaded tile — so
  * anything hoistable belongs outside the accessor. A legend that specifies no
  * styling leaves the constants intact.
  */
