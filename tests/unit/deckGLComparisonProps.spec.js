@@ -191,6 +191,27 @@ describe('comparison prop overrides', () => {
         expect(rightPane.overlay.props.layers[0].props.data).toBe('https://host/JUN')
     })
 
+    test('a pinned side holds its props when the registry layer is rebuilt', () => {
+        const adapter = makeAdapter()
+        adapter._layers.set('mvt', fakeLayer('mvt', { data: 'https://host/{endtime}/{z}/{x}/{y}.pbf' }))
+        adapter.enableComparison({
+            leftLayerIds: ['mvt'],
+            rightLayerIds: ['mvt'],
+            layout: 'swipe',
+            leftLayerProps: { mvt: { data: 'https://host/JAN/{z}/{x}/{y}.pbf' } },
+        })
+
+        // A time change on a vector tile layer rebuilds it from scratch and
+        // re-registers the new instance, rather than editing the old one in
+        // place. The pinned side must still outrank whatever instance the
+        // registry currently holds.
+        adapter.addLayer(fakeLayer('mvt', { data: 'https://host/JUN/{z}/{x}/{y}.pbf' }))
+
+        const { left, right } = rendered(adapter)
+        expect(left[0].props.data).toBe('https://host/JAN/{z}/{x}/{y}.pbf')
+        expect(right[0].props.data).toBe('https://host/JUN/{z}/{x}/{y}.pbf')
+    })
+
     test('overrides survive a layout switch', () => {
         const adapter = makeAdapter()
         adapter._layers.set('co2', fakeLayer('co2', { data: 'https://host/a' }))

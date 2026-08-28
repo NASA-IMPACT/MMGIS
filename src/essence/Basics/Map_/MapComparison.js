@@ -17,7 +17,8 @@
  *   mmgisAPI.request('map:comparison:setDividerPosition', 0.5)
  *   mmgisAPI.on('map:comparison:dividerMoved', handler)
  *
- * Providers and events are registered in Map_.js once the engine is ready.
+ * The `map:comparison:*` providers above are registered by `init`, which Map_
+ * calls once the engine is ready and again on every engine change.
  */
 
 import './MapComparison.css'
@@ -40,11 +41,62 @@ const _state = {
 let _dividerEl = null
 let _mouseDragMove = null
 let _mouseDragEnd = null
+let _providerCleanups = []
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+/**
+ * Bind the controller to the active map engine and register the
+ * `map:comparison:*` providers on the event bus.
+ *
+ * Map_ calls this again whenever it re-initialises onto another engine, so any
+ * comparison left running on the previous one is torn down first and the
+ * previous registration is dropped, which also keeps the bus from warning about
+ * replaced handlers.
+ */
 function init(engine) {
+    _resetForEngineChange()
     _engine = engine
+
+    _providerCleanups.forEach((cleanup) => cleanup())
+    _providerCleanups = []
+
+    // The bus is optional and, in tests, often a partial stub, so the
+    // registration is skipped rather than assumed.
+    if (typeof window.mmgisAPI?.provide !== 'function') return
+
+    const provide = (name, handler) =>
+        _providerCleanups.push(window.mmgisAPI.provide(name, handler))
+
+    provide('map:comparison:enable', (p) => enable(p))
+    provide('map:comparison:disable', () => disable())
+    provide('map:comparison:setLeftSide', (p) => setLeftSide(p))
+    provide('map:comparison:setRightSide', (p) => setRightSide(p))
+    provide('map:comparison:setLayout', (p) => setLayout(p))
+    provide('map:comparison:setDividerPosition', (p) => setDividerPosition(p))
+    provide('map:comparison:getState', () => getState())
+}
+
+/**
+ * Drop comparison state belonging to a map engine that is going away.
+ *
+ * The divider is attached to the outgoing engine's container and the incoming
+ * engine starts with no comparison of its own, so the controller returns to its
+ * disabled state and says so on the bus, letting consumers drop a stale "on"
+ * indicator. The outgoing engine is not asked to undo anything, since it is
+ * being discarded, and no comparison is re-established here: layers are built
+ * after the controller is bound, so there is nothing yet to compare.
+ */
+function _resetForEngineChange() {
+    if (!_state.enabled) return
+
+    _destroyDivider()
+
+    _state.enabled = false
+    _state.left = { layerIds: [], date: null }
+    _state.right = { layerIds: [], date: null }
+
+    window.mmgisAPI?.emit('map:comparison:disabled', {})
 }
 
 /**
