@@ -154,8 +154,8 @@ function interpolateMultipleColors(
 }
 
 /**
- * Parse any CSS colour string a legend might carry - `#rgb`, `#rrggbb`,
- * `rgb()`, `rgba()`, `hsl()`, a named colour - into RGB components.
+ * Parse any CSS colour string a legend might carry — `#rgb`, `#rrggbb`,
+ * `rgb()`, `rgba()`, `hsl()`, a named colour — into RGB components.
  *
  * d3-color does the work, so this stays pure: the previous implementation
  * fell back to appending a probe element to `document.body` and reading its
@@ -187,7 +187,7 @@ function colorToRgb(color: string): Rgb | null {
  * Whether a legend row opts into style matching.
  *
  * An inline legend carries a real boolean here, but a legend parsed from CSV
- * carries the cell text, and the string `'false'` is truthy - so a row that
+ * carries the cell text, and the string `'false'` is truthy — so a row that
  * plainly opts out would otherwise style features anyway.
  */
 function isStyleMatching(value: unknown): boolean {

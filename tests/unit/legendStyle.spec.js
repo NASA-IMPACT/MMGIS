@@ -223,7 +223,7 @@ test.describe('LegendStyle', () => {
         test('treats NaN as non-numeric rather than as the ramp maximum', () => {
             // typeof NaN is 'number', so NaN used to reach the interpolator,
             // bracket against no stop and fall out of it holding the top
-            // colour - a null-sentinel measurement drawn as the scale maximum.
+            // colour: a null-sentinel measurement drawn as the scale maximum.
             expect(resolve(ramp(), { co2: NaN })).toBe(null)
         })
 
