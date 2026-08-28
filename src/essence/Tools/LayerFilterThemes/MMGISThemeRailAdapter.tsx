@@ -2,15 +2,15 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { ThemeRail } from './lib'
 import { normalizeRailThemes, resolveInitialThemeId } from './lib/normalizeThemes'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
-import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
     mmgisEmit,
     mmgisGetMissionPath,
     mmgisGetPanels,
-    mmgisTogglePanelCollapsed,
-    PANEL_LAYOUT_CHANGED_EVENT,
-    type PanelSummary,
+    mmgisHidePanel,
+    mmgisOnPanelsChanged,
+    mmgisShowPanel,
+    type PanelInfo,
 } from '../_shared/adapters/mmgisAPI'
 import type { ThemeSummary } from './lib/types'
 
@@ -18,9 +18,10 @@ import type { ThemeSummary } from './lib/types'
 // replacement panel can subscribe without inheriting the old panel's name.
 const SELECTED_THEME_EVENT = 'plugin:layerfilterthemes:selectedThemeChanged'
 
-// How this plugin is identified in the layout, which is how the rail finds the
-// panel it lives in — and from there its neighbour.
-const TOOL_ID = 'layerfilterthemes'
+// How the layout identifies this plugin — the `js` id a mission config gives
+// the tool, which is what a panel lists in `toolIds`. Distinct from the
+// lowercased tool name `tool:getVars` is keyed by.
+const TOOL_ID = 'LayerFilterThemesTool'
 
 type ThemeRailVars = {
     themes?: unknown
@@ -30,14 +31,14 @@ type ThemeRailVars = {
 
 /**
  * The panel the rail's chevron opens and closes: the configured one, else the
- * rail's own neighbour — the one other collapsible panel sharing its region.
- * Null when nothing resolves, which leaves the chevron out rather than drawing
- * a control with nothing behind it.
+ * rail's own neighbour — the one other panel sharing its region. Null when
+ * nothing resolves, which leaves the chevron out rather than drawing a control
+ * with nothing behind it.
  */
 function resolveTogglePanel(
-    panels: PanelSummary[],
+    panels: PanelInfo[],
     configured: unknown,
-): PanelSummary | null {
+): PanelInfo | null {
     if (panels.length === 0) return null
 
     if (typeof configured === 'string' && configured !== '') {
@@ -47,12 +48,9 @@ function resolveTogglePanel(
     const own = panels.find((panel) => panel.toolIds.includes(TOOL_ID))
     if (!own) return null
     // Only an unambiguous neighbour is safe to pick blind; a region holding
-    // several collapsible panels needs `togglePanelId` to say which.
+    // several panels needs `togglePanelId` to say which.
     const neighbours = panels.filter(
-        (panel) =>
-            panel.id !== own.id &&
-            panel.position === own.position &&
-            panel.collapsible,
+        (panel) => panel.id !== own.id && panel.position === own.position,
     )
     return neighbours.length === 1 ? neighbours[0] : null
 }
@@ -120,21 +118,38 @@ export function MMGISThemeRailAdapter() {
     }, [])
 
     // The layout is core's, so the rail reads it rather than tracking its own
-    // idea of open/closed: re-pull on every layout change and the chevron stays
-    // right even when the panel is closed from somewhere else.
-    const [panels, setPanels] = useState<PanelSummary[]>([])
-    const refreshPanels = useCallback(async () => {
-        const all = await mmgisGetPanels()
-        if (!all) return
-        // A drag-resize broadcasts a layout change per frame, none of which
-        // move anything the rail draws — keep the old array unless what the
-        // rail reads actually differs, so those frames cost no re-render.
+    // idea of open/closed: core's listing is the only source, and the chevron
+    // stays right even when the panel is closed from somewhere else.
+    const [panels, setPanels] = useState<PanelInfo[]>([])
+    // A drag-resize broadcasts a layout change per frame, none of which move
+    // anything the rail draws — keep the old array unless what the rail reads
+    // actually differs, so those frames cost no re-render.
+    const applyPanels = useCallback((all: PanelInfo[]) => {
         setPanels((current) =>
             JSON.stringify(current) === JSON.stringify(all) ? current : all,
         )
     }, [])
-    useMMGISHandlerReady('panels:getAll', refreshPanels)
-    useMMGISEvent(PANEL_LAYOUT_CHANGED_EVENT, refreshPanels)
+    // Set once the broadcast has delivered a listing, which is fresher than
+    // anything the seed below can be holding.
+    const followingRef = useRef(false)
+    useEffect(
+        () =>
+            mmgisOnPanelsChanged((all) => {
+                followingRef.current = true
+                applyPanels(all)
+            }),
+        [applyPanels],
+    )
+    // Seed the first listing: the subscription only carries changes, so a rail
+    // that mounts into a settled layout would otherwise draw nothing until
+    // something moved. The panel providers register at module load, so there is
+    // no handler to wait for — but the request can still resolve after a
+    // broadcast has landed, so it yields to one that has.
+    useEffect(() => {
+        void mmgisGetPanels().then((all) => {
+            if (!followingRef.current) applyPanels(all)
+        })
+    }, [applyPanels])
 
     const togglePanel = useMemo(
         () => resolveTogglePanel(panels, vars.togglePanelId),
@@ -154,8 +169,23 @@ export function MMGISThemeRailAdapter() {
                 `[LayerFilterThemes] config error: togglePanelId "${configuredToggleId}" matches no panel — the collapse control is hidden`,
             )
     }, [panels, configuredToggleId])
+    // Collapsed panels open, visible ones close. Naming the direction rather
+    // than asking core to toggle keeps the chevron and the panel in step: the
+    // command matches the state the rail is drawing. A panel whose constraints
+    // forbid collapsing refuses, which is worth saying out loud — the rail
+    // cannot tell from the listing which panels those are.
     const onToggleCollapse = useCallback(() => {
-        if (togglePanel) void mmgisTogglePanelCollapsed(togglePanel.id)
+        if (!togglePanel) return
+        const command =
+            togglePanel.state === 'collapsed' ? mmgisShowPanel : mmgisHidePanel
+        void command(togglePanel.id).then((result) => {
+            // Compared against the discriminant so the branch narrows to the
+            // arm carrying a reason.
+            if (result.ok === false)
+                console.warn(
+                    `[LayerFilterThemes] panel "${togglePanel.id}" refused: ${result.reason}`,
+                )
+        })
     }, [togglePanel])
 
     return (

@@ -20,8 +20,9 @@ function text(value: unknown): string | null {
 }
 
 /**
- * A bare `icon` string, from configs written before the icon gained a source.
- * Anything carrying a path or scheme is a file; the rest is an MDI name.
+ * A bare `icon` string — the shorter form a mission config may carry instead
+ * of a source plus its field. Anything holding a path or scheme is a file;
+ * the rest is an MDI name.
  */
 function legacyIcon(value: string): ThemeIcon {
     return /[/.]|^data:/i.test(value)

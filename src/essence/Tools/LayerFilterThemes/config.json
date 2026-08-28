@@ -26,7 +26,7 @@
     },
     "name": "LayerFilterThemes",
     "defaultIcon": "view-dashboard-outline",
-    "description": "Theme rail for the two-step layer filter (step 1). Configures its own theme list and owns the selection; pair it with a panel plugin (LayerFilter, or a swap-in) whose theme ids match. Also carries a chevron that opens/closes a neighbouring panel. Events \u2014 emits: plugin:layerfilterthemes:selectedThemeChanged { themeId, initial? }. Requests: tool:getVars, panels:getAll, panels:toggleCollapsed.",
+    "description": "Theme rail for the two-step layer filter (step 1). Configures its own theme list and owns the selection; pair it with a panel plugin (LayerFilter, or a swap-in) whose theme ids match. Also carries a chevron that opens/closes a neighbouring panel. Events \u2014 emits: plugin:layerfilterthemes:selectedThemeChanged { themeId, initial? }. Requests: tool:getVars, panels:getAll, panels:show, panels:hide. Listens: panels:changed.",
     "hasVars": true,
     "width": 66,
     "height": 0,
@@ -58,7 +58,7 @@
                     {
                         "field": "variables.togglePanelId",
                         "name": "Panel to open/close",
-                        "description": "Id of the panel the rail's chevron opens and closes. Leave blank to drive the rail's neighbour — the one other collapsible panel in the same region; the chevron is hidden when that is ambiguous or the named panel doesn't exist.",
+                        "description": "Id of the panel the rail's chevron opens and closes. Leave blank to drive the rail's neighbour — the one other panel in the same region; the chevron is hidden when that is ambiguous or the named panel doesn't exist.",
                         "type": "text",
                         "width": 12
                     }
