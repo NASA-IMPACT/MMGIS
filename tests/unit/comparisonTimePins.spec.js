@@ -157,3 +157,33 @@ describe('pinWindowFor', () => {
         expect(pinWindowFor(END)).toEqual({ start: START, end: END })
     })
 })
+
+describe('sources a pin cannot be expressed through', () => {
+    test('a WMS layer keeps the source the engine built for it', async () => {
+        configs = {
+            wms: {
+                name: 'wms',
+                type: 'TileLayer',
+                tileformat: 'wms',
+                url: 'https://host/wms?LAYERS=co2&FORMAT=image/png&KEY=abc',
+                time: { enabled: true, type: 'global', start: 'x', end: 'x' },
+            },
+        }
+        await load()
+
+        // A string patch would replace the WMSImageSource the engine built and
+        // lose its parameters, so no patch is emitted at all.
+        expect(buildTimePinnedProps(['wms'], pinWindowFor(END))).toEqual({})
+    })
+})
+
+describe('pinWindowFor bounds', () => {
+    test('collapses rather than opening a window that closes before it starts', async () => {
+        const before = '2023-06-01T00:00:00Z'
+        expect(pinWindowFor(before)).toEqual({ start: before, end: before })
+    })
+
+    test('keeps the global start when the pin closes after it', async () => {
+        expect(pinWindowFor(END)).toEqual({ start: START, end: END })
+    })
+})

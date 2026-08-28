@@ -90,6 +90,14 @@ const makeAdapter = () => {
         zoom: 4,
         style: 'style://a',
     })
+    // What `_syncLayers` writes through, and so the only way the suite can see
+    // what the primary surface is given.
+    adapter._overlay = {
+        props: { layers: [] },
+        setProps(props) {
+            Object.assign(this.props, props)
+        },
+    }
     return adapter
 }
 
@@ -323,9 +331,10 @@ test.describe('DeckGLAdapter side-by-side comparison', () => {
 
     test('disabling removes the panes and restores the primary layers', () => {
         const adapter = makeAdapter()
-        const syncLayers = vi.spyOn(adapter, '_syncLayers')
+        adapter._layers.set('co2', { id: 'co2', clone: () => ({ id: 'co2' }) })
         sideBySide(adapter)
         const maps = paneMaps(adapter)
+        expect(adapter._overlay.props.layers).toEqual([])
 
         adapter.disableComparison()
 
@@ -333,7 +342,7 @@ test.describe('DeckGLAdapter side-by-side comparison', () => {
         expect(maps.every((m) => m.removed)).toBe(true)
         expect(adapter._sbsPanes).toBeNull()
         expect(adapter.isComparisonEnabled()).toBe(false)
-        expect(syncLayers).toHaveBeenCalled()
+        expect(adapter._overlay.props.layers.map((l) => l.id)).toEqual(['co2'])
     })
 
     test('a pane re-sends its layers once its style finishes loading', () => {

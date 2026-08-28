@@ -53,15 +53,24 @@ export type LayerPropPatches = Record<string, Record<string, unknown>>
  * instant leaves a pinned side alone, which is what pinning means.
  */
 export function pinWindowFor(instant: string): TimePin {
-    // TimeControl_ is untyped and may not have initialized yet. Without a
-    // non-empty start the window collapses onto `instant` — a zero-width
-    // window, which reads as "this moment" wherever a window is consumed.
+    // The window collapses onto `instant` — zero-width, read as "this moment" —
+    // when TimeControl_ has no usable start yet, and when the pinned instant is
+    // older than that start, which would otherwise open the window after it
+    // closes and leave every consumer reading a backwards interval.
     const globalStart = L_.TimeControl_?.getStartTime?.()
-    const start =
-        typeof globalStart === 'string' && globalStart !== ''
-            ? globalStart
-            : instant
-    return { start, end: instant }
+    const usable =
+        typeof globalStart === 'string' &&
+        globalStart !== '' &&
+        !isAfter(globalStart, instant)
+    return { start: usable ? (globalStart as string) : instant, end: instant }
+}
+
+/** True when `a` is a later instant than `b`; false if either fails to parse. */
+function isAfter(a: string, b: string): boolean {
+    const ta = Date.parse(a)
+    const tb = Date.parse(b)
+    if (Number.isNaN(ta) || Number.isNaN(tb)) return false
+    return ta > tb
 }
 
 /**
@@ -103,6 +112,10 @@ function patchFor(
             ) {
                 return { geotiff: resolveDeckCOGFileUrl(pinned, source) }
             }
+            // A WMS layer reads from a WMSImageSource the engine builds out of
+            // the service URL, not from a templated tile URL. A string patch
+            // would replace it and lose its parameters.
+            if (source.tileFormat === 'wms') return null
             return {
                 data: compileTileUrl(
                     source.url,

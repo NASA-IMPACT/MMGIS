@@ -991,13 +991,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     invalidateSize(): void {
         if (this._isOverlayMode) {
             this._basemap?.resize()
-            return
+        } else {
+            this._deck?.redraw('invalidateSize')
         }
-        this._deck?.redraw('invalidateSize')
-        if (this._comparisonEnabled) {
-            this._applyComparisonClip()
-            this._syncComparisonCamera()
-        }
+        this._handleComparisonResize()
     }
 
     getSize(): PointLike {
@@ -1527,13 +1524,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * depending on that call chain.
      */
     private _observeComparisonResize(): void {
-        this._comparisonResizeObserver = new ResizeObserver(() => {
-            if (!this._comparisonEnabled) return
-            if (this._comparisonLayout === 'sideBySide') this._resizeSideBySidePanes()
-            else this._applyComparisonClip()
-            this._syncComparisonCamera()
-        })
+        this._comparisonResizeObserver = new ResizeObserver(() =>
+            this._handleComparisonResize(),
+        )
         this._comparisonResizeObserver.observe(this._container)
+    }
+
+    /**
+     * Re-measure the comparison surfaces against the container. Shared by the
+     * observer and `invalidateSize()` so the two cannot drift.
+     */
+    private _handleComparisonResize(): void {
+        if (!this._comparisonEnabled) return
+        if (this._comparisonLayout === 'sideBySide') this._resizeSideBySidePanes()
+        else this._applyComparisonClip()
+        this._syncComparisonCamera()
     }
 
     /** Tear down whichever surfaces the active layout put up. */
@@ -1657,13 +1662,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
     }
 
+    /**
+     * The padding that centres a pane's camera in the slice it shows, capped a
+     * pixel short of the container so a fully-dragged divider still leaves the
+     * camera a width to project into.
+     */
     private _panePadding(right: number): {
         top: number
         bottom: number
         left: number
         right: number
     } {
-        return { top: 0, bottom: 0, left: 0, right: Math.max(0, Math.round(right)) }
+        const limit = Math.max(0, this._container.offsetWidth - 1)
+        const clamped = Math.min(Math.max(0, Math.round(right)), limit)
+        return { top: 0, bottom: 0, left: 0, right: clamped }
     }
 
     /**
@@ -1675,10 +1687,17 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      */
     private _resizeSideBySidePanes(): void {
         const width = this._container.offsetWidth
-        this._sbsPanes?.forEach((pane) => {
-            if (pane.mapDiv) pane.mapDiv.style.width = `${width}px`
-            pane.map?.resize()
-        })
+        // `resize()` raises `move`/`moveend` though the camera has not moved.
+        const wasSyncing = this._sbsSyncing
+        this._sbsSyncing = true
+        try {
+            this._sbsPanes?.forEach((pane) => {
+                if (pane.mapDiv) pane.mapDiv.style.width = `${width}px`
+                pane.map?.resize()
+            })
+        } finally {
+            this._sbsSyncing = wasSyncing
+        }
         this._applySideBySideSplit()
     }
 
@@ -1707,7 +1726,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                     pane.map?.jumpTo(camera)
                     pane.deck?.setProps({ viewState: this._viewState } as any)
                 })
-                if (source) this._basemap?.jumpTo(camera)
+                // The primary is hidden but still answers `getCenter()`, and
+                // in standalone it is the surface disable returns to.
+                if (source) {
+                    this._basemap?.jumpTo(camera)
+                    if (!this._isOverlayMode)
+                        this._deckSetProps({ viewState: this._viewState })
+                }
             } finally {
                 this._sbsSyncing = wasSyncing
             }
@@ -2012,6 +2037,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
         this._viewState = nextState
         this._deckSetProps({ viewState: nextState })
+        // A zero-duration move raises no `onViewStateChange`, so this is the
+        // only place the comparison surfaces hear about it.
+        if (this._comparisonEnabled) this._syncComparisonCamera()
     }
 
     /**
@@ -2038,9 +2066,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * layers are hidden and the side surfaces redraw from the same registry
      * instead, so a layer added, updated, or reordered mid-comparison reaches
      * both sides.
+     *
+     * Each sync mounts fresh clones: deck.gl leaves `internalState` set on a
+     * layer it finalizes, so a mounted instance is single-use and the registry
+     * holds descriptors rather than the instances on screen.
      */
     private _syncLayers(): void {
-        const layers = this._comparisonEnabled ? [] : [...this._layers.values()]
+        const layers = this._comparisonEnabled
+            ? []
+            : [...this._layers.values()].map((layer) => layer.clone({}) as Layer)
         if (this._isOverlayMode) {
             this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })
         } else {

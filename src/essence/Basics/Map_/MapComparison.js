@@ -41,6 +41,8 @@ const _state = {
 let _dividerEl = null
 let _mouseDragMove = null
 let _mouseDragEnd = null
+let _touchDragMove = null
+let _touchDragEnd = null
 let _providerCleanups = []
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -172,15 +174,19 @@ function _sideProps(key, layerIds, date) {
 function setLayout(layout) {
     const next = _resolveLayout(layout)
     if (next === null || next === _state.layout) return
+
+    // Checked before the state is written, so a refused switch leaves
+    // `getState()` reporting the layout actually on screen.
+    if (_state.enabled && !_engine?.setComparisonLayout) {
+        console.warn(
+            '[MapComparison] Active engine does not support comparison layouts.',
+        )
+        return
+    }
+
     _state.layout = next
 
     if (_state.enabled) {
-        if (!_engine?.setComparisonLayout) {
-            console.warn(
-                '[MapComparison] Active engine does not support comparison layouts.',
-            )
-            return
-        }
         // Changing layout rebuilds the engine's rendering surfaces around the
         // divider, so it is handed the position the divider keeps.
         _applyDividerPosition(_state.dividerPosition)
@@ -259,9 +265,18 @@ function setRightSide({ layers = [], date = null } = {}) {
 /**
  * Move the divider to `pos` (0–1 fraction of container width).
  * Updates both the DOM element and the engine's clip regions.
+ *
+ * Accepts a bare number or `{ position }`, matching `setLayout`.
  */
 function setDividerPosition(pos) {
-    _applyDividerPosition(Math.max(0, Math.min(1, pos)))
+    const value = typeof pos === 'number' ? pos : pos?.position
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        console.warn(
+            `[MapComparison] Divider position must be a number between 0 and 1, got ${JSON.stringify(pos)}.`,
+        )
+        return
+    }
+    _applyDividerPosition(Math.max(0, Math.min(1, value)))
 }
 
 /**
@@ -276,14 +291,18 @@ function _applyDividerPosition(pos) {
     if (_dividerEl) _dividerEl.style.left = (pos * 100) + '%'
 }
 
-/** Returns a snapshot of the current comparison state. */
+/**
+ * Returns a snapshot of the current comparison state. The layer lists are
+ * copied, so a caller cannot write through the snapshot into live state.
+ */
 function getState() {
+    const side = ({ layerIds, date }) => ({ layerIds: [...layerIds], date })
     return {
         enabled: _state.enabled,
         layout: _state.layout,
         dividerPosition: _state.dividerPosition,
-        left: { ..._state.left },
-        right: { ..._state.right },
+        left: side(_state.left),
+        right: side(_state.right),
     }
 }
 
@@ -314,6 +333,7 @@ function _destroyDivider() {
         _dividerEl.removeEventListener('mousedown', _onMouseDown)
         _dividerEl.removeEventListener('touchstart', _onTouchStart)
         _clearMouseDrag()
+        _clearTouchDrag()
         _dividerEl.parentNode?.removeChild(_dividerEl)
         _dividerEl = null
     }
@@ -343,16 +363,25 @@ function _onTouchStart(e) {
     e.preventDefault()
     e.stopPropagation()
 
-    const onMove = (ev) => {
+    _touchDragMove = (ev) => {
         if (ev.touches.length > 0) _handleDrag(ev.touches[0].clientX)
     }
-    const onEnd = () => {
-        document.removeEventListener('touchmove', onMove)
-        document.removeEventListener('touchend', onEnd)
-    }
+    _touchDragEnd = () => _clearTouchDrag()
 
-    document.addEventListener('touchmove', onMove, { passive: false })
-    document.addEventListener('touchend', onEnd)
+    document.addEventListener('touchmove', _touchDragMove, { passive: false })
+    document.addEventListener('touchend', _touchDragEnd)
+    // A gesture the system takes over ends in `touchcancel`, not `touchend`.
+    document.addEventListener('touchcancel', _touchDragEnd)
+}
+
+function _clearTouchDrag() {
+    if (_touchDragMove) {
+        document.removeEventListener('touchmove', _touchDragMove)
+        document.removeEventListener('touchend', _touchDragEnd)
+        document.removeEventListener('touchcancel', _touchDragEnd)
+        _touchDragMove = null
+        _touchDragEnd = null
+    }
 }
 
 function _handleDrag(clientX) {
