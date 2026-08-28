@@ -172,10 +172,8 @@ test.describe('buildLayerLegendData', () => {
 })
 
 /**
- * A layer's ramps come from whatever paints it, so the table only travels for
- * a layer the app renders itself. A tile-server-rendered layer keeps resolving
- * ramps from that service: it defines them, and it is what paints the pixels a
- * swatch stands for.
+ * A layer's ramps come from whatever paints it, so the table travels only to
+ * layers rendered in the browser.
  */
 test.describe('buildLayerLegendData local colormaps', () => {
     const DECK_COG = { hasColormap: true, canChangeColormap: true, deckRaster: true }

@@ -17,9 +17,8 @@ const rgb = (name, x, reverse = false) => {
 }
 
 describe('listLocalColormapNames', () => {
-    // Lowercase is how a tiling service names its ramps, and the UI's label
-    // and apply paths already assume it. Emitting the evaluator's own mixed
-    // casing would render "RdBu" where the service path renders "Rdbu".
+    // The label and apply paths assume a service's lowercase spelling; mixed
+    // casing here would render "RdBu" where the service path renders "Rdbu".
     test('reports every ramp the evaluator knows, lowercased and forward only', () => {
         const names = listLocalColormapNames()
         expect(names).toEqual(
@@ -38,8 +37,8 @@ describe('hasLocalColormap', () => {
         expect(hasLocalColormap('viridis_r')).toBe(true)
     })
 
-    // The renderer-aware list leans on this: a name the GPU cannot honour must
-    // report false rather than silently resolving to the viridis fallback.
+    // Callers offering a choice of ramps need "unknown" reported as such,
+    // rather than silently resolved to whatever stands in for it.
     test('rejects a name the evaluator does not define', () => {
         expect(hasLocalColormap('nlcd')).toBe(false)
         expect(hasLocalColormap('')).toBe(false)
@@ -59,10 +58,9 @@ describe('getLocalColormapColors', () => {
         expect(reversed[0]).toBe(forward[forward.length - 1])
     })
 
-    // The swatch and the GPU both stand for the same rendered pixels, so they
-    // have to be sampled identically. A qualitative ramp emitted at its own
-    // palette length would blend smoothly across its colours, where the GPU
-    // paints — and a tile server returns — hard bands of equal width.
+    // A preview and the render stand for the same pixels, so they must be
+    // sampled alike. At its palette length a qualitative ramp would blend
+    // smoothly, where the render holds each colour for an equal run.
     test('samples a discrete ramp exactly as the GPU lookup table does', () => {
         const colors = getLocalColormapColors('Accent')
         const lut = buildColormapLUT('Accent')
@@ -97,8 +95,7 @@ describe('buildLocalColormapTable', () => {
         expect(table.viridis).toEqual(getLocalColormapColors('viridis'))
     })
 
-    // Consumers look ramps up by the lowercased name the UI carries, so a
-    // mixed-case ramp has to be reachable under that spelling.
+    // Lookups come from the UI, which carries lowercase names.
     test('keys a mixed-case ramp by its lowercased name', () => {
         expect(buildLocalColormapTable().rdbu).toEqual(getLocalColormapColors('RdBu'))
     })

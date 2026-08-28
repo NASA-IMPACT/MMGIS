@@ -27,10 +27,7 @@ export type ColorRampPickerProps = {
     max: number
     units?: string | null
     titilerUrl?: string | null
-    /**
-     * Ramps the app can paint itself, as name -> ordered CSS colors. Present
-     * only for a layer the app renders, and then the whole ramp vocabulary.
-     */
+    /** Ramps available without a service; when set, the whole vocabulary. */
     localColormaps?: Record<string, string[]> | null
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void

@@ -25,7 +25,7 @@ export const getVisibleLayersWithLegends = async ({
         mmgisGetTiTilerUrls(),
     ])
 
-    // Memoized upstream, so every layer shares one table rather than a copy.
+    // Memoized upstream — every layer shares one table rather than a copy.
     const localColormaps = buildLocalColormapTable()
 
     const result: Layer[] = []

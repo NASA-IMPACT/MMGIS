@@ -71,12 +71,10 @@ const buildCategoricalFields = (legend: MMGISLegendEntry[]): CategoricalStop[] =
  * `titilerUrl` likewise comes from core, already resolved; null leaves the
  * ramp swatches with nowhere to load from.
  *
- * `localColormaps` carries the ramps the app can paint itself, as data rather
- * than an import: lib never reaches into core's colormap evaluator. It travels
- * only for a layer the app renders itself, and is then that layer's whole ramp
- * vocabulary. A tile-server rendered layer is withheld it and keeps resolving
- * ramps from its service — the service defines them, and it is what paints the
- * pixels a swatch stands for.
+ * `localColormaps` reaches the UI as data because the UI cannot import core.
+ * It travels only for a layer rendered in the browser, and is then that
+ * layer's whole ramp vocabulary; a tile-server layer resolves ramps from the
+ * service that defines them and paints the pixels they stand for.
  */
 export const buildLayerLegendData = (
     layerName: string,

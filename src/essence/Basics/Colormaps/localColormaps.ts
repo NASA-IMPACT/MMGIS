@@ -1,23 +1,15 @@
 // The ramps MMGIS can colour without a tile server.
 //
-// One evaluator answers two questions that used to have separate sources: what
-// the GPU paints (buildColormapLUT, via normalizeColormapName) and what a
-// legend swatch or ramp picker draws. Splitting those risked a swatch that
-// advertised colours the render never produced, so both read from here.
-//
-// TiTiler's `/colorMaps` still knows ramps this evaluator does not — a
-// deployment can register its own. Those stay the tile server's to serve;
-// `hasLocalColormap` reports false for them so callers can tell the difference
-// rather than silently painting the fallback ramp.
+// Anything that renders a ramp — the GPU lookup table, a legend, a picker
+// swatch — resolves it here, so a preview cannot advertise colours the render
+// does not produce. A tiling service may define ramps this does not; those
+// stay the service's to resolve, which is what `hasLocalColormap` is for.
 import {
     evaluate_cmap,
     data as colormapData,
 } from '../../../external/js-colormaps/js-colormaps.js'
 
-/**
- * Samples per ramp. Matches both the GPU lookup table's resolution and the
- * length a tiling service's payload carries, so all three agree.
- */
+/** Chosen to match the GPU lookup table and a tiling service's payload. */
 const SAMPLES = 256
 
 const REVERSED_SUFFIX = /_r$/i
@@ -27,10 +19,8 @@ type ColormapEntry = { interpolate: boolean; colors: number[][] }
 const entries = colormapData as Record<string, ColormapEntry>
 
 /**
- * Case-insensitively recover the evaluator's own spelling of a ramp, splitting
- * off the `_r` direction suffix. Returns null — never a fallback — when the
- * evaluator does not define the ramp, so callers can distinguish "unknown" from
- * "known and forward".
+ * Recovers the evaluator's own spelling and the `_r` direction suffix. Null
+ * rather than a fallback, so callers can tell an unknown ramp from a known one.
  */
 export function resolveLocalColormap(
     name: string | null | undefined
@@ -45,18 +35,14 @@ export function resolveLocalColormap(
     return match ? { name: match, reverse } : null
 }
 
-/** Whether this evaluator can colour the ramp, `_r` variants included. */
+/** Whether this can colour the ramp, `_r` variants included. */
 export function hasLocalColormap(name: string | null | undefined): boolean {
     return resolveLocalColormap(name) != null
 }
 
 /**
- * Every ramp the evaluator defines, alphabetized, forward directions only.
- *
- * Lowercased because that is how a tiling service names its ramps, and the
- * label and apply paths downstream already assume it. Emitting the evaluator's
- * own mixed casing would render "RdBu" where the service path renders "Rdbu".
- * The evaluator's 107 names stay distinct when lowercased.
+ * Lowercased to match how a tiling service names ramps, which the label and
+ * apply paths assume. The evaluator's names stay distinct when folded.
  */
 export function listLocalColormapNames(): string[] {
     return Object.keys(entries)
@@ -65,16 +51,12 @@ export function listLocalColormapNames(): string[] {
 }
 
 /**
- * One ramp's ordered CSS colours — the same 256 samples `buildColormapLUT`
- * uploads to the GPU, so a swatch cannot disagree with the pixels it stands
- * for. It is also the shape a tiling service returns, which reports even a
- * qualitative ramp as 256 entries rather than its palette length.
+ * One ramp's ordered CSS colours, sampled as the GPU samples it so a preview
+ * matches the pixels it stands for.
  *
- * Every ramp is sampled uniformly, qualitative ones included: `evaluate_cmap`
- * buckets those itself, so uniform sampling reproduces their hard bands.
- * Emitting a qualitative ramp at its own palette length instead would leave
- * the gradient blending smoothly between its colours, which is neither what
- * the GPU paints nor what a tile server serves.
+ * Qualitative ramps are sampled uniformly too: `evaluate_cmap` buckets them
+ * itself, so this reproduces their hard bands. Emitting one at its palette
+ * length instead would let a gradient blend smoothly between its colours.
  */
 export function getLocalColormapColors(
     name: string | null | undefined
@@ -97,10 +79,8 @@ export function getLocalColormapColors(
 let table: Record<string, string[]> | null = null
 
 /**
- * Every local ramp's colours, keyed by name — the payload handed across the
- * plugin boundary so the UI can draw swatches without reaching into core or
- * the network. Memoized: it is derived from a constant and several layers'
- * legends ask for it.
+ * Every ramp's colours, keyed by name, for handing to a UI that cannot import
+ * this module. Memoized — derived from a constant and asked for per layer.
  */
 export function buildLocalColormapTable(): Record<string, string[]> {
     if (table != null) return table

@@ -239,10 +239,8 @@ describe('layers:getCogCapabilities provider', () => {
             })
         })
 
-        // Which renderer paints a layer decides which ramps may be offered for
-        // it: the client-side one can only paint the ramps bundled with the
-        // app, while a tile server may serve ramps of its own. Reporting the
-        // renderer is what lets a picker offer exactly what will really paint.
+        // Which renderer paints a layer decides where its ramps come from, so
+        // callers offering a choice of ramps have to be told which it is.
         test('reports the client-side renderer in a deck.gl mission', () => {
             setEngine('deckgl')
             expect(providers['layers:getCogCapabilities'](uuid).deckRaster).toBe(true)

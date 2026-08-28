@@ -19,11 +19,9 @@ export type CogData = {
   units: string | null
   titilerUrl: string | null
   /**
-   * Ramps the app can paint without a service, as name -> ordered CSS colors.
-   * Supplied as data by core (lib never reaches into the colormap evaluator),
-   * and only for a layer the app renders itself — for which it is then the
-   * whole ramp vocabulary. Null means this layer's ramps belong to its tiling
-   * service, which defines them and paints the pixels they stand for.
+   * Ramps this layer can be given without a service, as name -> CSS colors,
+   * and then its whole vocabulary. Null means its ramps belong to the tiling
+   * service that paints it.
    */
   localColormaps: Record<string, string[]> | null
 }

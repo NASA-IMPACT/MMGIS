@@ -22,11 +22,9 @@ const byRampThenDirection = (a: string, b: string): number => {
  * obtained at all, which callers surface as "ramps unavailable" rather than an
  * empty list.
  *
- * A ramp list comes from whatever paints the layer. `localColormaps` is
- * supplied by core only for a layer the app renders itself, and is then the
- * whole list: a service's ramps are defined by that service, may differ from
- * what this renderer paints, and its extras cannot be painted here at all.
- * A server-rendered layer is handed none, and keeps asking its service.
+ * A list comes from whatever paints the layer. `localColormaps`, when given,
+ * is the whole list — a service defines its own ramps, which may differ from
+ * these and cannot all be painted locally. Without it, the service is asked.
  */
 export const useAvailableColormaps = (
     titilerUrl: string | null = null,

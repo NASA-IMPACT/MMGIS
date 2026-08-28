@@ -17,8 +17,7 @@ type Result = {
  * `enabled` lets a caller defer the request — the picker uses it to hold off
  * until a swatch scrolls into view.
  *
- * `localColormaps` short-circuits the request for a ramp the app can paint
- * itself, which is most of them.
+ * `localColormaps` resolves a ramp without a request.
  */
 export const useColormapColors = (
     colormapName: string | null | undefined,

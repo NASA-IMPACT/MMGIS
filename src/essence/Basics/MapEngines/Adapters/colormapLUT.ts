@@ -7,10 +7,9 @@ import { resolveLocalColormap } from '../../Colormaps/localColormaps'
 const FALLBACK = 'viridis'
 
 /**
- * The ramp to paint for a configured name. An unknown name resolves to the
- * fallback rather than failing, because a layer still has to render something.
- * Callers that need to *know* whether a ramp exists — the ramp picker, which
- * must not offer what this cannot paint — ask `hasLocalColormap` instead.
+ * The ramp to paint for a configured name, falling back rather than failing
+ * since a layer still has to render something. Ask `hasLocalColormap` when you
+ * need to know whether a ramp exists rather than what stands in for it.
  */
 export function normalizeColormapName(name: string): { name: string; reverse: boolean } {
     return resolveLocalColormap(name) ?? { name: FALLBACK, reverse: false }

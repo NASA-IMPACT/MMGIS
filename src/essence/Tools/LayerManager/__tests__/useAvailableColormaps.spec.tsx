@@ -89,10 +89,8 @@ describe('useAvailableColormaps', () => {
 })
 
 /**
- * A layer's ramps come from whatever paints it. Core hands down a local table
- * only for a client-side rendered layer, and that table is then the whole
- * truth — a tile server's ramps could differ from what this renderer paints,
- * and its extras cannot be painted here at all.
+ * A layer's ramps come from whatever paints it: a supplied table is the whole
+ * list, since a service's ramps are its own and may differ from these.
  */
 describe('useAvailableColormaps with a local ramp table', () => {
     const LOCAL = ['inferno', 'viridis']
@@ -109,9 +107,8 @@ describe('useAvailableColormaps with a local ramp table', () => {
         await unmount()
     })
 
-    // A server-rendered layer is handed no table, and its list stays the
-    // service's alone: that service is what paints its pixels, so its ramp
-    // definitions are the ones a swatch has to stand for.
+    // No table means the service paints this layer, so its ramp definitions
+    // are the ones a swatch has to stand for.
     test('lists only the service ramps when no local table is supplied', async () => {
         global.fetch = vi.fn(async () => okResponse(NAMES)) as never
         const { result, unmount } = await mountHook(() =>

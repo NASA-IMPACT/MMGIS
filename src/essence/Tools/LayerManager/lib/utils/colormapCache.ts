@@ -20,11 +20,9 @@ export const resolveTiTilerBase = (titilerUrl?: string | null): string | null =>
  * don't collide. Failures resolve to null rather than rejecting — a swatch
  * that can't load should render blank, not tear down the list.
  *
- * `localColormaps` carries the ramps the app can paint itself, supplied as
- * data by core (lib never reaches into the evaluator). It wins over the
- * service: those ramps need no network, and resolving them here is what makes
- * a swatch agree with what the renderer actually paints. Ramps missing from it
- * — a deployment's own registrations — still fall through to the service.
+ * `localColormaps` holds ramps the caller can already colour. It takes
+ * precedence: those need no network, and resolving them here keeps a swatch
+ * agreeing with the renderer they came from.
  */
 export const fetchColormapColors = (
     name: string,

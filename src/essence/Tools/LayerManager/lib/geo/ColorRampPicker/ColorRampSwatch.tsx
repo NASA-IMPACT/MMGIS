@@ -9,7 +9,7 @@ export type ColorRampSwatchProps = {
     reversed: boolean
     selected: boolean
     titilerUrl?: string | null
-    /** Ramps the app can paint itself; these resolve without a request. */
+    /** Ramps that resolve without a request. */
     localColormaps?: Record<string, string[]> | null
     /** Scroll container the visibility check measures against. */
     rootRef: RefObject<HTMLElement | null>
