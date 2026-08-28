@@ -1,6 +1,6 @@
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useAvailableColormaps } from '../lib/hooks/useAvailableColormaps'
-import { mountHook } from './reactHarness'
+import { mountHook } from '../../_shared/__tests__/reactHarness'
 
 /**
  * The hook decides whether ramps are available from the service URL it is

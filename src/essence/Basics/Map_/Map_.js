@@ -751,13 +751,9 @@ let Map_ = {
             if (typeof cb === 'function') cb()
             return true
         }
-
-        // We need to find and remove all points on the map that belong to the layer
-        // Not sure if there is a cleaner way of doing this
         for (var i = L_._layersOrdered.length - 1; i >= 0; i--) {
             if (
                 L_.layers.data[L_._layersOrdered[i]] &&
-                L_.layers.data[L_._layersOrdered[i]].type == 'vector' &&
                 L_.layers.data[L_._layersOrdered[i]].name == layerObj.name
             ) {
                 // Original

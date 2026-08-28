@@ -3,7 +3,7 @@ import { TOOL_ORIENTATION } from '../../../src/essence/Basics/ToolController_/ty
 import { mmgisAPI } from '../../../src/essence/mmgisAPI/mmgisAPI'
 import { onTestFinished } from 'vitest'
 
-const LAYOUT_CHANGED_EVENT = 'mmgis-panel-layout-changed'
+const LAYOUT_CHANGED_EVENT = 'panels:changed'
 
 /**
  * Create a basic mock panel configuration for testing
@@ -38,12 +38,12 @@ export function createMockToolMetadata(overrides = {}) {
 }
 
 /**
- * Capture panel layout-changed notifications fired over the in-app event bus.
+ * Capture panel change notifications fired over the in-app event bus.
  *
- * PanelManager_ broadcasts layout changes via mmgisAPI.emit (mitt), not a
- * window event. This subscribes to that bus and collects each notification,
- * normalizing them to the shape the panel specs assert on:
- *   { type: 'mmgis-panel-layout-changed', detail: { panels } }
+ * PanelManager_ broadcasts via mmgisAPI.emit (mitt). This subscribes to that
+ * bus and collects each notification, normalizing to the shape the panel specs
+ * assert on:
+ *   { type: 'panels:changed', detail: { panels } }
  */
 export function mockLayoutChangedEvents() {
     const events = []

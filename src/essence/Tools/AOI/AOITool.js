@@ -28,6 +28,7 @@
  *     - map:getBounds / map:fitBounds
  *     - map:enableDrawing / map:disableDrawing / map:finishDrawing
  *     - map:addOverlay / map:removeOverlay
+ *     - plugins:setState
 
  * AOIComponent.tsx and AOITooltip.tsx must stay MMGIS-agnostic.
  */
@@ -37,6 +38,7 @@ import { createRoot } from 'react-dom/client'
 
 import AOIComponent from './AOIComponent'
 import AOITooltip from './AOITooltip'
+import { mmgisSetPluginState } from '../_shared/adapters/mmgisAPI'
 import {
     buildSearchIndex,
     searchIndex,
@@ -368,7 +370,13 @@ const AOITool = {
     },
 
     _onClose() {
-        window.mmgisAPI?.emit('core:unloadPlugin', { pluginId: 'AOITool' })
+        mmgisSetPluginState('AOITool', 'unloaded')
+            .then((result) => {
+                if (!result.ok) {
+                    console.warn(`[AOI] unload refused: ${result.reason}`)
+                }
+            })
+            .catch((err) => console.warn('[AOI] unload failed', err))
     },
 
     // ── Search mode ────────────────────────────────────────────────────────────
