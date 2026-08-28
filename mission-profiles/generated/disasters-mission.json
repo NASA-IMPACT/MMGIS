@@ -19,7 +19,25 @@
     "basemap": {
       "provider": "maplibre",
       "style": "https://tiles.openfreemap.org/styles/positron",
-      "accessToken": ""
+      "accessToken": "",
+      "styles": [
+        {
+          "name": "Light",
+          "style": "https://tiles.openfreemap.org/styles/positron"
+        },
+        {
+          "name": "Streets",
+          "style": "https://tiles.openfreemap.org/styles/liberty"
+        },
+        {
+          "name": "Voyager",
+          "style": "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+        },
+        {
+          "name": "Dark",
+          "style": "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+        }
+      ]
     },
     "theme": "disasters"
   },
@@ -285,6 +303,53 @@
       "on": true,
       "variables": {
         "justification": "left"
+      }
+    },
+    {
+      "name": "MapControl",
+      "icon": "layers",
+      "js": "MapControlTool",
+      "on": true,
+      "variables": {
+        "showBasemapSwitcher": true,
+        "showSearch": true,
+        "showMeasure": true,
+        "showZoom": true,
+        "showShare": true
+      },
+      "metadata": {
+        "icon": "layers",
+        "compatiblePositions": [
+          "float-top-left",
+          "float-top-center",
+          "float-top-right",
+          "float-bottom-left",
+          "float-bottom-center",
+          "float-bottom-right"
+        ],
+        "preferredPosition": "float-top-right",
+        "modernLayoutSupport": true
+      }
+    },
+    {
+      "name": "AddTempLayer",
+      "icon": "add",
+      "js": "AddTempLayerTool",
+      "on": true,
+      "variables": {},
+      "metadata": {
+        "icon": "add",
+        "compatiblePositions": [
+          "float-top-left",
+          "float-top-center",
+          "float-top-right",
+          "float-bottom-left",
+          "float-bottom-center",
+          "float-bottom-right"
+        ],
+        "preferredPosition": "float-top-right",
+        "startHidden": true,
+        "modernLayoutSupport": true
       }
     },
     {
@@ -637,7 +702,49 @@
             1
           ],
           "nodata": 0
-        }
+        },
+        "legend": [
+          {
+            "shape": "discreet",
+            "color": "#3f2a6b",
+            "value": "0 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#3e869e",
+            "value": "25000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#73c0c3",
+            "value": "50000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#c3e09c",
+            "value": "75000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#f7e99c",
+            "value": "100000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#f3c556",
+            "value": "150000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#e78e41",
+            "value": "300000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#cf4931",
+            "value": "450000 m²"
+          }
+        ]
       },
       "properties": {
         "key": "gaia-total",
@@ -703,7 +810,49 @@
             1
           ],
           "nodata": 0
-        }
+        },
+        "legend": [
+          {
+            "shape": "discreet",
+            "color": "#3f2a6b",
+            "value": "0 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#3e869e",
+            "value": "25000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#73c0c3",
+            "value": "50000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#c3e09c",
+            "value": "75000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#f7e99c",
+            "value": "100000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#f3c556",
+            "value": "150000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#e78e41",
+            "value": "300000 m²"
+          },
+          {
+            "shape": "discreet",
+            "color": "#cf4931",
+            "value": "450000 m²"
+          }
+        ]
       },
       "properties": {
         "key": "gaia-wood",
@@ -750,7 +899,24 @@
             1
           ],
           "nodata": 255
-        }
+        },
+        "legend": [
+          {
+            "shape": "square",
+            "color": "#ffffff",
+            "value": "No disturbance"
+          },
+          {
+            "shape": "square",
+            "color": "#ff9999",
+            "value": "Moderate disturbance"
+          },
+          {
+            "shape": "square",
+            "color": "#e31a1c",
+            "value": "High disturbance"
+          }
+        ]
       },
       "name": "OPERA Surface Disturbance (DIST-S1)",
       "uuid": "f154c768-c8e7-4b23-a783-1ec458bdbb20",
@@ -875,7 +1041,14 @@
             1
           ],
           "nodata": 0
-        }
+        },
+        "legend": [
+          {
+            "shape": "square",
+            "color": "#ff0000",
+            "value": "Likely damaged"
+          }
+        ]
       },
       "name": "Sentinel-1 Likely Damaged Areas",
       "uuid": "2db3fe61-f031-4a6e-89a2-33bfe1ca4389",
@@ -937,7 +1110,64 @@
             1
           ],
           "nodata": -9999
-        }
+        },
+        "legend": [
+          {
+            "shape": "continuous",
+            "color": "#313695",
+            "value": "-25 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#4575b4",
+            "value": "-20 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#74add1",
+            "value": "-15 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#abd9e9",
+            "value": "-10 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#e0f3f8",
+            "value": "-5 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#ffffbf",
+            "value": "0 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#fee090",
+            "value": "5 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#fdae61",
+            "value": "10 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#f46d43",
+            "value": "15 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#d73027",
+            "value": "20 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#a50026",
+            "value": "25 cm"
+          }
+        ]
       },
       "name": "NISAR Displacement — Track D54 (descending)",
       "uuid": "5a1c9f02-7d64-4f18-9b3e-6c0a2e4d7b81",
@@ -999,7 +1229,64 @@
             1
           ],
           "nodata": -9999
-        }
+        },
+        "legend": [
+          {
+            "shape": "continuous",
+            "color": "#313695",
+            "value": "-25 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#4575b4",
+            "value": "-20 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#74add1",
+            "value": "-15 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#abd9e9",
+            "value": "-10 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#e0f3f8",
+            "value": "-5 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#ffffbf",
+            "value": "0 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#fee090",
+            "value": "5 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#fdae61",
+            "value": "10 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#f46d43",
+            "value": "15 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#d73027",
+            "value": "20 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#a50026",
+            "value": "25 cm"
+          }
+        ]
       },
       "name": "NISAR Displacement — Jun 13–25",
       "uuid": "b47e8d35-2a90-4c6f-8e51-19d3f7c0a624",
@@ -1061,7 +1348,64 @@
             1
           ],
           "nodata": -9999
-        }
+        },
+        "legend": [
+          {
+            "shape": "continuous",
+            "color": "#313695",
+            "value": "-25 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#4575b4",
+            "value": "-20 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#74add1",
+            "value": "-15 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#abd9e9",
+            "value": "-10 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#e0f3f8",
+            "value": "-5 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#ffffbf",
+            "value": "0 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#fee090",
+            "value": "5 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#fdae61",
+            "value": "10 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#f46d43",
+            "value": "15 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#d73027",
+            "value": "20 cm"
+          },
+          {
+            "shape": "continuous",
+            "color": "#a50026",
+            "value": "25 cm"
+          }
+        ]
       },
       "name": "NISAR Displacement — Track A61 (ascending)",
       "uuid": "c9f3b6a1-4e28-4d70-b5c2-8f61d0e394a7",
@@ -1089,6 +1433,168 @@
         ],
         "hazard": [
           "Earthquake"
+        ]
+      }
+    },
+    {
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 20,
+      "maxZoom": 20,
+      "throughTileServer": false,
+      "cogTransform": false,
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "legend": [
+          {
+            "shape": "square",
+            "color": "#015ce6",
+            "value": "Open water"
+          },
+          {
+            "shape": "square",
+            "color": "#ff0000",
+            "value": "Flooded developed"
+          },
+          {
+            "shape": "square",
+            "color": "#38a801",
+            "value": "Flooded vegetation"
+          },
+          {
+            "shape": "square",
+            "color": "#e69702",
+            "value": "Flooded cropland"
+          }
+        ],
+        "analysis": {
+          "is_analysis_supported": true,
+          "itemUrl": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-hydrosar-wm-iw-dvr-subdaily/items/sentinel1-hydrosar-wm-iw-dvr-subdaily-S1A_IW_DVR_RTC20_G_gpufed_0C2F_WM_2024-11-23T23:49:03Z",
+          "assets": [
+            "dvr"
+          ],
+          "bidx": [
+            1
+          ],
+          "nodata": 0
+        }
+      },
+      "name": "HydroSAR Water Extents",
+      "uuid": "7c2e40b8-93d1-4f6a-a05e-2b814c7d6e39",
+      "url": "https://dev.disasters.openveda.cloud/api/raster/collections/sentinel1-hydrosar-wm-iw-dvr-subdaily/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=dvr&bidx=1&nodata=0&colormap=%7B%221%22%3A%5B1%2C92%2C230%2C255%5D%2C%222%22%3A%5B255%2C0%2C0%2C255%5D%2C%223%22%3A%5B56%2C168%2C1%2C255%5D%2C%224%22%3A%5B230%2C151%2C2%2C255%5D%7D&resampling=nearest&datetime={starttime}/{endtime}",
+      "boundingBox": [
+        -125.15625,
+        -37.160317,
+        41.132813,
+        41.508577
+      ],
+      "description": "**HydroSAR Water Extents** — post-incident surface water mapped from Sentinel-1 SAR by the Alaska Satellite Facility. Radar sees through cloud, so flood extent is mapped during the storm rather than after it clears.",
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%dT%H:%M:%SZ",
+        "start": "2023-01-01T00:00:00Z",
+        "end": "2024-11-23T23:59:59Z",
+        "dataStartTime": "2023-01-01T00:00:00Z",
+        "dataEndTime": "2024-11-23T23:59:59Z"
+      },
+      "properties": {
+        "key": "hydrosar-dvr",
+        "sector": [
+          "Public Safety"
+        ],
+        "hazard": [
+          "Flood",
+          "Tropical Cyclone"
+        ]
+      }
+    },
+    {
+      "sublayers": [],
+      "type": "TileLayer",
+      "visibility": false,
+      "sourceType": "url",
+      "tileformat": "wmts",
+      "controlled": false,
+      "initialOpacity": 1,
+      "minZoom": 0,
+      "maxNativeZoom": 8,
+      "maxZoom": 20,
+      "throughTileServer": false,
+      "cogTransform": false,
+      "style": {
+        "brightness": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "blend": "none"
+      },
+      "variables": {
+        "legendOrientation": "vertical",
+        "legend": [
+          {
+            "shape": "square",
+            "color": "#0a0952",
+            "value": "Unlit"
+          },
+          {
+            "shape": "square",
+            "color": "#4d4b82",
+            "value": "Low"
+          },
+          {
+            "shape": "square",
+            "color": "#8181d9",
+            "value": "Moderate"
+          },
+          {
+            "shape": "square",
+            "color": "#e6e9cd",
+            "value": "Bright"
+          }
+        ]
+      },
+      "name": "Black Marble Nighttime Lights",
+      "uuid": "e83b1d47-06fa-4c25-9d8b-51a7f2c04b96",
+      "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_SNPP_DayNightBand_AtSensor_M15/default/{endtime}/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg",
+      "boundingBox": [
+        -180,
+        -85.05,
+        180,
+        85.05
+      ],
+      "description": "**Black Marble Nighttime Lights (Blue/Yellow)** — VIIRS Day/Night Band composite from Suomi NPP, served by NASA GIBS. Measures at-sensor radiance in W/cm²/sr. Power outages read as darkened areas against normally lit ones, which makes it a fast proxy for infrastructure disruption after an event. Imagery is available from 2021-04-30 onward; GIBS publishes no numeric colour scale for this composite, so the key is relative.",
+      "time": {
+        "enabled": true,
+        "type": "global",
+        "format": "%Y-%m-%d",
+        "start": "2021-04-30T00:00:00Z",
+        "end": "2026-08-12T00:00:00Z",
+        "dataStartTime": "2021-04-30T00:00:00Z",
+        "dataEndTime": "2026-08-12T00:00:00Z"
+      },
+      "properties": {
+        "key": "blackmarble-gibs",
+        "sector": [
+          "Public Safety"
+        ],
+        "hazard": [
+          "Wildfire",
+          "Storm",
+          "Flood",
+          "Earthquake",
+          "Tropical Cyclone"
         ]
       }
     }
