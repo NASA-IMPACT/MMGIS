@@ -130,20 +130,20 @@ test.describe('PanelManager - Layout', () => {
         })
     })
 
-    test.describe('notifyLayoutChanged', () => {
+    test.describe('notifyChanged', () => {
         test('dispatches custom event with panel data', () => {
             const mock = mockLayoutChangedEvents()
 
             const config = createMockPanelConfig()
             panelManager.registerPanel(config)
 
-            // notifyLayoutChanged is called during registration, clear previous events
+            // notifyChanged is called during registration, clear previous events
             mock.events.length = 0
 
-            panelManager.notifyLayoutChanged()
+            panelManager.notifyChanged()
 
             expect(mock.events.length).toBe(1)
-            expect(mock.events[0].type).toBe('mmgis-panel-layout-changed')
+            expect(mock.events[0].type).toBe('panels:changed')
             expect(mock.events[0].detail.panels).toBeDefined()
             expect(mock.events[0].detail.panels.length).toBe(1)
             mock.restore()
@@ -161,7 +161,7 @@ test.describe('PanelManager - Layout', () => {
             panelManager.registerPanel(config3)
 
             mock.events.length = 0
-            panelManager.notifyLayoutChanged()
+            panelManager.notifyChanged()
 
             const event = mock.events[0]
             expect(event.detail.panels[0].id).toBe('panel-2')
