@@ -266,6 +266,29 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _maxBounds: BoundsLike | null = null
 
     private _layers = new Map<string, Layer>()
+    /**
+     * Layer ids already reported as not-a-deck-layer, so a slider drag warns
+     * once rather than on every frame.
+     */
+    private _warnedNonDeckLayers = new Set<string>()
+
+    /**
+     * Whether the engine holds a real deck.gl layer under `id`. Warns once per
+     * id when it holds something else — see {@link updateLayer}.
+     */
+    private _holdsDeckLayer(id: string, existing: unknown): boolean {
+        if (typeof (existing as Layer)?.clone === 'function') return true
+        if (existing != null && !this._warnedNonDeckLayers.has(id)) {
+            this._warnedNonDeckLayers.add(id)
+            console.warn(
+                `DeckGLAdapter: layer "${id}" is not a deck.gl layer, so it cannot be ` +
+                `updated. It was built with Leaflet because this engine has no builder ` +
+                `for its type. The update was skipped.`
+            )
+        }
+        return false
+    }
+
     /** Per-layer refresh hooks, keyed by layer id. */
     private _refreshers = new Map<string, (layer: Layer, ctx: RefreshContext) => Layer | void>()
     private _layerZIndices = new Map<string, number>()
@@ -417,6 +440,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._overlays.clear()
 
         this._layers.clear()
+        this._warnedNonDeckLayers.clear()
         this._refreshers.clear()
         this._layerZIndices.clear()
         this._eventListeners.clear()
@@ -929,18 +953,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Clone the existing layer with overridden props. deck.gl detects the same
      * `id` and updates GPU resources incrementally.
      *
-     * A held value that is not a clonable deck layer is a no-op. Under the
-     * deck.gl engine MMGIS still builds `data`, `image`, `video` and
-     * `velocity` layers as native Leaflet objects — ENGINE_LAYER_SUPPORT has
-     * no deck builder for them — and callers hand every registry entry to the
-     * active engine. Such an object has no `clone`, so this declines rather
-     * than throwing `existing.clone is not a function`.
+     * A held value that is not a deck.gl layer is declined, with a warning.
+     * That state is invalid — this engine should only ever hold layers it
+     * built — but it is reachable today for layer types this engine has no
+     * builder for, which fall through to being constructed with Leaflet.
+     * Declining keeps the app running; the warning is there so the underlying
+     * mis-construction surfaces instead of presenting as an update that
+     * quietly did nothing.
      */
     updateLayer(layer: Layer | string, options: Partial<LayerOptions>): Layer {
         const id = resolveLayerId(layer)
         const existing = this._layers.get(id)
         if (!existing) return existing as unknown as Layer
-        if (typeof existing.clone !== 'function') return existing
+        if (!this._holdsDeckLayer(id, existing)) return existing
         const updated = existing.clone({
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
@@ -1054,7 +1079,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     ): void {
         const id = resolveLayerId(layer)
         const existing = this._layers.get(id)
-        if (typeof existing?.clone === 'function') this.updateLayer(id, { opacity })
+        if (this._holdsDeckLayer(id, existing)) this.updateLayer(id, { opacity })
     }
 
     /**
