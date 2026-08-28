@@ -7,6 +7,7 @@ import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
+import { resolveTimePolicy } from '../TimeControl_/layerTimePolicy'
 import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
 import {
     getActiveTileLevel,
@@ -26,6 +27,15 @@ import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
+
+// Resolved at call time so an open-ended "now" is fresh on every ask.
+const temporalExtentFor = (uuid) => {
+    const time = L_.layers.data[uuid]?.time
+    return {
+        start: resolveTimePolicy(time?.dataStartTime),
+        end: resolveTimePolicy(time?.dataEndTime),
+    }
+}
 
 /**
  * What a layer's COG colormap supports: whether it has one to draw a legend
@@ -489,6 +499,21 @@ const L_ = {
                         capabilities[uuid] = cogCapabilitiesFor(uuid)
                     })
                     return capabilities
+                }),
+                // When each layer has data, as ISO datetimes or null. The
+                // config's dataStartTime/dataEndTime may be a policy ("now",
+                // "now - P1D"); this is where it is resolved, so a plugin
+                // never sees the policy string. Same call shapes as above.
+                window.mmgisAPI.provide('layers:getTemporalExtent', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : temporalExtentFor(uuid)
+                    }
+                    const extents = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        extents[uuid] = temporalExtentFor(uuid)
+                    })
+                    return extents
                 }),
                 // Where each layer sits, for moving the map to it. Called with
                 // a layer identifier it answers for that one layer, resolving a
