@@ -8,6 +8,7 @@ import {
     mmgisGetVisibleLayers,
     mmgisIsTimeEnabled,
     type LayerConfig,
+    mmgisGetTemporalExtents,
 } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
@@ -22,7 +23,6 @@ import {
     type LayerTimeData
 } from './lib'
 import { stepTime, clampDate } from './lib/utils/timeUtils'
-import { resolveTimePolicy } from '../_shared/time/layerTimePolicy'
 import './Timeline.css'
 
 /** The wire shape of both 'time:changeRequested' and 'time:changed'. */
@@ -171,9 +171,10 @@ export const TimelineAdapter: React.FC = () => {
         let cancelled = false
 
         const fetchLayers = async () => {
-            const [configs, visibleLayers] = await Promise.all([
+            const [configs, visibleLayers, extents] = await Promise.all([
                 mmgisGetLayerConfigs(),
                 mmgisGetVisibleLayers(),
+                mmgisGetTemporalExtents(),
             ])
             if (cancelled || !configs) return
 
@@ -189,19 +190,11 @@ export const TimelineAdapter: React.FC = () => {
                 let color = 'var(--theme-color-base, #71767a)' // default grey
 
                 if (layer.time && layer.time.enabled) {
-                    const timeConfig = layer.time
-
-                    // Data times may be concrete datetimes or policies
-                    // ("now", "now - P1D") — the shared resolver evaluates
-                    // both; null means unset/unparseable, keep the fallback.
-                    const resolvedStart = resolveTimePolicy(
-                        timeConfig.dataStartTime
-                    )
-                    if (resolvedStart != null) start = new Date(resolvedStart)
-                    const resolvedEnd = resolveTimePolicy(
-                        timeConfig.dataEndTime
-                    )
-                    if (resolvedEnd != null) end = new Date(resolvedEnd)
+                    // Core resolves the authored data times; null means
+                    // unset or unreadable, keep the fallback.
+                    const extent = extents?.[layerName]
+                    if (extent?.start != null) start = new Date(extent.start)
+                    if (extent?.end != null) end = new Date(extent.end)
 
                     // Time-enabled layers stand out in the theme's secondary colour
                     color = 'var(--theme-color-secondary, #c91b6e)'

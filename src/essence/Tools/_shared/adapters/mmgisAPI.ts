@@ -22,8 +22,8 @@ export type LayerConfig = {
     display_name?: string
     time?: {
         enabled?: boolean
-        /** A concrete ISO datetime, or a policy string ("now",
-         *  "now - P1D") — resolve with _shared/time/layerTimePolicy. */
+        /** As authored: a concrete ISO datetime or a policy string ("now",
+         *  "now - P1D"). Ask mmgisGetTemporalExtents for the dates. */
         dataStartTime?: string
         dataEndTime?: string
         [key: string]: unknown
@@ -173,6 +173,35 @@ export const mmgisGetLayerCogCapabilities = (
 ): Promise<CogCapabilities | null> => {
     return mmgisRequestIfProvided<CogCapabilities>(
         'layers:getCogCapabilities',
+        layerUUID,
+    )
+}
+
+/** When a layer has data, as ISO datetimes; null where unset or unreadable. */
+export type TemporalExtent = {
+    start: string | null
+    end: string | null
+}
+
+/**
+ * Temporal extent for every layer, keyed by layer UUID, resolved by core at
+ * the moment of asking. Null against a core without the handler.
+ */
+export const mmgisGetTemporalExtents = (): Promise<Record<
+    string,
+    TemporalExtent
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, TemporalExtent>>(
+        'layers:getTemporalExtent',
+    )
+}
+
+/** Temporal extent for one layer, by UUID or display name. */
+export const mmgisGetLayerTemporalExtent = (
+    layerUUID: string,
+): Promise<TemporalExtent | null> => {
+    return mmgisRequestIfProvided<TemporalExtent>(
+        'layers:getTemporalExtent',
         layerUUID,
     )
 }

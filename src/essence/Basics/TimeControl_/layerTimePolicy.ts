@@ -11,8 +11,8 @@
  * veda-ui, which normalizes an ongoing (null-ended) STAC domain to the
  * current datetime as-is.
  *
- * This is the single resolver every consumer calls; nobody hand-rolls
- * `=== 'now'` checks.
+ * Core owns this vocabulary. Plugins never resolve it themselves: they ask
+ * `layers:getTemporalExtent` and receive plain ISO datetimes.
  */
 
 const DURATION_RE =

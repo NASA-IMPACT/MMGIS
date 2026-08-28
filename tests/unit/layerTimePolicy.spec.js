@@ -2,7 +2,7 @@ import { describe, test, expect } from 'vitest'
 import {
     resolveTimePolicy,
     parseISODuration,
-} from '../../src/essence/Tools/_shared/time/layerTimePolicy'
+} from '../../src/essence/Basics/TimeControl_/layerTimePolicy'
 
 // Injected "now" so results are exact: mid-afternoon UTC.
 const NOW = new Date('2026-08-25T15:42:31.500Z')
