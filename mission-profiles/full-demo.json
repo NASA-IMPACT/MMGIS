@@ -30,6 +30,30 @@
     "LayerFilter"
   ],
   "overrides": {
+    "LayerFilterThemes": {
+      "variables": {
+        "themes": [
+          {
+            "id": "need",
+            "label": "Need",
+            "iconSource": "link",
+            "iconUrl": "/public/images/layerfilterthemes/need.svg"
+          },
+          {
+            "id": "hazard",
+            "label": "Hazard",
+            "iconSource": "link",
+            "iconUrl": "/public/images/layerfilterthemes/hazard.svg"
+          },
+          {
+            "id": "event",
+            "label": "Event",
+            "iconSource": "link",
+            "iconUrl": "/public/images/layerfilterthemes/event.svg"
+          }
+        ]
+      }
+    },
     "Card": {
       "variables": {
         "cards": [
