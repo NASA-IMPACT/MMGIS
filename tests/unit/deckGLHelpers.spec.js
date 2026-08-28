@@ -441,6 +441,32 @@ test.describe('DeckGLHelpers', () => {
             ).toEqual([0, 255, 0, 255])
         })
 
+        test('combines a legend colour with a per-feature opacityProp', () => {
+            const layer = rampedLayer('legend-opacityprop', 'vectortile', {
+                opacityProp: 'o',
+            })
+            const colour = layer.props.getLineColor({
+                properties: { co2: 400, o: 0.5 },
+            })
+            // Legend supplies the hue, the property supplies the alpha.
+            expect(colour).toEqual([0, 0, 0, 128])
+        })
+
+        test('leaves the fill on the fixed colour for a stroke-only legend', () => {
+            const layer = buildDeckLayer('legend-stroke-only', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#00ff00', fillOpacity: 1, color: '#00ff00', opacity: 1 },
+                legend: co2Ramp.map(({ color, ...rest }) => ({
+                    ...rest,
+                    strokecolor: color,
+                })),
+            })
+            const feature = { properties: { co2: 420 } }
+            expect(layer.props.getLineColor(feature)).toEqual([128, 128, 128, 255])
+            expect(layer.props.getFillColor(feature)).toEqual([0, 255, 0, 255])
+        })
+
         // deck.gl decodes vector tiles into a binary form by default. Verified
         // against @loaders.gl/gis and deck.gl 9.3.7: a numeric property is
         // hoisted into one tile-wide typed array covering every feature, zero
