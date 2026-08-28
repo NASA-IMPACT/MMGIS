@@ -2259,8 +2259,9 @@ const L_ = {
             }
         }
 
-        // MMGIS marker markup, keyed by layer name and created outside any
-        // engine — product markup, so it stays caller-side.
+        // Marker elements carry a class keyed by layer name, assigned when
+        // the marker is built. No engine holds a handle on them, so their
+        // opacity is set on the DOM here rather than through an engine call.
         $(`.leafletMarkerShape_${F_.getSafeName(name)}`).css({
             opacity: newOpacity,
         })
