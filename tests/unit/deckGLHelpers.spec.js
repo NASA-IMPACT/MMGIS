@@ -477,7 +477,14 @@ test.describe('DeckGLHelpers', () => {
         //   {properties: {layerName: 'landcover', class: 'grass', ele: 0}}
         // The string properties kept alongside omit the key entirely and there
         // is no presence mask, so a missing measurement cannot be told from a
-        // real zero. The fix is to stop asking for binary when it matters.
+        // real zero. On a live OpenMapTiles layer that painted every polygon
+        // with no `ele` in the ramp's lowest colour instead of the layer's
+        // fixed colour. The fix is to stop asking for binary when it matters.
+        test('decodes vector tiles as GeoJSON when a legend reads a property', () => {
+            const layer = rampedLayer('legend-binary-off', 'vectortile')
+            expect(layer.props.binary).toBe(false)
+        })
+
         test.each([
             ['fillColorProp', { fillColorProp: 'c' }],
             ['fillOpacityProp', { fillOpacityProp: 'fo' }],
@@ -502,6 +509,7 @@ test.describe('DeckGLHelpers', () => {
                 type: 'vectortile',
                 url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
                 style: { fillColor: '#ff00ff', radius: 5, weight: 2 },
+                legend: [{ color: '#ff0000', value: 'Stations' }],
             })
             expect(layer.props.binary).toBe(true)
         })
@@ -509,19 +517,44 @@ test.describe('DeckGLHelpers', () => {
         test('lets a buildDeckLayer caller override the tile decoding format', () => {
             // An adapter-internal channel: no makeLayer call site forwards
             // a layer's own nativeOptions, so a mission cannot reach it.
-            const layer = buildDeckLayer('binary-override', {
-                type: 'vectortile',
-                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
-                style: { fillColor: '#ff00ff', fillColorProp: 'c' },
-            })
+            const layer = rampedLayer('binary-override', 'vectortile')
             expect(layer.props.binary).toBe(false)
             const overridden = buildDeckLayer('binary-override-2', {
                 type: 'vectortile',
                 url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
-                style: { fillColor: '#ff00ff', fillColorProp: 'c' },
+                style: { fillColor: '#ff00ff' },
+                legend: co2Ramp,
                 nativeOptions: { binary: true },
             })
             expect(overridden.props.binary).toBe(true)
+        })
+
+        test('falls back to the fixed colour when the property is truly absent', () => {
+            // The shape binary:false produces: a real GeoJSON feature whose
+            // properties simply have no `co2` key.
+            const layer = rampedLayer('legend-absent-prop', 'vectortile')
+            const feature = {
+                type: 'Feature',
+                properties: { class: 'grass', subclass: 'meadow' },
+            }
+            expect(layer.props.getFillColor(feature)).toEqual([0, 255, 0, 255])
+        })
+
+        test('still ramps a feature whose value is genuinely zero', () => {
+            // The fix belongs at the decoding layer, not here: a real 0 is a
+            // real measurement and must still take its place on the ramp.
+            const layer = buildDeckLayer('legend-real-zero', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#ff00ff', fillOpacity: 1 },
+                legend: [
+                    { ...co2Ramp[0], propertyValue: '0', color: '#000000' },
+                    { ...co2Ramp[1], propertyValue: '100', color: '#ffffff' },
+                ],
+            })
+            expect(
+                layer.props.getFillColor({ properties: { co2: 0 } })
+            ).toEqual([0, 0, 0, 255])
         })
 
         test('keeps colour accessors static when the legend styles nothing', () => {

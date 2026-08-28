@@ -411,7 +411,8 @@ function resolveStyleAccessors(
     // layers need this to pick a tile decoding format: see the `vectortile`
     // case in buildDeckLayer.
     const readsFeatureProperties = Boolean(
-        fillColorProp ||
+        legend ||
+            fillColorProp ||
             fillOpacityProp ||
             colorProp ||
             opacityProp ||
