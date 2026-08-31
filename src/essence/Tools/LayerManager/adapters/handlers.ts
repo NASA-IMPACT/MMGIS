@@ -1,6 +1,7 @@
 import {
     mmgisRequest,
     mmgisEmit,
+    mmgisShowPlugin,
     mmgisGetLayerCogCapabilities,
     mmgisGetLayerBounds,
     mmgisFitBounds,
@@ -63,6 +64,33 @@ export const zoomToLayer = async (layerId: string): Promise<void> => {
         padding: ZOOM_TO_LAYER_PADDING,
         ...(enclosesNoArea ? { maxZoom: ZOOM_TO_LAYER_POINT_MAX_ZOOM } : {}),
     })
+}
+
+/**
+ * Hands a layer to the Comparison plugin as the first of the two sides it
+ * swipes between. A mission without that plugin has nobody listening.
+ */
+export const compareLayer = (layerId: string): void => {
+    mmgisEmit('plugin:comparison:startWithLayer', { layerId })
+}
+
+export const ADD_LAYER_PLUGIN_ID = 'AddTempLayerTool'
+
+/**
+ * Reveals the "add layer from URL" form, loading the tool first if the mission
+ * starts it unloaded. Its own `addTempLayer:show` event would not reach it
+ * there, being listened for only while the tool is mounted.
+ */
+export const showAddLayer = (): void => {
+    // Widened from CommandResult: without strictNullChecks a boolean
+    // discriminant does not narrow, so `reason` is unreachable on the union.
+    mmgisShowPlugin(ADD_LAYER_PLUGIN_ID)
+        .then((result: { ok: boolean; reason?: string }) => {
+            if (!result.ok) {
+                console.warn(`LayerManager: showAddLayer refused: ${result.reason}`)
+            }
+        })
+        .catch((err) => console.warn('LayerManager: showAddLayer failed', err))
 }
 
 export const setColormap = async (layerId: string, colormap: string, refresh: Refresh): Promise<void> => {
