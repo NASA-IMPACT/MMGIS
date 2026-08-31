@@ -1,4 +1,7 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "defaultIcon": "compare-horizontal",
     "description": "Compare two layers, or the same layers across two dates, wiped under a divider or side by side.",
     "descriptionFull": {
@@ -16,8 +19,17 @@
     "metadata": {
         "icon": "compare-horizontal",
         "requiredOrientation": "vertical",
-        "compatiblePositions": ["left", "right"],
-        "preferredPosition": "right",
+        "compatiblePositions": [
+            "float-top-left",
+            "float-top-center",
+            "float-top-right",
+            "float-bottom-left",
+            "float-bottom-center",
+            "float-bottom-right",
+            "left",
+            "right"
+        ],
+        "preferredPosition": "float-top-left",
         "modernLayoutSupport": true,
         "startUnloaded": true,
         "width": 350,
