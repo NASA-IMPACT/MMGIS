@@ -29,3 +29,23 @@
     line-height: 1;
     user-select: none;
 }
+
+/* Side-by-side seam. The two panes already meet here, so the divider reads as
+   the join between them rather than a wipe across one view: a solid rule with
+   a grab handle, and a shadow either side to lift it off both maps. */
+.mmgis-comparison-divider--side-by-side {
+    width: .35rem;
+    box-shadow: 0 0 6px 1px rgba(0, 0, 0, .35);
+}
+
+.mmgis-comparison-divider--side-by-side::after {
+    content: '\2016'; /* ‖ */
+    font-size: 20px;
+    width: 32px;
+    height: 32px;
+}
+
+.mmgis-comparison-pane {
+    /* Panes tile the container edge to edge; the divider draws over the join. */
+    background: var(--theme-color-base-darkest, #1b1b1b);
+}

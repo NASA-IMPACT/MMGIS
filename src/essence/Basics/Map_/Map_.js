@@ -409,27 +409,11 @@ let Map_ = {
                 )
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
-
-            // Comparison / swipe providers — delegates to MapComparison which
-            // owns divider DOM and time-subscription lifecycle.
-            _providerCleanups.push(
-                window.mmgisAPI.provide('map:comparison:enable',
-                    (p) => MapComparison.enable(p)),
-                window.mmgisAPI.provide('map:comparison:disable',
-                    () => MapComparison.disable()),
-                window.mmgisAPI.provide('map:comparison:setLeftSide',
-                    (p) => MapComparison.setLeftSide(p)),
-                window.mmgisAPI.provide('map:comparison:setRightSide',
-                    (p) => MapComparison.setRightSide(p)),
-                window.mmgisAPI.provide('map:comparison:setDividerPosition',
-                    (p) => MapComparison.setDividerPosition(p)),
-                window.mmgisAPI.provide('map:comparison:getState',
-                    () => MapComparison.getState()),
-            )
         }
 
         // Initialise comparison controller with the active engine so it can
-        // inject the divider DOM and delegate rendering calls.
+        // inject the divider DOM, delegate rendering calls, and register its
+        // own `map:comparison:*` providers on the event bus.
         MapComparison.init(engine)
 
         //Make our layers
@@ -774,13 +758,9 @@ let Map_ = {
             if (typeof cb === 'function') cb()
             return true
         }
-
-        // We need to find and remove all points on the map that belong to the layer
-        // Not sure if there is a cleaner way of doing this
         for (var i = L_._layersOrdered.length - 1; i >= 0; i--) {
             if (
                 L_.layers.data[L_._layersOrdered[i]] &&
-                L_.layers.data[L_._layersOrdered[i]].type == 'vector' &&
                 L_.layers.data[L_._layersOrdered[i]].name == layerObj.name
             ) {
                 // Original

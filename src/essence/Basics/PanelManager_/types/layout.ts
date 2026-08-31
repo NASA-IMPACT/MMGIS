@@ -50,6 +50,30 @@ export const PANEL_STATE = {
     EXPANDED: 'expanded',
 } as const
 export type PanelState = (typeof PANEL_STATE)[keyof typeof PANEL_STATE]
+export const PANEL_STATES: readonly PanelState[] = Object.values(PANEL_STATE)
+
+/**
+ * Why a panel or plugin command was refused. Shared by both:
+ * - bad-request: malformed payload — a missing or non-string id, or a state
+ *   name outside the target's vocabulary
+ * - not-found: a well-formed payload naming nothing that exists
+ * - state-not-allowed: a real state this target forbids, per its configured
+ *   constraints or its position
+ * - no-visible-state: a panel with no non-collapsed state to reveal into
+ * - layout-inactive: no layout is mounted
+ * - load-failed: reaching the state needed a plugin load, and it threw
+ * - transition-failed: the target resolved but the subsystem could not move it
+ */
+export const COMMAND_REFUSAL_REASONS = [
+    'bad-request',
+    'not-found',
+    'state-not-allowed',
+    'no-visible-state',
+    'layout-inactive',
+    'load-failed',
+    'transition-failed',
+] as const
+export type CommandRefusalReason = (typeof COMMAND_REFUSAL_REASONS)[number]
 
 /**
  * How multiple tools are displayed when panel is in 'expanded' state:
