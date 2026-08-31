@@ -367,4 +367,71 @@ export interface IMapEngine<
      * removes the DOM node from the container. No-op if the id is unknown.
      */
     removeOverlay(id: string): void
+
+    // ── Comparison / swipe ────────────────────────────────────────────────────
+
+    /**
+     * Enable (or reconfigure) side-by-side swipe comparison mode.
+     * Renders each side's layer set into its own canvas stacked over the map and
+     * reveals them on either side of a draggable divider; the underlying basemap
+     * stays shared and all other data layers are hidden. Calling again while
+     * already enabled re-applies the (possibly changed) layer sets.
+     * Optional per-side date overrides for time-enabled layers are a follow-up.
+     */
+    enableComparison?(config: ComparisonConfig): void
+
+    /** Disable comparison mode and restore the normal single-viewport view. */
+    disableComparison?(): void
+
+    /**
+     * Move the comparison divider to `pos` (0–1 fraction of container width).
+     * No-op if comparison mode is off.
+     */
+    setComparisonDivider?(pos: number): void
+
+    /**
+     * Switch between the two ways the sides can share the viewport. Rebuilds
+     * the rendering surfaces, keeping the layer sets and the divider where
+     * they are. No-op if comparison mode is off.
+     */
+    setComparisonLayout?(layout: ComparisonLayout): void
+
+    /** Returns true when comparison mode is currently active. */
+    isComparisonEnabled?(): boolean
+
+    /** The layout comparison is currently drawn in. */
+    getComparisonLayout?(): ComparisonLayout
+}
+
+/**
+ * How the two comparison sides share the map viewport.
+ *
+ * - `'swipe'` — one camera, one basemap. Both sides draw the same view and the
+ *   divider wipes between them, so a place is seen under one layer or the
+ *   other.
+ * - `'sideBySide'` — two cameras locked to the same centre and zoom, each with
+ *   its own basemap, in panes that meet at the divider without overlapping. A
+ *   place is seen under both layers at once, once per pane.
+ */
+export type ComparisonLayout = 'swipe' | 'sideBySide'
+
+/** Configuration for {@link IMapEngine.enableComparison}. */
+export interface ComparisonConfig {
+    /** deck.gl layer IDs (= MMGIS layer names) to render on the left side. */
+    leftLayerIds: string[]
+    /** deck.gl layer IDs (= MMGIS layer names) to render on the right side. */
+    rightLayerIds: string[]
+    /** Defaults to the layout already in effect, or `'swipe'` on first enable. */
+    layout?: ComparisonLayout
+    /**
+     * Layer props to override on the left side only, keyed by layer id — how a
+     * side is drawn from a source the other side does not share, such as a
+     * different date's tiles. Props are engine-level (`data`, `geotiff`); the
+     * engine applies what it is given and never derives them. `id` is not among
+     * them: a clone is paired to its layer by id, and overriding it breaks the
+     * pairing the renderer diffs on.
+     */
+    leftLayerProps?: Record<string, Record<string, unknown>>
+    /** As {@link ComparisonConfig.leftLayerProps}, for the right side. */
+    rightLayerProps?: Record<string, Record<string, unknown>>
 }

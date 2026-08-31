@@ -44,6 +44,10 @@ import {
     DeckGLAdapter,
 } from '../MapEngines/index'
 import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import MapComparison from './MapComparison'
+
+import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
+import georaster from 'georaster'
 
 let L = window.L
 
@@ -52,8 +56,6 @@ let essenceFina = function () {}
 mapEngineRegistry.register(MAP_ENGINE.LEAFLET, LeafletAdapter)
 mapEngineRegistry.register(MAP_ENGINE.DECKGL, DeckGLAdapter)
 
-import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
-import georaster from 'georaster'
 
 // The default color ramp used for image layer types
 const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
@@ -408,6 +410,11 @@ let Map_ = {
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
         }
+
+        // Initialise comparison controller with the active engine so it can
+        // inject the divider DOM, delegate rendering calls, and register its
+        // own `map:comparison:*` providers on the event bus.
+        MapComparison.init(engine)
 
         //Make our layers
         makeLayers(L_.layers.dataFlat)
