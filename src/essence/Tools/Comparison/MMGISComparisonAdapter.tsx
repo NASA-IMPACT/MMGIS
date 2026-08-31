@@ -53,7 +53,7 @@ export function MMGISComparisonAdapter({
     seedMode = null,
     onClose,
 }: MMGISComparisonAdapterProps) {
-    const layers = useVisibleLayers()
+    const { layers, read: layersRead } = useVisibleLayers()
     const time = useGlobalTime()
     const [mode, setMode] = useState<ComparisonMode>('layers')
     const [layout, setLayout] = useState<ComparisonLayout>('swipe')
@@ -93,6 +93,17 @@ export function MMGISComparisonAdapter({
         () => (layerIdsKey === '' ? [] : layerIdsKey.split(ID_SEPARATOR)),
         [layerIdsKey],
     )
+
+    // A comparison reads two drawn layers, which is why the layers list disables
+    // its Compare entry for a switched-off one. A side whose layer stops being
+    // drawn therefore gives it up, ending the comparison. Gated on the first
+    // read, since an empty list before it would take the seed with it.
+    useEffect(() => {
+        if (!layersRead) return
+        const drawn = new Set(layerIds)
+        setLeftLayerId((id) => (id && !drawn.has(id) ? null : id))
+        setRightLayerId((id) => (id && !drawn.has(id) ? null : id))
+    }, [layersRead, layerIds])
 
     /**
      * What the active mode asks the map for, or null when it is not ready to

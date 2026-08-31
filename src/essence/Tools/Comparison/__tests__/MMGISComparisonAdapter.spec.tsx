@@ -32,6 +32,8 @@ let setCurrentCalls: Date[]
 let order: string[]
 /** What the visible-layer hook reports; reassign to simulate a layer event. */
 let visibleLayers: Layer[]
+/** Whether that hook has read yet; set false to model the gap before it has. */
+let layersRead: boolean
 /** Where the global timeline sits; reassign to simulate it moving. */
 let globalCurrent: Date
 let globalReadiness: 'loading' | 'ready' | 'unavailable'
@@ -49,6 +51,7 @@ const load = async () => {
     setCurrentCalls = []
     order = []
     visibleLayers = LAYERS
+    layersRead = true
     globalCurrent = PRIMARY
     globalReadiness = 'ready'
     panelProps = null
@@ -64,7 +67,7 @@ const load = async () => {
         },
     }))
     vi.doMock('../adapters/useVisibleLayers', () => ({
-        useVisibleLayers: () => visibleLayers,
+        useVisibleLayers: () => ({ layers: visibleLayers, read: layersRead }),
     }))
     vi.doMock('../adapters/useGlobalTime', () => ({
         useGlobalTime: () => ({
@@ -288,6 +291,39 @@ describe('MMGISComparisonAdapter layers mode', () => {
         })
 
         expect(enableCalls.length).toBe(before)
+    })
+
+    /**
+     * Otherwise the panel names a layer the map is not drawing: dropping the
+     * selected option leaves the select on its first enabled one, and that
+     * silent move fires no change event for the state behind it to follow.
+     */
+    test('a side gives up a layer that stops being drawn', async () => {
+        await act(async () => { panelProps.onRightLayerChange('roads') })
+        const before = disableCalls
+
+        visibleLayers = LAYERS.filter((layer) => layer.id !== 'co2')
+        await act(async () => {
+            root.render(<MMGISComparisonAdapter seedLayerId="co2" />)
+        })
+
+        expect(panelProps.leftLayerId).toBeNull()
+        expect(panelProps.rightLayerId).toBe('roads')
+        expect(disableCalls).toBe(before + 1)
+    })
+
+    /**
+     * An empty list before the first read says nothing about what the map
+     * draws, so the seed the kebab entry just handed over survives that gap.
+     */
+    test('keeps the seed until the layer list has been read', async () => {
+        layersRead = false
+        visibleLayers = []
+        await act(async () => {
+            root.render(<MMGISComparisonAdapter seedLayerId="co2" />)
+        })
+
+        expect(panelProps.leftLayerId).toBe('co2')
     })
 })
 
