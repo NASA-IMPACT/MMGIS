@@ -1,4 +1,5 @@
 // Components
+export { FloatingPopover, type FloatingPopoverProps } from './FloatingPopover/FloatingPopover'
 export { DateSelector, type DateSelectorProps } from './geo/DateSelector/DateSelector'
 export { LayerTimeline, type LayerTimelineProps } from './geo/LayerTimeline/LayerTimeline'
 export { PlaybackControls, type PlaybackControlsProps } from './geo/PlaybackControls/PlaybackControls'

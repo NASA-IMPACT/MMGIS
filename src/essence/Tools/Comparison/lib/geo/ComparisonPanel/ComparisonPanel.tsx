@@ -1,5 +1,5 @@
 import React from 'react'
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import type {
     ComparisonLayout,
     ComparisonMode,
@@ -7,6 +7,7 @@ import type {
     TimeStatus,
 } from '../../types'
 import { DateSelector, type TimeMode } from '../../../../Timeline/lib'
+import { LayerSelect } from './LayerSelect'
 
 export type ComparisonPanelProps = {
     /** Active comparison mode. */
@@ -226,14 +227,14 @@ export function ComparisonPanel({
 
                     {mode === 'layers' ? (
                         <>
-                            <SideSelect
+                            <LayerSelect
                                 label="Layer 1"
                                 value={leftLayerId}
                                 layers={layers}
                                 placeholder={PLACEHOLDER}
                                 onChange={onLeftLayerChange}
                             />
-                            <SideSelect
+                            <LayerSelect
                                 label="Layer 2"
                                 value={rightLayerId}
                                 layers={layers}
@@ -303,14 +304,16 @@ export function ComparisonPanel({
                             <LayoutButton
                                 layout="swipe"
                                 active={layout === 'swipe'}
-                                icon="mdi-arrow-split-vertical"
+                                icon={
+                                    <i className="mdi mdi-arrow-split-vertical mdi-18px" />
+                                }
                                 label="Swipe comparison"
                                 onSelect={onLayoutChange}
                             />
                             <LayoutButton
                                 layout="sideBySide"
                                 active={layout === 'sideBySide'}
-                                icon="mdi-view-grid-outline"
+                                icon={<SideBySideIcon />}
                                 label="Side-by-side comparison"
                                 onSelect={onLayoutChange}
                             />
@@ -325,13 +328,48 @@ export function ComparisonPanel({
 type LayoutButtonProps = {
     layout: ComparisonLayout
     active: boolean
-    /** Modifier suffix of the Material Design Icons class. */
-    icon: string
+    /** The layout drawn as a glyph, sized to sit beside an 18px icon. */
+    icon: ReactNode
     label: string
     onSelect?: (layout: ComparisonLayout) => void
 }
 
 /** One of the two mutually exclusive ways to split the map. */
+/**
+ * The two panes the side-by-side layout draws, meeting at the divider. Material
+ * Design Icons' view glyphs all carry three columns, so the pair is drawn here.
+ */
+function SideBySideIcon() {
+    return (
+        <svg
+            width="18"
+            height="18"
+            viewBox="0 0 18 18"
+            fill="none"
+            aria-hidden="true"
+        >
+            <rect
+                x="1.5"
+                y="3.5"
+                width="6"
+                height="11"
+                rx="1"
+                stroke="currentColor"
+                strokeWidth="1.5"
+            />
+            <rect
+                x="10.5"
+                y="3.5"
+                width="6"
+                height="11"
+                rx="1"
+                stroke="currentColor"
+                strokeWidth="1.5"
+            />
+        </svg>
+    )
+}
+
 function LayoutButton({ layout, active, icon, label, onSelect }: LayoutButtonProps) {
     return (
         <button
@@ -344,41 +382,8 @@ function LayoutButton({ layout, active, icon, label, onSelect }: LayoutButtonPro
             aria-pressed={active}
             onClick={() => onSelect?.(layout)}
         >
-            <i className={`mdi ${icon} mdi-18px`} />
+            {icon}
         </button>
-    )
-}
-
-type SideSelectProps = {
-    label: string
-    value: string | null
-    layers: LayerOption[]
-    placeholder: string
-    onChange?: (layerId: string) => void
-}
-
-function SideSelect({ label, value, layers, placeholder, onChange }: SideSelectProps) {
-    return (
-        <label className="blocks-comparison__field">
-            <span className="blocks-comparison__field-label">{label}</span>
-            <div className="blocks-comparison__select-wrapper">
-                <select
-                    className="blocks-comparison__select"
-                    value={value ?? ''}
-                    onChange={(e) => onChange?.(e.target.value)}
-                >
-                    <option value="" disabled>
-                        {placeholder}
-                    </option>
-                    {layers.map((layer) => (
-                        <option key={layer.id} value={layer.id}>
-                            {layer.title}
-                        </option>
-                    ))}
-                </select>
-                <i className="mdi mdi-chevron-down mdi-18px blocks-comparison__select-caret" />
-            </div>
-        </label>
     )
 }
 

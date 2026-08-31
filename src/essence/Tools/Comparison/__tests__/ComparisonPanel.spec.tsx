@@ -377,8 +377,10 @@ describe('ComparisonPanel swap control', () => {
             '.blocks-comparison__action-btn--swap',
         )!
 
-    const selects = () =>
-        [...container.querySelectorAll<HTMLSelectElement>('.blocks-comparison__select')]
+    /** What each side's field shows, which is the layer it is drawing. */
+    const shownLayers = () =>
+        [...container.querySelectorAll('.blocks-comparison__select')]
+            .map((field) => field.textContent)
 
     test('reads as unpressed while each side draws the choice beside it', () => {
         render()
@@ -415,7 +417,106 @@ describe('ComparisonPanel swap control', () => {
         })
 
         expect(onSwap).toHaveBeenCalledTimes(1)
-        expect(selects().map((s) => s.value)).toEqual(['co2', 'ch4'])
+        expect(shownLayers()).toEqual(['CO₂', 'CH₄'])
         expect(swap().getAttribute('aria-pressed')).toBe('false')
+    })
+})
+
+/**
+ * Each side is picked from a list the panel draws itself, rather than from the
+ * native control's, which the operating system renders in its own type and
+ * colour. The list is portaled, so it is read off the document rather than out
+ * of the panel's own subtree.
+ */
+describe('ComparisonPanel layer picker', () => {
+    let container: HTMLElement
+    let root: Root
+
+    beforeEach(() => {
+        delete (window as { mmgisAPI?: unknown }).mmgisAPI
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+    })
+
+    const render = (props: Record<string, unknown> = {}) => {
+        act(() => {
+            root.render(
+                <ComparisonPanel
+                    mode="layers"
+                    layout="swipe"
+                    layers={LAYERS}
+                    leftLayerId={null}
+                    rightLayerId={null}
+                    {...props}
+                />,
+            )
+        })
+    }
+
+    const fields = () =>
+        [...container.querySelectorAll<HTMLButtonElement>(
+            '.blocks-comparison__select',
+        )]
+
+    const options = () =>
+        [...document.querySelectorAll<HTMLButtonElement>(
+            '.blocks-comparison__option',
+        )]
+
+    const click = (el: HTMLElement) => {
+        act(() => {
+            el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        })
+    }
+
+    test('offers no list until the field is opened', () => {
+        render()
+        expect(options()).toEqual([])
+        expect(fields()[0].getAttribute('aria-expanded')).toBe('false')
+    })
+
+    test('opens on the field and offers every layer', () => {
+        render()
+        click(fields()[0])
+
+        expect(options().map((o) => o.textContent)).toEqual(['CO₂', 'CH₄'])
+        expect(fields()[0].getAttribute('aria-expanded')).toBe('true')
+    })
+
+    test('reports the picked layer and closes', () => {
+        const onLeftLayerChange = vi.fn()
+        render({ onLeftLayerChange })
+        click(fields()[0])
+        click(options()[1])
+
+        expect(onLeftLayerChange).toHaveBeenCalledWith('ch4')
+        expect(options()).toEqual([])
+    })
+
+    // The field is the only place the choice is shown, so it carries the
+    // chosen layer's name and marks it in the list it opens.
+    test('names the choice and marks it in the list', () => {
+        render({ leftLayerId: 'ch4' })
+        expect(fields()[0].textContent).toBe('CH₄')
+
+        click(fields()[0])
+        const selected = options().filter(
+            (o) => o.getAttribute('aria-selected') === 'true',
+        )
+        expect(selected.map((o) => o.textContent)).toEqual(['CH₄'])
+    })
+
+    test('reads as a prompt while nothing is chosen', () => {
+        render()
+        expect(fields()[0].textContent).toBe('Select a layer to compare')
+        expect(fields()[0].className).toContain(
+            'blocks-comparison__select--placeholder',
+        )
     })
 })
