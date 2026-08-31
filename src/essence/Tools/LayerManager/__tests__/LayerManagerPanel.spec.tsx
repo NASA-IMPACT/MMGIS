@@ -2,7 +2,7 @@ import React from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LayerManagerPanel } from '../lib/geo/LayerManagerPanel/LayerManagerPanel'
 import type { Layer } from '../lib/types'
-import { mount, click } from './reactHarness'
+import { mount, click } from '../../_shared/__tests__/reactHarness'
 
 /**
  * The portability proof for the plugin's UI.
