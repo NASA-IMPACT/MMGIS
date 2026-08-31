@@ -1,6 +1,12 @@
 import React from 'react'
-import { useState } from 'react'
-import type { ComparisonMode, LayerOption } from '../../types'
+import { useId, useState } from 'react'
+import type {
+    ComparisonLayout,
+    ComparisonMode,
+    LayerOption,
+    TimeStatus,
+} from '../../types'
+import { DateSelector, type TimeMode } from '../../../../Timeline/lib'
 
 export type ComparisonPanelProps = {
     /** Active comparison mode. */
@@ -8,11 +14,42 @@ export type ComparisonPanelProps = {
     /** Called when the user switches tabs. */
     onModeChange?: (mode: ComparisonMode) => void
     /**
-     * Disable the "Compare dates" tab. Compare-dates depends on per-side date
-     * pinning in the core swipe capability, which is not implemented yet, so
-     * the host disables the tab until the core supports it.
+     * Whether the host has a timeline at all. Without one there is no date to
+     * compare against, so the dates tab stays unavailable.
      */
-    datesDisabled?: boolean
+    timeEnabled?: boolean
+    /**
+     * Readiness of the host's answer about its timeline. A host that reports
+     * `'loading'` is still reading; the dates tab waits on it and says so,
+     * rather than claiming the map has no timeline.
+     */
+    timeStatus?: TimeStatus
+
+    /** Bounds both date pickers clamp to. Null before the host has read them. */
+    timeWindowStart?: Date | null
+    timeWindowEnd?: Date | null
+    /** The host timeline's instant — the date the first side reads at. */
+    primaryDate?: Date | null
+    /** The instant the second side reads at, null until the user picks one. */
+    compareDate?: Date | null
+    /** Moves the host's timeline, which moves the first side with it. */
+    onPrimaryDateChange?: (date: Date) => void
+    /** Sets the second side's date. */
+    onCompareDateChange?: (date: Date) => void
+    /**
+     * Wording for the first row while the host has supplied no date to show.
+     * Defaults to a phrasing that matches `timeStatus`.
+     */
+    primaryDatePlaceholder?: string
+    /** Wording inviting the second date. */
+    compareDatePlaceholder?: string
+    /** Granularity both date pickers select at. */
+    timeMode?: TimeMode
+
+    /** How the two sides currently share the map. */
+    layout: ComparisonLayout
+    /** Called when the user picks the other layout. */
+    onLayoutChange?: (layout: ComparisonLayout) => void
 
     /** Currently-visible layers offered in both side dropdowns. */
     layers: LayerOption[]
@@ -23,34 +60,91 @@ export type ComparisonPanelProps = {
     onLeftLayerChange?: (layerId: string) => void
     onRightLayerChange?: (layerId: string) => void
 
-    /** Swap the two sides (left ↔ right). */
+    /**
+     * Whether the two choices are drawn on the opposite sides of the divider
+     * from the ones they are listed beside. The panel shows this on the swap
+     * button; the host owns the state.
+     */
+    swapped?: boolean
+    /** Toggle which side of the divider each choice draws on. */
     onSwap?: () => void
     /** End the comparison (EXIT). */
     onClose?: () => void
 }
 
 const PLACEHOLDER = 'Select a layer to compare'
+const COMPARE_DATE_PLACEHOLDER = 'Pick a day to compare'
+
+/**
+ * What the first date row says when there is no date to show, phrased for how
+ * far the host has got: a host still reading its timeline is waited on, one
+ * without a timeline says so, and one that simply has not sent a date yet is
+ * described as unset rather than broken.
+ */
+const PRIMARY_DATE_PLACEHOLDER: Record<TimeStatus, string> = {
+    loading: 'Reading the timeline…',
+    ready: 'No date selected',
+    unavailable: 'This map has no timeline',
+}
+
+/** Why the dates tab is out of reach, when it is. */
+const DATES_TAB_TITLE: Record<TimeStatus, string | undefined> = {
+    loading: 'Reading this map’s timeline…',
+    ready: undefined,
+    unavailable: 'This map has no timeline to compare across',
+}
 
 /**
  * Presentational Comparison panel (Disasters Portal design). Renders the header
- * (brand + EXIT + collapse), the mode tab toggle, two visible-layer dropdowns,
- * and the compare-mode action row. Holds only local collapse UI state and
- * performs no MMGIS interaction — the host wires the callbacks.
+ * (brand + EXIT + collapse), the mode tab toggle, a body that holds either the
+ * two visible-layer dropdowns or the two date rows depending on the mode, and
+ * the action row holding swap plus the two layout choices. Holds only local
+ * collapse UI state and performs no MMGIS interaction — the host wires the
+ * callbacks.
+ *
+ * Swap is a toggle, not a rearrangement: the rows keep showing what the user
+ * chose, and the pressed swap button is what says those choices are drawn on
+ * the opposite sides of the divider.
  */
 export function ComparisonPanel({
     mode,
     onModeChange,
-    datesDisabled = false,
+    timeEnabled = false,
+    timeStatus = 'ready',
+    layout,
+    onLayoutChange,
     layers,
     leftLayerId,
     rightLayerId,
     onLeftLayerChange,
     onRightLayerChange,
+    timeWindowStart = null,
+    timeWindowEnd = null,
+    primaryDate = null,
+    compareDate = null,
+    onPrimaryDateChange,
+    onCompareDateChange,
+    primaryDatePlaceholder,
+    compareDatePlaceholder = COMPARE_DATE_PLACEHOLDER,
+    timeMode = 'HOUR',
+    swapped = false,
     onSwap,
     onClose,
 }: ComparisonPanelProps) {
     const [collapsed, setCollapsed] = useState(false)
-    const canSwap = !!leftLayerId && !!rightLayerId
+    // A host that reports a status is trusted over the flag; one that reports
+    // none is read as having finished, so `timeEnabled` alone still decides.
+    const status: TimeStatus =
+        timeStatus === 'ready' && !timeEnabled ? 'unavailable' : timeStatus
+    const datesDisabled = status !== 'ready'
+    // Swapping moves the two sides past each other, so both must exist first.
+    const canSwap =
+        mode === 'dates'
+            ? !!primaryDate && !!compareDate
+            : !!leftLayerId && !!rightLayerId
+    // Nothing else on screen moves when the sides do, so the button carries the
+    // state in its wording as well as in its pressed look.
+    const swapLabel = swapped ? 'Swap views (sides swapped)' : 'Swap views'
 
     return (
         <div className="blocks-comparison">
@@ -88,9 +182,11 @@ export function ComparisonPanel({
                         aria-label={collapsed ? 'Expand' : 'Collapse'}
                         title={collapsed ? 'Expand' : 'Collapse'}
                     >
+                        {/* Points the way the body will move: up to fold it
+                            away, down to bring it back. */}
                         <i
                             className={`mdi mdi-18px ${
-                                collapsed ? 'mdi-chevron-up' : 'mdi-chevron-down'
+                                collapsed ? 'mdi-chevron-down' : 'mdi-chevron-up'
                             }`}
                         />
                     </button>
@@ -117,67 +213,139 @@ export function ComparisonPanel({
                             role="tab"
                             aria-selected={mode === 'dates'}
                             disabled={datesDisabled}
-                            title={datesDisabled ? 'Compare dates is coming soon' : undefined}
+                            title={DATES_TAB_TITLE[status]}
                             className={`blocks-comparison__tab${
                                 mode === 'dates' ? ' blocks-comparison__tab--active' : ''
                             }${datesDisabled ? ' blocks-comparison__tab--disabled' : ''}`}
-                            onClick={() => !datesDisabled && onModeChange?.('dates')}
+                            onClick={() => onModeChange?.('dates')}
                         >
                             <i className="mdi mdi-calendar mdi-18px" />
                             <span>Compare dates</span>
                         </button>
                     </div>
 
-                    <SideSelect
-                        label="Layer 1"
-                        value={leftLayerId}
-                        layers={layers}
-                        placeholder={PLACEHOLDER}
-                        onChange={onLeftLayerChange}
-                    />
-                    <SideSelect
-                        label="Layer 2"
-                        value={rightLayerId}
-                        layers={layers}
-                        placeholder={PLACEHOLDER}
-                        onChange={onRightLayerChange}
-                    />
+                    {mode === 'layers' ? (
+                        <>
+                            <SideSelect
+                                label="Layer 1"
+                                value={leftLayerId}
+                                layers={layers}
+                                placeholder={PLACEHOLDER}
+                                onChange={onLeftLayerChange}
+                            />
+                            <SideSelect
+                                label="Layer 2"
+                                value={rightLayerId}
+                                layers={layers}
+                                placeholder={PLACEHOLDER}
+                                onChange={onRightLayerChange}
+                            />
+                        </>
+                    ) : (
+                        <>
+                            <DateRow
+                                label="Date 1"
+                                variant="primary"
+                                value={primaryDate}
+                                seed={timeWindowEnd}
+                                windowStart={timeWindowStart}
+                                windowEnd={timeWindowEnd}
+                                placeholder={
+                                    primaryDatePlaceholder ??
+                                    PRIMARY_DATE_PLACEHOLDER[status]
+                                }
+                                timeMode={timeMode}
+                                onChange={onPrimaryDateChange}
+                            />
+                            {/*
+                              * The second date is seeded from the first, so an
+                              * empty compare row opens its calendar on the month
+                              * the user is already reading rather than at an
+                              * unrelated corner of the window. The window's
+                              * closing instant stands in for a host that has
+                              * sent no date of its own.
+                              */}
+                            <DateRow
+                                label="Date 2"
+                                variant="compare"
+                                value={compareDate}
+                                seed={primaryDate ?? timeWindowEnd}
+                                windowStart={timeWindowStart}
+                                windowEnd={timeWindowEnd}
+                                placeholder={compareDatePlaceholder}
+                                timeMode={timeMode}
+                                onChange={onCompareDateChange}
+                            />
+                            <p className="blocks-comparison__hint">
+                                Pick a second date to split the map and compare the
+                                same layers across time.
+                            </p>
+                        </>
+                    )}
 
                     <div className="blocks-comparison__actions">
                         <button
                             type="button"
-                            className="blocks-comparison__action-btn blocks-comparison__action-btn--swap"
+                            className={`blocks-comparison__action-btn blocks-comparison__action-btn--swap${
+                                swapped
+                                    ? ' blocks-comparison__action-btn--active'
+                                    : ''
+                            }`}
                             onClick={() => onSwap?.()}
                             disabled={!canSwap}
-                            title="Swap views"
-                            aria-label="Swap views"
+                            title={swapLabel}
+                            aria-label={swapLabel}
+                            aria-pressed={swapped}
                         >
                             <i className="mdi mdi-swap-horizontal mdi-18px" />
                         </button>
                         <div className="blocks-comparison__actions-group">
-                            <button
-                                type="button"
-                                className="blocks-comparison__action-btn blocks-comparison__action-btn--mode blocks-comparison__action-btn--active"
-                                title="Swipe comparison"
-                                aria-label="Swipe comparison"
-                                aria-pressed
-                            >
-                                <i className="mdi mdi-arrow-split-vertical mdi-18px" />
-                            </button>
-                            <button
-                                type="button"
-                                className="blocks-comparison__action-btn blocks-comparison__action-btn--mode"
-                                disabled
-                                title="Side-by-side (coming soon)"
-                                aria-label="Side-by-side comparison"
-                            >
-                                <i className="mdi mdi-view-grid-outline mdi-18px" />
-                            </button>
+                            <LayoutButton
+                                layout="swipe"
+                                active={layout === 'swipe'}
+                                icon="mdi-arrow-split-vertical"
+                                label="Swipe comparison"
+                                onSelect={onLayoutChange}
+                            />
+                            <LayoutButton
+                                layout="sideBySide"
+                                active={layout === 'sideBySide'}
+                                icon="mdi-view-grid-outline"
+                                label="Side-by-side comparison"
+                                onSelect={onLayoutChange}
+                            />
                         </div>
                     </div>
                 </div>
             )}
         </div>
+    )
+}
+
+type LayoutButtonProps = {
+    layout: ComparisonLayout
+    active: boolean
+    /** Modifier suffix of the Material Design Icons class. */
+    icon: string
+    label: string
+    onSelect?: (layout: ComparisonLayout) => void
+}
+
+/** One of the two mutually exclusive ways to split the map. */
+function LayoutButton({ layout, active, icon, label, onSelect }: LayoutButtonProps) {
+    return (
+        <button
+            type="button"
+            className={`blocks-comparison__action-btn blocks-comparison__action-btn--mode${
+                active ? ' blocks-comparison__action-btn--active' : ''
+            }`}
+            title={label}
+            aria-label={label}
+            aria-pressed={active}
+            onClick={() => onSelect?.(layout)}
+        >
+            <i className={`mdi ${icon} mdi-18px`} />
+        </button>
     )
 }
 
@@ -211,5 +379,86 @@ function SideSelect({ label, value, layers, placeholder, onChange }: SideSelectP
                 <i className="mdi mdi-chevron-down mdi-18px blocks-comparison__select-caret" />
             </div>
         </label>
+    )
+}
+
+type DateRowProps = {
+    label: string
+    /** Which of the two rows this is — its role beside the label, and styling. */
+    variant: 'primary' | 'compare'
+    value: Date | null
+    /**
+     * Where the calendar opens while the row has no value of its own. A row
+     * whose date is unset is still a picker, so it needs an instant to open
+     * around even though it is showing none.
+     */
+    seed: Date | null
+    windowStart: Date | null
+    windowEnd: Date | null
+    /** Wording the picker carries while there is no date to show. */
+    placeholder: string
+    /** Granularity the picker selects at. */
+    timeMode: TimeMode
+    onChange?: (date: Date) => void
+}
+
+/**
+ * One of the two dates a comparison reads across.
+ *
+ * A row offers a picker as soon as there is a window to clamp against, whether
+ * or not it holds a date — an unset row is how the second date gets set, so
+ * withholding the picker until a date exists would leave it unreachable. Until
+ * one is picked the button carries the invitation instead of a date, and opens
+ * its calendar at `seed`. A host that has not read a window yet has nothing to
+ * clamp to, and shows the same wording as plain text.
+ *
+ * The picker is a button rather than a form field, so a wrapping `<label>`
+ * would not name it. The row is a labelled group instead, which names the
+ * picker and the invitation alike as assistive tech enters it.
+ */
+function DateRow({
+    label,
+    variant,
+    value,
+    seed,
+    windowStart,
+    windowEnd,
+    placeholder,
+    timeMode,
+    onChange,
+}: DateRowProps) {
+    const labelId = useId()
+    const anchor = value ?? seed ?? windowEnd
+    const pickable = windowStart != null && windowEnd != null && anchor != null
+
+    return (
+        <div
+            className={`blocks-comparison__date-row blocks-comparison__date-row--${variant}`}
+            role="group"
+            aria-labelledby={labelId}
+        >
+            <span className="blocks-comparison__field-label" id={labelId}>
+                {label} <span className="blocks-comparison__date-qualifier">({variant})</span>
+            </span>
+            {pickable ? (
+                <DateSelector
+                    className={`blocks-comparison__date-selector${
+                        value == null
+                            ? ' blocks-comparison__date-selector--unset'
+                            : ''
+                    }`}
+                    selectedDate={anchor}
+                    startTime={windowStart}
+                    endTime={windowEnd}
+                    timeMode={timeMode}
+                    placeholder={value == null ? placeholder : undefined}
+                    onDateChange={(date) => onChange?.(date)}
+                />
+            ) : (
+                <span className="blocks-comparison__date-placeholder">
+                    {placeholder}
+                </span>
+            )}
+        </div>
     )
 }

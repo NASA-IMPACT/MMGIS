@@ -1,10 +1,16 @@
-// Comparison plugin — panel (Disasters Portal design, Figma 7318-21979).
+// Comparison plugin — panel, scoped under the .blocks-comparison root only.
 //
-// Fills whatever container the modern layout mounts it into; the layout owns
-// the panel's outer position and size. Colors, spacing, and type come from the
-// disasters theme's exported CSS custom properties (dist/disasters.css →
-// var(--theme-*)), with the Figma pixel values as fallbacks so it renders
-// correctly before the theme bundle loads. No Sass theme coupling.
+// Every value resolves against the global design tokens exported by
+// src/styles/_theme-export.scss as :root --theme-* custom properties; the
+// literal after each is the air4us value, used only when no theme bundle is
+// loaded. Theming itself comes from the per-theme bundles at dist/<theme>.css,
+// loaded at runtime — there is no Sass theme coupling here.
+//
+// The panel's layout is the Comparison design's (Figma 7318-21979): a header
+// rule, a tab strip, a stack of side fields, and an action row. Its chrome
+// follows the AOI tool, so the two read as one system — 2px corners, a muted
+// tab strip the selected tab lifts out of in white, white fields, and a
+// primary tint for hover with solid primary for the selected state.
 
 .blocks-comparison {
     box-sizing: border-box;
@@ -12,25 +18,36 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
 
     background: var(--theme-color-white, #ffffff);
-    color: var(--theme-color-primary-dark, #0d313d);
+    color: var(--theme-color-ink, #1c1d1f);
     font-family: var(--theme-font-body, 'Public Sans', system-ui, sans-serif);
+    font-size: var(--theme-font-size-2xs, 14px);
 
     * {
         box-sizing: border-box;
     }
 
+    // Core's global `*:focus { outline: none }` strips the native ring, so every
+    // focusable control in the panel restores one here.
+    button:focus-visible,
+    select:focus-visible,
+    [tabindex]:focus-visible {
+        outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #005ea2);
+        outline-offset: -2px;
+    }
+
     // ── Header ──────────────────────────────────────────────────────────────
+    // The one rule in the panel, separating the title bar from the body. Stays
+    // full-bleed so the rule spans the panel.
     &__header {
         flex: 0 0 auto;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        min-height: 40px;
-        padding: 10px 10px;
-        border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        gap: var(--theme-spacing-1, 8px);
+        padding: var(--theme-spacing-205, 20px) var(--theme-spacing-2, 16px);
+        border-bottom: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
     }
 
     &__brand {
@@ -45,13 +62,14 @@
         display: block;
         width: 24px;
         height: 24px;
-        color: var(--theme-color-primary-dark, #0d313d);
+        color: var(--theme-color-ink, #1c1d1f);
     }
 
     &__brand-title {
-        font-size: 16px;
+        font-size: var(--theme-font-size-sm, 16px);
         font-weight: var(--theme-font-weight-semibold, 600);
-        color: var(--theme-color-primary-dark, #0d313d);
+        line-height: 1.6;
+        color: var(--theme-color-ink, #1c1d1f);
     }
 
     &__header-actions {
@@ -60,23 +78,28 @@
         gap: 10px;
     }
 
+    // A filled chip rather than a glyph: the action is named in words. Its 10px
+    // type is below the theme's smallest step, so it is stated here.
     &__exit {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        padding: 4px var(--theme-spacing-105, 12px);
-        background: var(--theme-color-primary, #0e7482);
+        gap: var(--theme-spacing-1, 8px);
+        padding: var(--theme-spacing-05, 4px) var(--theme-spacing-105, 12px);
+        background: var(--theme-color-primary, #005ea2);
         border: 0;
+        border-radius: 0;
         color: var(--theme-color-white, #ffffff);
         font-family: inherit;
         font-size: 10px;
         font-weight: var(--theme-font-weight-semibold, 600);
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
+        line-height: 1.6;
+        letter-spacing: 0.02em;
         cursor: pointer;
+        transition: background-color 0.12s ease;
 
         &:hover {
-            background: var(--theme-color-primary-dark, #0d313d);
+            background: var(--theme-color-primary-dark, #1a4480);
         }
     }
 
@@ -88,28 +111,41 @@
         background: none;
         border: 0;
         cursor: pointer;
-        color: var(--theme-color-base-dark, #565c65);
+        color: var(--theme-color-base, #71767a);
         line-height: 1;
+        transition: color 0.12s ease;
 
         &:hover {
-            color: var(--theme-color-primary-dark, #0d313d);
+            color: var(--theme-color-primary, #005ea2);
         }
     }
 
     // ── Body ────────────────────────────────────────────────────────────────
+    // The inset block under the header rule. It takes the scroll so the header
+    // stays put however tall the selected mode's fields run.
     &__body {
+        flex: 1 1 auto;
+        min-height: 0;
+        min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 20px;
-        padding: 10px 10px;
+        gap: var(--theme-spacing-205, 20px);
+        padding: var(--theme-spacing-205, 20px) var(--theme-spacing-2, 16px);
+        overflow-y: auto;
     }
 
     // ── Tab toggle ──────────────────────────────────────────────────────────
+    // The tab strip is framed as a single field, with the tabs dividing it. The
+    // strip itself is the muted ground; the selected tab lifts out of it in
+    // white, which is what separates the two without a rule between them.
     &__tabs {
         display: flex;
+        flex-shrink: 0;
         width: 100%;
-        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-        border-radius: 2px;
+        min-width: 0;
+        background: var(--theme-color-base-lightest, #f1f3f6);
+        border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-sm, 2px);
         overflow: hidden;
     }
 
@@ -120,25 +156,34 @@
         align-items: center;
         justify-content: center;
         gap: 6px;
-        padding: 10px var(--theme-spacing-105, 12px);
+        min-width: 0;
         min-height: 65px;
-        background: var(--theme-color-white, #ffffff);
+        padding: 10px var(--theme-spacing-105, 12px);
+        background: transparent;
         border: 0;
         cursor: pointer;
         font-family: inherit;
-        font-size: 12px;
+        font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
-        color: var(--theme-color-primary-dark, #0d313d);
+        line-height: 1.6;
+        color: var(--theme-color-base, #71767a);
+        transition: background-color 0.12s ease, color 0.12s ease;
 
-        & + & {
-            border-left: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        &:hover:not(:disabled) {
+            background: var(--theme-color-primary-lightest, #eff6fb);
+            color: var(--theme-color-primary, #005ea2);
         }
 
-        &--active {
-            background: var(--theme-color-base-lightest, #f1f3f6);
+        // The selected tab is the white cell in the strip, stated after :hover
+        // and matching its guard so pointing at the tab already selected keeps
+        // it white rather than taking the tint.
+        &--active,
+        &--active:hover:not(:disabled) {
+            background: var(--theme-color-white, #ffffff);
+            color: var(--theme-color-ink, #1c1d1f);
         }
 
-        &--disabled {
+        &:disabled {
             cursor: not-allowed;
             opacity: 0.5;
         }
@@ -153,7 +198,7 @@
     }
 
     &__field-label {
-        font-size: 12px;
+        font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
         color: var(--theme-color-base-dark, #565c65);
     }
@@ -163,32 +208,129 @@
         width: 100%;
     }
 
+    // A white field with its caret at the trailing edge, matching the tool's
+    // other fields. The trailing padding is the caret's gutter.
     &__select {
         width: 100%;
         height: 36px;
-        padding: 8px 32px 8px var(--theme-spacing-105, 12px);
+        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-4, 32px) var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
         appearance: none;
         -webkit-appearance: none;
-        background: var(--theme-color-base-lightest, #f1f3f6);
-        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-        border-radius: 2px;
+        background: var(--theme-color-white, #ffffff);
+        border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-sm, 2px);
         font-family: inherit;
-        font-size: 16px;
+        font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
-        color: var(--theme-color-primary-dark, #0d313d);
+        color: var(--theme-color-ink, #1c1d1f);
         cursor: pointer;
 
+        // The empty option is the field's placeholder, and reads as one.
         &:has(option[value='']:checked) {
-            color: var(--theme-color-base, #71767a);
+            color: var(--theme-color-base-light, #a9aeb1);
+        }
+
+        &:disabled {
+            background: var(--theme-color-base-lightest, #f1f3f6);
+            color: var(--theme-color-base-light, #a9aeb1);
+            cursor: not-allowed;
         }
     }
 
     &__select-caret {
         position: absolute;
         top: 50%;
-        right: 8px;
+        right: var(--theme-spacing-105, 12px);
         transform: translateY(-50%);
         pointer-events: none;
+        color: var(--theme-color-base-light, #a9aeb1);
+    }
+
+    // ── Date rows ───────────────────────────────────────────────────────────
+    &__date-row {
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-1, 8px);
+        width: 100%;
+
+        // The row holding a date is a field like the layer dropdowns, so it is
+        // framed like one.
+        &--primary .blocks-comparison__date-selector {
+            background: var(--theme-color-white, #ffffff);
+            border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
+        }
+
+        // The compare row reads as an empty slot until a date fills it, so its
+        // border stays dashed whether or not one has been picked.
+        &--compare .blocks-comparison__date-selector {
+            border: var(--theme-border-width-sm, 1px) dashed var(--theme-color-primary, #005ea2);
+        }
+    }
+
+    // The qualifier names each date's role without competing with the label.
+    &__date-qualifier {
+        font-weight: var(--theme-font-weight-normal, 400);
+        color: var(--theme-color-base, #71767a);
+    }
+
+    // The picker and the plain text standing in for it occupy the same slot, so
+    // they share one box and the row keeps its height whichever is drawn.
+    &__date-selector,
+    &__date-placeholder {
+        min-height: 36px;
+        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
+        border-radius: var(--theme-radius-sm, 2px);
+    }
+
+    // Stands in for the picker only where a date cannot be picked at all —
+    // before the timeline's window is read, or on a map that has none. It marks
+    // the empty slot without the accent an action would carry, since there is
+    // nothing here to click.
+    &__date-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: var(--theme-border-width-sm, 1px) dashed var(--theme-color-base-light, #a9aeb1);
+        font-size: var(--theme-font-size-3xs, 12px);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        color: var(--theme-color-base, #71767a);
+    }
+
+    // The date a picker is showing is the row's value, the same as the layer a
+    // dropdown is showing: both are set in the panel's own type rather than the
+    // date control's, so the two modes read alike. Written as a descendant of
+    // the block so it outranks `.date-selector-main-button .date-text`, which
+    // the date control sets for its own use in the timeline.
+    & &__date-selector .date-text {
+        font-family: inherit;
+        font-size: var(--theme-font-size-3xs, 12px);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        color: var(--theme-color-ink, #1c1d1f);
+    }
+
+    // The glyph opening the calendar sits beside the date it opens on, so it
+    // takes the weight of a label rather than the accent the date control
+    // paints it for the timeline.
+    & &__date-selector .calendar-icon {
+        color: var(--theme-color-base-dark, #565c65);
+    }
+
+    // A picker showing its invitation rather than a date reads as a placeholder,
+    // the same as an unset dropdown showing its own — the glyph fading with the
+    // wording it sits beside, so an empty row is empty throughout. Stated after
+    // the two rules above, whose specificity it shares.
+    & &__date-selector--unset {
+        .date-text,
+        .calendar-icon {
+            color: var(--theme-color-base-light, #a9aeb1);
+        }
+    }
+
+    &__hint {
+        margin: 0;
+        font-size: var(--theme-font-size-2xs, 14px);
+        font-weight: var(--theme-font-weight-normal, 400);
+        line-height: 1.6;
         color: var(--theme-color-base-dark, #565c65);
     }
 
@@ -206,32 +348,46 @@
         gap: var(--theme-spacing-1, 8px);
     }
 
+    // Square icon buttons: an outlined white cell that tints on hover, and
+    // fills with primary while it is the pressed one. Swap and the two layout
+    // choices are all toggles, so they share the pressed look.
     &__action-btn {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         width: 30px;
         height: 30px;
-        padding: 4px var(--theme-spacing-105, 12px);
-        border-radius: 2px;
+        padding: 0;
+        background: var(--theme-color-white, #ffffff);
+        border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-sm, 2px);
+        color: var(--theme-color-ink, #1c1d1f);
         cursor: pointer;
         font-family: inherit;
-        background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-        color: var(--theme-color-primary-dark, #0d313d);
+        transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 
-        &--swap {
-            color: var(--theme-color-primary-dark, #0d313d);
-
-            &:hover:not(:disabled) {
-                background: var(--theme-color-base-lightest, #f1f3f6);
-            }
+        &:hover:not(:disabled) {
+            background: var(--theme-color-primary-lightest, #eff6fb);
+            border-color: var(--theme-color-primary, #005ea2);
+            color: var(--theme-color-primary, #005ea2);
         }
 
-        &--mode.blocks-comparison__action-btn--active {
-            background: var(--theme-color-primary-dark, #0d313d);
-            border-color: var(--theme-color-primary-dark, #0d313d);
+        // Pressed: for swap, that the two choices draw on the opposite sides of
+        // the divider from the ones they are listed beside; for the layout
+        // pair, which of the two ways the map is split. Carries the hover
+        // rule's guard so the pressed look out-ranks the tint above it.
+        &--active,
+        &--active:hover:not(:disabled) {
+            background: var(--theme-color-primary, #005ea2);
+            border-color: var(--theme-color-primary, #005ea2);
             color: var(--theme-color-white, #ffffff);
+        }
+
+        // Pointing at the pressed button darkens it rather than lifting the
+        // press, keeping the white text the rule above sets.
+        &--active:hover:not(:disabled) {
+            background: var(--theme-color-primary-dark, #1a4480);
+            border-color: var(--theme-color-primary-dark, #1a4480);
         }
 
         &:disabled {

@@ -1,8 +1,8 @@
 {
     "defaultIcon": "compare-horizontal",
-    "description": "Swipe-compare two layers with a draggable divider.",
+    "description": "Compare two layers, or the same layers across two dates, wiped under a divider or side by side.",
     "descriptionFull": {
-        "title": "A comparison tool that reveals one layer against another behind a draggable divider on the map. Entered contextually from a layer's three-dots (kebab) menu via 'Compare layer', then pick a second layer to compare. Completely independent: it drives the core swipe capability and reads layers purely through the mmgisAPI event bus.",
+        "title": "A comparison tool that reads two layers against each other on the map, or the same layers at two different dates. Swipe draws one view and wipes between the two behind a draggable divider; side-by-side splits the map into two panes locked to the same centre and zoom, so both are read at once. Compare layers is entered contextually from a layer's three-dots (kebab) menu via 'Compare layer', then a second layer is picked. Compare dates reads every visible layer at the timeline's own date against the same layers at a second date picked in the panel; editing either date moves the other side or the timeline with it. Layers whose source templates a time — raster tiles, WMS, STAC, COG, and vector tiles — differ across the two dates, while vector GeoJSON layers draw the same on both sides. Completely independent: it drives the core comparison capability and reads layers and time purely through the mmgisAPI event bus.",
         "example": {}
     },
     "hasVars": false,
