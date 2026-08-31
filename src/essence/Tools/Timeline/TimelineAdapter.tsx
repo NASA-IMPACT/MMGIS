@@ -7,6 +7,9 @@ import {
     mmgisGetLayerConfigs,
     mmgisGetVisibleLayers,
     mmgisIsTimeEnabled,
+    mmgisGetTimeStart,
+    mmgisGetTimeEnd,
+    mmgisGetTimeCurrent,
     type LayerConfig,
 } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
@@ -236,9 +239,9 @@ export const TimelineAdapter: React.FC = () => {
             }
 
             const [start, end, current] = await Promise.all([
-                mmgisRequest<string>('time:getStart'),
-                mmgisRequest<string>('time:getEnd'),
-                mmgisRequest<string>('time:getCurrent'),
+                mmgisGetTimeStart(),
+                mmgisGetTimeEnd(),
+                mmgisGetTimeCurrent(),
             ])
 
             if (!start || !end || !current) {
@@ -299,7 +302,12 @@ export const TimelineAdapter: React.FC = () => {
      * it goes nowhere rather than breaking the timeline.
      */
     const handleCompareClick = useCallback(() => {
-        mmgisEmit('plugin:comparison:startWithDates')
+        const payload: TimePayload = {
+            startTime: startTimeRef.current.toISOString(),
+            endTime: endTimeRef.current.toISOString(),
+            currentTime: currentTimeRef.current.toISOString(),
+        }
+        mmgisEmit('plugin:comparison:startWithDates', payload)
     }, [])
 
     // Live time while the scrubber is dragged: the header date follows along,

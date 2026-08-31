@@ -226,3 +226,86 @@ describe('DateSelector round trip', () => {
         expect(committed[0].toISOString()).toBe(start.toISOString())
     })
 })
+
+/**
+ * The embedder here is controlled the way a real one is: it owns
+ * `selectedDate`, feeds every pick back, and goes on passing the same
+ * placeholder — which is what makes the wording's disappearance the
+ * component's own doing.
+ */
+describe('DateSelector placeholder', () => {
+    let container: HTMLElement
+    let root: Root
+
+    beforeEach(() => {
+        container = document.createElement('div')
+        document.body.appendChild(container)
+        root = createRoot(container)
+    })
+
+    afterEach(() => {
+        act(() => root.unmount())
+        container.remove()
+    })
+
+    const render = (placeholder?: string) => {
+        let selected = new Date('2024-10-31T00:00:00Z')
+        const draw = () => {
+            root.render(
+                <DateSelector
+                    selectedDate={selected}
+                    startTime={START}
+                    endTime={END}
+                    timeMode="DAY"
+                    placeholder={placeholder}
+                    onDateChange={(date) => {
+                        selected = date
+                        draw()
+                    }}
+                />,
+            )
+        }
+        act(draw)
+    }
+
+    const dateText = () => container.querySelector('.date-text')?.textContent
+
+    const pickDay = (label: string) => {
+        act(() => {
+            container
+                .querySelector<HTMLButtonElement>('.date-selector-main-button')!
+                .click()
+        })
+        // The popover portals to document.body.
+        act(() => {
+            Array.from(
+                document.body.querySelectorAll<HTMLButtonElement>(
+                    '.day-calendar-grid .day-calendar-cell',
+                ),
+            )
+                .find((cell) => cell.textContent === label)!
+                .click()
+        })
+    }
+
+    test('stands in for the date the component was seeded with', () => {
+        render('Select date')
+        expect(dateText()).toBe('Select date')
+    })
+
+    test('gives way to the date once the user picks one', () => {
+        render('Select date')
+        pickDay('15')
+        expect(dateText()).toBe('Oct 15, 2024')
+    })
+
+    test('an empty placeholder is no placeholder, not a blank button', () => {
+        render('')
+        expect(dateText()).toBe('Oct 31, 2024')
+    })
+
+    test('the date shows when no placeholder is given', () => {
+        render()
+        expect(dateText()).toBe('Oct 31, 2024')
+    })
+})

@@ -7,8 +7,8 @@ import { TimelineAdapter } from '../TimelineAdapter'
  * The timeline's "Compare date" action is a hand-off, not a call: the timeline
  * knows nothing about the Comparison plugin beyond the name of the event it
  * announces, and a mission without that plugin is simply one where nobody
- * listens. What is covered here is that the action is offered at all and that
- * clicking it puts that event on the bus.
+ * listens. What is covered here is that the action is offered at all, that
+ * clicking it puts that event on the bus, and that it carries the window.
  */
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -64,13 +64,27 @@ describe('TimelineAdapter compare hand-off', () => {
         expect(compareButton()).not.toBeNull()
     })
 
+    const handOffs = () =>
+        emits.filter((e) => e.event === 'plugin:comparison:startWithDates')
+
     test('clicking it announces the hand-off on the bus', () => {
         act(() => {
             compareButton()!.click()
         })
 
-        expect(
-            emits.filter((e) => e.event === 'plugin:comparison:startWithDates'),
-        ).toHaveLength(1)
+        expect(handOffs()).toHaveLength(1)
+    })
+
+    test('the hand-off carries the timeline window it is named for', () => {
+        act(() => {
+            compareButton()!.click()
+        })
+
+        // The Date round trip normalizes these, as it does for any commit.
+        expect(handOffs()[0].payload).toEqual({
+            startTime: new Date(START).toISOString(),
+            endTime: new Date(END).toISOString(),
+            currentTime: new Date(CURRENT).toISOString(),
+        })
     })
 })
