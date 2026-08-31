@@ -9,6 +9,12 @@ import { test, expect, vi, beforeEach, afterEach } from 'vitest'
  * a snapshot, and a drag the browser ends without a `touchend`.
  */
 
+// MapComparison reaches Layers_ through comparisonTimePins, and Layers_ pulls
+// Viewer_ in with it — the photosphere, model and PDF viewers, and with them a
+// bundled THREE build, react-pdf and WebVR. Nothing here opens a viewer, so
+// stub the aggregator to keep the import chain light in the jsdom test env.
+vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
+
 let MapComparison
 let engine
 let container
