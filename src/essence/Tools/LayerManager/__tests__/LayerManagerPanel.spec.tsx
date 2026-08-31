@@ -2,7 +2,7 @@ import React from 'react'
 import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LayerManagerPanel } from '../lib/geo/LayerManagerPanel/LayerManagerPanel'
 import type { Layer } from '../lib/types'
-import { mount, click } from './reactHarness'
+import { mount, click } from '../../_shared/__tests__/reactHarness'
 
 /**
  * The portability proof for the plugin's UI.
@@ -64,6 +64,15 @@ const titlesIn = (container: HTMLElement) =>
 const rampButtonsIn = (container: HTMLElement) =>
     container.querySelectorAll('[title="Change color ramp"]')
 
+/** Open a row's kebab and read its items out of the portal they render into. */
+const openMenu = async (container: HTMLElement) => {
+    await click(container.querySelector('[title="More options"]')!)
+    return Array.from(document.body.querySelectorAll('[role="menuitem"]'))
+}
+
+const menuItem = (items: Element[], label: string) =>
+    items.find((el) => el.textContent?.includes(label))
+
 beforeEach(() => {
     // Deleted rather than stubbed, so calling through either one throws.
     delete (window as { mmgisAPI?: unknown }).mmgisAPI
@@ -100,6 +109,28 @@ describe('LayerManagerPanel without a host', () => {
         expect((window as { mmgisAPI?: unknown }).mmgisAPI).toBeUndefined()
         expect((window as { mmgisglobal?: unknown }).mmgisglobal).toBeUndefined()
         expect(global.fetch).not.toHaveBeenCalled()
+        await unmount()
+    })
+
+    test('omits the add-layer button unless the host handles it', async () => {
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[GRADIENT_LAYER]} />,
+        )
+        expect(container.querySelector('.blocks-layer-manager__add-layer')).toBeNull()
+        await unmount()
+    })
+
+    test('reports add-layer clicks through its callback', async () => {
+        const onAddLayer = vi.fn()
+        const { container, unmount } = await mount(
+            <LayerManagerPanel layers={[GRADIENT_LAYER]} onAddLayer={onAddLayer} />,
+        )
+
+        const button = container.querySelector('.blocks-layer-manager__add-layer')!
+        expect(button.textContent).toContain('Add layer from URL')
+        await click(button)
+
+        expect(onAddLayer).toHaveBeenCalledTimes(1)
         await unmount()
     })
 
@@ -151,6 +182,41 @@ describe('LayerManagerPanel without a host', () => {
 
         expect(container.querySelector('.mmgisLoading')).not.toBeNull()
         expect(container.querySelector('.blocks-layer-legend-list')).toBeNull()
+        await unmount()
+    })
+
+    test('offers the comparison hand-off only when the host wires one', async () => {
+        const onCompareLayer = vi.fn()
+        const wired = await mount(
+            <LayerManagerPanel
+                layers={[GRADIENT_LAYER]}
+                onCompareLayer={onCompareLayer}
+            />,
+        )
+        await click(menuItem(await openMenu(wired.container), 'Compare layer')!)
+        expect(onCompareLayer).toHaveBeenCalledWith(GRADIENT_LAYER.id)
+        await wired.unmount()
+
+        const unwired = await mount(<LayerManagerPanel layers={[GRADIENT_LAYER]} />)
+        expect(menuItem(await openMenu(unwired.container), 'Compare layer'))
+            .toBeUndefined()
+        await unwired.unmount()
+    })
+
+    test('holds the comparison hand-off shut for a layer that is switched off', async () => {
+        const onCompareLayer = vi.fn()
+        const { container, unmount } = await mount(
+            <LayerManagerPanel
+                layers={[{ ...GRADIENT_LAYER, visible: false }]}
+                onCompareLayer={onCompareLayer}
+            />,
+        )
+
+        const item = menuItem(await openMenu(container), 'Compare layer')!
+        expect(item.getAttribute('aria-disabled')).toBe('true')
+        expect(item.getAttribute('title')).toBe('Turn this layer on to compare it')
+        await click(item)
+        expect(onCompareLayer).not.toHaveBeenCalled()
         await unmount()
     })
 

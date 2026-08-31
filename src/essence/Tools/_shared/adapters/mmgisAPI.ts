@@ -65,6 +65,12 @@ export const mmgisProvide = (name: string, handler: (...args: unknown[]) => unkn
     return window.mmgisAPI.provide(name, handler)
 }
 
+/**
+ * Whether this core build registers a handler under `name` — not whether it
+ * currently has anything to serve. The panel and plugin providers register at
+ * module scope, so their names read true with no layout mounted; a command's
+ * own `layout-inactive` refusal is what reports that.
+ */
 export const mmgisHasHandler = (name: string): boolean => {
     return window.mmgisAPI?.hasHandler?.(name) === true
 }
@@ -266,6 +272,135 @@ export const mmgisGetTiTilerUrls = (): Promise<Record<
 export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')
 }
+
+export type PanelState = 'collapsed' | 'expanded' | 'iconified' | 'focused'
+export type PluginState = 'unloaded' | 'hidden' | 'visible'
+
+/**
+ * Every panel and plugin bus name this client speaks, and the only place they
+ * are written. `tests/unit/providers/busReconciliation.spec.js` checks each
+ * against the handlers core registers.
+ */
+export const PANEL_PLUGIN_BUS = {
+    getPanels: 'panels:getAll',
+    setPanelState: 'panels:setState',
+    showPanel: 'panels:show',
+    hidePanel: 'panels:hide',
+    getPlugins: 'plugins:getAll',
+    setPluginState: 'plugins:setState',
+    showPlugin: 'plugins:show',
+    hidePlugin: 'plugins:hide',
+} as const
+
+/**
+ * Events core broadcasts when the layout moves. Each payload carries the same
+ * listing its `getAll` request returns, so a subscriber has nothing to
+ * re-request.
+ */
+export const PANEL_PLUGIN_EVENTS = {
+    panelsChanged: 'panels:changed',
+    pluginsChanged: 'plugins:changed',
+} as const
+
+/** One panel in the layout, as much of it as a plugin needs to target it. */
+export type PanelInfo = {
+    id: string
+    position: string
+    state: PanelState
+    /** Tool ids the panel holds — how a plugin finds the panel it lives in. */
+    toolIds: string[]
+}
+
+export type PluginInfo = {
+    id: string
+    state: PluginState
+}
+
+/**
+ * Why a command was refused. `PanelManager_/types/layout.ts` carries core's
+ * copy of this list and defines each reason.
+ *
+ * `layout-inactive` covers two causes a caller cannot tell apart: a core with
+ * no layout currently mounted, reported by the providers, and a core too old
+ * to register the handler, synthesized below by `command`.
+ */
+export const COMMAND_REFUSAL_REASONS = [
+    'bad-request',
+    'not-found',
+    'state-not-allowed',
+    'no-visible-state',
+    'layout-inactive',
+    'load-failed',
+    'transition-failed',
+] as const
+export type CommandRefusalReason = (typeof COMMAND_REFUSAL_REASONS)[number]
+
+export type CommandResult =
+    | { ok: true; state: PanelState | PluginState; changed: boolean }
+    | { ok: false; reason: CommandRefusalReason }
+
+const UNREACHABLE: CommandResult = { ok: false, reason: 'layout-inactive' }
+
+/** Against a core too old to register the handler, synthesizes the same
+ *  layout-inactive result a current core reports for an inactive layout. */
+const command = async (name: string, params: unknown): Promise<CommandResult> => {
+    const result = await mmgisRequestIfProvided<CommandResult>(name, params)
+    return result ?? UNREACHABLE
+}
+
+/**
+ * Every panel in the layout, ordered by priority. Empty against a core with no
+ * layout or no handler — follow state with the `panels:changed` event rather
+ * than polling.
+ */
+export const mmgisGetPanels = async (): Promise<PanelInfo[]> => {
+    return (await mmgisRequestIfProvided<PanelInfo[]>(PANEL_PLUGIN_BUS.getPanels)) ?? []
+}
+
+/** Move a panel to a state. Naming the state makes repeats and retries safe. */
+export const mmgisSetPanelState = (panelId: string, state: PanelState): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.setPanelState, { panelId, state })
+
+/** Restore a collapsed panel to the state it last held. */
+export const mmgisShowPanel = (panelId: string): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.showPanel, { panelId })
+
+/** Collapse a panel without destroying its contents. */
+export const mmgisHidePanel = (panelId: string): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.hidePanel, { panelId })
+
+/** Every plugin known to the layout and its lifecycle state. */
+export const mmgisGetPlugins = async (): Promise<PluginInfo[]> => {
+    return (await mmgisRequestIfProvided<PluginInfo[]>(PANEL_PLUGIN_BUS.getPlugins)) ?? []
+}
+
+/** Move a plugin to a lifecycle state, loading it first if that is required. */
+export const mmgisSetPluginState = (pluginId: string, state: PluginState): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.setPluginState, { pluginId, state })
+
+/** Reveal a plugin, loading it first if it is unloaded. */
+export const mmgisShowPlugin = (pluginId: string): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.showPlugin, { pluginId })
+
+/** Hide a plugin without destroying its instance or state. */
+export const mmgisHidePlugin = (pluginId: string): Promise<CommandResult> =>
+    command(PANEL_PLUGIN_BUS.hidePlugin, { pluginId })
+
+/** Subscribe to layout changes; the payload carries the full panel listing. */
+export const mmgisOnPanelsChanged = (
+    handler: (panels: PanelInfo[]) => void,
+): EventCleanup =>
+    mmgisOn(PANEL_PLUGIN_EVENTS.panelsChanged, (payload) =>
+        handler(((payload as { panels?: PanelInfo[] })?.panels) ?? []),
+    )
+
+/** Subscribe to plugin lifecycle changes; the payload carries every plugin. */
+export const mmgisOnPluginsChanged = (
+    handler: (plugins: PluginInfo[]) => void,
+): EventCleanup =>
+    mmgisOn(PANEL_PLUGIN_EVENTS.pluginsChanged, (payload) =>
+        handler(((payload as { plugins?: PluginInfo[] })?.plugins) ?? []),
+    )
 
 /**
  * Copies text to the clipboard via core's app:copyText handler; true on
