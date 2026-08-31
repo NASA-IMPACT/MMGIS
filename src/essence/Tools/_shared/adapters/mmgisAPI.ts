@@ -237,6 +237,15 @@ export const mmgisGetTiTilerUrls = (): Promise<Record<
     )
 }
 
+/**
+ * Where the active mission's files are served from, e.g. `Missions/MSL/`.
+ * Uploads configured through the Configure page are stored as paths relative
+ * to this. Null before a mission loads, or against a core without the handler.
+ */
+export const mmgisGetMissionPath = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('app:getMissionPath')
+}
+
 /** Whether the mission has time enabled at all. */
 export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')
