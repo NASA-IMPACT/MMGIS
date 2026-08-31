@@ -5,6 +5,7 @@ import { TimeMode } from '../../types'
 import { ChevronLeft, ChevronRight } from '../../icons/Chevron'
 import { snapMonthToRange } from '../../utils/timeUtils'
 import { DayCalendar } from './DayCalendar'
+import './DateSelector.css'
 
 export interface DateSelectorProps {
     selectedDate: Date
@@ -14,9 +15,9 @@ export interface DateSelectorProps {
     /** Appended to the root element, so an embedding layout can style it. */
     className?: string
     /**
-     * Wording shown on the button in place of the formatted date. A date the
-     * user has not chosen yet reads as an invitation rather than as a value
-     * they picked, while the calendar still opens around `selectedDate`.
+     * Wording shown on the button until the user picks a date, so an unchosen
+     * `selectedDate` reads as an invitation rather than as a value they
+     * picked. The calendar still opens around `selectedDate` throughout.
      */
     placeholder?: string
     onDateChange: (date: Date) => void
@@ -47,6 +48,9 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     onCompareClick,
 }) => {
     const [isOpen, setIsOpen] = useState(false)
+    // `selectedDate` is a real Date even before the user commits to it, so
+    // only this separates a seeded value from a chosen one.
+    const [hasPicked, setHasPicked] = useState(false)
     // YEAR and MONTH drive their own fields; DAY and HOUR use the native inputs.
     const [yearInput, setYearInput] = useState('')
     const [monthIndex, setMonthIndex] = useState(0)
@@ -126,6 +130,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
         if (date > endTime) date = new Date(endTime)
 
         setError(null)
+        setHasPicked(true)
         onDateChange(date)
         if (closeAfter) setIsOpen(false)
     }
@@ -282,7 +287,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                         <path d="M6 2H14V0H16V2H19V20H1V2H4V0H6V2ZM3 18H17V8H3V18ZM3 6H17V4H3V6Z" />
                     </svg>
                     <span className="date-text">
-                        {placeholder ?? formattedDate}
+                        {hasPicked ? formattedDate : placeholder || formattedDate}
                     </span>
                 </button>
 
