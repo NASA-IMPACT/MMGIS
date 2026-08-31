@@ -14,12 +14,11 @@ import {
     setRescale,
     zoomToLayer,
     compareLayer,
+    showAddLayer,
 } from './adapters/handlers'
-import { mmgisEmit, mmgisGetLayerBounds } from '../_shared/adapters/mmgisAPI'
+import { mmgisGetLayerBounds } from '../_shared/adapters/mmgisAPI'
 
 type ToolVars = { showOnlyVisible?: boolean; width?: number }
-
-const ADD_TEMP_LAYER_PLUGIN_ID = 'AddTempLayerTool'
 
 // Panel controls are event callbacks and cannot await the requests they fire,
 // so a rejected one would surface only as an unhandled rejection. Log it
@@ -48,10 +47,6 @@ export function MMGISLayerManagerAdapter() {
             setLoading(false)
         }
     }, [toolVars.showOnlyVisible])
-
-    const showAddLayer = useCallback(() => {
-        mmgisEmit('core:showPlugin', { pluginId: ADD_TEMP_LAYER_PLUGIN_ID })
-    }, [])
 
     // Whether the layer has somewhere to zoom to. Core answers null both for a
     // layer with no extent and for a core too old to know the question, and

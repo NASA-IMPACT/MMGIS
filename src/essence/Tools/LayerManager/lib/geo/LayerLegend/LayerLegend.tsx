@@ -164,9 +164,9 @@ export function LayerLegend({
                     : undefined,
             onSelect: () => onZoomToLayer?.(id),
         },
-        // A comparison shows one layer against another, so the layer has to be
-        // drawn to be one of the two. Offered as inert rather than hidden, so
-        // the way to reach it stays visible on a layer that is switched off.
+        // Inert rather than absent on a layer that is switched off: a
+        // comparison reads two drawn layers against each other, and the way to
+        // reach it should stay visible meanwhile.
         ...(onCompareLayer
             ? [
                   {
