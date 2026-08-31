@@ -1,4 +1,7 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "defaultIcon": "add",
     "description": "Add an external layer (WMS/WMTS/XYZ/GeoJSON) to the map for the current session.",
     "descriptionFull": {

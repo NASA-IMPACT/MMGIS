@@ -21,6 +21,7 @@
   "on": [
     "Title",
     "LayerManager",
+    "AddTempLayer",
     "AOI",
     "Card",
     "Chart",
@@ -210,7 +211,8 @@
             "defaultState": "expanded"
           },
           "panelTools": [
-            "ShareExport"
+            "ShareExport",
+            "AddTempLayer"
           ],
           "id": "float-share"
         },
