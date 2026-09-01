@@ -32,8 +32,10 @@ export async function uploadImage(file, mission, subdir) {
     return data.path;
 }
 
-// Mirrors ASSETS_UPLOAD_KEY in
-// src/essence/Tools/Card/adapters/buildCardData.ts.
+// Same test as ASSETS_UPLOAD_KEY in
+// src/essence/Tools/Card/adapters/buildCardData.ts — the full story of the
+// shape, and why it is written twice, lives there.
+// tests/unit/uploadPreviewSrc.spec.js fails if the two copies ever differ.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 
 // Resolves a stored upload-field value to a previewable URL for the CMS.
