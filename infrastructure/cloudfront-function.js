@@ -1,30 +1,33 @@
 /**
- * Source of the per-dashboard password-gate CloudFront Function
- * (viewer-request, cloudfront-js-1.0 runtime). This file IS what gets
- * deployed — renderAuthFunctionCode() in scripts/lib/cfn-template.js reads
- * it at publish time, strips this header comment, and substitutes
- * <BASE64_BASIC_CREDENTIALS> with base64("mmgis:" + MMGIS_DASHBOARDS_PASSWORD)
- * before inlining the result into each mmgis-dashboard-* CloudFormation
- * stack. The password is baked into the Function body, never a
- * CloudFormation Parameter (parameters surface in DescribeStacks output,
- * which the Deployments list reads).
+ * The per-dashboard password gate + path-prefix handler. This file IS what
+ * gets deployed: renderAuthFunctionCode() in scripts/lib/cfn-template.js
+ * reads it at publish time, strips this header comment, and bakes
+ * base64("mmgis:" + MMGIS_DASHBOARDS_PASSWORD) into the
+ * <BASE64_BASIC_CREDENTIALS> placeholder. The password lives in the
+ * function body and never in a CloudFormation Parameter, because
+ * parameters show up in DescribeStacks — which the admin's Deployments
+ * list reads on every load.
  *
- * The function body below is kept ES5. The cloudfront-js-1.0 runtime is
- * ES5.1-based and has no let/const (use var), and a unit test parses this
- * body with espree at ES5 to keep it that way.
+ * What the handler does, in order:
+ *   1. password gate — wrong or missing Authorization → 401, nothing else runs
+ *   2. read and validate X-Forwarded-Prefix (see trust model below);
+ *      a missing or malformed header means: change nothing
+ *   3. bare-prefix entry URL → 302 to the trailing-slash form, query
+ *      string carried along (unsafe pairs dropped, see below)
+ *   4. prefixed request → strip the prefix so the S3 lookup is prefix-blind
  *
- * Trust model: the X-Forwarded-Prefix header honored below is not
- * authenticated on its own — anyone holding the shared password can send it
- * directly to this distribution, bypassing any fronting CloudFront
- * entirely. Validating it is load-bearing, not just hygiene.
+ * Trust model: the header is unauthenticated input. Anyone holding the
+ * shared password can send it straight to this distribution, bypassing any
+ * fronting CloudFront — so validating it is load-bearing, not hygiene.
  *
- * CloudFront appears to hand querystring values to the function still
- * percent-encoded (observed behavior; not documented by AWS either way),
- * but the redirect below does not rest on that: when it rebuilds the
- * Location it drops any pair whose key or value carries a character that
- * would corrupt the reassembly. A value that arrived decoded with a "&"
- * or "#" in it is left out rather than emitting a spurious param break or
- * fragment.
+ * Stay ES5: the cloudfront-js-1.0 runtime has no let/const (use var), and
+ * a unit test parses this body with espree at ES5 to keep it that way.
+ *
+ * Encoding: CloudFront appears to hand querystring values over still
+ * percent-encoded (observed, undocumented). The redirect doesn't rest on
+ * that: rebuilding the Location, it drops any pair whose key or value
+ * carries a character that would corrupt the reassembly — a decoded "&"
+ * or "#" loses its pair instead of forging a param break or fragment.
  */
 function handler(event) {
     var request = event.request;
