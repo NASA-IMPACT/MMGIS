@@ -38,16 +38,28 @@ export async function uploadImage(file, mission, subdir) {
 // tests/unit/uploadPreviewSrc.spec.js fails if the two copies ever differ.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 
-// Resolves a stored upload-field value to a previewable URL for the CMS.
-// Absolute/data values pass through unchanged. Values matching
-// ASSETS_UPLOAD_KEY are resolved against `base`, where the admin CloudFront
-// serves /assets/* from the shared bucket; a legacy rooted "/assets/..."
-// value is rebased to that same slash-less shape before the test. The CMS is
-// always server-hosted, so `base || '/'` is root-absolute when there is no
-// ROOT_PATH base to prefix with — mission-relative values are anchored the
-// same way, since a document-relative preview URL would resolve against
-// whatever path the CMS is currently visited at (e.g. '/configure/') and
-// 404. Any other already-rooted value passes through unchanged.
+// Turns a stored upload-field value into the URL the CMS's preview <img>
+// should use. Same four cases as resolveImageUrl in
+// src/essence/Tools/Card/adapters/buildCardData.ts, checked in the same
+// order — but anchored differently. The CMS knows where it lives (`base`
+// is the ROOT_PATH prefix, or '/' when unset), while the page's own URL
+// is untrustworthy: a relative preview src would resolve against whatever
+// path the admin is visiting (e.g. '/configure/') and 404. So the values
+// that point at our own storage get `base` glued on the front:
+//
+//   - a full URL ("https://..." or "data:...") — used as-is.
+//
+//   - a lean-mode upload key ("assets/<mission>/<subdir>/uploads/<file>")
+//     — returned as `base` + the key; the admin CloudFront serves
+//     /assets/* from the shared bucket. A legacy value from before the
+//     slash-less contract ("/assets/...") is the same thing with a
+//     leading slash; the slash is stripped before the test so it takes
+//     this branch too.
+//
+//   - any other rooted path ("/somewhere/else.png") — used as-is.
+//
+//   - anything else ("CardPlugin/uploads/a.png") — a mission-relative
+//     path, returned as `base` + "Missions/<mission>/" + the value.
 export function buildPreviewSrc(value, mission, base) {
     if (!value) return '';
     if (typeof value !== 'string') return '';
