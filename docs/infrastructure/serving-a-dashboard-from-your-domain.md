@@ -6,24 +6,26 @@ The examples below use the path `/tools/dashboard`; substitute your own everywhe
 
 ## Setup
 
-1. **Add a cache behavior** to your distribution: path pattern `/tools/dashboard*` — no slash before the `*` — with the dashboard's address as its origin. Pick a path that isn't the start of any other route you serve.
+1. **Add the dashboard as an origin** on your distribution: origin domain is the dashboard's address, origin protocol policy **HTTPS only**, and one custom origin header — `X-Forwarded-Prefix` with the path as its value: `/tools/dashboard`. Leading slash, no trailing slash, written un-encoded (`/tools/dash board`, not `/tools/dash%20board`), ASCII only.
 
-2. **Declare the prefix.** On that behavior's origin, add a custom header `X-Forwarded-Prefix` whose value is the path from your pattern: `/tools/dashboard`. Leading slash, no trailing slash, written un-encoded (`/tools/dash board`, not `/tools/dash%20board`), ASCII only.
-
-3. **Create a custom cache policy** for the behavior — not a managed one — with:
+2. **Create a custom cache policy** — not a managed one — with:
    - the `Authorization` header in the cache key,
    - all query strings in the cache key,
    - Minimum TTL 0.
 
-4. **Set the origin protocol policy to HTTPS only.**
+3. **Add two cache behaviors** pointing at that origin, both using that cache policy:
+   - path pattern `/tools/dashboard` — exact, no wildcard,
+   - path pattern `/tools/dashboard/*`.
 
-5. **Don't forward the viewer's `Host` header.** Attaching no origin request policy is fine. If you want one, use the managed `AllViewerExceptHostHeader`.
+   Nothing else matches, so your other routes are untouched — even ones that start with the same text, like `/tools/dashboard-archive`.
 
-That's the whole setup. The path stays yours to change: rename it or move it whenever you like — update the pattern and the header together, and nothing on our side needs to hear about it.
+4. **Don't forward the viewer's `Host` header.** Attaching no origin request policy is fine. If you want one, use the managed `AllViewerExceptHostHeader`.
+
+That's the whole setup. The path stays yours to change: rename it or move it whenever you like — update the two patterns and the header together, and nothing on our side needs to hear about it.
 
 ## What to expect
 
-With the rule `/tools/dashboard*` and header `X-Forwarded-Prefix: /tools/dashboard`:
+With the two patterns above and header `X-Forwarded-Prefix: /tools/dashboard`:
 
 | The visitor opens | `X-Forwarded-Prefix` value | What our edge does | The visitor gets |
 |---|---|---|---|
@@ -32,7 +34,7 @@ With the rule `/tools/dashboard*` and header `X-Forwarded-Prefix: /tools/dashboa
 | `site.gov/tools/dashboard` *(no trailing slash)* | `/tools/dashboard` | 302 redirect to `/tools/dashboard/` | one redirect, then the dashboard |
 | `site.gov/tools/dashboard?view=2` | `/tools/dashboard` | 302 to `/tools/dashboard/?view=2` | the deep link, query string intact |
 | `site.gov/tools/dash board/logo.png` *(a rule whose path contains a space)* | `/tools/dash board` | the browser sends `/tools/dash%20board/logo.png`; the edge matches the encoded form of the prefix and strips it | the asset — spaces work |
-| `site.gov/tools/dashboard-archive` *(a sibling route the `*` catches)* | `/tools/dashboard` | path doesn't start with `/tools/dashboard/` — passes through untouched | 403 |
+| `site.gov/tools/dashboard-archive` *(a route of yours with a similar name)* | *(never sent)* | nothing — matches neither pattern, so it never leaves your site | your own route, unaffected |
 | anything under the path | **missing**, or wrong — e.g. `/tools/dashbord` *(typo)* | header invalid or matches nothing — no rewrite, no redirect | 403 on every request — loud failure, never the wrong files |
 | `d1abc23def.cloudfront.net/` *(the dashboard's own address, no header)* | *(none — no fronting CloudFront to add it)* | nothing — passes through | the dashboard, as always |
 
@@ -40,7 +42,7 @@ When the dashboard's password is on, every row also sits behind it: a wrong or m
 
 ## Why these settings
 
-**The pattern has no slash before the `*`** so it also matches the bare path (`/tools/dashboard`, no trailing slash). Otherwise a visitor who types the path without a slash falls through to your default behavior, and our redirect never gets a chance to run. The same wildcard also catches sibling routes (`/tools/dashboard-archive`), which is why the path must not be the start of any other route you serve — a sibling's requests would come to us and 403.
+**Two patterns, not one:** `/tools/dashboard/*` covers everything under the path, and the exact `/tools/dashboard` covers the bare path — a visitor who types it without a trailing slash would otherwise fall through to your default behavior, and our redirect would never get a chance to run. A single wildcard pattern (`/tools/dashboard*`) could do both jobs, but it would also capture any of your own routes that start with the same text; the exact-plus-`/*` pair matches only the dashboard's path and leaves the rest of your site alone.
 
 **The header** tells us how much of the forwarded path is yours. CloudFront forwards the full path exactly as the visitor typed it, so our side receives `/tools/dashboard/index.html` and needs to know that `/tools/dashboard` is prefix, not content. We remove exactly what the header declares and serve the file. If the header is missing or doesn't match the pattern, every request under the path fails with a 403 immediately — a loud failure on purpose, instead of quietly serving the wrong files. (It's a 403 rather than a 404 because the rejection comes from our storage layer, which answers "access denied.")
 
