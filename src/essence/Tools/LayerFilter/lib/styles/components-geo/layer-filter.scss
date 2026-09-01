@@ -6,6 +6,10 @@
     display: flex;
     flex-direction: column;
     gap: var(--theme-spacing-1, 8px);
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
     // Natural content height — this is a stacked tool; the panel body
     // (.ui-region-left .ui-panel-body) owns vertical scrolling. Forcing
     // height:100% here made the card eat the whole panel and create a scroll.
@@ -35,6 +39,7 @@
     &__filters {
         display: flex;
         flex-direction: column;
+        min-width: 0;
     }
 
     &__filters-header {
@@ -57,6 +62,21 @@
             outline: 2px solid var(--theme-color-primary, #0e7482);
             outline-offset: 2px;
         }
+
+        // The glyph and chevron carry their own muted color, so the header's
+        // hover color has to be pushed onto them explicitly.
+        &:hover {
+            color: var(--theme-color-primary, #0e7482);
+
+            .blocks-layer-filter__filters-icon {
+                color: inherit;
+            }
+
+            .blocks-layer-filter__chevron {
+                border-right-color: currentColor;
+                border-bottom-color: currentColor;
+            }
+        }
     }
 
     &__filters-icon {
@@ -64,6 +84,7 @@
         width: 16px;
         height: 16px;
         color: var(--theme-color-base, #71767a);
+        transition: color 0.12s ease;
     }
 
     &__filters-count {
@@ -84,6 +105,7 @@
         display: flex;
         flex-direction: column;
         gap: var(--theme-spacing-105, 12px);
+        min-width: 0;
         padding: var(--theme-spacing-105, 12px) 0 var(--theme-spacing-1, 8px)
             var(--theme-spacing-1, 8px);
     }
@@ -92,6 +114,7 @@
         display: flex;
         flex-direction: column;
         gap: var(--theme-spacing-05, 4px);
+        min-width: 0;
     }
 
     &__label {
@@ -106,10 +129,9 @@
     &__select {
         box-sizing: border-box;
         width: 100%;
-        // `type="search"` otherwise picks up WebKit's search-field appearance,
-        // whose own inner metrics overflow a border-box width and clip the
-        // field's right edge. Stripping it renders the input on exactly the
-        // same box as the dropdown triggers.
+        // Text inputs and dropdown triggers share this box, so the browser's
+        // own control chrome — whose inner metrics overflow a border-box
+        // width and clip the right edge — is stripped from both.
         appearance: none;
         -webkit-appearance: none;
         max-width: 100%;
@@ -132,11 +154,6 @@
             outline: none;
             border-color: var(--theme-color-primary, #0e7482);
             box-shadow: 0 0 0 2px var(--theme-color-primary-lighter, #c3dce0);
-        }
-
-        &::-webkit-search-cancel-button,
-        &::-webkit-search-decoration {
-            -webkit-appearance: none;
         }
     }
 
@@ -174,6 +191,7 @@
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 8px);
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -190,7 +208,7 @@
         border-right: 1.5px solid var(--theme-color-base, #71767a);
         border-bottom: 1.5px solid var(--theme-color-base, #71767a);
         transform: translateY(2px) rotate(-135deg);
-        transition: transform 0.12s ease;
+        transition: transform 0.12s ease, border-color 0.12s ease;
 
         &--collapsed {
             transform: translateY(-2px) rotate(45deg);
@@ -213,10 +231,12 @@
 
     // Single-select / entry rows inside the menu.
     &__row {
+        box-sizing: border-box;
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 8px);
         width: 100%;
+        min-width: 0;
         padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
         background: none;
         border: none;
@@ -288,6 +308,7 @@
         display: flex;
         flex-direction: column;
         gap: var(--theme-spacing-105, 12px);
+        min-width: 0;
         padding: var(--theme-spacing-105, 12px);
         background: var(--theme-color-base-lightest, #f1f3f6);
         border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
@@ -309,12 +330,12 @@
         gap: var(--theme-spacing-05, 4px);
         color: var(--theme-color-ink, #1c1d1f);
         font-size: var(--theme-font-size-2xs, 14px);
-        font-weight: var(--theme-font-weight-bold, 700);
+        font-weight: var(--theme-font-weight-semibold, 600);
     }
 
     &__count {
         color: var(--theme-color-primary, #0e7482);
-        font-size: var(--theme-font-size-md, 18px);
+        font-size: var(--theme-font-size-xl, 1.5rem);
         font-weight: var(--theme-font-weight-bold, 700);
         line-height: 1;
     }
@@ -326,13 +347,12 @@
         border: none;
         color: var(--theme-color-base-dark, #565c65);
         font-family: inherit;
-        font-size: var(--theme-font-size-3xs, 12px);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
         font-weight: var(--theme-font-weight-normal, 400);
         cursor: pointer;
 
         &:hover {
             color: var(--theme-color-primary, #0e7482);
-            text-decoration: underline;
         }
 
         // Outside the count line there's nothing to push against, so it
@@ -372,6 +392,7 @@
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 8px);
+        min-width: 0;
         min-height: 36px;
         padding: var(--theme-spacing-05, 4px) var(--theme-spacing-1, 8px);
         background: var(--theme-color-primary-lightest, #e6f4f6);
@@ -380,6 +401,7 @@
     }
 
     &__chip-label {
+        min-width: 0;
         overflow: hidden;
         color: var(--theme-color-ink, #1c1d1f);
         font-size: var(--theme-font-size-2xs, 14px);
@@ -413,6 +435,7 @@
     }
 
     &__result {
+        box-sizing: border-box;
         display: block;
         width: 100%;
         padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
@@ -421,6 +444,10 @@
         color: var(--theme-color-ink, #1c1d1f);
         font-size: var(--theme-font-size-2xs, 14px);
         text-align: left;
+        // Place names run long; they wrap within the list rather than
+        // widening it.
+        white-space: normal;
+        overflow-wrap: anywhere;
         cursor: pointer;
 
         &:hover {

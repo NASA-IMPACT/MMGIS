@@ -393,7 +393,7 @@ function GeocodeField({
             <span className="blocks-layer-filter__label">{filter.label}</span>
             <input
                 className="blocks-layer-filter__select"
-                type="search"
+                type="text"
                 placeholder={filter.allLabel ?? 'Search places…'}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
