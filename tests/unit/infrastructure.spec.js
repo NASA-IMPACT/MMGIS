@@ -702,7 +702,7 @@ test.describe('dashboard CloudFront Function behavior', () => {
         // A real parse rather than a keyword-blocklist regex: it also
         // catches ES6+ shapes a regex would miss (classes, for-of/for-const,
         // spread, shorthand methods) and needs no upkeep as the source grows.
-        const acorn = require('acorn')
-        expect(() => acorn.parse(code, { ecmaVersion: 5 })).not.toThrow()
+        const espree = require('espree')
+        expect(() => espree.parse(code, { ecmaVersion: 5 })).not.toThrow()
     })
 })

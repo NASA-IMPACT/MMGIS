@@ -11,7 +11,7 @@
  *
  * The function body below is kept ES5. The cloudfront-js-1.0 runtime is
  * ES5.1-based and has no let/const (use var), and a unit test parses this
- * body with acorn at ES5 to keep it that way.
+ * body with espree at ES5 to keep it that way.
  *
  * Trust model: the X-Forwarded-Prefix header honored below is not
  * authenticated on its own — anyone holding the shared password can send it
