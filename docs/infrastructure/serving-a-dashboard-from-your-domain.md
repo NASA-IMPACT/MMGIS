@@ -6,7 +6,7 @@ The examples below use the path `/tools/dashboard`; substitute your own everywhe
 
 ## Setup
 
-1. **Add the dashboard as an origin** on your distribution: origin domain is the dashboard's address, origin protocol policy **HTTPS only**, and one custom origin header — `X-Forwarded-Prefix` with the path as its value: `/tools/dashboard`. Leading slash, no trailing slash, written un-encoded (`/tools/dash board`, not `/tools/dash%20board`), ASCII only.
+1. **Add the dashboard as an origin** on your distribution: origin domain is the dashboard's address, origin protocol policy **HTTPS only**, and one custom origin header — `X-Forwarded-Prefix` with the path as its value: `/tools/dashboard`. Leading slash, no trailing slash; letters, digits, `-`, `_`, `.`, `~`, and `/` only.
 
 2. **Create a custom cache policy** — not a managed one — with:
    - the `Authorization` header in the cache key,
@@ -17,7 +17,7 @@ The examples below use the path `/tools/dashboard`; substitute your own everywhe
    - path pattern `/tools/dashboard` — exact, no wildcard,
    - path pattern `/tools/dashboard/*`.
 
-   Nothing else matches, so your other routes are untouched — even ones that start with the same text, like `/tools/dashboard-archive`.
+   Nothing else matches, so your other routes are untouched — even ones that start with the same text, like `/tools/dashboard-archive`. Place both behaviors above any broader pattern of yours that also matches the path (e.g. `/tools/*`) — CloudFront uses the first match in the list.
 
 4. **Don't forward the viewer's `Host` header.** Attaching no origin request policy is fine. If you want one, use the managed `AllViewerExceptHostHeader`.
 
@@ -33,7 +33,6 @@ With the two patterns above and header `X-Forwarded-Prefix: /tools/dashboard`:
 | `site.gov/tools/dashboard/js/main.js` | `/tools/dashboard` | strips `/tools/dashboard` → `/js/main.js` | the asset |
 | `site.gov/tools/dashboard` *(no trailing slash)* | `/tools/dashboard` | 302 redirect to `/tools/dashboard/` | one redirect, then the dashboard |
 | `site.gov/tools/dashboard?view=2` | `/tools/dashboard` | 302 to `/tools/dashboard/?view=2` | the deep link, query string intact |
-| `site.gov/tools/dash board/logo.png` *(a rule whose path contains a space)* | `/tools/dash board` | the browser sends `/tools/dash%20board/logo.png`; the edge matches the encoded form of the prefix and strips it | the asset — spaces work |
 | `site.gov/tools/dashboard-archive` *(a route of yours with a similar name)* | *(never sent)* | nothing — matches neither pattern, so it never leaves your site | your own route, unaffected |
 | anything under the path | **missing**, or wrong — e.g. `/tools/dashbord` *(typo)* | header invalid or matches nothing — no rewrite, no redirect | 403 on every request — loud failure, never the wrong files |
 | `d1abc23def.cloudfront.net/` *(the dashboard's own address, no header)* | *(none — no fronting CloudFront to add it)* | nothing — passes through | the dashboard, as always |
@@ -44,7 +43,7 @@ When the dashboard's password is on, every row also sits behind it: a wrong or m
 
 **Two patterns, not one:** `/tools/dashboard/*` covers everything under the path, and the exact `/tools/dashboard` covers the bare path — a visitor who types it without a trailing slash would otherwise fall through to your default behavior, and our redirect would never get a chance to run. A single wildcard pattern (`/tools/dashboard*`) could do both jobs, but it would also capture any of your own routes that start with the same text; the exact-plus-`/*` pair matches only the dashboard's path and leaves the rest of your site alone.
 
-**The header** tells us how much of the forwarded path is yours. CloudFront forwards the full path exactly as the visitor typed it, so our side receives `/tools/dashboard/index.html` and needs to know that `/tools/dashboard` is prefix, not content. We remove exactly what the header declares and serve the file. If the header is missing or doesn't match the pattern, every request under the path fails with a 403 immediately — a loud failure on purpose, instead of quietly serving the wrong files. (It's a 403 rather than a 404 because the rejection comes from our storage layer, which answers "access denied.")
+**The header** tells us how much of the forwarded path is yours. CloudFront forwards the full path exactly as the visitor typed it, so our side receives `/tools/dashboard/index.html` and needs to know that `/tools/dashboard` is prefix, not content. We remove exactly what the header declares and serve the file. If the header is missing or doesn't match the path, every request under the path fails with a 403 immediately — a loud failure on purpose, instead of quietly serving the wrong files. (It's a 403 rather than a 404 because the rejection comes from our storage layer, which answers "access denied.")
 
 **`Authorization` in the cache key:** dashboards are password-protected, and your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential. This matters whether or not the dashboard's password is currently on.
 
