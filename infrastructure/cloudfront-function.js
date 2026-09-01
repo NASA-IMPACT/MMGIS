@@ -79,12 +79,14 @@ function handler(event) {
             // Keys and values go into the Location raw, which reassembles
             // correctly only for characters percent-encoding would have
             // covered; anything else ('&', '#', an '=' in a key, a space,
-            // a control character) is dropped with its pair instead.
-            var SAFE_KEY = /^[A-Za-z0-9%\-_.~!$'()*+,;:@\/?]*$/;
-            var SAFE_VALUE = /^[A-Za-z0-9%\-_.~!$'()*+,;=:@\/?]*$/;
+            // a control character) is dropped with its pair instead. The
+            // test is an unanchored search for a disallowed character, so
+            // it never leans on how '$' treats a trailing newline.
+            var UNSAFE_KEY = /[^A-Za-z0-9%\-_.~!$'()*+,;:@\/?]/;
+            var UNSAFE_VALUE = /[^A-Za-z0-9%\-_.~!$'()*+,;=:@\/?]/;
             var parts = [];
             for (var key in qs) {
-                if (!SAFE_KEY.test(key)) continue;
+                if (UNSAFE_KEY.test(key)) continue;
                 var param = qs[key];
                 var values =
                     param.multiValue && param.multiValue.length > 0
@@ -92,7 +94,7 @@ function handler(event) {
                         : [param];
                 for (var i = 0; i < values.length; i++) {
                     var val = values[i].value;
-                    if (!SAFE_VALUE.test(val)) continue;
+                    if (UNSAFE_VALUE.test(val)) continue;
                     parts.push(val === '' ? key : key + '=' + val);
                 }
             }

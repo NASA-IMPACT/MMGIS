@@ -620,6 +620,28 @@ test.describe('dashboard CloudFront Function behavior', () => {
         expect(result.headers.location.value).toBe('/d/v/?a=1&b=2')
     })
 
+    // Dropping is per value, not per key: one bad value in a multiValue list
+    // takes only itself out, leaving that key's other values in place.
+    test('an unsafe value in a multiValue param drops only itself', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: {
+                    a: { value: '1' },
+                    b: {
+                        value: '2',
+                        multiValue: [
+                            { value: '2' },
+                            { value: 'x&injected=1' },
+                            { value: '4' },
+                        ],
+                    },
+                },
+            })
+        )
+        expect(result.headers.location.value).toBe('/d/v/?a=1&b=2&b=4')
+    })
+
     test('a key carrying a raw # is dropped', () => {
         const result = handler(
             makeEvent('/d/v', {
