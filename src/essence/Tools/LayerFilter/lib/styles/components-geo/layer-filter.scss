@@ -1,71 +1,159 @@
-// Step-2 filter panel (wider left panel), styled per the Figma "Need" view.
-// USWDS --theme-* tokens only.
+// Step-2 filter panel (wider left panel), styled per the Figma "Event" view.
+// USWDS --theme-* tokens only; fallbacks mirror the disasters theme so the
+// panel still reads correctly if a brand stylesheet hasn't loaded.
 .blocks-layer-filter {
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: var(--theme-spacing-2, 16px);
+    gap: var(--theme-spacing-1, 8px);
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-wrap: anywhere;
     // Natural content height — this is a stacked tool; the panel body
     // (.ui-region-left .ui-panel-body) owns vertical scrolling. Forcing
     // height:100% here made the card eat the whole panel and create a scroll.
-    padding: var(--theme-spacing-2, 16px) var(--theme-spacing-3, 24px);
+    padding: var(--theme-spacing-105, 12px) var(--theme-spacing-105, 12px)
+        var(--theme-spacing-2, 16px);
     background: var(--theme-color-white, #ffffff);
-    color: var(--theme-color-ink, #1b1b1b);
+    color: var(--theme-color-ink, #1c1d1f);
     font-family: var(--theme-font-ui);
 
     &__title {
         margin: 0;
-        color: var(--theme-color-ink, #1b1b1b);
-        font-size: var(--theme-font-size-lg, 28px);
+        color: var(--theme-color-ink, #1c1d1f);
+        font-size: var(--theme-font-size-lg, 22px);
         font-weight: var(--theme-font-weight-bold, 700);
-        line-height: 1.2;
+        line-height: var(--theme-line-height-1, 1.1);
+        letter-spacing: -0.01em;
     }
 
     &__description {
-        // Pull the description up tight under the title, then let the container
-        // gap space it from the first filter.
         margin: 0;
-        margin-top: calc(-1 * var(--theme-spacing-1, 8px));
         color: var(--theme-color-base-dark, #565c65);
         font-size: var(--theme-font-size-2xs, 14px);
-        line-height: 1.4;
+        line-height: var(--theme-line-height-3, 1.4);
+    }
+
+    // ── Collapsible filter section ───────────────────────────────────────
+    &__filters {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+
+    &__filters-header {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 8px);
+        width: 100%;
+        padding: var(--theme-spacing-1, 8px) 0;
+        background: none;
+        border: none;
+        color: var(--theme-color-base-dark, #565c65);
+        font-family: inherit;
+        font-size: var(--theme-font-size-3xs, 12px);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        cursor: pointer;
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #0e7482);
+            outline-offset: 2px;
+        }
+
+        // The glyph and chevron carry their own muted color, so the header's
+        // hover color has to be pushed onto them explicitly.
+        &:hover {
+            color: var(--theme-color-primary, #0e7482);
+
+            .blocks-layer-filter__filters-icon {
+                color: inherit;
+            }
+
+            .blocks-layer-filter__chevron {
+                border-right-color: currentColor;
+                border-bottom-color: currentColor;
+            }
+        }
+    }
+
+    &__filters-icon {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        color: var(--theme-color-base, #71767a);
+        transition: color 0.12s ease;
+    }
+
+    &__filters-count {
+        flex: none;
+        min-width: 18px;
+        padding: 0 var(--theme-spacing-05, 4px);
+        background: var(--theme-color-primary-lighter, #c3dce0);
+        border-radius: var(--theme-radius-0, 0);
+        color: var(--theme-color-primary, #0e7482);
+        font-size: var(--theme-font-size-3xs, 12px);
+        font-weight: var(--theme-font-weight-bold, 700);
+        line-height: 18px;
+        text-align: center;
+        letter-spacing: 0;
+    }
+
+    &__filters-body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-105, 12px);
+        min-width: 0;
+        padding: var(--theme-spacing-105, 12px) 0 var(--theme-spacing-1, 8px)
+            var(--theme-spacing-1, 8px);
     }
 
     &__field {
         display: flex;
         flex-direction: column;
         gap: var(--theme-spacing-05, 4px);
+        min-width: 0;
     }
 
     &__label {
-        color: var(--theme-color-base, #71767a);
-        font-size: var(--theme-font-size-3xs, 13px);
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.06em;
     }
 
+    // ── Select-styled controls ───────────────────────────────────────────
     &__select {
         box-sizing: border-box;
         width: 100%;
-        min-height: 40px;
-        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
+        // Text inputs and dropdown triggers share this box, so the browser's
+        // own control chrome — whose inner metrics overflow a border-box
+        // width and clip the right edge — is stripped from both.
+        appearance: none;
+        -webkit-appearance: none;
+        max-width: 100%;
+        min-width: 0;
+        min-height: 36px;
+        padding: var(--theme-spacing-05, 4px) var(--theme-spacing-1, 8px);
         background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-base-light, #a9aeb1);
-        border-radius: var(--theme-radius-md, 4px);
-        color: var(--theme-color-ink, #1b1b1b);
-        font-family: var(--theme-font-ui);
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-0, 0);
+        color: var(--theme-color-ink, #1c1d1f);
+        font-family: inherit;
         font-size: var(--theme-font-size-2xs, 14px);
         cursor: pointer;
 
         &:hover {
-            border-color: var(--theme-color-base, #71767a);
+            border-color: var(--theme-color-base-light, #a9aeb1);
         }
 
-        &:focus {
+        &:focus-visible {
             outline: none;
-            border-color: var(--theme-color-primary, #137480);
-            box-shadow: 0 0 0 2px var(--theme-color-primary-light, #97d4ea);
+            border-color: var(--theme-color-primary, #0e7482);
+            box-shadow: 0 0 0 2px var(--theme-color-primary-lighter, #c3dce0);
         }
     }
 
@@ -75,7 +163,7 @@
         position: relative;
 
         &:has([aria-expanded='true']) .blocks-layer-filter__dropdown-trigger {
-            border-color: var(--theme-color-primary, #137480);
+            border-color: var(--theme-color-primary, #0e7482);
         }
     }
 
@@ -89,10 +177,13 @@
         // Chevron, mirroring the native select affordance.
         &::after {
             content: '';
+            flex: none;
+            width: 7px;
+            height: 7px;
             margin-left: auto;
-            border: 5px solid transparent;
-            border-top-color: var(--theme-color-base, #71767a);
-            transform: translateY(2px);
+            border-right: 1.5px solid var(--theme-color-base, #71767a);
+            border-bottom: 1.5px solid var(--theme-color-base, #71767a);
+            transform: translateY(-2px) rotate(45deg);
         }
     }
 
@@ -100,60 +191,83 @@
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 8px);
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
+    // Standalone chevron for the collapsible section header: points up at the
+    // section it opens, and down at the content it would reveal when closed.
+    &__chevron {
+        flex: none;
+        width: 7px;
+        height: 7px;
+        margin-left: auto;
+        margin-right: 4px;
+        border-right: 1.5px solid var(--theme-color-base, #71767a);
+        border-bottom: 1.5px solid var(--theme-color-base, #71767a);
+        transform: translateY(2px) rotate(-135deg);
+        transition: transform 0.12s ease, border-color 0.12s ease;
+
+        &--collapsed {
+            transform: translateY(-2px) rotate(45deg);
+        }
+    }
+
+    // ── Dropdown menu contents ───────────────────────────────────────────
+    &__dropdown-menu {
+        box-sizing: border-box;
+        max-height: 240px;
+        padding: var(--theme-spacing-05, 4px);
+        background: var(--theme-color-white, #ffffff);
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-0, 0);
+        box-shadow: 0 2px 8px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+        // Portalled to <body>, so the panel's family doesn't reach it.
+        font-family: var(--theme-font-ui);
+        overflow-y: auto;
+    }
+
     // Single-select / entry rows inside the menu.
     &__row {
+        box-sizing: border-box;
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 8px);
         width: 100%;
-        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-05, 4px);
+        min-width: 0;
+        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
         background: none;
         border: none;
-        color: var(--theme-color-ink, #1b1b1b);
-        font-family: var(--theme-font-ui);
+        border-radius: var(--theme-radius-0, 0);
+        color: var(--theme-color-ink, #1c1d1f);
+        font-family: inherit;
         font-size: var(--theme-font-size-2xs, 14px);
         text-align: left;
         cursor: pointer;
 
         &:hover {
-            background: var(--theme-color-primary-lightest, #e7f6f8);
+            background: var(--theme-color-primary-lightest, #e6f4f6);
         }
     }
 
     &__check {
         margin-left: auto;
-        color: var(--theme-color-primary, #137480);
+        color: var(--theme-color-base, #71767a);
         font-weight: var(--theme-font-weight-bold, 700);
     }
 
     &__year-chip {
         flex: none;
-        padding: 0 var(--theme-spacing-05, 4px);
-        background: var(--theme-color-base-lightest, #f0f0f0);
-        border-radius: var(--theme-radius-sm, 2px);
+        padding: 2px var(--theme-spacing-05, 4px);
+        background: var(--theme-color-base-lightest, #f1f3f6);
+        border-radius: var(--theme-radius-0, 0);
         color: var(--theme-color-base-dark, #565c65);
-        font-size: var(--theme-font-size-3xs, 13px);
+        font-family: var(--theme-font-mono);
+        font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
-    }
-
-    &__dropdown-menu {
-        position: absolute;
-        z-index: 10;
-        top: calc(100% + 2px);
-        left: 0;
-        right: 0;
-        max-height: 240px;
-        padding: var(--theme-spacing-05, 4px) var(--theme-spacing-105, 12px);
-        background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-base-light, #a9aeb1);
-        border-radius: var(--theme-radius-md, 4px);
-        box-shadow: 0 2px 8px var(--theme-color-base-light, #a9aeb1);
-        overflow-y: auto;
+        line-height: 1;
     }
 
     // Multi-select facets: checkbox rows with per-option counts.
@@ -161,10 +275,20 @@
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 8px);
-        padding: var(--theme-spacing-05, 4px) 0;
-        color: var(--theme-color-ink, #1b1b1b);
+        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
+        border-radius: var(--theme-radius-0, 0);
+        color: var(--theme-color-ink, #1c1d1f);
         font-size: var(--theme-font-size-2xs, 14px);
         cursor: pointer;
+
+        &:hover {
+            background: var(--theme-color-primary-lightest, #e6f4f6);
+        }
+
+        // Per-option counts sit hard right, clear of the value text.
+        .blocks-layer-filter__badge {
+            margin-left: auto;
+        }
     }
 
     // Count / selected-count chip (trigger and menu rows).
@@ -172,19 +296,70 @@
         display: inline-block;
         margin-left: var(--theme-spacing-1, 8px);
         padding: 0 var(--theme-spacing-1, 8px);
-        background: var(--theme-color-primary-lightest, #e7f6f8);
-        border-radius: var(--theme-radius-md, 4px);
-        color: var(--theme-color-primary-dark, #2e6276);
-        font-size: var(--theme-font-size-3xs, 13px);
+        background: var(--theme-color-base-lightest, #f1f3f6);
+        border-radius: var(--theme-radius-0, 0);
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: var(--theme-font-size-3xs, 12px);
+        font-weight: var(--theme-font-weight-semibold, 600);
     }
 
-    // "N activations" line above the entry picker.
-    &__countline {
-        color: var(--theme-color-ink, #1b1b1b);
-        font-size: var(--theme-font-size-md, 22px);
+    // ── Results card: the matched-entry picker and its summary ───────────
+    &__results {
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-105, 12px);
+        min-width: 0;
+        padding: var(--theme-spacing-105, 12px);
+        background: var(--theme-color-base-lightest, #f1f3f6);
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-lg, 8px);
+    }
 
-        strong {
-            font-weight: var(--theme-font-weight-bold, 700);
+    &__results-label {
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: var(--theme-font-size-3xs, 12px);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+    }
+
+    // "N entries match" line above the entry picker.
+    &__countline {
+        display: flex;
+        align-items: baseline;
+        gap: var(--theme-spacing-05, 4px);
+        color: var(--theme-color-ink, #1c1d1f);
+        font-size: var(--theme-font-size-2xs, 14px);
+        font-weight: var(--theme-font-weight-semibold, 600);
+    }
+
+    &__count {
+        color: var(--theme-color-primary, #0e7482);
+        font-size: var(--theme-font-size-xl, 1.5rem);
+        font-weight: var(--theme-font-weight-bold, 700);
+        line-height: 1;
+    }
+
+    &__clear {
+        margin-left: auto;
+        padding: 0;
+        background: none;
+        border: none;
+        color: var(--theme-color-base-dark, #565c65);
+        font-family: inherit;
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        font-weight: var(--theme-font-weight-normal, 400);
+        cursor: pointer;
+
+        &:hover {
+            color: var(--theme-color-primary, #0e7482);
+        }
+
+        // Outside the count line there's nothing to push against, so it
+        // simply sits under the filters it clears.
+        &--standalone {
+            align-self: flex-start;
+            margin-left: 0;
         }
     }
 
@@ -193,42 +368,42 @@
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 8px);
-        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
-        background: var(--theme-color-primary-lightest, #e7f6f8);
-        border-radius: var(--theme-radius-md, 4px);
+        padding: 0 var(--theme-spacing-05, 4px);
     }
 
     &__entry-dates {
-        color: var(--theme-color-ink, #1b1b1b);
-        font-size: var(--theme-font-size-2xs, 14px);
+        color: var(--theme-color-base-dark, #565c65);
+        font-size: var(--theme-font-size-3xs, 12px);
     }
 
     &__pill {
         margin-left: auto;
         padding: 0 var(--theme-spacing-1, 8px);
-        background: var(--theme-color-success-lighter, #ecf3ec);
-        border-radius: var(--theme-radius-md, 4px);
-        color: var(--theme-color-success-dark, #4d8055);
-        font-size: var(--theme-font-size-3xs, 13px);
+        background: var(--theme-color-primary-lightest, #e6f4f6);
+        border-radius: var(--theme-radius-0, 0);
+        color: var(--theme-color-primary-dark, #0d313d);
+        font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
-        letter-spacing: 0.5px;
+        letter-spacing: 0.06em;
     }
 
-    // Geocode filter: chosen-place chip…
+    // ── Geocode filter: chosen-place chip… ──────────────────────────────
     &__chip {
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 8px);
-        min-height: 40px;
-        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
-        background: var(--theme-color-primary-lightest, #e7f6f8);
-        border: 1px solid var(--theme-color-primary-light, #97d4ea);
-        border-radius: var(--theme-radius-md, 4px);
+        min-width: 0;
+        min-height: 36px;
+        padding: var(--theme-spacing-05, 4px) var(--theme-spacing-1, 8px);
+        background: var(--theme-color-primary-lightest, #e6f4f6);
+        border: 1px solid var(--theme-color-primary-light, #87bac1);
+        border-radius: var(--theme-radius-0, 0);
     }
 
     &__chip-label {
+        min-width: 0;
         overflow: hidden;
-        color: var(--theme-color-ink, #1b1b1b);
+        color: var(--theme-color-ink, #1c1d1f);
         font-size: var(--theme-font-size-2xs, 14px);
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -245,38 +420,43 @@
         cursor: pointer;
 
         &:hover {
-            color: var(--theme-color-ink, #1b1b1b);
+            color: var(--theme-color-ink, #1c1d1f);
         }
     }
 
     // …and its live search results.
-    &__results {
+    &__results-list {
         margin: 0;
         padding: 0;
-        border: 1px solid var(--theme-color-base-light, #a9aeb1);
-        border-radius: var(--theme-radius-md, 4px);
+        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-0, 0);
         list-style: none;
         overflow: hidden;
     }
 
     &__result {
+        box-sizing: border-box;
         display: block;
         width: 100%;
         padding: var(--theme-spacing-1, 8px) var(--theme-spacing-105, 12px);
         background: var(--theme-color-white, #ffffff);
         border: none;
-        color: var(--theme-color-ink, #1b1b1b);
+        color: var(--theme-color-ink, #1c1d1f);
         font-size: var(--theme-font-size-2xs, 14px);
         text-align: left;
+        // Place names run long; they wrap within the list rather than
+        // widening it.
+        white-space: normal;
+        overflow-wrap: anywhere;
         cursor: pointer;
 
         &:hover {
-            background: var(--theme-color-primary-lightest, #e7f6f8);
+            background: var(--theme-color-primary-lightest, #e6f4f6);
         }
     }
 
     &__hint {
         color: var(--theme-color-base-dark, #565c65);
-        font-size: var(--theme-font-size-3xs, 13px);
+        font-size: var(--theme-font-size-3xs, 12px);
     }
 }
