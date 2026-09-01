@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import LayerGeologic from '../../src/essence/Basics/Layers_/LayerGeologic/LayerGeologic.js'
 
-// PDFViewer.js and LayerGeologic.js fetch public/ assets by URL; a leading
+// PDFViewer.jsx and LayerGeologic.js fetch public/ assets by URL; a leading
 // slash would send the request to the customer's domain root when the
 // dashboard is served under a path prefix, so the paths must stay
 // document-relative.
@@ -27,11 +27,11 @@ test.describe('public asset paths stay document-relative', () => {
         expect(LayerGeologic.getBaseUrl('linework', '17.001')).toBe('')
     })
 
-    test('PDFViewer.js does not root its worker path', () => {
-        // A source tripwire, not a behavioral import: PDFViewer.js is JSX in
-        // a .js file, which Vite's import analysis cannot parse here.
+    test('PDFViewer.jsx does not root its worker path', () => {
+        // A source tripwire, not a behavioral import: importing the component
+        // would drag react-pdf and its worker setup into the test environment.
         const source = fs.readFileSync(
-            path.join(__dirname, '../../src/essence/Basics/Viewer_/PDFViewer.js'),
+            path.join(__dirname, '../../src/essence/Basics/Viewer_/PDFViewer.jsx'),
             'utf8',
         )
         expect(source).not.toMatch(/['"`]\/public/)
