@@ -312,7 +312,7 @@
         padding: var(--theme-spacing-105, 12px);
         background: var(--theme-color-base-lightest, #f1f3f6);
         border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-        border-radius: var(--theme-radius-0, 0);
+        border-radius: var(--theme-radius-lg, 8px);
     }
 
     &__results-label {
