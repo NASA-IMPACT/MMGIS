@@ -172,18 +172,12 @@ test.describe('renderCfnTemplate', () => {
         ])
     })
 
-    test('logical IDs and bucket anonymity are pinned (replacement mints a new domain)', () => {
+    test('the bucket is left unnamed (naming it would REPLACE it, minting a new domain)', () => {
         const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
-        // Renaming a logical ID (or naming the bucket) makes UpdateStack REPLACE
-        // the resource: a replaced distribution gets a new *.cloudfront.net
-        // domain, the one thing a published dashboard must never change.
-        expect(Object.keys(template.Resources).sort()).toEqual([
-            'DashboardAuthFunction',
-            'DashboardBucket',
-            'DashboardBucketPolicy',
-            'DashboardDistribution',
-            'DashboardOriginAccessControl',
-        ])
+        // A named bucket makes UpdateStack REPLACE it, and a replaced bucket
+        // drops the distribution's origin — the one thing a published dashboard
+        // must never change. (Resource renames are already caught by the
+        // "expected resources" test, which addresses each by its logical ID.)
         expect(
             template.Resources.DashboardBucket.Properties
         ).not.toHaveProperty('BucketName')

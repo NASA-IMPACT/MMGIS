@@ -70,15 +70,6 @@ const TERMINAL_STACK_STATUSES = [
   "UPDATE_ROLLBACK_FAILED",
 ];
 
-// Resting statuses a publish can pick up and reuse as-is. The create-side
-// ROLLBACK_COMPLETE and CREATE_FAILED are deliberately absent — a stack that
-// failed on the way up can only be deleted (see publish-static.js).
-const REUSABLE_STACK_STATUSES = [
-  "CREATE_COMPLETE",
-  "UPDATE_COMPLETE",
-  "UPDATE_ROLLBACK_COMPLETE",
-];
-
 async function createStack({ stackName, templateBody }) {
   const { cfn } = getClients();
   const resp = await cfn.send(
@@ -117,18 +108,22 @@ async function updateStack({ stackName, templateBody }) {
   }
 }
 
-// True for the ValidationError CloudFormation raises when the stack is
-// already busy with someone else's operation ("Stack:arn:... is in
+// True only for the ValidationError CloudFormation raises when the stack is
+// busy with an operation genuinely IN FLIGHT ("Stack:arn:... is in
 // UPDATE_IN_PROGRESS state and can not be updated."). Two republish clicks
 // start two ECS tasks and the loser lands here — a race to wait out, not a
-// failure. Same error NAME as the no-op and the does-not-exist cases, so
-// again the message is the only discriminator.
+// failure. CloudFormation reuses the same "... state and can not be updated"
+// wording for wedged terminal statuses too (UPDATE_ROLLBACK_FAILED,
+// UPDATE_FAILED, DELETE_FAILED), which are delete-only dead ends, NOT another
+// task updating — so key off the status the message names and accept only an
+// *_IN_PROGRESS one. Same error NAME as the no-op and does-not-exist cases, so
+// the message stays the only discriminator.
 function isStackBusyError(err) {
-  return (
-    err != null &&
-    err.name === "ValidationError" &&
-    (err.message || "").indexOf("state and can not be updated") !== -1
+  if (err == null || err.name !== "ValidationError") return false;
+  const named = (err.message || "").match(
+    /is in ([A-Z_]+) state and can not be updated/
   );
+  return named != null && named[1].endsWith("_IN_PROGRESS");
 }
 
 // The status an in-flight stack operation settles at, for a caller that
@@ -136,47 +131,14 @@ function isStackBusyError(err) {
 // at UPDATE_ROLLBACK_COMPLETE: waiting for UPDATE_COMPLETE from an in-flight
 // rollback can only ever throw, even though a stack resting at
 // UPDATE_ROLLBACK_COMPLETE is perfectly reusable. A status that is already
-// terminal maps to whatever its family settles at; waitForStack() checks
-// terminal statuses first, so a stuck one (UPDATE_FAILED) still throws.
+// terminal maps to whatever its family settles at; waitForStack() resolves on
+// desired-status equality, so a stuck one (UPDATE_FAILED) never matches its
+// unreachable target and still throws on the terminal check before the timeout.
 function settleStatusFor(stackStatus) {
   if (stackStatus.indexOf("UPDATE_ROLLBACK_") === 0)
     return "UPDATE_ROLLBACK_COMPLETE";
   if (stackStatus.indexOf("UPDATE_") === 0) return "UPDATE_COMPLETE";
   return "CREATE_COMPLETE";
-}
-
-// The wait this run needs, from the action and the stack it found (or did
-// not). Pure: the caller makes the AWS calls. `mode` says what to do —
-//   create - no stack yet: CreateStack, then wait
-//   reuse  - resting at a reusable status: no wait at all
-//   settle - mid-operation: wait out whatever is running
-//   update - UpdateStack, then wait for it to converge
-// and `wait` is the waitForStack() argument bag (null for "reuse").
-function planStackWait({ action, existing }) {
-  if (action === "update")
-    return {
-      mode: "update",
-      wait: {
-        desiredStatus: "UPDATE_COMPLETE",
-        // See waitForStack: the read that proves the update landed is the
-        // one whose LastUpdatedTime is newer than this.
-        prior: {
-          status: existing.StackStatus,
-          lastUpdatedTime: existing.LastUpdatedTime,
-        },
-      },
-    };
-  if (existing == null)
-    return {
-      mode: "create",
-      wait: { desiredStatus: "CREATE_COMPLETE", prior: null },
-    };
-  if (REUSABLE_STACK_STATUSES.indexOf(existing.StackStatus) !== -1)
-    return { mode: "reuse", wait: null };
-  return {
-    mode: "settle",
-    wait: { desiredStatus: settleStatusFor(existing.StackStatus), prior: null },
-  };
 }
 
 // Returns the Stack object, or null when the stack does not exist.
@@ -230,7 +192,9 @@ async function waitForStack({
   const startedAt = Date.now();
   // CloudFormation usually puts the failure reason on the IN_PROGRESS
   // rollback status and leaves the terminal one empty, so remember the last
-  // reason seen rather than reading only the status we throw on.
+  // reason seen rather than reading only the status we throw on. Skip the
+  // boilerplate "User Initiated" CloudFormation stamps on *_IN_PROGRESS
+  // statuses, so it can't get attached to a later terminal failure message.
   let lastReason = null;
   for (;;) {
     const stack = await describeStack({ stackName });
@@ -243,7 +207,8 @@ async function waitForStack({
       stack.StackStatus === prior.status &&
       !lastUpdatedAdvanced(stack.LastUpdatedTime, prior.lastUpdatedTime);
     if (!stale) {
-      if (stack.StackStatusReason) lastReason = stack.StackStatusReason;
+      if (stack.StackStatusReason && stack.StackStatusReason !== "User Initiated")
+        lastReason = stack.StackStatusReason;
       if (stack.StackStatus === desiredStatus) return stack;
       if (TERMINAL_STACK_STATUSES.indexOf(stack.StackStatus) !== -1)
         throw new Error(
@@ -257,6 +222,85 @@ async function waitForStack({
           (lastReason ? `: ${lastReason}` : "")
       );
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+}
+
+// Converges `templateBody` onto an existing stack via UpdateStack and waits
+// for OUR update to finish. Returns the converged Stack object, or `existing`
+// unchanged when CloudFormation reports there is nothing to update.
+//
+// Callers MUST already have turned away the delete-only dead-end statuses
+// (see publish-static UNUSABLE_STACK_STATUSES) — with those excluded, an
+// isStackBusyError here can only be a genuinely in-flight operation. Two
+// republish clicks race two ECS tasks and CloudFormation rejects the loser's
+// UpdateStack: this waits that operation out and then retries OUR OWN update,
+// so this run's template — not merely the winner's — actually converges.
+// `maxBusyRetries` bounds that so a stack that never frees up throws instead of
+// looping forever. `log` (optional) reports progress for the ECS task's stdout.
+async function convergeStackUpdate({
+  stackName,
+  templateBody,
+  existing,
+  maxBusyRetries = 10,
+  log = () => {},
+  // Forwarded to both waitForStack calls; undefined lets waitForStack apply its
+  // own defaults (production passes neither — tests inject a tiny interval).
+  pollIntervalMs,
+  timeoutMs,
+}) {
+  // The freshest state seen just before our own UpdateStack, seeded as `prior`
+  // for the converge wait. After a wait-out it advances to the winner's
+  // settled state, so a stale read of the WINNER'S result can't resolve our
+  // wait early either.
+  let preUpdate = existing;
+  for (let attempt = 0; ; attempt++) {
+    let started;
+    try {
+      started = await updateStack({ stackName, templateBody });
+    } catch (err) {
+      if (!isStackBusyError(err)) throw err;
+      if (attempt >= maxBusyRetries)
+        throw new Error(
+          `Stack '${stackName}' stayed busy after ${maxBusyRetries + 1} ` +
+            "UpdateStack attempts — another operation may be stuck; try again shortly."
+        );
+      const current = (await describeStack({ stackName })) || preUpdate;
+      log(
+        `Stack '${stackName}' is busy with another operation ` +
+          `(${current.StackStatus}); waiting for it to settle, then retrying.`
+      );
+      // No `prior`: nothing this run has started yet, so every read is real. A
+      // stale/early wake is safe — the retry's UpdateStack simply throws busy
+      // again and we wait once more.
+      preUpdate = await waitForStack({
+        stackName,
+        desiredStatus: settleStatusFor(current.StackStatus),
+        pollIntervalMs,
+        timeoutMs,
+      });
+      continue;
+    }
+    // "No updates are to be performed" — the template already converged.
+    if (!started) {
+      log(`Stack '${stackName}' is already up to date.`);
+      return existing;
+    }
+    log(`Updating stack '${stackName}'...`);
+    // Our own update is in flight. `prior` (the pre-update read) stops an
+    // eventually-consistent pre-op DescribeStacks from resolving the wait
+    // early; desiredStatus UPDATE_COMPLETE makes a rollback settling at
+    // UPDATE_ROLLBACK_COMPLETE hit the terminal-status throw rather than be
+    // reported as a successful publish.
+    return await waitForStack({
+      stackName,
+      desiredStatus: "UPDATE_COMPLETE",
+      prior: {
+        status: preUpdate.StackStatus,
+        lastUpdatedTime: preUpdate.LastUpdatedTime,
+      },
+      pollIntervalMs,
+      timeoutMs,
+    });
   }
 }
 
@@ -558,14 +602,13 @@ async function runPublishTask({ deploymentId, action }) {
 module.exports = {
   getClients,
   setClients,
-  TERMINAL_STACK_STATUSES,
   createStack,
   updateStack,
   isStackBusyError,
   settleStatusFor,
-  planStackWait,
   describeStack,
   waitForStack,
+  convergeStackUpdate,
   getStackOutputs,
   deleteStack,
   contentTypeForFile,

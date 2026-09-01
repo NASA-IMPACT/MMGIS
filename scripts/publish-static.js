@@ -42,15 +42,30 @@ const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publis
 
 const { requireEnv } = provision;
 
-// A stack that failed on the way UP can only be deleted, never reused or
-// updated. CREATE_FAILED is where this codebase's own createStack leaves a
-// failed first publish (OnFailure: "DO_NOTHING"); the ROLLBACK_* pair is
-// where an out-of-band operator create leaves one, and ROLLBACK_IN_PROGRESS
-// gets the same guidance as the ROLLBACK_COMPLETE it is on its way to.
+// Statuses a stack can neither be reused at nor driven forward from: it can
+// only be deleted (or, for a couple, have a rollback continued) — never
+// updated in place. Reaching one earns the actionable "delete and republish"
+// guidance BEFORE any busy classification, so a permanently-wedged stack is
+// never mistaken for one another task is merely busy updating.
+//   CREATE_FAILED / ROLLBACK_COMPLETE / ROLLBACK_IN_PROGRESS - a failed first
+//     create: CREATE_FAILED is where this code's own createStack (OnFailure:
+//     "DO_NOTHING") stops; the ROLLBACK_* pair is where an out-of-band operator
+//     create stops, and ROLLBACK_IN_PROGRESS pre-empts the ROLLBACK_COMPLETE it
+//     is on its way to.
+//   ROLLBACK_FAILED / UPDATE_ROLLBACK_FAILED / DELETE_FAILED - a rollback or a
+//     delete that itself failed; stuck until an operator intervenes.
+//   UPDATE_FAILED - where an update with rollback disabled stops; moved only by
+//     a ContinueUpdateRollback or a delete, so it can't be updated in place.
+// UPDATE_ROLLBACK_COMPLETE is deliberately absent: a stack resting there has a
+// working bucket/distribution and stays reusable by a publish.
 const UNUSABLE_STACK_STATUSES = [
   "CREATE_FAILED",
   "ROLLBACK_COMPLETE",
   "ROLLBACK_IN_PROGRESS",
+  "ROLLBACK_FAILED",
+  "UPDATE_ROLLBACK_FAILED",
+  "UPDATE_FAILED",
+  "DELETE_FAILED",
 ];
 
 function log(message) {
@@ -157,6 +172,9 @@ async function main() {
     // prior update converged it) — reuse it instead of dying on
     // CloudFormation's AlreadyExistsException.
     const existing = await provision.describeStack({ stackName });
+    // Preflight: a stack in a delete-only dead-end state gets actionable
+    // guidance, never a wait and never a busy misclassification. This runs
+    // before either action's dispatch below.
     if (
       existing != null &&
       UNUSABLE_STACK_STATUSES.indexOf(existing.StackStatus) !== -1
@@ -167,21 +185,23 @@ async function main() {
       );
     let stack;
     if (ACTION === "publish") {
-      const plan = provision.planStackWait({ action: ACTION, existing });
-      if (plan.mode === "create") {
+      // Publish only needs a working bucket, so it never runs UpdateStack: it
+      // either creates the stack, or waits for whatever the existing one is
+      // doing to settle. A stack already RESTING at its settle target
+      // (CREATE_COMPLETE / UPDATE_COMPLETE / UPDATE_ROLLBACK_COMPLETE) resolves
+      // on the first poll — status already matches, no `prior`, no pre-sleep.
+      if (existing == null) {
         log(`Creating stack '${stackName}'...`);
         await provision.createStack({ stackName, templateBody });
-        stack = await provision.waitForStack({ stackName, ...plan.wait });
-      } else if (plan.mode === "reuse") {
-        log(
-          `Stack '${stackName}' already exists (${existing.StackStatus}); skipping CreateStack.`
-        );
-        stack = existing;
+        stack = await provision.waitForStack({ stackName });
       } else {
         log(
           `Stack '${stackName}' already exists (${existing.StackStatus}); waiting for it to settle.`
         );
-        stack = await provision.waitForStack({ stackName, ...plan.wait });
+        stack = await provision.waitForStack({
+          stackName,
+          desiredStatus: provision.settleStatusFor(existing.StackStatus),
+        });
       }
       log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     } else {
@@ -193,39 +213,19 @@ async function main() {
         `Converging stack '${stackName}' to the current template — this ` +
           "re-bakes the current dashboards password into the auth Function."
       );
-      const plan = provision.planStackWait({ action: ACTION, existing });
-      let updating = false;
-      let waited = null;
-      try {
-        updating = await provision.updateStack({ stackName, templateBody });
-      } catch (err) {
-        if (!provision.isStackBusyError(err)) throw err;
-        // Two republish clicks start two ECS tasks, and CloudFormation
-        // rejects the loser's UpdateStack outright. The winner is converging
-        // the same template, so wait that operation out instead of failing
-        // the row, then fall through to the upload — a double republish stays
-        // harmlessly last-write-wins.
-        log(
-          `Stack '${stackName}' is already being updated by another task; waiting for that update to settle.`
-        );
-        const current =
-          (await provision.describeStack({ stackName })) || existing;
-        waited = await provision.waitForStack({
-          stackName,
-          desiredStatus: provision.settleStatusFor(current.StackStatus),
-        });
-      }
-      if (updating) {
-        log(`Updating stack '${stackName}'...`);
-        waited = await provision.waitForStack({ stackName, ...plan.wait });
-      }
-      if (waited != null) {
-        stack = waited;
-        log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
-      } else {
-        stack = existing;
-        log(`Stack '${stackName}' is already up to date.`);
-      }
+      // Converge OUR OWN template through provision's single retry loop: it
+      // runs UpdateStack, waits out any concurrent operation (a double
+      // republish race) and retries our own update, and waits for OUR update
+      // to reach UPDATE_COMPLETE — a rollback throws rather than passing as
+      // success. The preflight above already rejected the delete-only dead-end
+      // statuses, so a busy error inside can only be a genuinely in-flight op.
+      stack = await provision.convergeStackUpdate({
+        stackName,
+        templateBody,
+        existing,
+        log,
+      });
+      log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     }
     const outputs = provision.getStackOutputs(stack);
     const bucket = outputs.BucketName;
