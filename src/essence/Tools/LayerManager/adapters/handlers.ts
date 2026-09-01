@@ -76,11 +76,7 @@ export const compareLayer = (layerId: string): void => {
 
 export const ADD_LAYER_PLUGIN_ID = 'AddTempLayerTool'
 
-/**
- * Reveals the "add layer from URL" form, loading the tool first if the mission
- * starts it unloaded. Its own `addTempLayer:show` event would not reach it
- * there, being listened for only while the tool is mounted.
- */
+/** Reveals the "add layer from URL" form. */
 export const showAddLayer = (): void => {
     // Widened from CommandResult: without strictNullChecks a boolean
     // discriminant does not narrow, so `reason` is unreachable on the union.
