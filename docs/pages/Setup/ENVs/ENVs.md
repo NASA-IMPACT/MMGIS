@@ -14,10 +14,9 @@ Environment variables are set within `MMGIS/.env`. A sample file `MMGIS/sample.e
 
 #### `SERVER=`
 
-The kind of server running (apache is deprecated) | string enum | default `''`
+The kind of server running | string enum | default `''`
 
 - _node:_ A node express server running NodeJS v20.11.1+
-- _apache (deprecated):_ Served through Apache. Some or all functionality may not work
 
 #### `AUTH=`
 

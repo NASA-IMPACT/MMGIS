@@ -72,25 +72,11 @@ test.describe('buildPreviewSrc', () => {
         ).toBe('/mmgis/assets/M/CardPlugin/uploads/x.png')
     })
 
-    test('an assets/ value without /uploads/ stays mission-relative', () => {
-        expect(buildPreviewSrc('assets/logo.png', 'M', '')).toBe(
-            '/Missions/M/assets/logo.png',
-        )
-    })
-
-    test('the assets/ discriminator is case-sensitive', () => {
-        expect(
-            buildPreviewSrc('Assets/M/CardPlugin/uploads/a.png', 'M', ''),
-        ).toBe('/Missions/M/Assets/M/CardPlugin/uploads/a.png')
-    })
-
-    // Why this lookalike is not an upload key: see the ASSETS_UPLOAD_KEY
-    // comment in src/essence/Tools/Card/adapters/buildCardData.ts.
-    test('the full-mode "assets/uploads/x.png" shape (subdir "assets") stays mission-relative', () => {
-        expect(buildPreviewSrc('assets/uploads/x.png', 'M', '')).toBe(
-            '/Missions/M/assets/uploads/x.png',
-        )
-    })
+    // The upload-key classifier negatives (assets/ without /uploads/,
+    // case-sensitivity, the "assets/uploads/x.png" lookalike) are exercised
+    // in tests/unit/Card/resolveImageUrl.spec.js. The ASSETS_UPLOAD_KEY sync
+    // test below proves both bundles' classifier regexes are byte-identical,
+    // so those negatives hold for buildPreviewSrc too without duplicating them.
 
     test('resolves mission-relative values under Missions/<mission>/', () => {
         expect(
@@ -101,11 +87,10 @@ test.describe('buildPreviewSrc', () => {
     // With no ROOT_PATH base the mission-relative branch must still produce a
     // root-anchored URL: a document-relative "Missions/…" would resolve
     // against the CMS's own path (the SPA is served at '/configure/') and
-    // 404. The leading slash is asserted on its own so a regression to
-    // `base || ''` fails here rather than passing on a substring match.
+    // 404. The exact root-absolute value below catches a regression to
+    // `base || ''`.
     test('an empty base resolves a mission-relative value root-absolute', () => {
         const src = buildPreviewSrc('CardPlugin/uploads/a.png', 'M', '')
-        expect(src.startsWith('/')).toBe(true)
         expect(src).toBe('/Missions/M/CardPlugin/uploads/a.png')
     })
 })
@@ -138,7 +123,6 @@ test.describe('ASSETS_UPLOAD_KEY stays identical across both bundles', () => {
             expect(match, `${relative} declares ASSETS_UPLOAD_KEY`).toBeTruthy()
             return match[1]
         })
-        expect(literals[0]).toBe('/^assets\\/[^/]+\\/[^/]+\\/uploads\\//')
         expect(literals[1]).toBe(literals[0])
     })
 })

@@ -89,16 +89,7 @@ function stackNameForDeployment(deploymentId) {
  * does (auth gate, X-Forwarded-Prefix handling).
  */
 function renderAuthFunctionCode(password) {
-  let source;
-  try {
-    source = fs.readFileSync(AUTH_FUNCTION_SOURCE_PATH, "utf8");
-  } catch (err) {
-    throw new Error(
-      `renderAuthFunctionCode could not read the CloudFront Function source ` +
-        `at ${AUTH_FUNCTION_SOURCE_PATH}: ${err.message}. The deployment ` +
-        "container must ship the infrastructure/ directory alongside scripts/."
-    );
-  }
+  const source = fs.readFileSync(AUTH_FUNCTION_SOURCE_PATH, "utf8");
 
   const body = source.replace(/^\/\*[\s\S]*?\*\/\s*/, "").trimEnd();
 

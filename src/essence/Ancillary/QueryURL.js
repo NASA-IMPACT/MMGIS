@@ -237,7 +237,7 @@ var QueryURL = {
         for (var i = 0; i < vars.length; i++) {
             var pair = vars[i].split('=')
             if (pair[0] == variable) {
-                return decodeURIComponent(pair[1])
+                return pair[1] === undefined ? '' : decodeURIComponent(pair[1])
             }
         }
 

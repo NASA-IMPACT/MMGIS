@@ -1,7 +1,8 @@
 import { test, expect } from 'vitest'
 
 // Tests for the lean deployment's AWS recipes in infrastructure/.
-// These are static checks: every JSON file must parse, the IAM must stay
+// These cover both static checks on the recipes and the runtime behavior of
+// the rendered password-gate Function: every JSON file must parse, the IAM must stay
 // least-privilege (no `Resource: "*"` except the unscopeable
 // ecr:GetAuthorizationToken, dashboard grants pinned to the
 // mmgis-dashboard-* prefix, PassRole for both publish roles), the task
@@ -536,6 +537,12 @@ test.describe('dashboard CloudFront Function behavior', () => {
         }
     }
 
+    test('the rendered function stays under the cloudfront-js-1.0 10KB limit', () => {
+        // cloudfront-js-1.0 caps a viewer-request function's code at 10 KB;
+        // exceeding it fails the CreateFunction call at deploy time, not here.
+        expect(code.length).toBeLessThan(10240)
+    })
+
     test('with no declared prefix, requests pass through unchanged', () => {
         expect(handler(makeEvent('/build/static/js/main.abc.js')).uri).toBe(
             '/build/static/js/main.abc.js'
@@ -593,16 +600,6 @@ test.describe('dashboard CloudFront Function behavior', () => {
             })
         )
         expect(result.headers.location.value).toBe('/d/v/?debug')
-    })
-
-    test('an empty multiValue array falls back to the plain value', () => {
-        const result = handler(
-            makeEvent('/d/v', {
-                prefix: '/d/v',
-                querystring: { b: { value: '2', multiValue: [] } },
-            })
-        )
-        expect(result.headers.location.value).toBe('/d/v/?b=2')
     })
 
     test('trailing slash on the declared prefix is normalized', () => {

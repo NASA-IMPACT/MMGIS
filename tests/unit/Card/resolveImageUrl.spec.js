@@ -21,6 +21,9 @@ test.describe('resolveImageUrl', () => {
         expect(
             resolveImageUrl('data:image/png;base64,AAAA', 'Missions/MSL/'),
         ).toBe('data:image/png;base64,AAAA')
+    })
+
+    test('an already-rooted value that is not an upload shape passes through unchanged', () => {
         expect(resolveImageUrl('/already/rooted.png', 'Missions/MSL/')).toBe(
             '/already/rooted.png',
         )
