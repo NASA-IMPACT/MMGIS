@@ -602,6 +602,47 @@ test.describe('dashboard CloudFront Function behavior', () => {
         expect(result.headers.location.value).toBe('/d/v/?debug')
     })
 
+    // The rebuild concatenates keys and values into the Location raw, so a
+    // pair that arrived decoded rather than percent-encoded is dropped
+    // instead of breaking the URL apart.
+    test('a value carrying a raw & or # is dropped, its neighbours survive', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: {
+                    a: { value: '1' },
+                    evil: { value: 'x&injected=1' },
+                    frag: { value: 'y#nope' },
+                    b: { value: '2' },
+                },
+            })
+        )
+        expect(result.headers.location.value).toBe('/d/v/?a=1&b=2')
+    })
+
+    test('a key carrying a raw # is dropped', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: { 'a#b': { value: '1' }, ok: { value: '2' } },
+            })
+        )
+        expect(result.headers.location.value).toBe('/d/v/?ok=2')
+    })
+
+    test('percent-encoded values pass through byte-identical', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: {
+                    q: { value: 'a%20b' },
+                    t: { value: 'a%26b%23c' },
+                },
+            })
+        )
+        expect(result.headers.location.value).toBe('/d/v/?q=a%20b&t=a%26b%23c')
+    })
+
     test('trailing slash on the declared prefix is normalized', () => {
         const result = handler(
             makeEvent('/d/v/x.png', { prefix: '/d/v/' })

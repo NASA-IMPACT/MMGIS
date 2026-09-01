@@ -18,10 +18,13 @@
  * directly to this distribution, bypassing any fronting CloudFront
  * entirely. Validating it is load-bearing, not just hygiene.
  *
- * Assumes CloudFront hands querystring values to the function still
- * percent-encoded (observed behavior; not documented by AWS either way). A
- * value that ever arrived decoded and contained "&" or "#" would corrupt
- * the redirect's rebuilt Location with a spurious param break or fragment.
+ * CloudFront appears to hand querystring values to the function still
+ * percent-encoded (observed behavior; not documented by AWS either way),
+ * but the redirect below does not rest on that: when it rebuilds the
+ * Location it drops any pair whose key or value carries a character that
+ * would corrupt the reassembly. A value that arrived decoded with a "&"
+ * or "#" in it is left out rather than emitting a spurious param break or
+ * fragment.
  */
 function handler(event) {
     var request = event.request;
@@ -73,8 +76,15 @@ function handler(event) {
         var uri = request.uri;
         if (uri === prefix || uri === encodedPrefix) {
             var qs = request.querystring || {};
+            // Keys and values go into the Location raw, which reassembles
+            // correctly only for characters percent-encoding would have
+            // covered; anything else ('&', '#', an '=' in a key, a space,
+            // a control character) is dropped with its pair instead.
+            var SAFE_KEY = /^[A-Za-z0-9%\-_.~!$'()*+,;:@\/?]*$/;
+            var SAFE_VALUE = /^[A-Za-z0-9%\-_.~!$'()*+,;=:@\/?]*$/;
             var parts = [];
             for (var key in qs) {
+                if (!SAFE_KEY.test(key)) continue;
                 var param = qs[key];
                 var values =
                     param.multiValue && param.multiValue.length > 0
@@ -82,6 +92,7 @@ function handler(event) {
                         : [param];
                 for (var i = 0; i < values.length; i++) {
                     var val = values[i].value;
+                    if (!SAFE_VALUE.test(val)) continue;
                     parts.push(val === '' ? key : key + '=' + val);
                 }
             }
