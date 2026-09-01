@@ -4,11 +4,9 @@ import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 /**
  * The tool wrapper is the plugin's front door. Both entry points into it — the
  * layers list's "Compare layer" kebab entry and the timeline's "Compare date"
- * action — arrive as bus events while the plugin is still unloaded, so what
- * matters is that the wrapper catches them before it has a panel, asks the core
- * loader for one, and hands the panel both what to compare and which tab to
- * open on. A hand-off that lands while the panel is already open must reach it
- * too, rather than being swallowed as a repeat.
+ * action — arrive as bus events carrying what to compare and which tab to open
+ * on. A hand-off that lands while the panel is already open must reach it too,
+ * rather than being swallowed as a repeat.
  */
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean })
@@ -101,12 +99,19 @@ describe('ComparisonTool hand-offs', () => {
 
     test('a date hand-off moves an open panel to the dates tab in place', async () => {
         await open()
-        const before = requested('plugins:show').length
 
         fire('plugin:comparison:startWithDates')
 
         expect(adapterProps.seedMode?.mode).toBe('dates')
-        expect(requested('plugins:show').length).toBe(before)
+    })
+
+    test('a hand-off to a mounted panel still asks for it to be shown', async () => {
+        await open()
+        const before = requested('plugins:show').length
+
+        fire('plugin:comparison:startWithDates')
+
+        expect(requested('plugins:show').length).toBe(before + 1)
     })
 
     /**

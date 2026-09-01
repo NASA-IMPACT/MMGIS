@@ -38,10 +38,8 @@ import {
 const PLUGIN_ID = 'ComparisonTool'
 
 // ── Module-level state ────────────────────────────────────────────────────────
-// Comparison is `startUnloaded`, so when an entry point fires make() hasn't run
-// yet. The bus listeners live at module scope to catch the emit; they stash what
-// the panel is to open with and ask the core loader to open it, which then reads
-// them.
+// A hand-off can fire before make() has ever run, so the bus listeners live at
+// module scope; they stash what the panel opens with, which make() then reads.
 let _root: Root | null = null
 let _seedLayerId: string | null = null
 // The tab the last hand-off asked for. A fresh object per hand-off, so a repeat
@@ -74,20 +72,10 @@ function handleClose(): void {
         .catch((err) => console.warn('[Comparison] unload failed:', err))
 }
 
-/**
- * Opens the panel on `mode`, or moves it there if it is already open. A panel
- * that is open is re-rendered in place with what the hand-off carried; one that
- * is not is asked for from the core loader, and reads the same stash on mount.
- */
+/** Opens the panel on `mode`, or moves it there if it is already open. */
 function startWithPanel(mode: ComparisonMode): void {
     _seedMode = { mode }
-    if (_root) {
-        renderPanel()
-        return
-    }
-    // Comparison is registered `startUnloaded: true`, so the plugin has no
-    // instance yet; showPlugin loads it into its container and reveals it in
-    // the one request.
+    if (_root) renderPanel()
     mmgisShowPlugin(PLUGIN_ID)
         .then((result) => {
             if (result.ok === false) {
