@@ -226,17 +226,14 @@ async function waitForStack({
 }
 
 // Converges `templateBody` onto an existing stack via UpdateStack and waits
-// for OUR update to finish. Returns the converged Stack object, or `existing`
-// unchanged when CloudFormation reports there is nothing to update.
+// for our update to finish. Returns the converged Stack, or `existing`
+// unchanged when there is nothing to update.
 //
-// Callers MUST already have turned away the delete-only dead-end statuses
-// (see publish-static UNUSABLE_STACK_STATUSES) — with those excluded, an
-// isStackBusyError here can only be a genuinely in-flight operation. Two
-// republish clicks race two ECS tasks and CloudFormation rejects the loser's
-// UpdateStack: this waits that operation out and then retries OUR OWN update,
-// so this run's template — not merely the winner's — actually converges.
-// `maxBusyRetries` bounds that so a stack that never frees up throws instead of
-// looping forever. `log` (optional) reports progress for the ECS task's stdout.
+// Callers must first turn away the delete-only dead-end statuses (see
+// publish-static UNUSABLE_STACK_STATUSES), so an isStackBusyError here is
+// only ever a concurrent republish. On that race we wait the other task's
+// operation out and retry our OWN UpdateStack, so this run's template — not
+// merely the winner's — converges; `maxBusyRetries` bounds the wait.
 async function convergeStackUpdate({
   stackName,
   templateBody,
@@ -248,10 +245,8 @@ async function convergeStackUpdate({
   pollIntervalMs,
   timeoutMs,
 }) {
-  // The freshest state seen just before our own UpdateStack, seeded as `prior`
-  // for the converge wait. After a wait-out it advances to the winner's
-  // settled state, so a stale read of the WINNER'S result can't resolve our
-  // wait early either.
+  // The read just before our own UpdateStack, passed as `prior` to the
+  // converge wait; a wait-out advances it to the other task's settled state.
   let preUpdate = existing;
   for (let attempt = 0; ; attempt++) {
     let started;
