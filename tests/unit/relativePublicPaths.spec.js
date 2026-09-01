@@ -16,7 +16,6 @@ test.describe('public asset paths stay document-relative', () => {
         // Tag '101' is a real definition in patterns.json's first group.
         const url = LayerGeologic.getUrl('pattern', '101')
         expect(url.startsWith('public/')).toBe(true)
-        expect(url.startsWith('/public')).toBe(false)
     })
 
     test('LayerGeologic.getBaseUrl returns empty string for a group with no baseUrl', () => {

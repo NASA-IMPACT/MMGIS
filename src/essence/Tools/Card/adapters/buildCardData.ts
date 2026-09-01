@@ -40,6 +40,7 @@ export function resolveImageUrl(
     missionPath: string | null,
 ): string {
     if (!image) return ''
+    if (typeof image !== 'string') return ''
     if (/^(https?:|data:)/i.test(image)) return image
     const rooted = image.startsWith('/')
     const rebased = rooted ? image.slice(1) : image

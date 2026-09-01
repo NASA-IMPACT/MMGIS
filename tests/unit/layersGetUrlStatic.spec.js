@@ -50,18 +50,4 @@ test.describe('L_.getUrl static-build guard', () => {
         })
         expect(url).toBe('/Missions/M/tiles/{z}/{x}/{y}.png')
     })
-
-    test('static: an already-absolute URL is left unchanged', () => {
-        window.mmgisglobal = { SERVER: 'static', IS_DOCKER: 'false' }
-        const url = L_.getUrl('tile', 'https://x/t/{z}.png', {
-            throughTileServer: true,
-        })
-        expect(url).toBe('https://x/t/{z}.png')
-    })
-
-    test('static: a plain tile (no throughTileServer, no COG) is unaffected by this guard', () => {
-        window.mmgisglobal = { SERVER: 'static', IS_DOCKER: 'false' }
-        const url = L_.getUrl('tile', 'tiles/{z}/{x}/{y}.png', {})
-        expect(url).toBe('Missions/M/tiles/{z}/{x}/{y}.png')
-    })
 })

@@ -48,6 +48,7 @@ const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 // 404. Any other already-rooted value passes through unchanged.
 export function buildPreviewSrc(value, mission, base) {
     if (!value) return '';
+    if (typeof value !== 'string') return '';
     if (/^(https?:|data:)/i.test(value)) return value;
     const rooted = value.startsWith('/');
     const rebased = rooted ? value.slice(1) : value;

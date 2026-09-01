@@ -196,7 +196,7 @@ var Viewer_ = {
         this.imageIntro.append(introMessage)
 
         this.lookupPath =
-            'Missions/' + L_.mission + '/' + 'Data/mosaic_parameters.csv'
+            L_.missionPath + 'Data/mosaic_parameters.csv'
 
         buildToolBar()
 

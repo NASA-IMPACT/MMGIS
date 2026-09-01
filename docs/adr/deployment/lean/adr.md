@@ -75,7 +75,7 @@ Each published dashboard is provisioned as a **CloudFormation stack**, created b
 
 - **One S3 bucket.** Holds the dashboard's JS bundle, the baked mission config, and a copy of the mission's static assets (images, icons) — copied at publish from the shared admin asset bucket and referenced as a document-relative `assets/…` key (under a customer prefix the browser URL is `<prefix>/assets/…`), so the dashboard is self-contained. No per-dashboard *layer data* (tiles, COGs, DEMs): that resolves to external URLs.
 - **One CloudFront distribution.** Default origin is the bucket. The distribution's default domain name (`d<n>.cloudfront.net`) is the dashboard's URL.
-- **One CloudFront Function** attached to the viewer-request event. JavaScript that checks the `Authorization: Basic` header against a baked password and returns `401` on mismatch. The password value is the same across every dashboard.
+- **One CloudFront Function** attached to the viewer-request event. JavaScript that checks the `Authorization: Basic` header against a baked password and returns `401` on mismatch (the password value is the same across every dashboard), then validates and strips the `X-Forwarded-Prefix` prefix from the request URI and redirects the slash-less entry URL to its trailing-slash form.
 - **No Route 53 record.** The dashboard is reachable at its CloudFront default name. If the eventual owner wants a friendly hostname, they CNAME their own DNS at the distribution as a separate, out-of-MMGIS step.
 
 **Why CloudFormation rather than direct SDK calls:**
