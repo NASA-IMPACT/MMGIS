@@ -2152,11 +2152,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Each sync mounts fresh clones: deck.gl leaves `internalState` set on a
      * layer it finalizes, so a mounted instance is single-use and the registry
      * holds descriptors rather than the instances on screen.
+     *
+     * Entries that cannot be cloned are left out. Under the deck.gl engine
+     * MMGIS still builds `data`, `image`, `video` and `velocity` layers as
+     * native Leaflet objects — ENGINE_LAYER_SUPPORT has no deck builder for
+     * them — and callers hand every registry entry to the active engine. Such
+     * an object carries no deck `id`, so {@link addLayer} files it under
+     * `undefined`; deck.gl could not render it in any case.
      */
     private _syncLayers(): void {
         const layers = this._comparisonEnabled
             ? []
-            : [...this._layers.values()].map((layer) => layer.clone({}) as Layer)
+            : [...this._layers.values()]
+                  .filter((layer) => typeof layer.clone === 'function')
+                  .map((layer) => layer.clone({}) as Layer)
         if (this._isOverlayMode) {
             this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })
         } else {
