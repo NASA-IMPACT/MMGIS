@@ -1,5 +1,5 @@
 import React from 'react'
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useState } from 'react'
 import type {
     ComparisonLayout,
     ComparisonMode,
@@ -151,20 +151,10 @@ export function ComparisonPanel({
         <div className="blocks-comparison">
             <header className="blocks-comparison__header">
                 <div className="blocks-comparison__brand">
-                    <svg
+                    <span
                         className="blocks-comparison__brand-icon"
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="24"
-                        height="24"
-                        viewBox="0 0 24 24"
-                        fill="none"
                         aria-hidden="true"
-                    >
-                        <path
-                            d="M19 3H14V5H19V18L14 12V21H19C19.5304 21 20.0391 20.7893 20.4142 20.4142C20.7893 20.0391 21 19.5304 21 19V5C21 3.89 20.1 3 19 3ZM10 18H5L10 12M10 3H5C3.89 3 3 3.89 3 5V19C3 19.5304 3.21071 20.0391 3.58579 20.4142C3.96086 20.7893 4.46957 21 5 21H10V23H12V1H10V3Z"
-                            fill="currentColor"
-                        />
-                    </svg>
+                    />
                     <span className="blocks-comparison__brand-title">Compare</span>
                 </div>
                 <div className="blocks-comparison__header-actions">
@@ -173,6 +163,8 @@ export function ComparisonPanel({
                         className="blocks-comparison__exit"
                         onClick={() => onClose?.()}
                     >
+                        {/* The way out, drawn as leaving rather than closing. */}
+                        <i className="mdi mdi-logout" aria-hidden="true" />
                         EXIT
                     </button>
                     <button
@@ -304,16 +296,12 @@ export function ComparisonPanel({
                             <LayoutButton
                                 layout="swipe"
                                 active={layout === 'swipe'}
-                                icon={
-                                    <i className="mdi mdi-arrow-split-vertical mdi-18px" />
-                                }
                                 label="Swipe comparison"
                                 onSelect={onLayoutChange}
                             />
                             <LayoutButton
                                 layout="sideBySide"
                                 active={layout === 'sideBySide'}
-                                icon={<SideBySideIcon />}
                                 label="Side-by-side comparison"
                                 onSelect={onLayoutChange}
                             />
@@ -328,49 +316,16 @@ export function ComparisonPanel({
 type LayoutButtonProps = {
     layout: ComparisonLayout
     active: boolean
-    /** The layout drawn as a glyph, sized to sit beside an 18px icon. */
-    icon: ReactNode
     label: string
     onSelect?: (layout: ComparisonLayout) => void
 }
 
-/** One of the two mutually exclusive ways to split the map. */
 /**
- * The two panes the side-by-side layout draws, meeting at the divider. Material
- * Design Icons' view glyphs all carry three columns, so the pair is drawn here.
+ * One of the two mutually exclusive ways to split the map. Its glyph is a
+ * masked box the stylesheet fills from the layout's own icon, so the mark takes
+ * the button's colour through every state.
  */
-function SideBySideIcon() {
-    return (
-        <svg
-            width="18"
-            height="18"
-            viewBox="0 0 18 18"
-            fill="none"
-            aria-hidden="true"
-        >
-            <rect
-                x="1.5"
-                y="3.5"
-                width="6"
-                height="11"
-                rx="1"
-                stroke="currentColor"
-                strokeWidth="1.5"
-            />
-            <rect
-                x="10.5"
-                y="3.5"
-                width="6"
-                height="11"
-                rx="1"
-                stroke="currentColor"
-                strokeWidth="1.5"
-            />
-        </svg>
-    )
-}
-
-function LayoutButton({ layout, active, icon, label, onSelect }: LayoutButtonProps) {
+function LayoutButton({ layout, active, label, onSelect }: LayoutButtonProps) {
     return (
         <button
             type="button"
@@ -382,7 +337,10 @@ function LayoutButton({ layout, active, icon, label, onSelect }: LayoutButtonPro
             aria-pressed={active}
             onClick={() => onSelect?.(layout)}
         >
-            {icon}
+            <span
+                className={`blocks-comparison__layout-icon blocks-comparison__layout-icon--${layout}`}
+                aria-hidden="true"
+            />
         </button>
     )
 }

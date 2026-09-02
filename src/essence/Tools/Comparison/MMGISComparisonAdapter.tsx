@@ -1,10 +1,15 @@
 import React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import moment from 'moment'
 import { ComparisonPanel } from './lib'
 import type { ComparisonLayout, ComparisonMode } from './lib/types'
 import { useVisibleLayers } from './adapters/useVisibleLayers'
 import { useGlobalTime } from './adapters/useGlobalTime'
-import { enableComparison, disableComparison } from './adapters/handlers'
+import {
+    enableComparison,
+    disableComparison,
+    setComparisonLabels,
+} from './adapters/handlers'
 
 /**
  * A request from whatever started the comparison for the panel to sit on one of
@@ -35,11 +40,21 @@ type Sides = {
     rightDate: string | null
 } | null
 
+/** What the map calls each side, either side of the divider. */
+type Labels = { left: string; right: string }
+
 /**
  * Joins layer ids into a comparable key. Layer names carry spaces and most
  * punctuation, so the separator is a NUL, which none of them can contain.
  */
 const ID_SEPARATOR = '\u0000'
+
+/**
+ * How a date is worded in the caption beside the divider. UTC and in the same
+ * form the panel's date rows use, so the caption over one half of the map and
+ * the row that set it read as the same instant.
+ */
+const dateLabel = (date: Date) => moment.utc(date).format('MMM D, YYYY')
 
 /**
  * Stateful adapter for the Comparison plugin. Owns the side selection in both
@@ -145,6 +160,37 @@ export function MMGISComparisonAdapter({
         }
     }, [mode, compareDate, swapped, layerIds, leftLayerId, rightLayerId])
 
+    /**
+     * What the map writes either side of the divider: the layer each side
+     * draws, or the date it is pinned to. Swap flips the wording along with the
+     * sides, so a caption always names the half of the map it sits over.
+     *
+     * Unlike `sides`, this reads the global instant. A caption is chrome over
+     * the finished render, so it can follow the timeline as the user moves it
+     * without any layer being rebuilt for the wording.
+     */
+    const labels: Labels = useMemo(() => {
+        const order = (first: string, second: string) =>
+            swapped
+                ? { left: second, right: first }
+                : { left: first, right: second }
+
+        if (mode === 'dates') {
+            return order(
+                time.current ? dateLabel(time.current) : '',
+                compareDate ? dateLabel(compareDate) : '',
+            )
+        }
+        const titleOf = (id: string | null) =>
+            (id && layers.find((layer) => layer.id === id)?.title) || ''
+        return order(titleOf(leftLayerId), titleOf(rightLayerId))
+    }, [mode, swapped, layers, leftLayerId, rightLayerId, time.current, compareDate])
+
+    // Read by the enable effect below, which must not re-run — and re-clone
+    // both sides — just because the wording changed.
+    const labelsRef = useRef(labels)
+    labelsRef.current = labels
+
     // Drive the core capability whenever the selection or the layout changes.
     // Core preserves the divider position across re-enables and rebuilds only
     // what a layout switch actually invalidates, so re-enabling on every change
@@ -157,13 +203,26 @@ export function MMGISComparisonAdapter({
             // the event bus and the deck adapter runs synchronously, so the
             // later of two rapid changes wins. Were any of them to become
             // genuinely asynchronous, that would have to be sequenced here.
-            void enableComparison({ ...sides, layout })
+            void enableComparison({
+                ...sides,
+                leftLabel: labelsRef.current.left,
+                rightLabel: labelsRef.current.right,
+                layout,
+            })
             enabledRef.current = true
         } else if (enabledRef.current) {
             void disableComparison()
             enabledRef.current = false
         }
     }, [sides, layout])
+
+    // Keep the captions current on their own. Declared after the effect above
+    // so a first enable has already put the chrome up by the time this runs,
+    // which is also why it can leave a comparison that is off alone.
+    useEffect(() => {
+        if (closedRef.current || !enabledRef.current) return
+        void setComparisonLabels(labels)
+    }, [labels.left, labels.right])
 
     // Tear down comparison if the panel unmounts while still active.
     useEffect(() => {

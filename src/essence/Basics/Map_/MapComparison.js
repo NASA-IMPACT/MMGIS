@@ -13,6 +13,7 @@
  * External consumers drive this entirely through the mmgisAPI event bus:
  *   mmgisAPI.request('map:comparison:enable', { leftLayers, rightLayers, layout })
  *   mmgisAPI.request('map:comparison:disable')
+ *   mmgisAPI.request('map:comparison:setLabels', { left, right })
  *   mmgisAPI.request('map:comparison:setLayout', { layout: 'sideBySide' })
  *   mmgisAPI.request('map:comparison:setDividerPosition', 0.5)
  *   mmgisAPI.on('map:comparison:dividerMoved', handler)
@@ -34,11 +35,16 @@ const _state = {
     enabled: false,
     layout: DEFAULT_LAYOUT,
     dividerPosition: 0.5,
-    left: { layerIds: [], date: null },
-    right: { layerIds: [], date: null },
+    left: { layerIds: [], date: null, label: '' },
+    right: { layerIds: [], date: null, label: '' },
 }
 
+/** A side with nothing chosen on it, and the shape `_state` holds per side. */
+const emptySide = () => ({ layerIds: [], date: null, label: '' })
+
 let _dividerEl = null
+let _overlayEl = null
+let _labelEls = { left: null, right: null }
 let _mouseDragMove = null
 let _mouseDragEnd = null
 let _touchDragMove = null
@@ -74,6 +80,7 @@ function init(engine) {
     provide('map:comparison:disable', () => disable())
     provide('map:comparison:setLeftSide', (p) => setLeftSide(p))
     provide('map:comparison:setRightSide', (p) => setRightSide(p))
+    provide('map:comparison:setLabels', (p) => setLabels(p))
     provide('map:comparison:setLayout', (p) => setLayout(p))
     provide('map:comparison:setDividerPosition', (p) => setDividerPosition(p))
     provide('map:comparison:getState', () => getState())
@@ -95,8 +102,8 @@ function _resetForEngineChange() {
     _destroyDivider()
 
     _state.enabled = false
-    _state.left = { layerIds: [], date: null }
-    _state.right = { layerIds: [], date: null }
+    _state.left = emptySide()
+    _state.right = emptySide()
 
     window.mmgisAPI?.emit('map:comparison:disabled', {})
 }
@@ -113,6 +120,8 @@ function _resetForEngineChange() {
  * @param {string[]} config.rightLayers - Layer IDs (MMGIS layer names) for the right side.
  * @param {string|null} [config.leftDate]  - ISO instant the left side is pinned to.
  * @param {string|null} [config.rightDate] - ISO instant the right side is pinned to.
+ * @param {string} [config.leftLabel]  - What the left side draws, named on the map.
+ * @param {string} [config.rightLabel] - What the right side draws, named on the map.
  * @param {'swipe'|'sideBySide'} [config.layout] - Defaults to the layout already in effect.
  */
 function enable({
@@ -120,6 +129,8 @@ function enable({
     rightLayers = [],
     leftDate = null,
     rightDate = null,
+    leftLabel = '',
+    rightLabel = '',
     layout,
 } = {}) {
     if (!_engine?.enableComparison) {
@@ -127,8 +138,8 @@ function enable({
         return
     }
 
-    _state.left = { layerIds: leftLayers, date: leftDate }
-    _state.right = { layerIds: rightLayers, date: rightDate }
+    _state.left = { layerIds: leftLayers, date: leftDate, label: leftLabel }
+    _state.right = { layerIds: rightLayers, date: rightDate, label: rightLabel }
     _state.layout = _resolveLayout(layout) ?? _state.layout
     if (!_state.enabled) _state.dividerPosition = 0.5
 
@@ -146,6 +157,7 @@ function enable({
 
     if (!_state.enabled) _createDivider()
     _applyDividerLayout()
+    _applyLabels()
 
     _state.enabled = true
 
@@ -154,6 +166,8 @@ function enable({
         rightLayers,
         leftDate,
         rightDate,
+        leftLabel,
+        rightLabel,
         layout: _state.layout,
     })
 }
@@ -210,14 +224,41 @@ function _resolveLayout(value) {
 
 /**
  * Mark the divider with the active layout. Side-by-side is a seam between two
- * panes rather than a wipe across one, and it reads as a different control.
+ * panes rather than a wipe across one, and it reads as a different control:
+ * its own glyph on the handle, and captions laid out for two panes rather than
+ * for one wipe.
+ *
+ * The handle's glyph is a mask the stylesheet points at one of the two icon
+ * files off the divider's own mark, so the two classes below are all that
+ * changes here.
  */
 function _applyDividerLayout() {
-    if (!_dividerEl) return
-    _dividerEl.classList.toggle(
-        'mmgis-comparison-divider--side-by-side',
-        _state.layout === 'sideBySide',
-    )
+    const sideBySide = _state.layout === 'sideBySide'
+    _dividerEl?.classList.toggle('mmgis-comparison-divider--side-by-side', sideBySide)
+    _overlayEl?.classList.toggle('mmgis-comparison-overlay--side-by-side', sideBySide)
+}
+
+/**
+ * Rename the two sides without touching what they draw.
+ *
+ * Captions are chrome over the finished render, not rendering config, so a
+ * consumer following its own timeline can refresh the wording without going
+ * back through `enable` and re-cloning both sides' layers for it.
+ *
+ * @param {object} labels
+ * @param {string} [labels.left]  - Wording for the left side; omitted leaves it.
+ * @param {string} [labels.right] - Wording for the right side; omitted leaves it.
+ */
+function setLabels({ left, right } = {}) {
+    if (typeof left === 'string') _state.left.label = left
+    if (typeof right === 'string') _state.right.label = right
+    _applyLabels()
+}
+
+/** Write each side's caption onto the map, if the chrome is up to carry it. */
+function _applyLabels() {
+    if (_labelEls.left) _labelEls.left.textContent = _state.left.label ?? ''
+    if (_labelEls.right) _labelEls.right.textContent = _state.right.label ?? ''
 }
 
 /** Disable comparison mode and restore the normal single-viewport view. */
@@ -228,38 +269,52 @@ function disable() {
     _destroyDivider()
 
     _state.enabled = false
-    _state.left = { layerIds: [], date: null }
-    _state.right = { layerIds: [], date: null }
+    _state.left = emptySide()
+    _state.right = emptySide()
 
     window.mmgisAPI?.emit('map:comparison:disabled', {})
 }
 
-/** Replace the left side's layer set (and optional date pin). */
-function setLeftSide({ layers = [], date = null } = {}) {
-    _state.left = { layerIds: layers, date }
+/** Replace the left side's layer set (and optional date pin and caption). */
+function setLeftSide({ layers = [], date = null, label = '' } = {}) {
+    _state.left = { layerIds: layers, date, label }
     if (_state.enabled) {
         enable({
             leftLayers: layers,
             rightLayers: _state.right.layerIds,
             leftDate: date,
             rightDate: _state.right.date,
+            leftLabel: label,
+            rightLabel: _state.right.label,
         })
     }
-    window.mmgisAPI?.emit('map:comparison:sidesUpdated', { side: 'left', layers, date })
+    window.mmgisAPI?.emit('map:comparison:sidesUpdated', {
+        side: 'left',
+        layers,
+        date,
+        label,
+    })
 }
 
-/** Replace the right side's layer set (and optional date pin). */
-function setRightSide({ layers = [], date = null } = {}) {
-    _state.right = { layerIds: layers, date }
+/** Replace the right side's layer set (and optional date pin and caption). */
+function setRightSide({ layers = [], date = null, label = '' } = {}) {
+    _state.right = { layerIds: layers, date, label }
     if (_state.enabled) {
         enable({
             leftLayers: _state.left.layerIds,
             rightLayers: layers,
             leftDate: _state.left.date,
             rightDate: date,
+            leftLabel: _state.left.label,
+            rightLabel: label,
         })
     }
-    window.mmgisAPI?.emit('map:comparison:sidesUpdated', { side: 'right', layers, date })
+    window.mmgisAPI?.emit('map:comparison:sidesUpdated', {
+        side: 'right',
+        layers,
+        date,
+        label,
+    })
 }
 
 /**
@@ -288,7 +343,18 @@ function setDividerPosition(pos) {
 function _applyDividerPosition(pos) {
     _state.dividerPosition = pos
     _engine?.setComparisonDivider?.(pos)
-    if (_dividerEl) _dividerEl.style.left = (pos * 100) + '%'
+    _drawDividerPosition()
+}
+
+/**
+ * Put the rule and its captions at the fraction the controller is holding. The
+ * captions are laid out off that one fraction, so they travel with the rule
+ * rather than being positioned a second time.
+ */
+function _drawDividerPosition() {
+    const percent = (_state.dividerPosition * 100) + '%'
+    if (_dividerEl) _dividerEl.style.left = percent
+    _overlayEl?.style.setProperty('--mmgis-comparison-position', percent)
 }
 
 /**
@@ -296,7 +362,11 @@ function _applyDividerPosition(pos) {
  * copied, so a caller cannot write through the snapshot into live state.
  */
 function getState() {
-    const side = ({ layerIds, date }) => ({ layerIds: [...layerIds], date })
+    const side = ({ layerIds, date, label }) => ({
+        layerIds: [...layerIds],
+        date,
+        label,
+    })
     return {
         enabled: _state.enabled,
         layout: _state.layout,
@@ -313,19 +383,50 @@ function isEnabled() {
 
 // ── Divider DOM ───────────────────────────────────────────────────────────────
 
+/**
+ * Raise the divider and the captions flanking it.
+ *
+ * The captions sit in an overlay of their own rather than inside the divider:
+ * the side-by-side layout puts each one in the top corner of the pane it names,
+ * which is a position in the container, not an offset from the rule. One
+ * element spanning the container therefore serves both layouts, and it takes no
+ * pointer events, so only the rule itself is draggable.
+ */
 function _createDivider() {
     if (!_engine) return
     const container = _engine.getContainer()
     if (!container) return
 
+    _overlayEl = document.createElement('div')
+    _overlayEl.className = 'mmgis-comparison-overlay'
+    _labelEls = { left: _createLabel('left'), right: _createLabel('right') }
+    _overlayEl.appendChild(_labelEls.left)
+    _overlayEl.appendChild(_labelEls.right)
+    container.appendChild(_overlayEl)
+
     _dividerEl = document.createElement('div')
     _dividerEl.className = 'mmgis-comparison-divider'
-    _dividerEl.style.left = (_state.dividerPosition * 100) + '%'
-    _applyDividerLayout()
+    const handle = document.createElement('div')
+    handle.className = 'mmgis-comparison-handle'
+    const glyph = document.createElement('span')
+    glyph.className = 'mmgis-comparison-handle__glyph'
+    handle.appendChild(glyph)
+    _dividerEl.appendChild(handle)
     container.appendChild(_dividerEl)
+
+    _applyDividerLayout()
+    // Both elements open at the position the controller is already holding,
+    // which the engine was handed before it drew anything.
+    _drawDividerPosition()
 
     _dividerEl.addEventListener('mousedown', _onMouseDown)
     _dividerEl.addEventListener('touchstart', _onTouchStart, { passive: false })
+}
+
+function _createLabel(side) {
+    const el = document.createElement('div')
+    el.className = `mmgis-comparison-label mmgis-comparison-label--${side}`
+    return el
 }
 
 function _destroyDivider() {
@@ -336,6 +437,11 @@ function _destroyDivider() {
         _clearTouchDrag()
         _dividerEl.parentNode?.removeChild(_dividerEl)
         _dividerEl = null
+    }
+    if (_overlayEl) {
+        _overlayEl.parentNode?.removeChild(_overlayEl)
+        _overlayEl = null
+        _labelEls = { left: null, right: null }
     }
 }
 
@@ -405,6 +511,7 @@ const MapComparison = {
     disable,
     setLeftSide,
     setRightSide,
+    setLabels,
     setLayout,
     setDividerPosition,
     getState,

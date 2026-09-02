@@ -30,6 +30,8 @@ let disableCalls: number
 let setCurrentCalls: Date[]
 /** Enables and disables in the order core received them. */
 let order: string[]
+/** Every re-wording of the two sides core was asked for. */
+let labelCalls: any[]
 /** What the visible-layer hook reports; reassign to simulate a layer event. */
 let visibleLayers: Layer[]
 /** Whether that hook has read yet; set false to model the gap before it has. */
@@ -44,10 +46,14 @@ let panelProps: any
 /** The most recent enable, i.e. what the map is currently drawing. */
 const lastEnable = () => enableCalls[enableCalls.length - 1]
 
+/** What the map is currently calling the two sides. */
+const lastLabels = () => labelCalls[labelCalls.length - 1]
+
 const load = async () => {
     vi.resetModules()
     enableCalls = []
     disableCalls = 0
+    labelCalls = []
     setCurrentCalls = []
     order = []
     visibleLayers = LAYERS
@@ -64,6 +70,10 @@ const load = async () => {
         disableComparison: async () => {
             disableCalls += 1
             order.push('disable')
+        },
+        setComparisonLabels: async (labels: unknown) => {
+            labelCalls.push(labels)
+            order.push('labels')
         },
     }))
     vi.doMock('../adapters/useVisibleLayers', () => ({
@@ -122,7 +132,38 @@ describe('MMGISComparisonAdapter dates mode', () => {
             rightLayers: ['co2', 'roads', 'ch4'],
             leftDate: null,
             rightDate: COMPARE.toISOString(),
+            leftLabel: 'Oct 31, 2024',
+            rightLabel: 'Jun 15, 2024',
             layout: 'swipe',
+        })
+    })
+
+    // The map says which date each half is showing, in UTC and in the wording
+    // the panel's own date rows use.
+    test('names each half of the map for the date it is showing', async () => {
+        await act(async () => { panelProps.onCompareDateChange(COMPARE) })
+
+        expect(lastLabels()).toEqual({
+            left: 'Oct 31, 2024',
+            right: 'Jun 15, 2024',
+        })
+    })
+
+    // Moving the timeline is exactly the case a re-enable must not serve, so
+    // the caption is re-worded on its own.
+    test('the timeline moving re-words the primary caption without re-enabling', async () => {
+        await act(async () => { panelProps.onCompareDateChange(COMPARE) })
+        const enablesBefore = enableCalls.length
+
+        globalCurrent = new Date('2024-09-02T00:00:00Z')
+        await act(async () => {
+            root.render(<MMGISComparisonAdapter />)
+        })
+
+        expect(enableCalls.length).toBe(enablesBefore)
+        expect(lastLabels()).toEqual({
+            left: 'Sep 2, 2024',
+            right: 'Jun 15, 2024',
         })
     })
 
@@ -235,8 +276,27 @@ describe('MMGISComparisonAdapter layers mode', () => {
             rightLayers: ['roads'],
             leftDate: null,
             rightDate: null,
+            leftLabel: 'CO₂',
+            rightLabel: 'Roads',
             layout: 'swipe',
         })
+    })
+
+    // The map names each half by the layer's title, not the id the dropdown
+    // carries, since the title is what the user picked it by.
+    test('names each half of the map for the layer it is drawing', async () => {
+        await act(async () => { panelProps.onRightLayerChange('roads') })
+
+        expect(lastLabels()).toEqual({ left: 'CO₂', right: 'Roads' })
+    })
+
+    // Swap moves the choices across the divider, so the captions cross with
+    // them and each one stays over the half it names.
+    test('swapping crosses the captions with the sides', async () => {
+        await act(async () => { panelProps.onRightLayerChange('roads') })
+        await act(async () => { panelProps.onSwap() })
+
+        expect(lastLabels()).toEqual({ left: 'Roads', right: 'CO₂' })
     })
 
     /** A second kebab click re-seeds the panel that is already open. */
