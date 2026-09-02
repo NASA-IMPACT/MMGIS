@@ -322,17 +322,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _warnedNonDeckLayers = new Set<string>()
 
     /**
-     * Whether the engine holds a real deck.gl layer under `id`. Warns once per
-     * id when it holds something else — see {@link updateLayer}.
+     * Whether `candidate` is a real deck.gl layer — the one thing this engine
+     * can hold, because every sync clones what it holds. Warns once per id
+     * when it is not; see {@link addLayer} and {@link updateLayer}.
      */
-    private _holdsDeckLayer(id: string, existing: unknown): boolean {
-        if (typeof (existing as Layer)?.clone === 'function') return true
-        if (existing != null && !this._warnedNonDeckLayers.has(id)) {
+    private _holdsDeckLayer(id: string, candidate: unknown): boolean {
+        if (typeof (candidate as Layer)?.clone === 'function') return true
+        if (candidate != null && !this._warnedNonDeckLayers.has(id)) {
             this._warnedNonDeckLayers.add(id)
             console.warn(
-                `DeckGLAdapter: layer "${id}" is not a deck.gl layer, so it cannot be ` +
-                `updated. It was built with Leaflet because this engine has no builder ` +
-                `for its type. The update was skipped.`
+                `DeckGLAdapter: layer "${id}" is not a deck.gl layer, so this engine ` +
+                `can neither hold nor update it. It was built with Leaflet because ` +
+                `this engine has no builder for its type. The call was skipped.`
             )
         }
         return false
@@ -1040,8 +1041,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /**
      * Add a pre-built deck.gl layer to the map. The layer's `id` property is
      * used as the registry key.
+     *
+     * Anything else is declined rather than registered. MMGIS still builds
+     * `data`, `image`, `video` and `velocity` layers with Leaflet under this
+     * engine, and toggling one on brings it here; held, it would break far
+     * more than itself, because every sync clones every registered layer and
+     * a Leaflet object has no `clone`.
      */
     addLayer(layer: Layer): void {
+        if (!this._holdsDeckLayer(layer?.id, layer)) return
         this._layers.set(layer.id, layer)
         this._syncLayers()
     }
