@@ -13,7 +13,7 @@
  *   2. read and validate X-Forwarded-Prefix (see trust model below);
  *      a missing or malformed header means: change nothing
  *   3. bare-prefix entry URL → 302 to the trailing-slash form, query
- *      string carried along (unsafe pairs dropped, see below)
+ *      string carried along (unsafe characters escaped, see below)
  *   4. prefixed request → strip the prefix so the S3 lookup is prefix-blind
  *
  * Trust model: the header is unauthenticated input. Anyone holding the
@@ -23,11 +23,16 @@
  * Stay ES5: the cloudfront-js-1.0 runtime has no let/const (use var), and
  * a unit test parses this body with espree at ES5 to keep it that way.
  *
- * Encoding: CloudFront appears to hand querystring values over still
- * percent-encoded (observed, undocumented). The redirect doesn't rest on
- * that: rebuilding the Location, it drops any pair whose key or value
- * carries a character that would corrupt the reassembly — a decoded "&"
- * or "#" loses its pair instead of forging a param break or fragment.
+ * Encoding: CloudFront hands querystring values over still percent-encoded.
+ * That is undocumented in prose, but AWS's own normalize-query-string-parameters
+ * example rebuilds a query string by raw concatenation of .value — correct
+ * only for wire-form values — and the restrictions doc's encoding section
+ * agrees. The redirect doesn't rest on it for delimiter safety: rebuilding
+ * the Location, it escapes any character that would corrupt the reassembly,
+ * so a decoded "&" or "#" becomes %26 or %23 rather than forging a param
+ * break or fragment. It does still rest on it for percent-ambiguity: "%" is
+ * left alone so encoded values survive byte-identical, which means a value
+ * delivered decoded and carrying a literal "%" reassembles ambiguously.
  */
 function handler(event) {
     var request = event.request;
@@ -82,23 +87,46 @@ function handler(event) {
             // Keys and values go into the Location raw, which reassembles
             // correctly only for characters percent-encoding would have
             // covered; anything else ('&', '#', an '=' in a key, a space,
-            // a control character) is dropped with its pair instead. The
-            // test is an unanchored search for a disallowed character, so
-            // it never leans on how '$' treats a trailing newline.
-            var UNSAFE_KEY = /[^A-Za-z0-9%\-_.~!$'()*+,;:@\/?]/;
-            var UNSAFE_VALUE = /[^A-Za-z0-9%\-_.~!$'()*+,;=:@\/?]/;
+            // a control character) is escaped into its %XX form here, so
+            // the pair survives instead of being dropped. '%' is inside
+            // the safe set, so an already-encoded value passes through
+            // byte-identical rather than double-encoding. The match is an
+            // unanchored run of disallowed characters — a run, so a
+            // surrogate pair encodes as the one character it is — which
+            // means it never leans on how '$' treats a trailing newline.
+            // A lone surrogate cannot be encoded at all and makes
+            // encodeURIComponent throw; that pair alone is dropped.
+            var UNSAFE_KEY_G = /[^A-Za-z0-9%\-_.~!$'()*+,;:@\/?]+/g;
+            var UNSAFE_VALUE_G = /[^A-Za-z0-9%\-_.~!$'()*+,;=:@\/?]+/g;
+            var escapeRun = function (run) {
+                return encodeURIComponent(run);
+            };
             var parts = [];
             for (var key in qs) {
-                if (UNSAFE_KEY.test(key)) continue;
+                var safeKey;
+                try {
+                    safeKey = key.replace(UNSAFE_KEY_G, escapeRun);
+                } catch (keyErr) {
+                    continue;
+                }
                 var param = qs[key];
                 var values =
                     param.multiValue && param.multiValue.length > 0
                         ? param.multiValue
                         : [param];
                 for (var i = 0; i < values.length; i++) {
-                    var val = values[i].value;
-                    if (UNSAFE_VALUE.test(val)) continue;
-                    parts.push(val === '' ? key : key + '=' + val);
+                    var safeVal;
+                    try {
+                        safeVal = values[i].value.replace(
+                            UNSAFE_VALUE_G,
+                            escapeRun
+                        );
+                    } catch (valErr) {
+                        continue;
+                    }
+                    parts.push(
+                        safeVal === '' ? safeKey : safeKey + '=' + safeVal
+                    );
                 }
             }
             var location = uri + '/';
