@@ -13,6 +13,13 @@
         "preferredPosition": "bottom",
         "modernLayoutSupport": true
     },
+    "defaults": {
+        "variables": {
+            "allowPlayback": true,
+            "shownTimeModes": ["YEAR", "MONTH", "DAY", "HOUR"],
+            "defaultTimeMode": "DAY"
+        }
+    },
     "config": {
         "rows": [
             {

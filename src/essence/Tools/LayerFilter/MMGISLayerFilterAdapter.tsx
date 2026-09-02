@@ -8,6 +8,7 @@ import type {
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { emitFilterChange } from './adapters/emitFilterChange'
+import { fitToMatches } from './adapters/fitToMatches'
 import { applyTheme } from './lib/engine'
 import { toEngineTheme } from './lib/utils/toEngineTheme'
 import { parseCatalog } from './lib/catalog/parseCatalog'
@@ -161,6 +162,61 @@ export function MMGISLayerFilterAdapter() {
             hasInteracted,
         )
     }, [selectedThemeId, result, selections, layerConfigs, hasInteracted])
+
+    // Move the map to what was matched. Filtering otherwise only narrows the
+    // layers list, so selecting an activation elsewhere in the world left the
+    // user on the default view with its layers loading off-screen.
+    //
+    // Gated on hasInteracted for the same reason the listed-updates are: on
+    // boot the default theme is auto-selected, and flying the map unprompted
+    // would override the mission's configured starting view.
+    const lastFittedRef = useRef<string>('')
+    useEffect(() => {
+        if (!hasInteracted || !result || !layerConfigs) return
+
+        const matched = result.layerKeys
+        if (matched.length === 0) {
+            // Nothing matched — stay put rather than framing an empty set.
+            lastFittedRef.current = ''
+            return
+        }
+
+        // Only the rows for matched layers carry a pairing worth reading, and
+        // only when their entry is the selected one.
+        const edgesByLayerUUID: Record<string, unknown> = {}
+        let entryGeometry: unknown
+        const matchedSet = new Set(matched)
+        for (const row of rows) {
+            if (!matchedSet.has(row.layerKey) || row.entry == null) continue
+            if (row.edge != null && !(row.layerKey in edgesByLayerUUID)) {
+                edgesByLayerUUID[row.layerKey] = row.edge
+            }
+            entryGeometry ??= row.entry.geometry
+        }
+
+        // Refit only when the destination could actually have changed;
+        // unrelated re-renders must not yank the map back.
+        const signature = JSON.stringify([
+            selectedThemeId,
+            [...matched].sort(),
+            selections,
+        ])
+        if (signature === lastFittedRef.current) return
+        lastFittedRef.current = signature
+
+        void fitToMatches({
+            matchedLayerUUIDs: matched,
+            edgesByLayerUUID,
+            entryGeometry,
+        })
+    }, [
+        hasInteracted,
+        result,
+        layerConfigs,
+        rows,
+        selections,
+        selectedThemeId,
+    ])
 
     const handleChange = useCallback(
         (filterId: string, value: string | string[] | GeocodeSelection | null) => {

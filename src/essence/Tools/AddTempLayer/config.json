@@ -8,6 +8,9 @@
         "title": "An 'Add layer from URL' form in a floating panel over the map. It starts hidden — reveal it with the core action 'plugins:show:AddTempLayerTool'; its close button hides it again. Added layers are session-only and lost on reload."
     },
     "hasVars": false,
+    "defaults": {
+        "variables": {}
+    },
     "name": "AddTempLayer",
     "toolbarPriority": 6,
     "paths": {

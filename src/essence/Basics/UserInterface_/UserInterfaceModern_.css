@@ -521,6 +521,18 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
     flex-direction: column;
     gap: var(--ui-float-gap);
     pointer-events: none;
+    /* An overlay zone must never outgrow the map it floats over. Without this a
+       panel holding tall content stretches the zone past the viewport, and every
+       descendant then resolves its height against an unbounded parent — so a
+       panel body set to scroll simply grows instead, and its overflow runs off
+       the bottom of the screen with no way to reach it. */
+    max-height: 100%;
+}
+
+/* Panels may shrink to fit the bounded zone; without this they keep their
+   content height and the clamp above never reaches the scroll container. */
+.ui-float-zone > .ui-panel {
+    min-height: 0;
 }
 
 /* Compact mode has no panel margin, so add outer gap on the zone instead */
@@ -609,4 +621,18 @@ body.ui-is-dragging .ui-modern-grid .ui-panel {
 .ui-modern-grid .ui-float-panel.ui-panel-transparent .ui-tool-card {
     overflow: visible;
     border-radius: 0;
+}
+
+/* Visible overflow above means this panel's body cannot be the scroll
+   container, so a tool with more content than the zone has room for has to
+   bound and scroll itself — and it can only do that if its card is allowed to
+   give up height.
+
+   Which cards actually give way is settled by flex's own automatic minimum
+   rather than anything named here: a card keeps min-height auto, so it cannot
+   shrink below its content's intrinsic minimum. A tool that scrolls internally
+   reports almost none, so it yields; one that does not — map controls, say —
+   reports its full height and stays rigid. */
+.ui-modern-grid .ui-float-panel.ui-panel-transparent .ui-tool-card {
+    flex-shrink: 1;
 }
