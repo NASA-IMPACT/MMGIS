@@ -292,7 +292,7 @@ test.describe('legend compositing in downloadSharePng', () => {
     }
     const composedBlob = new Blob(['composed'], { type: 'image/png' })
     const composed = { ...screenshot, blob: composedBlob, height: 700 }
-    const emptyModel = { missionName: null, timeLabel: null, rows: [] }
+    const emptyModel = { missionName: null, headerLines: [], rows: [] }
 
     test('composes by default and downloads the composed blob', async () => {
         const composeCalls = []
@@ -360,7 +360,7 @@ test.describe('legend compositing in downloadSharePdf', () => {
     }
     const composedBlob = new Blob(['composed'], { type: 'image/png' })
     const composed = { ...screenshot, blob: composedBlob, height: screenshot.height + 100 }
-    const emptyModel = { missionName: null, timeLabel: null, rows: [] }
+    const emptyModel = { missionName: null, headerLines: [], rows: [] }
 
     test('buildPdf receives the composed width/height, not the original', async () => {
         const buildArgs = []

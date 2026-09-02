@@ -66,7 +66,7 @@ const screenshot = {
 
 const gradientModel = {
     missionName: 'M20',
-    timeLabel: null,
+    headerLines: [],
     rows: [
         {
             kind: 'gradient',
@@ -79,7 +79,7 @@ const gradientModel = {
     ],
 }
 
-const emptyModel = { missionName: null, timeLabel: null, rows: [] }
+const emptyModel = { missionName: null, headerLines: [], rows: [] }
 
 test.describe('composeExportImage', () => {
     test('an empty model returns the screenshot untouched', async () => {

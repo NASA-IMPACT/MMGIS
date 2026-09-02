@@ -68,8 +68,6 @@ The only home for a layer's acquisition range is a pair of fields on the layer i
 
 `temporalExtentFor` in `src/essence/Basics/Layers_/Layers_.js` resolves the policy at call time through `layerTimePolicy.ts`, and the `layers:getTemporalExtent` bus request serves the result for one layer, by UUID or name, or for all layers at once. The Timeline and the Layers panel read it.
 
-Two limits:
-
 Two ways the fields get filled:
 
 - **By hand.** A mission admin types them into the Data Time Extent fields.
@@ -79,20 +77,26 @@ One limit: **resolving `now` discards that it was `now`.** The resolver returns 
 
 ## Period length: `time.interval` and `time.isPeriodic`
 
-A time-enabled layer may carry two more fields in its `time` block: `interval`, an ISO 8601 duration such as `P1D` or `P1M` giving the length of one period, and `isPeriodic`, whether the data repeats on that cadence. The VEDA STAC Source action writes them from the collection's `dashboard:time_interval` and `dashboard:is_periodic`. Nothing else writes them, and nothing on the frontend reads them yet, so no feature currently snaps the cursor to "June 2025" for a monthly layer. They are the fields such a feature would read.
+A time-enabled layer may carry two more fields in its `time` block: `interval`, an ISO 8601 duration such as `P1D` or `P1M` giving the length of one period, and `isPeriodic`, whether the data repeats on that cadence. The VEDA STAC Source action writes them from the collection's `dashboard:time_interval` and `dashboard:is_periodic`, and nothing else writes them. The export legend reads `interval`, snapping the cursor to the period holding it — `2025-06` for a monthly layer. Nothing reads `isPeriodic`.
 
 ## Export time
 
-Not captured today. `buildExportFilename` in `shareActions.ts` stamps the filename with `viewState.time`, which is the cursor, not the wall clock. The legend band drawn onto exports does not include the export time either.
+The export legend's header carries it: `new Date().toISOString()`, rendered through `time:formatTime`. Filenames do not — `buildExportFilename` in `shareActions.ts` stamps the filename with `viewState.time`, which is the cursor, not the wall clock.
 
-## What the export legend reads today
+## What the export legend shows
 
-`getExportLegendModel.ts` in `src/essence/Tools/_shared/legend/` builds one row per toggled-on layer with legend graphics and, for time-enabled layers, attaches a time range:
+`getExportLegendModel.ts` in `src/essence/Tools/_shared/legend/` builds the band: a header, then one row for every layer that is toggled on, painting (opacity above zero), not a header layer, and listed. A layer with no colour ramp and no categorical stops still gets a row, carrying its name and its date line alone.
 
-- `local` layers: their own `time.start` to `time.end`
-- `global` and `requery` layers: the Time Control's `startTime` to `endTime`, the window edges
-- layers whose URL has no time placeholder: no range
+The header is the mission name, then the cursor as `time:getCurrentFormatted` renders it, left out when that returns null, then `Exported <now>` — the wall-clock moment the export was made, printed as the raw ISO string when that moment cannot be formatted.
 
-`renderLegendBand.ts` draws the range under the row's name as a bare "start to end" line.
+Each row carries one date line, and every date line names what kind of date it is, so a bare `A → B` can never be read as an acquisition claim.
 
-Held against the sections above, that logic has known limits: it prints the window's right edge, which is never requested; it skips the appended-parameter layers because their URLs carry no placeholder; it shows no range for layers that are not time-enabled even when a Data Time Extent is authored; and a bare range carries no label saying whether it is a request or an acquisition claim.
+For a **time-enabled layer**, `time.enabled` is the whole test. The URL is not inspected: core appends `datetime=` and `starttime=` to URLs that carry no placeholder, so a placeholder test would drop most of a mission's stack. Such a layer's cursor is its own `time.end` when `time.type` is `local`, and the Time Control's `time:getCurrent` otherwise; its window start is its own `time.start`, or `time:getStart`. Then:
+
+- With a usable `time.interval`, the row shows the period holding the cursor, labelled **Showing**. `P1Y`, `P1M`, and `P1D` are the UTC year, month, or day containing it and print compactly: `Showing 2025-06`. Any other duration is stepped forward from the layer's resolved `dataStartTime` and prints as `Showing <start> → <end>`, where the end is the period's last second rather than the boundary the next period starts on. With no `dataStartTime` to anchor on, a cursor sitting before that anchor, or an interval that will not parse, the row falls through to the next rule. The period arithmetic lives in `layerPeriod.ts`, on top of the ISO-duration parsing core owns in `layerTimePolicy.ts`.
+- Otherwise the row shows the span the map actually requested, **Requested** `<window start> → <cursor>` — or `Requested up to <cursor>` when the window start is missing or sits within a day of 1970-01-01, which is where Point mode puts it.
+- Without a cursor, the row shows no date line.
+
+A layer that is **not time-enabled** shows its Data Time Extent, resolved for every layer in one `layers:getTemporalExtent` call: `Collected <start> → <end>`, or `Collected from <start>` / `Collected until <end>` for a half-open extent. No extent means no date line.
+
+Every timestamp on the band goes through `time:formatTime`, so the dates read the way the mission's own time UI writes them; the compact calendar labels are periods rather than timestamps and are printed as they are. `renderLegendBand.ts` draws each date line under its row's name, and the header lines under the mission name.

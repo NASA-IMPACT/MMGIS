@@ -49,23 +49,53 @@ type Ctx2D = Pick<
     | 'restore'
 > & { fillStyle: unknown; font: string; textBaseline: CanvasTextBaseline }
 
-// The line a row's time range occupies under its title, for the rows that
-// carry one — the draw pass advances by exactly this much before the row's
-// body, so measure and draw agree on where the row ends.
-const timeRangeHeight = (row: ExportLegendRow, scale: number): number =>
-    row.timeRange ? (LABEL_TEXT + LINE_GAP) * scale : 0
+// The header's lines in draw order: the mission name, then whatever the
+// model worded — the renderer prints them without knowing what any of them
+// says.
+type HeaderLine = { text: string; size: number; weight: string; color: string }
+
+const headerLinesOf = (model: ExportLegendModel): HeaderLine[] => {
+    const lines: HeaderLine[] = []
+    if (model.missionName) {
+        lines.push({
+            text: model.missionName,
+            size: HEADER_TEXT,
+            weight: 'bold',
+            color: '#111111',
+        })
+    }
+    for (const text of model.headerLines) {
+        lines.push({ text, size: LABEL_TEXT, weight: '', color: '#444444' })
+    }
+    return lines
+}
+
+const headerHeight = (lines: HeaderLine[], scale: number): number =>
+    lines.length === 0
+        ? 0
+        : lines.reduce(
+              (h, line, i) =>
+                  h + (i > 0 ? LINE_GAP * scale : 0) + line.size * scale,
+              0,
+          ) + ROW_GAP * scale
+
+// The line a row's date occupies under its title, for the rows that carry
+// one — the draw pass advances by exactly this much before the row's body,
+// so measure and draw agree on where the row ends.
+const dateLineHeight = (row: ExportLegendRow, scale: number): number =>
+    row.dateLine ? (LINE_GAP + LABEL_TEXT) * scale : 0
 
 const rowHeight = (row: ExportLegendRow, scale: number): number => {
-    const time = timeRangeHeight(row, scale)
+    const head = TITLE_TEXT * scale + dateLineHeight(row, scale)
     if (row.kind === 'gradient') {
-        return (
-            time +
-            (TITLE_TEXT + LINE_GAP + BAR_HEIGHT + LINE_GAP + LABEL_TEXT) * scale
-        )
+        return head + (LINE_GAP + BAR_HEIGHT + LINE_GAP + LABEL_TEXT) * scale
     }
+    // A plain row is its title and its date line: there is no graphic under
+    // them to leave room for.
+    if (row.kind === 'plain') return head
     // Categorical: title line + one swatch line (swatches wrap at draw time;
     // wrapping adds lines, so measure with the same wrap the draw pass uses).
-    return time + (TITLE_TEXT + LINE_GAP + SWATCH) * scale
+    return head + (LINE_GAP + SWATCH) * scale
 }
 
 // The widest a single category label can render, clipped so that even alone
@@ -106,9 +136,7 @@ export const measureLegendBand = (
 ): number => {
     if (model.rows.length === 0) return 0
     let h = PAD * scale
-    if (model.missionName) {
-        h += (HEADER_TEXT + ROW_GAP) * scale
-    }
+    h += headerHeight(headerLinesOf(model), scale)
     for (const row of model.rows) {
         h += rowHeight(row, scale)
         if (row.kind === 'categorical') {
@@ -167,27 +195,35 @@ export const drawLegendBand = (
     const textMaxWidth = width - 2 * left
     let y = yTop + PAD * scale
 
-    // The mission name alone: the band carries no single time, because each
-    // row's own range is the only time claim that holds for that row.
-    if (model.missionName) {
-        ctx.fillStyle = '#111111'
-        ctx.font = FONT(HEADER_TEXT, scale, 'bold')
-        ctx.fillText(clipText(ctx, model.missionName, textMaxWidth), left, y)
-        y += (HEADER_TEXT + ROW_GAP) * scale
-    }
+    const header = headerLinesOf(model)
+    header.forEach((line, i) => {
+        if (i > 0) y += LINE_GAP * scale
+        ctx.fillStyle = line.color
+        ctx.font = FONT(line.size, scale, line.weight)
+        ctx.fillText(clipText(ctx, line.text, textMaxWidth), left, y)
+        y += line.size * scale
+    })
+    if (header.length > 0) y += ROW_GAP * scale
 
     for (const row of model.rows) {
         ctx.fillStyle = '#111111'
         ctx.font = FONT(TITLE_TEXT, scale, 'bold')
         ctx.fillText(clipText(ctx, row.title, textMaxWidth), left, y)
-        y += (TITLE_TEXT + LINE_GAP) * scale
+        y += TITLE_TEXT * scale
 
-        if (row.timeRange) {
+        if (row.dateLine) {
+            y += LINE_GAP * scale
             ctx.fillStyle = '#444444'
             ctx.font = FONT(LABEL_TEXT, scale)
-            ctx.fillText(clipText(ctx, row.timeRange, textMaxWidth), left, y)
-            y += (LABEL_TEXT + LINE_GAP) * scale
+            ctx.fillText(clipText(ctx, row.dateLine, textMaxWidth), left, y)
+            y += LABEL_TEXT * scale
         }
+
+        if (row.kind === 'plain') {
+            y += ROW_GAP * scale
+            continue
+        }
+        y += LINE_GAP * scale
 
         if (row.kind === 'gradient') {
             const barW = Math.min(BAR_WIDTH * scale, width - 2 * left)

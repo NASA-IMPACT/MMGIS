@@ -276,6 +276,15 @@ export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
 }
 
 /**
+ * The time cursor as core holds it: an ISO string, unformatted, for callers
+ * that need to do arithmetic on it rather than print it. Null when time is
+ * disabled or not yet seeded.
+ */
+export const mmgisGetCurrentTime = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getCurrent')
+}
+
+/**
  * The current time already rendered through the mission's configured time
  * format (`L_.configData.time.format`), so a header displaying it matches
  * what TimeControl's own UI shows rather than a raw ISO string. Null when
@@ -302,11 +311,6 @@ export const mmgisFormatTime = (
 /** The global time cursor's window start; null until time is seeded. */
 export const mmgisGetTimeStart = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('time:getStart')
-}
-
-/** The global time cursor's window end; null until time is seeded. */
-export const mmgisGetTimeEnd = (): Promise<string | null> => {
-    return mmgisRequestIfProvided<string>('time:getEnd')
 }
 
 /**
