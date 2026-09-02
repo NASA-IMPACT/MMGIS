@@ -11,10 +11,19 @@ import { createLogger } from '../Logger_/Logger_'
 const logger = createLogger('ToolMetadataUtils')
 
 // pre/tools.js is generated at server start and gitignored, so a bundle can be
-// built against a copy written before the registry carried ids at all. Falling
-// back to derivation there costs a hyphenated id its declaration; reading a
-// property off undefined would take every tool's metadata down with it.
+// built against a copy written before the registry carried ids at all. Reading
+// a property off undefined would take every tool's metadata down with it, and
+// the derivation each id falls back to instead quietly renames every tool whose
+// declared id is not its lowercased binding — so say so once. Regenerating the
+// registry is the fix, and nothing further down the line can tell you that.
 const toolIds = generatedToolIds || {}
+if (!generatedToolIds) {
+    logger.warn(
+        'The generated tool registry carries no toolIds, so tool ids are ' +
+        'being derived from module bindings. Restart the server to ' +
+        'regenerate src/pre/tools.js.'
+    )
+}
 
 
 /**
