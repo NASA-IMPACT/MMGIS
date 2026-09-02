@@ -1,7 +1,7 @@
 // "Add layer from URL" form card — rendered in place inside the floating
 // panel the layout assigns; the panel system owns placement.
 //
-// USWDS --theme-* tokens only; fallbacks mirror the disasters theme so the
+// USWDS --theme-* tokens only; fallbacks mirror the horizon theme so the
 // card still reads correctly if a brand stylesheet hasn't loaded.
 
 .blocks-add-layer-modal {
@@ -16,30 +16,31 @@
         overflow-wrap: anywhere;
         background: var(--theme-color-white, #ffffff);
         border: var(--theme-border-width-sm, 1px) solid
-            var(--theme-color-base-lighter, #dfe1e2);
+            var(--theme-color-base-lighter, #e3e3e3);
         border-radius: var(--theme-radius-0, 0);
-        color: var(--theme-color-ink, #1c1d1f);
-        font-family: var(--theme-font-ui);
+        color: var(--theme-color-ink, #17171b);
+        font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue',
+            sans-serif);
     }
 
     &__header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: var(--theme-spacing-1, 8px);
+        gap: var(--theme-spacing-1, 0.5rem);
         min-width: 0;
-        padding: var(--theme-spacing-2, 16px) var(--theme-spacing-205, 20px);
+        padding: var(--theme-spacing-2, 1rem) var(--theme-spacing-205, 1.25rem);
         border-bottom: var(--theme-border-width-sm, 1px) solid
-            var(--theme-color-base-lighter, #dfe1e2);
+            var(--theme-color-base-lighter, #e3e3e3);
     }
 
     &__title {
         display: flex;
         align-items: center;
-        gap: var(--theme-spacing-105, 12px);
+        gap: var(--theme-spacing-105, 0.75rem);
         min-width: 0;
-        color: var(--theme-color-ink, #1c1d1f);
-        font-size: var(--theme-font-size-sm, 16px);
+        color: var(--theme-color-ink, #17171b);
+        font-size: var(--theme-font-size-sm, 0.99rem);
         font-weight: var(--theme-font-weight-bold, 700);
 
         svg {
@@ -52,23 +53,23 @@
         flex: none;
         align-items: center;
         justify-content: center;
-        padding: var(--theme-spacing-05, 4px);
+        padding: var(--theme-spacing-05, 0.25rem);
         background: transparent;
         border: none;
         border-radius: var(--theme-radius-0, 0);
-        color: var(--theme-color-base, #71767a);
+        color: var(--theme-color-base, #77777a);
         cursor: pointer;
         transition:
             background 0.12s ease,
             color 0.12s ease;
 
         &:hover {
-            background: var(--theme-color-base-lightest, #f1f3f6);
+            background: var(--theme-color-base-lightest, #f6f6f6);
         }
 
         &:focus-visible {
             outline: var(--theme-border-width-md, 2px) solid
-                var(--theme-color-primary, #0e7482);
+                var(--theme-color-primary, #1c67e3);
             outline-offset: 2px;
         }
     }
@@ -76,28 +77,28 @@
     &__body {
         display: flex;
         flex-direction: column;
-        gap: var(--theme-spacing-205, 20px);
+        gap: var(--theme-spacing-205, 1.25rem);
         min-width: 0;
-        padding: var(--theme-spacing-205, 20px);
+        padding: var(--theme-spacing-205, 1.25rem);
     }
 
     &__help {
         margin: 0;
-        color: var(--theme-color-ink, #1c1d1f);
-        font-size: var(--theme-font-size-2xs, 14px);
-        line-height: var(--theme-line-height-5, 1.62);
+        color: var(--theme-color-ink, #17171b);
+        font-size: var(--theme-font-size-2xs, 0.87rem);
+        line-height: var(--theme-line-height-5, 1.6);
     }
 
     &__field {
         display: flex;
         flex-direction: column;
-        gap: var(--theme-spacing-05, 4px);
+        gap: var(--theme-spacing-05, 0.25rem);
         min-width: 0;
     }
 
     &__label {
-        color: var(--theme-color-base, #71767a);
-        font-size: var(--theme-font-size-3xs, 12px);
+        color: var(--theme-color-base, #77777a);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
         font-weight: var(--theme-font-weight-semibold, 600);
     }
 
@@ -111,15 +112,17 @@
         box-sizing: border-box;
         width: 100%;
         min-width: 0;
-        height: var(--theme-spacing-5, 40px);
-        padding: var(--theme-spacing-05, 4px) var(--theme-spacing-105, 12px);
-        background: var(--theme-color-base-lightest, #f1f3f6);
+        height: var(--theme-spacing-5, 2.5rem);
+        padding: var(--theme-spacing-05, 0.25rem)
+            var(--theme-spacing-105, 0.75rem);
+        background: var(--theme-color-base-lightest, #f6f6f6);
         border: var(--theme-border-width-sm, 1px) solid
-            var(--theme-color-base-lighter, #dfe1e2);
+            var(--theme-color-base-lighter, #e3e3e3);
         border-radius: var(--theme-radius-0, 0);
-        color: var(--theme-color-ink, #1c1d1f);
-        font-family: var(--theme-font-ui);
-        font-size: var(--theme-font-size-2xs, 14px);
+        color: var(--theme-color-ink, #17171b);
+        font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue',
+            sans-serif);
+        font-size: var(--theme-font-size-2xs, 0.87rem);
         outline: none;
         transition:
             background 0.12s ease,
@@ -127,37 +130,37 @@
             box-shadow 0.12s ease;
 
         &::placeholder {
-            color: var(--theme-color-base-light, #a9aeb1);
+            color: var(--theme-color-base-light, #b9b9bb);
         }
 
         &:hover {
-            border-color: var(--theme-color-base-light, #a9aeb1);
+            border-color: var(--theme-color-base-light, #b9b9bb);
         }
 
         // The field lifts off its tinted resting fill while it holds focus.
         &:focus {
             background: var(--theme-color-white, #ffffff);
-            border-color: var(--theme-color-primary, #0e7482);
-            box-shadow: 0 0 0 3px var(--theme-color-primary, #0e7482);
+            border-color: var(--theme-color-primary, #1c67e3);
+            box-shadow: 0 0 0 3px var(--theme-color-primary, #1c67e3);
         }
 
         &--error {
-            border-color: var(--theme-color-secondary, #c91b6e);
+            border-color: var(--theme-color-secondary, #f64137);
 
             &:hover,
             &:focus {
-                border-color: var(--theme-color-secondary, #c91b6e);
+                border-color: var(--theme-color-secondary, #f64137);
             }
 
             &:focus {
-                box-shadow: 0 0 0 3px var(--theme-color-secondary, #c91b6e);
+                box-shadow: 0 0 0 3px var(--theme-color-secondary, #f64137);
             }
         }
     }
 
     &__error {
-        color: var(--theme-color-secondary, #c91b6e);
-        font-size: var(--theme-font-size-3xs, 12px);
+        color: var(--theme-color-secondary, #f64137);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
         // The message can include a long example URL — wrap it instead of
         // overflowing the dialog.
         overflow-wrap: anywhere;
@@ -167,15 +170,15 @@
     &__behaviour {
         display: flex;
         flex-direction: column;
-        gap: var(--theme-spacing-1, 8px);
+        gap: var(--theme-spacing-1, 0.5rem);
         min-width: 0;
-        padding: var(--theme-spacing-2, 16px);
+        padding: var(--theme-spacing-2, 1rem);
         // The callout's rule is the brand's primary at half strength — a
         // mix rather than a lighter grade, which reads as its own hue.
         border: var(--theme-border-width-sm, 1px) dashed
             color-mix(
                 in srgb,
-                var(--theme-color-primary, #0e7482) 50%,
+                var(--theme-color-primary, #1c67e3) 50%,
                 transparent
             );
         border-radius: var(--theme-radius-0, 0);
@@ -183,15 +186,15 @@
 
     &__behaviour-title {
         margin: 0;
-        color: var(--theme-color-ink, #1c1d1f);
-        font-size: var(--theme-font-size-2xs, 14px);
+        color: var(--theme-color-ink, #17171b);
+        font-size: var(--theme-font-size-2xs, 0.87rem);
         font-weight: var(--theme-font-weight-semibold, 600);
     }
 
     &__behaviour-list {
         display: flex;
         flex-direction: column;
-        gap: var(--theme-spacing-05, 4px);
+        gap: var(--theme-spacing-05, 0.25rem);
         margin: 0;
         padding: 0;
         list-style: none;
@@ -199,10 +202,10 @@
         li {
             display: flex;
             align-items: flex-start;
-            gap: var(--theme-spacing-1, 8px);
+            gap: var(--theme-spacing-1, 0.5rem);
             min-width: 0;
-            color: var(--theme-color-base-dark, #565c65);
-            font-size: var(--theme-font-size-2xs, 14px);
+            color: var(--theme-color-base-dark, #58585b);
+            font-size: var(--theme-font-size-2xs, 0.87rem);
             line-height: var(--theme-line-height-4, 1.5);
 
             // Middot markers, so the bullet aligns with the first line of a
@@ -210,7 +213,7 @@
             &::before {
                 content: '\00B7';
                 flex: none;
-                color: var(--theme-color-base, #71767a);
+                color: var(--theme-color-base, #77777a);
             }
         }
     }
@@ -225,25 +228,26 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        min-height: var(--theme-spacing-5, 40px);
-        padding: 0 var(--theme-spacing-3, 24px);
-        background: var(--theme-color-primary, #0e7482);
+        min-height: var(--theme-spacing-5, 2.5rem);
+        padding: 0 var(--theme-spacing-3, 1.5rem);
+        background: var(--theme-color-primary, #1c67e3);
         border: none;
         border-radius: var(--theme-radius-0, 0);
         color: var(--theme-color-white, #ffffff);
-        font-family: var(--theme-font-ui);
-        font-size: var(--theme-font-size-2xs, 14px);
+        font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue',
+            sans-serif);
+        font-size: var(--theme-font-size-2xs, 0.87rem);
         font-weight: var(--theme-font-weight-semibold, 600);
         cursor: pointer;
         transition: background 0.12s ease;
 
         &:hover {
-            background: var(--theme-color-primary-dark, #0d313d);
+            background: var(--theme-color-primary-dark, #0b3d91);
         }
 
         &:focus-visible {
             outline: var(--theme-border-width-md, 2px) solid
-                var(--theme-color-primary, #0e7482);
+                var(--theme-color-primary, #1c67e3);
             outline-offset: 2px;
         }
 
@@ -252,7 +256,7 @@
             cursor: not-allowed;
 
             &:hover {
-                background: var(--theme-color-primary, #0e7482);
+                background: var(--theme-color-primary, #1c67e3);
             }
         }
     }
