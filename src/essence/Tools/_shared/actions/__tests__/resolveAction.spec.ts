@@ -57,13 +57,13 @@ describe('resolveAction', () => {
 
         // Still emitted verbatim — a bare event name is legal.
         expect(emit).toHaveBeenCalledWith('refresh', undefined)
-        // But it reaches no `plugin:<toolId>:` listener, so it is called out
+        // But it reaches no `plugin:<pluginId>:` listener, so it is called out
         // and the warning names the form the author most likely wanted.
         expect(warn).toHaveBeenCalledWith(
             expect.stringContaining('"refresh" has no namespace'),
         )
         expect(warn).toHaveBeenCalledWith(
-            expect.stringContaining('plugin:<toolId>:refresh'),
+            expect.stringContaining('plugin:<pluginId>:refresh'),
         )
     })
 

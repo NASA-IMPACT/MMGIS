@@ -70,7 +70,7 @@
                     {
                         "field": "variables.actionButtonLink",
                         "name": "Button Link",
-                        "description": "An external http(s) URL (opened in a new tab); one of 'panels:show:<panelId>', 'panels:hide:<panelId>', 'plugins:show:<pluginId>', 'plugins:hide:<pluginId>' (e.g. 'panels:hide:left-panel', 'plugins:show:draw'); or a custom event name, which is emitted as-is. Event names should be namespaced (e.g. 'plugin:title:refresh'). Leave empty to hide the button.",
+                        "description": "An external http(s) URL (opened in a new tab); one of 'panels:show:<panelId>', 'panels:hide:<panelId>', 'plugins:show:<pluginId>', 'plugins:hide:<pluginId>' (e.g. 'panels:hide:left-panel', 'plugins:show:chart'); or a custom event name, which is emitted as-is. Event names should be namespaced (e.g. 'plugin:title:refresh'). Leave empty to hide the button.",
                         "type": "text",
                         "width": 6
                     }

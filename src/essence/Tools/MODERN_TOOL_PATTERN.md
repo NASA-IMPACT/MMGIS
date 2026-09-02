@@ -149,11 +149,12 @@ function separateFromMMGIS() {
 
 ## Configuration (`config.json`)
 
-If your tool requires specific placement options, add a `metadata` object to your tool's `config.json`:
+Declare the tool's `id` in its `config.json`, and add a `metadata` object if it needs specific placement options:
 
 ```json
 {
   "name": "MyTool",
+  "id": "my-tool",
   "description": "Short description of what this tool does",
   "defaultIcon": "clock-outline",
   "paths": {
@@ -168,3 +169,5 @@ If your tool requires specific placement options, add a `metadata` object to you
   }
 }
 ```
+
+`id` must match `/^[a-z][a-z0-9-]*$/` and be unique across tools; the build refuses to generate the tool registry otherwise. It is the tool's identity everywhere but the import: the key under which its configured `variables` resolve, the target `plugins:show:my-tool` takes, the prefix on the bus handle the controller injects as `this.api` (`plugin:my-tool:ready`), and the `pluginId` its teardown announces. The `paths` key beside it names the generated import binding and nothing else.

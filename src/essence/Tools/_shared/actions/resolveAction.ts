@@ -100,14 +100,15 @@ export const resolveAction = async (action?: string): Promise<void> => {
 
     // A name carrying no namespace is emitted exactly as written, which is
     // what the string asks for but rarely what the author meant: every tool
-    // publishes under `plugin:<toolId>:`, so a bare name reaches none of them
-    // and lands on a channel nothing subscribes to. Emit it anyway — a bare
-    // event name is legal — but say so, because the alternative is a button
-    // that looks wired up and does nothing.
+    // publishes under `plugin:<pluginId>:` — the same declared id the
+    // `plugins:` actions above take as their target — so a bare name reaches
+    // none of them and lands on a channel nothing subscribes to. Emit it
+    // anyway — a bare event name is legal — but say so, because the
+    // alternative is a button that looks wired up and does nothing.
     if (!action.includes(':')) {
         console.warn(
             `[resolveAction] "${action}" has no namespace and is emitted verbatim. ` +
-                `A tool's own event needs its full name, e.g. "plugin:<toolId>:${action}".`,
+                `A tool's own event needs its full name, e.g. "plugin:<pluginId>:${action}".`,
         )
     }
 

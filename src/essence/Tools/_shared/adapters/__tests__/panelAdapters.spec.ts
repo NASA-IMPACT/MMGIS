@@ -68,18 +68,18 @@ describe('panel adapters', () => {
     })
 
     test('setPluginState passes the pluginId and state', async () => {
-        await mmgisSetPluginState('DrawTool', 'hidden')
-        expect(request).toHaveBeenCalledWith('plugins:setState', { pluginId: 'DrawTool', state: 'hidden' })
+        await mmgisSetPluginState('draw', 'hidden')
+        expect(request).toHaveBeenCalledWith('plugins:setState', { pluginId: 'draw', state: 'hidden' })
     })
 
     test('showPlugin passes the pluginId', async () => {
-        await mmgisShowPlugin('DrawTool')
-        expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'DrawTool' })
+        await mmgisShowPlugin('draw')
+        expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'draw' })
     })
 
     test('hidePlugin passes the pluginId', async () => {
-        await mmgisHidePlugin('DrawTool')
-        expect(request).toHaveBeenCalledWith('plugins:hide', { pluginId: 'DrawTool' })
+        await mmgisHidePlugin('draw')
+        expect(request).toHaveBeenCalledWith('plugins:hide', { pluginId: 'draw' })
     })
 
     test('a command falls back to layout-inactive when core has no handler', async () => {

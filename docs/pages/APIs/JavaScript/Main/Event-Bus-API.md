@@ -158,9 +158,18 @@ anything there right now.
 
 ## Plugin Scoped API
 
-MMGIS automatically injects a scoped API into each tool as `this.api`. This API automatically prefixes event and provider names with `plugin:{pluginId}:`, where `pluginId` is derived from the tool's module name (e.g., `DrawTool` → `draw`).
+MMGIS injects a scoped API into each tool as `this.api`. It prefixes event and provider names with `plugin:{pluginId}:`, where `pluginId` is the id the tool declares in its own `config.json`:
 
-> **Note:** Each plugin must have a unique ID. Multiple instances of the same plugin in a mission are not currently supported. If two plugins share the same ID, their events and providers will collide. This constraint is not currently enforced at runtime but may be in a future version.
+```json
+{
+    "name": "FetchStats",
+    "id": "fetch-stats"
+}
+```
+
+That declaration is the tool's whole identity — the same string names it on the bus, in `plugins:show:<pluginId>` and friends, and in the `plugins:destroyed` its teardown fires. MMGIS mints the handle from it before the tool's `initialize()` runs and releases it after the tool's `destroy()` returns, unregistering every provider the handle registered. Anything a tool subscribes to straight on `window.mmgisAPI` sits outside the handle and stays the tool's own to remove.
+
+> **Note:** An id must match `/^[a-z][a-z0-9-]*$/`, and no two tools may answer to the same one: the build refuses to generate the tool registry, and loading a mission whose tools resolve to one id throws, both naming the pair that collided. One identity means one instance — a mission cannot run two instances of the same tool.
 
 The scoped API is available on `this.api` in your tool's `initialize()` and `make()` functions:
 
@@ -245,13 +254,14 @@ console.log(api.prefix)   // 'plugin:myPlugin:'
 ### Complete Plugin Example
 
 ```javascript
-// MyPluginTool.js - this.api is automatically injected by ToolController
+// MyPluginTool.js - its config.json declares { "id": "my-plugin" }, and
+// ToolController injects this.api minted from that id
 const MyPluginTool = {
     _cleanups: [],
 
     initialize() {
         // this.api is available here (auto-injected)
-        // Register providers (auto-prefixed to 'plugin:myplugin:getData')
+        // Register providers (auto-prefixed to 'plugin:my-plugin:getData')
         this._cleanups.push(
             this.api.provide('getData', () => this.data),
             this.api.provide('setData', (newData) => { this.data = newData })
@@ -274,7 +284,7 @@ const MyPluginTool = {
     },
 
     notifyUpdate() {
-        // Emit events (auto-prefixed to 'plugin:myplugin:updated')
+        // Emit events (auto-prefixed to 'plugin:my-plugin:updated')
         this.api.emit('updated', { timestamp: Date.now() })
     }
 }
