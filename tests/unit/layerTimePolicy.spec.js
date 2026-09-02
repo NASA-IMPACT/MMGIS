@@ -19,9 +19,26 @@ describe('layer time policy', () => {
             expect(parseISODuration(value)).toMatchObject(expected)
         })
 
-        test.each([['garbage'], ['P'], ['1D'], ['']])('rejects %s', (value) => {
-            expect(parseISODuration(value)).toBeNull()
+        test('parses a full compound duration', () => {
+            expect(parseISODuration('P1Y2M3DT4H5M6S')).toEqual({
+                years: 1,
+                months: 2,
+                weeks: 0,
+                days: 3,
+                hours: 4,
+                minutes: 5,
+                seconds: 6,
+            })
         })
+
+        // 'P0D' is well-formed and length zero: nothing to offset by, and no
+        // period it could ever contain.
+        test.each([['garbage'], ['P'], ['1D'], [''], ['P0D'], ['P0DT0H']])(
+            'rejects %s',
+            (value) => {
+                expect(parseISODuration(value)).toBeNull()
+            },
+        )
     })
 
     describe('resolveTimePolicy', () => {
