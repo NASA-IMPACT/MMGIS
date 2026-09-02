@@ -70,10 +70,16 @@ The only home for a layer's acquisition range is a pair of fields on the layer i
 
 Two limits:
 
-- **Nothing fills these fields in automatically.** They are typed by a mission admin. No STAC import writes them, so on most missions they are empty and a layer's acquisition date exists only as text inside its tile URL, which is not data.
-- **Resolving `now` discards that it was `now`.** The resolver returns a date. A consumer cannot tell "collection is ongoing" from "collection ended today."
+Two ways the fields get filled:
 
-There is no field for a time-enabled layer's period length (monthly, daily). Nothing in the config, the API, or the frontend records it, so a feature cannot snap the cursor to "June 2025" for a monthly layer.
+- **By hand.** A mission admin types them into the Data Time Extent fields.
+- **From a VEDA STAC collection.** The tile layer editor's VEDA STAC Source action (`scripts/lib/vedaStacLayer.js`) reads the collection's temporal extent and writes `dataStartTime` and `dataEndTime`. An ongoing collection, one whose STAC extent has no end, gets `dataEndTime: "now"`. Layers authored any other way, including hand-typed STAC, COG, and TiTiler URLs, get nothing automatically, and their acquisition date then exists only as text inside the tile URL, which is not data.
+
+One limit: **resolving `now` discards that it was `now`.** The resolver returns a date. A consumer cannot tell "collection is ongoing" from "collection ended today."
+
+## Period length: `time.interval` and `time.isPeriodic`
+
+A time-enabled layer may carry two more fields in its `time` block: `interval`, an ISO 8601 duration such as `P1D` or `P1M` giving the length of one period, and `isPeriodic`, whether the data repeats on that cadence. The VEDA STAC Source action writes them from the collection's `dashboard:time_interval` and `dashboard:is_periodic`. Nothing else writes them, and nothing on the frontend reads them yet, so no feature currently snaps the cursor to "June 2025" for a monthly layer. They are the fields such a feature would read.
 
 ## Export time
 
