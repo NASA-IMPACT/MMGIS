@@ -29,6 +29,7 @@ import {
     TileLayerOptions,
     MarkerOptions,
     OverlayOptions,
+    RefreshContext,
 } from '../types/layers'
 import { IMapEngineMarkers } from '../IMapEngineMarkers'
 import {
@@ -86,6 +87,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Registry of layers by ID
      */
     private _layers: Map<string, any> = new Map()
+
+    /**
+     * Per-layer refresh hooks, keyed the same way as {@link _layers}. They
+     * mutate in place and return nothing — see {@link setLayerRefresher}.
+     */
+    private _refreshers: Map<string, (layer: any, ctx: RefreshContext) => void> = new Map()
 
     /**
      * Registry of markers by ID
@@ -328,6 +335,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._detachFeatureHoverListeners()
 
         this._layers.clear()
+        this._refreshers.clear()
         this._markers.clear()
 
         this._map.remove()
@@ -625,11 +633,20 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return Array.from(this._layers.values())
     }
 
+    /**
+     * Whether the layer is currently on the map.
+     *
+     * Both forms ask the map, never the registry: `_layers` holds every
+     * MMGIS-built tile layer whether or not it is on the map, so membership
+     * there does not answer "is it on the map". `hasLayer(id)` and
+     * `hasLayer(layerObject)` must not disagree, because mmgisAPI's
+     * `map:hasLayer` exposes this answer publicly.
+     */
     hasLayer(layer: any | string): boolean {
-        if (typeof layer === 'string') {
-            return this._layers.has(layer)
-        }
-        return this._map.hasLayer(layer)
+        const leafletLayer =
+            typeof layer === 'string' ? this._layers.get(layer) : layer
+        if (!leafletLayer) return false
+        return this._map?.hasLayer(leafletLayer) === true
     }
 
     /**
@@ -697,8 +714,14 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             if (leafletLayer) {
                 this._map.removeLayer(leafletLayer)
                 this._layers.delete(layer)
+                this._refreshers.delete(layer)
             }
         } else {
+            // Deliberately keeps the registration. Map_.rmNotNull removes
+            // layers by object every time one is toggled off, and a toggled-off
+            // layer still has to be refreshable — TimeControl.reloadLayer's
+            // `evenIfOff` path depends on it. Only the id form, which means
+            // "destroy this layer", drops the entry.
             this._map.removeLayer(layer)
         }
     }
@@ -754,6 +777,48 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return leafletLayer
     }
 
+    registerLayer(id: string, layer: any): void {
+        // resolveLeafletLayerId reads _mmgisId, so stamp it: the layer must be
+        // findable by object as well as by id.
+        if (layer != null && typeof layer === 'object') layer._mmgisId = id
+        this._layers.set(id, layer)
+    }
+
+    /**
+     * Mutates the layer in place; any return value is ignored. See
+     * {@link IMapEngine.setLayerRefresher}.
+     */
+    setLayerRefresher(
+        id: string,
+        refresh: ((layer: any, ctx: RefreshContext) => void) | null
+    ): void {
+        if (refresh == null) this._refreshers.delete(id)
+        else this._refreshers.set(id, refresh)
+    }
+
+    refreshLayer(id: string, ctx: RefreshContext = {}): boolean {
+        const layer = this._layers.get(id)
+        if (!layer) return false
+
+        // Return value deliberately ignored — see setLayerRefresher above.
+        const refresh = this._refreshers.get(id)
+        if (refresh) {
+            refresh(layer, {
+                url: ctx.url,
+                tileOptions: ctx.tileOptions,
+                force: ctx.force,
+            })
+            return true
+        }
+
+        // A Leaflet tile layer recompiles its URL per tile from this.options,
+        // which is what refresh() merges tileOptions into — that is why Leaflet
+        // keeps its tile cache where deck.gl cannot.
+        if (typeof layer.refresh !== 'function') return false
+        layer.refresh(ctx.url, ctx.force === true, ctx.tileOptions)
+        return true
+    }
+
     setLayerZIndex(layer: any | string, zIndex: number): void {
         const leafletLayer = typeof layer === 'string' ? this._layers.get(layer) : layer
         if (leafletLayer && typeof leafletLayer.setZIndex === 'function') {
@@ -775,10 +840,25 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
     }
 
-    setLayerOpacity(layer: any | string, opacity: number): void {
+    setLayerOpacity(
+        layer: any | string,
+        opacity: number,
+        options?: { fillOpacity?: number }
+    ): void {
         const leafletLayer = typeof layer === 'string' ? this._layers.get(layer) : layer
-        if (leafletLayer && typeof leafletLayer.setOpacity === 'function') {
+        if (!leafletLayer) return
+
+        // Tile, image and video layers carry a whole-element opacity; vector
+        // layers have to be re-styled, and paint stroke and fill separately.
+        if (typeof leafletLayer.setOpacity === 'function') {
             leafletLayer.setOpacity(opacity)
+            return
+        }
+        if (typeof leafletLayer.setStyle === 'function') {
+            leafletLayer.setStyle({
+                opacity,
+                fillOpacity: options?.fillOpacity ?? opacity,
+            })
         }
     }
 

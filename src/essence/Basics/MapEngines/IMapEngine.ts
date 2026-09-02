@@ -6,7 +6,7 @@ import {
     FitBoundsOptions,
     MapInitOptions,
 } from './types/view'
-import { LayerOptions, OverlayOptions } from './types/layers'
+import { LayerOptions, OverlayOptions, RefreshContext } from './types/layers'
 import {
     MapEventHandler,
     MapEventOptions,
@@ -201,6 +201,49 @@ export interface IMapEngine<
     updateLayer(layer: TLayer | string, options: Partial<LayerOptions>): TLayer
 
     /**
+     * Take ownership of an externally-built native layer under `id`, so
+     * id-addressed methods can find it.
+     *
+     * Leaflet holds the layer without changing what is drawn — `addLayer`
+     * still does that separately. deck.gl has no such split: holding a layer
+     * *is* drawing it, since `_layers` is simultaneously its registry and its
+     * render list. That's why callers that want a layer held but not yet
+     * shown may only rely on this method on the Leaflet path.
+     */
+    registerLayer(id: string, layer: TLayer): void
+
+    /**
+     * Register how one layer recomputes itself, or pass null to clear.
+     *
+     * Called by the module that owns the layer kind, at creation — never by
+     * an adapter, which stays layer-type-agnostic. The engine invokes it with
+     * the live instance and remains its owner; the function must not retain
+     * it.
+     *
+     * deck.gl layers are immutable, so a refresher returns a replacement and
+     * the engine adopts it (returning nothing keeps what's held). Leaflet
+     * layers are mutable and already on the map, so a refresher mutates in
+     * place and any return value is ignored. The signature stays
+     * `TLayer | void` for that reason; the Leaflet adapter narrows its own
+     * parameter to void.
+     */
+    setLayerRefresher(
+        id: string,
+        refresh: ((layer: TLayer, ctx: RefreshContext) => TLayer | void) | null
+    ): void
+
+    /**
+     * Re-render a layer from its current configuration.
+     *
+     * The single update entry point for time changes, colormap/rescale changes
+     * and any other "your config moved, redraw" event. Callers never branch on
+     * the active engine or renderer.
+     *
+     * @returns Whether the engine had a layer to refresh.
+     */
+    refreshLayer(id: string, ctx?: RefreshContext): boolean
+
+    /**
      * Set the z index of a layer to control draw order.
      */
     setLayerZIndex(layer: TLayer | string, zIndex: number): void
@@ -216,14 +259,25 @@ export interface IMapEngine<
     bringToBack(layer: TLayer | string): void
 
     /**
-     * Set the opacity of a layer.
+     * Set a layer's opacity. Both engines return nothing — each owns its
+     * instance and applies the change internally: Leaflet mutates in place,
+     * deck.gl replaces the instance it holds. Callers never adopt a
+     * replacement.
      *
-     * Engines with immutable layer objects (deck.gl) return the instance that
-     * carries the new opacity; callers holding a reference to the layer must
-     * replace it with the returned one. Engines that mutate in place (Leaflet)
-     * return nothing.
+     * `fillOpacity` is not honoured uniformly, deliberately: Leaflet applies
+     * it to the fill of layers that paint one separately from their stroke
+     * (`setStyle`'s `fillOpacity`). deck.gl has no separate fill channel —
+     * its single `opacity` prop scales stroke and fill together, so the value
+     * is accepted here to satisfy the signature but subsumed into `opacity`.
+     *
+     * @param options.fillOpacity - Absolute fill opacity, not a multiplier.
+     * Defaults to `opacity`. See per-engine note above.
      */
-    setLayerOpacity(layer: TLayer | string, opacity: number): TLayer | void
+    setLayerOpacity(
+        layer: TLayer | string,
+        opacity: number,
+        options?: { fillOpacity?: number }
+    ): void
 
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).

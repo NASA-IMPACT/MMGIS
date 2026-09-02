@@ -33,8 +33,8 @@ const leafletLayer = (bounds) => ({
     getBounds: () => bounds,
 })
 
-// requiresEngineFacade identifies a deck.gl layer by shape: deck's `props` and
-// never Leaflet's `options`.
+// A deck.gl layer is identified by shape: deck's `props` and never Leaflet's
+// `options`.
 const deckLayer = (data) => ({ props: { data } })
 
 const feature = (coordinates) => ({

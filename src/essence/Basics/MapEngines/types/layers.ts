@@ -165,3 +165,20 @@ export interface OverlayOptions {
     latlng: LatLngLike
     mount: (node: HTMLElement) => (() => void) | void
 }
+
+/**
+ * What a caller knows about a refresh, independent of engine. `url` is the
+ * *uncompiled* tile source URL — Leaflet recompiles per tile from
+ * `tileOptions`, deck.gl bakes them in with `compileTileUrl`. A refresher that
+ * derives its own URL (client-side COG) ignores both.
+ *
+ * `url` is nullable, not merely optional: a source that resolves to nothing —
+ * a `COG:` layer with no TiTiler service behind it — yields null, and callers
+ * pass it through so the refresher, not the call site, decides what to do
+ * with it. The domain-side refresher registered in `Map_.makeTileLayer` tests `ctx.url == null`.
+ */
+export type RefreshContext = {
+    url?: string | null
+    tileOptions?: Record<string, unknown>
+    force?: boolean
+}

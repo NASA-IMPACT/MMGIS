@@ -47,7 +47,7 @@ import type {
     MapInitOptions,
     BasemapOptions,
 } from '../types/view'
-import type { LayerOptions, OverlayOptions } from '../types/layers'
+import type { LayerOptions, OverlayOptions, RefreshContext } from '../types/layers'
 import type {
     MapEventHandler,
     MapEventOptions,
@@ -315,6 +315,31 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _maxBounds: BoundsLike | null = null
 
     private _layers = new Map<string, Layer>()
+    /**
+     * Layer ids already reported as not-a-deck-layer, so a slider drag warns
+     * once rather than on every frame.
+     */
+    private _warnedNonDeckLayers = new Set<string>()
+
+    /**
+     * Whether the engine holds a real deck.gl layer under `id`. Warns once per
+     * id when it holds something else — see {@link updateLayer}.
+     */
+    private _holdsDeckLayer(id: string, existing: unknown): boolean {
+        if (typeof (existing as Layer)?.clone === 'function') return true
+        if (existing != null && !this._warnedNonDeckLayers.has(id)) {
+            this._warnedNonDeckLayers.add(id)
+            console.warn(
+                `DeckGLAdapter: layer "${id}" is not a deck.gl layer, so it cannot be ` +
+                `updated. It was built with Leaflet because this engine has no builder ` +
+                `for its type. The update was skipped.`
+            )
+        }
+        return false
+    }
+
+    /** Per-layer refresh hooks, keyed by layer id. */
+    private _refreshers = new Map<string, (layer: Layer, ctx: RefreshContext) => Layer | void>()
     private _layerZIndices = new Map<string, number>()
     private _layerIdCounter = 0
 
@@ -531,6 +556,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._overlays.clear()
 
         this._layers.clear()
+        this._warnedNonDeckLayers.clear()
+        this._refreshers.clear()
         this._layerZIndices.clear()
         this._eventListeners.clear()
         this._featureClickHandler = null
@@ -1037,17 +1064,25 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const id = resolveLayerId(layer)
         this._layers.delete(id)
         this._layerZIndices.delete(id)
+        this._refreshers.delete(id)
         this._syncLayers()
     }
 
     /**
-     * Clone the existing layer with overridden props. deck.gl detects the same
-     * `id` and updates GPU resources incrementally.
+     * Clone the existing layer with overridden props. deck.gl detects the
+     * same `id` and updates GPU resources incrementally.
+     *
+     * A held value that is not a deck.gl layer is declined, with a warning,
+     * rather than applied: this engine should only ever hold layers it
+     * built, but layer types it has no builder for fall through to being
+     * built with Leaflet instead. The warning exists so that mis-construction
+     * surfaces, rather than presenting as an update that quietly did nothing.
      */
     updateLayer(layer: Layer | string, options: Partial<LayerOptions>): Layer {
         const id = resolveLayerId(layer)
         const existing = this._layers.get(id)
         if (!existing) return existing as unknown as Layer
+        if (!this._holdsDeckLayer(id, existing)) return existing
         const updated = existing.clone({
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
@@ -1056,6 +1091,45 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._layers.set(id, updated)
         this._syncLayers()
         return updated
+    }
+
+    registerLayer(id: string, layer: Layer): void {
+        // For deck.gl, holding a layer is rendering it — there is no
+        // "registered but not on the map" state. Keyed by the caller's id
+        // rather than layer.id so the two can never drift apart.
+        this._layers.set(id, layer)
+        this._syncLayers()
+    }
+
+    setLayerRefresher(
+        id: string,
+        refresh: ((layer: Layer, ctx: RefreshContext) => Layer | void) | null
+    ): void {
+        if (refresh == null) this._refreshers.delete(id)
+        else this._refreshers.set(id, refresh)
+    }
+
+    refreshLayer(id: string, ctx: RefreshContext = {}): boolean {
+        const existing = this._layers.get(id)
+        if (!existing) return false
+
+        // No fallback: how a layer recomputes itself is layer-kind knowledge,
+        // and this adapter has none. The module that owns the kind registers a
+        // refresher at creation (see Map_.makeTileLayer); a held layer without
+        // one has no way to refresh, exactly as in the Leaflet adapter.
+        const refresh = this._refreshers.get(id)
+        if (!refresh) return false
+
+        const next = refresh(existing, {
+            url: ctx.url,
+            tileOptions: ctx.tileOptions,
+            force: ctx.force,
+        })
+
+        // A refresher with nothing to apply returns nothing; keep what we hold.
+        if (next) this._layers.set(id, next)
+        this._syncLayers()
+        return true
     }
 
     /**
@@ -1098,20 +1172,28 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Set a layer's opacity and return the instance carrying it. deck.gl layers
-     * are immutable, so the caller must replace its reference with the result.
+     * Set a layer's opacity. deck.gl layers are immutable, so this replaces
+     * the instance the engine holds via {@link updateLayer}, which re-syncs
+     * the render list.
      *
-     * A layer on the map goes through {@link updateLayer}, which re-syncs the
-     * render list. One that is off the map is cloned instead, so it comes back
-     * at the requested opacity when it is added. A reference that is neither
-     * on the map nor a clonable layer instance (an unknown id, or a registry
-     * value that never became a layer) yields no replacement.
+     * A no-op when the engine doesn't hold `id`, or holds a native Leaflet
+     * layer (MMGIS still builds `data`, `image`, `video` and `velocity`
+     * layers with Leaflet under this engine, and those carry no `id` to be
+     * found by). Either way the caller has already written
+     * `L_.layers.opacity[name]`, which layer creation reads, so the opacity
+     * is picked up next time the layer is built or re-added.
+     *
+     * `options.fillOpacity` is accepted but not applied separately — see
+     * {@link IMapEngine.setLayerOpacity}.
      */
-    setLayerOpacity(layer: Layer | string, opacity: number): Layer | undefined {
+    setLayerOpacity(
+        layer: Layer | string,
+        opacity: number,
+        options?: { fillOpacity?: number }
+    ): void {
         const id = resolveLayerId(layer)
-        if (this._layers.has(id)) return this.updateLayer(id, { opacity })
-        if (typeof (layer as Layer)?.clone !== 'function') return undefined
-        return (layer as Layer).clone({ opacity }) as Layer
+        const existing = this._layers.get(id)
+        if (this._holdsDeckLayer(id, existing)) this.updateLayer(id, { opacity })
     }
 
     /**
