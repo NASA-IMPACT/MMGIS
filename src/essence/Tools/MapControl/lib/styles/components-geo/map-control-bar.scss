@@ -17,8 +17,7 @@
 
 .blocks-map-control {
     // Placement is owned by the host container (e.g. a floating panel zone);
-    // the bar only anchors its own dropdowns. It spans its host and pins its
-    // contents to the right edge.
+    // the bar only spans it and anchors its own dropdowns.
     position: relative;
     display: flex;
     flex-direction: column;
@@ -27,35 +26,48 @@
     pointer-events: auto;
     font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue', sans-serif);
 
+    /* A row that wraps once its boxes no longer fit at their minimum widths. */
     &__bar {
         display: flex;
         flex-direction: row;
+        flex-wrap: wrap;
         align-items: center;
+        width: 100%;
         gap: var(--theme-spacing-05, 0.25rem);
-        white-space: nowrap;
     }
 
-    /* Sizes to its buttons: each is a 36x36 square, so a group of two is
-       72x36 plus its border. */
+    /* Groups grow by one unit per button they hold, so every button in the bar
+       widens at the same rate and they all stay equal to each other. */
     &__group {
         display: flex;
         flex-direction: row;
         align-items: center;
+        flex: 1 0 auto;
         overflow: hidden;
         background: var(--theme-color-white, #ffffff);
         border-radius: var(--theme-radius-0, 0);
+
+        &--pair {
+            flex-grow: 2;
+        }
     }
 
+    /* 36px is the button's floor, not its width: it splits whatever extra width
+       its group was given, with the glyph centered in the result. The floor is
+       stated twice because a flex basis alone does not reach the group around
+       it — Firefox sizes the group from its buttons' content, and without the
+       min-width would hold the group at glyph width while the button overflows
+       it. */
     &__btn {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 36px;
+        flex: 1 0 36px;
+        min-width: 36px;
         height: 36px;
         padding: 0;
         border: none;
         cursor: pointer;
-        flex-shrink: 0;
         background: transparent;
         /* The glyph is drawn in currentColor, so this is the icon's color. */
         color: var(--theme-color-base-darker, #444447);
@@ -83,24 +95,33 @@
     }
 
     &__divider {
-        width: 1px;
+        flex: 0 0 1px;
         height: 24px;
-        flex-shrink: 0;
         background: var(--theme-color-base-lighter, #e3e3e3);
     }
 
     // The hosted share control ("Share map") in the bar's end slot. Its colors,
     // square corners and interaction states come from the component's own
-    // tokens, which resolve to the same theme values the bar uses; only the
-    // boxed chrome and the 36px control height are the bar's to state.
+    // tokens, which resolve to the same theme values the bar uses; the boxed
+    // chrome and the control's geometry are the bar's to state.
     &__share {
         display: flex;
         align-items: center;
+        /* Grows at the rate of a two-button group, and never shrinks below its
+           label, so a row too narrow to hold it sends it to the next one. */
+        flex: 2 0 auto;
         background: var(--theme-color-white, #ffffff);
         border-radius: var(--theme-radius-0, 0);
 
+        &.shareExport-tool-host .share-menu {
+            display: flex;
+            width: 100%;
+        }
+
         &.shareExport-tool-host .share-menu__trigger {
+            width: 100%;
             height: 36px;
+            justify-content: center;
             font-size: var(--theme-font-size-2xs, 0.88rem);
         }
     }
