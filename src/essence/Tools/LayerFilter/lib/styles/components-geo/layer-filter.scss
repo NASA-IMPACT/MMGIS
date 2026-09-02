@@ -1,6 +1,24 @@
 // Step-2 filter panel (wider left panel), styled per the Figma "Event" view.
 // USWDS --theme-* tokens only; fallbacks mirror the disasters theme so the
 // panel still reads correctly if a brand stylesheet hasn't loaded.
+//
+// Icons are the design set's own files under ../../geo/icons, drawn as masks
+// rather than as inline markup: the file supplies the shape and the element's
+// own colour fills it, so a glyph follows its control through hover, pressed
+// and disabled without a second copy of the artwork.
+
+// Paint `$file` as a glyph `$size` across, in whatever colour the element
+// carries.
+@mixin masked-icon($file, $size) {
+    flex: 0 0 auto;
+    display: block;
+    width: $size;
+    height: $size;
+    background-color: currentColor;
+    -webkit-mask: url('../../geo/icons/#{$file}') no-repeat center / contain;
+    mask: url('../../geo/icons/#{$file}') no-repeat center / contain;
+}
+
 .blocks-layer-filter {
     box-sizing: border-box;
     display: flex;
@@ -250,12 +268,17 @@
         &:hover {
             background: var(--theme-color-primary-lightest, #e6f4f6);
         }
+
+        // The row the field is already showing, marked the way pointing at a
+        // row marks it — the tick is what separates the two.
+        &--selected {
+            background: var(--theme-color-primary-lightest, #e6f4f6);
+        }
     }
 
     &__check {
+        @include masked-icon('check.svg', 14px);
         margin-left: auto;
-        color: var(--theme-color-base, #71767a);
-        font-weight: var(--theme-font-weight-bold, 700);
     }
 
     &__year-chip {
