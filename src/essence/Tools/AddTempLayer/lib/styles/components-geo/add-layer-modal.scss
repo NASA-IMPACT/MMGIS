@@ -1,16 +1,24 @@
 // "Add layer from URL" form card — rendered in place inside the floating
 // panel the layout assigns; the panel system owns placement.
+//
+// USWDS --theme-* tokens only; fallbacks mirror the disasters theme so the
+// card still reads correctly if a brand stylesheet hasn't loaded.
 
 .blocks-add-layer-modal {
     &__dialog {
+        box-sizing: border-box;
         display: flex;
         flex-direction: column;
-        width: 372px;
+        width: 100%;
         max-width: 100%;
+        min-width: 0;
         overflow: hidden;
+        overflow-wrap: anywhere;
         background: var(--theme-color-white, #ffffff);
-        border-radius: var(--theme-radius-lg, 6px);
-        box-shadow: 0 8px 32px var(--theme-color-shadow, rgba(0, 0, 0, 0.18));
+        border: var(--theme-border-width-sm, 1px) solid
+            var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-0, 0);
+        color: var(--theme-color-ink, #1c1d1f);
         font-family: var(--theme-font-ui);
     }
 
@@ -18,126 +26,210 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: var(--theme-spacing-2, 16px);
-        border-bottom: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        gap: var(--theme-spacing-1, 8px);
+        min-width: 0;
+        padding: var(--theme-spacing-2, 16px) var(--theme-spacing-205, 20px);
+        border-bottom: var(--theme-border-width-sm, 1px) solid
+            var(--theme-color-base-lighter, #dfe1e2);
     }
 
     &__title {
         display: flex;
         align-items: center;
-        gap: var(--theme-spacing-1, 8px);
-        color: var(--theme-color-ink, #1b1b1b);
+        gap: var(--theme-spacing-105, 12px);
+        min-width: 0;
+        color: var(--theme-color-ink, #1c1d1f);
         font-size: var(--theme-font-size-sm, 16px);
-        font-weight: var(--theme-font-weight-semibold, 600);
+        font-weight: var(--theme-font-weight-bold, 700);
+
+        svg {
+            flex: none;
+        }
     }
 
     &__close {
         display: flex;
+        flex: none;
         align-items: center;
         justify-content: center;
         padding: var(--theme-spacing-05, 4px);
         background: transparent;
         border: none;
-        border-radius: var(--theme-radius-md, 4px);
+        border-radius: var(--theme-radius-0, 0);
         color: var(--theme-color-base, #71767a);
         cursor: pointer;
+        transition:
+            background 0.12s ease,
+            color 0.12s ease;
 
         &:hover {
-            background: var(--theme-color-base-lightest, #f6f7f8);
-            color: var(--theme-color-ink, #1b1b1b);
+            background: var(--theme-color-base-lightest, #f1f3f6);
+        }
+
+        &:focus-visible {
+            outline: var(--theme-border-width-md, 2px) solid
+                var(--theme-color-primary, #0e7482);
+            outline-offset: 2px;
         }
     }
 
     &__body {
         display: flex;
         flex-direction: column;
-        gap: var(--theme-spacing-2, 16px);
-        padding: var(--theme-spacing-2, 16px);
+        gap: var(--theme-spacing-205, 20px);
+        min-width: 0;
+        padding: var(--theme-spacing-205, 20px);
     }
 
     &__help {
         margin: 0;
-        color: var(--theme-color-base-dark, #565c65);
+        color: var(--theme-color-ink, #1c1d1f);
         font-size: var(--theme-font-size-2xs, 14px);
+        line-height: var(--theme-line-height-5, 1.62);
     }
 
     &__field {
         display: flex;
         flex-direction: column;
         gap: var(--theme-spacing-05, 4px);
+        min-width: 0;
     }
 
     &__label {
-        color: var(--theme-color-base-dark, #565c65);
-        font-size: var(--theme-font-size-3xs, 13px);
+        color: var(--theme-color-base, #71767a);
+        font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
+    }
+
+    // The "(optional)" qualifier sits on the label but reads as secondary to
+    // the field's name.
+    &__label-note {
+        font-weight: var(--theme-font-weight-normal, 400);
     }
 
     &__input {
         box-sizing: border-box;
         width: 100%;
-        padding: var(--theme-spacing-1, 8px);
-        background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-base-light, #a9aeb1);
-        border-radius: var(--theme-radius-md, 4px);
-        color: var(--theme-color-ink, #1b1b1b);
+        min-width: 0;
+        height: var(--theme-spacing-5, 40px);
+        padding: var(--theme-spacing-05, 4px) var(--theme-spacing-105, 12px);
+        background: var(--theme-color-base-lightest, #f1f3f6);
+        border: var(--theme-border-width-sm, 1px) solid
+            var(--theme-color-base-lighter, #dfe1e2);
+        border-radius: var(--theme-radius-0, 0);
+        color: var(--theme-color-ink, #1c1d1f);
         font-family: var(--theme-font-ui);
         font-size: var(--theme-font-size-2xs, 14px);
         outline: none;
+        transition:
+            background 0.12s ease,
+            border-color 0.12s ease,
+            box-shadow 0.12s ease;
 
+        &::placeholder {
+            color: var(--theme-color-base-light, #a9aeb1);
+        }
+
+        &:hover {
+            border-color: var(--theme-color-base-light, #a9aeb1);
+        }
+
+        // The field lifts off its tinted resting fill while it holds focus.
         &:focus {
-            border-color: var(--theme-color-primary, #137480);
-            box-shadow: 0 0 0 2px var(--theme-color-primary-light, #97d4ea);
+            background: var(--theme-color-white, #ffffff);
+            border-color: var(--theme-color-primary, #0e7482);
+            box-shadow: 0 0 0 3px var(--theme-color-primary, #0e7482);
         }
 
         &--error {
-            border-color: var(--theme-color-secondary, #b50909);
+            border-color: var(--theme-color-secondary, #c91b6e);
+
+            &:hover,
+            &:focus {
+                border-color: var(--theme-color-secondary, #c91b6e);
+            }
 
             &:focus {
-                border-color: var(--theme-color-secondary, #b50909);
-                box-shadow: 0 0 0 2px var(--theme-color-secondary-light, #f8dfe2);
+                box-shadow: 0 0 0 3px var(--theme-color-secondary, #c91b6e);
             }
         }
     }
 
     &__error {
-        margin-top: var(--theme-spacing-05, 4px);
-        color: var(--theme-color-secondary, #b50909);
-        font-size: var(--theme-font-size-3xs, 13px);
+        color: var(--theme-color-secondary, #c91b6e);
+        font-size: var(--theme-font-size-3xs, 12px);
         // The message can include a long example URL — wrap it instead of
         // overflowing the dialog.
         overflow-wrap: anywhere;
     }
 
+    // Dashed callout listing the constraints an imported layer carries.
     &__behaviour {
-        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-2, 16px);
-        background: var(--theme-color-base-lightest, #f6f7f8);
-        border-radius: var(--theme-radius-md, 4px);
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-1, 8px);
+        min-width: 0;
+        padding: var(--theme-spacing-2, 16px);
+        // The callout's rule is the brand's primary at half strength — a
+        // mix rather than a lighter grade, which reads as its own hue.
+        border: var(--theme-border-width-sm, 1px) dashed
+            color-mix(
+                in srgb,
+                var(--theme-color-primary, #0e7482) 50%,
+                transparent
+            );
+        border-radius: var(--theme-radius-0, 0);
+    }
+
+    &__behaviour-title {
+        margin: 0;
+        color: var(--theme-color-ink, #1c1d1f);
+        font-size: var(--theme-font-size-2xs, 14px);
+        font-weight: var(--theme-font-weight-semibold, 600);
     }
 
     &__behaviour-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--theme-spacing-05, 4px);
         margin: 0;
-        padding-left: var(--theme-spacing-2, 16px);
-        color: var(--theme-color-base-dark, #565c65);
-        font-size: var(--theme-font-size-3xs, 13px);
+        padding: 0;
+        list-style: none;
 
         li {
-            margin: var(--theme-spacing-05, 4px) 0;
+            display: flex;
+            align-items: flex-start;
+            gap: var(--theme-spacing-1, 8px);
+            min-width: 0;
+            color: var(--theme-color-base-dark, #565c65);
+            font-size: var(--theme-font-size-2xs, 14px);
+            line-height: var(--theme-line-height-4, 1.5);
+
+            // Middot markers, so the bullet aligns with the first line of a
+            // wrapped entry rather than hanging outside the callout.
+            &::before {
+                content: '\00B7';
+                flex: none;
+                color: var(--theme-color-base, #71767a);
+            }
         }
     }
 
     &__footer {
         display: flex;
         justify-content: flex-end;
-        padding: var(--theme-spacing-2, 16px);
-        border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+        min-width: 0;
     }
 
     &__submit {
-        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-3, 24px);
-        background: var(--theme-color-primary, #137480);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: var(--theme-spacing-5, 40px);
+        padding: 0 var(--theme-spacing-3, 24px);
+        background: var(--theme-color-primary, #0e7482);
         border: none;
-        border-radius: var(--theme-radius-md, 4px);
+        border-radius: var(--theme-radius-0, 0);
         color: var(--theme-color-white, #ffffff);
         font-family: var(--theme-font-ui);
         font-size: var(--theme-font-size-2xs, 14px);
@@ -146,12 +238,22 @@
         transition: background 0.12s ease;
 
         &:hover {
-            background: var(--theme-color-primary-dark, #0b4c54);
+            background: var(--theme-color-primary-dark, #0d313d);
+        }
+
+        &:focus-visible {
+            outline: var(--theme-border-width-md, 2px) solid
+                var(--theme-color-primary, #0e7482);
+            outline-offset: 2px;
         }
 
         &:disabled {
-            opacity: 0.6;
-            cursor: default;
+            opacity: 0.5;
+            cursor: not-allowed;
+
+            &:hover {
+                background: var(--theme-color-primary, #0e7482);
+            }
         }
     }
 }
