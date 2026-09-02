@@ -204,6 +204,39 @@ async function refreshTileLayer(uuid, updateOptions) {
     }
 }
 
+/**
+ * Shows a layer on an engine that hides a toggled-off layer instead of
+ * removing it. Which of two states the layer is in decides what happens:
+ *
+ * - held (shown before): flip it visible again. Anything changed while it was
+ *   hidden reached the held instance already.
+ * - not held (configured off at load, never shown): the engine adopts the
+ *   instance built at creation. Any opacity or config change made since only
+ *   reached the registry, so re-apply the opacity and re-run the layer's
+ *   refresher — otherwise the map shows creation-time values while the panel
+ *   shows the new ones.
+ *
+ * Either way the layer is ranked here, so the caller does not rank it again:
+ * a re-sort and a full layer sync per toggle is enough.
+ *
+ * @param {object} s - Layer config.
+ * @param {object} nativeLayer - The engine's own object for `s`.
+ */
+async function showLayerOnEngine(s, nativeLayer) {
+    const engine = L_.Map_.engine
+    const held = engine.updateLayer(nativeLayer, { visible: true })
+    if (!held) engine.addLayer(nativeLayer)
+    // Ranked before the refresh, not after: an unranked layer draws on top
+    // of the whole stack, and the refresh can wait on a network round trip.
+    engine.setLayerZIndex(
+        nativeLayer,
+        L_._layersOrdered.length + 1 - L_._layersOrdered.indexOf(s.name)
+    )
+    if (held) return
+    L_.setLayerOpacity(s.name, L_.layers.opacity[s.name] ?? 1)
+    await refreshTileLayer(s.name)
+}
+
 const L_ = {
     url: window.location.href,
     mission: null,
@@ -935,18 +968,17 @@ const L_ = {
 
                     const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
                     if (L_.Map_.engine.engineType !== 'leaflet') {
-                        if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
-                            L_.Map_.engine.addLayer(nativeLayer)
-                        }
+                        // Ranks the layer itself.
+                        await showLayerOnEngine(s, nativeLayer)
                     } else {
                         L_.Map_.engine.addLayer(nativeLayer)
+                        L_.Map_.engine.setLayerZIndex(
+                            nativeLayer,
+                            L_._layersOrdered.length +
+                                1 -
+                                L_._layersOrdered.indexOf(s.name)
+                        )
                     }
-                    L_.Map_.engine.setLayerZIndex(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(s.name)
-                    )
                 }
 
                 if (s.type === 'tile') {
@@ -1051,18 +1083,17 @@ const L_ = {
                             }
                             const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
                             if (L_.Map_.engine.engineType !== 'leaflet') {
-                                if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
-                                    L_.Map_.engine.addLayer(nativeLayer)
-                                }
+                                // Ranks the layer itself.
+                                await showLayerOnEngine(s, nativeLayer)
                             } else {
                                 L_.Map_.engine.addLayer(nativeLayer)
+                                L_.Map_.engine.setLayerZIndex(
+                                    nativeLayer,
+                                    L_._layersOrdered.length +
+                                        1 -
+                                        L_._layersOrdered.indexOf(s.name)
+                                )
                             }
-                            L_.Map_.engine.setLayerZIndex(
-                                L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                                L_._layersOrdered.length +
-                                    1 -
-                                    L_._layersOrdered.indexOf(s.name)
-                            )
                         }
 
                         if (s.type === 'image') {
