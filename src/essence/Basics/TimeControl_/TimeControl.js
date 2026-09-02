@@ -98,6 +98,17 @@ var TimeControl = {
                         ? formatMissionTime(TimeControl.currentTime)
                         : null
                 ),
+                // Formats a caller-supplied time through that same mission
+                // format, so a plugin displaying a time it holds itself
+                // (e.g. a per-layer window on an exported legend) matches
+                // what TimeControl's UI shows. Deliberately not gated on
+                // TimeControl.enabled: the time comes from the caller, not
+                // from the cursor. Null for a missing or unparseable time.
+                window.mmgisAPI.provide('time:formatTime', (time) =>
+                    time != null && !isNaN(new Date(time).getTime())
+                        ? formatMissionTime(time)
+                        : null
+                ),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
                 window.mmgisAPI.provide('time:set', (params) => {

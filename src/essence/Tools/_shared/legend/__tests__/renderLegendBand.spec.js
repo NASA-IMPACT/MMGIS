@@ -31,11 +31,12 @@ const makeCtx = () => {
     return { ctx, fillRectCalls, fillTextCalls, gradients }
 }
 
-const emptyModel = { missionName: null, timeLabel: null, rows: [] }
+const emptyModel = { missionName: null, rows: [] }
 
 const gradientRow = (overrides = {}) => ({
     kind: 'gradient',
     title: 'Displacement',
+    timeRange: null,
     colors: ['#000', '#fff'],
     min: 0,
     max: 10,
@@ -43,10 +44,12 @@ const gradientRow = (overrides = {}) => ({
     ...overrides,
 })
 
-const categoricalRow = (stops) => ({
+const categoricalRow = (stops, overrides = {}) => ({
     kind: 'categorical',
     title: 'Classes',
+    timeRange: null,
     stops,
+    ...overrides,
 })
 
 describe('measureLegendBand', () => {
@@ -57,10 +60,9 @@ describe('measureLegendBand', () => {
 
     test('grows as rows are added', () => {
         const { ctx } = makeCtx()
-        const oneRow = { missionName: null, timeLabel: null, rows: [gradientRow()] }
+        const oneRow = { missionName: null, rows: [gradientRow()] }
         const twoRows = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow(), gradientRow({ title: 'Second' })],
         }
         const h1 = measureLegendBand(ctx, oneRow, 400, 1)
@@ -77,12 +79,10 @@ describe('measureLegendBand', () => {
         }))
         const narrow = {
             missionName: null,
-            timeLabel: null,
             rows: [categoricalRow(manyStops)],
         }
         const wide = {
             missionName: null,
-            timeLabel: null,
             rows: [categoricalRow(manyStops.slice(0, 2))],
         }
         const hNarrow = measureLegendBand(ctx, narrow, 300, 1)
@@ -90,9 +90,26 @@ describe('measureLegendBand', () => {
         expect(hNarrow).toBeGreaterThan(hWide)
     })
 
+    test('a row with a time range is taller by exactly one label line', () => {
+        const { ctx } = makeCtx()
+        const without = { missionName: null, rows: [gradientRow()] }
+        const with_ = {
+            missionName: null,
+            rows: [gradientRow({ timeRange: '2024-01-01 → 2024-02-01' })],
+        }
+        // LABEL_TEXT (11) + LINE_GAP (6), the same advance the draw pass makes
+        // before the row's body.
+        expect(measureLegendBand(ctx, with_, 400, 1)).toBe(
+            measureLegendBand(ctx, without, 400, 1) + 17,
+        )
+        expect(measureLegendBand(ctx, with_, 400, 2)).toBe(
+            measureLegendBand(ctx, without, 400, 2) + 34,
+        )
+    })
+
     test('scale 2 doubles the measured height of the same model', () => {
         const { ctx } = makeCtx()
-        const model = { missionName: 'Mission', timeLabel: null, rows: [gradientRow()] }
+        const model = { missionName: 'Mission', rows: [gradientRow()] }
         const h1 = measureLegendBand(ctx, model, 400, 1)
         const h2 = measureLegendBand(ctx, model, 400, 2)
         expect(h2).toBe(h1 * 2)
@@ -102,31 +119,71 @@ describe('measureLegendBand', () => {
 describe('drawLegendBand', () => {
     test('paints the white band exactly at yTop covering width x bandHeight', () => {
         const { ctx, fillRectCalls } = makeCtx()
-        const model = { missionName: null, timeLabel: null, rows: [gradientRow()] }
+        const model = { missionName: null, rows: [gradientRow()] }
         drawLegendBand(ctx, model, 400, 600, 100, 1)
         expect(fillRectCalls[0].args).toEqual([0, 600, 400, 100])
     })
 
-    test('draws the header once with mission and time joined', () => {
+    test('draws the mission name as the whole header, with no date beside it', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: 'M20',
-            timeLabel: '2024-01-01',
-            rows: [gradientRow()],
+            rows: [gradientRow({ timeRange: '2024-01-01 → 2024-02-01' })],
         }
         drawLegendBand(ctx, model, 400, 0, 200, 1)
         const headerCalls = fillTextCalls.filter(({ args: [text] }) =>
-            text.includes('M20') && text.includes('2024-01-01'),
+            text.includes('M20'),
         )
         expect(headerCalls).toHaveLength(1)
-        expect(headerCalls[0].args[0]).toBe('M20  ·  2024-01-01')
+        // The only date on the band belongs to a row, never the header.
+        expect(headerCalls[0].args[0]).toBe('M20')
+        expect(fillTextCalls[0].args[0]).toBe('M20')
+    })
+
+    test('draws a row time range under its title in the smaller label style', () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const model = {
+            missionName: null,
+            rows: [gradientRow({ timeRange: '2024-01-01 → 2024-02-01' })],
+        }
+        drawLegendBand(ctx, model, 400, 0, 200, 1)
+        const [titleCall, timeCall] = fillTextCalls
+        expect(titleCall.args[0]).toBe('Displacement')
+        expect(timeCall.args[0]).toBe('2024-01-01 → 2024-02-01')
+        // Same column as the title, on the line below it, in the label font.
+        expect(timeCall.args[1]).toBe(titleCall.args[1])
+        expect(timeCall.args[2]).toBeGreaterThan(titleCall.args[2])
+        expect(timeCall.font).toBe('11px sans-serif')
+    })
+
+    test('draws no time line for a row without a range', () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const model = { missionName: null, rows: [gradientRow()] }
+        drawLegendBand(ctx, model, 400, 0, 200, 1)
+        // Title, then the two gradient bounds — nothing between them.
+        expect(fillTextCalls.map(({ args: [text] }) => text)).toEqual([
+            'Displacement',
+            '0',
+            '10',
+        ])
+    })
+
+    test('clips a long time range rather than overflowing the band', () => {
+        const { ctx, fillTextCalls } = makeCtx()
+        const model = {
+            missionName: null,
+            rows: [gradientRow({ timeRange: 'T'.repeat(200) })],
+        }
+        drawLegendBand(ctx, model, 300, 0, 200, 1)
+        const timeCall = fillTextCalls[1]
+        expect(timeCall.args[0].length).toBeLessThan(200)
+        expect(timeCall.args[0].endsWith('…')).toBe(true)
     })
 
     test('draws min/max bounds with units via formatLegendBound', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow({ min: 2, max: 8, unit: 'K' })],
         }
         drawLegendBand(ctx, model, 400, 0, 200, 1)
@@ -139,7 +196,6 @@ describe('drawLegendBand', () => {
         const { ctx, gradients } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow({ colors: null })],
         }
         expect(() => drawLegendBand(ctx, model, 400, 0, 200, 1)).not.toThrow()
@@ -156,7 +212,6 @@ describe('drawLegendBand', () => {
         const { ctx, gradients } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow({ colors: ['#000', '', '#fff'] })],
         }
         expect(() => drawLegendBand(ctx, model, 400, 0, 200, 1)).not.toThrow()
@@ -177,7 +232,6 @@ describe('drawLegendBand', () => {
         const { ctx, fillRectCalls, gradients } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow({ colors: ['#ff0000'] })],
         }
         expect(() => drawLegendBand(ctx, model, 400, 0, 200, 1)).not.toThrow()
@@ -192,7 +246,6 @@ describe('drawLegendBand', () => {
         const { ctx, gradients } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow({ colors: [] })],
         }
         expect(() => drawLegendBand(ctx, model, 400, 0, 200, 1)).not.toThrow()
@@ -209,7 +262,6 @@ describe('drawLegendBand', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow({ min: null, max: null, unit: 'm' })],
         }
         drawLegendBand(ctx, model, 400, 0, 200, 1)
@@ -226,7 +278,6 @@ describe('drawLegendBand gradient bounds', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [
                 gradientRow({
                     min: '0.000000000000123 microseconds per parsec',
@@ -247,7 +298,6 @@ describe('drawLegendBand gradient bounds', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow({ min: 0, max: 'X'.repeat(300) })],
         }
         // A band narrower than the bar's nominal width, so the clamp is what
@@ -261,7 +311,6 @@ describe('drawLegendBand gradient bounds', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow({ min: 2, max: 8, unit: 'K' })],
         }
         drawLegendBand(ctx, model, 400, 0, 200, 1)
@@ -280,7 +329,6 @@ describe('drawLegendBand text clipping', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: 'A'.repeat(200),
-            timeLabel: null,
             rows: [gradientRow()],
         }
         drawLegendBand(ctx, model, 300, 0, 200, 1)
@@ -293,7 +341,6 @@ describe('drawLegendBand text clipping', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [gradientRow({ title: 'B'.repeat(200) })],
         }
         drawLegendBand(ctx, model, 300, 0, 200, 1)
@@ -306,7 +353,6 @@ describe('drawLegendBand text clipping', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [categoricalRow([{ color: '#abc', label: 'C'.repeat(200) }])],
         }
         drawLegendBand(ctx, model, 300, 0, 200, 1)
@@ -323,7 +369,6 @@ describe('drawLegendBand text clipping', () => {
         const { ctx, fillTextCalls } = makeCtx()
         const model = {
             missionName: 'M20',
-            timeLabel: null,
             rows: [gradientRow({ title: 'Short' })],
         }
         drawLegendBand(ctx, model, 400, 0, 200, 1)
@@ -339,6 +384,19 @@ describe('drawn primitives stay within the measured band (regression)', () => {
     const fontPx = (font) => {
         const match = font.match(/(\d+)px/)
         return match ? Number(match[1]) : 0
+    }
+
+    // The deepest painted content, ignoring the two full-height rects the
+    // background and top border paint.
+    const assertNoSlack = (model, width, scale) => {
+        const { ctx, fillRectCalls } = makeCtx()
+        const bandHeight = measureLegendBand(ctx, model, width, scale)
+        const yTop = 50
+        drawLegendBand(ctx, model, width, yTop, bandHeight, scale)
+        const contentBottom = Math.max(
+            ...fillRectCalls.slice(2).map(({ args: [, y, , h] }) => y + h),
+        )
+        expect(contentBottom).toBe(yTop + bandHeight - 16 * scale)
     }
 
     const assertWithinBand = (model, width, scale) => {
@@ -361,7 +419,6 @@ describe('drawn primitives stay within the measured band (regression)', () => {
     test('gradient-only model at scale 1 and 2', () => {
         const model = {
             missionName: 'M20',
-            timeLabel: '2024-01-01',
             rows: [gradientRow(), gradientRow({ title: 'Second' })],
         }
         assertWithinBand(model, 400, 1)
@@ -375,11 +432,34 @@ describe('drawn primitives stay within the measured band (regression)', () => {
         }))
         const model = {
             missionName: null,
-            timeLabel: null,
             rows: [categoricalRow(manyStops)],
         }
         assertWithinBand(model, 300, 1)
         assertWithinBand(model, 300, 2)
+    })
+
+    test('model where only some rows carry a time range, at scale 1 and 2', () => {
+        const manyStops = Array.from({ length: 20 }, (_, i) => ({
+            color: '#abc',
+            label: `Category number ${i}`,
+        }))
+        const model = {
+            missionName: 'M20',
+            rows: [
+                gradientRow({ timeRange: '2015-03-13 → 2026-08-25' }),
+                gradientRow({ title: 'Fixed scene' }),
+                categoricalRow(manyStops, {
+                    timeRange: '2015-03-13 → 2026-08-25',
+                }),
+                categoricalRow(manyStops.slice(0, 3)),
+            ],
+        }
+        assertWithinBand(model, 300, 1)
+        assertWithinBand(model, 300, 2)
+        // And no slack either: the band ends one PAD below the deepest thing
+        // drawn, so the extra line on the timed rows is counted exactly once.
+        assertNoSlack(model, 300, 1)
+        assertNoSlack(model, 300, 2)
     })
 
     test('mixed gradient and categorical model at scale 1 and 2', () => {
@@ -389,7 +469,6 @@ describe('drawn primitives stay within the measured band (regression)', () => {
         }))
         const model = {
             missionName: 'M20',
-            timeLabel: '2024-01-01',
             rows: [gradientRow(), categoricalRow(manyStops)],
         }
         assertWithinBand(model, 300, 1)

@@ -49,16 +49,23 @@ type Ctx2D = Pick<
     | 'restore'
 > & { fillStyle: unknown; font: string; textBaseline: CanvasTextBaseline }
 
+// The line a row's time range occupies under its title, for the rows that
+// carry one — the draw pass advances by exactly this much before the row's
+// body, so measure and draw agree on where the row ends.
+const timeRangeHeight = (row: ExportLegendRow, scale: number): number =>
+    row.timeRange ? (LABEL_TEXT + LINE_GAP) * scale : 0
+
 const rowHeight = (row: ExportLegendRow, scale: number): number => {
+    const time = timeRangeHeight(row, scale)
     if (row.kind === 'gradient') {
         return (
-            (TITLE_TEXT + LINE_GAP + BAR_HEIGHT + LINE_GAP + LABEL_TEXT) *
-            scale
+            time +
+            (TITLE_TEXT + LINE_GAP + BAR_HEIGHT + LINE_GAP + LABEL_TEXT) * scale
         )
     }
     // Categorical: title line + one swatch line (swatches wrap at draw time;
     // wrapping adds lines, so measure with the same wrap the draw pass uses).
-    return (TITLE_TEXT + LINE_GAP + SWATCH) * scale
+    return time + (TITLE_TEXT + LINE_GAP + SWATCH) * scale
 }
 
 // The widest a single category label can render, clipped so that even alone
@@ -99,7 +106,7 @@ export const measureLegendBand = (
 ): number => {
     if (model.rows.length === 0) return 0
     let h = PAD * scale
-    if (model.missionName || model.timeLabel) {
+    if (model.missionName) {
         h += (HEADER_TEXT + ROW_GAP) * scale
     }
     for (const row of model.rows) {
@@ -160,11 +167,12 @@ export const drawLegendBand = (
     const textMaxWidth = width - 2 * left
     let y = yTop + PAD * scale
 
-    const header = [model.missionName, model.timeLabel].filter(Boolean).join('  ·  ')
-    if (header) {
+    // The mission name alone: the band carries no single time, because each
+    // row's own range is the only time claim that holds for that row.
+    if (model.missionName) {
         ctx.fillStyle = '#111111'
         ctx.font = FONT(HEADER_TEXT, scale, 'bold')
-        ctx.fillText(clipText(ctx, header, textMaxWidth), left, y)
+        ctx.fillText(clipText(ctx, model.missionName, textMaxWidth), left, y)
         y += (HEADER_TEXT + ROW_GAP) * scale
     }
 
@@ -173,6 +181,13 @@ export const drawLegendBand = (
         ctx.font = FONT(TITLE_TEXT, scale, 'bold')
         ctx.fillText(clipText(ctx, row.title, textMaxWidth), left, y)
         y += (TITLE_TEXT + LINE_GAP) * scale
+
+        if (row.timeRange) {
+            ctx.fillStyle = '#444444'
+            ctx.font = FONT(LABEL_TEXT, scale)
+            ctx.fillText(clipText(ctx, row.timeRange, textMaxWidth), left, y)
+            y += (LABEL_TEXT + LINE_GAP) * scale
+        }
 
         if (row.kind === 'gradient') {
             const barW = Math.min(BAR_WIDTH * scale, width - 2 * left)

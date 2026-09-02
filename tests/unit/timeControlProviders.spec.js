@@ -10,6 +10,10 @@ import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
  *
  * That time.format comes in two languages: d3 time-format specifiers, marked
  * by a '%', and moment tokens. Both must render an actual date.
+ *
+ * time:formatTime applies the same mission format to a time the caller
+ * supplies, for a plugin displaying a time of its own (a per-layer window on
+ * an exported legend) rather than the cursor's.
  */
 
 vi.mock('../../src/essence/Basics/Map_/Map_', () => ({ default: {} }))
@@ -136,6 +140,78 @@ describe('TimeControl time:getCurrentFormatted provider', () => {
 
         expect(handlers['time:getCurrentFormatted']()).toBe(
             '2026-08-20T19:24:39Z'
+        )
+        expect(warn).toHaveBeenCalled()
+        warn.mockRestore()
+    })
+})
+
+describe('TimeControl time:formatTime provider', () => {
+    let originalMmgisAPI
+
+    beforeEach(() => {
+        originalMmgisAPI = window.mmgisAPI
+        vi.resetModules()
+    })
+
+    afterEach(() => {
+        window.mmgisAPI = originalMmgisAPI
+    })
+
+    test('is registered even when the mission has time disabled', async () => {
+        const { handlers } = await initTimeControl({})
+
+        expect(typeof handlers['time:formatTime']).toBe('function')
+    })
+
+    test('formats a caller-supplied time through a moment-style mission format', async () => {
+        const { handlers } = await initTimeControl(
+            enabledTimeConfig('YYYY-MM-DD')
+        )
+
+        expect(handlers['time:formatTime']('2015-03-13T00:00:00Z')).toBe(
+            '2015-03-13'
+        )
+    })
+
+    test('formats a caller-supplied time through a d3-style mission format', async () => {
+        const { handlers } = await initTimeControl(
+            enabledTimeConfig('%d %b %Y')
+        )
+
+        expect(handlers['time:formatTime']('2015-03-13T00:00:00Z')).toBe(
+            '13 Mar 2015'
+        )
+    })
+
+    // The time comes from the caller, so the cursor's own state is not what
+    // gates an answer — a layer with its own window still gets one.
+    test('answers for a mission whose time is disabled', async () => {
+        const { handlers } = await initTimeControl({
+            time: { format: 'YYYY-MM-DD' },
+        })
+
+        expect(handlers['time:formatTime']('2015-03-13T00:00:00Z')).toBe(
+            '2015-03-13'
+        )
+    })
+
+    test('is null for a missing or unparseable time', async () => {
+        const { handlers } = await initTimeControl(
+            enabledTimeConfig('YYYY-MM-DD')
+        )
+
+        expect(handlers['time:formatTime'](null)).toBeNull()
+        expect(handlers['time:formatTime'](undefined)).toBeNull()
+        expect(handlers['time:formatTime']('not a time')).toBeNull()
+    })
+
+    test('falls back to the default rather than throwing on an unusable format', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const { handlers } = await initTimeControl(enabledTimeConfig(42))
+
+        expect(handlers['time:formatTime']('2015-03-13T00:00:00Z')).toBe(
+            '2015-03-13T00:00:00Z'
         )
         expect(warn).toHaveBeenCalled()
         warn.mockRestore()

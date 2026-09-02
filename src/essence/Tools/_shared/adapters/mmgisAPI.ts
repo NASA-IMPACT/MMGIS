@@ -22,12 +22,20 @@ export type LayerConfig = {
     display_name?: string
     time?: {
         enabled?: boolean
+        /**
+         * 'global' and 'requery' track the global cursor; 'local' carries its
+         * own window in `start`/`end`.
+         */
+        type?: string
+        start?: string | null
+        end?: string | null
         /** As authored: a concrete ISO datetime or a policy string ("now",
          *  "now - P1D"). Ask mmgisGetTemporalExtents for the dates. */
         dataStartTime?: string
         dataEndTime?: string
         [key: string]: unknown
     }
+    url?: string
     [key: string]: unknown
 }
 
@@ -276,6 +284,29 @@ export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
  */
 export const mmgisGetCurrentTimeFormatted = (): Promise<string | null> => {
     return mmgisRequestIfProvided<string>('time:getCurrentFormatted')
+}
+
+/**
+ * A caller-supplied time rendered through that same mission format, for
+ * displaying a time the caller holds itself rather than the cursor's. Null
+ * for a missing or unparseable time, and against a core that predates the
+ * handler — callers show no time at all rather than one formatted their own
+ * way, which would disagree with the mission's.
+ */
+export const mmgisFormatTime = (
+    time: string | number | null | undefined,
+): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:formatTime', time)
+}
+
+/** The global time cursor's window start; null until time is seeded. */
+export const mmgisGetTimeStart = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getStart')
+}
+
+/** The global time cursor's window end; null until time is seeded. */
+export const mmgisGetTimeEnd = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getEnd')
 }
 
 /**
