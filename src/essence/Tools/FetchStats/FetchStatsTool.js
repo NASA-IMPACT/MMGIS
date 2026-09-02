@@ -3,8 +3,8 @@
  *
  * pluginId: 'fetch-stats' — declared in this plugin's config.json. The tool
  * controller mints the plugin-scoped bus handle from it and injects it as
- * `FetchStatsTool.api` before initialize() runs, which is what prefixes the
- * emits below with `plugin:fetch-stats:`.
+ * `FetchStatsTool.api` before make() runs, which is what prefixes the emits
+ * below with `plugin:fetch-stats:`.
  *
  * Listens to:
  *   - plugin:aoi:analysisAOIReady   { feature }
@@ -39,16 +39,15 @@ const FetchStatsTool = {
     _api: null,
     _cleanups: [],
 
-    initialize() {
-        this.make(null)
-    },
-
+    // No initialize(): the controller calls make() on every load, and a
+    // make() that ran twice would subscribe twice and answer one AOI
+    // selection with two analysis runs.
     make(targetId) {
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
-        // The controller minted this tool's bus handle before initialize()
-        // ran. The stand-in mirrors the handle's shape so environments that
-        // mount the tool without one do not crash. Releasing the handle
-        // belongs to the controller, not to destroy().
+        // The controller minted this tool's bus handle before make() ran. The
+        // stand-in mirrors the handle's shape so environments that mount the
+        // tool without one do not crash. Releasing the handle belongs to the
+        // controller, not to destroy().
         this._api = FetchStatsTool.api || {
             emit: () => {},
             provide: () => () => {},
