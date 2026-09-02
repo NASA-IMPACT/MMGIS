@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { buildToolIds } from '../../API/updateTools'
+import { toolCanonicalId } from '../../src/essence/Basics/ToolController_/ToolMetadataUtils'
 
 // Issue #350: every tool has exactly one canonical id. A manifest declares it
 // top-level; tools that declare none get one derived from their module binding.
@@ -130,6 +131,24 @@ describe('the checked-in tool manifests', () => {
     it('declare ids the build accepts', () => {
         expect(Object.keys(tools).length).toBeGreaterThan(0)
         expect(() => buildToolIds(tools)).not.toThrow()
+    })
+
+    // The rule for a manifest that declares no id is written twice — once here
+    // for the build, once in toolCanonicalId for the browser — because the two
+    // run in different processes. They must land on the same string, or a tool
+    // the registry names one thing answers the bus as another. The frontend
+    // half reads an empty toolIds under the hermetic pre/tools stub, which is
+    // exactly the derived branch this pins.
+    it('derive the same ids the frontend does', () => {
+        const ids = buildToolIds(tools)
+        const undeclared = Object.values(tools)
+            .filter((manifest) => manifest.id == null)
+            .flatMap((manifest) => Object.keys(manifest.paths || {}))
+
+        expect(undeclared.length).toBeGreaterThan(0)
+        for (const binding of undeclared) {
+            expect(toolCanonicalId({ js: binding })).toBe(ids[binding])
+        }
     })
 
     it('give the modern tools their canonical ids', () => {

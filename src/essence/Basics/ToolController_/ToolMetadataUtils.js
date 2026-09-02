@@ -3,12 +3,18 @@
  */
 
 import DOMPurify from 'dompurify'
-import { toolIds } from '../../../pre/tools'
+import { toolIds as generatedToolIds } from '../../../pre/tools'
 import { TOOL_ORIENTATION } from './types/tool'
 import { PANEL_POSITION } from '../PanelManager_/types/layout'
 import { createLogger } from '../Logger_/Logger_'
 
 const logger = createLogger('ToolMetadataUtils')
+
+// pre/tools.js is generated at server start and gitignored, so a bundle can be
+// built against a copy written before the registry carried ids at all. Falling
+// back to derivation there costs a hyphenated id its declaration; reading a
+// property off undefined would take every tool's metadata down with it.
+const toolIds = generatedToolIds || {}
 
 
 /**
@@ -205,8 +211,11 @@ export function sanitizeToolMetadata(metadata) {
     // Sanitize critical string fields that are used in DOM
     sanitized.id = sanitizeValue(metadata.id, 'id')
     sanitized.name = sanitizeValue(metadata.name, 'text')
-    // Only carried when the config named a module; metadata built by hand for
-    // a tool that has no registry binding has nothing to sanitize here.
+    // generateToolMetadata always sets this, to '' for a config naming no
+    // module. The guard is for metadata assembled by hand — a panel's own
+    // fixtures, a caller sanitizing a partial object — which carries no
+    // binding at all and should come back without the key rather than with an
+    // empty one.
     if (metadata.module !== undefined) {
         sanitized.module = sanitizeValue(metadata.module, 'id')
     }

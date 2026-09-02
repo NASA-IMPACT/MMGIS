@@ -148,6 +148,36 @@ describe('resolving a tool config to its two names', () => {
             ])
         ).toThrow(/fetch-stats.*Fetch Stats.*Legacy Stats/)
     })
+
+    // A config parks an alternate entry by switching it off rather than
+    // deleting it. Only one of a parked pair can ever load, so the parked one
+    // claims nothing — and throwing over it would take the whole layout down
+    // for a tool the mission asked to leave out.
+    test('a switched-off entry does not collide with the live one', () => {
+        const parkedSecond = ToolControllerModern_.buildToolConfigMap([
+            statsConfig,
+            { name: 'Legacy Stats', js: 'FetchStatsTool_Legacy', on: false },
+        ])
+        const parkedFirst = ToolControllerModern_.buildToolConfigMap([
+            { name: 'Legacy Stats', js: 'FetchStatsTool_Legacy', on: false },
+            statsConfig,
+        ])
+
+        expect(parkedSecond.getToolData('fetch-stats').metadata.name).toBe('Fetch Stats')
+        expect(parkedFirst.getToolData('fetch-stats').metadata.name).toBe('Fetch Stats')
+    })
+
+    // A panel's `panelTools` names its tools however the config author wrote
+    // them, and the binding is what the id used to be, so configs written
+    // against older builds keep placing their tools.
+    test('a panel finds a tool by name, by id, or by module binding', () => {
+        const { getToolData } = ToolControllerModern_.buildToolConfigMap([statsConfig])
+
+        expect(getToolData('Fetch Stats').metadata.id).toBe('fetch-stats')
+        expect(getToolData('fetch-stats').metadata.id).toBe('fetch-stats')
+        expect(getToolData('FetchStatsTool').metadata.id).toBe('fetch-stats')
+        expect(getToolData('Nothing Named This')).toBe(undefined)
+    })
 })
 
 describe('a tool the controller loads', () => {

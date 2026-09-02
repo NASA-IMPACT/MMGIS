@@ -87,9 +87,9 @@ describe('panel adapters', () => {
         expect(await mmgisSetPanelState('left', 'expanded')).toEqual({ ok: false, reason: 'layout-inactive' })
         expect(await mmgisShowPanel('left')).toEqual({ ok: false, reason: 'layout-inactive' })
         expect(await mmgisHidePanel('left')).toEqual({ ok: false, reason: 'layout-inactive' })
-        expect(await mmgisSetPluginState('DrawTool', 'hidden')).toEqual({ ok: false, reason: 'layout-inactive' })
-        expect(await mmgisShowPlugin('DrawTool')).toEqual({ ok: false, reason: 'layout-inactive' })
-        expect(await mmgisHidePlugin('DrawTool')).toEqual({ ok: false, reason: 'layout-inactive' })
+        expect(await mmgisSetPluginState('draw', 'hidden')).toEqual({ ok: false, reason: 'layout-inactive' })
+        expect(await mmgisShowPlugin('draw')).toEqual({ ok: false, reason: 'layout-inactive' })
+        expect(await mmgisHidePlugin('draw')).toEqual({ ok: false, reason: 'layout-inactive' })
     })
 
     test('a command passes through whatever result core reports', async () => {

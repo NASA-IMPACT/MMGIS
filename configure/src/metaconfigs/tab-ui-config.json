@@ -226,7 +226,7 @@
             {
               "field": "panelTools",
               "name": "Panel Tools",
-              "description": "Tool identifiers to assign to this panel. Can be tool names (e.g., 'Title') or tool IDs (e.g., 'Title_instance1') for multiple instances. Must match values in the mission's tools array. Example: Title,Layers,Draw",
+              "description": "Tool identifiers to assign to this panel. Each is a tool's name (e.g., 'Title') or its declared id (e.g., 'title'), and must match a tool in the mission's tools array. Example: Title,Layers,Draw",
               "type": "textarray",
               "default": [],
               "width": 24

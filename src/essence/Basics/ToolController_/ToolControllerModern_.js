@@ -145,21 +145,28 @@ const ToolControllerModern_ = {
     buildToolConfigMap: function (tools) {
         const toolConfigMap = new Map() // id -> { config, metadata }
         const toolNameToId = new Map() // name -> id
+        const toolModuleToId = new Map() // registry binding -> id
 
         tools.forEach(toolConfig => {
             const toolMetadata = generateToolMetadata(toolConfig)
 
             // Store by ID (primary key). The id is the tool's identity on the
-            // bus, in the DOM and in teardown events, so two tools claiming it
-            // is a broken mission config rather than something to work around:
-            // whichever lost the race would be missing from the layout with
-            // only a console line to say why, while the other answered for it.
+            // bus, in the DOM and in teardown events, so two live entries
+            // claiming it is a broken mission config rather than something to
+            // work around: whichever lost the race would be missing from the
+            // layout with only a console line to say why, while the other
+            // answered for it. A switched-off entry is not a claimant — it
+            // cannot be loaded beside its live twin — so it neither throws
+            // nor displaces the entry already holding the id.
             const claimed = toolConfigMap.get(toolMetadata.id)
             if (claimed) {
-                throw new Error(
-                    `[ToolControllerModern] Duplicate tool id "${toolMetadata.id}": ` +
-                    `"${claimed.metadata.name}" and "${toolMetadata.name}" both claim it`
-                )
+                if (claimed.config.on !== false && toolConfig.on !== false) {
+                    throw new Error(
+                        `[ToolControllerModern] Duplicate tool id "${toolMetadata.id}": ` +
+                        `"${claimed.metadata.name}" and "${toolMetadata.name}" both claim it`
+                    )
+                }
+                if (toolConfig.on === false) return
             }
             toolConfigMap.set(toolMetadata.id, { config: toolConfig, metadata: toolMetadata })
 
@@ -169,11 +176,20 @@ const ToolControllerModern_ = {
             } else {
                 toolNameToId.set(toolMetadata.name, toolMetadata.id)
             }
+            if (toolMetadata.module) toolModuleToId.set(toolMetadata.module, toolMetadata.id)
         })
 
         // Helper function to get tool data by name or ID
+        //
+        // A panel names its tools however the mission config author wrote
+        // them: the display name, the canonical id, or the registry binding
+        // the config's `js` carries — which is what the id used to be, so
+        // configs written against older builds still resolve.
         const getToolData = (nameOrId) => {
-            const id = toolNameToId.get(nameOrId) || nameOrId
+            const id =
+                toolNameToId.get(nameOrId) ||
+                toolModuleToId.get(nameOrId) ||
+                nameOrId
             return toolConfigMap.get(id)
         }
 
@@ -436,7 +452,9 @@ const ToolControllerModern_ = {
             // for a tool that isn't there for the rest of the session.
             if (api && !tracked) {
                 api.release()
-                if (ToolClass && ToolClass.api === api) ToolClass.api = null
+                // A handle exists only past the point the class was found, so
+                // ToolClass is there to read.
+                if (ToolClass.api === api) ToolClass.api = null
             }
             return null
         }
