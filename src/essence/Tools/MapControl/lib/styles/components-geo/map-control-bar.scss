@@ -53,12 +53,17 @@
     }
 
     /* 36px is the button's floor, not its width: it splits whatever extra width
-       its group was given, with the glyph centered in the result. */
+       its group was given, with the glyph centered in the result. The floor is
+       stated twice because a flex basis alone does not reach the group around
+       it — Firefox sizes the group from its buttons' content, and without the
+       min-width would hold the group at glyph width while the button overflows
+       it. */
     &__btn {
         display: flex;
         align-items: center;
         justify-content: center;
         flex: 1 0 36px;
+        min-width: 36px;
         height: 36px;
         padding: 0;
         border: none;
