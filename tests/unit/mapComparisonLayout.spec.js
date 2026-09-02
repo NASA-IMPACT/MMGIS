@@ -163,6 +163,18 @@ test.describe('MapComparison layouts', () => {
         )
     })
 
+    // Each layout gives the handle a glyph of its own. The artwork is a mask
+    // the stylesheet selects off the divider's mark, so what the DOM has to
+    // carry is the box to draw it in.
+    test('raises a glyph on the handle for the stylesheet to fill', () => {
+        enable()
+        expect(
+            divider().querySelector(
+                '.mmgis-comparison-handle .mmgis-comparison-handle__glyph',
+            ),
+        ).not.toBeNull()
+    })
+
     test('disable takes the divider down whichever layout it was in', () => {
         enable('sideBySide')
         expect(divider()).not.toBeNull()
