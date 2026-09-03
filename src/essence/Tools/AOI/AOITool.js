@@ -142,9 +142,6 @@ const AOITool = {
     // The selection a drawing session took the card away from, held until the
     // session either replaces it or is backed out of.
     _suspendedAOI: null,
-    // True across the request that swaps one draw shape for another, whose
-    // cancel is this plugin's own doing rather than the user backing out.
-    _switchingShape: false,
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -243,7 +240,6 @@ const AOITool = {
         // Nothing of the selection outlives the tool, so the cancel below has
         // no card to put back.
         this._suspendedAOI = null
-        this._switchingShape = false
 
         // Fire-and-forget: cancel any active drawing session via the bus.
         this._removeDrawKeys()
@@ -416,17 +412,11 @@ const AOITool = {
 
     _onDrawShapeChange(shape) {
         this._setState({ drawShape: shape, drawVerticesCount: 0 })
-        // The engines end any live session before starting the new one, and
-        // both events reach the handlers below from inside this request. The
-        // cancel among them is the shape swap, not the user backing out, so it
-        // leaves the suspended selection suspended.
-        this._switchingShape = true
-        try {
-            this._api?.request('map:enableDrawing', { shape })
-                .catch((err) => console.warn('[AOI] enableDrawing failed', err))
-        } finally {
-            this._switchingShape = false
-        }
+        // The engines end any live session without a cancel of its own before
+        // starting the new one, so a swap reaches the handlers below as a
+        // `drawstart` alone and the suspended selection stays suspended.
+        this._api?.request('map:enableDrawing', { shape })
+            .catch((err) => console.warn('[AOI] enableDrawing failed', err))
     },
 
     /**
@@ -442,9 +432,8 @@ const AOITool = {
         this._installDrawKeys()
         this._setState({
             isDrawing: true,
-            // The shape the engine started, which is what tells the panel
-            // which session is live after a mid-session switch — that switch
-            // cancels the old session, and the cancel resets the shape.
+            // The shape the engine actually started: its word on which session
+            // is live outranks the one the panel asked for.
             drawShape: e?.shape ?? this._state.drawShape,
             drawVerticesCount: 0,
         })
@@ -501,8 +490,8 @@ const AOITool = {
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
         const feature = e?.feature
         if (!feature) {
-            // Nothing was drawn, so the session leaves the previous selection
-            // as it found it.
+            // Defence against a payload with no feature: there is nothing to
+            // select, so the previous selection is left as it was found.
             this._restoreSuspendedSelection()
             return
         }
@@ -516,7 +505,7 @@ const AOITool = {
     _onDrawCancelEvent() {
         this._removeDrawKeys()
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
-        if (!this._switchingShape) this._restoreSuspendedSelection()
+        this._restoreSuspendedSelection()
     },
 
     /** Let go of the selection a session suspended: it is being replaced. */
@@ -528,16 +517,23 @@ const AOITool = {
 
     /**
      * Put back the card of a selection a session suspended without replacing.
-     * The selection never left the map, so its centroid is still in view and
-     * the anchor needs no view to fall back on.
+     * Only the card: the selection itself never left the map. The camera is
+     * wherever the session left it and the centroid may well be off it — the
+     * search that made the selection may never have been able to frame it —
+     * so the card is anchored against the view, as the first show was.
      */
     _restoreSuspendedSelection() {
         const aoi = this._suspendedAOI
         this._suspendedAOI = null
         if (!aoi || this._state.currentAOI !== aoi) return
-        const c = featureCentroid(aoi.feature)
-        if (!c) return
-        this._showPopup(aoi.label, selectionPopupAnchor({ lat: c[1], lng: c[0] }))
+        this._api?.request('map:getBounds')
+            .catch(() => null)
+            .then((view) => {
+                // The read is a hop, and the selection can be replaced or
+                // cleared across it.
+                if (this._state.currentAOI !== aoi) return
+                this._showSelectionPopup(aoi.feature, aoi.label, view)
+            })
     },
 
     // ── Inspect mode ───────────────────────────────────────────────────────────
@@ -670,17 +666,7 @@ const AOITool = {
         this._state.currentAOI = { feature, source, label }
         api?.emit('areaDrawn', { feature, source })
 
-        const c = featureCentroid(feature)
-        // `view` keeps the popup on-screen when the camera does not move; omit
-        // it once the camera has been fitted to the selection.
-        const showPopup = (view) => {
-            if (c) {
-                this._showPopup(
-                    label,
-                    selectionPopupAnchor({ lat: c[1], lng: c[0] }, view)
-                )
-            }
-        }
+        const showPopup = (view) => this._showSelectionPopup(feature, label, view)
 
         const bbox = featureBounds(feature)
         if (bbox && api?.request && bus?.on && bus?.off) {
@@ -779,6 +765,19 @@ const AOITool = {
     },
 
     // ── Popup ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Show a selection's card at its centroid, or at the centre of `view` when
+     * that centroid sits outside it (see {@link selectionPopupAnchor}) — which
+     * is what keeps the card, and so the only Analyze and Cancel the selection
+     * has, on screen. Pass no view once the camera has been fitted to the
+     * selection.
+     */
+    _showSelectionPopup(feature, label, view) {
+        const c = featureCentroid(feature)
+        if (!c) return
+        this._showPopup(label, selectionPopupAnchor({ lat: c[1], lng: c[0] }, view))
+    },
 
     /**
      * Ask core for the analyze/cancel popup at a feature centroid. The request

@@ -471,6 +471,12 @@ describe('AOITool drawing sessions', () => {
 
     test('backing out before any vertex puts the card back', async () => {
         await selectAndOpen(SQUARE, 'Alabama')
+        // The camera was fitted to the selection, so its centroid is in view
+        // and the card goes back on it.
+        api.requestImpl.set('map:getBounds', () => ({
+            southWest: { lat: 0, lng: 0 },
+            northEast: { lat: 10, lng: 10 },
+        }))
         api.emit('map:drawstart', { shape: 'polygon' })
         await flush()
         api.reset()
@@ -478,14 +484,34 @@ describe('AOITool drawing sessions', () => {
         api.emit('map:drawcancel', { shape: 'polygon' })
         await flush()
 
-        // At the selection's own centroid, and with no camera step: the
-        // selection never left the map, so it is still in view.
         const shows = api.namesOf('map:showPopup')
         expect(shows).toHaveLength(1)
         expect(shows[0].payload.title).toBe('Alabama')
         expect(shows[0].payload.latlng).toEqual({ lat: 5, lng: 5 })
         expect(api.hasOpenPopup()).toBe(true)
         expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+    })
+
+    // The camera is not always on the selection when a session is backed out
+    // of: a search whose extent cannot be framed never took it there, and a
+    // pan during the session takes it away. The card holds the only Analyze
+    // and Cancel a selection has, so it has to come back somewhere visible.
+    test('a card put back for an off-screen selection lands at the view centre', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.emit('map:drawstart', { shape: 'polygon' })
+        await flush()
+        api.reset()
+
+        // VIEW holds neither square, so the suspended selection's centroid
+        // (5, 5) is off it; the view's own centre is (-35, -35).
+        api.emit('map:drawcancel', { shape: 'polygon' })
+        await flush()
+
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.title).toBe('Alabama')
+        expect(shows[0].payload.latlng).toEqual({ lat: -35, lng: -35 })
+        expect(api.hasOpenPopup()).toBe(true)
     })
 
     test('the first vertex is where the previous selection goes', async () => {
@@ -530,12 +556,10 @@ describe('AOITool drawing sessions', () => {
     })
 
     // Both engines end the live session inside `enableDrawing` before starting
-    // the new one, so a shape switch delivers a cancel and then a start.
+    // the new one, and end it without a cancel of its own, so a shape switch
+    // reaches the plugin as a `drawstart` alone.
     test('switching shape mid-session keeps the session and its new shape', async () => {
         api.requestImpl.set('map:enableDrawing', ({ shape }) => {
-            if (AOITool._state.isDrawing) {
-                api.emit('map:drawcancel', { shape: AOITool._state.drawShape })
-            }
             api.emit('map:drawstart', { shape })
             return true
         })
@@ -549,11 +573,11 @@ describe('AOITool drawing sessions', () => {
         AOITool._onDrawShapeChange('rectangle')
         await flush()
 
-        // Without the shape the start carries, the panel falls back to the
-        // shape picker while a rectangle session is running.
+        // A live session on the new shape: the panel needs both, or it falls
+        // back to the shape picker while a rectangle session is running.
         expect(AOITool._state).toMatchObject({ isDrawing: true, drawShape: 'rectangle' })
-        // The cancel in the middle is the swap, not the user backing out, so
-        // the suspended card is not put back only to be retracted again.
+        // Nothing was backed out of, so the suspended card stays suspended
+        // instead of coming back only to be retracted again.
         expect(api.namesOf('map:showPopup')).toHaveLength(0)
         expect(api.getSelection()).toMatchObject({ feature: SQUARE })
     })
