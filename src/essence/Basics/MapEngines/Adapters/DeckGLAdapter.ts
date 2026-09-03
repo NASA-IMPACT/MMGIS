@@ -19,6 +19,7 @@
 
 import {
     Deck,
+    MapView,
     FlyToInterpolator,
     LinearInterpolator,
     type PickingInfo,
@@ -29,7 +30,12 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { Map as MaplibreGLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import type { IMapEngine, MapScreenshotResult } from '../IMapEngine'
+import type { 
+    IMapEngine, 
+    ComparisonConfig, 
+    ComparisonLayout,
+    MapScreenshotResult 
+} from '../IMapEngine'
 import { MAP_ENGINE } from '../types/engine'
 import type { MapEngineType } from '../types/engine'
 import type { LatLng, LatLngLike, BoundsLike, PointLike } from '../types/geometry'
@@ -41,7 +47,7 @@ import type {
     MapInitOptions,
     BasemapOptions,
 } from '../types/view'
-import type { LayerOptions, OverlayOptions } from '../types/layers'
+import type { LayerOptions, OverlayOptions, RefreshContext } from '../types/layers'
 import type {
     MapEventHandler,
     MapEventOptions,
@@ -49,7 +55,6 @@ import type {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from '../types/events'
 
 import {
@@ -72,7 +77,12 @@ import {
     TerraDrawCircleMode,
 } from 'terra-draw'
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
-import { extractVerticesFromGeometry } from './DrawingHelpers'
+import {
+    committedVerticesFromChange,
+    drawModeKeyEvents,
+    drawStyles,
+    validateDrawnLineString,
+} from './DrawingHelpers'
 
 /**
  * Minimal API surface that is identical between mapbox-gl and maplibre-gl `Map` instances.
@@ -93,11 +103,32 @@ interface BasemapInstance {
     getCenter(): { lat: number; lng: number }
     /** Return the current zoom level. */
     getZoom(): number
+    /** Return the current bearing (rotation) in degrees. */
+    getBearing(): number
+    /** Return the current pitch (tilt) in degrees. */
+    getPitch(): number
     /** Return the current visible bounds. */
     getBounds(): {
         getSouthWest(): { lat: number; lng: number }
         getNorthEast(): { lat: number; lng: number }
     }
+    /**
+     * Set the padding, in pixels, around the viewport the camera centres in.
+     * Preserves the centre and zoom, and reallocates nothing.
+     */
+    setPadding(padding: {
+        top: number
+        bottom: number
+        left: number
+        right: number
+    }): unknown
+    /** Move the camera to a new position with no animation. */
+    jumpTo(options: {
+        center?: [number, number]
+        zoom?: number
+        bearing?: number
+        pitch?: number
+    }): unknown
     /** Animate the camera to a new position using a fly-to curve. */
     flyTo(options: {
         center?: [number, number]
@@ -129,10 +160,34 @@ interface BasemapInstance {
     resize(): void
     /** Switch the map to a different style URL at runtime. */
     setStyle(styleUrl: string): unknown
+    /** Return the style layer with the given id, or `undefined` if it is not in the style. */
+    getLayer(id: string): unknown
     /** Return the WebGL canvas element the base map renders into. */
     getCanvas(): HTMLCanvasElement
     /** Schedule a re-render on the next animation frame (mapbox-gl + maplibre-gl). */
     triggerRepaint(): void
+}
+
+/**
+ * One half of a side-by-side comparison: a clipped div holding a map of its
+ * own, so the two halves meet at the divider instead of overlapping.
+ *
+ * Overlay mode fills `map` + `overlay`; standalone mode (no basemap) fills
+ * `deck`. `offMap` detaches whichever listeners were attached.
+ */
+interface SideBySidePane {
+    /** The clipping slice. Its width is what the divider moves. */
+    div: HTMLElement
+    /**
+     * The basemap's own element inside the slice, held at the full container
+     * width so the divider never resizes a canvas. Null in standalone mode,
+     * where the deck fills the slice directly.
+     */
+    mapDiv: HTMLElement | null
+    map: BasemapInstance | null
+    overlay: MapboxOverlay | null
+    deck: Deck | null
+    offMap: () => void
 }
 
 /**
@@ -141,6 +196,30 @@ interface BasemapInstance {
  * short enough that a dead map fails fast.
  */
 const SCREENSHOT_RENDER_TIMEOUT_MS = 3000
+
+/**
+ * Prefix on the MapLibre layers terra-draw renders the in-progress drawing
+ * into. Passed to `TerraDrawMapLibreGLAdapter` explicitly, so this file sets
+ * the ids rather than inheriting whatever the library defaults to.
+ */
+const TERRA_DRAW_PREFIX = 'td'
+
+/**
+ * Bottom of the terra-draw stack: its MapLibre adapter registers the polygon
+ * fill layer first.
+ */
+const TERRA_DRAW_BOTTOM_LAYER_ID = `${TERRA_DRAW_PREFIX}-polygon`
+
+/**
+ * Sort rank for a layer that was never given an explicit z-index.
+ *
+ * Every layer of the configured mission stack is ranked through
+ * {@link DeckGLAdapter.setLayerZIndex} as it is added, so the unranked layers
+ * are the ones added on top of that stack afterwards — plugin overlays such as
+ * a selection highlight. Ranking them above every assigned index keeps them
+ * there.
+ */
+const UNRANKED_Z_INDEX = Number.MAX_SAFE_INTEGER
 
 function canvasToPngScreenshot(canvas: HTMLCanvasElement): Promise<MapScreenshotResult> {
     return new Promise((resolve, reject) => {
@@ -236,6 +315,31 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _maxBounds: BoundsLike | null = null
 
     private _layers = new Map<string, Layer>()
+    /**
+     * Layer ids already reported as not-a-deck-layer, so a slider drag warns
+     * once rather than on every frame.
+     */
+    private _warnedNonDeckLayers = new Set<string>()
+
+    /**
+     * Whether the engine holds a real deck.gl layer under `id`. Warns once per
+     * id when it holds something else — see {@link updateLayer}.
+     */
+    private _holdsDeckLayer(id: string, existing: unknown): boolean {
+        if (typeof (existing as Layer)?.clone === 'function') return true
+        if (existing != null && !this._warnedNonDeckLayers.has(id)) {
+            this._warnedNonDeckLayers.add(id)
+            console.warn(
+                `DeckGLAdapter: layer "${id}" is not a deck.gl layer, so it cannot be ` +
+                `updated. It was built with Leaflet because this engine has no builder ` +
+                `for its type. The update was skipped.`
+            )
+        }
+        return false
+    }
+
+    /** Per-layer refresh hooks, keyed by layer id. */
+    private _refreshers = new Map<string, (layer: Layer, ctx: RefreshContext) => Layer | void>()
     private _layerZIndices = new Map<string, number>()
     private _layerIdCounter = 0
 
@@ -250,18 +354,78 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /** Registry of anchored HTML overlays (id -> teardown function). */
     private _overlays = new Map<string, () => void>()
 
+    // ── Comparison / swipe state ──────────────────────────────────────────────
+    // Comparison renders each side into its own dedicated `Deck` canvas stacked
+    // over the primary map. The primary keeps its basemap but hides its data
+    // layers (see `_syncLayers`); each side canvas renders only its assigned
+    // layers and is revealed by a CSS clip driven by the divider position. Both
+    // side canvases follow the primary camera (controller-less, view-only) so the
+    // basemap + data stay aligned while the user pans/zooms the primary map.
+    private _comparisonEnabled = false
+    private _comparisonDividerPos = 0.5
+    private _comparisonLeftIds: string[] = []
+    private _comparisonRightIds: string[] = []
+    /**
+     * Deck props overriding each side's layers, keyed by layer id. Empty means
+     * both sides clone the live layer verbatim, which draws them identically.
+     */
+    private _comparisonLeftProps: Record<string, Record<string, unknown>> = {}
+    private _comparisonRightProps: Record<string, Record<string, unknown>> = {}
+    private _comparisonLeftDeck: Deck | null = null
+    private _comparisonRightDeck: Deck | null = null
+    private _comparisonLeftDiv: HTMLElement | null = null
+    private _comparisonRightDiv: HTMLElement | null = null
+    /**
+     * Watches the container for size changes while comparison is active so the
+     * side canvases redraw and the clip stays aligned. `invalidateSize()` isn't
+     * reliably called on every layout change (e.g. the modern UI's docked-panel
+     * resizes only dispatch a synthetic `window` resize event), so this observes
+     * the container directly instead of depending on that call chain.
+     */
+    private _comparisonResizeObserver: ResizeObserver | null = null
+
+    // ── Side-by-side comparison state ─────────────────────────────────────────
+    // The other way of splitting the viewport: rather than one camera drawn
+    // twice and wiped between, each half gets a map of its own — basemap
+    // included — and the two cameras are held to the same centre and zoom. That
+    // is what lets a place be seen under both layers at once.
+    private _comparisonLayout: ComparisonLayout = 'swipe'
+    /** `[left, right]` while the side-by-side layout is mounted. */
+    private _sbsPanes: [SideBySidePane, SideBySidePane] | null = null
+    /**
+     * Held true while one pane's camera is being copied onto the others, so the
+     * `move` those copies raise is ignored rather than echoed back.
+     */
+    private _sbsSyncing = false
+
+    /**
+     * The basemap constructor and options the panes rebuild from. Overlay mode
+     * resolves its map class through a dynamic import, so the class is kept
+     * rather than imported again, and the style tracks runtime basemap swaps so
+     * a pane opens on the basemap the user is actually looking at.
+     */
+    private _basemapCtor:
+        | (new (options: Record<string, unknown>) => BasemapInstance)
+        | null = null
+    private _basemapOptions: BasemapOptions | null = null
+    private _basemapStyle: string | null = null
+
     /**
      * Bound handler kept as a class field so it can be removed cleanly in {@link destroy}.
      * Syncs `_viewState` from the basemap and emits the engine-level `'moveend'` event.
      */
     private _onBasemapMoveEnd = (): void => {
+        if (this._sbsSyncing) return
         const center = this._basemap!.getCenter()
         this._viewState = {
             ...this._viewState,
             longitude: center.lng,
             latitude: center.lat,
             zoom: this._basemap!.getZoom(),
+            bearing: this._basemap!.getBearing(),
+            pitch: this._basemap!.getPitch(),
         }
+        if (this._comparisonEnabled) this._syncComparisonCamera()
         this._emitEvent('moveend', this._viewState)
     }
 
@@ -272,13 +436,17 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * accurate while the camera is moving.
      */
     private _onBasemapMove = (): void => {
+        if (this._sbsSyncing) return
         const center = this._basemap!.getCenter()
         this._viewState = {
             ...this._viewState,
             longitude: center.lng,
             latitude: center.lat,
             zoom: this._basemap!.getZoom(),
+            bearing: this._basemap!.getBearing(),
+            pitch: this._basemap!.getPitch(),
         }
+        if (this._comparisonEnabled) this._syncComparisonCamera()
     }
 
     /**
@@ -345,13 +513,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * The adapter must not be used again after this call.
      */
     destroy(): void {
+        // End a live session the normal way, while its listeners are still
+        // attached, so its initiator hears `drawcancel` and stops driving a
+        // session that is about to have no engine.
+        this.disableDrawing()
+
         if (this._terraDraw) {
             this._terraDrawListeners.forEach((off) => { try { off() } catch { /* ignore */ } })
             this._terraDrawListeners = []
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
-        this._drawingShape = null
+
+        this._comparisonEnabled = false
+        this._destroyComparisonSurfaces()
 
         if (this._isOverlayMode) {
             if (this._basemap) {
@@ -381,6 +556,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._overlays.clear()
 
         this._layers.clear()
+        this._warnedNonDeckLayers.clear()
+        this._refreshers.clear()
         this._layerZIndices.clear()
         this._eventListeners.clear()
         this._featureClickHandler = null
@@ -412,9 +589,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return this._basemap
     }
 
+    /**
+     * Switch the basemap to a different style URL.
+     *
+     * Loading a style replaces every layer on the map, terra-draw's included,
+     * and terra-draw does not register its layers again. So a live drawing
+     * session is ended before the swap. That emits `drawcancel`, which tells
+     * consumers the session is over, and it lets {@link _syncLayers} drop the
+     * terra-draw anchor while the layers it points at are still in the style.
+     */
     setBasemapStyle(styleUrl: string): boolean {
         if (!this._basemap) return false
+        this.disableDrawing()
         this._basemap.setStyle(styleUrl)
+        this._basemapStyle = styleUrl
+        this._sbsPanes?.forEach((pane) => pane.map?.setStyle(styleUrl))
         return true
     }
 
@@ -612,10 +801,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Returns the current visible geographic bounds.
+     * Returns the geographic bounds currently visible.
      *
-     * - Overlay mode: delegated directly to the basemap's `getBounds()`.
-     * - Standalone mode: derived by unprojecting the container corners via `WebMercatorViewport`.
+     * - Overlay mode: handed straight to the basemap's `getBounds()`.
+     * - Standalone mode: all four container corners are unprojected through
+     *   `WebMercatorViewport`, and the answer is the smallest north-up box
+     *   around those four points.
+     *
+     * All four corners are read because the map can be rotated — drag-rotate
+     * is enabled, and the view state carries bearing and pitch — so a corner
+     * of the screen is not a corner of the compass. Past 90° of bearing the
+     * bottom-left pixel unprojects north-east of the top-right one. Taking the
+     * min and max across every corner keeps south below north and west below
+     * east at any angle, and covers the whole rotated rectangle rather than
+     * just its diagonal.
      */
     getBounds(): BoundsLike {
         if (this._isOverlayMode) {
@@ -629,11 +828,18 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
         const vp = makeViewport(this._viewState, this._container)
         const { offsetWidth: w, offsetHeight: h } = this._container
-        const [west, south] = vp.unproject([0, h]) as [number, number]
-        const [east, north] = vp.unproject([w, 0]) as [number, number]
+        const corners: [number, number][] = [
+            [0, 0],
+            [w, 0],
+            [w, h],
+            [0, h],
+        ]
+        const unprojected = corners.map((c) => vp.unproject(c) as [number, number])
+        const lngs = unprojected.map(([lng]) => lng)
+        const lats = unprojected.map(([, lat]) => lat)
         return {
-            southWest: { lat: south, lng: west },
-            northEast: { lat: north, lng: east },
+            southWest: { lat: Math.min(...lats), lng: Math.min(...lngs) },
+            northEast: { lat: Math.max(...lats), lng: Math.max(...lngs) },
         }
     }
 
@@ -812,9 +1018,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     invalidateSize(): void {
         if (this._isOverlayMode) {
             this._basemap?.resize()
-            return
+        } else {
+            this._deck?.redraw('invalidateSize')
         }
-        this._deck?.redraw('invalidateSize')
+        this._handleComparisonResize()
     }
 
     getSize(): PointLike {
@@ -857,17 +1064,25 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         const id = resolveLayerId(layer)
         this._layers.delete(id)
         this._layerZIndices.delete(id)
+        this._refreshers.delete(id)
         this._syncLayers()
     }
 
     /**
-     * Clone the existing layer with overridden props. deck.gl detects the same
-     * `id` and updates GPU resources incrementally.
+     * Clone the existing layer with overridden props. deck.gl detects the
+     * same `id` and updates GPU resources incrementally.
+     *
+     * A held value that is not a deck.gl layer is declined, with a warning,
+     * rather than applied: this engine should only ever hold layers it
+     * built, but layer types it has no builder for fall through to being
+     * built with Leaflet instead. The warning exists so that mis-construction
+     * surfaces, rather than presenting as an update that quietly did nothing.
      */
     updateLayer(layer: Layer | string, options: Partial<LayerOptions>): Layer {
         const id = resolveLayerId(layer)
         const existing = this._layers.get(id)
         if (!existing) return existing as unknown as Layer
+        if (!this._holdsDeckLayer(id, existing)) return existing
         const updated = existing.clone({
             ...(options.opacity !== undefined ? { opacity: options.opacity } : {}),
             ...(options.visible !== undefined ? { visible: options.visible } : {}),
@@ -876,6 +1091,45 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._layers.set(id, updated)
         this._syncLayers()
         return updated
+    }
+
+    registerLayer(id: string, layer: Layer): void {
+        // For deck.gl, holding a layer is rendering it — there is no
+        // "registered but not on the map" state. Keyed by the caller's id
+        // rather than layer.id so the two can never drift apart.
+        this._layers.set(id, layer)
+        this._syncLayers()
+    }
+
+    setLayerRefresher(
+        id: string,
+        refresh: ((layer: Layer, ctx: RefreshContext) => Layer | void) | null
+    ): void {
+        if (refresh == null) this._refreshers.delete(id)
+        else this._refreshers.set(id, refresh)
+    }
+
+    refreshLayer(id: string, ctx: RefreshContext = {}): boolean {
+        const existing = this._layers.get(id)
+        if (!existing) return false
+
+        // No fallback: how a layer recomputes itself is layer-kind knowledge,
+        // and this adapter has none. The module that owns the kind registers a
+        // refresher at creation (see Map_.makeTileLayer); a held layer without
+        // one has no way to refresh, exactly as in the Leaflet adapter.
+        const refresh = this._refreshers.get(id)
+        if (!refresh) return false
+
+        const next = refresh(existing, {
+            url: ctx.url,
+            tileOptions: ctx.tileOptions,
+            force: ctx.force,
+        })
+
+        // A refresher with nothing to apply returns nothing; keep what we hold.
+        if (next) this._layers.set(id, next)
+        this._syncLayers()
+        return true
     }
 
     /**
@@ -891,6 +1145,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the end of the layers array so deck.gl renders it on top.
+     * The move lasts only until the next z-index re-sort, which puts the layer
+     * back at its assigned index — or on top, if it has none.
      */
     bringToFront(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -903,6 +1159,8 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Move a layer to the start of the layers array so deck.gl renders it below all others.
+     * The move lasts only until the next z-index re-sort, which puts the layer
+     * back at its assigned index — or on top, if it has none.
      */
     bringToBack(layer: Layer | string): void {
         const id = resolveLayerId(layer)
@@ -914,20 +1172,28 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Set a layer's opacity and return the instance carrying it. deck.gl layers
-     * are immutable, so the caller must replace its reference with the result.
+     * Set a layer's opacity. deck.gl layers are immutable, so this replaces
+     * the instance the engine holds via {@link updateLayer}, which re-syncs
+     * the render list.
      *
-     * A layer on the map goes through {@link updateLayer}, which re-syncs the
-     * render list. One that is off the map is cloned instead, so it comes back
-     * at the requested opacity when it is added. A reference that is neither
-     * on the map nor a clonable layer instance (an unknown id, or a registry
-     * value that never became a layer) yields no replacement.
+     * A no-op when the engine doesn't hold `id`, or holds a native Leaflet
+     * layer (MMGIS still builds `data`, `image`, `video` and `velocity`
+     * layers with Leaflet under this engine, and those carry no `id` to be
+     * found by). Either way the caller has already written
+     * `L_.layers.opacity[name]`, which layer creation reads, so the opacity
+     * is picked up next time the layer is built or re-added.
+     *
+     * `options.fillOpacity` is accepted but not applied separately — see
+     * {@link IMapEngine.setLayerOpacity}.
      */
-    setLayerOpacity(layer: Layer | string, opacity: number): Layer | undefined {
+    setLayerOpacity(
+        layer: Layer | string,
+        opacity: number,
+        options?: { fillOpacity?: number }
+    ): void {
         const id = resolveLayerId(layer)
-        if (this._layers.has(id)) return this.updateLayer(id, { opacity })
-        if (typeof (layer as Layer)?.clone !== 'function') return undefined
-        return (layer as Layer).clone({ opacity }) as Layer
+        const existing = this._layers.get(id)
+        if (this._holdsDeckLayer(id, existing)) this.updateLayer(id, { opacity })
     }
 
     /**
@@ -963,21 +1229,39 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._emitEvent(eventName, data)
     }
 
-    private _ensureTerraDraw(options: DrawingOptions): TerraDraw | null {
+    private _ensureTerraDraw(): TerraDraw | null {
         if (this._terraDraw) return this._terraDraw
         if (!this._isOverlayMode || !this._basemap) return null
 
-        const finishKey = 'Enter'
-        const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
+        // The drawing is rendered in the theme's accent, at the stroke width
+        // a committed shape is drawn with; terra-draw's own defaults supply
+        // the opacities.
+        const styles = drawStyles()
 
         const td = new TerraDraw({
-            adapter: new TerraDrawMapLibreGLAdapter({ map: this._basemap as any }),
+            adapter: new TerraDrawMapLibreGLAdapter({
+                map: this._basemap as any,
+                prefixId: TERRA_DRAW_PREFIX,
+            }),
             modes: [
-                new TerraDrawPointMode(),
-                new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawPolygonMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawRectangleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawCircleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawPointMode({ styles: styles.point }),
+                new TerraDrawLineStringMode({
+                    keyEvents: drawModeKeyEvents('linestring'),
+                    validation: validateDrawnLineString,
+                    styles: styles.linestring,
+                }),
+                new TerraDrawPolygonMode({
+                    keyEvents: drawModeKeyEvents('polygon'),
+                    styles: styles.polygon,
+                }),
+                new TerraDrawRectangleMode({
+                    keyEvents: drawModeKeyEvents('rectangle'),
+                    styles: styles.rectangle,
+                }),
+                new TerraDrawCircleMode({
+                    keyEvents: drawModeKeyEvents('circle'),
+                    styles: styles.circle,
+                }),
             ],
         })
 
@@ -996,13 +1280,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
         const onChange = (ids: any[], type: string) => {
             if (type !== 'create' && type !== 'update') return
-            if (!this._drawingShape) return
-            const lastId = ids[ids.length - 1]
-            const snap = td.getSnapshotFeature(lastId)
-            if (!snap) return
-            const vertices = extractVerticesFromGeometry(snap.geometry as GeoJSON.Geometry)
-            if (!vertices) return
-            this._emitEvent('drawvertex', { shape: this._drawingShape, vertices })
+            const shape = this._drawingShape
+            if (!shape) return
+            const vertices = committedVerticesFromChange(shape, ids, (id) =>
+                td.getSnapshotFeature(id)
+            )
+            if (vertices) this._emitEvent('drawvertex', { shape, vertices })
         }
 
         td.on('finish', onFinish)
@@ -1016,12 +1299,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return td
     }
 
-    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+    enableDrawing(shape: DrawShape): void {
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
-        const td = this._ensureTerraDraw(options)
+        const td = this._ensureTerraDraw()
         if (!td) {
             throw new Error(
                 '[DeckGLAdapter] enableDrawing requires overlay mode ' +
@@ -1033,7 +1316,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
+        this._syncLayers()
         this._emitEvent('drawstart', { shape })
+    }
+
+    /** The element terra-draw's MapLibre adapter attaches its listeners to. */
+    private _drawEventElement(): HTMLElement | null {
+        return (this._basemap as any)?.getCanvas?.() ?? null
     }
 
     /**
@@ -1051,6 +1340,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             try { this._terraDraw.clear() } catch { /* mid-vertex */ }
             try { this._terraDraw.stop() } catch { /* idempotent */ }
         }
+        this._syncLayers()
         return shape
     }
 
@@ -1063,16 +1353,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * terra-draw modes commit on `Enter` via their `keyEvents.finish` binding.
      * There's no programmatic-finish API yet (see
      * https://github.com/JamesLMilner/terra-draw), so we dispatch a synthetic
-     * keydown to the map container — the mode's keyboard handler picks it up
-     * and emits `finish` if the geometry is valid. If it isn't (e.g. polygon
-     * with <3 vertices), the dispatch is a no-op and we fall through to
-     * cancel.
+     * keyup on the map canvas — the element terra-draw listens on. The mode
+     * emits `finish` if the geometry is valid, which ends the session; if it
+     * isn't (e.g. polygon with <3 vertices), the dispatch is a no-op and the
+     * session is left untouched. Rectangle and circle bind no finish key at
+     * all (see {@link drawModeKeyEvents}), so they only ever finish on their
+     * second click.
      */
-    finishDrawing(): void {
-        if (!this._drawingShape || !this._terraDraw) return
-        const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
-        this._container?.dispatchEvent(evt)
-        if (this._drawingShape) this.disableDrawing()
+    finishDrawing(): boolean {
+        if (!this._drawingShape || !this._terraDraw) return false
+        this._drawEventElement()?.dispatchEvent(
+            new KeyboardEvent('keyup', { key: 'Enter' })
+        )
+        return !this.isDrawing()
     }
 
     isDrawing(): boolean {
@@ -1168,6 +1461,524 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return this.projectCoordinates(latLng)
     }
 
+    // ── Comparison / swipe ────────────────────────────────────────────────────
+
+    /**
+     * Enable (or reconfigure) side-by-side swipe comparison mode.
+     *
+     * Each side renders into its own dedicated `Deck` canvas stacked over the
+     * primary map; the primary keeps its basemap but hides its data layers. A
+     * CSS clip driven by the divider reveals the left canvas on the left of the
+     * divider and the right canvas on the right. Both side canvases are camera
+     * followers (no controller) locked to the primary map's view, so the shared
+     * basemap and each side's layers stay aligned while panning/zooming.
+     *
+     * Works in both standalone and overlay (basemap) modes. Calling again while
+     * already enabled just re-renders the layer sets (used for live side swaps).
+     */
+    enableComparison(config: ComparisonConfig): void {
+        const layout = config.layout ?? this._comparisonLayout
+        const layoutChanged = layout !== this._comparisonLayout
+
+        this._comparisonLeftIds = [...config.leftLayerIds]
+        this._comparisonRightIds = [...config.rightLayerIds]
+        this._comparisonLeftProps = config.leftLayerProps ?? {}
+        this._comparisonRightProps = config.rightLayerProps ?? {}
+
+        // Each layout draws through surfaces the other has no use for, so a
+        // switch tears the old ones down before the new ones go up. The divider
+        // position is deliberately left alone — the split stays where the user
+        // put it across the change.
+        if (this._comparisonEnabled && layoutChanged) this._destroyComparisonSurfaces()
+        this._comparisonLayout = layout
+
+        if (!this._comparisonEnabled || layoutChanged) {
+            this._comparisonEnabled = true
+            if (layout === 'sideBySide') this._createSideBySidePanes()
+            else this._createComparisonCanvases()
+        }
+
+        // Hides the primary map's data layers — comparison layers render in the
+        // side surfaces instead — and draws both sides from the layer registry.
+        this._syncLayers()
+        this._applyComparisonSplit()
+        this._syncComparisonCamera()
+    }
+
+    /** Disable comparison mode and restore the normal single view. */
+    disableComparison(): void {
+        if (!this._comparisonEnabled) return
+        this._comparisonEnabled = false
+        this._comparisonLeftIds = []
+        this._comparisonRightIds = []
+        this._comparisonLeftProps = {}
+        this._comparisonRightProps = {}
+        this._destroyComparisonSurfaces()
+        // Restore the primary map's data layers.
+        this._syncLayers()
+    }
+
+    /**
+     * Move the comparison divider to `pos` (0–1 fraction of container width).
+     *
+     * Swipe only re-applies the CSS clip; side-by-side resizes the two panes,
+     * which changes how much ground each one covers.
+     */
+    setComparisonDivider(pos: number): void {
+        this._comparisonDividerPos = Math.max(0, Math.min(1, pos))
+        if (this._comparisonEnabled) this._applyComparisonSplit()
+    }
+
+    /**
+     * Switch between wiping one view and showing two. Rebuilds the rendering
+     * surfaces around the layer sets and divider already in place.
+     */
+    setComparisonLayout(layout: ComparisonLayout): void {
+        if (layout === this._comparisonLayout) return
+        if (!this._comparisonEnabled) {
+            // Remembered for whenever comparison is switched on.
+            this._comparisonLayout = layout
+            return
+        }
+        this.enableComparison({
+            leftLayerIds: this._comparisonLeftIds,
+            rightLayerIds: this._comparisonRightIds,
+            leftLayerProps: this._comparisonLeftProps,
+            rightLayerProps: this._comparisonRightProps,
+            layout,
+        })
+    }
+
+    /** Returns true when comparison mode is currently active. */
+    isComparisonEnabled(): boolean {
+        return this._comparisonEnabled
+    }
+
+    /** The layout comparison is currently drawn in. */
+    getComparisonLayout(): ComparisonLayout {
+        return this._comparisonLayout
+    }
+
+    /**
+     * Create the two side canvases (each a controller-less `Deck` in an absolutely
+     * positioned, pointer-events-transparent div) and start observing the
+     * container for resizes so the canvases redraw and the clip stays aligned.
+     */
+    private _createComparisonCanvases(): void {
+        const makeCanvas = (): { div: HTMLElement; deck: Deck } => {
+            const div = document.createElement('div')
+            // Full-size overlay; pointer-events:none so pan/zoom passes through to
+            // the primary map underneath. z-index sits above the primary canvas
+            // but below the MapComparison divider (z-index 1000).
+            div.style.cssText =
+                'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;'
+            this._container.appendChild(div)
+            const deck = new Deck({
+                parent: div,
+                width: '100%',
+                height: '100%',
+                controller: false,
+                // Match the wrapping basemap: render every world copy so the
+                // side layers fill the viewport when zoomed out past one world.
+                views: new MapView({ repeat: true }),
+                viewState: this._viewState,
+                layers: [],
+            } as any)
+            return { div, deck }
+        }
+
+        const left = makeCanvas()
+        this._comparisonLeftDiv = left.div
+        this._comparisonLeftDeck = left.deck
+
+        const right = makeCanvas()
+        this._comparisonRightDiv = right.div
+        this._comparisonRightDeck = right.deck
+
+        this._observeComparisonResize()
+    }
+
+    /**
+     * Keep the split aligned while the container changes size.
+     * `invalidateSize()` isn't reliably called on every layout change (e.g. the
+     * modern UI's docked-panel resizes only dispatch a synthetic `window`
+     * resize event), so this observes the container directly instead of
+     * depending on that call chain.
+     */
+    private _observeComparisonResize(): void {
+        this._comparisonResizeObserver = new ResizeObserver(() =>
+            this._handleComparisonResize(),
+        )
+        this._comparisonResizeObserver.observe(this._container)
+    }
+
+    /**
+     * Re-measure the comparison surfaces against the container. Shared by the
+     * observer and `invalidateSize()` so the two cannot drift.
+     */
+    private _handleComparisonResize(): void {
+        if (!this._comparisonEnabled) return
+        if (this._comparisonLayout === 'sideBySide') this._resizeSideBySidePanes()
+        else this._applyComparisonClip()
+        this._syncComparisonCamera()
+    }
+
+    /** Tear down whichever surfaces the active layout put up. */
+    private _destroyComparisonSurfaces(): void {
+        this._comparisonResizeObserver?.disconnect()
+        this._comparisonResizeObserver = null
+        this._destroyComparisonCanvases()
+        this._destroySideBySidePanes()
+    }
+
+    /** Finalize both side canvases and remove their DOM nodes. */
+    private _destroyComparisonCanvases(): void {
+        this._comparisonLeftDeck?.finalize()
+        this._comparisonLeftDeck = null
+        this._comparisonRightDeck?.finalize()
+        this._comparisonRightDeck = null
+        this._comparisonLeftDiv?.remove()
+        this._comparisonLeftDiv = null
+        this._comparisonRightDiv?.remove()
+        this._comparisonRightDiv = null
+    }
+
+    /**
+     * Render each side's layer set into its surface. Looks up the live deck
+     * layer for each requested id in `_layers` and clones it so the side owns
+     * an independent instance (the originals stay untouched for restore on
+     * disable). Unknown ids (e.g. a layer that isn't currently on) are skipped.
+     */
+    private _renderComparisonLayers(): void {
+        const left = this._comparisonClonesFor(
+            this._comparisonLeftIds,
+            this._comparisonLeftProps,
+        )
+        const right = this._comparisonClonesFor(
+            this._comparisonRightIds,
+            this._comparisonRightProps,
+        )
+
+        if (this._comparisonLayout === 'sideBySide') {
+            if (!this._sbsPanes) return
+            this._setPaneLayers(this._sbsPanes[0], left)
+            this._setPaneLayers(this._sbsPanes[1], right)
+            return
+        }
+
+        this._comparisonLeftDeck?.setProps({ layers: left } as any)
+        this._comparisonRightDeck?.setProps({ layers: right } as any)
+    }
+
+    /**
+     * The live deck layer for each requested id, cloned so the side surface
+     * owns an independent instance. A clone carries the layer's own props
+     * unless `overrides` names that id, which is how one side draws a source
+     * the other does not share. Unknown ids are skipped.
+     */
+    private _comparisonClonesFor(
+        ids: string[],
+        overrides: Record<string, Record<string, unknown>>,
+    ): Layer[] {
+        return ids
+            .map((id) => {
+                const layer = this._layers.get(id)
+                return layer ? (layer.clone(overrides[id] ?? {}) as Layer) : null
+            })
+            .filter((l): l is Layer => l != null)
+    }
+
+    /** Apply the divider position the way the active layout reads it. */
+    private _applyComparisonSplit(): void {
+        if (this._comparisonLayout === 'sideBySide') this._applySideBySideSplit()
+        else this._applyComparisonClip()
+    }
+
+    /**
+     * Reveal the left canvas over `[0, pos]` and the right canvas over `[pos, 1]`
+     * via CSS clip. Percentages keep the split proportional across resizes.
+     */
+    private _applyComparisonClip(): void {
+        const pct = this._comparisonDividerPos * 100
+        if (this._comparisonLeftDiv)
+            this._comparisonLeftDiv.style.clipPath = `inset(0 ${100 - pct}% 0 0)`
+        if (this._comparisonRightDiv)
+            this._comparisonRightDiv.style.clipPath = `inset(0 0 0 ${pct}%)`
+    }
+
+    /**
+     * Lay the two panes out either side of the divider.
+     *
+     * Only the clipping slices move. Each basemap canvas stays the full width
+     * of the container, and what changes is the padding that says which part of
+     * that canvas the camera centres in — a matrix update, not a reallocation.
+     * Resizing a canvas instead would drop and refetch tiles on every frame of
+     * a drag, which reads as a flicker.
+     *
+     * Padding is the right edge only. The left pane shows canvas `[0, pos]`, so
+     * it pads away the `(1 - pos)` it cannot see; the right pane's canvas
+     * starts at the divider, so the slice it shows is its leading `(1 - pos)`
+     * and it pads away `pos`. Each camera then sits in the middle of its own
+     * visible slice, which is what puts the same place in both panes.
+     */
+    private _applySideBySideSplit(): void {
+        if (!this._sbsPanes) return
+        const pos = this._comparisonDividerPos
+        const pct = pos * 100
+        const width = this._container.offsetWidth
+        const [left, right] = this._sbsPanes
+
+        left.div.style.left = '0'
+        left.div.style.width = `${pct}%`
+        right.div.style.left = `${pct}%`
+        right.div.style.width = `${100 - pct}%`
+
+        // Padding raises `move`; it is the same camera, so swallow the echo.
+        const wasSyncing = this._sbsSyncing
+        this._sbsSyncing = true
+        try {
+            left.map?.setPadding(this._panePadding(width * (1 - pos)))
+            right.map?.setPadding(this._panePadding(width * pos))
+        } finally {
+            this._sbsSyncing = wasSyncing
+        }
+    }
+
+    /**
+     * The padding that centres a pane's camera in the slice it shows, capped a
+     * pixel short of the container so a fully-dragged divider still leaves the
+     * camera a width to project into.
+     */
+    private _panePadding(right: number): {
+        top: number
+        bottom: number
+        left: number
+        right: number
+    } {
+        const limit = Math.max(0, this._container.offsetWidth - 1)
+        const clamped = Math.min(Math.max(0, Math.round(right)), limit)
+        return { top: 0, bottom: 0, left: 0, right: clamped }
+    }
+
+    /**
+     * Re-measure the panes against the container.
+     *
+     * This is the expensive path — it reallocates both canvases — so it runs
+     * only when the container itself changes size, never while the divider is
+     * being dragged.
+     */
+    private _resizeSideBySidePanes(): void {
+        const width = this._container.offsetWidth
+        // `resize()` raises `move`/`moveend` though the camera has not moved.
+        const wasSyncing = this._sbsSyncing
+        this._sbsSyncing = true
+        try {
+            this._sbsPanes?.forEach((pane) => {
+                if (pane.mapDiv) pane.mapDiv.style.width = `${width}px`
+                pane.map?.resize()
+            })
+        } finally {
+            this._sbsSyncing = wasSyncing
+        }
+        this._applySideBySideSplit()
+    }
+
+    /**
+     * Push the shared camera onto every surface except the one it came from.
+     *
+     * In swipe that is the two follower canvases. In side-by-side it is the
+     * other pane plus the primary map, which stays hidden underneath but is
+     * still what `getCenter()` / `getBounds()` answer from, so it has to keep
+     * tracking the view the user is actually looking at.
+     */
+    private _syncComparisonCamera(source?: SideBySidePane): void {
+        if (this._comparisonLayout === 'sideBySide') {
+            const { longitude, latitude, zoom, bearing, pitch } = this._viewState
+            const camera = {
+                center: [longitude, latitude] as [number, number],
+                zoom,
+                bearing: bearing ?? 0,
+                pitch: pitch ?? 0,
+            }
+            const wasSyncing = this._sbsSyncing
+            this._sbsSyncing = true
+            try {
+                this._sbsPanes?.forEach((pane) => {
+                    if (pane === source) return
+                    pane.map?.jumpTo(camera)
+                    pane.deck?.setProps({ viewState: this._viewState } as any)
+                })
+                // The primary is hidden but still answers `getCenter()`, and
+                // in standalone it is the surface disable returns to.
+                if (source) {
+                    this._basemap?.jumpTo(camera)
+                    if (!this._isOverlayMode)
+                        this._deckSetProps({ viewState: this._viewState })
+                }
+            } finally {
+                this._sbsSyncing = wasSyncing
+            }
+            return
+        }
+
+        this._comparisonLeftDeck?.setProps({ viewState: this._viewState } as any)
+        this._comparisonRightDeck?.setProps({ viewState: this._viewState } as any)
+    }
+
+    // ── Side-by-side panes ────────────────────────────────────────────────────
+
+    /**
+     * Build the two panes the side-by-side layout draws into.
+     *
+     * Each pane is a clipped div holding a map of its own — its own basemap in
+     * overlay mode, its own `Deck` in standalone — because two halves showing
+     * the same place at the same zoom need two cameras, which one map cannot
+     * provide. The panes cover the container between them, hiding the primary
+     * map rather than compositing over it.
+     */
+    private _createSideBySidePanes(): void {
+        this._sbsPanes = [this._createSideBySidePane(), this._createSideBySidePane()]
+        this._resizeSideBySidePanes()
+        this._observeComparisonResize()
+    }
+
+    private _createSideBySidePane(): SideBySidePane {
+        const div = document.createElement('div')
+        div.className = 'mmgis-comparison-pane'
+        // Sits above the primary canvas and below the divider (z-index 1000).
+        // Unlike the swipe canvases this one takes pointer events: each pane is
+        // a map the user can drag.
+        div.style.cssText =
+            'position:absolute;top:0;height:100%;overflow:hidden;z-index:2;'
+        this._container.appendChild(div)
+
+        const pane: SideBySidePane = {
+            div,
+            mapDiv: null,
+            map: null,
+            overlay: null,
+            deck: null,
+            offMap: () => {},
+        }
+
+        if (this._isOverlayMode && this._basemapCtor) {
+            // The basemap gets an element of its own, sized to the whole
+            // container rather than to the slice, so dragging the divider
+            // re-clips it instead of resizing it.
+            const mapDiv = document.createElement('div')
+            mapDiv.className = 'mmgis-comparison-pane__map'
+            mapDiv.style.cssText = 'position:absolute;top:0;left:0;height:100%;'
+            div.appendChild(mapDiv)
+            pane.mapDiv = mapDiv
+            this._buildPaneBasemap(pane)
+        } else {
+            pane.deck = new Deck({
+                parent: div,
+                width: '100%',
+                height: '100%',
+                controller: true,
+                views: new MapView({ repeat: true }),
+                viewState: this._viewState,
+                layers: [],
+                onViewStateChange: ({ viewState }: { viewState: DeckViewState }) => {
+                    if (this._sbsSyncing) return
+                    this._viewState = this._clampToMaxBounds(viewState)
+                    pane.deck?.setProps({ viewState: this._viewState } as any)
+                    this._syncComparisonCamera(pane)
+                    this._emitEvent('moveend', this._viewState)
+                },
+            } as any)
+        }
+
+        return pane
+    }
+
+    /** Stand up a pane's basemap + interleaved overlay and wire its camera. */
+    private _buildPaneBasemap(pane: SideBySidePane): void {
+        const options: Record<string, unknown> = {
+            container: pane.mapDiv ?? pane.div,
+            style: this._basemapStyle ?? this._basemapOptions?.style,
+            center: [this._viewState.longitude, this._viewState.latitude],
+            zoom: this._viewState.zoom,
+            bearing: this._viewState.bearing,
+            pitch: this._viewState.pitch,
+            minZoom: this._minZoom,
+            maxZoom: this._maxZoom,
+            projection: 'mercator',
+        }
+        if (this._basemapOptions?.provider === 'mapbox' && this._basemapOptions.accessToken) {
+            options['accessToken'] = this._basemapOptions.accessToken
+        }
+
+        const map = new this._basemapCtor!(options)
+        const overlay = new MapboxOverlay({ interleaved: true, layers: [] })
+        map.addControl(overlay as unknown as object)
+        if (this._maxBounds) map.setMaxBounds(resolveBounds(this._maxBounds))
+
+        pane.map = map
+        pane.overlay = overlay
+
+        const onMove = () => this._onPaneCameraChange(pane, false)
+        const onMoveEnd = () => this._onPaneCameraChange(pane, true)
+        // The interleaved overlay drops layers set before the style loads (see
+        // `_onBasemapLoad`), so a pane re-sends its own once it is ready.
+        const onLoad = () => this._renderComparisonLayers()
+
+        map.on('move', onMove)
+        map.on('moveend', onMoveEnd)
+        map.on('load', onLoad)
+        pane.offMap = () => {
+            map.off('move', onMove)
+            map.off('moveend', onMoveEnd)
+            map.off('load', onLoad)
+        }
+    }
+
+    /**
+     * Adopt a pane's camera as the shared one and copy it everywhere else.
+     *
+     * Either pane may be dragged, so whichever moved becomes the source and the
+     * rest follow. `settled` separates the frames during a gesture — which only
+     * need the cameras to stay locked — from its end, which is what the rest of
+     * MMGIS listens for.
+     */
+    private _onPaneCameraChange(source: SideBySidePane, settled: boolean): void {
+        if (this._sbsSyncing || !source.map) return
+
+        const center = source.map.getCenter()
+        this._viewState = {
+            ...this._viewState,
+            longitude: center.lng,
+            latitude: center.lat,
+            zoom: source.map.getZoom(),
+            bearing: source.map.getBearing(),
+            pitch: source.map.getPitch(),
+        }
+        this._syncComparisonCamera(source)
+        if (settled) this._emitEvent('moveend', this._viewState)
+    }
+
+    /** Finalize both panes, detach their listeners and remove their DOM nodes. */
+    private _destroySideBySidePanes(): void {
+        this._sbsPanes?.forEach((pane) => {
+            pane.offMap()
+            if (pane.map && pane.overlay) {
+                try { pane.map.removeControl(pane.overlay as unknown as object) }
+                catch { /* the control goes with the map either way */ }
+            }
+            pane.map?.remove()
+            pane.deck?.finalize()
+            pane.div.remove()
+        })
+        this._sbsPanes = null
+    }
+
+    /** Send one pane's layer set to whichever surface that pane renders through. */
+    private _setPaneLayers(pane: SideBySidePane, layers: Layer[]): void {
+        if (pane.overlay) pane.overlay.setProps({ layers })
+        else pane.deck?.setProps({ layers } as any)
+    }
+
     /**
      * Initialise a standalone `Deck` instance (no basemap).
      * Called by {@link init} when `options.basemap` is absent.
@@ -1187,6 +1998,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 const clamped = this._clampToMaxBounds(viewState)
                 this._viewState = clamped
                 this._deckSetProps({ viewState: clamped })
+                if (this._comparisonEnabled) this._syncComparisonCamera()
                 this._emitEvent('moveend', clamped)
             },
             onClick: (info: PickingInfo) => {
@@ -1258,6 +2070,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
 
         this._basemap = new MapClass(mapOptions)
+        this._basemapCtor = MapClass
+        this._basemapOptions = basemap
+        this._basemapStyle = basemap.style
         this._isOverlayMode = true
 
         this._overlay = new MapboxOverlay({
@@ -1304,6 +2119,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         }
         this._viewState = nextState
         this._deckSetProps({ viewState: nextState })
+        // A zero-duration move raises no `onViewStateChange`, so this is the
+        // only place the comparison surfaces hear about it.
+        if (this._comparisonEnabled) this._syncComparisonCamera()
     }
 
     /**
@@ -1325,28 +2143,68 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      *
      * - Overlay mode: `_overlay.setProps({ layers })` — the `MapboxOverlay` diffs and re-renders.
      * - Standalone mode: `_deck.setProps({ layers })` — direct deck.gl update.
+     *
+     * While comparison is active the primary map shows basemap only: its data
+     * layers are hidden and the side surfaces redraw from the same registry
+     * instead, so a layer added, updated, or reordered mid-comparison reaches
+     * both sides.
+     *
+     * Each sync mounts fresh clones: deck.gl leaves `internalState` set on a
+     * layer it finalizes, so a mounted instance is single-use and the registry
+     * holds descriptors rather than the instances on screen.
+     *
+     * Entries that cannot be cloned are left out. Under the deck.gl engine
+     * MMGIS still builds `data`, `image`, `video` and `velocity` layers as
+     * native Leaflet objects — ENGINE_LAYER_SUPPORT has no deck builder for
+     * them — and callers hand every registry entry to the active engine. Such
+     * an object carries no deck `id`, so {@link addLayer} files it under
+     * `undefined`; deck.gl could not render it in any case.
      */
     private _syncLayers(): void {
-        // DeckGL diffs by array identity to detect changes and re-ordering.
-        // Since we manage layers imperatively, we hand it a fresh copy of the
-        // layers *array* (the layer instances themselves are reused) so the diff
-        // picks up additions, removals, and drawing-order changes.
-        const layers = [...this._layers.values()]
+        const layers = this._comparisonEnabled
+            ? []
+            : [...this._layers.values()]
+                  .filter((layer) => typeof layer.clone === 'function')
+                  .map((layer) => layer.clone({}) as Layer)
         if (this._isOverlayMode) {
-            this._overlay?.setProps({ layers })
+            this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })
         } else {
             this._deckSetProps({ layers })
         }
+        if (this._comparisonEnabled) this._renderComparisonLayers()
+    }
+
+    /**
+     * While a terra-draw session is running, return a clone of every deck
+     * layer carrying a `beforeId` that points at terra-draw's bottom-most
+     * MapLibre layer, which keeps the whole drawing above the deck layers.
+     *
+     * Without that `beforeId`, the interleaved overlay's `resolveLayers()`
+     * lifts the deck layers back to the top of the style on every `styledata`
+     * event and buries the in-progress drawing.
+     *
+     * `resolveLayers()` passes the anchor straight to `map.addLayer`, which
+     * refuses to insert before a layer that is not in the style. So the anchor
+     * is only applied while terra-draw's layers are actually registered.
+     */
+    private _anchorBelowDrawing(layers: Layer[]): Layer[] {
+        if (!this._drawingShape) return layers
+        if (!this._basemap?.getLayer(TERRA_DRAW_BOTTOM_LAYER_ID)) return layers
+        return layers.map((layer) => layer.clone({ beforeId: TERRA_DRAW_BOTTOM_LAYER_ID } as any))
     }
 
     /**
      * Re-order the layer Map by ascending z-index so `_syncLayers` sends them in the
      * correct draw order (lower z-index = rendered first = behind).
+     *
+     * A layer with no assigned z-index ranks {@link UNRANKED_Z_INDEX}, which
+     * holds it above the mission layer stack. The sort is stable, so several
+     * such layers also keep their order relative to each other.
      */
     private _sortLayersByZIndex(): void {
+        const rank = (id: string) => this._layerZIndices.get(id) ?? UNRANKED_Z_INDEX
         const entries = [...this._layers.entries()].sort(
-            ([aId], [bId]) =>
-                (this._layerZIndices.get(aId) ?? 0) - (this._layerZIndices.get(bId) ?? 0)
+            ([aId], [bId]) => rank(aId) - rank(bId)
         )
         this._layers = new Map(entries)
     }

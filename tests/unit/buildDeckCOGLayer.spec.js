@@ -1,0 +1,157 @@
+import { test, expect, describe } from 'vitest'
+import {
+    buildDeckCOGLayer,
+    deckCOGProps,
+    resolveNoDataValue,
+    resolveRgbTextureFormat,
+} from '../../src/essence/Basics/MapEngines/Adapters/DeckCOGLayer.ts'
+
+const SAMPLE_FORMAT_UINT = 1
+
+describe('buildDeckCOGLayer', () => {
+    test('derives zoom limits from the layer config so refresh rebuilds keep them', () => {
+        const layer = buildDeckCOGLayer('l1', {
+            rawCogUrl: 'https://example.com/a.tif',
+            layerObj: { minZoom: '3', maxZoom: '12', cogColormap: 'viridis' },
+        })
+        expect(layer.props.minZoom).toBe(3)
+        expect(layer.props.maxZoom).toBe(12)
+    })
+
+    test('leaves zoom limits at deck defaults (not NaN) when the config has none', () => {
+        const layer = buildDeckCOGLayer('l2', {
+            rawCogUrl: 'https://example.com/a.tif',
+            layerObj: {},
+        })
+        expect(Number.isNaN(layer.props.minZoom)).toBe(false)
+        expect(Number.isNaN(layer.props.maxZoom)).toBe(false)
+    })
+
+    test('supplies getTileData and renderTile together (skips float-unsupported inference)', () => {
+        const layer = buildDeckCOGLayer('l3', {
+            rawCogUrl: 'https://example.com/a.tif',
+            layerObj: {},
+        })
+        expect(typeof layer.props.getTileData).toBe('function')
+        expect(typeof layer.props.renderTile).toBe('function')
+    })
+
+    test('re-renders without refetching when colormap or rescale changes', () => {
+        const layer = buildDeckCOGLayer('l4', {
+            rawCogUrl: 'https://example.com/a.tif',
+            layerObj: { cogColormap: 'plasma', cogMin: 0, cogMax: 10 },
+        })
+        // renderTile carries the trigger; getTileData deliberately does not, so
+        // cached tiles survive a colormap change.
+        expect(layer.props.updateTriggers.renderTile).toEqual(['plasma', 0, 10])
+        expect(layer.props.updateTriggers.getTileData).toBeUndefined()
+    })
+
+    describe('renderTile', () => {
+        const renderTileOf = (layerObj = {}) =>
+            buildDeckCOGLayer('r', {
+                rawCogUrl: 'https://example.com/a.tif',
+                layerObj,
+            }).props.renderTile
+
+        test('skips a tile with no data', () => {
+            expect(renderTileOf()(null)).toBe(null)
+        })
+
+        test('multi-band tiles display colour directly and discard black nodata', () => {
+            const texture = { device: {} }
+            const result = renderTileOf()({
+                texture,
+                mode: 'rgb',
+                width: 8,
+                height: 8,
+                byteLength: 256,
+            })
+            const names = result.renderPipeline.map((m) => m.module.name)
+            expect(names).toEqual(['create-texture-unorm', 'filter-black'])
+            expect(result.renderPipeline[0].props.textureName).toBe(texture)
+        })
+    })
+})
+
+describe('resolveNoDataValue', () => {
+    test("falls back to the file's GDAL_NODATA when no config value is set", () => {
+        expect(resolveNoDataValue(null, -9999)).toBe(-9999)
+        expect(resolveNoDataValue(undefined, 0)).toBe(0)
+    })
+
+    test('config value wins over the file value', () => {
+        expect(resolveNoDataValue(255, -9999)).toBe(255)
+    })
+
+    test('returns null when neither is set', () => {
+        expect(resolveNoDataValue(null, null)).toBe(null)
+        expect(resolveNoDataValue(undefined, undefined)).toBe(null)
+    })
+
+    test('returns null for NaN — FilterNaN discards those pixels, == cannot match them', () => {
+        expect(resolveNoDataValue(null, NaN)).toBe(null)
+        expect(resolveNoDataValue(NaN, -9999)).toBe(null)
+    })
+})
+
+describe('resolveRgbTextureFormat', () => {
+    const tags = (bits) => ({
+        bitsPerSample: Uint16Array.from([bits, bits, bits]),
+        sampleFormat: [SAMPLE_FORMAT_UINT, SAMPLE_FORMAT_UINT, SAMPLE_FORMAT_UINT],
+    })
+
+    test('8-bit RGBA keeps the format the RGB path always assumed', () => {
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(8))).toBe('rgba8unorm')
+    })
+
+    test('16-bit samples get a 16-bit format instead of being truncated to 8', () => {
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(16))).toBe('rgba16unorm')
+    })
+
+    test('uses the alpha-padded channel count, not the file tag', () => {
+        // addAlphaChannel sets count: 4 while SamplesPerPixel still reads 3.
+        // Passing the tag would pick a 3-channel format and mis-read RGBA data.
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(16))).not.toBe(
+            'rgb16unorm-webgl'
+        )
+    })
+
+    test('uint maps to unorm so the existing unorm sampler reads it correctly', () => {
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(8))).toContain('unorm')
+        expect(resolveRgbTextureFormat({ count: 4 }, tags(16))).toContain('unorm')
+    })
+})
+
+describe('deckCOGProps', () => {
+    const options = {
+        rawCogUrl: 'https://example.com/a.tif',
+        layerObj: { minZoom: '3', maxZoom: '12', cogColormap: 'plasma', cogMin: 0, cogMax: 10 },
+        opacity: 0.4,
+    }
+
+    test('produces exactly the props buildDeckCOGLayer constructs with', () => {
+        const props = deckCOGProps('l1', options)
+        const layer = buildDeckCOGLayer('l1', options)
+        Object.keys(props).forEach((key) => {
+            // Closures differ by identity; compare what is comparable.
+            if (typeof props[key] === 'function') {
+                expect(typeof layer.props[key]).toBe('function')
+            } else {
+                expect(layer.props[key]).toEqual(props[key])
+            }
+        })
+    })
+
+    test('carries the id, url and opacity a refresh has to preserve', () => {
+        const props = deckCOGProps('l1', options)
+        expect(props.id).toBe('l1')
+        expect(props.geotiff).toBe('https://example.com/a.tif')
+        expect(props.opacity).toBe(0.4)
+    })
+
+    test('defaults opacity to 1 but keeps an explicit 0', () => {
+        expect(deckCOGProps('l1', { ...options, opacity: undefined }).opacity).toBe(1)
+        expect(deckCOGProps('l1', { ...options, opacity: 0 }).opacity).toBe(0)
+    })
+})

@@ -119,7 +119,7 @@ async function main() {
     bakeStaticConfig(baked);
 
     // 2. Build the static bundle. Theme assets (dist/) are baked into the
-    // image at image-build time (deploy-lean.yml runs build:themes before
+    // image at image-build time (the deploy workflow runs build:themes before
     // docker build), and build-assets.sh needs tools absent from the slim
     // runtime image (rsync) — so only build themes when they're missing.
     const distDir = path.join(__dirname, "..", "dist");

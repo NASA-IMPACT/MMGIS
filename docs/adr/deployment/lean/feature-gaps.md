@@ -1,4 +1,4 @@
-> **Status: exploratory inventory, NOT a source of truth.** This catalogs potential feature gaps from a lean deployment so none is forgotten. The authoritative decisions live in [`adr.md`](./adr.md), [`api.md`](./api.md), and the per-PR docs in [`prs/`](./prs/) — where this doc and those disagree, those win. Lean's standing default for any gap below is **gate/hide it**, with the listed "escape hatch" reserved for a specific mission that actually needs it (built only when triggered, not speculatively).
+> **Status: exploratory inventory, NOT a source of truth.** This catalogs potential feature gaps from a lean deployment so none is forgotten. The authoritative decisions live in [`adr.md`](./adr.md) and [`api.md`](./api.md) — where this doc and those disagree, those win. Lean's standing default for any gap below is **gate/hide it**, with the listed "escape hatch" reserved for a specific mission that actually needs it (built only when triggered, not speculatively).
 
 # Feature gaps in the lean deployment
 
@@ -70,7 +70,7 @@ Cases where the trade-offs are real and the choice affects how many missions are
 
 **Why lean breaks it.** No `Missions/` middleware and no local data, so the substituted URL has nothing to answer it.
 
-**Lean default: A (hide).** Implemented at publish time per [PR 8](./prs/pr-08-publish-flow-backend.md) (force `config.time.enabled = false` when no resolvable time layer remains). B is the escape hatch for a mission that genuinely needs time-scrubbing.
+**Lean default: A (hide).** Implemented at publish time by forcing `config.time.enabled = false` when no resolvable time layer remains. B is the escape hatch for a mission that genuinely needs time-scrubbing.
 
 **Options:**
 
@@ -89,7 +89,7 @@ Cases where the trade-offs are real and the choice affects how many missions are
 
 **Why lean breaks it.** All three depend on the admin's Postgres + sidecar stack, and lean drops the Datasets and Geodatasets modules entirely. In a dashboard, every `geodatasets:`-prefixed layer fails to load (vector or vectortile), dataset-link popups silently lose joined fields, filters and aggregations 404, and any `/tipg/...` mission URL 404s.
 
-**Lean default: hide (D), with external hosting (B) as the per-mission escape hatch.** The `Datasets`/`Geodatasets` modules are gated out ([PR 3](./prs/pr-03-gate-datasets-geodatasets.md)) and the `datasets_*`/`geodatasets_*` dispatcher calls Drop ([PR 7](./prs/pr-07-static-frontend-dispatcher.md)), so by default these layers simply don't appear in a dashboard. A mission that needs the data points its layer URLs at an external OGC Features / vector-tile / CDN-JSON service (B); the publish flow performs no URL rewrite or bake. A and C (bake at publish) remain available but are not built by default.
+**Lean default: hide (D), with external hosting (B) as the per-mission escape hatch.** The `Datasets`/`Geodatasets` modules are gated out and the `datasets_*`/`geodatasets_*` dispatcher calls Drop, so by default these layers simply don't appear in a dashboard. A mission that needs the data points its layer URLs at an external OGC Features / vector-tile / CDN-JSON service (B); the publish flow performs no URL rewrite or bake. A and C (bake at publish) remain available but are not built by default.
 
 **The core decision (when a mission opts in) is A vs B: where does the data live for a dashboard?** Both are principle-compatible — the `Missions/` settled-drops bullet already permits S3-baked content alongside externally hosted content. The choice is driven by data size, mission owner capacity, and bundle-budget. C and D are accommodations for the cases where neither A nor B applies cleanly.
 
@@ -116,10 +116,10 @@ Cases where the trade-offs are real and the choice affects how many missions are
 | **AOI** | Safe — boundary GeoJSON is webpack-bundled assets (the mission-relative config fields are dead code) | none needed |
 | **Chart** | Safe — event-bus only, no backend | none needed |
 | **FetchStats** | Safe **iff** the layer's `analysis.itemUrl` is external (raw `fetch` to `<itemUrl>/statistics`; same reroute shape as `getminmax`) | per-mission discipline: only configure it with an external `itemUrl` |
-| **Card** | Uploaded images resolve to `Missions/<mission>/…` → 404 in a dashboard | handled by **PR 10** (upload returns root-relative `/assets/…`, which `resolveImageUrl` passes through unchanged) + **PR 8** (asset copy into the dashboard bucket) |
+| **Card** | Uploaded images resolve to `Missions/<mission>/…` → 404 in a dashboard | handled by the S3 upload repoint (upload returns root-relative `/assets/…`, which `resolveImageUrl` passes through unchanged) plus the publish-time asset copy into the dashboard bucket |
 | **`api:tacticaltargets` layer URL** | Private-plugin layer prefix → loads empty in a dashboard | the `tactical_targets` dispatcher call Drops (api.md); the mission should not use that layer URL in lean |
 
-**Lean decision: no new PR.** Because unselected tools are harmless and the only real breakage (Card uploaded images) is already covered by PR 10 + PR 8, lean relies on the same per-mission config discipline it already applies to Identifier/Measure/Shade — don't select a backend-coupled tool unless its data is reachable externally; author Card images as uploads (→ `/assets/…`) or absolute URLs. A `staticCompatible` flag + build-time filter (the old option A below) is **not** built for lean.
+**Lean decision: no new PR.** Because unselected tools are harmless and the only real breakage (Card uploaded images) is already covered by the S3 upload repoint plus the publish-time asset copy, lean relies on the same per-mission config discipline it already applies to Identifier/Measure/Shade — don't select a backend-coupled tool unless its data is reachable externally; author Card images as uploads (→ `/assets/…`) or absolute URLs. A `staticCompatible` flag + build-time filter (the old option A below) is **not** built for lean.
 
 **The retained options (for reference / future):**
 

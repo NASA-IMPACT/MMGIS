@@ -5,6 +5,44 @@
 @use "uswds-core" as *;
 
 @mixin export-theme-tokens() {
+  // USWDS leaves the outermost primary grades unset unless a theme opts in, and
+  // color() errors on a grade set to false. Fall back to the nearest defined
+  // grade so every consumer of these properties resolves to a real color.
+  $primary-lighter: color("primary-light");
+  @if $theme-color-primary-lighter {
+    $primary-lighter: color("primary-lighter");
+  }
+
+  $primary-lightest: $primary-lighter;
+  @if $theme-color-primary-lightest {
+    $primary-lightest: color("primary-lightest");
+  }
+
+  // The optional weight grades are unset by default and fw() returns that
+  // `false` verbatim, which would emit an invalid declaration. Resolve each one
+  // to the nearest weight the theme does define, stepping toward normal.
+  $weight-normal: fw("normal");
+
+  $weight-bold: $weight-normal;
+  @if $theme-font-weight-bold {
+    $weight-bold: fw("bold");
+  }
+
+  $weight-light: $weight-normal;
+  @if $theme-font-weight-light {
+    $weight-light: fw("light");
+  }
+
+  $weight-semibold: $weight-bold;
+  @if $theme-font-weight-semibold {
+    $weight-semibold: fw("semibold");
+  }
+
+  $weight-heavy: $weight-bold;
+  @if $theme-font-weight-heavy {
+    $weight-heavy: fw("heavy");
+  }
+
   :root {
     /* ===================================================================
        COLOR TOKENS
@@ -15,23 +53,9 @@
     --theme-color-primary-dark: #{color("primary-dark")};
     --theme-color-primary-darker: #{color("primary-darker")};
     --theme-color-primary-light: #{color("primary-light")};
-    --theme-color-primary-lighter: #{color("primary-lighter")};
-    /* Tinted hover surface. USWDS leaves the lightest grade unset by default;
-       brands without one fall back to their own primary-lighter. */
-    --theme-color-primary-lightest: #{if(
-      $theme-color-primary-lightest,
-      color("primary-lightest"),
-      color("primary-lighter")
-    )};
-
-    /* USWDS leaves the outer primary grades off unless a theme opts in, and
-       color() errors on a grade set to false — so only emit what exists. */
-    @if $theme-color-primary-lighter {
-      --theme-color-primary-lighter: #{color("primary-lighter")};
-    }
-    @if $theme-color-primary-lightest {
-      --theme-color-primary-lightest: #{color("primary-lightest")};
-    }
+    --theme-color-primary-lighter: #{$primary-lighter};
+    /* Tinted hover surface */
+    --theme-color-primary-lightest: #{$primary-lightest};
 
     /* Secondary colors */
     --theme-color-secondary: #{color("secondary")};
@@ -87,11 +111,11 @@
     --theme-font-size-3xl: #{fs("ui", "3xl")};
 
     /* Font weights */
-    --theme-font-weight-light: #{fw("light")};
-    --theme-font-weight-normal: #{fw("normal")};
-    --theme-font-weight-semibold: #{fw("semibold")};
-    --theme-font-weight-bold: #{fw("bold")};
-    --theme-font-weight-heavy: #{fw("heavy")};
+    --theme-font-weight-light: #{$weight-light};
+    --theme-font-weight-normal: #{$weight-normal};
+    --theme-font-weight-semibold: #{$weight-semibold};
+    --theme-font-weight-bold: #{$weight-bold};
+    --theme-font-weight-heavy: #{$weight-heavy};
 
     /* Line heights (using "ui" family) */
     --theme-line-height-1: #{lh("ui", 1)};

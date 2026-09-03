@@ -6,6 +6,8 @@ import {
     resolveTileFormat,
     formatLayerTime,
     buildTileUrlOptions,
+    isCogLayer,
+    shouldUseDeckRaster,
 } from '../../src/essence/Basics/Layers_/tileUrlUtils.ts'
 
 describe('tileUrlUtils', () => {
@@ -104,6 +106,16 @@ describe('tileUrlUtils', () => {
             expect(result).toContain('rescale=20%2C80')
         })
 
+        test('prefers currentCogColormap over cogColormap', () => {
+            const result = applyCogFieldsToUrl('https://example.com/tiles/{z}/{x}/{y}', {
+                cogTransform: true,
+                cogColormap: 'viridis',
+                currentCogColormap: 'magma',
+            })
+            expect(result).toContain('colormap_name=magma')
+            expect(result).not.toContain('viridis')
+        })
+
         test('expression takes precedence: removes bidx and sets expression', () => {
             const url = 'https://example.com/tiles/{z}/{x}/{y}?bidx=1'
             const result = applyCogFieldsToUrl(url, { cogExpression: 'b1/b2' })
@@ -124,6 +136,54 @@ describe('tileUrlUtils', () => {
                 cogResampling: 'bilinear',
             })
             expect(result).toContain('resampling=bilinear')
+        })
+
+        test('prefers currentCogColormap over cogColormap', () => {
+            const url = applyCogFieldsToUrl('https://t/{z}/{x}/{y}.png', {
+                cogTransform: true,
+                cogColormap: 'viridis',
+                currentCogColormap: 'plasma',
+                cogMin: 0,
+                cogMax: 1,
+            })
+            expect(url).toContain('colormap_name=plasma')
+        })
+    })
+
+    describe('shouldUseDeckRaster', () => {
+        test('true only for deckgl + COG + deckRaster mode', () => {
+            const layer = { cogRendererMode: 'deckRaster' }
+            expect(shouldUseDeckRaster('deckgl', 'COG', layer)).toBe(true)
+        })
+        test('false in leaflet even when mode is deckRaster', () => {
+            expect(
+                shouldUseDeckRaster('leaflet', 'COG', {
+                    cogRendererMode: 'deckRaster',
+                })
+            ).toBe(false)
+        })
+        test('false when mode is titiler or unset', () => {
+            expect(shouldUseDeckRaster('deckgl', 'COG', {})).toBe(false)
+            expect(
+                shouldUseDeckRaster('deckgl', 'COG', {
+                    cogRendererMode: 'titiler',
+                })
+            ).toBe(false)
+        })
+        test('isCogLayer: COG prefix or cogTransform, not stac-collection', () => {
+            expect(isCogLayer('COG', {})).toBe(true)
+            expect(isCogLayer(undefined, { cogTransform: true })).toBe(true)
+            // A mosaic is COG-backed server-side, but nothing here treats it
+            // as a COG file — it stays on the tile-server path.
+            expect(isCogLayer('stac-collection', {})).toBe(false)
+            expect(isCogLayer('url', {})).toBe(false)
+        })
+        test('false for stac-collection even with deckRaster mode', () => {
+            expect(
+                shouldUseDeckRaster('deckgl', 'stac-collection', {
+                    cogRendererMode: 'deckRaster',
+                })
+            ).toBe(false)
         })
     })
 
@@ -358,6 +418,7 @@ describe('tileUrlUtils', () => {
                 variables: { a: 1 },
                 cogTransform: true,
                 cogColormap: 'viridis',
+                currentCogColormap: 'magma',
                 cogResampling: 'bilinear',
                 time: { enabled: true, end: '2024-03-04T00:00:00Z' },
             },
@@ -370,6 +431,7 @@ describe('tileUrlUtils', () => {
             expect(opts.tileFormat).toBe('tms')
             expect(opts.cogTransform).toBe(true)
             expect(opts.cogColormap).toBe('viridis')
+            expect(opts.currentCogColormap).toBe('magma')
             expect(opts.cogResampling).toBe('bilinear')
         })
 
@@ -382,6 +444,7 @@ describe('tileUrlUtils', () => {
                 'cogResampling',
                 'cogTransform',
                 'compositeTile',
+                'currentCogColormap',
                 'currentCogExpression',
                 'currentCogMax',
                 'currentCogMin',

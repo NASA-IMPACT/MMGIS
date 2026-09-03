@@ -1,0 +1,126 @@
+{
+    "defaults": {
+        "variables": {
+            "defaultThemeId": "need",
+            "themes": [
+                {
+                    "id": "need",
+                    "label": "Need",
+                    "iconSource": "mdi",
+                    "iconMdi": "satellite-variant"
+                },
+                {
+                    "id": "hazard",
+                    "label": "Hazard",
+                    "iconSource": "mdi",
+                    "iconMdi": "flash-outline"
+                },
+                {
+                    "id": "event",
+                    "label": "Event",
+                    "iconSource": "mdi",
+                    "iconMdi": "calendar-outline"
+                }
+            ]
+        }
+    },
+    "name": "LayerFilterThemes",
+    "defaultIcon": "view-dashboard-outline",
+    "description": "Theme rail for the two-step layer filter (step 1). Configures its own theme list and owns the selection; pair it with a panel plugin (LayerFilter, or a swap-in) whose theme ids match. Also carries a chevron that opens/closes a neighbouring panel. Events \u2014 emits: plugin:layerfilterthemes:selectedThemeChanged { themeId, initial? }. Requests: tool:getVars, panels:getAll, panels:show, panels:hide. Listens: panels:changed.",
+    "hasVars": true,
+    "width": 66,
+    "height": 0,
+    "paths": {
+        "LayerFilterThemesTool": "essence/Tools/LayerFilterThemes/LayerFilterThemesTool"
+    },
+    "metadata": {
+        "icon": "view-dashboard-outline",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+            "left"
+        ],
+        "preferredPosition": "left",
+        "modernLayoutSupport": true,
+        "width": 66,
+        "height": 0
+    },
+    "config": {
+        "rows": [
+            {
+                "components": [
+                    {
+                        "field": "variables.defaultThemeId",
+                        "name": "Default theme",
+                        "description": "Theme id selected on load. Falls back to the first theme when it matches nothing.",
+                        "type": "text",
+                        "width": 12
+                    },
+                    {
+                        "field": "variables.togglePanelId",
+                        "name": "Panel to open/close",
+                        "description": "Id of the panel the rail's chevron opens and closes. Leave blank to drive the rail's neighbour — the one other panel in the same region; the chevron is hidden when that is ambiguous or the named panel doesn't exist.",
+                        "type": "text",
+                        "width": 12
+                    }
+                ]
+            },
+            {
+                "components": [
+                    {
+                        "field": "variables.themes",
+                        "name": "Themes",
+                        "description": "One row per category on the rail, top to bottom. Each row's <b>Theme Id</b> must match a theme id in the paired filter panel's config — that id is what the rail broadcasts on selection. Pick where the row's icon comes from, then fill in the matching field; an icon is drawn in the rail's own colors whichever source it came from.",
+                        "type": "objectarray",
+                        "width": 12,
+                        "object": [
+                            {
+                                "field": "id",
+                                "name": "Theme Id",
+                                "description": "Must match the filter panel's theme id.",
+                                "type": "text",
+                                "width": 3
+                            },
+                            {
+                                "field": "label",
+                                "name": "Label",
+                                "description": "Shown under the icon. Falls back to the id.",
+                                "type": "text",
+                                "width": 3
+                            },
+                            {
+                                "field": "iconSource",
+                                "name": "Icon Source",
+                                "description": "Which of the three fields below supplies this row's icon.",
+                                "type": "dropdown",
+                                "width": 2,
+                                "options": ["upload", "link", "mdi"]
+                            },
+                            {
+                                "field": "iconUpload",
+                                "name": "Upload Icon",
+                                "description": "An SVG or PNG for this category. Drawn as a silhouette in the rail's colors, so a single-color glyph on a transparent background works best.",
+                                "type": "upload",
+                                "subdir": "LayerFilterThemes",
+                                "width": 4
+                            },
+                            {
+                                "field": "iconUrl",
+                                "name": "Icon Link",
+                                "description": "URL of an icon hosted elsewhere.",
+                                "type": "text",
+                                "width": 6
+                            },
+                            {
+                                "field": "iconMdi",
+                                "name": "MDI Icon Name",
+                                "description": "A Material Design Icons name without the 'mdi-' prefix, e.g. 'flash-outline'.",
+                                "type": "text",
+                                "width": 6
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+}

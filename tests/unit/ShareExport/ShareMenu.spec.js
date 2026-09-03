@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { getShareMenuItems } from '../../../src/essence/Tools/ShareExport/lib/getShareMenuItems.ts'
+import { getShareMenuItems } from '../../../src/essence/Tools/_shared/share/getShareMenuItems.ts'
 
 // Issue #144 - the redesigned Share control is a top-right "Share map" trigger
 // that opens a compact dropdown. getShareMenuItems is the single source of truth

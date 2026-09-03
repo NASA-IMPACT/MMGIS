@@ -1,55 +1,21 @@
 name: App deploy engine
 
-# The shared application engine. Every environment's trigger workflow
-# (`deploy-development.yml`, `deploy-production.yml`) calls this file after the
-# infrastructure engine has converged: build theme assets -> build image ->
-# push to ECR -> register new admin + publish task-definition revisions ->
-# point the ECS Express Mode gateway service's primary container at the new
-# image and let the managed rollout run.
+# The shared application engine, called by every environment's trigger workflow
+# once the infrastructure engine has converged. Reusable only
+# (`on: workflow_call`). ECS Express Mode owns the ALB, the rollout strategy,
+# and scaling; this workflow defines none of them.
 #
-# Reusable only (`on: workflow_call`): it has no trigger of its own, so it can
-# never run against an environment nobody asked for.
+# ── Invariants for anyone editing this file ──────────────────────────────────
+# - The job below MUST keep `environment: ${{ inputs.environment }}`. That
+#   binding is what makes GitHub mint the environment-form OIDC subject
+#   `mmgis-<env>-github-deploy`'s trust policy accepts; without it every
+#   AssumeRole fails with a cryptic error.
+# - Secrets cannot be `workflow_call` inputs. That is why every environment-
+#   specific NAME arrives as an input but IAC_DEPLOY_ROLE_ARN arrives as a
+#   secret, and why callers MUST pass `secrets: inherit` — the value resolves
+#   against the environment the job below binds.
 #
-# The step logic is `deploy-lean.yml`'s, unchanged — same build, same
-# registrations, same rollout call, same 80 x 15 s bounded poll, same summary.
-# The only difference is where the names come from: deploy-lean reads hand-set
-# repository variables, this engine takes them as inputs the caller sourced from
-# `terraform output` at run time. deploy-lean.yml itself is deliberately left
-# alone and keeps running the existing staging deployment until that environment
-# is cut over to the composed pipeline.
-#
-# Per the D1 decision, ECS Express Mode owns the ALB, target groups, rollout
-# strategy, and scaling — this workflow deliberately defines and touches none of
-# them. Express Mode services are NOT task-definition driven: the admin rollout
-# goes through `aws ecs update-express-gateway-service --primary-container`, not
-# `update-service --task-definition`. The task-definition registrations below
-# still matter (see that step's comment).
-#
-# This is the fork's only container build: it builds the Dockerfile on every
-# push to a deployed branch, so a broken container build fails here.
-#
-# ── The environment binding is load-bearing ──────────────────────────────────
-# `environment: ${{ inputs.environment }}` on the job below is not decoration.
-# GitHub only mints the *environment*-form OIDC subject
-# (`repo:NASA-IMPACT/MMGIS:environment:<env>`) for a job that binds an
-# Environment, and that is the exact subject `mmgis-<env>-github-deploy`'s trust
-# policy accepts. A job without an `environment:` key presents the branch form
-# and every AssumeRole fails. A caller cannot supply this — `environment:` is
-# not settable through `workflow_call` inputs — so the binding lives here.
-#
-# ── Configuration contract ───────────────────────────────────────────────────
-#   inputs:  environment, aws_region, ecr_repository, ecs_cluster, ecs_service,
-#            admin_task_family, publish_task_family — every environment-specific
-#            NAME. The trigger fills them from the infrastructure engine's
-#            outputs, which are read out of terraform state at run time; nothing
-#            here is hand-set.
-#   secrets: IAC_DEPLOY_ROLE_ARN — ARN of `mmgis-<env>-github-deploy`
-#            (OIDC-assumable; no long-lived keys). Environment-scoped, set when
-#            the GitHub Environment is configured. Secrets cannot be
-#            workflow_call inputs, so this is the
-#            one parameterized name that arrives as a secret: callers MUST pass
-#            `secrets: inherit`, and it resolves against the environment the
-#            job below binds.
+# What a run does: docs/infrastructure/pipelines.md#a-deploy-run-step-by-step.
 
 on:
   workflow_call:
@@ -94,18 +60,18 @@ jobs:
       # OIDC token for aws-actions/configure-aws-credentials
       id-token: write
       contents: read
-    # No `concurrency:` here on purpose (deploy-lean.yml carries one):
-    # serialisation must span the composed run (infra + app), so the group
-    # belongs to the calling trigger. A group on this job would let the app
-    # engine of one run overlap the infra engine of the next.
+    # No `concurrency:` here on purpose: serialisation must span the composed
+    # run (infra + app), so the group belongs to the calling trigger. A group on
+    # this job would let the app engine of one run overlap the infra engine of
+    # the next.
     env:
       # Task-definition family names are region-global, so each environment uses
       # its own (mmgis-<env>-admin / -publish) to keep a production deploy from
       # registering a revision development's publish-by-family flow would pick
-      # up. They arrive as inputs rather than the hard-coded fallbacks
-      # deploy-lean.yml carries: a wrong-but-plausible default here would deploy
-      # into another environment's families, which the validation step below
-      # forecloses by refusing to run at all without them.
+      # up. They arrive as inputs and carry no default: a wrong-but-plausible
+      # fallback here would deploy into another environment's families, which
+      # the validation step below forecloses by refusing to run at all without
+      # them.
       ADMIN_TASK_FAMILY: ${{ inputs.admin_task_family }}
       PUBLISH_TASK_FAMILY: ${{ inputs.publish_task_family }}
     steps:
@@ -159,14 +125,15 @@ jobs:
       - name: Use Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
+          cache: "npm"
 
       # The Dockerfile's `npm run build` does NOT run build:themes; the
       # generated public/ CSS + fonts must exist in the build context
       # (COPY . .) or themed missions/dashboards render unstyled.
       - name: Build theme assets
         run: |
-          npm install --force
+          npm ci
           npm run build:themes
 
       - name: Configure AWS credentials (OIDC)

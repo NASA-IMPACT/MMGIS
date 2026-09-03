@@ -20,28 +20,27 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 
 import ChartComponent from './ChartComponent'
+import { mmgisShowPlugin, mmgisSetPluginState } from '../_shared/adapters/mmgisAPI'
 
 // ── Module-level state ────────────────────────────────────────────────────────
-// MMGIS tools are mutually exclusive, so when FetchStats emits `analysisReady`,
-// Chart's `make()` hasn't run yet. The bus listeners have to live at module
-// scope to catch the emit; we stash the latest payload here and replay it
-// to the instance once it mounts.
+// FetchStats can emit `analysisReady` before Chart's `make()` has ever run, so
+// the bus listeners have to live at module scope to catch the emit; we stash
+// the latest payload here and replay it to the instance once it mounts.
 let _instance = null
 let _latestAnalysisData = null
 let _subscribed = false
 
+/** Stashes the latest results, renders them, and brings the panel on screen. */
 function _onAnalysisReady(payload) {
     _latestAnalysisData = payload?.analysisData ?? null
-    if (_instance && _instance._reactRoot) {
-        _instance._render()
-        return
-    }
-    // Auto-open the Chart panel via the core plugin loader. Chart is
-    // registered `startUnloaded: true`, so make() hasn't run yet — this
-    // mounts it in its existing container. No-ops (with a warning) if Chart
-    // is already loaded, and warns if the modern layout / plugin isn't active.
-    if (typeof window === 'undefined' || !window.mmgisAPI?.emit) return
-    window.mmgisAPI.emit('core:loadPlugin', { pluginId: 'ChartTool' })
+    if (_instance && _instance._reactRoot) _instance._render()
+    mmgisShowPlugin('ChartTool')
+        .then((result) => {
+            if (!result.ok) {
+                console.warn(`[Chart] showPlugin refused: ${result.reason}`)
+            }
+        })
+        .catch((err) => console.warn('[Chart] showPlugin failed:', err))
 }
 
 function _onAnalysisStart() {
@@ -124,9 +123,14 @@ const ChartTool = {
 
     _onClose() {
         // Fully unload (not just hide) so a later analysisReady re-mounts a
-        // fresh instance via _onAnalysisReady's core:loadPlugin call.
-        if (typeof window === 'undefined' || !window.mmgisAPI?.unloadPlugin) return
-        window.mmgisAPI.unloadPlugin('ChartTool')
+        // fresh instance via _onAnalysisReady's showPlugin call.
+        mmgisSetPluginState('ChartTool', 'unloaded')
+            .then((result) => {
+                if (!result.ok) {
+                    console.warn(`[Chart] unload refused: ${result.reason}`)
+                }
+            })
+            .catch((err) => console.warn('[Chart] unload failed:', err))
     },
 }
 

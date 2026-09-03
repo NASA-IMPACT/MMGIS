@@ -6,40 +6,202 @@ import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
+import { isRasterTileLayerType } from '../MapEngines/types/engine'
+import {
+    getActiveTileLevel,
+    getTileLevelUrl,
+    resolveTileLayerSource,
+} from './tileLayerSource'
+import {
+    buildTileUrlOptions,
+    cogSourceType,
+    hasCogColormap,
+    shouldUseDeckRaster,
+    supportsCogTransform,
+} from './tileUrlUtils'
+import { bbox } from '@turf/turf'
 import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
 
 /**
- * True when a registry entry is owned by the active non-Leaflet engine.
- * Engine-owned layers must go through the IMapEngine facade rather than
- * Leaflet's methods — they have no Leaflet API to call, and under deck.gl a
- * mutation returns a replacement instance for the registry to adopt.
+ * What a layer's COG colormap supports: whether it has one to draw a legend
+ * ramp from, and whether that ramp can be changed at runtime.
  *
- * Which types are engine-owned is per-engine, not universal — see
- * ENGINE_LAYER_SUPPORT. Types the active engine has no builder for (velocity,
- * model, data, image and video under deck.gl) stay Leaflet-built, so the
- * registry always holds a mix.
+ * The two answers differ — an `image` layer colours its pixels from a COG
+ * colormap but bakes it in at construction — so they are reported separately
+ * rather than collapsed into one verdict.
  *
- * Ownership is identified positively by shape: a deck.gl layer carries deck's
- * `props` (or arrives as a `_deckLayer` wrapper, which `Map_.nativeLayer`
- * unwraps) and never Leaflet's `options`. Anything else in the registry —
- * Leaflet layers, aggregate arrays of them, and the load-failure sentinel
- * (`false`) — takes the Leaflet path.
- *
- * @param {object} layer - A registry entry from `L_.layers.layer`.
- * @returns {boolean}
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {{hasColormap: boolean, canChangeColormap: boolean}}
  */
-function isEngineOwnedLayer(layer) {
-    return (
-        layer != null &&
-        layer.options == null &&
-        (layer.props != null || layer._deckLayer != null) &&
-        L_.Map_?.engine != null &&
-        L_.Map_.engine.engineType !== MAP_ENGINE.LEAFLET
+function cogCapabilitiesFor(uuid) {
+    const layerObj = L_.layers.data[uuid]
+    // The source before URL resolution, matching resolveTileLayerSource's
+    // pick. Resolving in full would build TiTiler and STAC URLs this verdict
+    // never reads.
+    const sourceUrl =
+        getTileLevelUrl(getActiveTileLevel(layerObj || {})) || layerObj?.url
+    // A deckRaster layer changes its colormap by rebuilding the layer rather
+    // than recompiling a tile URL, so it qualifies without a service-prefixed
+    // source — which is what supportsCogTransform requires.
+    const deckRaster = shouldUseDeckRaster(
+        L_.Map_?.engine?.engineType,
+        cogSourceType(sourceUrl),
+        layerObj || {}
     )
+    return {
+        hasColormap: hasCogColormap(layerObj),
+        canChangeColormap:
+            supportsCogTransform(layerObj, sourceUrl) || deckRaster,
+    }
+}
+
+/**
+ * Where a layer's TiTiler lives, or null when it is out of reach. A configured
+ * service is someone else's to serve and always reachable; everything else
+ * falls through to the same-origin `/titiler` proxy, which exists only under
+ * WITH_TITILER. Without it that path reaches the SPA catch-all, which answers
+ * 200 with HTML rather than failing outright.
+ *
+ * @param {object} layerConfig - An entry of `L_.layers.data`.
+ * @returns {string|null} Base URL of the layer's TiTiler.
+ */
+function titilerUrlFor(layerConfig) {
+    const url = ServiceUrls.getTiTilerUrl(layerConfig)
+    if (url == null) return null
+    if (ServiceUrls.hasExternalServiceUrl('titiler', layerConfig)) return url
+    return window.mmgisglobal?.WITH_TITILER === 'true' ? url : null
+}
+
+/**
+ * A layer's geographic extent as `[[south, west], [north, east]]` — the
+ * `[LatLngLike, LatLngLike]` pair both map engines normalise — or null when no
+ * extent can be worked out.
+ *
+ * Where an extent comes from depends on how the layer is drawn, so the sources
+ * are tried in order of fidelity: a Leaflet layer measures the geometry it has
+ * actually rendered, a deck.gl layer has to be measured from the GeoJSON it was
+ * handed, and a raster layer has no geometry at all — only the footprint
+ * declared in mission configuration.
+ *
+ * @param {string} uuid - A key of `L_.layers.data`.
+ * @returns {[[number, number], [number, number]] | null}
+ */
+function layerBoundsFor(uuid) {
+    const layer = L_.layers.layer[uuid]
+
+    // Leaflet measures its own rendered geometry. A vector layer whose features
+    // have not arrived yet reports empty bounds, and getBounds() throws outright
+    // on layer types that only look like they have one, so neither case counts
+    // as an extent — both fall through to the sources below.
+    if (layer && typeof layer.getBounds === 'function') {
+        try {
+            const bounds = layer.getBounds()
+            if (bounds && bounds.isValid && bounds.isValid()) {
+                const sw = bounds.getSouthWest()
+                const ne = bounds.getNorthEast()
+                return [
+                    [sw.lat, sw.lng],
+                    [ne.lat, ne.lng],
+                ]
+            }
+        } catch (err) {
+            // Not measurable through Leaflet; try the remaining sources.
+        }
+    }
+
+    // A deck.gl layer keeps its features on props.data and exposes no
+    // measurement method.
+    const deckData = layer?.props?.data ?? layer?._deckLayer?.props?.data
+    if (deckData != null && typeof deckData === 'object') {
+        // deck accepts a bare array of features as readily as a GeoJSON
+        // object; turf measures only the latter. Only inline GeoJSON can be
+        // measured here — when data is a URL the features live inside deck's
+        // loaders, out of reach.
+        const geojson = Array.isArray(deckData)
+            ? { type: 'FeatureCollection', features: deckData }
+            : deckData
+        try {
+            const [west, south, east, north] = bbox(geojson)
+            // An empty FeatureCollection measures to infinities.
+            if ([west, south, east, north].every(Number.isFinite)) {
+                return [
+                    [south, west],
+                    [north, east],
+                ]
+            }
+        } catch (err) {
+            // Unmeasurable GeoJSON; try the configured footprint.
+        }
+    }
+
+    // Raster layers carry no geometry of their own. Mission configuration
+    // declares their footprint as [west, south, east, north].
+    const boundingBox = L_.layers.data[uuid]?.boundingBox
+    if (Array.isArray(boundingBox) && boundingBox.length === 4) {
+        const [west, south, east, north] = boundingBox.map((n) => parseFloat(n))
+        if ([west, south, east, north].every(Number.isFinite)) {
+            return [
+                [south, west],
+                [north, east],
+            ]
+        }
+    }
+
+    return null
+}
+
+/**
+ * Refreshes a raster tile layer through the map engine's per-layer refresher.
+ *
+ * Resolution order — source, then time replacements, then tile-URL options —
+ * is the one layer creation and time-driven reloads use, so all three agree on
+ * the URL a layer ends up serving.
+ *
+ * Failures are reported as `false` rather than thrown: the caller is a UI
+ * control on the request bus, and a rejection there escapes as an unhandled
+ * promise with nothing to show for it.
+ *
+ * @param {string} uuid - Layer UUID, already resolved.
+ * @param {object} [updateOptions] - Tile-URL option overrides, the keys
+ * buildTileUrlOptions produces. These win over the layer config.
+ * @returns {Promise<boolean>} Whether the engine had a layer to refresh.
+ */
+async function refreshTileLayer(uuid, updateOptions) {
+    const layerObj = L_.layers.data[uuid]
+    // Only raster tiles carry a compiled tile URL. The other facade-managed
+    // types (vector, vectortile, pointcloud) reload through their own paths.
+    if (!isRasterTileLayerType(layerObj)) return false
+
+    try {
+        const tileSource = resolveTileLayerSource(layerObj)
+        const sourceUrl = await L_.TimeControl_.performTimeUrlReplacements(
+            tileSource.url,
+            layerObj,
+            false
+        )
+        const tileOptions = {
+            ...buildTileUrlOptions(
+                layerObj,
+                tileSource.splitColonType,
+                tileSource.tileFormat
+            ),
+            ...(updateOptions || {}),
+        }
+
+        // Leaflet recompiles per tile from tileOptions; deck.gl bakes them in.
+        // Neither is this caller's business.
+        return L_.Map_.engine.refreshLayer(uuid, {
+            url: sourceUrl,
+            tileOptions,
+            force: false,
+        })
+    } catch (err) {
+        console.error(`layers:refresh failed for "${uuid}"`, err)
+        return false
+    }
 }
 
 const L_ = {
@@ -68,10 +230,14 @@ const L_ = {
         attachments: {}, // layersGroupSubLayers
         on: {}, // toggledArray
         opacity: {}, // opacityArray
+        listed: {}, // uuid -> bool; false hides from layer lists (runtime-only; absent = listed)
         filters: {}, // layerFilters
         nameToUUID: {},
         refreshIntervals: {}, // In order to reloadLayer
         refreshFailed: {}, // Track layers with failed refreshes
+        // Name -> { status: 'ok' | 'error', message } as reported by the map
+        // engine's request hooks. Written only via L_.setLayerLoadStatus.
+        loadStatus: {},
     },
     // ===== Private ======
     //Index -> layer name
@@ -224,14 +390,9 @@ const L_ = {
                     }
                     return false
                 }),
-                window.mmgisAPI.provide('layers:refresh', ({ layerUUID, options }) => {
+                window.mmgisAPI.provide('layers:refresh', async ({ layerUUID, options }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
-                    const tileLayer = L_.layers.layer[uuid]
-                    if (tileLayer && typeof tileLayer.refresh === 'function') {
-                        tileLayer.refresh(null, false, options || {})
-                        return true
-                    }
-                    return false
+                    return refreshTileLayer(uuid, options)
                 }),
                 window.mmgisAPI.provide('layers:updateConfig', ({ layerUUID, updates }) => {
                     const uuid = L_.asLayerUUID(layerUUID)
@@ -244,10 +405,103 @@ const L_ = {
                 }),
                 window.mmgisAPI.provide('layers:getAllConfigs', () => L_.layers.data),
                 window.mmgisAPI.provide('layers:getAllOpacities', () => L_.layers.opacity),
+                // What each layer's COG colormap supports. Called with a layer
+                // identifier it answers for that one layer, resolving a name
+                // the way every other layer-keyed provider does; called with
+                // none it returns the whole map, keyed by UUID.
+                window.mmgisAPI.provide('layers:getCogCapabilities', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : cogCapabilitiesFor(uuid)
+                    }
+                    const capabilities = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        capabilities[uuid] = cogCapabilitiesFor(uuid)
+                    })
+                    return capabilities
+                }),
+                // Where each layer sits, for moving the map to it. Called with
+                // a layer identifier it answers for that one layer, resolving a
+                // name the way every other layer-keyed provider does; called
+                // with none it returns the whole map, keyed by UUID.
+                //
+                // An extent is measured on demand, not looked up: every deck.gl
+                // layer answered for is walked feature by feature. That is
+                // nothing for one layer and a blocking sweep of the mission's
+                // whole geometry for all of them, so ask by identifier wherever
+                // a single layer will do.
+                window.mmgisAPI.provide('layers:getBounds', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null ? null : layerBoundsFor(uuid)
+                    }
+                    const bounds = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        bounds[uuid] = layerBoundsFor(uuid)
+                    })
+                    return bounds
+                }),
+                // Where a layer's tiles and colormaps are served from, and
+                // null when nowhere is. Called with a layer identifier it
+                // answers for that one layer; called with none it returns the
+                // whole map, keyed by UUID.
+                window.mmgisAPI.provide('layers:getTiTilerUrl', (layerUUID) => {
+                    if (layerUUID != null) {
+                        const uuid = L_.asLayerUUID(layerUUID)
+                        return uuid == null
+                            ? null
+                            : titilerUrlFor(L_.layers.data[uuid])
+                    }
+                    const urls = {}
+                    Object.keys(L_.layers.data).forEach((uuid) => {
+                        urls[uuid] = titilerUrlFor(L_.layers.data[uuid])
+                    })
+                    return urls
+                }),
                 window.mmgisAPI.provide('layers:isVisible', (layerUUID) => {
                     const uuid = L_.asLayerUUID(layerUUID)
                     return L_.layers.on?.[uuid] === true
                 }),
+                // Runtime "shown in layer lists" flags. Only unlisted layers
+                // get an entry (uuid -> false); absent = listed, so the map
+                // stays empty until something filters. Orthogonal to map
+                // visibility (layers.on). Session-only sibling of layers.on;
+                // lives outside configData so resetConfig re-parses don't
+                // wipe it. `source` is accepted but unused — reserved for
+                // arbitrating between multiple writers later.
+                window.mmgisAPI.provide('layers:getListed', () => L_.layers.listed),
+                window.mmgisAPI.provide('layers:setListed', ({ updates, source } = {}) => {
+                    if (updates == null || typeof updates !== 'object')
+                        return false
+                    Object.entries(updates).forEach(([name, isListed]) => {
+                        const uuid = L_.asLayerUUID(name)
+                        if (uuid == null) return
+                        if (isListed !== false) delete L_.layers.listed[uuid]
+                        else L_.layers.listed[uuid] = false
+                    })
+                    window.mmgisAPI.emit('layer:listedChange', {
+                        listed: L_.layers.listed,
+                    })
+                    return true
+                }),
+                // In-memory layer add/remove (not persisted; lost on reload).
+                // layerObj requires { name, type, ... }. See mmgisAPI.addLayer.
+                window.mmgisAPI.provide('layers:addLayer', (layerObj) =>
+                    window.mmgisAPI.addLayer(layerObj)
+                ),
+                window.mmgisAPI.provide('layers:removeLayer', (layerUUID) =>
+                    window.mmgisAPI.removeLayer(layerUUID)
+                ),
+                // Engine-reported load health. With a layerUUID returns that
+                // layer's { status, message } (null if none reported yet);
+                // without, the whole name-keyed map. Live updates broadcast
+                // as 'layers:loadStatusChanged'.
+                window.mmgisAPI.provide('layers:getLoadStatus', (layerUUID) =>
+                    layerUUID != null
+                        ? L_.layers.loadStatus[L_.asLayerUUID(layerUUID)] ??
+                          null
+                        : L_.layers.loadStatus
+                ),
                 window.mmgisAPI.provide('tool:getVars', (toolName) => L_.getToolVars(toolName)),
                 window.mmgisAPI.provide('app:isMobile', () => L_.UserInterface_?.isMobile === true),
                 window.mmgisAPI.provide('app:getMissionPath', () => L_.missionPath),
@@ -453,16 +707,6 @@ const L_ = {
                 window.mmgisglobal.IS_DOCKER === 'true'
             ) {
                 nextUrl = `/${nextUrl}`
-            }
-        }
-        if (process.env.NODE_ENV === 'development' && F_.isUrlAbsolute(nextUrl)) {
-            try {
-                if (new URL(nextUrl).origin !== window.location.origin) {
-                    const rootPath = window?.mmgisglobal?.ROOT_PATH || ''
-                    nextUrl = `${rootPath}/corsproxy/${nextUrl}`
-                }
-            } catch (e) {
-                // Invalid URL, leave unchanged
             }
         }
         return nextUrl
@@ -1144,6 +1388,20 @@ const L_ = {
                                 L_.layers.layer[L_.layers.dataFlat[i].name]
                             )
                         )
+                        // Rank every layer the same way toggleLayerHelper does,
+                        // so the stack follows z-index order at start instead of
+                        // element order and a later toggle re-sorts against
+                        // ranks that are already assigned.
+                        engine.setLayerZIndex(
+                            L_.Map_.nativeLayer(
+                                L_.layers.layer[L_.layers.dataFlat[i].name]
+                            ),
+                            L_._layersOrdered.length +
+                                1 -
+                                L_._layersOrdered.indexOf(
+                                    L_.layers.dataFlat[i].name
+                                )
+                        )
 
                         // Ensure video layers start muted when added to map
                         if (L_.layers.dataFlat[i].type === 'video') {
@@ -1186,14 +1444,6 @@ const L_ = {
                     s.type === 'data' ||
                     s.type === 'vectortile'
                 ) {
-                    // Make sure all tile layers follow z-index order at start instead of element order
-                    engine.setLayerZIndex(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(s.name)
-                    )
-
                     let demUrl = s.demtileurl
                     if (!F_.isUrlAbsolute(demUrl))
                         demUrl = L_.missionPath + demUrl
@@ -1925,115 +2175,107 @@ const L_ = {
                 }
             )
     },
+    // Records engine-reported load health for a layer and broadcasts
+    // transitions on the bus. Engines call this from their request hooks
+    // (tile load/error, WMS image load/error, GeoJSON fetch), but the status
+    // is per LAYER, not per request: once a layer has loaded anything
+    // successfully it stays 'ok' — later individual failures (tiles outside
+    // a regional dataset's coverage, transient requests) don't flip it back.
+    // 'error' therefore means the layer has never loaded anything.
+    setLayerLoadStatus: function (name, status, message) {
+        message = message ?? null
+        const prev = L_.layers.loadStatus[name]
+        if (prev && prev.status === 'ok' && status === 'error') return
+        if (prev && prev.status === status && prev.message === message) return
+        L_.layers.loadStatus[name] = { status, message }
+        if (window.mmgisAPI)
+            window.mmgisAPI.emit('layers:loadStatusChanged', {
+                layerName: name,
+                status,
+                message,
+            })
+    },
     setLayerOpacity: function (name, newOpacity) {
         newOpacity = parseFloat(newOpacity)
+        // LithoSphere is not a map engine; the globe keeps its own path.
         if (L_.Globe_) L_.Globe_.litho.setLayerOpacity(name, newOpacity)
-        let l = L_.layers.layer[name]
 
-        // Engine-owned layers go through the IMapEngine facade, which may return
-        // a replacement instance for the registry to hold (deck.gl layers are
-        // immutable). They have no attachments and no Leaflet marker elements,
-        // so the sublayer and CSS passes below do not apply to them.
-        if (isEngineOwnedLayer(l)) {
-            const updated = L_.Map_.engine.setLayerOpacity(
-                L_.Map_.nativeLayer(l),
-                newOpacity
-            )
-            if (updated) L_.layers.layer[name] = updated
-        } else if (l && l.options) {
-            // Leaflet layers only. A registry entry that is neither
-            // engine-owned nor a Leaflet layer — the load failure sentinel
-            // (`false`) or an aggregate array — falls through to the registry
-            // write below, which is the value the engine reads when it builds
-            // or re-adds the layer.
-            if (l.options.initialFillOpacity == null)
-                l.options.initialFillOpacity =
-                    L_.layers.data[name]?.style?.fillOpacity != null
-                        ? parseFloat(L_.layers.data[name].style.fillOpacity)
-                        : 1
-            try {
-                l.setOpacity(newOpacity)
-            } catch (error) {
-                l.setStyle({
-                    opacity: newOpacity,
-                    fillOpacity: newOpacity * l.options.initialFillOpacity,
-                })
-            }
-            $(`.leafletMarkerShape_${F_.getSafeName(name)}`).css({
-                opacity: newOpacity,
+        const l = L_.layers.layer[name]
+        const engine = L_.Map_?.engine
+
+        // The configured fill opacity is what the slider scales. Read from
+        // config so there is one source of truth.
+        const configuredFill =
+            L_.layers.data[name]?.style?.fillOpacity != null
+                ? parseFloat(L_.layers.data[name].style.fillOpacity)
+                : 1
+
+        // Recorded first: the registry is the sole source of truth for a
+        // layer's opacity (getLayerOpacity reads it, and layer creation seeds
+        // itself from it). If an attachment below throws, a write down here
+        // would be skipped along with the marker pass and the layer would come
+        // back at the wrong opacity.
+        L_.layers.opacity[name] = newOpacity
+
+        // An MMGIS layer is a compound — main layer plus attachment
+        // decorations. The caller iterates the parts and asks the engine once
+        // per part; the adapter never learns what an attachment is. Skipped
+        // here: the load-failure sentinel (false) and aggregate arrays,
+        // neither of which is a layer the engine holds.
+        if (engine && l && l !== false && !Array.isArray(l)) {
+            // nativeLayer unwraps the main layer, whose registry entry may be
+            // a wrapper carrying `._deckLayer` rather than the engine's own
+            // layer. Attachments below are passed raw because they are always
+            // plain Leaflet objects, never wrapped.
+            engine.setLayerOpacity(L_.Map_.nativeLayer(l), newOpacity, {
+                fillOpacity: newOpacity * configuredFill,
             })
 
             const sublayers = L_.layers.attachments[name]
-            if (sublayers) {
-                for (let sub in sublayers) {
-                    if (
-                        sublayers[sub] !== false &&
-                        sublayers[sub].layer != null &&
-                        !['models'].includes(sub)
-                    ) {
-                        try {
-                            sublayers[sub].layer.setOpacity(newOpacity)
-                        } catch (error) {
-                            try {
-                                let opacity = newOpacity
-                                let fillOpacity =
-                                    newOpacity * l.options.initialFillOpacity
-                                if (sub === 'uncertainty_ellipses') {
-                                    opacity = opacity * 0.8
-                                    fillOpacity = fillOpacity * 0.25
-                                }
-                                sublayers[sub].layer.setStyle({
-                                    opacity,
-                                    fillOpacity,
-                                })
-                            } catch (error2) {
-                                /*
-                                if (sublayers[sub].layer._layers)
-                                    for (let sl in sublayers[sub].layer
-                                        ._layers) {
-                                    }
-                                    */
-                            }
-                        }
-                    }
-                }
-            }
+            for (const sub in sublayers || {}) {
+                const attachment = sublayers[sub]
+                // 'models' render on the globe only — no 2D layer to dim.
+                if (
+                    attachment === false ||
+                    attachment.layer == null ||
+                    ['models'].includes(sub)
+                )
+                    continue
 
-            try {
-                l.options.fillOpacity =
-                    newOpacity * l.options.initialFillOpacity
-                l.options.opacity = newOpacity
-                l.options.style.fillOpacity =
-                    newOpacity * l.options.initialFillOpacity
-                l.options.style.opacity = newOpacity
-            } catch (error) {
-                l.options.fillOpacity =
-                    newOpacity * l.options.initialFillOpacity
-                l.options.opacity = newOpacity
+                // Decoration dimming factors are product behaviour, not
+                // engine mechanics, so they are applied here and passed in
+                // as absolute values.
+                const isEllipses = sub === 'uncertainty_ellipses'
+                engine.setLayerOpacity(
+                    attachment.layer,
+                    newOpacity * (isEllipses ? 0.8 : 1),
+                    {
+                        fillOpacity:
+                            newOpacity *
+                            configuredFill *
+                            (isEllipses ? 0.25 : 1),
+                    }
+                )
             }
         }
-        L_.layers.opacity[name] = newOpacity
+
+        // Marker elements carry a class keyed by layer name, assigned when
+        // the marker is built. No engine holds a handle on them, so their
+        // opacity is set on the DOM here rather than through an engine call.
+        $(`.leafletMarkerShape_${F_.getSafeName(name)}`).css({
+            opacity: newOpacity,
+        })
 
         if (L_.activeFeature?.layer && L_.activeFeature.layerName === name) {
             L_.highlight(L_.activeFeature.layer)
         }
     },
     getLayerOpacity: function (name) {
-        var l = L_.layers.layer[name]
-
-        if (l == null) return 0
-
-        // Engine-owned layer objects carry no Leaflet `options`; the registry is
-        // the authority on their opacity.
-        if (isEngineOwnedLayer(l)) return L_.layers.opacity[name] ?? 1
-
-        var opacity
-        try {
-            opacity = l.options?.style.opacity
-        } catch (error) {
-            opacity = l.options?.opacity
-        }
-        return opacity
+        // A layer that was never built has no opacity to report. Everything
+        // else reads the registry, which is authoritative for both engines —
+        // layer options are not a source of opacity.
+        if (L_.layers.layer[name] == null) return 0
+        return L_.layers.opacity[name] ?? 1
     },
     setLayerFilter: function (name, filter, value) {
         // Clear
@@ -3386,6 +3628,7 @@ const L_ = {
         L_._layersOrdered = []
         L_.layers.dataFlat = []
         L_._layersLoaded = []
+        L_.layers.loadStatus = {}
 
         await L_.parseConfig(data)
 
@@ -3409,6 +3652,14 @@ const L_ = {
             await L_.removeLayerFromLayersData(layerName)
         }
 
+        // Notify subscribers (e.g. the modern-layout Layers panel) that the
+        // layer list changed, so they rebuild.
+        if (window.mmgisAPI) {
+            window.mmgisAPI.emit('layers:listChanged')
+        }
+
+        // The classic-layout LayersTool doesn't subscribe to the bus, so
+        // rebuild it directly when it's the active tool.
         if (ToolController_.activeToolName === 'LayersTool') {
             const layersTool = ToolController_.getTool('LayersTool')
             if (layersTool.destroy && layersTool.make) {
@@ -3474,8 +3725,10 @@ const L_ = {
                 delete L_.layers.layer[layerUUID]
                 delete L_.layers.data[layerUUID]
                 delete L_.layers.on[layerUUID]
+                delete L_.layers.listed[layerUUID]
                 delete L_.layers.attachments[layerUUID]
                 delete L_.layers.opacity[layerUUID]
+                delete L_.layers.loadStatus[layerUUID]
             }
         }
     },

@@ -8,7 +8,14 @@ import {
     pickInfoToResult,
     buildDeckLayer,
     hexToRgba,
+    isImageTileResponse,
 } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
+
+const tileResponse = (ok, status, contentType) => ({
+    ok,
+    status,
+    headers: { get: () => contentType },
+})
 
 test.describe('DeckGLHelpers', () => {
     test.describe('resolveLatLng', () => {
@@ -109,6 +116,28 @@ test.describe('DeckGLHelpers', () => {
         })
     })
 
+    test.describe('isImageTileResponse', () => {
+        test('accepts a response carrying image bytes', () => {
+            expect(isImageTileResponse(tileResponse(true, 200, 'image/png'))).toBe(true)
+            expect(isImageTileResponse(tileResponse(true, 200, 'image/jpeg;charset=binary'))).toBe(true)
+            expect(isImageTileResponse(tileResponse(true, 200, 'IMAGE/PNG'))).toBe(true)
+        })
+
+        test('rejects an error body served with a 200, as tile servers do for a missing timestamp', () => {
+            expect(isImageTileResponse(tileResponse(true, 200, 'text/html'))).toBe(false)
+            expect(isImageTileResponse(tileResponse(true, 200, 'application/json'))).toBe(false)
+        })
+
+        test('rejects a failed request', () => {
+            expect(isImageTileResponse(tileResponse(false, 404, 'image/png'))).toBe(false)
+            expect(isImageTileResponse(tileResponse(false, 500, 'text/html'))).toBe(false)
+        })
+
+        test('rejects a response with no content type', () => {
+            expect(isImageTileResponse(tileResponse(true, 200, null))).toBe(false)
+        })
+    })
+
     test.describe('buildDeckLayer', () => {
         test('throws for unsupported layer type', () => {
             expect(() => buildDeckLayer('id', { type: 'unsupported' })).toThrow(
@@ -153,6 +182,39 @@ test.describe('DeckGLHelpers', () => {
             expect(layer.id).toBe('tile-2')
         })
 
+        test.describe('missing tiles', () => {
+            const tileLayer = () =>
+                buildDeckLayer('tile-missing', {
+                    type: 'tile',
+                    url: 'https://example.com/tiles/{z}/{x}/{y}.png',
+                })
+
+            const tileProps = (data) => ({
+                data,
+                tile: {
+                    index: { z: 1, x: 0, y: 0 },
+                    bbox: { west: 0, south: 0, east: 10, north: 10 },
+                },
+            })
+
+            test('renders nothing for a tile that carried no image', () => {
+                const renderSubLayers = tileLayer().props.renderSubLayers
+                expect(renderSubLayers(tileProps(null))).toBeNull()
+                expect(renderSubLayers(tileProps(undefined))).toBeNull()
+            })
+
+            test('renders a BitmapLayer for a tile that decoded', () => {
+                const image = { width: 256, height: 256 }
+                const sublayer = tileLayer().props.renderSubLayers(tileProps(image))
+                expect(sublayer).not.toBeNull()
+                expect(sublayer.props.image).toBe(image)
+            })
+
+            test('reports tile failures through onTileError', () => {
+                expect(typeof tileLayer().props.onTileError).toBe('function')
+            })
+        })
+
         test('creates a GeoJsonLayer for vector type', () => {
             const layer = buildDeckLayer('vec-1', {
                 type: 'vector',
@@ -183,6 +245,90 @@ test.describe('DeckGLHelpers', () => {
                 url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
             })
             expect(layer.id).toBe('mvt-2')
+        })
+
+        test('gives vectortile points a pixel radius from style.radius', () => {
+            const layer = buildDeckLayer('mvt-3', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { radius: 5 },
+            })
+            // Without these, MVT points inherit deck.gl's 1-metre default and
+            // render sub-pixel at every practical zoom.
+            expect(layer.props.getPointRadius).toBe(5)
+            expect(layer.props.pointRadiusUnits).toBe('pixels')
+        })
+
+        test('reads vectortile point radius from style.radiusProp', () => {
+            const layer = buildDeckLayer('mvt-4', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { radius: 5, radiusProp: 'size' },
+            })
+            expect(layer.props.getPointRadius({ properties: { size: 12 } })).toBe(12)
+            // Falls back to style.radius when the feature lacks the property.
+            expect(layer.props.getPointRadius({ properties: {} })).toBe(5)
+        })
+
+        test('reads vectortile line width from style.weightProp', () => {
+            const layer = buildDeckLayer('mvt-5', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { weight: 2, weightProp: 'w' },
+            })
+            expect(layer.props.getLineWidth({ properties: { w: 7 } })).toBe(7)
+            expect(layer.props.getLineWidth({ properties: {} })).toBe(2)
+        })
+
+        test('reads vectortile fill colour from style.fillColorProp', () => {
+            const layer = buildDeckLayer('mvt-6', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#000000', fillOpacity: 1, fillColorProp: 'c' },
+            })
+            expect(
+                layer.props.getFillColor({ properties: { c: '#ff0000' } })
+            ).toEqual([255, 0, 0, 255])
+            expect(layer.props.getFillColor({ properties: {} })).toEqual([0, 0, 0, 255])
+        })
+
+        test('reads vectortile line colour from style.colorProp', () => {
+            const layer = buildDeckLayer('mvt-7', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { color: '#000000', opacity: 1, colorProp: 'c' },
+            })
+            expect(
+                layer.props.getLineColor({ properties: { c: '#00ff00' } })
+            ).toEqual([0, 255, 0, 255])
+        })
+
+        test('reads vectortile opacities from their *Prop fields', () => {
+            const layer = buildDeckLayer('mvt-8', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: {
+                    fillColor: '#ff0000',
+                    fillOpacityProp: 'fo',
+                    color: '#0000ff',
+                    opacityProp: 'o',
+                },
+            })
+            expect(layer.props.getFillColor({ properties: { fo: 0.5 } })[3]).toBe(128)
+            expect(layer.props.getLineColor({ properties: { o: 0.5 } })[3]).toBe(128)
+        })
+
+        test('keeps vectortile style accessors static when no *Prop is set', () => {
+            const layer = buildDeckLayer('mvt-9', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { radius: 5, weight: 2 },
+            })
+            // Constants, not functions — deck.gl skips per-feature evaluation.
+            expect(typeof layer.props.getPointRadius).toBe('number')
+            expect(typeof layer.props.getLineWidth).toBe('number')
+            expect(Array.isArray(layer.props.getFillColor)).toBe(true)
+            expect(Array.isArray(layer.props.getLineColor)).toBe(true)
         })
 
         test('creates a ScatterplotLayer for scatterplot type', () => {

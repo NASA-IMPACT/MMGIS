@@ -1,0 +1,129 @@
+/* Map Control Bar
+   Grouped icon buttons over the map. Every value resolves against the theme's
+   exported --theme-* custom properties; the literal after each is the horizon
+   value, used only when no theme bundle is loaded. Control geometry (button
+   and divider sizes) has no token and is stated in px.
+
+   Every surface is square-cornered: --theme-radius-0 is stated rather than
+   left to the initial value, so a UA or framework default cannot round it. */
+/* The element the tool mounts into. It spans the full width of the panel's
+   tool card so the bar below has room to align itself within it; without this
+   the host shrink-wraps the bar and alignment has no effect. */
+.mapControl-tool-host {
+    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.blocks-map-control {
+    // Placement is owned by the host container (e.g. a floating panel zone);
+    // the bar only spans it and anchors its own dropdowns.
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    width: 100%;
+    pointer-events: auto;
+    font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue', sans-serif);
+
+    /* A row that wraps once its boxes no longer fit at their minimum widths. */
+    &__bar {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        width: 100%;
+        gap: var(--theme-spacing-05, 0.25rem);
+    }
+
+    /* Groups grow by one unit per button they hold, so every button in the bar
+       widens at the same rate and they all stay equal to each other. */
+    &__group {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        flex: 1 0 auto;
+        overflow: hidden;
+        background: var(--theme-color-white, #ffffff);
+        border-radius: var(--theme-radius-0, 0);
+
+        &--pair {
+            flex-grow: 2;
+        }
+    }
+
+    /* 36px is the button's floor, not its width: it splits whatever extra width
+       its group was given, with the glyph centered in the result. The floor is
+       stated twice because a flex basis alone does not reach the group around
+       it — Firefox sizes the group from its buttons' content, and without the
+       min-width would hold the group at glyph width while the button overflows
+       it. */
+    &__btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 1 0 36px;
+        min-width: 36px;
+        height: 36px;
+        padding: 0;
+        border: none;
+        cursor: pointer;
+        background: transparent;
+        /* The glyph is drawn in currentColor, so this is the icon's color. */
+        color: var(--theme-color-base-darker, #444447);
+        transition: background-color 0.12s ease, color 0.12s ease;
+
+        &:hover {
+            background: var(--theme-color-primary-lightest, #eaf0fd);
+            color: var(--theme-color-primary, #1c67e3);
+        }
+
+        /* Core's global `*:focus { outline: none }` strips the native ring, so
+           the bar restores one for keyboard users. */
+        &:focus-visible {
+            outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
+            outline-offset: -2px;
+        }
+
+        /* Filled while the button's panel is open or measure mode is on. Stated
+           after :hover so pointing at an already-on button keeps it filled. */
+        &--active,
+        &--active:hover {
+            background: var(--theme-color-primary, #1c67e3);
+            color: var(--theme-color-white, #ffffff);
+        }
+    }
+
+    &__divider {
+        flex: 0 0 1px;
+        height: 24px;
+        background: var(--theme-color-base-lighter, #e3e3e3);
+    }
+
+    // The hosted share control ("Share map") in the bar's end slot. Its colors,
+    // square corners and interaction states come from the component's own
+    // tokens, which resolve to the same theme values the bar uses; the boxed
+    // chrome and the control's geometry are the bar's to state.
+    &__share {
+        display: flex;
+        align-items: center;
+        /* Grows at the rate of a two-button group, and never shrinks below its
+           label, so a row too narrow to hold it sends it to the next one. */
+        flex: 2 0 auto;
+        background: var(--theme-color-white, #ffffff);
+        border-radius: var(--theme-radius-0, 0);
+
+        &.shareExport-tool-host .share-menu {
+            display: flex;
+            width: 100%;
+        }
+
+        &.shareExport-tool-host .share-menu__trigger {
+            width: 100%;
+            height: 36px;
+            justify-content: center;
+            font-size: var(--theme-font-size-2xs, 0.88rem);
+        }
+    }
+
+}

@@ -49,7 +49,7 @@ $legend-content-indent: 28px;
         margin: 0;
         flex-shrink: 0;
         background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-primary-light, #6b8a96);
+        border: 1px solid var(--theme-color-base-light, #77777a);
         border-radius: var(--theme-radius-0, 0);
         cursor: pointer;
 
@@ -61,6 +61,7 @@ $legend-content-indent: 28px;
             background-repeat: no-repeat;
             background-position: center;
             background-size: 12px 12px;
+            border: 1px solid var(--theme-color-primary, #1c67e3);
         }
 
         &:focus-visible {
@@ -98,8 +99,11 @@ $legend-content-indent: 28px;
         transition: opacity 0.15s ease;
     }
 
+    /* An open popover lives in a portal, so focus leaving the row would
+       otherwise fade out the very button that opened it. */
     &:hover &__actions,
-    &:focus-within &__actions {
+    &:focus-within &__actions,
+    &--menu-open &__actions {
         opacity: 1;
     }
 
@@ -113,17 +117,35 @@ $legend-content-indent: 28px;
         background: transparent;
         border: none;
         border-radius: var(--theme-radius-0, 0);
-        color: var(--theme-color-primary-light, #6b8a96);
+        color: var(--theme-color-base, #77777a);
         cursor: pointer;
         transition: background-color 0.15s ease, color 0.15s ease;
 
         &:hover {
             background: var(--theme-color-primary-lightest, #e6f4f6);
-            color: var(--theme-color-base-darker, #3d4551);
+            color: var(--theme-color-primary, #1c67e3);
         }
 
         &--active {
-            color: var(--theme-color-primary, #0e7482);
+            color: var(--theme-color-primary, #1c67e3);
+        }
+
+        /* Nothing to open. The button stays in place and focusable so the row's
+           controls don't reflow and its title can explain the absence, but it
+           reads as inert and drops the hover affordance. */
+        &--disabled {
+            color: var(--theme-color-base-light, #a9aeb1);
+            cursor: default;
+
+            &:hover {
+                background: transparent;
+                color: var(--theme-color-base-light, #a9aeb1);
+            }
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #1c67e3);
+            outline-offset: -2px;
         }
     }
 
@@ -147,6 +169,11 @@ $legend-content-indent: 28px;
             mask-image: url('../../geo/icons/opacity.svg');
         }
 
+        &--color-ramp {
+            -webkit-mask-image: url('../../geo/icons/color-ramp.svg');
+            mask-image: url('../../geo/icons/color-ramp.svg');
+        }
+
         &--info {
             -webkit-mask-image: url('../../geo/icons/info.svg');
             mask-image: url('../../geo/icons/info.svg');
@@ -155,37 +182,6 @@ $legend-content-indent: 28px;
         &--more-options {
             -webkit-mask-image: url('../../geo/icons/more-options.svg');
             mask-image: url('../../geo/icons/more-options.svg');
-        }
-    }
-
-    /* Legend Body (expandable description) */
-    &__body {
-        padding-left: $legend-content-indent;
-        color: var(--theme-color-base-dark, #565c65);
-        font-size: var(--theme-font-size-3xs, 0.75rem);
-        line-height: 1.6;
-        max-height: 120px;
-        overflow-y: auto;
-
-        p {
-            margin: 0;
-        }
-
-        &::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        &::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        &::-webkit-scrollbar-thumb {
-            background: var(--theme-color-base-light, #a9aeb1);
-            border-radius: 3px;
-        }
-
-        &::-webkit-scrollbar-thumb:hover {
-            background: var(--theme-color-base-dark, #565c65);
         }
     }
 
@@ -213,40 +209,28 @@ $legend-content-indent: 28px;
         font-size: var(--theme-font-size-3xs, 0.75rem);
         line-height: 1.6;
         color: var(--theme-color-base-dark, #565c65);
+
+        /* Markdown can carry a table or a long code span wider than the panel.
+           The list clips horizontal overflow, so this scrolls it in place instead
+           of putting it out of reach. */
+        overflow-x: auto;
     }
 
     /* Opacity Popover Styles */
-    &__opacity-wrapper {
-        position: relative;
+    &__opacity-heading {
+        font-size: var(--theme-font-size-3xs, 0.75rem);
+        font-weight: var(--theme-font-weight-semibold, 600);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--theme-color-base-dark, #565c65);
+        margin-bottom: var(--theme-spacing-05, 0.25rem);
     }
 
-    &__opacity-popover {
-        position: absolute;
-        top: 100%;
-        right: 0;
-        margin-top: 4px;
+    &__opacity-row {
         display: flex;
         align-items: center;
         gap: var(--theme-spacing-1, 0.5rem);
-        padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
-        background: var(--theme-color-white, #ffffff);
-        border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-        box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
-        z-index: 1000;
         white-space: nowrap;
-
-        &::before {
-            content: '';
-            position: absolute;
-            top: -6px;
-            right: 10px;
-            width: 10px;
-            height: 10px;
-            background: var(--theme-color-white, #ffffff);
-            border-left: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-            border-top: 1px solid var(--theme-color-base-lighter, #dfe1e2);
-            transform: rotate(45deg);
-        }
     }
 
     &__opacity-slider {
@@ -289,5 +273,95 @@ $legend-content-indent: 28px;
         color: var(--theme-color-ink, #1c1d1f);
         min-width: 32px;
         text-align: right;
+    }
+}
+
+/* Opacity Popover
+   Portaled to <body> like the other row popovers; FloatingPopover owns placement
+   and stacking, so only the surface chrome belongs here. */
+.blocks-layer-legend__opacity-popover {
+    padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
+}
+
+/* Color Ramp Popover
+   Portaled to <body> to clear the layer list's clipped overflow. FloatingPopover
+   owns the placement and stacking, so only the surface chrome belongs here. */
+.blocks-layer-legend__ramp-popover {
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+}
+
+/* Layer Info Popover
+   Same portaled surface as the ramp picker. Wide enough for a two-column table
+   and capped in height, since a description can run to several paragraphs. */
+.blocks-layer-legend__info-popover {
+    width: max-content;
+    max-width: 360px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
+    font-size: var(--theme-font-size-3xs, 0.75rem);
+    line-height: 1.6;
+    color: var(--theme-color-base-dark, #565c65);
+
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: var(--theme-color-base-light, #a9aeb1);
+        border-radius: 3px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: var(--theme-color-base-dark, #565c65);
+    }
+}
+
+/* Names the layer the description belongs to. The popover is portaled away
+   from its row, so without it the text has no visible owner. Wraps in full
+   rather than truncating — the surface is wide enough and the name is the
+   only context the overlay carries. */
+.blocks-layer-legend__info-title {
+    margin-bottom: var(--theme-spacing-05, 0.25rem);
+    font-size: var(--theme-font-size-2xs, 0.88rem);
+    font-weight: var(--theme-font-weight-semibold, 600);
+    line-height: 1.4;
+    color: var(--theme-color-ink, #1c1d1f);
+    overflow-wrap: anywhere;
+}
+
+/* Rendered markdown from a layer description, wherever the panel shows it.
+   Core styles the content from theme tokens; this adds only what the panel's
+   narrow surfaces need. */
+.blocks-layer-legend__markdown {
+    /* Long URLs and unbroken identifiers wrap instead of widening the surface. */
+    overflow-wrap: anywhere;
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-size: var(--theme-font-size-2xs);
+    }
+
+    a:focus-visible {
+        outline: 2px solid var(--theme-color-primary);
+        outline-offset: 2px;
     }
 }
