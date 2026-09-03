@@ -974,9 +974,9 @@ var mmgisAPI = {
      * @param {string} [options.caller] - Id of the plugin making the request,
      * handed to the handler beside the data rather than mixed into it, so a
      * payload of any shape — a string, an array, nothing at all — reaches the
-     * handler as it was written. Plugins do not pass this themselves:
-     * `forPlugin`'s `request` stamps it, which is the whole reason it is worth
-     * anything.
+     * handler as it was written. A plugin holding an injected handle should let
+     * `forPlugin`'s `request` stamp it rather than name itself; a plugin on the
+     * shared request client passes its own declared id.
      * @returns {Promise<*>} - Promise that resolves to handler's response, and
      * rejects when no handler is registered for the request name or `options`
      * is given as anything but an object

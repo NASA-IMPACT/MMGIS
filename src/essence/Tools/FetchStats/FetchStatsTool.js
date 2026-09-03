@@ -43,7 +43,10 @@ const FetchStatsTool = {
     // This plugin has no UI, so the classic layout never calls make() for it:
     // initialize() is the only hook it gets there. The modern layout calls
     // both, hence the guard in make() — a second subscription would answer one
-    // AOI selection with two analysis runs.
+    // AOI selection with two analysis runs. The guard also drops the modern
+    // controller's targetId, which is safe only because this plugin renders
+    // nothing and interfaceWithMMGIS ignores the argument; a tool with UI
+    // needs the real target and cannot copy this shape.
     initialize() {
         this.make(null)
     },
