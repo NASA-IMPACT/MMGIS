@@ -15,20 +15,6 @@ import './Viewer_.css'
 
 let L = window.L
 
-// Builds the URL for a mission media file (master image, model texture).
-// Two worlds:
-//   - static build: the mission's files sit next to the page, and the page
-//     may be mounted under a customer prefix — so stay relative and let the
-//     browser resolve from wherever the page is. A '../' climb here would
-//     escape the prefix.
-//   - full app: the page is served four folders deep (the get_profile
-//     route) and Missions/ is at the server root — so climb back up first.
-function missionRelativeAssetPath(relativePath) {
-    return isStaticBuild()
-        ? L_.missionPath + relativePath
-        : '../../../../' + L_.missionPath + relativePath
-}
-
 var Viewer_ = {
     wasInitialized: false,
     viewer: $('#viewer'),
@@ -59,7 +45,6 @@ var Viewer_ = {
     modelviewer: null,
     pdfviewer: null,
     baseToolbar: null,
-    lookupPath: null,
     toolBar: null,
     toolBarSelector: null,
     lastImageId: null,
@@ -198,9 +183,6 @@ var Viewer_ = {
             .html('To begin, select any imagery-enabled feature.')
         this.imageIntro.append(introMessage)
 
-        this.lookupPath =
-            L_.missionPath + 'Data/mosaic_parameters.csv'
-
         buildToolBar()
 
         this.imageViewerMap = OpenSeadragon({
@@ -320,7 +302,7 @@ var Viewer_ = {
             this.masterImg = o.master
             //Check if it's absolute or relative
             if (!F_.isUrlAbsolute(this.masterImg))
-                this.masterImg = missionRelativeAssetPath(this.masterImg)
+                this.masterImg = L_.missionPath + this.masterImg
         } else this.masterImg = null
 
         if (o.isModel) {
@@ -336,14 +318,13 @@ var Viewer_ = {
 
             if (this.modelviewer == null) {
                 this.modelviewer = ModelViewer(
-                    document.getElementById('imageModelWebGL'),
-                    this.lookupPath
+                    document.getElementById('imageModelWebGL')
                 )
             }
 
             let textureURL = o.texture
             if (!F_.isUrlAbsolute(textureURL))
-                textureURL = missionRelativeAssetPath(textureURL)
+                textureURL = L_.missionPath + textureURL
 
             window.onresize = this.modelviewer.resize
             Viewer_.toolBarLoading.css('opacity', '1')
@@ -391,7 +372,6 @@ var Viewer_ = {
             if (this.photosphere == null) {
                 this.photosphere = Photosphere(
                     document.getElementById('imagePanoramaWebGL'),
-                    this.lookupPath,
                     null,
                     Viewer_.Map_
                 )

@@ -17,8 +17,8 @@ const DEFAULT_STACK_NAME_PREFIX = "mmgis-dashboard-";
 
 // The readable source of the viewer-request CloudFront Function, resolved
 // from this module's own location so it works regardless of the process's
-// cwd. See renderAuthFunctionCode's read error for the packaging
-// requirement this implies.
+// cwd. infrastructure/ therefore has to ship in the publish image: the
+// Dockerfile's `COPY . .` includes it, and .dockerignore must not exclude it.
 const AUTH_FUNCTION_SOURCE_PATH = path.join(
   __dirname,
   "..",

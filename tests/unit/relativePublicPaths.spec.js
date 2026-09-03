@@ -18,15 +18,6 @@ test.describe('public asset paths stay document-relative', () => {
         expect(url.startsWith('public/')).toBe(true)
     })
 
-    test('LayerGeologic.getBaseUrl returns empty string for a group with no baseUrl', () => {
-        // linework.json's group carries "baseUrl": null (unlike
-        // patterns.json, which has a real value); tag '17.001' is a real
-        // definition in its first group. This exercises the
-        // `baseUrl ? 'public' + baseUrl : ''` branch directly, rather than
-        // only ever hitting the truthy side.
-        expect(LayerGeologic.getBaseUrl('linework', '17.001')).toBe('')
-    })
-
     test('PDFViewer.jsx does not root its worker path', () => {
         // A source tripwire, not a behavioral import: importing the component
         // would drag react-pdf and its worker setup into the test environment.

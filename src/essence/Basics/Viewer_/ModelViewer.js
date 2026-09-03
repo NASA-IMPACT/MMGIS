@@ -5,7 +5,7 @@ import WebVR from '../../../external/THREE/WebVR'
 
 import * as THREE from '../../../external/THREE/three118'
 
-export default function (domEl, lookupPath, options) {
+export default function (domEl, options) {
     options = options || {}
 
     var camera,

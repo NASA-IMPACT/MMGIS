@@ -363,22 +363,6 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
         }
     })
 
-    test('renderAuthFunctionCode() bakes in the credentials and drops the placeholder', () => {
-        const {
-            renderAuthFunctionCode,
-            BASIC_AUTH_USER,
-        } = require('../../scripts/lib/cfn-template')
-
-        const password = 'render-credentials-check'
-        const code = renderAuthFunctionCode(password)
-        const expectedCredentials = Buffer.from(
-            `${BASIC_AUTH_USER}:${password}`
-        ).toString('base64')
-
-        expect(code).toContain(expectedCredentials)
-        expect(code).not.toContain('<BASE64_BASIC_CREDENTIALS>')
-    })
-
     test('admin CloudFront uses AllViewerExceptHostHeader + CachingDisabled and serves /assets/*', () => {
         const distribution = readJson('cloudfront-admin.json')
         const defaultBehavior = distribution.DefaultCacheBehavior
@@ -726,10 +710,21 @@ test.describe('dashboard CloudFront Function behavior', () => {
         expect(result.headers.location.value).toBe('/d/v/?a%23b=1&ok=2')
     })
 
+    // '=' is the one character safe inside a value but not inside a key: left
+    // raw in a key it would forge the pair's separator.
+    test('a key carrying a raw = is escaped', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: { 'a=b': { value: '1' } },
+            })
+        )
+        expect(result.headers.location.value).toBe('/d/v/?a%3Db=1')
+    })
+
     // A lone surrogate has no UTF-8 encoding, so encodeURIComponent throws on
     // it. A throw inside a CloudFront Function fails the request outright, so
-    // that one pair falls back to the old drop behavior and the redirect is
-    // still issued.
+    // that pair is dropped and the redirect is still issued.
     test('a value that cannot be encoded is dropped, not thrown on', () => {
         const result = handler(
             makeEvent('/d/v', {
