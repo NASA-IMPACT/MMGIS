@@ -22,9 +22,9 @@ const RAIL_PANEL = {
     id: 'rail',
     position: 'left',
     state: 'expanded',
-    // The `js` id a mission config gives the tool, which is what the layout
-    // lists — not the lowercased name `tool:getVars` is keyed by.
-    toolIds: ['LayerFilterThemesTool'],
+    // The canonical id declared in the tool's `config.json`, which is what the
+    // layout lists.
+    toolIds: ['layerfilterthemes'],
 }
 const NEIGHBOUR = {
     id: 'filters',
