@@ -425,13 +425,14 @@ export interface IMapEngine<
      * Calling `addOverlay` with an `id` that already exists removes the
      * prior overlay first.
      *
-     * @deprecated Superseded by the `map:showPopup` provider, whose request is
-     * serializable — a description of a card rather than a `mount` callback,
-     * which is what lets it cross a sandbox boundary — and whose card the core
-     * owns whole: it sanitizes the content, renders the chrome around it,
-     * holds focus inside it, and answers the request with how the popup
-     * closed. An overlay positions a node and leaves everything in it, and
-     * every question of how it closes, to its caller.
+     * @deprecated For card-shaped content, superseded by the `map:showPopup`
+     * provider, whose request is serializable — a description of a card rather
+     * than a `mount` callback, which is what lets it cross a sandbox boundary
+     * — and whose card the core owns whole: it sanitizes the content, renders
+     * the chrome around it, holds focus inside it, and answers the request
+     * with how the popup closed. An anchored bare node with no chrome and no
+     * close of its own — MapControl's measure label, which follows the pointer
+     * and has to coexist with a popup — has no replacement and stays here.
      */
     addOverlay(options: OverlayOptions): void
 
@@ -439,7 +440,8 @@ export interface IMapEngine<
      * Remove an overlay by id. Runs the cleanup returned by `mount` and
      * removes the DOM node from the container. No-op if the id is unknown.
      *
-     * @deprecated Superseded by the `map:hidePopup` provider.
+     * @deprecated Alongside `addOverlay`: `map:hidePopup` retracts a card, not
+     * an overlay, so anything still on `addOverlay` is removed here.
      */
     removeOverlay(id: string): void
 

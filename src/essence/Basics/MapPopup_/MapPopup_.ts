@@ -24,15 +24,8 @@ const VIEWPORT_MARGIN = 8
 const PARKED = 'translate(-100000px, -100000px)'
 
 /**
- * The namespace an SVG link keeps its target in. SVG 1.1 spells the attribute
- * `xlink:href`, and content written against it is still what most drawing
- * tools export.
- */
-const XLINK_NAMESPACE = 'http://www.w3.org/1999/xlink'
-
-/**
  * What a card may hand focus to, in the order a Tab moves through it. Which of
- * them a Tab actually reaches is {@link focusStops}' to settle: an element the
+ * them a Tab actually reaches is {@link isTabStop}'s to settle: an element the
  * selector names can still be hidden, or held out of the sequence.
  *
  * The controls are named for both sides of the card. The chrome contributes
@@ -71,7 +64,7 @@ const FOCUS_STOP = [
  * by {@link guardNavigation}. What must not reach past the card is the top
  * layer, which is what the `FORBID_ATTR` below is for.
  */
-export const POPUP_SANITIZE_CONFIG = {
+const POPUP_SANITIZE_CONFIG = {
     // DOMPurify's defaults strip `<style>` whole, tag and rules alike. An
     // author's own stylesheet is the point of mounting content in a shadow
     // root, where the rules reach the card's content and stop there, so it is
@@ -200,13 +193,14 @@ function buildActionButton(
     return button
 }
 
-/** Where a link points, in either of the two spellings SVG and HTML use. */
+/**
+ * Where a link points, in either of the two spellings SVG and HTML use. SVG
+ * 1.1 spells it `xlink:href`, which is what most drawing tools still export,
+ * and which is the qualified name the attribute carries whether the parser
+ * put it in the xlink namespace or left it a plain attribute.
+ */
 function linkTarget(anchor: Element): string | null {
-    return (
-        anchor.getAttribute('href') ??
-        anchor.getAttributeNS(XLINK_NAMESPACE, 'href') ??
-        anchor.getAttribute('xlink:href')
-    )
+    return anchor.getAttribute('href') ?? anchor.getAttribute('xlink:href')
 }
 
 /**

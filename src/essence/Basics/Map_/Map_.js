@@ -340,7 +340,7 @@ let Map_ = {
                 // anyone else's finds a popup that is not theirs and answers
                 // false. A plugin's id is its alone, while "no caller" is one
                 // identity shared by everyone without a handle.
-                window.mmgisAPI.provide('map:hidePopup', (payload, caller) =>
+                window.mmgisAPI.provide('map:hidePopup', (_payload, caller) =>
                     MapPopup_.hideForCaller(caller)
                 ),
                 window.mmgisAPI.provide('map:setBasemap', (styleName) => {
