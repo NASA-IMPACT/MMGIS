@@ -16,6 +16,7 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import Description from '../../Ancillary/Description'
 import QueryURL from '../../Ancillary/QueryURL'
 import MetadataCapturer from '../Layers_/MetadataCapturer.js'
+import { buildFeatureClickPayload } from './featureClickPayload'
 import {
     compileTileUrl,
     buildTileUrlOptions,
@@ -405,9 +406,13 @@ let Map_ = {
             // `map:createLayer`. The whole pick result is forwarded so
             // consumers can filter by layerId or react to empty-space clicks.
             if (typeof engine.onFeatureClick === 'function') {
-                const off = engine.onFeatureClick((info) =>
+                const off = engine.onFeatureClick((info) => {
                     window.mmgisAPI.emit('map:featureClick', info)
-                )
+                    emitFeatureClick(info?.feature, info?.layerId, {
+                        latlng: info?.latlng,
+                        containerPoint: info?.pixel,
+                    })
+                })
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
         }
@@ -1093,6 +1098,22 @@ function onEachFeatureDefault(feature, layer) {
     }
 }
 
+function emitFeatureClick(feature, layerName, e) {
+    if (!window.mmgisAPI) return
+    if (
+        ToolController_.activeTool &&
+        ToolController_.activeTool.disableLayerInteractions === true
+    )
+        return
+    const payload = buildFeatureClickPayload(
+        feature,
+        L_.asLayerUUID(layerName),
+        e
+    )
+    if (payload == null) return
+    window.mmgisAPI.emit('feature:click', payload)
+}
+
 Map_.featureDefaultClick = featureDefaultClick
 function featureDefaultClick(feature, layer, e) {
     if (
@@ -1100,6 +1121,7 @@ function featureDefaultClick(feature, layer, e) {
         ToolController_.activeTool.disableLayerInteractions === true
     )
         return
+    emitFeatureClick(feature, layer?.options?.layerName, e)
     MetadataCapturer.populateMetadata(layer, () => {
         Kinds.use(
             L_.layers.data[layer.options.layerName].kind,
@@ -1948,14 +1970,20 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
         }
     }
     var timedSelectTimeout = null
-    var timedSelect = function (layer, layerName, e) {
+    var timedSelect = function (layer, layerName, e, clickedFeature) {
         clearTimeout(timedSelectTimeout)
         timedSelectTimeout = setTimeout(
-            (function (layer, layerName, e) {
+            (function (layer, layerName, e, clickedFeature) {
                 return function () {
-                    let ell = { latlng: null }
+                    let ell = { latlng: null, containerPoint: null }
                     if (e.latlng != null)
                         ell.latlng = JSON.parse(JSON.stringify(e.latlng))
+                    if (e.containerPoint != null)
+                        ell.containerPoint = {
+                            x: e.containerPoint.x,
+                            y: e.containerPoint.y,
+                        }
+                    emitFeatureClick(clickedFeature, layerName, ell)
                     MetadataCapturer.populateMetadata(layer, () => {
                         Kinds.use(
                             L_.layers.data[layerName].kind,
@@ -1979,7 +2007,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                         L_.layers.layer[layerName].activeFeatures = []
                     })
                 }
-            })(layer, layerName, e),
+            })(layer, layerName, e, clickedFeature),
             100
         )
     }
@@ -2025,13 +2053,14 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                     fillOpacity: 1,
                 }
             )
-            L_.layers.layer[layerName].activeFeatures =
-                L_.layers.layer[layerName].activeFeatures || []
-            L_.layers.layer[layerName].activeFeatures.push({
+            const clickedFeature = {
                 type: 'Feature',
                 properties: e.layer.properties,
                 geometry: {},
-            })
+            }
+            L_.layers.layer[layerName].activeFeatures =
+                L_.layers.layer[layerName].activeFeatures || []
+            L_.layers.layer[layerName].activeFeatures.push(clickedFeature)
 
             Map_.activeLayer = e.layer
             if (Map_.activeLayer) L_.Map_._justSetActiveLayer = true
@@ -2064,7 +2093,7 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
                 }
             }
 
-            timedSelect(e.layer, layerName, e)
+            timedSelect(e.layer, layerName, e, clickedFeature)
 
             L.DomEvent.stop(e)
         })
