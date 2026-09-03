@@ -6,17 +6,9 @@ import F_ from '../Formulae_/Formulae_'
 import L_ from '../Layers_/Layers_'
 import Map_ from '../Map_/Map_'
 import { parseTimeWithOffset, parseTimeToSeconds } from './timeUtils'
-import {
-    compileTileUrl,
-    formatLayerTime,
-    buildTileUrlOptions,
-    shouldUseDeckRaster,
-} from '../Layers_/tileUrlUtils'
-import {
-    resolveTileLayerSource,
-    resolveDeckCOGFileUrl,
-} from '../Layers_/tileLayerSource'
-import { MAP_ENGINE, isRasterTileLayerType } from '../MapEngines/types/engine'
+import { formatLayerTime, buildTileUrlOptions } from '../Layers_/tileUrlUtils'
+import { resolveTileLayerSource } from '../Layers_/tileLayerSource'
+import { isRasterTileLayerType } from '../MapEngines/types/engine'
 
 import './TimeControl.css'
 
@@ -397,7 +389,6 @@ var TimeControl = {
                 TimeControl.setLayerWmsParams(layer)
             }
             if (evenIfControlled === true || layer.controlled !== true) {
-                const tileLayer = L_.layers.layer[layer.name]
                 if (L_.layers.on[layer.name] || evenIfOff) {
                     // resolveTileLayerSource is what layer creation uses, so
                     // the refreshed URL keeps the layer's active tile level and
@@ -415,45 +406,22 @@ var TimeControl = {
                         tileFormat
                     )
 
-                    // TODO: Refactor this to push URL compilation and refreshing
-                    // into the map engine adapters so TimeControl doesn't branch
-                    // on Map_.engine.engineType
-                    // https://github.com/NASA-IMPACT/MMGIS/issues/212 tracks this
-                    if (
-                        shouldUseDeckRaster(
-                            Map_.engine?.engineType,
-                            splitColonType,
-                            layer
+                    // The engine decides whether this means mutating,
+                    // cloning or rebuilding; the layer's registered refresher
+                    // supplies the how for kinds that need one.
+                    const refreshed = Map_.engine?.refreshLayer(layer.name, {
+                        url: resolvedUrl,
+                        tileOptions,
+                        force: forceRequery === true,
+                    })
+                    // false means the engine had nothing to refresh — the
+                    // layer was never registered with it, or it has no way to
+                    // recompute it. The time change is then silently lost, so
+                    // say so rather than leaving stale tiles unexplained.
+                    if (refreshed === false)
+                        console.warn(
+                            `TimeControl.reloadLayer: the map engine had no layer to refresh for '${layer.name}'; its time change was not applied.`
                         )
-                    ) {
-                        // The client-side COG renderer reads the file directly —
-                        // the compiled TiTiler tiles URL above is meaningless to
-                        // it, and updateLayer({url}) would be silently ignored
-                        // (COGLayer is keyed on its `geotiff` prop). Rebuild
-                        // from the time-substituted file URL so deck.gl swaps
-                        // the layer in place by id.
-                        L_.rebuildDeckCOGLayer(
-                            layer,
-                            resolveDeckCOGFileUrl(layer, tileSource)
-                        )
-                    } else if (
-                        tileLayer &&
-                        typeof tileLayer.refresh === 'function'
-                    ) {
-                        // refresh() copies every key onto this.options, which the
-                        // per-tile getTileUrl then reads. Safe to pass whole:
-                        // buildTileUrlOptions returns only tile-URL keys.
-                        // It also re-applies the creation-time URL normalization
-                        // ({t} rewriting, the WMS base/params split).
-                        tileLayer.refresh(
-                            resolvedUrl,
-                            forceRequery === true,
-                            tileOptions
-                        )
-                    } else if (Map_.engine?.engineType === MAP_ENGINE.DECKGL) {
-                        const newUrl = compileTileUrl(resolvedUrl, tileOptions)
-                        Map_.engine.updateLayer(layer.name, { url: newUrl })
-                    }
                 }
             }
         } else if (layer.type == 'velocity') {

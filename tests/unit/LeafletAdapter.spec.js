@@ -480,9 +480,70 @@ test.describe('LeafletAdapter - addLayer (backward compatibility)', () => {
     })
 })
 
+// ─── hasLayer ────────────────────────────────────────────────────────────────
+
+test.describe('LeafletAdapter - hasLayer', () => {
+
+    // registerLayer holds every MMGIS-built tile layer whether or not it is on
+    // the map, so a registry hit is not the answer. Both forms ask the map, and
+    // must give the same one — mmgisAPI's `map:hasLayer` exposes it publicly.
+    test('a registered layer that is not on the map reports false either way', () => {
+        setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const layer = { _leaflet_id: 7 }
+        adapter.registerLayer('off-map', layer)
+
+        expect(adapter.hasLayer('off-map')).toBe(false)
+        expect(adapter.hasLayer(layer)).toBe(false)
+    })
+
+    test('both forms report true once the layer is on the map', () => {
+        setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const layer = { _leaflet_id: 7 }
+        adapter.registerLayer('on-map', layer)
+        adapter.addLayer(layer)
+
+        expect(adapter.hasLayer('on-map')).toBe(true)
+        expect(adapter.hasLayer(layer)).toBe(true)
+    })
+
+    test('an id the adapter never saw reports false rather than throwing', () => {
+        setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        expect(adapter.hasLayer('never-seen')).toBe(false)
+    })
+})
+
 // ─── removeLayer ─────────────────────────────────────────────────────────────
 
 test.describe('LeafletAdapter - removeLayer', () => {
+
+    // Map_.rmNotNull removes by object on every toggle-off, and a toggled-off
+    // layer still has to be refreshable — TimeControl.reloadLayer's `evenIfOff`
+    // path depends on it — so the object form deliberately keeps the entry.
+    test('removing by object keeps the registration', () => {
+        const { removedLayers } = setupWithLayerMocks()
+        const adapter = new LeafletAdapter()
+        adapter.init({ containerId: 'map' })
+
+        const layer = { _leaflet_id: 9, refresh: vi.fn() }
+        adapter.registerLayer('toggled-off', layer)
+        adapter.addLayer(layer)
+
+        adapter.removeLayer(layer)
+
+        expect(removedLayers).toContain(layer)
+        expect(adapter.hasLayer('toggled-off')).toBe(false)
+        expect(adapter.refreshLayer('toggled-off', { url: 'u' })).toBe(true)
+        expect(layer.refresh).toHaveBeenCalled()
+    })
 
     test('removes a layer by string ID and cleans up the registry', () => {
         const { removedLayers } = setupWithLayerMocks()

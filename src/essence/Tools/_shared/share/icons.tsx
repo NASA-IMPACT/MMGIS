@@ -49,6 +49,13 @@ function Download({ className }: IconProps) {
     )
 }
 
+/**
+ * The trigger's share glyph. The file carries a viewBox and no width/height so
+ * the stylesheet sizes it; webpack routes `.svg` through @svgr, which exports
+ * the component as `ReactComponent`.
+ */
+export { ReactComponent as ShareMapIcon } from './share-map.svg'
+
 /** Lucide icon name → component, keyed by the names getShareMenuItems emits. */
 export const SHARE_MENU_ICONS: Record<
     string,

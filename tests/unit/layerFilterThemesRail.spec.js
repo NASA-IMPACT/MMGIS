@@ -12,12 +12,119 @@ describe('LayerFilterThemes normalizeRailThemes', () => {
         vi.restoreAllMocks()
     })
 
-    test('keeps id, label and icon from a well-formed entry', () => {
+    test('reads an uploaded icon when that is the chosen source', () => {
+        expect(
+            normalizeRailThemes([
+                {
+                    id: 'need',
+                    label: 'Need',
+                    iconSource: 'upload',
+                    iconUpload: 'LayerFilterThemes/uploads/abc.svg',
+                    iconMdi: 'satellite-variant',
+                },
+            ]),
+        ).toEqual([
+            {
+                id: 'need',
+                label: 'Need',
+                icon: {
+                    kind: 'image',
+                    src: 'LayerFilterThemes/uploads/abc.svg',
+                },
+            },
+        ])
+    })
+
+    test('reads a linked icon when that is the chosen source', () => {
+        expect(
+            normalizeRailThemes([
+                {
+                    id: 'need',
+                    label: 'Need',
+                    iconSource: 'link',
+                    iconUrl: 'https://example.test/need.svg',
+                },
+            ]),
+        ).toEqual([
+            {
+                id: 'need',
+                label: 'Need',
+                icon: { kind: 'image', src: 'https://example.test/need.svg' },
+            },
+        ])
+    })
+
+    test('reads an MDI name when that is the chosen source', () => {
+        expect(
+            normalizeRailThemes([
+                {
+                    id: 'need',
+                    label: 'Need',
+                    iconSource: 'mdi',
+                    iconMdi: 'satellite-variant',
+                },
+            ]),
+        ).toEqual([
+            {
+                id: 'need',
+                label: 'Need',
+                icon: { kind: 'mdi', name: 'satellite-variant' },
+            },
+        ])
+    })
+
+    test('falls back to whichever icon field is filled when the chosen source is empty', () => {
+        expect(
+            normalizeRailThemes([
+                {
+                    id: 'need',
+                    label: 'Need',
+                    iconSource: 'upload',
+                    iconMdi: 'satellite-variant',
+                },
+            ]),
+        ).toEqual([
+            {
+                id: 'need',
+                label: 'Need',
+                icon: { kind: 'mdi', name: 'satellite-variant' },
+            },
+        ])
+        expect(console.warn).not.toHaveBeenCalled()
+    })
+
+    test('warns when a chosen source has no icon to fall back on', () => {
+        expect(
+            normalizeRailThemes([
+                { id: 'need', label: 'Need', iconSource: 'upload' },
+            ]),
+        ).toEqual([{ id: 'need', label: 'Need' }])
+        expect(console.warn).toHaveBeenCalledTimes(1)
+    })
+
+    test('a bare icon string from an older config still resolves', () => {
         expect(
             normalizeRailThemes([
                 { id: 'need', label: 'Need', icon: 'satellite-variant' },
             ]),
-        ).toEqual([{ id: 'need', label: 'Need', icon: 'satellite-variant' }])
+        ).toEqual([
+            {
+                id: 'need',
+                label: 'Need',
+                icon: { kind: 'mdi', name: 'satellite-variant' },
+            },
+        ])
+        expect(
+            normalizeRailThemes([
+                { id: 'a', label: 'A', icon: 'LayerFilterThemes/uploads/a.svg' },
+            ]),
+        ).toEqual([
+            {
+                id: 'a',
+                label: 'A',
+                icon: { kind: 'image', src: 'LayerFilterThemes/uploads/a.svg' },
+            },
+        ])
     })
 
     test('label falls back to the id so the rail is never blank', () => {
@@ -50,6 +157,9 @@ describe('LayerFilterThemes normalizeRailThemes', () => {
         expect(normalizeRailThemes([{ id: 'b', label: 'B', icon: '' }])).toEqual([
             { id: 'b', label: 'B' },
         ])
+        expect(
+            normalizeRailThemes([{ id: 'c', label: 'C', iconMdi: '   ' }]),
+        ).toEqual([{ id: 'c', label: 'C' }])
     })
 
     test('a non-array config yields an empty rail with a warning', () => {

@@ -7,6 +7,9 @@ import {
     mmgisGetLayerConfigs,
     mmgisGetVisibleLayers,
     mmgisIsTimeEnabled,
+    mmgisGetTimeStart,
+    mmgisGetTimeEnd,
+    mmgisGetTimeCurrent,
     type LayerConfig,
     mmgisGetTemporalExtents,
 } from '../_shared/adapters/mmgisAPI'
@@ -229,9 +232,9 @@ export const TimelineAdapter: React.FC = () => {
             }
 
             const [start, end, current] = await Promise.all([
-                mmgisRequest<string>('time:getStart'),
-                mmgisRequest<string>('time:getEnd'),
-                mmgisRequest<string>('time:getCurrent'),
+                mmgisGetTimeStart(),
+                mmgisGetTimeEnd(),
+                mmgisGetTimeCurrent(),
             ])
 
             if (!start || !end || !current) {
@@ -282,6 +285,23 @@ export const TimelineAdapter: React.FC = () => {
         },
         [commitTime]
     )
+
+    /**
+     * Hands the comparison of two dates over to the Comparison plugin.
+     *
+     * Announced on the bus rather than called: the timeline knows nothing about
+     * Comparison beyond the name of the event, and a mission without that
+     * plugin simply has nobody listening — the action still draws, and clicking
+     * it goes nowhere rather than breaking the timeline.
+     */
+    const handleCompareClick = useCallback(() => {
+        const payload: TimePayload = {
+            startTime: startTimeRef.current.toISOString(),
+            endTime: endTimeRef.current.toISOString(),
+            currentTime: currentTimeRef.current.toISOString(),
+        }
+        mmgisEmit('plugin:comparison:startWithDates', payload)
+    }, [])
 
     // Live time while the scrubber is dragged: the header date follows along,
     // but nothing is emitted until the drag is released.
@@ -372,6 +392,7 @@ export const TimelineAdapter: React.FC = () => {
                         endTime={endTime}
                         timeMode={timeMode}
                         onDateChange={handleCurrentTimeChange}
+                        onCompareClick={handleCompareClick}
                     />
                 </div>
                 <div className="timeline-header-center">

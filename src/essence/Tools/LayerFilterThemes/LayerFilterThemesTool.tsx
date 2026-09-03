@@ -12,6 +12,9 @@
  *     without treating it as user interaction.
  * Requests:
  *   - tool:getVars
+ *   - panels:getAll, panels:show, panels:hide  (the chevron above the themes)
+ * Listens:
+ *   - panels:changed  (keeps the chevron pointing the way the layout sits)
  */
 import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
