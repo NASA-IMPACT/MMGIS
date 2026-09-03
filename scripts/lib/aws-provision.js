@@ -376,6 +376,12 @@ function contentTypeForFile(filePath) {
   );
 }
 
+// The object keys API/Backend/Upload/uploadRouter.js writes for plugin
+// uploads: "assets/", exactly two path segments, then "/uploads/". The same
+// classifier lives in src/pre/uploadKey.ts and configure/src/core/upload.js;
+// tests/unit/uploadKeyClassifier.spec.js runs one table through all three.
+const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
+
 // Cache-Control tier for a published-dashboard object key. The entry page and
 // baked config must revalidate on every request (a fronting cache we cannot
 // invalidate may otherwise pin an old release for a day); two classes are
@@ -385,7 +391,11 @@ function contentTypeForFile(filePath) {
 // assets/<mission>/<subdir>/uploads/, which the upload router names
 // crypto.randomUUID() and never overwrites (API/Backend/Upload/uploadRouter.js).
 // Everything else — the keys that really do change in place on republish —
-// falls back to a short TTL.
+// falls back to a short TTL. Two runtime families sit in that fallback under
+// stable names, the pdf.js worker under public/workers and the Cesium tree
+// under build/static/cesium, so a republish that bumps the MMGIS version can
+// leave a customer's edge pairing a new bundle with a copy of those up to five
+// minutes old.
 function cacheControlForKey(key) {
   if (
     key === "index.html" ||
@@ -393,13 +403,9 @@ function cacheControlForKey(key) {
     /^Missions\/[^/]+\/config\.json$/.test(key)
   )
     return "no-cache";
-  // The uploads shape mirrors ASSETS_UPLOAD_KEY in
-  // src/essence/Tools/Card/adapters/buildCardData.ts: exactly two segments
-  // between "assets/" and "/uploads/", so a lookalike such as
-  // "assets/uploads/x.png" is not mistaken for the writer's shape.
   if (
     /^build\/static\/(js|css|media)\//.test(key) ||
-    /^assets\/[^/]+\/[^/]+\/uploads\//.test(key)
+    ASSETS_UPLOAD_KEY.test(key)
   )
     return "public, max-age=31536000, immutable";
   return "public, max-age=300";
@@ -421,10 +427,19 @@ function walkDirectory(dir, baseDir) {
 }
 
 // Uploads every file under `dir` to `bucket`, keys relative to `dir`
-// (optionally prefixed). Returns the number of files uploaded.
-async function uploadDirectory({ bucket, dir, prefix = "", concurrency = 8 }) {
+// (optionally prefixed). `filter` receives that relative key and keeps the
+// file when it returns true. Returns the number of files uploaded.
+async function uploadDirectory({
+  bucket,
+  dir,
+  prefix = "",
+  concurrency = 8,
+  filter,
+}) {
   const { s3 } = getClients();
-  const files = walkDirectory(dir);
+  const files = filter
+    ? walkDirectory(dir).filter((file) => filter(file.key))
+    : walkDirectory(dir);
   let index = 0;
   async function worker() {
     while (index < files.length) {
@@ -466,11 +481,11 @@ async function uploadFile({ bucket, key, filePath }) {
   );
 }
 
-// Invalidates CloudFront paths so an updated dashboard is served
-// immediately. Our own Cache-Control tiers already cover most of it —
-// index.html and config.json revalidate every request, and hashed bundles
-// arrive under new names — so this is what closes the gap for the short-TTL
-// tier and for any edge that ignores those headers.
+// Invalidates paths on our own distribution, the only one this reaches. The
+// Cache-Control tiers already cover most of it there — index.html and
+// config.json revalidate every request, and hashed bundles arrive under new
+// names — so this is what closes the gap for the five-minute tier. Any other
+// edge in front of the dashboard is governed by those headers alone.
 async function createInvalidation({ distributionId, paths = ["/*"] }) {
   const { cloudfront } = getClients();
   await cloudfront.send(
@@ -519,9 +534,8 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
           // never had — and REPLACE means supplying ContentType too.
           // REPLACE drops the source's entire metadata set, not just its
           // Content-Type: Content-Encoding, Content-Disposition and any
-          // x-amz-meta-* are lost unless restated here. Nothing sets those
-          // today (the upload router writes ContentType alone), but a future
-          // gzipped object would have to carry its Content-Encoding across.
+          // x-amz-meta-* are lost unless restated here. Nothing sets those:
+          // the upload router writes ContentType alone.
           MetadataDirective: "REPLACE",
           ContentType: contentTypeForFile(obj.Key),
           CacheControl: cacheControlForKey(obj.Key),

@@ -288,6 +288,8 @@ async function main() {
       bucket,
       dir: path.join(rootDir, "public"),
       prefix: "public/",
+      // public/index.html is the un-rendered Pug template.
+      filter: (key) => key !== "index.html",
     });
     await provision.uploadFile({
       bucket,
@@ -312,11 +314,12 @@ async function main() {
       `Uploaded ${uploadedBuild} build and ${uploadedPublic} public file(s) to ${bucket}.`
     );
 
-    // 5.5 Bust the CDN so the refreshed bundle/config/assets serve
-    // immediately — the distribution caches aggressively, and only the
-    // hashed bundle filenames are naturally cache-safe. A brand-new
-    // distribution has nothing cached, so doing this unconditionally
-    // keeps publish and update on one path.
+    // 5.5 Invalidate our own distribution so the five-minute tier serves the
+    // new release now. Customers' edges are governed by the Cache-Control
+    // tiers instead — see
+    // docs/infrastructure/serving-a-dashboard-from-your-domain.md. A brand-new
+    // distribution has nothing cached, so doing this unconditionally keeps
+    // publish and update on one path.
     if (outputs.DistributionId) {
       await provision.createInvalidation({
         distributionId: outputs.DistributionId,

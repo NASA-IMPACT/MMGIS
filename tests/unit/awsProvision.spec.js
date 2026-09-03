@@ -7,6 +7,7 @@ import path from 'path'
 // no test here (or anywhere) ever calls real AWS.
 
 const provision = require('../../scripts/lib/aws-provision')
+const { IMAGE_MIME_TO_EXT } = require('../../API/Backend/Upload/validate')
 
 function mockClient(handler) {
     return { send: async (command) => handler(command) }
@@ -774,16 +775,21 @@ test.describe('emptyBucket', () => {
 })
 
 test.describe('contentTypeForFile', () => {
-    test('maps a known extension', () => {
-        expect(provision.contentTypeForFile('a/b/c.png')).toBe('image/png')
-    })
+    // CopyObject's MetadataDirective: REPLACE drops the source's Content-Type
+    // and takes this one, so every type the upload router can write has to
+    // round-trip back to itself through the extension it was stored under.
+    test.each(Object.entries(IMAGE_MIME_TO_EXT))(
+        "round-trips the upload router's %s",
+        (mime, ext) => {
+            expect(provision.contentTypeForFile('x.' + ext)).toBe(mime)
+        }
+    )
 
     test('matches extensions case-insensitively', () => {
         expect(provision.contentTypeForFile('a/b/C.PNG')).toBe('image/png')
     })
 
-    // Load-bearing under CopyObject's MetadataDirective: REPLACE, which drops
-    // the source's Content-Type and takes whatever this returns instead.
+    // The catch-all a copy or upload gets when nothing maps the extension.
     test('falls back to octet-stream for an unmapped extension', () => {
         expect(provision.contentTypeForFile('a/b/c.xyz')).toBe(
             'application/octet-stream'
@@ -806,7 +812,7 @@ test.describe('cacheControlForKey', () => {
         ],
         ['build/static/css/x.css', 'public, max-age=31536000, immutable'],
         ['build/static/media/a.png', 'public, max-age=31536000, immutable'],
-        ['Missions/M/Data/mosaic_parameters.csv', 'public, max-age=300'],
+        ['Missions/M/Data/waypoints.csv', 'public, max-age=300'],
         // Under build/static but not content-hashed, so explicitly NOT
         // immutable.
         ['build/static/cesium/Cesium.js', 'public, max-age=300'],
@@ -885,26 +891,47 @@ test.describe('uploadDirectory', () => {
             expect(byKey['build/index.html'].CacheControl).toBe('no-cache')
         })
     })
+
+    test('skips the files filter rejects, by their unprefixed key', async () => {
+        await withUploadFixture(async (dir, puts) => {
+            fs.writeFileSync(path.join(dir, 'index.html'), '<html></html>')
+            fs.writeFileSync(path.join(dir, 'keep.txt'), 'keep')
+            const count = await provision.uploadDirectory({
+                bucket: 'dash',
+                dir,
+                prefix: 'public/',
+                filter: (key) => key !== 'index.html',
+            })
+            expect(count).toBe(1)
+            expect(puts.map((input) => input.Key)).toEqual(['public/keep.txt'])
+        })
+    })
 })
 
 test.describe('uploadFile', () => {
     test('sets CacheControl for the tier of the target key', async () => {
         await withUploadFixture(async (dir, puts) => {
-            const filePath = path.join(dir, 'mosaic_parameters.csv')
-            fs.writeFileSync(filePath, 'a,b,c\n')
+            // The local file's own name sits on a different tier from the key
+            // it is uploaded under, so this fails if the tier is read off the
+            // path instead of the key.
+            const filePath = path.join(dir, 'payload.txt')
+            fs.writeFileSync(filePath, '<html></html>\n')
             await provision.uploadFile({
                 bucket: 'dash',
-                key: 'Missions/M/Data/mosaic_parameters.csv',
+                key: 'index.html',
                 filePath,
             })
             // Literal, not cacheControlForKey(key): that form would pass even
             // if the tiering broke.
-            expect(puts[0].CacheControl).toBe('public, max-age=300')
+            expect(puts[0].CacheControl).toBe('no-cache')
         })
     })
 })
 
 test.describe('copyPrefix', () => {
+    // The upload router names every file crypto.randomUUID() + the extension.
+    const UPLOAD_UUID = '6f1e2a3c-4b5d-4e6f-8a9b-0c1d2e3f4a5b'
+
     test.afterEach(() => provision.setClients(null))
 
     test('same-key copies every object under the prefix', async () => {
@@ -916,8 +943,11 @@ test.describe('copyPrefix', () => {
                     expect(command.input.Prefix).toBe('assets/TestMission/')
                     return {
                         Contents: [
+                            // The shape the upload router writes.
+                            {
+                                Key: `assets/TestMission/CardPlugin/uploads/${UPLOAD_UUID}.png`,
+                            },
                             { Key: 'assets/TestMission/icon.png' },
-                            { Key: 'assets/TestMission/photo.jpg' },
                             { Key: 'assets/TestMission/with space.png' },
                         ],
                         IsTruncated: false,
@@ -937,12 +967,12 @@ test.describe('copyPrefix', () => {
         })
         expect(count).toBe(3)
         // Same keys in the destination bucket
-        expect(copies[0].Bucket).toBe('dash')
-        expect(copies[0].Key).toBe('assets/TestMission/icon.png')
+        expect(copies[1].Bucket).toBe('dash')
+        expect(copies[1].Key).toBe('assets/TestMission/icon.png')
         // CopySource is "bucket/key" with the separators left intact —
         // NOT encodeURIComponent of the whole string (that would turn the
         // slashes into %2F and break the copy).
-        expect(copies[0].CopySource).toBe('shared/assets/TestMission/icon.png')
+        expect(copies[1].CopySource).toBe('shared/assets/TestMission/icon.png')
         // Special chars inside a segment are encoded; the "/" separators
         // and the bucket/key boundary are preserved.
         expect(copies[2].Key).toBe('assets/TestMission/with space.png')
@@ -952,10 +982,16 @@ test.describe('copyPrefix', () => {
         // CopyObject's default (COPY) keeps the source's metadata and cannot
         // add the Cache-Control the source never had; REPLACE can, and in turn
         // obliges the copy to restate its Content-Type. Tier coverage lives in
-        // the cacheControlForKey table — this pins the wiring at this site.
+        // the cacheControlForKey table — this pins the wiring at this site,
+        // across both tiers a copied object can land on.
         expect(copies[0].MetadataDirective).toBe('REPLACE')
         expect(copies[0].ContentType).toBe('image/png')
-        expect(copies[0].CacheControl).toBe('public, max-age=300')
+        expect(copies[0].CacheControl).toBe(
+            'public, max-age=31536000, immutable'
+        )
+        expect(copies[1].MetadataDirective).toBe('REPLACE')
+        expect(copies[1].ContentType).toBe('image/png')
+        expect(copies[1].CacheControl).toBe('public, max-age=300')
     })
 })
 

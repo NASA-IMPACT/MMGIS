@@ -2,16 +2,16 @@ import { test, expect } from 'vitest'
 import { resolveMissionAssetUrl } from '../../src/pre/uploadKey.ts'
 import { buildPreviewSrc } from '../../configure/src/core/upload.js'
 
+const { cacheControlForKey } = require('../../scripts/lib/aws-provision')
+
 // One table of stored values, run through every copy of the upload-key
-// classifier. The app bundle and the Configure SPA cannot share a module, so
-// each carries its own regex; what they must agree on is which values are
-// upload keys written by API/Backend/Upload/uploadRouter.js, not the bytes of
-// the regex. A value one treats as an upload key and another as a
-// mission-relative path renders a broken image only at runtime. What each
-// consumer then does with a matched key differs by design and is asserted
-// per classifier below. The third classifier, cacheControlForKey in
-// scripts/lib/aws-provision.js, is added to this table by the PR that
-// introduces it.
+// classifier: the app bundle, the Configure SPA and the publish scripts. None
+// of the three can share a module with the others, so each carries its own
+// regex; what they must agree on is which values are upload keys written by
+// API/Backend/Upload/uploadRouter.js, not the bytes of the regex. A value one
+// treats as an upload key and another as a mission-relative path renders a
+// broken image only at runtime. What each consumer then does with a matched
+// key differs by design and is asserted per classifier below.
 
 const MISSION = 'M'
 const MISSION_PATH = 'Missions/M/'
@@ -45,6 +45,18 @@ test.describe('upload-key classification', () => {
     test.each(VALUES)('buildPreviewSrc: %s', (value, key) => {
         expect(buildPreviewSrc(value, MISSION, BASE)).toBe(
             key === null ? `${BASE}Missions/${MISSION}/${value}` : BASE + key,
+        )
+    })
+
+    // The publish gives a matched key the immutable tier, because the upload
+    // router names those files crypto.randomUUID() and never overwrites one.
+    // The rooted row is not a key the publish can ever see — S3 object keys
+    // have no leading slash — so it lands on the short tier here.
+    test.each(VALUES)('cacheControlForKey: %s', (value, key) => {
+        expect(cacheControlForKey(value)).toBe(
+            key !== null && !value.startsWith('/')
+                ? 'public, max-age=31536000, immutable'
+                : 'public, max-age=300',
         )
     })
 })

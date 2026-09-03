@@ -227,7 +227,10 @@ function renderCfnTemplate({ password } = {}) {
             DefaultCacheBehavior: {
               TargetOriginId: "DashboardBucketOrigin",
               ViewerProtocolPolicy: "redirect-to-https",
-              // AWS managed policy: CachingOptimized
+              // AWS managed policy: CachingOptimized — minimum TTL 1 s,
+              // default 86400 s, maximum 31536000 s. The Cache-Control tiers
+              // in scripts/lib/aws-provision.js rely on that maximum being at
+              // least a year, or the edge would cap the immutable tier.
               CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6",
               FunctionAssociations: [
                 {
