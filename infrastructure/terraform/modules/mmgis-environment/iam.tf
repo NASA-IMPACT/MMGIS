@@ -345,6 +345,9 @@ resource "aws_iam_role_policy" "publish_task" {
         Action = [
           "cloudfront:CreateOriginAccessControl",
           "cloudfront:GetOriginAccessControl",
+          # The Config read and the Update below are headroom for a future OAC
+          # change; the current template's OAC properties are all constants, so
+          # no update exercises them.
           "cloudfront:GetOriginAccessControlConfig",
           "cloudfront:UpdateOriginAccessControl",
           "cloudfront:DeleteOriginAccessControl",

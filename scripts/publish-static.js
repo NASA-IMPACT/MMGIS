@@ -7,14 +7,13 @@
  * Driven by environment:
  *   MMGIS_DEPLOYMENT_ID     - the deployments row to publish (required)
  *   MMGIS_DEPLOYMENT_ACTION - "publish" (default) creates the CloudFormation
- *                       stack when none exists yet, or waits for an existing
- *                       one to settle (a previous attempt may have created
- *                       it, or an earlier "update" may still be converging
- *                       it); "update" converges an existing stack's
- *                       infrastructure to the current template via
+ *                       stack when none exists yet and otherwise converges the
+ *                       existing one (a previous attempt may have created it);
+ *                       "update" requires an existing stack and converges it.
+ *                       Converging applies the current template via
  *                       UpdateStack — including re-baking the current
- *                       dashboards password into the auth Function — then
- *                       re-bakes + re-uploads the bundle (same URL).
+ *                       dashboards password into the auth Function. Both
+ *                       actions then re-bake + re-upload the bundle (same URL).
  *
  * Flow: read the mission config from Postgres → apply bake guards → bake
  * via bakeStaticConfig → build themes + static webpack bundle
@@ -40,33 +39,7 @@ const { applyTimeBakeGuard } = require("./lib/bake-guards");
 const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
 
-const { requireEnv } = provision;
-
-// Statuses a stack can neither be reused at nor driven forward from: it can
-// only be deleted (or, for a couple, have a rollback continued) — never
-// updated in place. Reaching one earns the actionable "delete and republish"
-// guidance BEFORE any busy classification, so a permanently-wedged stack is
-// never mistaken for one another task is merely busy updating.
-//   CREATE_FAILED / ROLLBACK_COMPLETE / ROLLBACK_IN_PROGRESS - a failed first
-//     create: CREATE_FAILED is where this code's own createStack (OnFailure:
-//     "DO_NOTHING") stops; the ROLLBACK_* pair is where an out-of-band operator
-//     create stops, and ROLLBACK_IN_PROGRESS pre-empts the ROLLBACK_COMPLETE it
-//     is on its way to.
-//   ROLLBACK_FAILED / UPDATE_ROLLBACK_FAILED / DELETE_FAILED - a rollback or a
-//     delete that itself failed; stuck until an operator intervenes.
-//   UPDATE_FAILED - where an update with rollback disabled stops; moved only by
-//     a ContinueUpdateRollback or a delete, so it can't be updated in place.
-// UPDATE_ROLLBACK_COMPLETE is deliberately absent: a stack resting there has a
-// working bucket/distribution and stays reusable by a publish.
-const UNUSABLE_STACK_STATUSES = [
-  "CREATE_FAILED",
-  "ROLLBACK_COMPLETE",
-  "ROLLBACK_IN_PROGRESS",
-  "ROLLBACK_FAILED",
-  "UPDATE_ROLLBACK_FAILED",
-  "UPDATE_FAILED",
-  "DELETE_FAILED",
-];
+const { requireEnv, UNUSABLE_STACK_STATUSES } = provision;
 
 function log(message) {
   console.log(`[publish-static] ${message}`);
@@ -183,50 +156,32 @@ async function main() {
         `Stack '${stackName}' is in ${existing.StackStatus} and cannot be used — ` +
           "delete the deployment and publish it again (this mints a new URL)"
       );
+    if (ACTION === "update" && existing == null)
+      throw new Error(
+        `Stack '${stackName}' does not exist — publish before updating`
+      );
     let stack;
-    if (ACTION === "publish") {
-      // Publish only needs a working bucket, so it never runs UpdateStack: it
-      // either creates the stack, or waits for whatever the existing one is
-      // doing to settle. A stack already RESTING at its settle target
-      // (CREATE_COMPLETE / UPDATE_COMPLETE / UPDATE_ROLLBACK_COMPLETE) resolves
-      // on the first poll — status already matches, no `prior`, no pre-sleep.
-      if (existing == null) {
-        log(`Creating stack '${stackName}'...`);
-        await provision.createStack({ stackName, templateBody });
-        stack = await provision.waitForStack({ stackName });
-      } else {
-        log(
-          `Stack '${stackName}' already exists (${existing.StackStatus}); waiting for it to settle.`
-        );
-        stack = await provision.waitForStack({
-          stackName,
-          desiredStatus: provision.settleStatusFor(existing.StackStatus),
-        });
-      }
-      log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
+    // Converging is provision's single retry loop: UpdateStack, wait out any
+    // concurrent operation and retry our own update, then wait for our update
+    // to reach UPDATE_COMPLETE. It is a no-op on an unchanged template, and
+    // its busy loop waits out a create another attempt left in flight.
+    if (existing == null) {
+      log(`Creating stack '${stackName}'...`);
+      await provision.createStack({ stackName, templateBody });
+      stack = await provision.waitForStack({ stackName });
     } else {
-      if (existing == null)
-        throw new Error(
-          `Stack '${stackName}' does not exist — publish before updating`
-        );
       log(
         `Converging stack '${stackName}' to the current template — this ` +
           "re-bakes the current dashboards password into the auth Function."
       );
-      // Converge OUR OWN template through provision's single retry loop: it
-      // runs UpdateStack, waits out any concurrent operation (a double
-      // republish race) and retries our own update, and waits for OUR update
-      // to reach UPDATE_COMPLETE — a rollback throws rather than passing as
-      // success. The preflight above already rejected the delete-only dead-end
-      // statuses, so a busy error inside can only be a genuinely in-flight op.
       stack = await provision.convergeStackUpdate({
         stackName,
         templateBody,
         existing,
         log,
       });
-      log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     }
+    log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     const outputs = provision.getStackOutputs(stack);
     const bucket = outputs.BucketName;
     if (bucket == null)
@@ -250,17 +205,6 @@ async function main() {
         prefix: `assets/${missionFolderName}/`,
       });
       log(`Copied ${copied} mission asset(s) from ${sharedBucket}.`);
-
-      // Viewer-panel mosaic file (conditional): the Photosphere/ModelViewer
-      // panes fetch this hardcoded same-origin path. Copy it when present;
-      // when absent the panes fail silently rather than erroring.
-      const mosaicKey = `Missions/${missionFolderName}/Data/mosaic_parameters.csv`;
-      const mosaicCopied = await provision.copyObjectIfExists({
-        sourceBucket: sharedBucket,
-        destBucket: bucket,
-        key: mosaicKey,
-      });
-      if (mosaicCopied) log(`Copied ${mosaicKey}.`);
     } else {
       log("MMGIS_SHARED_ASSET_BUCKET not set; skipping mission asset copy.");
     }

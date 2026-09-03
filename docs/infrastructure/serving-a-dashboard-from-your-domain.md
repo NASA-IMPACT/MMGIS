@@ -6,7 +6,7 @@ The examples below use the path `/tools/dashboard`; substitute your own everywhe
 
 ## Setup
 
-1. **Add the dashboard as an origin** on your distribution: origin domain is the dashboard's address, origin protocol policy **HTTPS only**, and one custom origin header — `X-Forwarded-Prefix` with the path as its value: `/tools/dashboard`. Leading slash, no trailing slash; letters, digits, `-`, `_`, `.`, `~`, and `/` only.
+1. **Add the dashboard as an origin** on your distribution: origin domain is the dashboard's address, origin protocol policy **HTTPS only**, and one custom origin header — `X-Forwarded-Prefix` with the path as its value: `/tools/dashboard`. Leading slash, no trailing slash; letters, digits, `-`, `_`, `.`, `~`, and `/` only, with no `//` and no `..` segment.
 
 2. **Create a custom cache policy** — not a managed one — with:
    - the `Authorization` header in the cache key,
@@ -38,7 +38,7 @@ With the two patterns above and header `X-Forwarded-Prefix: /tools/dashboard`:
 | anything under the path | **missing**, or wrong — e.g. `/tools/dashbord` *(typo)* | header invalid or matches nothing — no rewrite, no redirect | 403 on every request — loud failure, never the wrong files |
 | `d1abc23def.cloudfront.net/` *(the dashboard's own address, no header)* | *(none — no fronting CloudFront to add it)* | nothing — passes through | the dashboard, as always |
 
-When the dashboard's password is on, every row also sits behind it: a wrong or missing password is a 401 before any of this runs.
+Every dashboard is password-protected, so every row also sits behind the password: a wrong or missing password is a 401 before any of this runs.
 
 ## Why these settings
 
@@ -46,7 +46,7 @@ When the dashboard's password is on, every row also sits behind it: a wrong or m
 
 **The header** tells us how much of the forwarded path is yours. CloudFront forwards the full path exactly as the visitor typed it, so our side receives `/tools/dashboard/index.html` and needs to know that `/tools/dashboard` is prefix, not content. We remove exactly what the header declares and serve the file. If the header is missing or doesn't match the path, every request under the path fails with a 403 immediately — a loud failure on purpose, instead of quietly serving the wrong files. (It's a 403 rather than a 404 because the rejection comes from our storage layer, which answers "access denied.")
 
-**`Authorization` in the cache key:** dashboards are password-protected, and your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential. This matters whether or not the dashboard's password is currently on.
+**`Authorization` in the cache key:** dashboards are password-protected, and your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential. The password is shared by every dashboard published from the same MMGIS environment, so it is an internal credential, not something to hand to your visitors.
 
 **All query strings in the cache key:** a policy that drops query strings never sends them to us. A deep link like `/tools/dashboard?view=2` then reaches us stripped of its `?view=2`, and the address we redirect the visitor to has lost it for good.
 

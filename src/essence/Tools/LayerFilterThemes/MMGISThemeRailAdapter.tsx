@@ -12,6 +12,7 @@ import {
     mmgisShowPanel,
     type PanelInfo,
 } from '../_shared/adapters/mmgisAPI'
+import { resolveMissionAssetUrl } from '../../../pre/uploadKey'
 import type { ThemeSummary } from './lib/types'
 
 // This plugin's own broadcast — named after the rail, not the panel, so a
@@ -57,8 +58,9 @@ function resolveTogglePanel(
 
 /**
  * Points an uploaded icon at the file the mission actually serves. The upload
- * field stores a path relative to the mission directory
- * ("LayerFilterThemes/uploads/<uuid>.svg"); a link the author pasted is already
+ * field stores either a path relative to the mission directory
+ * ("LayerFilterThemes/uploads/<uuid>.svg") or an asset-bucket key, and the
+ * shared resolver tells the two apart; a link the author pasted is already
  * complete and passes through.
  */
 function withResolvedIcons(
@@ -67,10 +69,12 @@ function withResolvedIcons(
 ): ThemeSummary[] {
     return themes.map((theme) => {
         if (theme.icon?.kind !== 'image') return theme
-        if (/^(https?:|data:|\/)/i.test(theme.icon.src)) return theme
         return {
             ...theme,
-            icon: { kind: 'image', src: (missionPath || '') + theme.icon.src },
+            icon: {
+                kind: 'image',
+                src: resolveMissionAssetUrl(theme.icon.src, missionPath),
+            },
         }
     })
 }

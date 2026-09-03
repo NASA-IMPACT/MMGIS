@@ -8,7 +8,7 @@ import * as THREE from '../../../external/THREE/three118'
 
 import './Photosphere.css'
 
-export default function (domEl, lookupPath, options, Map_) {
+export default function (domEl, options, Map_) {
     options = options || {}
 
     var camera,
