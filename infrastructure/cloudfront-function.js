@@ -1,27 +1,38 @@
 /**
- * Source of the per-dashboard password-gate CloudFront Function
- * (viewer-request, cloudfront-js-1.0 runtime). This file IS what gets
- * deployed — renderAuthFunctionCode() in scripts/lib/cfn-template.js reads
- * it at publish time, strips this header comment, and substitutes
- * <BASE64_BASIC_CREDENTIALS> with base64("mmgis:" + MMGIS_DASHBOARDS_PASSWORD)
- * before inlining the result into each mmgis-dashboard-* CloudFormation
- * stack. The password is baked into the Function body, never a
- * CloudFormation Parameter (parameters surface in DescribeStacks output,
- * which the Deployments list reads).
+ * The per-dashboard password gate + path-prefix handler. This file IS what
+ * gets deployed: renderAuthFunctionCode() in scripts/lib/cfn-template.js
+ * reads it at publish time, strips this header comment, and bakes
+ * base64("mmgis:" + MMGIS_DASHBOARDS_PASSWORD) into the
+ * <BASE64_BASIC_CREDENTIALS> placeholder. The password lives in the
+ * function body and never in a CloudFormation Parameter, because
+ * parameters show up in DescribeStacks — which the admin's Deployments
+ * list reads on every load.
  *
- * The function body below is kept ES5. The cloudfront-js-1.0 runtime is
- * ES5.1-based and has no let/const (use var), and a unit test parses this
- * body with acorn at ES5 to keep it that way.
+ * What the handler does, in order:
+ *   1. password gate — wrong or missing Authorization → 401, nothing else runs
+ *   2. read and validate X-Forwarded-Prefix (see trust model below);
+ *      a missing or malformed header means: change nothing
+ *   3. bare-prefix entry URL → 302 to the trailing-slash form, query
+ *      string carried along (unsafe characters escaped, see below)
+ *   4. prefixed request → strip the prefix so the S3 lookup is prefix-blind
  *
- * Trust model: the X-Forwarded-Prefix header honored below is not
- * authenticated on its own — anyone holding the shared password can send it
- * directly to this distribution, bypassing any fronting CloudFront
- * entirely. Validating it is load-bearing, not just hygiene.
+ * Trust model: the header is unauthenticated input. Anyone holding the
+ * shared password can send it straight to this distribution, bypassing any
+ * fronting CloudFront — so validating it is load-bearing, not hygiene.
  *
- * Assumes CloudFront hands querystring values to the function still
- * percent-encoded (observed behavior; not documented by AWS either way). A
- * value that ever arrived decoded and contained "&" or "#" would corrupt
- * the redirect's rebuilt Location with a spurious param break or fragment.
+ * Stay ES5: the cloudfront-js-1.0 runtime has no let/const (use var), and
+ * a unit test parses this body with espree at ES5 to keep it that way.
+ *
+ * Encoding: CloudFront hands querystring values over still percent-encoded.
+ * That is undocumented in prose, but AWS's own normalize-query-string-parameters
+ * example rebuilds a query string by raw concatenation of .value — correct
+ * only for wire-form values — and the restrictions doc's encoding section
+ * agrees. The redirect doesn't rest on it for delimiter safety: rebuilding
+ * the Location, it escapes any character that would corrupt the reassembly,
+ * so a decoded "&" or "#" becomes %26 or %23 rather than forging a param
+ * break or fragment. It does still rest on it for percent-ambiguity: "%" is
+ * left alone so encoded values survive byte-identical, which means a value
+ * delivered decoded and carrying a literal "%" reassembles ambiguously.
  */
 function handler(event) {
     var request = event.request;
@@ -73,16 +84,49 @@ function handler(event) {
         var uri = request.uri;
         if (uri === prefix || uri === encodedPrefix) {
             var qs = request.querystring || {};
+            // Keys and values go into the Location raw, which reassembles
+            // correctly only for characters percent-encoding would have
+            // covered; anything else ('&', '#', an '=' in a key, a space,
+            // a control character) is escaped into its %XX form here, so
+            // the pair survives instead of being dropped. '%' is inside
+            // the safe set, so an already-encoded value passes through
+            // byte-identical rather than double-encoding. The match is an
+            // unanchored run of disallowed characters — a run, so a
+            // surrogate pair encodes as the one character it is — which
+            // means it never leans on how '$' treats a trailing newline.
+            // A lone surrogate cannot be encoded at all and makes
+            // encodeURIComponent throw; that pair alone is dropped.
+            var UNSAFE_KEY_G = /[^A-Za-z0-9%\-_.~!$'()*+,;:@\/?]+/g;
+            var UNSAFE_VALUE_G = /[^A-Za-z0-9%\-_.~!$'()*+,;=:@\/?]+/g;
+            var escapeRun = function (run) {
+                return encodeURIComponent(run);
+            };
             var parts = [];
             for (var key in qs) {
+                var safeKey;
+                try {
+                    safeKey = key.replace(UNSAFE_KEY_G, escapeRun);
+                } catch (keyErr) {
+                    continue;
+                }
                 var param = qs[key];
                 var values =
                     param.multiValue && param.multiValue.length > 0
                         ? param.multiValue
                         : [param];
                 for (var i = 0; i < values.length; i++) {
-                    var val = values[i].value;
-                    parts.push(val === '' ? key : key + '=' + val);
+                    var safeVal;
+                    try {
+                        safeVal = values[i].value.replace(
+                            UNSAFE_VALUE_G,
+                            escapeRun
+                        );
+                    } catch (valErr) {
+                        continue;
+                    }
+                    parts.push(
+                        safeVal === '' ? safeKey : safeKey + '=' + safeVal
+                    );
                 }
             }
             var location = uri + '/';

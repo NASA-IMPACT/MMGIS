@@ -151,6 +151,25 @@
     ],
     "floatingPanels": [
       {
+        "position": "float-top-left",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "collapsed",
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "panelTools": [
+          "Comparison"
+        ],
+        "id": "float-compare",
+        "dimensions": {
+          "defaultWidth": "350px",
+          "minWidth": "350px"
+        }
+      },
+      {
         "position": "float-top-right",
         "hasHeader": false,
         "stateConstraints": {
@@ -161,7 +180,8 @@
           "defaultState": "expanded"
         },
         "panelTools": [
-          "ShareExport"
+          "ShareExport",
+          "AddTempLayer"
         ],
         "id": "float-share"
       },
@@ -317,11 +337,58 @@
       }
     },
     {
+      "name": "AddTempLayer",
+      "icon": "add",
+      "js": "AddTempLayerTool",
+      "on": true,
+      "variables": {},
+      "metadata": {
+        "icon": "add",
+        "compatiblePositions": [
+          "float-top-left",
+          "float-top-center",
+          "float-top-right",
+          "float-bottom-left",
+          "float-bottom-center",
+          "float-bottom-right"
+        ],
+        "preferredPosition": "float-top-right",
+        "startHidden": true,
+        "modernLayoutSupport": true
+      }
+    },
+    {
       "name": "Chart",
       "icon": "chart-bar",
       "js": "ChartTool",
       "on": true,
       "variables": {}
+    },
+    {
+      "name": "Comparison",
+      "icon": "compare-horizontal",
+      "js": "ComparisonTool",
+      "on": true,
+      "variables": {},
+      "metadata": {
+        "icon": "compare-horizontal",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+          "float-top-left",
+          "float-top-center",
+          "float-top-right",
+          "float-bottom-left",
+          "float-bottom-center",
+          "float-bottom-right",
+          "left",
+          "right"
+        ],
+        "preferredPosition": "float-top-left",
+        "modernLayoutSupport": true,
+        "startUnloaded": true,
+        "width": 350,
+        "height": 0
+      }
     },
     {
       "name": "FetchStats",
@@ -433,17 +500,20 @@
           {
             "id": "need",
             "label": "Need",
-            "icon": "satellite-variant"
+            "iconSource": "link",
+            "iconUrl": "/public/images/layerfilterthemes/need.svg"
           },
           {
             "id": "hazard",
             "label": "Hazard",
-            "icon": "flash-outline"
+            "iconSource": "link",
+            "iconUrl": "/public/images/layerfilterthemes/hazard.svg"
           },
           {
             "id": "event",
             "label": "Event",
-            "icon": "calendar-outline"
+            "iconSource": "link",
+            "iconUrl": "/public/images/layerfilterthemes/event.svg"
           }
         ]
       },

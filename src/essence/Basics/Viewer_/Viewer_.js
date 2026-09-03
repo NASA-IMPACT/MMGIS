@@ -15,11 +15,14 @@ import './Viewer_.css'
 
 let L = window.L
 
-// Resolves a relative viewer asset (master image, model texture) under the
-// active mission. A static build is served from the document's own directory,
-// which may sit under a customer path prefix, so the mission path stays
-// relative; the full app serves these from get_profile, four levels down from
-// the mmgis dir.
+// Builds the URL for a mission media file (master image, model texture).
+// Two worlds:
+//   - static build: the mission's files sit next to the page, and the page
+//     may be mounted under a customer prefix — so stay relative and let the
+//     browser resolve from wherever the page is. A '../' climb here would
+//     escape the prefix.
+//   - full app: the page is served four folders deep (the get_profile
+//     route) and Missions/ is at the server root — so climb back up first.
 function missionRelativeAssetPath(relativePath) {
     return isStaticBuild()
         ? L_.missionPath + relativePath

@@ -237,10 +237,22 @@ var QueryURL = {
         for (var i = 0; i < vars.length; i++) {
             var pair = vars[i].split('=')
             if (pair[0] == variable) {
-                return pair[1] === undefined ? '' : decodeURIComponent(pair[1])
+                if (pair[1] === undefined) return ''
+                // Rejoin so a value containing '=' (e.g. base64) survives;
+                // split('=') cut it at every equals sign.
+                var raw = pair.slice(1).join('=')
+                try {
+                    return decodeURIComponent(raw)
+                } catch (e) {
+                    // Malformed percent-encoding (e.g. '%zz') must not throw
+                    // out of URL-reading code that runs during app startup.
+                    // Treat the value as absent: callers strict-check
+                    // `!== false`, and '' would flow into parseFloat/split
+                    // cascades (a bad `on` param would turn all layers off).
+                    return false
+                }
             }
         }
-
         return false
     },
     getMultipleQueryVariable: function (variable) {
@@ -250,7 +262,16 @@ var QueryURL = {
         for (var i = 0; i < vars.length; i++) {
             var pair = vars[i].split('=')
             if (pair[0].toLowerCase() == variable) {
-                parameterList.push(decodeURIComponent(pair[1]))
+                if (pair[1] === undefined) {
+                    parameterList.push('')
+                    continue
+                }
+                var raw = pair.slice(1).join('=')
+                try {
+                    parameterList.push(decodeURIComponent(raw))
+                } catch (e) {
+                    // Skip a malformed value rather than throwing at startup.
+                }
             }
         }
 

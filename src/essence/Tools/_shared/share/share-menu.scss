@@ -90,6 +90,14 @@
     }
 }
 
+// Draws in currentColor, so it follows the trigger's hover and open states.
+.share-menu__trigger-icon {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    color: inherit;
+}
+
 // Portaled to document.body and anchored to the trigger with an inline
 // top/right computed from the trigger's bounding rect (see <ShareMenu>), so
 // the float zone's overflow clipping can't cut the menu off.

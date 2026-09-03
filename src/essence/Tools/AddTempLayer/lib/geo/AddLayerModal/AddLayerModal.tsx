@@ -49,7 +49,8 @@ export function AddLayerModal({
 
                 <div className="blocks-add-layer-modal__body">
                     <p className="blocks-add-layer-modal__help">
-                        Paste a layer URL to add it to your layer gallery.
+                        Provide a WMS, WMTS, or GeoJSON link to add to your
+                        layer gallery.
                     </p>
 
                     <label className="blocks-add-layer-modal__field">
@@ -70,7 +71,10 @@ export function AddLayerModal({
 
                     <label className="blocks-add-layer-modal__field">
                         <span className="blocks-add-layer-modal__label">
-                            Display name (optional)
+                            Display name{' '}
+                            <span className="blocks-add-layer-modal__label-note">
+                                (optional)
+                            </span>
                         </span>
                         <input
                             type="text"
@@ -82,6 +86,9 @@ export function AddLayerModal({
                     </label>
 
                     <div className="blocks-add-layer-modal__behaviour">
+                        <p className="blocks-add-layer-modal__behaviour-title">
+                            Imported layer behaviour
+                        </p>
                         <ul className="blocks-add-layer-modal__behaviour-list">
                             <li>Color map is fixed (returned with the request)</li>
                             <li>Min &amp; max values are fixed (if returned)</li>
@@ -89,17 +96,17 @@ export function AddLayerModal({
                             <li>Only the opacity slider is editable</li>
                         </ul>
                     </div>
-                </div>
 
-                <div className="blocks-add-layer-modal__footer">
-                    <button
-                        type="button"
-                        className="blocks-add-layer-modal__submit"
-                        onClick={onSubmit}
-                        disabled={submitting}
-                    >
-                        {submitting ? 'Adding…' : 'Add layer'}
-                    </button>
+                    <div className="blocks-add-layer-modal__footer">
+                        <button
+                            type="button"
+                            className="blocks-add-layer-modal__submit"
+                            onClick={onSubmit}
+                            disabled={submitting}
+                        >
+                            {submitting ? 'Adding…' : 'Add layer'}
+                        </button>
+                    </div>
                 </div>
         </div>
     )
