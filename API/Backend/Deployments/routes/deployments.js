@@ -111,10 +111,15 @@ router.post("/publish", async function (req, res) {
   }
 });
 
-// Statuses an update can't start from because a publish task or a teardown is
-// already in flight — the caller's move is to wait. (A `deleted` row is also
-// off limits, but it has no stack left to converge and so earns its own
-// answer.)
+// Row statuses that claim a publish task or a teardown is running. The row
+// alone doesn't settle it: a task killed before its error handler runs leaves
+// the row sitting in one of these forever, and nothing else ever moves it — so
+// an update is refused only when the live stack backs the row up, by reporting
+// an operation still in flight or by not being there at all — a publish whose
+// CreateStack has not gone out yet leaves nothing for an update to converge.
+// A row resting on a settled stack passes, whatever it says. (A `deleted` row
+// is also off limits, but it has no stack left to converge and so earns its
+// own answer.)
 const UPDATE_IN_FLIGHT_STATUSES = [
   STATUS.PROVISIONING,
   STATUS.UPDATING,
@@ -133,17 +138,23 @@ router.post("/:id/update", async function (req, res) {
       res.send({ status: "failure", message: "Deployment not found." });
       return;
     }
-    if (UPDATE_IN_FLIGHT_STATUSES.indexOf(deployment.status) !== -1) {
-      res.status(409).send({
-        status: "failure",
-        message: `Deployment is ${deployment.status}; wait for it to finish`,
-      });
-      return;
-    }
-    if (deployment.status === STATUS.DELETED) {
+    // Read the live stack alongside the row (this also flips a `deleting` row
+    // whose stack is already gone to `deleted`).
+    const row = await withLiveStatus(deployment);
+    if (row.status === STATUS.DELETED) {
       res.status(409).send({
         status: "failure",
         message: "Deployment was deleted; publish it again",
+      });
+      return;
+    }
+    if (
+      UPDATE_IN_FLIGHT_STATUSES.indexOf(row.status) !== -1 &&
+      (row.stack_status == null || row.stack_status.endsWith("_IN_PROGRESS"))
+    ) {
+      res.status(409).send({
+        status: "failure",
+        message: `Deployment is ${row.status}; wait for it to finish`,
       });
       return;
     }
