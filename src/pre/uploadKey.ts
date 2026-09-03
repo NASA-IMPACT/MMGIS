@@ -21,7 +21,7 @@
 // scripts are CommonJS run by Node, neither with an import path into this one.
 // tests/unit/uploadKeyClassifier.spec.js runs one table of values through
 // all three and fails if they classify any of them differently.
-export const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
+const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
 
 // What URL should the page request for a stored value? Four cases, checked
 // in this order:

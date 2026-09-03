@@ -63,7 +63,7 @@ function resolveTogglePanel(
  * shared resolver tells the two apart; a link the author pasted is already
  * complete and passes through.
  */
-function withResolvedIcons(
+export function withResolvedIcons(
     themes: ThemeSummary[],
     missionPath: string | null,
 ): ThemeSummary[] {
@@ -84,8 +84,8 @@ export function MMGISThemeRailAdapter() {
     // selected. The panel owns each theme's filters; the two join on `id`.
     const vars = useMMGISToolVars<ThemeRailVars>('layerfilterthemes')
 
-    // Uploaded icons are stored mission-relative, so the rail needs the
-    // mission's path before it can draw them.
+    // Mission-relative icons need the mission's path before the rail can draw
+    // them; asset-bucket keys need none.
     const [missionPath, setMissionPath] = useState<string | null>(null)
     const refreshMissionPath = useCallback(async () => {
         setMissionPath(await mmgisGetMissionPath())

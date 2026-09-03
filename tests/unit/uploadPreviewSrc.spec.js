@@ -1,16 +1,14 @@
 import { test, expect } from 'vitest'
 import { buildPreviewSrc } from '../../configure/src/core/upload.js'
 
-// Pins the Configure CMS's stored-value-to-preview-URL resolution: absolute
-// and data values pass through unchanged. Values matching the lean-mode
-// upload writer's own shape ("assets/<mission>/<subdir>/uploads/<file>", see
-// API/Backend/Upload/uploadRouter.js) resolve against `base` (root-absolute
-// when `base` is empty — the CMS is always server-hosted); a rooted
-// "/assets/..." value is the same key with a leading slash, stripped before
-// the test. Any other already-rooted value passes through unchanged; everything
-// else is a mission-relative path resolved under Missions/ — root-anchored
-// the same way, so the preview URL does not resolve against whatever path
-// the CMS happens to be visited at.
+// Pins the parts of the Configure CMS's stored-value-to-preview-URL
+// resolution that the shared classifier table in
+// tests/unit/uploadKeyClassifier.spec.js cannot express: empty input,
+// absolute and data values passing through unchanged, an already-rooted
+// non-upload value passing through unchanged, and — with an empty `base` —
+// both resolved branches staying root-absolute. That last one matters
+// because the SPA is served at '/configure/', so a document-relative preview
+// URL would resolve against that path and 404.
 test.describe('buildPreviewSrc', () => {
     test('returns empty string for empty input', () => {
         expect(buildPreviewSrc('', 'M', 'http://localhost:8888/')).toBe('')
@@ -37,43 +35,12 @@ test.describe('buildPreviewSrc', () => {
                 'http://localhost:8888/',
             ),
         ).toBe('/already/rooted.png')
-        // Starts with "/assets/" but carries no "/uploads/" segment, so it
-        // is not the writer's shape — stays root-relative, unresolved.
-        expect(
-            buildPreviewSrc('/assets/M/x.png', 'M', 'http://localhost:8888/'),
-        ).toBe('/assets/M/x.png')
-    })
-
-    test('resolves an assets/ upload value against the API base', () => {
-        expect(
-            buildPreviewSrc(
-                'assets/M/CardPlugin/uploads/x.png',
-                'M',
-                'http://localhost:8888/',
-            ),
-        ).toBe('http://localhost:8888/assets/M/CardPlugin/uploads/x.png')
     })
 
     test('an empty base resolves an assets/ upload value root-absolute', () => {
         expect(
             buildPreviewSrc('assets/M/CardPlugin/uploads/x.png', 'M', ''),
         ).toBe('/assets/M/CardPlugin/uploads/x.png')
-    })
-
-    test('a non-empty base rebases a rooted /assets/ upload value', () => {
-        expect(
-            buildPreviewSrc(
-                '/assets/M/CardPlugin/uploads/x.png',
-                'M',
-                '/mmgis/',
-            ),
-        ).toBe('/mmgis/assets/M/CardPlugin/uploads/x.png')
-    })
-
-    test('resolves mission-relative values under Missions/<mission>/', () => {
-        expect(
-            buildPreviewSrc('CardPlugin/uploads/a.png', 'M', '/mmgis/'),
-        ).toBe('/mmgis/Missions/M/CardPlugin/uploads/a.png')
     })
 
     // With no ROOT_PATH base the mission-relative branch must still produce a

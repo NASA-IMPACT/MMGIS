@@ -30,6 +30,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const Sequelize = require("sequelize");
 
 const rootDir = path.join(__dirname, "..");
 
@@ -128,6 +129,11 @@ async function main() {
       throw new Error(
         `Stack '${stackName}' does not exist — publish before updating`
       );
+    // A stack only a delete can move fails here, in seconds, rather than after
+    // the bake and build below. convergeStackUpdate re-checks per attempt,
+    // because that build takes minutes.
+    if (existing != null)
+      provision.assertStackUsable({ stackName, stack: existing });
 
     // 1. Bake the mission config into the bundle
     log(`Baking mission '${mission}' for deployment ${deployment.id}...`);
@@ -162,10 +168,6 @@ async function main() {
       await provision.createStack({ stackName, templateBody });
       stack = await provision.waitForStack({ stackName });
     } else {
-      log(
-        `Converging stack '${stackName}' to the current template — this ` +
-          "re-bakes the current dashboards password into the auth Function."
-      );
       stack = await provision.convergeStackUpdate({
         stackName,
         templateBody,
@@ -173,7 +175,7 @@ async function main() {
         log,
       });
     }
-    log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
+    log(`Stack '${stackName}' is at ${stack.StackStatus}.`);
     const outputs = provision.getStackOutputs(stack);
     const bucket = outputs.BucketName;
     if (bucket == null)
@@ -345,12 +347,26 @@ async function main() {
     log(`Deployment ${deployment.id} published at ${cloudfrontUrl}.`);
   } catch (err) {
     console.error(err);
-    await deployment
-      .update({
+    // A Delete that overlaps a running task owns the row's status from then
+    // on, so the failure is recorded only while the row is still one this
+    // task is responsible for.
+    await Deployments.update(
+      {
         status: Deployments.STATUS.FAILED,
         last_error: err.message || String(err),
-      })
-      .catch(() => {});
+      },
+      {
+        where: {
+          id: deployment.id,
+          status: {
+            [Sequelize.Op.notIn]: [
+              Deployments.STATUS.DELETING,
+              Deployments.STATUS.DELETED,
+            ],
+          },
+        },
+      }
+    ).catch(() => {});
     throw err;
   }
 }
