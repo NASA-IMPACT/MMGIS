@@ -73,6 +73,13 @@ const TERMINAL_STACK_STATUSES = [
   "UPDATE_ROLLBACK_FAILED",
 ];
 
+// What a wait for "whatever the other task settles at" accepts. DELETE_COMPLETE
+// is absent because DescribeStacks by name answers "does not exist" for a
+// deleted stack, so no poll can ever read that status back.
+const SETTLED_STACK_STATUSES = TERMINAL_STACK_STATUSES.filter(
+  (status) => status !== "DELETE_COMPLETE"
+);
+
 // Statuses a stack can neither be reused at nor driven forward from: it can
 // only be deleted (or, for a couple, have a rollback continued) — never
 // updated in place. Reaching one earns the actionable "delete and republish"
@@ -83,6 +90,10 @@ const TERMINAL_STACK_STATUSES = [
 //     operator or a delete clears.
 //   DELETE_IN_PROGRESS - the stack and its bucket are on their way out, so
 //     there is nothing to publish onto.
+//   REVIEW_IN_PROGRESS - a change set created the stack shell and was never
+//     executed, so it holds no bucket or distribution to converge onto.
+// Three of these end in _IN_PROGRESS while leading nowhere but a delete, which
+// is why an _IN_PROGRESS suffix alone never means "another task is busy".
 // UPDATE_ROLLBACK_COMPLETE is deliberately absent: a stack resting there has a
 // working bucket/distribution and stays reusable.
 const UNUSABLE_STACK_STATUSES = [
@@ -94,11 +105,11 @@ const UNUSABLE_STACK_STATUSES = [
   "UPDATE_FAILED",
   "DELETE_FAILED",
   "DELETE_IN_PROGRESS",
+  "REVIEW_IN_PROGRESS",
 ];
 
 // Throws the actionable "delete and republish" guidance when `stack` rests in
-// a delete-only status, so a wedged stack never reads as a raw CloudFormation
-// rejection or as another task merely being busy.
+// one of UNUSABLE_STACK_STATUSES.
 function assertStackUsable({ stackName, stack }) {
   if (UNUSABLE_STACK_STATUSES.indexOf(stack.StackStatus) !== -1)
     throw new Error(
@@ -145,27 +156,24 @@ async function updateStack({ stackName, templateBody }) {
   }
 }
 
-// True only for the ValidationError CloudFormation raises when the stack is
-// busy with an operation genuinely IN FLIGHT ("Stack:arn:... is in
-// UPDATE_IN_PROGRESS state and can not be updated."). Two republish clicks
-// start two ECS tasks and the loser lands here — a race to wait out, not a
-// failure. CloudFormation reuses the same "... state and can not be updated"
-// wording for delete-only statuses too, which are NOT another task updating —
-// so key off the status the message names and accept only an *_IN_PROGRESS one
-// that is also absent from UNUSABLE_STACK_STATUSES (DELETE_IN_PROGRESS and
-// ROLLBACK_IN_PROGRESS end in _IN_PROGRESS yet lead only to a stack that has
-// to be deleted). Same error NAME as the no-op and does-not-exist cases, so
-// the message stays the only discriminator.
-function isStackBusyError(err) {
-  if (err == null || err.name !== "ValidationError") return false;
+// The status named by the ValidationError CloudFormation raises when a stack
+// is busy with an operation genuinely IN FLIGHT ("Stack:arn:... is in
+// UPDATE_IN_PROGRESS state and can not be updated."), or null for any other
+// error. Two republish clicks start two ECS tasks and the loser lands here — a
+// race to wait out, not a failure. CloudFormation reuses that same wording for
+// delete-only statuses, which are not another task updating, so the status has
+// to be both *_IN_PROGRESS and absent from UNUSABLE_STACK_STATUSES. Same error
+// NAME as the no-op and does-not-exist cases, so the message stays the only
+// discriminator.
+function busyStatusOf(err) {
+  if (err == null || err.name !== "ValidationError") return null;
   const named = (err.message || "").match(
     /is in ([A-Z_]+) state and can not be updated/
   );
-  if (named == null) return false;
-  return (
-    named[1].endsWith("_IN_PROGRESS") &&
-    UNUSABLE_STACK_STATUSES.indexOf(named[1]) === -1
-  );
+  if (named == null) return null;
+  const status = named[1];
+  if (!status.endsWith("_IN_PROGRESS")) return null;
+  return UNUSABLE_STACK_STATUSES.indexOf(status) === -1 ? status : null;
 }
 
 // Returns the Stack object, or null when the stack does not exist.
@@ -256,32 +264,33 @@ async function waitForStack({
             (lastReason ? `: ${lastReason}` : "")
         );
     }
-    if (Date.now() - startedAt > timeoutMs)
-      throw new Error(
+    if (Date.now() - startedAt > timeoutMs) {
+      const timedOut = new Error(
         `Timed out waiting for stack '${stackName}' to ${desiredLabel} (last status '${stack.StackStatus}')` +
           (lastReason ? `: ${lastReason}` : "")
       );
+      // Marks the one rejection that means "the clock ran out", so a caller
+      // running this wait on a shared budget can say whose clock it was.
+      timedOut.timedOut = true;
+      throw timedOut;
+    }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 }
 
 // Converges `templateBody` onto an existing stack via UpdateStack and waits
 // for our update to finish. Returns the converged Stack, or the latest read
-// of it when there is nothing to update.
+// of it when there is nothing to update. The stack is read fresh at the top of
+// every attempt, so the caller passes only its name.
 //
-// Every attempt starts on a stack assertStackUsable has cleared, so an
-// isStackBusyError here is only ever a concurrent republish. On that race we
+// Every attempt starts on a stack assertStackUsable has cleared, so a busy
+// rejection here is only ever a concurrent republish. On that race we
 // wait the other task's operation out and retry our OWN UpdateStack, so this
 // run's template — not merely the winner's — converges; `maxBusyRetries` bounds
 // how many rounds that takes and `deadlineMs` how long they may take in total.
-//
-// `existing` is the caller's earlier read of the stack, taken before a
-// multi-minute build, so it is re-read here — it serves only as the fallback
-// for a describe that comes back empty.
 async function convergeStackUpdate({
   stackName,
   templateBody,
-  existing,
   maxBusyRetries = 10,
   deadlineMs = 45 * 60 * 1000,
   log = () => {},
@@ -300,54 +309,67 @@ async function convergeStackUpdate({
       `Stack '${stackName}' did not converge within its ${deadlineMs}ms ` +
         "deadline — another operation may be stuck; try again shortly."
     );
-  // Budget for one waitForStack, capped by a caller's own `timeoutMs`. An
-  // exhausted budget throws here instead of starting a wait, which would
-  // reject as an ordinary poll timeout and never name the deadline it hit.
-  const waitBudgetMs = () => {
+  // Runs one waitForStack on what is left of the shared budget, capped by a
+  // caller's own `timeoutMs`. An exhausted budget, and a wait the budget cut
+  // short, both surface as the deadline rather than as one poll's timeout —
+  // so the row names the deadline it actually hit.
+  const waitWithinDeadline = async (options) => {
     const left = remainingMs();
     if (left === 0) throw deadlineError();
-    return timeoutMs != null ? Math.min(timeoutMs, left) : left;
+    const budgetMs = timeoutMs != null ? Math.min(timeoutMs, left) : left;
+    try {
+      return await waitForStack({ ...options, timeoutMs: budgetMs });
+    } catch (err) {
+      if (err.timedOut && budgetMs === left) throw deadlineError();
+      throw err;
+    }
   };
-  // The read just before our own UpdateStack, passed as `prior` to the
-  // converge wait and returned as-is when there is nothing to update; a
-  // wait-out advances it to the other task's settled state.
-  let preUpdate = existing;
   for (let attempt = 0; ; attempt++) {
     if (remainingMs() === 0) throw deadlineError();
-    // Re-read per attempt: another task can converge, wedge, or start deleting
-    // the stack while this one bakes and builds, and a wait-out can settle on a
-    // delete-only status — which earns the guidance rather than an UpdateStack
-    // that CloudFormation would reject with its own opaque wording.
-    preUpdate = (await describeStack({ stackName })) || preUpdate;
+    // The read just before our own UpdateStack: passed as `prior` to the
+    // converge wait, and returned as-is when there is nothing to update. It is
+    // taken per attempt because another task can converge, wedge, or delete the
+    // stack while this one bakes and builds, and a wait-out can settle on a
+    // delete-only status. A stack that is gone is gone — publishing again is
+    // what recreates it, so there is nothing here to converge onto.
+    const preUpdate = await describeStack({ stackName });
+    if (preUpdate == null)
+      throw new Error(
+        `Stack '${stackName}' does not exist (deleted or never created)`
+      );
+    // A delete-only status earns the guidance rather than an UpdateStack
+    // CloudFormation would reject with its own opaque wording.
     assertStackUsable({ stackName, stack: preUpdate });
     let started;
     try {
       started = await updateStack({ stackName, templateBody });
     } catch (err) {
-      if (!isStackBusyError(err)) throw err;
+      const busyStatus = busyStatusOf(err);
+      if (busyStatus == null) throw err;
       if (attempt >= maxBusyRetries)
         throw new Error(
           `Stack '${stackName}' stayed busy after ${maxBusyRetries + 1} ` +
             "UpdateStack attempts — another operation may be stuck; try again shortly."
         );
+      // The rejection names the status the other operation is holding, which is
+      // fresher than the read taken before it.
       log(
         `Stack '${stackName}' is busy with another operation ` +
-          `(${preUpdate.StackStatus}); waiting for it to settle, then retrying.`
+          `(${busyStatus}); waiting for it to settle, then retrying.`
       );
-      // Resolve on whatever status the other operation settles at (a rollback
+      // Wait on whatever status the other operation settles at (a rollback
       // settles at UPDATE_ROLLBACK_COMPLETE, which is still updatable) and let
-      // the next attempt judge it. The busy rejection is itself proof an
-      // operation is in flight, so the read taken before it is stale: pass it
-      // as `prior` and poll through reads that still match it.
-      preUpdate = await waitForStack({
+      // the next attempt read it back and judge it. The busy rejection is
+      // itself proof an operation is in flight, so the read taken before it is
+      // stale: pass it as `prior` and poll through reads that still match it.
+      await waitWithinDeadline({
         stackName,
-        desiredStatus: TERMINAL_STACK_STATUSES,
+        desiredStatus: SETTLED_STACK_STATUSES,
         prior: {
           status: preUpdate.StackStatus,
           lastUpdatedTime: preUpdate.LastUpdatedTime,
         },
         pollIntervalMs,
-        timeoutMs: waitBudgetMs(),
       });
       // The winner's operation only just settled; this pause is deliberate,
       // giving CloudFormation a beat before we ask it to accept ours.
@@ -363,7 +385,7 @@ async function convergeStackUpdate({
     // The strict single UPDATE_COMPLETE makes our own rollback, settling at
     // UPDATE_ROLLBACK_COMPLETE, hit the terminal-status throw rather than be
     // reported as a successful publish.
-    return await waitForStack({
+    return await waitWithinDeadline({
       stackName,
       desiredStatus: "UPDATE_COMPLETE",
       prior: {
@@ -371,7 +393,6 @@ async function convergeStackUpdate({
         lastUpdatedTime: preUpdate.LastUpdatedTime,
       },
       pollIntervalMs,
-      timeoutMs: waitBudgetMs(),
     });
   }
 }
@@ -655,7 +676,7 @@ module.exports = {
   assertStackUsable,
   // convergeStackUpdate's own steps; exported for tests.
   updateStack,
-  isStackBusyError,
+  busyStatusOf,
   describeStack,
   waitForStack,
   convergeStackUpdate,

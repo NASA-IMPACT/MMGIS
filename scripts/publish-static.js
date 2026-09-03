@@ -114,24 +114,33 @@ async function main() {
   if (deployment == null)
     throw new Error(`Deployment row ${DEPLOYMENT_ID} not found`);
 
+  // A Delete that overlaps a running task owns the row's status from then on,
+  // so every terminal write below lands only while the row is still one this
+  // task is responsible for.
+  const stillOurs = {
+    id: deployment.id,
+    status: {
+      [Sequelize.Op.notIn]: [
+        Deployments.STATUS.DELETING,
+        Deployments.STATUS.DELETED,
+      ],
+    },
+  };
+
   try {
     const mission = deployment.mission;
     const stackName =
       deployment.stack_name || stackNameForDeployment(deployment.id);
 
-    // Read the stack first so an "update" of something that was never
-    // published fails in seconds, ahead of the bake and build below.
-    // Idempotent re-run: a previous attempt may have created the stack (or a
-    // prior update converged it) — reuse it instead of dying on
-    // CloudFormation's AlreadyExistsException.
+    const noStackForUpdate = `Stack '${stackName}' does not exist — publish before updating`;
+    // A first read, purely to fail fast: an "update" of something that was
+    // never published, and a stack only a delete can move, both stop here in
+    // seconds rather than after the multi-minute bake and build below. What
+    // gets created or converged is decided by a second read taken after that
+    // build, and convergeStackUpdate re-checks usability per attempt.
     const existing = await provision.describeStack({ stackName });
     if (ACTION === "update" && existing == null)
-      throw new Error(
-        `Stack '${stackName}' does not exist — publish before updating`
-      );
-    // A stack only a delete can move fails here, in seconds, rather than after
-    // the bake and build below. convergeStackUpdate re-checks per attempt,
-    // because that build takes minutes.
+      throw new Error(noStackForUpdate);
     if (existing != null)
       provision.assertStackUsable({ stackName, stack: existing });
 
@@ -160,10 +169,17 @@ async function main() {
       password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
     });
     let stack;
-    // An existing stack is converged rather than reused as-is: the template
-    // this run renders has to reach it, and converging is what keeps two
-    // simultaneous republishes safe.
-    if (existing == null) {
+    // Which branch to take follows a read taken now, not the one from before
+    // the build: another task can have created the stack in the meantime (a
+    // CreateStack onto it is an AlreadyExistsException) or deleted it (a
+    // converge onto it has nothing to update). An existing stack is converged
+    // rather than reused as-is: the template this run renders has to reach it,
+    // and converging is what keeps two simultaneous republishes safe.
+    const current = await provision.describeStack({ stackName });
+    if (current == null) {
+      // An update owns one stack and one URL; minting a second one behind the
+      // same row is not an update.
+      if (ACTION === "update") throw new Error(noStackForUpdate);
       log(`Creating stack '${stackName}'...`);
       await provision.createStack({ stackName, templateBody });
       stack = await provision.waitForStack({ stackName });
@@ -171,7 +187,6 @@ async function main() {
       stack = await provision.convergeStackUpdate({
         stackName,
         templateBody,
-        existing,
         log,
       });
     }
@@ -324,40 +339,34 @@ async function main() {
       outputs.DistributionDomainName != null
         ? `https://${outputs.DistributionDomainName}`
         : deployment.cloudfront_url;
-    await deployment.update({
-      status: Deployments.STATUS.PUBLISHED,
-      stack_arn: stack.StackId,
-      stack_name: stackName,
-      cloudfront_url: cloudfrontUrl,
-      last_error: null,
-      settings: {
-        ...(deployment.settings || {}),
-        bucket,
-        distributionId: outputs.DistributionId,
+    const [published] = await Deployments.update(
+      {
+        status: Deployments.STATUS.PUBLISHED,
+        stack_arn: stack.StackId,
+        stack_name: stackName,
+        cloudfront_url: cloudfrontUrl,
+        last_error: null,
+        settings: {
+          ...(deployment.settings || {}),
+          bucket,
+          distributionId: outputs.DistributionId,
+        },
       },
-    });
-    log(`Deployment ${deployment.id} published at ${cloudfrontUrl}.`);
+      { where: stillOurs }
+    );
+    log(
+      published
+        ? `Deployment ${deployment.id} published at ${cloudfrontUrl}.`
+        : `Deployment ${deployment.id} is being deleted; leaving its status alone.`
+    );
   } catch (err) {
     console.error(err);
-    // A Delete that overlaps a running task owns the row's status from then
-    // on, so the failure is recorded only while the row is still one this
-    // task is responsible for.
     await Deployments.update(
       {
         status: Deployments.STATUS.FAILED,
         last_error: err.message || String(err),
       },
-      {
-        where: {
-          id: deployment.id,
-          status: {
-            [Sequelize.Op.notIn]: [
-              Deployments.STATUS.DELETING,
-              Deployments.STATUS.DELETED,
-            ],
-          },
-        },
-      }
+      { where: stillOurs }
     ).catch(() => {});
     throw err;
   }
