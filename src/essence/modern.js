@@ -229,13 +229,11 @@ class ModernInterface {
             ToolControllerModern_.assignToolsToPanels(tools)
         } catch (error) {
             // A mission config the controller refuses outright — two tools
-            // claiming one id, for one. There is no catch between here and the
-            // async init that called render(), and by this point the loading
-            // screen has been dismissed and the container emptied, so letting
-            // it propagate leaves the user a blank page and puts the only
-            // explanation in the console. Stop here and say so on screen
-            // instead: a layout built from a config core rejected would be
-            // missing tools with nothing to indicate why.
+            // claiming one id, for one. LandingPage's catch above would paint a
+            // generic initialization-error screen; this one names the config
+            // problem, which is the only thing that tells an operator what to
+            // go and fix. Stopping here also keeps a half-built layout off the
+            // screen: it would be missing tools with nothing to indicate why.
             console.error('[Modern Interface] Tool assignment failed:', error)
             this._renderFatalError(error.message || String(error))
             return

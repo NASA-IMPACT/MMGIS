@@ -16,15 +16,24 @@ const logger = createLogger('ToolMetadataUtils')
 // the derivation each id falls back to instead quietly renames every tool whose
 // declared id is not its lowercased binding — so say so once. Regenerating the
 // registry is the fix, and nothing further down the line can tell you that.
-const toolIds = generatedToolIds || {}
-if (!generatedToolIds) {
-    logger.warn(
-        'The generated tool registry carries no toolIds, so tool ids are ' +
-        'being derived from module bindings. Restart the server to ' +
-        'regenerate src/pre/tools.js.'
-    )
+//
+// Read on first use, not at module scope: this module sits inside the
+// Layers_ -> ToolController_ -> pre/tools -> every tool -> Layers_ import
+// cycle, where a module-scope read can land before pre/tools has finished
+// evaluating and see nothing.
+let warnedAboutMissingIds = false
+function generatedIds() {
+    if (generatedToolIds) return generatedToolIds
+    if (!warnedAboutMissingIds) {
+        warnedAboutMissingIds = true
+        logger.warn(
+            'The generated tool registry carries no toolIds, so tool ids are ' +
+            'being derived from module bindings. Restart the server to ' +
+            'regenerate src/pre/tools.js.'
+        )
+    }
+    return {}
 }
-
 
 /**
  * Sanitizes a string value using DOMPurify to prevent XSS attacks
@@ -563,6 +572,7 @@ export function getValidIconClass(iconClass, toolId) {
 export function toolCanonicalId(toolConfig) {
     const toolModule = (toolConfig && toolConfig.js) || ''
     if (toolModule) {
+        const toolIds = generatedIds()
         return Object.prototype.hasOwnProperty.call(toolIds, toolModule)
             ? toolIds[toolModule]
             : toolModule.replace(/Tool$/, '').toLowerCase()

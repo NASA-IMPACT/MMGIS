@@ -2487,16 +2487,6 @@ const L_ = {
         L_.Map_.resetView(L_.configData.msv.view)
         L_.Globe_.litho.setCenter(L_.configData.msv.view)
     },
-    hasTool: function (toolName) {
-        for (var i = 0; i < L_.tools.length; i++) {
-            if (
-                L_.tools[i].hasOwnProperty('name') &&
-                L_.tools[i].name.toLowerCase() == toolName
-            )
-                return true
-        }
-        return false
-    },
     getToolVars: function (toolName, withVarsFromLayers, showWarnings) {
         let vars = {}
         for (var i = 0; i < L_.tools.length; i++) {

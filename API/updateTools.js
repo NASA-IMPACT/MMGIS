@@ -191,6 +191,11 @@ function updateTools() {
       return obj;
     }, {});
 
+  // Derive the ids first: a malformed or duplicate one throws, and doing it
+  // before anything is written keeps a failed run from leaving toolConfigs.json
+  // ahead of src/pre/tools.js.
+  const toolIds = buildToolIds(tools);
+
   // Build dynamic toolConfigs.json file for configure page
   try {
     fs.writeFileSync(
@@ -233,9 +238,7 @@ function updateTools() {
   toolConfigs += `export const toolModules = ${JSON.stringify(
     toolModules
   ).replace(/"/g, "")}\n`;
-  toolConfigs += `export const toolIds = ${JSON.stringify(
-    buildToolIds(tools)
-  )}\n`;
+  toolConfigs += `export const toolIds = ${JSON.stringify(toolIds)}\n`;
   toolConfigs += `export const testModules = ${JSON.stringify(
     testModules
   ).replace(/"/g, "")}\n`;

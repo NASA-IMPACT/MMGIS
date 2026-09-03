@@ -354,7 +354,7 @@
             {
               "field": "panelTools",
               "name": "Tools",
-              "description": "Tool names to display in this floating panel. Each tool renders as its own card with a gap between cards. Must match tool names in the mission's tools array (e.g., 'Timeline', 'Legend').",
+              "description": "Tool identifiers to display in this floating panel. Each is a tool's name (e.g., 'Timeline') or its declared id (e.g., 'timeline'), and must match a tool in the mission's tools array. Each tool renders as its own card with a gap between cards.",
               "type": "textarray",
               "default": [],
               "width": 24

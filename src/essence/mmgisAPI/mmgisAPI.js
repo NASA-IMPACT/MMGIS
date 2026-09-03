@@ -1031,9 +1031,11 @@ var mmgisAPI = {
      * release methods. `release` unregisters every provider the handle
      * registered — its own `getVars` and anything put up through its
      * `provide` — so whoever hands the handle to a tool can take the tool's
-     * registrations back when that tool is destroyed. The handle keeps working
-     * afterwards: anything provided through it after a release is tracked for
-     * the next one.
+     * registrations back when that tool is destroyed. The handle still emits,
+     * requests and provides afterwards, and anything provided through it after
+     * a release is tracked for the next one — but the `getVars` provider the
+     * mint put up is not registered again, so `plugin:{id}:getVars` stays off
+     * the bus once released.
      * @example
      * const api = mmgisAPI.forPlugin('draw');
      *
@@ -1093,10 +1095,12 @@ var mmgisAPI = {
             request: (name, data) =>
                 mmgisAPI.request(name, data, { caller: pluginId }),
             getVars: readVars,
-            // Unregisters everything this handle registered. Draining the list
-            // rather than iterating it is what makes a second call a no-op, and
-            // leaves the handle usable: a later `provide` refills the list for
-            // the next release. The bare call is safe only because `cleanups`
+            // Unregisters everything this handle registered, `getVars`
+            // included. Draining the list rather than iterating it is what
+            // makes a second call a no-op, and leaves the handle usable: a
+            // later `provide` refills the list for the next release, though
+            // `getVars` is only ever put up at the mint and does not come
+            // back. The bare call is safe only because `cleanups`
             // holds the bus's own handler deletes, which cannot throw; should
             // it ever collect a plugin's own teardown callback, each entry
             // needs its own try/catch so one failure cannot strand the rest.

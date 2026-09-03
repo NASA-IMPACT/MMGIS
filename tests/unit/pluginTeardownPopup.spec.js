@@ -32,6 +32,7 @@ const { mmgisAPI } = await import('../../src/essence/mmgisAPI/mmgisAPI')
 const { default: ToolControllerModern_ } = await import(
     '../../src/essence/Basics/ToolController_/ToolControllerModern_'
 )
+const { toolModules } = await import('../../src/pre/tools')
 
 /**
  * The popup service run the way the app runs it: the real controller and the
@@ -80,11 +81,16 @@ const cardCount = () =>
 /** Let the bus promises settle and the popup's deferred wiring run. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-/** Open a popup as `pluginId` and hand back how its request settles. */
-async function showPopupAs(pluginId) {
+/**
+ * Open a popup through a handle, and hand back how its request settles.
+ *
+ * A loaded tool goes through the handle the controller injected — the same one
+ * its own code would reach for — so what these specs exercise is the identity
+ * the controller minted, not a second one standing in for it.
+ */
+async function showPopupThrough(api) {
     const outcome = { result: null }
-    const settled = mmgisAPI
-        .forPlugin(pluginId)
+    const settled = api
         .request('map:showPopup', popupRequest)
         .then((result) => {
             outcome.result = result
@@ -92,6 +98,10 @@ async function showPopupAs(pluginId) {
     await flush()
     return { outcome, settled }
 }
+
+/** A popup opened by a plugin that is not one of the loaded tools. */
+const showPopupAs = (pluginId) =>
+    showPopupThrough(mmgisAPI.forPlugin(pluginId))
 
 beforeAll(() => {
     // Map_ captured `window.L` at import; init writes onto it.
@@ -138,7 +148,9 @@ describe('a tool being torn down', () => {
 
     test('takes its own card with it and answers its request', async () => {
         loadTool('fake', 'FakeTool', 'fake-target')
-        const { outcome, settled } = await showPopupAs('fake')
+        const { outcome, settled } = await showPopupThrough(
+            toolModules.FakeTool.api
+        )
         expect(cardCount()).toBe(1)
 
         // FakeTool's destroy() hands nothing back, so the card only goes if
@@ -174,7 +186,9 @@ describe('a tool being torn down', () => {
 
     test('may retract its own card in destroy() before core does', async () => {
         loadTool('retracting', 'RetractingTool', 'retracting-target')
-        const { outcome, settled } = await showPopupAs('retracting')
+        const { outcome, settled } = await showPopupThrough(
+            toolModules.RetractingTool.api
+        )
         expect(cardCount()).toBe(1)
 
         // Unloading one plugin runs its destroy() first, where this plugin
