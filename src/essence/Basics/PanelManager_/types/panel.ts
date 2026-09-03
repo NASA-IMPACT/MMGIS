@@ -374,6 +374,15 @@ export interface PanelManager {
     getToolsForPanel(panelId: string): ToolMetadata[];
 
     /**
+     * Whether the panel can take another tool. A panel without a `maxTools`
+     * capability is unbounded.
+     *
+     * @param panelId Panel identifier
+     * @returns true if the panel is below its tool capacity
+     */
+    hasCapacity(panelId: string): boolean;
+
+    /**
      * Whether this panel supports a pinned region at all.
      *
      * @param panelId Panel identifier

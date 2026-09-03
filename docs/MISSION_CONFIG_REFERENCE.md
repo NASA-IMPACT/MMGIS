@@ -96,7 +96,7 @@ Each panel in the `panels` array must include these fields:
 | `stateConstraints` | Object | Yes | Defines allowed states and default state |
 | `capabilities` | Object | No | Panel capabilities (orientation, resizing, max tools) |
 | `dimensions` | Object | No | Size configuration for different states |
-| `tools` | Array | No | Array of tool names to assign to this panel |
+| `panelTools` | Array | No | Array of tool names to assign to this panel's scrolling body |
 | `pinnedTools` | Array | No | Tool names to hold in the panel's pinned region, above the scrolling body. Left/right panels only |
 | `hasHeader` | Boolean | No | Whether panel has a header with title and control buttons |
 | `overlay` | Boolean | No | Whether panel overlays map (default: true) or pushes it aside |
