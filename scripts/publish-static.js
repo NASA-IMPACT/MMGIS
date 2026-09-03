@@ -182,17 +182,6 @@ async function main() {
         prefix: `assets/${missionFolderName}/`,
       });
       log(`Copied ${copied} mission asset(s) from ${sharedBucket}.`);
-
-      // Viewer-panel mosaic file (conditional): the Photosphere/ModelViewer
-      // panes fetch this hardcoded same-origin path. Copy it when present;
-      // when absent the panes fail silently rather than erroring.
-      const mosaicKey = `Missions/${missionFolderName}/Data/mosaic_parameters.csv`;
-      const mosaicCopied = await provision.copyObjectIfExists({
-        sourceBucket: sharedBucket,
-        destBucket: bucket,
-        key: mosaicKey,
-      });
-      if (mosaicCopied) log(`Copied ${mosaicKey}.`);
     } else {
       log("MMGIS_SHARED_ASSET_BUCKET not set; skipping mission asset copy.");
     }
