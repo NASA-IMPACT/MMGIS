@@ -1,8 +1,10 @@
 import { test, expect } from 'vitest'
+import { color as parseColor } from 'd3'
 import {
     compileLegendStyle,
     resolveLegendStyle,
 } from '../../src/essence/Basics/Layers_/LegendStyle.ts'
+import { hexToRgba } from '../../src/essence/Basics/MapEngines/Adapters/DeckGLHelpers.ts'
 
 /**
  * These pin the legend styling behaviour that shipped inside
@@ -207,6 +209,80 @@ test.describe('LegendStyle', () => {
             expect(
                 resolve(rampOf('notacolour', '#ffffff'), { co2: 420 }).fillColor
             ).toBe('notacolour')
+        })
+
+        test.describe('a bare hex triplet, on every path out', () => {
+            // A bare triplet is not CSS, so nothing downstream can read one:
+            // d3.color('000000') is null, and hexToRgba - which every deck.gl
+            // colour accessor goes through - answers a null parse with the
+            // layer's flat colour. Interpolation hid that by reserialising to
+            // rgb(); the paths that hand a stop back verbatim did not, so a
+            // bare-hex ramp drew both its ends in a colour nobody configured.
+            const SENTINEL = [9, 9, 9, 255]
+            const expectUsable = (value, rgba) => {
+                expect(parseColor(value)).not.toBe(null)
+                expect(hexToRgba(value, 1, SENTINEL)).toEqual(rgba)
+            }
+
+            test('at and below the ramp minimum', () => {
+                const bare = rampOf('000000', 'ffffff')
+                expect(resolve(bare, { co2: 400 }).fillColor).toBe('#000000')
+                expectUsable(resolve(bare, { co2: 400 }).fillColor, [
+                    0, 0, 0, 255,
+                ])
+                expectUsable(resolve(bare, { co2: 100 }).fillColor, [
+                    0, 0, 0, 255,
+                ])
+            })
+
+            test('at and above the ramp maximum', () => {
+                const bare = rampOf('000000', 'ffffff')
+                expectUsable(
+                    resolve(bare, { co2: 440 }).fillColor,
+                    [255, 255, 255, 255]
+                )
+                expectUsable(
+                    resolve(bare, { co2: 9000 }).fillColor,
+                    [255, 255, 255, 255]
+                )
+            })
+
+            test('on a ramp where only one stop carries a colour', () => {
+                const legend = rampOf('000000', 'ffffff')
+                delete legend[1].color
+                expectUsable(resolve(legend, { co2: 440 }).fillColor, [
+                    0, 0, 0, 255,
+                ])
+            })
+
+            test('on a discrete entry, fill and stroke alike', () => {
+                const result = resolve(
+                    [
+                        {
+                            styleMatching: true,
+                            propertyName: 'kind',
+                            propertyValue: 'buoy',
+                            color: '00ff00',
+                            strokecolor: '0000ff',
+                        },
+                    ],
+                    { kind: 'buoy' }
+                )
+                expectUsable(result.fillColor, [0, 255, 0, 255])
+                expectUsable(result.color, [0, 0, 255, 255])
+            })
+
+            test('in the three-character spelling, accepted too', () => {
+                const bare = rampOf('000', 'fff')
+                expect(resolve(bare, { co2: 400 }).fillColor).toBe('#000')
+                expectUsable(resolve(bare, { co2: 400 }).fillColor, [
+                    0, 0, 0, 255,
+                ])
+                expectUsable(
+                    resolve(bare, { co2: 440 }).fillColor,
+                    [255, 255, 255, 255]
+                )
+            })
         })
     })
 

@@ -13,9 +13,10 @@
  * so every renderer resolves the same configuration the same way.
  *
  * The work is split in two so callers can pay the grouping and sorting cost
- * once: `compileLegendStyle` digests the legend into ramps and lookup tables,
- * and `resolveLegendStyle` — the half that runs once per feature, whenever a
- * renderer styles it — does lookup and interpolation only.
+ * once: `compileLegendStyle` digests the legend into ramps and lookup tables
+ * of normalised colours, and `resolveLegendStyle` — the half that runs once
+ * per feature, whenever a renderer styles it — does lookup and interpolation
+ * only.
  *
  * Both halves are pure, and neither touches the DOM: colours are parsed with
  * d3-color rather than by measuring a throwaway element, so this module works
@@ -50,10 +51,20 @@ export interface LegendStyleResult {
     fillColor?: string
 }
 
-/** A ramp stop, already normalised to its 0-1 position along the ramp. */
+/**
+ * A ramp stop, already normalised to its 0-1 position along the ramp. Its
+ * colour is normalised too — see {@link normaliseColor}.
+ */
 interface ColorStop {
     position: number
     color: string
+}
+
+/** A legend row matched by exact value, with its colours normalised. */
+interface DiscreteEntry {
+    propertyValue: unknown
+    color?: string
+    strokecolor?: string
 }
 
 interface ContinuousRamp {
@@ -67,7 +78,7 @@ interface CompiledPropertyGroup {
     propertyName: string
     /** Null unless the group holds two or more numeric continuous entries. */
     ramp: ContinuousRamp | null
-    discreteEntries: LegendStyleEntry[]
+    discreteEntries: DiscreteEntry[]
 }
 
 /** Opaque digest of a legend, produced by {@link compileLegendStyle}. */
@@ -154,27 +165,39 @@ function interpolateMultipleColors(
 }
 
 /**
- * Parse any CSS colour string a legend might carry — `#rgb`, `#rrggbb`,
- * `rgb()`, `rgba()`, `hsl()`, a named colour — into RGB components.
+ * Canonicalise a colour a legend carries into a spelling a CSS parser accepts.
  *
- * d3-color does the work, so this stays pure: the previous implementation
- * fell back to appending a probe element to `document.body` and reading its
- * computed style, which needed a DOM and forced a layout for every named
- * colour it parsed.
+ * Every compiled colour passes through here, which is what makes the bare hex
+ * triplet below work on every path out of this module rather than only on the
+ * one that happened to reparse it.
+ *
+ * @returns The author's own string when it is already CSS or is not a colour
+ *   at all, so an unrecognised value reaches the renderer untouched.
+ */
+function normaliseColor(color: string | undefined): string | undefined {
+    if (!color || typeof color !== 'string') return color
+
+    // Legends are sometimes authored with a bare hex triplet, which no CSS
+    // parser accepts.
+    const trimmed = color.trim()
+    return /^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(trimmed)
+        ? `#${trimmed}`
+        : trimmed
+}
+
+/**
+ * Parse any CSS colour string a legend might carry — `#rgb`, `#rrggbb`,
+ * `rgb()`, `rgba()`, `hsl()`, a named colour — into RGB components. Expects a
+ * string that has already been through {@link normaliseColor}.
+ *
+ * d3-color does the work, so this needs no DOM.
  *
  * @returns Null when the string is not a colour, so callers can fall back.
  */
 function colorToRgb(color: string): Rgb | null {
     if (!color || typeof color !== 'string') return null
 
-    // Legends are sometimes authored with a bare hex triplet. The previous
-    // hex parser stripped an optional '#', so accept that spelling still.
-    const trimmed = color.trim()
-    const normalised = /^(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(trimmed)
-        ? `#${trimmed}`
-        : trimmed
-
-    const parsed = parseColor(normalised)
+    const parsed = parseColor(color)
     if (!parsed) return null
 
     const { r, g, b } = parsed.rgb()
@@ -267,7 +290,7 @@ export function compileLegendStyle(
                     .filter((e) => e.entry.color)
                     .map((e) => ({
                         position: positionOf(e.numericValue),
-                        color: e.entry.color as string,
+                        color: normaliseColor(e.entry.color) as string,
                     })),
                 // Stroke stops fall back to the entry's fill colour, so a
                 // legend authored with fill colours alone still produces a
@@ -276,7 +299,9 @@ export function compileLegendStyle(
                     .filter((e) => e.entry.strokecolor || e.entry.color)
                     .map((e) => ({
                         position: positionOf(e.numericValue),
-                        color: (e.entry.strokecolor || e.entry.color) as string,
+                        color: normaliseColor(
+                            e.entry.strokecolor || e.entry.color
+                        ) as string,
                     })),
             }
         }
@@ -284,9 +309,13 @@ export function compileLegendStyle(
         return {
             propertyName,
             ramp,
-            discreteEntries: entries.filter(
-                (entry) => entry.shape !== 'continuous'
-            ),
+            discreteEntries: entries
+                .filter((entry) => entry.shape !== 'continuous')
+                .map((entry) => ({
+                    propertyValue: entry.propertyValue,
+                    color: normaliseColor(entry.color),
+                    strokecolor: normaliseColor(entry.strokecolor),
+                })),
         }
     })
 }
@@ -373,9 +402,9 @@ function resolveRamp(ramp: ContinuousRamp, value: number): LegendStyleResult {
 }
 
 function matchDiscreteEntry(
-    entries: LegendStyleEntry[],
+    entries: DiscreteEntry[],
     featureValue: unknown
-): LegendStyleEntry | null {
+): DiscreteEntry | null {
     for (const entry of entries) {
         let matches = false
         if (
