@@ -295,6 +295,24 @@ test.describe('DeckGLAdapter', () => {
             ])
         })
 
+        // Map_ registers every layer it builds with the active engine, and
+        // under this engine it still builds data, image, video and velocity
+        // layers with Leaflet. Every sync clones what the engine holds, so
+        // one such entry in the registry took the whole map down rather than
+        // just the layer that could not be built.
+        test('registerLayer declines a layer this engine cannot draw', () => {
+            const adapter = makeAdapter()
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+            adapter.registerLayer('velocity', { setOpacity() {} })
+
+            expect(adapter.getLayers()).toHaveLength(0)
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(warn.mock.calls[0][0]).toContain('velocity')
+
+            warn.mockRestore()
+        })
+
         test('a re-sort keeps two layers with no z-index in the order they were added', () => {
             const adapter = makeAdapter()
             adapter.addLayer(makeLayer('mission'))
