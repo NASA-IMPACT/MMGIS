@@ -6,22 +6,12 @@
  */
 
 // Is this stored value one of the keys API/Backend/Upload/uploadRouter.js
-// writes when the S3 asset bucket is configured? Those look exactly like
-//
-//   assets/<mission>/<subdir>/uploads/<file>
-//
-// so this matches "assets/", then exactly two path segments, then
-// "/uploads/". The exactness matters: a plugin whose subdir is itself named
-// "assets" stores ordinary mission-relative values like
-// "assets/uploads/x.png", and a looser test ("starts with assets/") would
-// grab those too and resolve them against the wrong root.
-//
-// This is a copy of the regex in API/Backend/Upload/validate.js, the CommonJS
-// home beside the router that writes the keys and the copy the publish scripts
-// require. configure/src/core/upload.js carries the third, for the CMS bundle.
-// Neither frontend bundle has an import path into a CommonJS module run by
-// Node. tests/unit/uploadKeyClassifier.spec.js runs one table of values through
-// all three and fails if they classify any of them differently.
+// writes when the S3 asset bucket is configured? This is a copy of
+// ASSETS_UPLOAD_KEY in API/Backend/Upload/validate.js; see it for the shape
+// this matches and why. The Essence bundle has no import path into a CommonJS
+// module run by Node, and configure/src/core/upload.js carries a third copy
+// for the CMS bundle. tests/unit/uploadKeyClassifier.spec.js runs one table of
+// values through all three and fails if they classify any of them differently.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
 
 // What URL should the page request for a stored value? Four cases, checked

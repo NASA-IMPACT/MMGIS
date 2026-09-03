@@ -2,18 +2,17 @@ import { test, expect } from 'vitest'
 import { resolveMissionAssetUrl } from '../../src/pre/uploadKey.ts'
 import { buildPreviewSrc } from '../../configure/src/core/upload.js'
 
-const { cacheControlForKey } = require('../../scripts/lib/aws-provision')
+const { ASSETS_UPLOAD_KEY } = require('../../API/Backend/Upload/validate')
 
 // One table of stored values, run through every copy of the upload-key
-// classifier: the app bundle, the Configure SPA and API/Backend/Upload/
-// validate.js — the CommonJS copy beside the router that writes the keys, and
-// the one the publish scripts require. Neither frontend bundle can import that
-// module, so each carries its own regex; what they must agree on is which
-// values are upload keys written by API/Backend/Upload/uploadRouter.js, not the
-// bytes of the regex. A value one
+// classifier: API/Backend/Upload/validate.js — the CommonJS home beside the
+// router that writes the keys — the app bundle and the Configure SPA. Neither
+// frontend bundle can import that module, so each carries its own regex; what
+// they must agree on is which values are upload keys written by
+// API/Backend/Upload/uploadRouter.js, not the bytes of the regex. A value one
 // treats as an upload key and another as a mission-relative path renders a
-// broken image only at runtime. What each consumer then does with a matched
-// key differs by design and is asserted per classifier below.
+// broken image only at runtime. What each consumer then does with a matched key
+// differs by design and is asserted per classifier below.
 
 const MISSION = 'M'
 const MISSION_PATH = 'Missions/M/'
@@ -50,18 +49,11 @@ test.describe('upload-key classification', () => {
         )
     })
 
-    // The publish gives a matched key the immutable tier, because the upload
-    // router names those files crypto.randomUUID() and never overwrites one.
-    // The rooted row sits out: S3 object keys have no leading slash, so it is
-    // not a value this classifier is ever handed.
-    test.each(VALUES.filter(([value]) => !value.startsWith('/')))(
-        'cacheControlForKey: %s',
-        (value, key) => {
-            expect(cacheControlForKey(value)).toBe(
-                key !== null
-                    ? 'max-age=31536000, immutable'
-                    : 'max-age=300',
-            )
-        },
-    )
+    // The regex itself, which every consumer applies to the value with any
+    // leading slash already stripped.
+    test.each(VALUES)('ASSETS_UPLOAD_KEY: %s', (value, key) => {
+        expect(ASSETS_UPLOAD_KEY.test(value.replace(/^\//, ''))).toBe(
+            key !== null,
+        )
+    })
 })

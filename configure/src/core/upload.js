@@ -32,10 +32,10 @@ export async function uploadImage(file, mission, subdir) {
     return data.path;
 }
 
-// The CMS is a separate bundle with no import path into the app's, so this
-// is a copy of ASSETS_UPLOAD_KEY in src/pre/uploadKey.ts, where the shape it
-// matches is explained. API/Backend/Upload/validate.js holds the third, beside
-// the router that writes the keys, in CommonJS for the publish scripts.
+// The CMS is a separate bundle with no import path into a CommonJS module run
+// by Node, so this is a copy of ASSETS_UPLOAD_KEY in
+// API/Backend/Upload/validate.js; see it for the shape this matches and why.
+// src/pre/uploadKey.ts carries a third copy for the app bundle.
 // tests/unit/uploadKeyClassifier.spec.js runs one table of values through all
 // three and fails if they classify any of them differently.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;

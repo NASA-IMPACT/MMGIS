@@ -464,19 +464,17 @@ function contentTypeForFile(filePath) {
 // tests/unit/webpackHashedOutput.spec.js), and plugin uploads under
 // assets/<mission>/<subdir>/uploads/, which the upload router names
 // crypto.randomUUID() and never overwrites (API/Backend/Upload/uploadRouter.js).
-// Everything else — the keys that really do change in place on republish —
-// falls back to a short TTL. Every stable-named runtime asset outside those two
-// immutable prefixes sits in that fallback: the pdf.js worker, the Cesium tree,
-// the fonts, the ffmpeg core. scripts/build.js copyPublicFolder copies public/
-// into build/ verbatim, so nothing arriving that way is content-hashed either
-// (tests/unit/publicHasNoHashedDirs.spec.js). A republish that bumps the MMGIS
-// version can therefore leave a customer's edge pairing a new bundle with a copy
-// of those roughly five minutes old, up to about ten while our own invalidation
-// propagates.
+// Everything else — the keys that really do change in place on republish, which
+// is every stable-named runtime asset outside those two immutable prefixes —
+// falls back to a short TTL. scripts/build.js copyPublicFolder copies public/
+// and dist/ into build/ verbatim, so nothing arriving that way is
+// content-hashed either (tests/unit/publicHasNoHashedDirs.spec.js).
 //
 // Neither cacheable tier says "public": CloudFront caches on max-age alone, and
-// omitting it keeps a conforming shared cache from storing these password-gated
-// responses at all (RFC 9111 §3.5) — see
+// omitting it keeps a conforming shared cache from ever serving these
+// password-gated responses to another request (RFC 9111 §3.5; reuse would take
+// public, must-revalidate or s-maxage, none of which we send). What the tiers
+// mean for a customer fronting the dashboard is in
 // docs/infrastructure/serving-a-dashboard-from-your-domain.md.
 function cacheControlForKey(key) {
   if (

@@ -991,9 +991,12 @@ test.describe('emptyBucket', () => {
 })
 
 test.describe('contentTypeForFile', () => {
-    // CopyObject's MetadataDirective: REPLACE drops the source's Content-Type
-    // and takes this one, so every type the upload router can write has to
-    // round-trip back to itself through the extension it was stored under.
+    // CopyObject's MetadataDirective: REPLACE drops the source's Content-Type,
+    // so copyPrefix restates one. An extension this mapping knows answers from
+    // the key alone and saves a HeadObject per object, so every type the upload
+    // router can write has to round-trip back to itself through the extension
+    // it was stored under. An unmapped type still copies correctly — it just
+    // costs the HeadObject that reads the source's own Content-Type.
     test.each(Object.entries(IMAGE_MIME_TO_EXT))(
         "round-trips the upload router's %s",
         (mime, ext) => {
@@ -1030,7 +1033,10 @@ test.describe('cacheControlForKey', () => {
         ['build/asset-manifest.json', 'max-age=300'],
         // Under build/static but not content-hashed, so explicitly NOT
         // immutable.
-        ['build/static/cesium/Cesium.js', 'max-age=300'],
+        [
+            'build/static/cesium/Workers/cesiumWorkerBootstrapper.js',
+            'max-age=300',
+        ],
         ['public/workers/pdf.worker.min.mjs', 'max-age=300'],
     ]
 
@@ -1159,7 +1165,10 @@ test.describe('copyPrefix', () => {
 
     test.afterEach(() => provision.setClients(null))
 
-    test('same-key copies every object under the prefix', async () => {
+    // One copyPrefix run over SOURCE_KEYS against a mocked source bucket:
+    // returns how many objects it copied, the copies by key, and the keys that
+    // cost a HeadObject.
+    async function runCopyPrefix() {
         const copies = []
         const heads = []
         provision.setClients({
@@ -1188,8 +1197,12 @@ test.describe('copyPrefix', () => {
             destBucket: 'dash',
             prefix: 'assets/TestMission/',
         })
+        return { count, copied: byKey(copies), heads }
+    }
+
+    test('same-key copies every object under the prefix', async () => {
+        const { count, copied } = await runCopyPrefix()
         expect(count).toBe(SOURCE_KEYS.length)
-        const copied = byKey(copies)
         // Same keys in the destination bucket
         expect(Object.keys(copied).sort()).toEqual([...SOURCE_KEYS].sort())
         const icon = copied['assets/TestMission/icon.png']
@@ -1203,6 +1216,11 @@ test.describe('copyPrefix', () => {
         expect(copied['assets/TestMission/with space.png'].CopySource).toBe(
             'shared/assets/TestMission/with%20space.png'
         )
+    })
+
+    test('every copy carries its own Cache-Control and Content-Type', async () => {
+        const { copied, heads } = await runCopyPrefix()
+        const icon = copied['assets/TestMission/icon.png']
         // REPLACE lets the copy carry its own Cache-Control and Content-Type.
         expect(copied[UPLOAD_KEY].MetadataDirective).toBe('REPLACE')
         // An upload key gets the immutable tier, everything else the short one.
@@ -1217,7 +1235,7 @@ test.describe('copyPrefix', () => {
         )
         // ...and only an unmapped one costs a HeadObject, which is what keeps
         // the source's own type instead of downgrading it to octet-stream...
-        expect(heads).toEqual(Object.keys(SOURCE_HEADS))
+        expect([...heads].sort()).toEqual(Object.keys(SOURCE_HEADS).sort())
         expect(copied['assets/TestMission/scan.tif'].ContentType).toBe(
             'image/tiff'
         )

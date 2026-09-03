@@ -293,6 +293,8 @@ async function main() {
     // writes into build/, and public/index.html is the HTML template the
     // build renders from. Either one served as-is would hand a visitor the
     // placeholders un-interpolated. The rendered page is uploaded below.
+    // A publish only writes: it deletes nothing already in the bucket, so a
+    // bucket that picked up either key before keeps it until emptied.
     const uploadedBuild = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "build"),

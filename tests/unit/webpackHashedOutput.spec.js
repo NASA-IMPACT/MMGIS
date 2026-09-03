@@ -28,13 +28,20 @@ const HASH_TOKEN = /\[contenthash|\[hash/
 
 // Every emitted-file name pattern in the rules, however they are nested — the
 // production asset loaders sit inside a `oneOf`. Loaders name their output
-// with `options.name`; webpack 5 asset modules use `generator.filename`.
+// with `options.name`, whether the loader sits on the rule itself or in its
+// `use` chain; webpack 5 asset modules use `generator.filename`.
 function emittedNames(rules, found = []) {
     const list = rules || []
     list.forEach((rule) => {
         if (!rule) return
         emittedNames(rule.oneOf, found)
         emittedNames(rule.rules, found)
+        // `use` holds either one loader or a chain of them.
+        const uses = [].concat(rule.use || [])
+        uses.forEach((entry) => {
+            const used = entry && entry.options && entry.options.name
+            if (typeof used === 'string') found.push(used)
+        })
         const name = rule.options && rule.options.name
         if (typeof name === 'string') found.push(name)
         const generated = rule.generator && rule.generator.filename
@@ -56,11 +63,16 @@ function pluginNamed(name) {
 }
 
 test.describe('webpack production output is content-hashed', () => {
-    test('output.filename and output.chunkFilename land hashed under static/js', () => {
+    test('the compiler hashes the filenames it picks itself', () => {
         expect(CONFIG.output.filename).toMatch(HASH_TOKEN)
         expect(CONFIG.output.filename).toMatch(/^static\/js\//)
         expect(CONFIG.output.chunkFilename).toMatch(HASH_TOKEN)
         expect(CONFIG.output.chunkFilename).toMatch(/^static\/js\//)
+        // The name an asset module falls back to when no rule gives it one.
+        // The config leaves it to webpack's own hashed default; setting it to
+        // anything hashless is what this guards against.
+        if (CONFIG.output.assetModuleFilename)
+            expect(CONFIG.output.assetModuleFilename).toMatch(HASH_TOKEN)
     })
 
     test("MiniCssExtractPlugin's filenames land hashed under static/css", () => {
