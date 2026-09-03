@@ -244,6 +244,27 @@ const _renderRegion = (regionName, regionPanels) => {
 
 
 /**
+ * Builds a card per tool into `container` and queues each tool's load (or its
+ * deferred registration, for tools configured to start unloaded) for after the
+ * DOM is in place.
+ *
+ * @param {jQuery} container - Element the cards are appended to
+ * @param {Array} toolsMetadata - Tool metadata in render order
+ * @param {string} containerId - Panel container ID the cards belong to
+ */
+const _appendToolCards = (container, toolsMetadata, containerId) => {
+    toolsMetadata.forEach(toolMetadata => {
+        const { toolCard, loadTool, targetId } = UserInterfaceModern_.createToolCard(toolMetadata, containerId)
+        container.append(toolCard)
+        if (toolMetadata.startUnloaded) {
+            toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
+        } else {
+            toolLoadQueue.push(loadTool)
+        }
+    })
+}
+
+/**
  * Modern User Interface Module
  */
 const UserInterfaceModern_ = {
@@ -448,18 +469,7 @@ const UserInterfaceModern_ = {
             return
         }
 
-        const toolsMetadata = PanelManager_.getScrollingToolsForPanel(panel.id) || []
-
-        toolsMetadata.forEach(toolMetadata => {
-            const { toolCard, loadTool, targetId } = this.createToolCard(toolMetadata, panel.containerId)
-            body.append(toolCard)
-            // Queue tool loading (or deferred registration) for after DOM is fully rendered
-            if (toolMetadata.startUnloaded) {
-                toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
-            } else {
-                toolLoadQueue.push(loadTool)
-            }
-        })
+        _appendToolCards(body, PanelManager_.getScrollingToolsForPanel(panel.id), panel.containerId)
     },
 
     /**
@@ -476,21 +486,11 @@ const UserInterfaceModern_ = {
             return null
         }
 
-        const toolsMetadata = PanelManager_.getPinnedToolsForPanel(panel.id) || []
+        const toolsMetadata = PanelManager_.getPinnedToolsForPanel(panel.id)
         if (toolsMetadata.length === 0) return null
 
         const pinnedRegion = $('<div class="ui-panel-pinned"></div>')
-
-        toolsMetadata.forEach(toolMetadata => {
-            const { toolCard, loadTool, targetId } = this.createToolCard(toolMetadata, panel.containerId)
-            pinnedRegion.append(toolCard)
-            // Queue tool loading (or deferred registration) for after DOM is fully rendered
-            if (toolMetadata.startUnloaded) {
-                toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
-            } else {
-                toolLoadQueue.push(loadTool)
-            }
-        })
+        _appendToolCards(pinnedRegion, toolsMetadata, panel.containerId)
 
         return pinnedRegion
     },

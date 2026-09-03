@@ -183,6 +183,18 @@ class PanelManager implements PanelManagerInterface {
     }
 
     /**
+     * Whether the panel can take another tool. A panel without a `maxTools`
+     * capability is unbounded.
+     */
+    hasCapacity(panelId: string): boolean {
+        const panel = this.panels.get(panelId);
+        if (!panel) return false;
+
+        const maxTools = panel.config.capabilities?.maxTools;
+        return maxTools === undefined || panel.tools.size < maxTools;
+    }
+
+    /**
      * Whether this panel supports a pinned region. Pinning holds tools above a
      * scrolling stack, which only means something where the stack runs
      * vertically — so left and right panels, not the horizontal edges or floats.

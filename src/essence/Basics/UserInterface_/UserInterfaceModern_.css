@@ -123,15 +123,17 @@
     gap: var(--theme-spacing-105, 0.75rem);
 }
 
-/* Pinned region: stacks above the panel body and holds its full height, so its
-   tools stay in place while the body scrolls beneath them. Sized entirely by
-   its content — pin more than the panel can show and the body is what gives way. */
+/* Pinned region: stacks above the panel body and holds its place while the body
+   scrolls beneath it. Sized by its content up to 60% of the panel, past which
+   the region scrolls on its own rather than crowding the body out. */
 .ui-panel-pinned {
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     gap: var(--theme-spacing-105, 0.75rem);
-    overflow: visible;
+    max-height: 60%;
+    overflow-y: auto;
+    margin-bottom: var(--theme-spacing-05, 0.25rem);
 }
 
 /* Tool Cards */

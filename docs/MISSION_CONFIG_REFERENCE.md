@@ -80,7 +80,7 @@ Each panel in the `panels` array must include these fields:
   "stateConstraints": { /* ... */ },
   "capabilities": { /* ... */ },
   "dimensions": { /* ... */ },
-  "tools": ["Tool1", "Tool2"]
+  "panelTools": ["Tool1", "Tool2"]
 }
 ```
 
@@ -159,13 +159,13 @@ Determines how multiple tools are displayed when panel is expanded:
 - **`"stacked"`**: All tools visible simultaneously, stacked vertically/horizontally
 - **`"tabbed"`**: Tools in tabs, only active tool's content visible
 
-### tools
+### panelTools
 
-Array of tool names that should be assigned to this panel:
+Array of tool names that should be assigned to this panel's scrolling body:
 
 ```json
 {
-  "tools": ["Layers", "Legend", "Info", "Sites"]
+  "panelTools": ["Layers", "Legend", "Info", "Sites"]
 }
 ```
 
@@ -178,8 +178,8 @@ the panel that holds its place while everything below it scrolls:
 
 ```json
 {
-  "pinnedTools": ["Map Control"],
-  "tools": ["Layers", "Legend", "Info"]
+  "pinnedTools": ["MapControl"],
+  "panelTools": ["Layers", "Legend", "Info"]
 }
 ```
 
@@ -197,8 +197,8 @@ Notes:
 - A tool belongs to one list or the other. A name in both stays pinned.
 - Pinned tools are still tools in the panel: they count towards
   `capabilities.maxTools` and appear in the iconified icon bar.
-- The region is sized by its content and has no height cap — pin more than the
-  panel can show and the scrolling area is what gives way.
+- The region is sized by its content up to 60% of the panel; past that it
+  scrolls on its own rather than crowding out the panel body.
 
 ## State Constraints
 
@@ -388,11 +388,11 @@ Specify tools directly in each panel configuration:
   "panels": [
     {
       "id": "left-panel",
-      "tools": ["Layers", "Legend", "Info"]
+      "panelTools": ["Layers", "Legend", "Info"]
     },
     {
       "id": "right-panel",
-      "tools": ["Measure", "Draw"]
+      "panelTools": ["Measure", "Draw"]
     }
   ]
 }
@@ -438,7 +438,7 @@ Full mission configuration with four panels:
         "dimensions": {
           "expandedSize": 60
         },
-        "tools": ["Animation"]
+        "panelTools": ["Animation"]
       },
       {
         "id": "left-panel",
@@ -460,7 +460,7 @@ Full mission configuration with four panels:
           "focusedWidth": 300,
           "expandedSize": 400
         },
-        "tools": ["Layers", "Legend", "Info"]
+        "panelTools": ["Layers", "Legend", "Info"]
       },
       {
         "id": "right-panel",
@@ -482,7 +482,7 @@ Full mission configuration with four panels:
           "focusedWidth": 300,
           "expandedSize": 400
         },
-        "tools": ["Measure", "Chart", "PointCloud"]
+        "panelTools": ["Measure", "Chart", "PointCloud"]
       },
       {
         "id": "bottom-panel",
@@ -504,7 +504,7 @@ Full mission configuration with four panels:
           "focusedHeight": 200,
           "expandedSize": 300
         },
-        "tools": ["Draw", "RasterTile", "Identifier"]
+        "panelTools": ["Draw", "RasterTile", "Identifier"]
       },
       {
         "id": "timeline-panel",

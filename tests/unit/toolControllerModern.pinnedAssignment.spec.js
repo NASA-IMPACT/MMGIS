@@ -95,3 +95,19 @@ test('a panel with no pinned region keeps its pinned tools in the body', () => {
     expect(PanelManager_.getPinnedToolsForPanel('top-panel')).toEqual([])
     expect(idsIn(PanelManager_.getScrollingToolsForPanel('top-panel'))).toEqual(['MapControl', 'Layers'])
 })
+
+test('a tool displaced by pinned tools filling maxTools lands in another panel', () => {
+    PanelManager_.registerPanel(panel({
+        id: 'left-panel',
+        pinnedTools: ['MapControl'],
+        panelTools: ['Layers'],
+        capabilities: { maxTools: 1 },
+    }))
+    PanelManager_.registerPanel(panel({ id: 'right-panel', position: 'right', priority: 1 }))
+
+    ToolControllerModern_.assignToolsToPanels(tools('MapControl', 'Layers'))
+
+    expect(idsIn(PanelManager_.getPinnedToolsForPanel('left-panel'))).toEqual(['MapControl'])
+    expect(PanelManager_.getScrollingToolsForPanel('left-panel')).toEqual([])
+    expect(idsIn(PanelManager_.getToolsForPanel('right-panel'))).toEqual(['Layers'])
+})

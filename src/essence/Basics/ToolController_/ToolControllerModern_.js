@@ -38,11 +38,14 @@ const deferredTools = new Map()
  * @returns {string|null} Panel ID if found, otherwise null
  */
 const _findPanel = (metadata, registeredPanels) => {
+    // A panel already at maxTools would throw on add, so it is not a candidate.
+    const canTake = p =>
+        PanelManager_.isToolCompatible(p.id, metadata) && PanelManager_.hasCapacity(p.id)
+
     // Try preferred position first if specified
     if (metadata.preferredPosition) {
         const preferredPanel = registeredPanels.find(p =>
-            p.config.position === metadata.preferredPosition &&
-            PanelManager_.isToolCompatible(p.id, metadata)
+            p.config.position === metadata.preferredPosition && canTake(p)
         )
 
         if (preferredPanel) {
@@ -52,9 +55,7 @@ const _findPanel = (metadata, registeredPanels) => {
     }
 
     // Fall back to any compatible panel
-    const compatiblePanel = registeredPanels.find(p =>
-        PanelManager_.isToolCompatible(p.id, metadata)
-    )
+    const compatiblePanel = registeredPanels.find(canTake)
 
     if (compatiblePanel) {
         logger.debug(`Assigning "${metadata.name}" to compatible panel "${compatiblePanel.id}"`)
@@ -202,6 +203,10 @@ const ToolControllerModern_ = {
                 logger.debug(`Explicit assignment for panel "${panelConfig.id}":`, { pinnedTools, panelTools })
             }
 
+            // Tool ids already placed in this panel, so a name in both lists
+            // keeps its first slot and is reported once.
+            const placedInPanel = new Set()
+
             const assignToPanel = (toolIdentifier, pinned) => {
                 const toolData = getToolData(toolIdentifier)
 
@@ -215,7 +220,7 @@ const ToolControllerModern_ = {
 
                     // A tool named in both of a panel's lists belongs to the
                     // list that claimed it first, which is the pinned one.
-                    if (PanelManager_.getPanelState(panelConfig.id)?.tools.has(metadata.id)) {
+                    if (placedInPanel.has(metadata.id)) {
                         logger.warn(`Tool "${metadata.name}" is listed twice in panel "${panelConfig.id}" — keeping the first placement`)
                         return
                     }
@@ -228,6 +233,7 @@ const ToolControllerModern_ = {
 
                     // Add tool to panel
                     PanelManager_.addToolToPanel(panelConfig.id, metadata, { pinned })
+                    placedInPanel.add(metadata.id)
                     assignedToolIds.add(metadata.id)
                 } catch (error) {
                     logger.error(`Failed to add tool "${toolIdentifier}" to panel "${panelConfig.id}":`, error)
