@@ -197,22 +197,26 @@ function textOf(el: Element, tag: string): string | null {
     return node?.textContent?.trim() || null
 }
 
-export function featureCentroid(f: Feature): [number, number] | null {
-    const g = f.geometry
+/**
+ * A geometry as a list of vertex lists — rings for the polygons, the line
+ * itself for the linestrings, a one-vertex list for a point. The centroid and
+ * the bounds both read a selection through this, so the two agree on which
+ * geometries a selection can be made of.
+ */
+function vertexParts(g: Geometry | null | undefined): number[][][] | null {
     if (!g) return null
-    if (g.type === 'Point') {
-        const c = g.coordinates as [number, number]
-        return [c[0], c[1]]
-    }
-    // Every other supported geometry is a list of vertex lists — rings for the
-    // polygons, the line itself for the linestrings — and all of them get the
-    // same vertex mean.
-    let parts: number[][][] | null = null
-    if (g.type === 'Polygon') parts = g.coordinates as number[][][]
-    else if (g.type === 'MultiPolygon')
-        parts = (g.coordinates as number[][][][]).flat() as number[][][]
-    else if (g.type === 'LineString') parts = [g.coordinates as number[][]]
-    else if (g.type === 'MultiLineString') parts = g.coordinates as number[][][]
+    if (g.type === 'Point') return [[g.coordinates as number[]]]
+    if (g.type === 'Polygon') return g.coordinates as number[][][]
+    if (g.type === 'MultiPolygon')
+        return (g.coordinates as number[][][][]).flat() as number[][][]
+    if (g.type === 'LineString') return [g.coordinates as number[][]]
+    if (g.type === 'MultiLineString') return g.coordinates as number[][][]
+    return null
+}
+
+/** The unweighted mean of a selection's vertices. */
+export function featureCentroid(f: Feature): [number, number] | null {
+    const parts = vertexParts(f.geometry)
     if (!parts) return null
 
     let sx = 0
@@ -236,19 +240,21 @@ export function featureCentroid(f: Feature): [number, number] | null {
     return n > 0 ? [sx / n, sy / n] : null
 }
 
+/**
+ * The west/south/east/north envelope of a selection's vertices. A point, and a
+ * line with no width or no height, give a degenerate box — too thin for
+ * {@link selectionFitBounds} to frame, which leaves the camera where it is and
+ * the popup anchored against the view it can still see.
+ */
 export function featureBounds(f: Feature): [number, number, number, number] | null {
-    const g = f.geometry
-    if (!g || (g.type !== 'Polygon' && g.type !== 'MultiPolygon')) return null
-    const rings: number[][][] =
-        g.type === 'Polygon'
-            ? (g.coordinates as number[][][])
-            : ((g.coordinates as number[][][][]).flat() as number[][][])
+    const parts = vertexParts(f.geometry)
+    if (!parts) return null
     let w = Infinity
     let s = Infinity
     let e = -Infinity
     let n = -Infinity
-    for (const ring of rings) {
-        for (const [x, y] of ring) {
+    for (const part of parts) {
+        for (const [x, y] of part) {
             if (x < w) w = x
             if (y < s) s = y
             if (x > e) e = x
