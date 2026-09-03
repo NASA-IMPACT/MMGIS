@@ -323,8 +323,11 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     /**
      * Whether `candidate` is a real deck.gl layer — the one thing this engine
-     * can hold, because every sync clones what it holds. Warns once per id
-     * when it is not; see {@link addLayer} and {@link updateLayer}.
+     * can hold, because every sync clones what it holds and a Leaflet object
+     * has no `clone`. Under this engine MMGIS still builds `data`, `image`,
+     * `video` and `velocity` layers with Leaflet, and callers hand those here
+     * like any other; held, one would throw on every later change rather than
+     * fail alone. Warns once per id.
      */
     private _holdsDeckLayer(id: string, candidate: unknown): boolean {
         if (typeof (candidate as Layer)?.clone === 'function') return true
@@ -1034,32 +1037,23 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     /**
-     * Whether the layer is currently drawn.
-     *
-     * Membership of `_layers` is not the answer: this engine holds a layer
-     * from creation and hides it with a prop, so the registry also contains
-     * layers that are off. The Leaflet adapter asks its map the same
-     * question, and mmgisAPI publishes the answer as `map:hasLayer`, so the
-     * two must agree about a hidden layer.
+     * Whether the layer is currently drawn — not whether the registry holds
+     * it, which is also true of layers that are off. mmgisAPI publishes this
+     * as `map:hasLayer`, so both engines must give the same answer for a
+     * hidden layer.
      */
     hasLayer(layer: Layer | string): boolean {
         const id = typeof layer === 'string' ? layer : layer.id
         const existing = this._layers.get(id)
         if (!existing) return false
-        // Absent means drawn: a layer handed over without anyone saying
-        // otherwise is on the map.
+        // Absent means drawn.
         return (existing.props as { visible?: boolean })?.visible !== false
     }
 
     /**
      * Add a pre-built deck.gl layer to the map. The layer's `id` property is
-     * used as the registry key.
-     *
-     * Anything else is declined rather than registered. MMGIS still builds
-     * `data`, `image`, `video` and `velocity` layers with Leaflet under this
-     * engine, and toggling one on brings it here; held, it would break far
-     * more than itself, because every sync clones every registered layer and
-     * a Leaflet object has no `clone`.
+     * used as the registry key. Anything this engine cannot hold is declined —
+     * see {@link _holdsDeckLayer}.
      */
     addLayer(layer: Layer): void {
         if (!this._holdsDeckLayer(layer?.id, layer)) return
@@ -1114,17 +1108,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return updated
     }
 
+    /**
+     * Take ownership of a pre-built layer under `id`. Registering does not
+     * show it — visibility is a separate prop this engine owns.
+     */
     registerLayer(id: string, layer: Layer): void {
-        // Anything this engine cannot draw is declined rather than held: Map_
-        // registers every layer it builds, and under this engine it still
-        // builds `data`, `image`, `video` and `velocity` layers with Leaflet.
-        // Held, one of those breaks far more than itself, because every sync
-        // clones every registered layer and a Leaflet object has no `clone`.
         if (!this._holdsDeckLayer(id, layer)) return
-
-        // Keyed by the caller's id rather than layer.id so the two can never
-        // drift apart. Registering does not show the layer: visibility is a
-        // prop this engine owns, set through setLayerVisibility.
+        // Keyed by the caller's id rather than layer.id so the two cannot drift.
         this._layers.set(id, layer)
         this._syncLayers()
     }
@@ -2196,39 +2186,20 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * layer it finalizes, so a mounted instance is single-use and the registry
      * holds descriptors rather than the instances on screen.
      *
-     * Two kinds of entry are left out of the render list.
-     *
-     * Anything that cannot be cloned. Under the deck.gl engine MMGIS still
-     * builds `data`, `image`, `video` and `velocity` layers as native Leaflet
-     * objects — ENGINE_LAYER_SUPPORT has no deck builder for them — and
-     * callers hand every registry entry to the active engine.
-     * {@link registerLayer} and {@link addLayer} both decline such an object,
-     * so none should reach here; the check stays because one that did would
-     * throw on the clone below and take the whole map down rather than fail
-     * alone.
-     *
-     * Anything hidden. Holding a layer is not drawing it: deck.gl stops
-     * drawing a layer marked `visible: false` but still runs its lifecycle, so
-     * a hidden tile layer left in this list goes on requesting tiles. It stays
-     * in the registry — that is what an opacity write or a refresh while the
-     * layer is off addresses — and rejoins this list when it is shown.
+     * Holding a layer is not drawing it: hidden layers stay in the registry,
+     * where an opacity write or a refresh still reaches them, but are left out
+     * of the render list. deck.gl stops drawing a layer marked
+     * `visible: false` yet still runs its lifecycle, so a hidden tile layer
+     * handed over would go on requesting tiles.
      */
     private _syncLayers(): void {
         const layers = this._comparisonEnabled
             ? []
             : [...this._layers.values()]
-                  // Anything this engine cannot clone is left out. registerLayer
-                  // and addLayer already decline such a layer, so nothing should
-                  // reach here — kept because every entry is cloned below, and
-                  // one that cannot be would take the whole map down rather than
-                  // fail alone.
+                  // Belt and braces: registerLayer and addLayer already
+                  // decline these, but one reaching the clone below would
+                  // take the whole map down rather than fail alone.
                   .filter((layer) => typeof layer.clone === 'function')
-                  // Hidden layers are withheld, not handed over as
-                  // `visible: false`. deck.gl stops *drawing* an invisible
-                  // layer but still runs its lifecycle, so a hidden TileLayer
-                  // left in the render list goes on requesting tiles for a
-                  // layer nobody asked to see. The registry keeps holding it,
-                  // which is what an opacity write or a refresh addresses.
                   .filter(
                       (layer) =>
                           (layer.props as { visible?: boolean })?.visible !==

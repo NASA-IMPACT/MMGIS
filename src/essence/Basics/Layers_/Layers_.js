@@ -208,20 +208,15 @@ async function refreshTileLayer(uuid, updateOptions) {
 /**
  * Brings a layer just switched on up to the current time.
  *
- * TimeControl reloads only layers that are switched on, so every time step
- * taken while a layer is off passes it by. What the engine holds is then the
- * range the layer was last shown with — or, for a layer that has never been
- * shown, the range it was built with — while the time bar says otherwise.
+ * TimeControl reloads only layers that are switched on, so time steps taken
+ * while a layer is off pass it by and it would otherwise draw with the range
+ * it was last shown with.
  *
- * Asked for through `reloadLayer` rather than through the raster tile
- * pipeline because that is the only path that resolves time for a vector or
- * vectortile layer: it rewrites `layer.url` and the rebuild reads it back.
- *
- * Only when the layer is actually behind, so one that never went stale pays
- * nothing for the check. That test is also what keeps the work to once per
- * toggle: some layer types pass two show paths in a single toggle, and
- * reloadLayer stamps `time.current` with the time it refreshed at, so the
- * second pass finds the layer already current.
+ * Through `reloadLayer` rather than the raster tile pipeline, because that is
+ * the only path resolving time for a vector or vectortile layer. Guarded on
+ * the layer actually being behind, which also keeps this to once per toggle:
+ * some layer types pass two show paths, and `reloadLayer` stamps
+ * `time.current` so the second finds the layer current.
  *
  * @param {object} s - Layer config.
  */
@@ -229,8 +224,7 @@ async function catchUpLayerTime(s) {
     if (s.time?.enabled !== true) return
     if (s.time.current === L_.TimeControl_.currentTime) return
 
-    // evenIfOff: the layer is still recorded as off while the toggle runs,
-    // and reloadLayer skips a layer that is off.
+    // evenIfOff: the layer is still recorded as off while the toggle runs.
     await L_.TimeControl_.reloadLayer(s, true)
 }
 
@@ -742,12 +736,8 @@ const L_ = {
         return nextUrl
     },
     /**
-     * A layer's rank in the engine's draw order, derived from the configured
-     * stack: first in `_layersOrdered` draws on top.
-     *
-     * One derivation, used by every caller that ranks a layer — creation and
-     * re-ordering both do, and a stack that disagrees with itself draws in
-     * the wrong order.
+     * A layer's rank in the engine's draw order: first in `_layersOrdered`
+     * draws on top. One derivation, shared by creation and re-ordering.
      *
      * @param {string} name - Layer UUID.
      * @returns {number}
@@ -835,10 +825,6 @@ const L_ = {
                             $('.drawToolContextMenuHeaderClose').click()
                         } catch (err) {}
                     }
-                    // One call on either engine. What "off" means is the
-                    // adapter's to decide — Leaflet takes the layer off the
-                    // map, deck.gl flips a prop — and either way the engine
-                    // keeps holding it, so it stays addressable while off.
                     CursorInfo.hide(true)
                     L_.Map_.engine.setLayerVisibility(s.name, false)
                     if (L_.layers.attachments[s.name]) {
@@ -964,16 +950,9 @@ const L_ = {
                         }
                     }
 
-                    // Caught up before being shown. A layer that is behind
-                    // still holds the URL it was built with, placeholders and
-                    // all, so showing it first spends a burst of tile requests
-                    // on a URL that was never going to resolve. A layer already
-                    // current skips this and appears at once.
+                    // Before showing, not after: a layer that is behind still
+                    // holds the URL it was built with, placeholders and all.
                     await catchUpLayerTime(s)
-                    // One call on either engine: the engine has held and ranked
-                    // this layer since creation, and was told about every
-                    // opacity and config change while it was hidden, so nothing
-                    // is re-applied here.
                     L_.Map_.engine.setLayerVisibility(s.name, true)
                 }
 
@@ -1075,16 +1054,9 @@ const L_ = {
                                         }
                                     })
                             }
-                            // Caught up before being shown. A layer that is behind
-                            // still holds the URL it was built with, placeholders and
-                            // all, so showing it first spends a burst of tile requests
-                            // on a URL that was never going to resolve. A layer already
-                            // current skips this and appears at once.
+                            // Before showing, not after: a layer that is behind still
+                            // holds the URL it was built with, placeholders and all.
                             await catchUpLayerTime(s)
-                            // One call on either engine: the engine has held and ranked
-                            // this layer since creation, and was told about every
-                            // opacity and config change while it was hidden, so nothing
-                            // is re-applied here.
                             L_.Map_.engine.setLayerVisibility(s.name, true)
                         }
 
@@ -1402,18 +1374,14 @@ const L_ = {
                                 }
                             }
                         }
-                        // Shown, not added: creation already handed every
-                        // layer to the engine. Asking by uuid also keeps the
-                        // engine on the instance it holds — re-adding the
-                        // object built at creation would drop whatever the
-                        // layer has been refreshed to since.
+                        // By uuid, so the engine acts on the instance it
+                        // holds rather than the object built at creation,
+                        // which may since have been refreshed.
                         engine.setLayerVisibility(
                             L_.layers.dataFlat[i].name,
                             true
                         )
-                        // Re-ranked here as well as at creation, because this
-                        // runs again after a re-order, and the stack has to
-                        // follow the new configured order.
+                        // Re-ranked because this also runs after a re-order.
                         engine.setLayerZIndex(
                             L_.layers.dataFlat[i].name,
                             L_.layerZIndex(L_.layers.dataFlat[i].name)

@@ -42,20 +42,9 @@ describe('handOffLayerToEngine', () => {
         )
     })
 
-    /**
-     * The hand-off states the layer's visibility outright rather than leaving
-     * it hidden for a later pass to correct.
-     *
-     * `addVisible` is that later pass, and it cannot be relied on to run
-     * after this: a builder flips the layer's loaded flag and calls
-     * `allLayersLoaded` itself, which for the last layer to finish runs
-     * `addVisible` synchronously — before the builder has even returned to
-     * the hand-off. That layer was asked to be shown while the engine did not
-     * yet hold it, so the request did nothing, and the hand-off then filed it
-     * hidden. It never drew and never requested a tile.
-     *
-     * Saying the state here makes the order stop mattering.
-     */
+    // Visibility is stated here rather than left for a later pass to
+    // correct, because a builder can trigger that pass itself before
+    // returning — so a layer handed over hidden could stay hidden.
     test('hands over a configured-on layer already visible', () => {
         const engine = makeEngine()
 

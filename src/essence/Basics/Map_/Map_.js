@@ -921,23 +921,13 @@ let Map_ = {
 
 //Takes an array of layer objects and makes them map layers
 /**
- * Hand a layer that has just been built to the main map's engine.
+ * Hand a layer that has just been built to the main map's engine, in the
+ * state the mission configured it. See handOffLayerToEngine. Layers that were
+ * never built — a header, a globe-only model, a failed load — are ignored
+ * there.
  *
- * Called for every layer, on either engine, whether or not it starts switched
- * on. The engine holds each layer from creation so that an opacity write or a
- * refresh while it is off still reaches it, and so that every caller can
- * address it by uuid.
- *
- * The layer is handed over already showing whatever the mission configured,
- * rather than hidden for `addVisible` to correct — see handOffLayerToEngine
- * for why that ordering cannot be relied on.
- *
- * Layers that were never built — a header, a globe-only model, a failed load
- * recorded as null or as the `false` sentinel — are ignored by the hand-off.
- *
- * Main map only. `Map_.engine` is always the main map's engine, so a
- * secondary ctx — which has its own map and registry — would collide with the
- * main map's entry under the same uuid.
+ * Main map only: `Map_.engine` is always the main map's, so a secondary ctx
+ * would collide with its entry under the same uuid.
  */
 function handOffToEngine(layerObj, ctx) {
     if (ctx.default !== true) return
@@ -1064,9 +1054,8 @@ async function makeLayer(
             }
         }
 
-        // Every builder makeLayer waits on has recorded its layer by now, so
-        // one hand-off covers them all. The two that finish on their own
-        // schedule — image and video — hand off from their success paths.
+        // Every builder above is awaited, so the layer exists by now. Image
+        // and video finish on their own schedule and hand off themselves.
         handOffToEngine(layerObj, mapContext)
 
         // release hold on layer
@@ -2394,9 +2383,8 @@ function makeImageLayer(layerObj, mapContext = null) {
 
             L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
 
-            // Here rather than in makeLayer: this builder finishes on its own
-            // schedule, long after makeLayer's hand-off has run and found
-            // nothing to give the engine.
+            // Here, not in makeLayer: this builder finishes after that
+            // hand-off has already run.
             handOffToEngine(layerObj, ctx)
 
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
@@ -2495,9 +2483,8 @@ function makeVideoLayer(layerObj, mapContext = null) {
 
         L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
 
-        // Here rather than in makeLayer: this builder finishes on its own
-        // schedule, long after makeLayer's hand-off has run and found nothing
-        // to give the engine.
+        // Here, not in makeLayer: this builder finishes after that hand-off
+        // has already run.
         handOffToEngine(layerObj, ctx)
 
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true

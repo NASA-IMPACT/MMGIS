@@ -398,12 +398,10 @@ var TimeControl = {
 
         const layerTimeFormat = formatLayerTime(layer.time?.format)
 
-        // Records the time this layer was refreshed at — and only when it is
-        // actually going to be, which is what the gates below decide. Stamped
-        // unconditionally it claims a refresh that never happened: a layer
-        // switched off is skipped, so it would go on looking current however
-        // far the time bar moved while it was off, and a caller asking
-        // "is this layer behind?" would always be told no.
+        // Records the time the layer was refreshed at, so only when it will
+        // be. Stamped unconditionally, a layer that is off — which the gates
+        // below skip — would go on looking current however far the time bar
+        // moved, and nothing could tell it had fallen behind.
         const willRefresh =
             (evenIfControlled === true || layer.controlled !== true) &&
             (L_.layers.on[layer.name] || evenIfOff)

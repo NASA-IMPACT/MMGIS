@@ -3,17 +3,10 @@ import LeafletAdapter from '../../src/essence/Basics/MapEngines/Adapters/Leaflet
 import DeckGLAdapter from '../../src/essence/Basics/MapEngines/Adapters/DeckGLAdapter.ts'
 
 /**
- * Showing and hiding a layer is one verb on the engine, because the two
- * engines disagree about what "off" means and that disagreement is theirs to
- * keep: Leaflet takes the layer off the map, deck.gl flips a prop on a layer
- * it still holds. A caller that had to know which would be branching on the
- * engine, which is the thing the adapter boundary exists to prevent.
- *
- * The contract both sides implement: an engine holds a layer from creation
- * until it is removed, and hiding never gives that hold up. Everything a
- * hidden layer is told — a new opacity, a refreshed URL — therefore lands on
- * the instance that is shown next, and nothing has to be replayed at show
- * time.
+ * One verb, two implementations: Leaflet takes the layer off the map, deck.gl
+ * flips a prop on one it still holds. The contract both keep is that hiding
+ * never gives up the hold, so anything a hidden layer is told lands on the
+ * instance shown next and nothing is replayed at show time.
  */
 
 // A Leaflet map that remembers what is on it, which is the whole of what

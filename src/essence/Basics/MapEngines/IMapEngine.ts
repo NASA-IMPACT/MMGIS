@@ -202,13 +202,8 @@ export interface IMapEngine<
 
     /**
      * Take ownership of an externally-built native layer under `id`, so
-     * id-addressed methods can find it.
-     *
-     * Leaflet holds the layer without changing what is drawn — `addLayer`
-     * still does that separately. deck.gl has no such split: holding a layer
-     * *is* drawing it, since `_layers` is simultaneously its registry and its
-     * render list. That's why callers that want a layer held but not yet
-     * shown may only rely on this method on the Leaflet path.
+     * id-addressed methods can find it. Holding is not drawing on either
+     * engine; {@link setLayerVisibility} decides what is shown.
      */
     registerLayer(id: string, layer: TLayer): void
 
@@ -244,16 +239,13 @@ export interface IMapEngine<
     refreshLayer(id: string, ctx?: RefreshContext): boolean
 
     /**
-     * Show or hide a layer the engine already holds.
+     * Show or hide a layer the engine already holds. A no-op for one it does
+     * not.
      *
      * Hiding never gives up the hold: a hidden layer stays addressable by id,
      * so an opacity write or a {@link refreshLayer} while it is off lands on
-     * the instance that is shown next. Callers therefore never replay
-     * settings at show time, and never branch on the engine to do it — the
-     * two engines disagree about what "off" means (Leaflet takes the layer
-     * off the map, deck.gl flips a prop) and that disagreement stays here.
-     *
-     * A no-op for a layer the engine does not hold.
+     * the instance shown next, and callers never replay settings at show
+     * time. How "off" is implemented differs per engine and stays there.
      */
     setLayerVisibility(layer: TLayer | string, visible: boolean): void
 

@@ -20,15 +20,10 @@ const { default: L_ } = await import(
 /**
  * Turning a layer on and off.
  *
- * The engine holds every layer from creation, ranked and hidden, so a toggle
- * is one thing: tell the engine what to show. It is the same call on either
- * engine — how "off" is implemented (off the map, or a prop) belongs to the
- * adapter — and it re-applies nothing, because a held layer was told about
- * every opacity and config change while it was hidden.
- *
- * Time is the exception, and it is not the engine's fault: TimeControl skips
- * a layer that is switched off, so a layer shown after the time bar moved has
- * to ask for the current range itself.
+ * The engine holds every layer from creation, so a toggle is one call on
+ * either engine and re-applies nothing. Time is the exception: TimeControl
+ * skips layers that are off, so one being shown asks for the current range
+ * itself.
  */
 
 // An engine that holds what it is given and hides rather than removes.
