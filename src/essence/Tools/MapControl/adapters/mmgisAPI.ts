@@ -4,8 +4,14 @@ type EventCleanup = () => void
 
 // Must stay structurally identical to other tools' Window.mmgisAPI augmentation
 // (e.g. LayerManager's) — TS merges global declarations only if they match.
+type RequestOptions = { caller?: string }
+
 type MMGISAPI = {
-    request: (name: string, params?: unknown) => Promise<unknown>
+    request: (
+        name: string,
+        params?: unknown,
+        options?: RequestOptions,
+    ) => Promise<unknown>
     on: (event: string, handler: (payload?: unknown) => void) => EventCleanup
     emit: (event: string, payload?: unknown) => void
     provide?: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup

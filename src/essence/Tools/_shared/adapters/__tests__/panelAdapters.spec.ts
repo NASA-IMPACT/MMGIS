@@ -8,6 +8,7 @@ import {
     mmgisSetPluginState,
     mmgisShowPlugin,
     mmgisHidePlugin,
+    mmgisRequest,
 } from '../mmgisAPI'
 
 const request = vi.fn()
@@ -96,5 +97,21 @@ describe('panel adapters', () => {
         const notFound = { ok: false, reason: 'not-found' }
         request.mockResolvedValue(notFound)
         expect(await mmgisSetPanelState('ghost', 'expanded')).toEqual(notFound)
+    })
+})
+
+// Some providers answer per caller — `map:hidePopup` retracts only the card its
+// caller opened — so a plugin on this client has to be able to say who it is.
+describe('the request client', () => {
+    test('stamps the caller when one is given', async () => {
+        await mmgisRequest('map:hidePopup', undefined, { caller: 'aoi' })
+        expect(request).toHaveBeenCalledWith('map:hidePopup', undefined, {
+            caller: 'aoi',
+        })
+    })
+
+    test('names nobody when none is given', async () => {
+        await mmgisRequest('map:hidePopup')
+        expect(request).toHaveBeenCalledWith('map:hidePopup', undefined)
     })
 })
