@@ -31,7 +31,6 @@ export function resolveMissionAssetUrl(
     missionPath: string | null,
 ): string {
     if (!value) return ''
-    if (typeof value !== 'string') return ''
     if (/^(https?:|data:)/i.test(value)) return value
     const rooted = value.startsWith('/')
     const rebased = rooted ? value.slice(1) : value

@@ -47,7 +47,11 @@ function handler(event) {
             headers: {
                 'www-authenticate': {
                     value: 'Basic realm="MMGIS Dashboard"'
-                }
+                },
+                // An edge that keeps Authorization out of its cache key is
+                // credential-blind, and must not replay this refusal to a
+                // visitor who did send the password.
+                'cache-control': { value: 'no-store' }
             }
         };
     }

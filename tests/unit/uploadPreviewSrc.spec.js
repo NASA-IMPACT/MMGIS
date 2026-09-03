@@ -81,4 +81,12 @@ test.describe('resolveMissionAssetUrl', () => {
             '/already/rooted.png',
         )
     })
+
+    test('an absent mission path leaves a mission-relative value as it came', () => {
+        // Callers resolve before the mission path is known, so a null path
+        // yields the stored value rather than a URL anchored nowhere.
+        expect(resolveMissionAssetUrl('Sub/uploads/x.png', null)).toBe(
+            'Sub/uploads/x.png',
+        )
+    })
 })

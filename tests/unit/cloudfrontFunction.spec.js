@@ -68,6 +68,10 @@ test.describe('dashboard CloudFront Function behavior', () => {
         expect(result.uri).toBe('/index.html')
     })
 
+    // This redirect is what keeps the page's baseURI in its trailing-slash
+    // form. Relative resolution drops the last segment of a slash-less base,
+    // so a document-relative asset path off '/d/v' would ask for '/d/…' and
+    // miss the dashboard's own folder.
     test('entry without trailing slash redirects', () => {
         const result = handler(makeEvent('/d/v', { prefix: '/d/v' }))
         expect(result.statusCode).toBe(302)
@@ -308,6 +312,9 @@ test.describe('dashboard CloudFront Function behavior', () => {
         expect(result.headers['www-authenticate'].value).toContain(
             'Basic realm='
         )
+        // A credential-blind edge cache must not hand this refusal to the
+        // next visitor, who may well be sending the right password.
+        expect(result.headers['cache-control'].value).toBe('no-store')
     })
 
     test('a missing or empty authorization header is unauthorized', () => {

@@ -13,8 +13,9 @@ const { default: L_ } = await import(
 /**
  * L_.getUrl's throughTileServer/COG branch climbs out of the mission path
  * ('../../' non-Docker, '/' Docker) to reach a server-backed tile endpoint.
- * A static (published) build has no such endpoint — its tiles live under
- * Missions/<mission>/... in the bucket — so the climb must not apply there.
+ * A static (published) build has neither a tile server nor tile data, so the
+ * guard keeps the climb from producing a root-absolute URL that escapes the
+ * dashboard's path prefix.
  */
 test.describe('L_.getUrl static-build guard', () => {
     beforeEach(() => {
