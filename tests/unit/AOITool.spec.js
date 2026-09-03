@@ -70,13 +70,18 @@ function makeFakeApi() {
         // Core's own signature: the caller travels in an options object, and
         // core refuses a bare id in that slot outright. Recording it unwrapped
         // is what keeps `requests` reading as a plain caller.
+        // The provider runs inside the call, before the promise is handed
+        // back, as core's does — ordering that depends on a provider having
+        // already run by the next line has to break here too.
         request(name, payload, options) {
             const caller = options?.caller
             requests.push({ name, payload, caller })
             const impl = requestImpl.get(name)
-            return Promise.resolve().then(() =>
-                impl ? impl(payload, caller) : true
-            )
+            try {
+                return Promise.resolve(impl ? impl(payload, caller) : true)
+            } catch (err) {
+                return Promise.reject(err)
+            }
         },
         provide(name, handler) {
             provided.set(name, handler)
@@ -217,6 +222,26 @@ describe('AOITool popup requests', () => {
         expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE })
     })
 
+    test('catches the moveend a transitionless fit emits inside its own request', async () => {
+        // An engine with no transition to run ends the camera move inside the
+        // `map:fitBounds` call itself, so the plugin has to be listening
+        // before it asks for the fit — a listener added afterwards hears
+        // nothing and leaves the card to the 1.5s fallback timer.
+        api.requestImpl.set('map:fitBounds', () => {
+            api.emit('map:moveend', { longitude: 5, latitude: 5, zoom: 4 })
+            return true
+        })
+
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        // `flush` advances the clock by nothing, so the fallback timer cannot
+        // be what opened this.
+        await flush()
+
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.latlng).toEqual({ lat: 5, lng: 5 })
+        expect(api.listenerCount('map:moveend')).toBe(0)
+    })
 })
 
 describe('AOITool popup outcomes', () => {
@@ -273,6 +298,7 @@ describe('AOITool popup outcomes', () => {
 
     test('a rejected popup request is reported and leaves the tool usable', async () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => { })
+        const showPopupImpl = api.requestImpl.get('map:showPopup')
         api.requestImpl.set('map:showPopup', () => {
             throw new Error('invalid request')
         })
@@ -283,11 +309,19 @@ describe('AOITool popup outcomes', () => {
         await flush()
 
         expect(warn).toHaveBeenCalled()
-        // The selection survives, and a later selection still works.
         expect(api.getSelection()).toMatchObject({ feature: SQUARE })
-        api.requestImpl.delete('map:showPopup')
+
+        // The next selection still gets its card: the rejected show left no
+        // pending popup behind to suppress it.
+        api.requestImpl.set('map:showPopup', showPopupImpl)
+        api.reset()
         await selectAndOpen(FAR_SQUARE, 'Alaska')
+
         expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE })
+        expect(api.hasOpenPopup()).toBe(true)
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.title).toBe('Alaska')
     })
 })
 
@@ -311,9 +345,10 @@ describe('AOITool popup lifecycle', () => {
         expect(api.listenerCount('map:featureClick')).toBe(0)
     })
 
-    // Switching tools, closing the tool and collapsing its panel all reach the
-    // plugin the same way — through `destroy()` — so this is the whole of the
-    // teardown contract: nothing of the selection outlives the tool.
+    // Closing the tool and unloading it both reach the plugin through
+    // `destroy()`, and that is the whole of the teardown contract: nothing of
+    // the selection outlives the tool. Hiding the tool does not reach it — the
+    // instance is kept and the card stays up.
     test('destroy clears the selection, its highlight and the popup', async () => {
         await selectAndOpen(SQUARE, 'Alabama')
         expect(api.hasOpenPopup()).toBe(true)
@@ -328,6 +363,61 @@ describe('AOITool popup lifecycle', () => {
             api.namesOf('map:removeLayer').map((r) => r.payload.id)
         ).toContain('aoi:selection')
         expect(AOITool._state.currentAOI).toBeNull()
+    })
+
+    test('a drawing session takes the previous selection and its popup away', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        expect(api.hasOpenPopup()).toBe(true)
+        api.reset()
+
+        api.emit('map:drawstart', { shape: 'polygon' })
+        await flush()
+
+        // The card would otherwise sit over the map for the whole session,
+        // holding the Escape and Enter the session needs and offering to
+        // analyze the area being replaced.
+        expect(api.hasOpenPopup()).toBe(false)
+        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        // And the selection goes with it: the card holds its only controls, so
+        // leaving it behind would strand it.
+        expect(api.getSelection()).toBeNull()
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(1)
+    })
+
+    test('destroy disarms a show already waiting on the camera', async () => {
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        // Far enough in that the show is armed: the camera has been read and
+        // the fit asked for, so a `map:moveend` listener and the fallback timer
+        // are both standing.
+        await flush()
+        expect(api.listenerCount('map:moveend')).toBe(1)
+        api.reset()
+
+        AOITool.destroy()
+
+        expect(api.listenerCount('map:moveend')).toBe(0)
+        api.emit('map:moveend')
+        await vi.advanceTimersByTimeAsync(2000)
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
+    })
+
+    test('a superseding selection disarms the show already waiting on the camera', async () => {
+        AOITool._applySelection(SQUARE, 'search', 'Alabama')
+        await flush()
+        expect(api.listenerCount('map:moveend')).toBe(1)
+
+        AOITool._applySelection(FAR_SQUARE, 'search', 'Alaska')
+        await flush()
+        // The superseded show let go of its listener and its timer; only the
+        // current one is armed.
+        expect(api.listenerCount('map:moveend')).toBe(1)
+
+        api.emit('map:moveend')
+        await vi.advanceTimersByTimeAsync(2000)
+
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.title).toBe('Alaska')
     })
 
     test('a superseding selection leaves only its own popup pending', async () => {
