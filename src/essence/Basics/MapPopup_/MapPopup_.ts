@@ -9,6 +9,11 @@ import './MapPopup.css'
 const ANCHOR_GAP = 12
 /** How close in pixels the card may come to an edge of the map it sits on. */
 const VIEWPORT_MARGIN = 8
+/**
+ * The height in pixels of the card's own chrome — its padding, a title line and
+ * its actions row — which is the least a cap can leave and still show a button.
+ */
+const MIN_CARD_HEIGHT = 100
 
 /**
  * Where a card waits when it has nowhere on screen to be: while the map
@@ -849,7 +854,17 @@ const MapPopup_ = {
             // stylesheet's viewport-sized cap covers the card until the
             // anchor first projects.
             const cardRoom = boundsBottom - boundsTop - 2 * VIEWPORT_MARGIN
-            if (cardRoom > 0) open.card.style.maxHeight = `${cardRoom}px`
+            const cap = `${cardRoom}px`
+            // A cap under the card's own chrome would clip the actions row
+            // away, so a sliver of map leaves the card uncapped to overhang
+            // with its buttons intact; and rewriting the cap it already has
+            // would dirty the layout a second time in the one reposition.
+            if (
+                cardRoom >= MIN_CARD_HEIGHT &&
+                open.card.style.maxHeight !== cap
+            ) {
+                open.card.style.maxHeight = cap
+            }
 
             const card = open.card.getBoundingClientRect()
 

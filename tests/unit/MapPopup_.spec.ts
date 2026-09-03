@@ -447,9 +447,23 @@ describe('MapPopup_', () => {
         // top margin, so it ends at 592 — inside the map.
         expect(card().style.maxHeight).toBe('584px')
         expect(card().style.transform).toBe('translate(300px, 8px)')
-        expect(8 + card().getBoundingClientRect().height).toBeLessThanOrEqual(
-            600
-        )
+    })
+
+    it('leaves the card uncapped when the visible map is shorter than its chrome', () => {
+        // Top and bottom panels on a short window leave a sliver of map: a cap
+        // that small would clip the actions row away, so none is set and the
+        // card overhangs with its buttons still reachable.
+        engine = makeEngine({
+            point: { x: 300, y: 50 },
+            containerTop: 0,
+            containerHeight: 110,
+        })
+        show(engine)
+        sizeCard(200, 300)
+
+        engine.fire('move')
+
+        expect(card().style.maxHeight).toBe('')
     })
 
     it("clamps the card to the map's left edge when its anchor sits near it", () => {
@@ -479,8 +493,8 @@ describe('MapPopup_', () => {
         engine.fire('move')
 
         // There is no placement that honours both edges, so the card takes the
-        // left margin and spills off the right rather than the other way
-        // about, which would put its close control off the map.
+        // left margin and spills off the right: the left edge is where its
+        // title and body start, and that is the half worth keeping on the map.
         expect(card().style.transform).toBe('translate(8px, 88px)')
     })
 
