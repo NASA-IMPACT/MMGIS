@@ -4,7 +4,6 @@ import { test, expect, beforeEach, afterEach, vi } from 'vitest'
 // (scripts/lib/cfn-template.js) used by the lean publish flow.
 
 const {
-    DEFAULT_STACK_NAME_PREFIX,
     BASIC_AUTH_USER,
     stackNamePrefix,
     stackNameForDeployment,
@@ -15,21 +14,22 @@ const {
 const PASSWORD = 'a-Distinctive-Passw0rd!'
 
 test.describe('stackNameForDeployment', () => {
-    // The default shape only holds when MMGIS_ENVIRONMENT is unset; stub it
-    // away so a machine or CI job that exports it can't fail these spuriously.
+    // The names are namespaced by MMGIS_ENVIRONMENT; stub a valid value so a
+    // machine or CI job that exports its own can't fail these spuriously.
     beforeEach(() => {
-        vi.stubEnv('MMGIS_ENVIRONMENT', '')
+        vi.stubEnv('MMGIS_ENVIRONMENT', 'development')
     })
 
     afterEach(() => {
         vi.unstubAllEnvs()
     })
 
-    test('encodes the deployment id with the mmgis-dashboard- prefix', () => {
-        expect(stackNameForDeployment(12)).toBe('mmgis-dashboard-12')
-        expect(stackNameForDeployment('40')).toBe('mmgis-dashboard-40')
-        expect(DEFAULT_STACK_NAME_PREFIX).toBe('mmgis-dashboard-')
-        expect(stackNamePrefix()).toBe('mmgis-dashboard-')
+    test('encodes the deployment id with the namespaced dashboard prefix', () => {
+        expect(stackNameForDeployment(12)).toBe('mmgis-development-dashboard-12')
+        expect(stackNameForDeployment('40')).toBe(
+            'mmgis-development-dashboard-40'
+        )
+        expect(stackNamePrefix()).toBe('mmgis-development-dashboard-')
     })
 
     test('throws without an id', () => {
@@ -49,10 +49,15 @@ test.describe('MMGIS_ENVIRONMENT namespacing', () => {
         expect(stackNameForDeployment(12)).toBe('mmgis-development-dashboard-12')
     })
 
-    test('an empty value falls back to the legacy shared prefix', () => {
+    test('throws when MMGIS_ENVIRONMENT is unset or empty', () => {
         vi.stubEnv('MMGIS_ENVIRONMENT', '')
-        expect(stackNamePrefix()).toBe(DEFAULT_STACK_NAME_PREFIX)
-        expect(stackNameForDeployment(12)).toBe('mmgis-dashboard-12')
+        expect(() => stackNamePrefix()).toThrow(/MMGIS_ENVIRONMENT/)
+        expect(() => stackNameForDeployment(12)).toThrow(/MMGIS_ENVIRONMENT/)
+        vi.unstubAllEnvs()
+        const saved = process.env.MMGIS_ENVIRONMENT
+        delete process.env.MMGIS_ENVIRONMENT
+        expect(() => stackNamePrefix()).toThrow(/MMGIS_ENVIRONMENT/)
+        if (saved !== undefined) process.env.MMGIS_ENVIRONMENT = saved
     })
 
     test('still throws without an id', () => {

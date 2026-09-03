@@ -10,8 +10,6 @@
  * surface in DescribeStacks output, which the Deployments list reads.
  */
 
-const DEFAULT_STACK_NAME_PREFIX = "mmgis-dashboard-";
-
 // Basic-auth username paired with the shared password.
 const BASIC_AUTH_USER = "mmgis";
 
@@ -25,11 +23,10 @@ const ENVIRONMENT_PATTERN = /^[a-z][a-z0-9-]*$/;
 const MAX_ENVIRONMENT_LENGTH = 11;
 
 /**
- * The stack-name prefix for this runtime. When MMGIS_ENVIRONMENT is set
- * (the Terraform module sets it to the environment name, e.g. "development"),
- * dashboards are namespaced per environment: "mmgis-<env>-dashboard-".
- * Unset/empty => the legacy shared prefix "mmgis-dashboard-" (the hand-built
- * environment never sets the variable and must keep today's names).
+ * The stack-name prefix for this runtime. MMGIS_ENVIRONMENT is the
+ * environment name (e.g. "development"), which the Terraform module injects
+ * into every lean runtime; dashboards are namespaced per environment:
+ * "mmgis-<env>-dashboard-".
  * LOCKSTEP: the composed shape must match the IAM patterns in
  * infrastructure/terraform/modules/mmgis-environment/iam.tf. A value the
  * module's own validation would reject is rejected here too, so a malformed
@@ -37,7 +34,12 @@ const MAX_ENVIRONMENT_LENGTH = 11;
  */
 function stackNamePrefix() {
   const env = process.env.MMGIS_ENVIRONMENT;
-  if (env == null || env === "") return DEFAULT_STACK_NAME_PREFIX;
+  if (env == null || env === "")
+    throw new Error(
+      "MMGIS_ENVIRONMENT is required and must be set to the environment " +
+        "name (the Terraform module injects it); there is no shared default " +
+        "dashboard prefix"
+    );
   if (!ENVIRONMENT_PATTERN.test(env))
     throw new Error(
       `MMGIS_ENVIRONMENT '${env}' must be lowercase alphanumeric/hyphen ` +
@@ -54,8 +56,8 @@ function stackNamePrefix() {
 
 /**
  * The deterministic stack name for a deployment row id, e.g.
- * stackNameForDeployment(12) === "mmgis-dashboard-12" by default, or
- * "mmgis-development-dashboard-12" when MMGIS_ENVIRONMENT=development.
+ * stackNameForDeployment(12) === "mmgis-development-dashboard-12" when
+ * MMGIS_ENVIRONMENT=development.
  */
 function stackNameForDeployment(deploymentId) {
   if (deploymentId == null || `${deploymentId}`.length === 0)
@@ -251,7 +253,6 @@ function renderCfnTemplate({ password } = {}) {
 }
 
 module.exports = {
-  DEFAULT_STACK_NAME_PREFIX,
   BASIC_AUTH_USER,
   stackNamePrefix,
   stackNameForDeployment,

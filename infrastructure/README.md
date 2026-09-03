@@ -33,9 +33,7 @@ infrastructure/
 │   └── environments/
 │       ├── development/               # thin root: module call + backend + tfvars
 │       └── production/                # thin root (same shape as development)
-├── ecs/*.json                         # recipe source (provenance; see below)
-├── iam/*.json                         # recipe source (provenance)
-├── cloudfront-admin.json              # recipe source (provenance)
+├── cloudfront-admin.json              # recipe source (provenance; see below)
 ├── cloudfront-function.js             # canonical password-gate Function reference
 └── s3-asset-bucket.json               # recipe source (provenance)
 ```
@@ -49,17 +47,12 @@ IAM roles.
 
 ### The recipe JSON files are provenance, not applied
 
-`ecs/*.json`, `iam/*.json`, `cloudfront-admin.json`, and `s3-asset-bucket.json`
-are the recipe JSONs the Terraform module was translated from — every attribute
-value in them is production-tested. They are **kept in place**: they document
-where each Terraform value came from.
-`cloudfront-function.js` is still load-bearing as the canonical reference the
-publish generator (`scripts/lib/cfn-template.js`) is kept in sync with (see
-`tests/unit/infrastructure.spec.js`). Nothing here is applied directly anymore.
-One deliberate divergence: the recipes inject all five `DB_*` keys from an
-app-shaped DB secret (`<DB_SECRET_ARN>`) that the module has since retired —
-`DB_PASS` now comes straight from the RDS-managed master secret, and
-host/port/user/name ride as plain environment values.
+`cloudfront-admin.json` and `s3-asset-bucket.json` are recipe JSONs the
+Terraform module was translated from — every attribute value in them is
+production-tested. They document where each Terraform value came from; nothing
+here is applied directly. `cloudfront-function.js` is load-bearing as the
+canonical reference the publish generator (`scripts/lib/cfn-template.js`) is
+kept in sync with (see `tests/unit/infrastructure.spec.js`).
 
 ## Prerequisites (operator-provided, not created by Terraform)
 
@@ -290,15 +283,11 @@ it from the real login password (the full note lives in
 
 ## Placeholders in the recipe JSON
 
-The recipe files still use `<ACCOUNT_ID>`, `<REGION>`, `<ECR_REPOSITORY_NAME>`,
-`<ECS_CLUSTER_NAME>`, `<SUBNET_IDS>`, `<SECURITY_GROUP_IDS>`,
-`<ASSET_BUCKET_NAME>`, the `<*_SECRET_ARN>` set (of which `<DB_SECRET_ARN>` is
-superseded by the managed master secret — see the provenance note above),
-`<EXPRESS_ONAWS_ENDPOINT>`,
-`<VPC_ORIGIN_ID>`, `<ASSET_BUCKET_OAC_ID>`, and `<ADMIN_DISTRIBUTION_ID>`. In
-the Terraform module these are resolved from `data.aws_caller_identity`, the
-`region` variable, resource attributes, and the two-phase CloudFront inputs —
-you do not fill them in by hand anymore.
+The recipe files still use `<ACCOUNT_ID>`, `<REGION>`, `<ASSET_BUCKET_NAME>`,
+`<ASSET_BUCKET_OAC_ID>`, `<EXPRESS_ONAWS_ENDPOINT>`, `<VPC_ORIGIN_ID>`, and
+`<ADMIN_DISTRIBUTION_ID>`. In the Terraform module these are resolved from
+`data.aws_caller_identity`, the `region` variable, resource attributes, and the
+two-phase CloudFront inputs — you do not fill them in by hand anymore.
 
 ## CI-driven deploys (the composed pipeline)
 
