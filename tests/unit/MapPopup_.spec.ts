@@ -7,37 +7,6 @@ import type {
 } from '../../src/essence/Basics/MapPopup_/types'
 
 /**
- * Records anything the service broadcasts — it should never broadcast — and
- * lets a spec fire bus events back. Handlers are snapshotted before dispatch,
- * exactly as mitt does, so a listener unsubscribed mid-emit still receives
- * that emit.
- */
-function makeBus() {
-    const listeners = new Map<string, Set<(payload?: unknown) => void>>()
-    const emitted: string[] = []
-    const dispatch = (event: string) => {
-        const handlers = listeners.get(event)
-        if (handlers) Array.from(handlers).forEach((handler) => handler())
-    }
-    return {
-        emitted,
-        listenerCount: (event: string) => listeners.get(event)?.size ?? 0,
-        fire: dispatch,
-        api: {
-            emit: (event: string) => {
-                emitted.push(event)
-                dispatch(event)
-            },
-            on: (event: string, handler: (payload?: unknown) => void) => {
-                if (!listeners.has(event)) listeners.set(event, new Set())
-                listeners.get(event)!.add(handler)
-                return () => listeners.get(event)!.delete(handler)
-            },
-        },
-    }
-}
-
-/**
  * Stand-in for the active map engine. jsdom lays nothing out, so the container
  * rect is stubbed to a known position and size. Handlers are snapshotted
  * before dispatch, as the engines do, so a handler unsubscribed mid-dispatch
@@ -110,12 +79,10 @@ function track(promise: Promise<MapPopupResult>): string[] {
 }
 
 function show(
-    bus: ReturnType<typeof makeBus>,
     engine: ReturnType<typeof makeEngine>,
     overrides: Partial<MapPopupRequest> = {},
     owner?: string | null
 ): string[] {
-    window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
     return track(
         MapPopup_.show(request(overrides), engine.engine as never, owner)
     )
@@ -124,7 +91,7 @@ function show(
 const INVALID_REQUEST =
     'rejected: [MapPopup] Invalid request: latlng must hold finite lat/lng numbers, and title and html must be strings when given.'
 const OUT_OF_RANGE =
-    'rejected: [MapPopup] Invalid request: latlng must hold a lat within ±90 and a lng within ±180.'
+    'rejected: [MapPopup] Invalid request: latlng must hold a lat within ±90.'
 const NOTHING_TO_SHOW =
     'rejected: [MapPopup] Invalid request: a popup needs a title or html to show.'
 
@@ -172,22 +139,19 @@ const observerFor = (target: Element): StubResizeObserver | undefined =>
     ).find((observer) => observer.observed.has(target))
 
 describe('MapPopup_', () => {
-    let bus: ReturnType<typeof makeBus>
     let engine: ReturnType<typeof makeEngine>
 
     beforeEach(() => {
-        bus = makeBus()
         engine = makeEngine()
     })
 
     afterEach(() => {
         MapPopup_.hide()
         document.body.innerHTML = ''
-        delete window.mmgisAPI
     })
 
     it('mounts a single popup and sanitizes the html', async () => {
-        const outcome = show(bus, engine, {
+        const outcome = show(engine, {
             html: '<p>Crater A</p><script>window.pwned = true</script>',
         })
 
@@ -201,7 +165,7 @@ describe('MapPopup_', () => {
     })
 
     it('renders both actions and resolves with the primary on its click', async () => {
-        const outcome = show(bus, engine, {
+        const outcome = show(engine, {
             secondaryAction: { label: 'Cancel' },
             primaryAction: { label: 'Analyze' },
         })
@@ -216,11 +180,10 @@ describe('MapPopup_', () => {
 
         expect(outcome).toEqual(['primary'])
         expect(popups()).toHaveLength(0)
-        expect(bus.emitted).toEqual([])
     })
 
     it('styles a lone secondary action as the primary button', async () => {
-        const outcome = show(bus, engine, {
+        const outcome = show(engine, {
             secondaryAction: { label: 'Cancel' },
         })
 
@@ -239,7 +202,7 @@ describe('MapPopup_', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
         // A button with spaces on it is as blank as one with nothing on it.
-        show(bus, engine, {
+        show(engine, {
             primaryAction: { label: '   ' },
             secondaryAction: {} as never,
         })
@@ -256,7 +219,7 @@ describe('MapPopup_', () => {
     // row and speaks for the whole card.
     describe('the title', () => {
         it('renders the title as text rather than as markup', () => {
-            show(bus, engine, { title: '<b>Drawn</b> rectangle' })
+            show(engine, { title: '<b>Drawn</b> rectangle' })
 
             // The body is sanitized markup; a title is neither sanitized nor
             // parsed, because it never goes near the html path.
@@ -266,12 +229,12 @@ describe('MapPopup_', () => {
 
             // As blank a heading as an empty one: it would take a row of the
             // card and say nothing on it.
-            show(bus, engine, { title: '   ', html: '<p>Crater A</p>' })
+            show(engine, { title: '   ', html: '<p>Crater A</p>' })
             expect(title()).toBeNull()
         })
 
         it('renders a card that is a title and its actions', async () => {
-            const outcome = show(bus, engine, {
+            const outcome = show(engine, {
                 title: 'Drawn rectangle',
                 html: undefined,
                 primaryAction: { label: 'Analyze' },
@@ -292,8 +255,7 @@ describe('MapPopup_', () => {
         })
 
         it('rejects a request with neither a title nor html to show', async () => {
-            window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
-
+    
             const empty = track(
                 MapPopup_.show(
                     { latlng: { lat: 45, lng: -120 } } as MapPopupRequest,
@@ -329,7 +291,7 @@ describe('MapPopup_', () => {
     // A dialog with a generic name tells a screen reader user nothing about
     // which popup they have landed in.
     it('takes its name from the title, falling back to the generic one', () => {
-        show(bus, engine, { title: 'Drawn rectangle' })
+        show(engine, { title: 'Drawn rectangle' })
 
         expect(card().getAttribute('aria-labelledby')).toBe(title()!.id)
         expect(title()!.id).not.toBe('')
@@ -337,14 +299,14 @@ describe('MapPopup_', () => {
         // with it.
         expect(card().getAttribute('aria-label')).toBeNull()
 
-        show(bus, engine, { html: '<p>Crater A</p>' })
+        show(engine, { html: '<p>Crater A</p>' })
 
         expect(card().getAttribute('aria-label')).toBe('Map popup')
         expect(card().getAttribute('aria-labelledby')).toBeNull()
     })
 
     it('resolves dismiss and closes when the X is pressed', async () => {
-        const outcome = show(bus, engine)
+        const outcome = show(engine)
 
         document
             .querySelector('.mmgis-map-popup__close')!
@@ -353,11 +315,10 @@ describe('MapPopup_', () => {
 
         expect(outcome).toEqual(['dismiss'])
         expect(popups()).toHaveLength(0)
-        expect(bus.emitted).toEqual([])
     })
 
     it('dismisses on a map click once the opening gesture has passed', async () => {
-        const outcome = show(bus, engine)
+        const outcome = show(engine)
         await nextTick()
 
         engine.fire('click')
@@ -366,14 +327,13 @@ describe('MapPopup_', () => {
         await nextTick()
         expect(outcome).toEqual(['dismiss'])
         expect(popups()).toHaveLength(0)
-        expect(bus.emitted).toEqual([])
     })
 
     it('ignores the map click that deck.gl emits after the feature click that opened the popup', async () => {
         // deck.gl calls its feature-click handler and then emits the click, so
         // a popup opened from a feature click would otherwise be dismissed by
         // the very click that opened it.
-        const outcome = show(bus, engine)
+        const outcome = show(engine)
         engine.fire('click')
 
         await nextTick()
@@ -384,11 +344,11 @@ describe('MapPopup_', () => {
     it('keeps a popup opened later in the same gesture as the dismissing click', async () => {
         // Leaflet emits its click before its feature click, so a plugin's
         // replacement popup is shown after the dismissal was scheduled.
-        const first = show(bus, engine, { html: '<p>First</p>' })
+        const first = show(engine, { html: '<p>First</p>' })
         await nextTick()
 
         engine.fire('click')
-        const second = show(bus, engine, { html: '<p>Second</p>' })
+        const second = show(engine, { html: '<p>Second</p>' })
 
         await nextTick()
         expect(popups()).toHaveLength(1)
@@ -400,19 +360,18 @@ describe('MapPopup_', () => {
     })
 
     it('replaces the current popup and resolves the replaced request with closed', async () => {
-        const first = show(bus, engine, { html: '<p>First</p>' })
-        const second = show(bus, engine, { html: '<p>Second</p>' })
+        const first = show(engine, { html: '<p>First</p>' })
+        const second = show(engine, { html: '<p>Second</p>' })
 
         await nextTick()
         expect(popups()).toHaveLength(1)
         expect(cardText()).toContain('Second')
         expect(first).toEqual(['closed'])
         expect(second).toEqual([])
-        expect(bus.emitted).toEqual([])
     })
 
     it('retracts the popup for map:hidePopup, resolving its request with closed', async () => {
-        const outcome = show(bus, engine)
+        const outcome = show(engine)
 
         // What the map:hidePopup provider calls.
         MapPopup_.hide()
@@ -427,24 +386,35 @@ describe('MapPopup_', () => {
 
         expect(popups()).toHaveLength(0)
         expect(outcome).toEqual(['closed'])
-        expect(bus.emitted).toEqual([])
     })
 
     it('repositions the card on every engine move', () => {
-        show(bus, engine)
+        show(engine)
         sizeCard(200, 100)
         engine.fire('move')
         expect(card().style.transform).toBe('translate(300px, 138px)')
 
-        engine.setPoint({ x: 10, y: 220 })
+        engine.setPoint({ x: 210, y: 220 })
         engine.fire('move')
 
-        expect(card().style.transform).toBe('translate(10px, 158px)')
+        expect(card().style.transform).toBe('translate(210px, 158px)')
+    })
+
+    // deck.gl's comparison panes report a camera only once it settles, so a
+    // card following `move` alone would sit still while a pane is dragged.
+    it('repositions the card on an engine moveend', () => {
+        show(engine)
+        sizeCard(200, 100)
+
+        engine.setPoint({ x: 210, y: 220 })
+        engine.fire('moveend')
+
+        expect(card().style.transform).toBe('translate(210px, 158px)')
     })
 
     it('flips below the anchor when the card would clip the viewport top', () => {
         engine = makeEngine({ point: { x: 300, y: 50 }, containerTop: 0 })
-        show(bus, engine)
+        show(engine)
         sizeCard(200, 100)
 
         engine.fire('move')
@@ -453,23 +423,23 @@ describe('MapPopup_', () => {
         expect(card().style.transform).toBe('translate(300px, 62px)')
     })
 
-    it('keeps a card flipped below a low anchor inside the viewport', () => {
+    it('keeps a card flipped below a low anchor inside the map', () => {
         engine = makeEngine({ point: { x: 300, y: 200 }, containerTop: 0 })
-        show(bus, engine)
+        show(engine)
         // Taller than the room above its anchor, so it flips below it.
         sizeCard(200, 650)
 
         engine.fire('move')
 
         // Left where the flip put it, at 212, the card would end 862px down a
-        // 768px viewport with its actions row past the fold — and nothing
-        // scrolls to them — so it stops at the 8px margin instead.
-        expect(card().style.transform).toBe('translate(300px, 110px)')
+        // 600px map with its actions row out of reach, so both clamps bite and
+        // the top one wins, at the 8px margin.
+        expect(card().style.transform).toBe('translate(300px, 8px)')
     })
 
     it('clamps the card to the viewport when its anchor sits near an edge', () => {
         engine = makeEngine({ point: { x: 5, y: 200 }, containerLeft: 0 })
-        show(bus, engine)
+        show(engine)
         sizeCard(200, 100)
 
         engine.fire('move')
@@ -479,11 +449,28 @@ describe('MapPopup_', () => {
         expect(card().style.transform).toBe('translate(8px, 138px)')
     })
 
+    // The layout lays panels over the map's edges, and those panels are
+    // positioned, so a card that spilled past the map would be painted over
+    // and its buttons swallowed.
+    it('clamps the card to the map, not to the viewport', () => {
+        engine = makeEngine({ point: { x: 5, y: 200 }, containerLeft: 300 })
+        show(engine)
+        sizeCard(200, 100)
+
+        engine.fire('move')
+
+        // Centred on its anchor at 305 the card would start at 205, clear of
+        // the viewport but 95px over whatever sits left of the map, so it
+        // stops 8px inside the map's own edge.
+        expect(card().style.transform).toBe('translate(308px, 138px)')
+    })
+
     it('repositions when the card itself resizes, until the popup is hidden', () => {
         // Content that lands late — an image, a lazy fetch — grows the card
         // downwards from a top-left transform, so the card watches its own box
         // rather than waiting for a map event that may never come.
-        show(bus, engine)
+        engine = makeEngine({ point: { x: 300, y: 400 }, containerTop: 0 })
+        show(engine)
         sizeCard(200, 100)
         const watched = card()
         const observer = observerFor(watched)
@@ -492,7 +479,9 @@ describe('MapPopup_', () => {
         sizeCard(200, 200)
         observer!.callback()
 
-        expect(card().style.transform).toBe('translate(300px, 38px)')
+        // A hundred pixels taller, so its top rises a hundred pixels to keep
+        // the same gap above the anchor.
+        expect(card().style.transform).toBe('translate(300px, 188px)')
 
         MapPopup_.hide()
 
@@ -504,7 +493,7 @@ describe('MapPopup_', () => {
         // map's left edge still has most of its card over the map, and rides
         // off with the anchor rather than parking against a viewport edge.
         engine = makeEngine({ point: { x: -20, y: 200 }, containerLeft: 0 })
-        show(bus, engine)
+        show(engine)
         sizeCard(200, 100)
         engine.fire('move')
         expect(card().style.transform).toBe('translate(-120px, 138px)')
@@ -528,7 +517,7 @@ describe('MapPopup_', () => {
             containerLeft: 300,
             containerWidth: 400,
         })
-        show(bus, engine)
+        show(engine)
         sizeCard(200, 100)
 
         engine.fire('move')
@@ -543,7 +532,7 @@ describe('MapPopup_', () => {
         engine.engine.latLngToContainerPoint = () => {
             throw new Error('the engine has no view yet')
         }
-        show(bus, engine)
+        show(engine)
         expect(card().style.transform).toBe(PARKED)
 
         engine.engine.latLngToContainerPoint = () => ({ x: 300, y: 200 })
@@ -561,7 +550,7 @@ describe('MapPopup_', () => {
     it('parks the card while the engine animates a zoom and places it again after', () => {
         // Leaflet emits no move while its zoom animation runs, so the card
         // would otherwise hang at the pre-zoom position and jump at the end.
-        show(bus, engine)
+        show(engine)
         sizeCard(200, 100)
         engine.fire('move')
         expect(card().style.transform).toBe('translate(300px, 138px)')
@@ -580,7 +569,7 @@ describe('MapPopup_', () => {
     // `display: none` it leaves the card a box for `_reposition` to measure.
     it('parks the card rather than blanking it', () => {
         engine = makeEngine({ point: { x: -400, y: 200 }, containerLeft: 0 })
-        show(bus, engine)
+        show(engine)
         sizeCard(200, 100)
 
         engine.fire('move')
@@ -594,9 +583,10 @@ describe('MapPopup_', () => {
 
     it('unsubscribes from the engine and the window when hidden', async () => {
         const removeListener = vi.spyOn(window, 'removeEventListener')
-        const outcome = show(bus, engine)
+        const outcome = show(engine)
         await nextTick()
         expect(engine.listenerCount('move')).toBe(1)
+        expect(engine.listenerCount('moveend')).toBe(1)
         expect(engine.listenerCount('zoomstart')).toBe(1)
         expect(engine.listenerCount('zoomend')).toBe(1)
         expect(engine.listenerCount('click')).toBe(1)
@@ -605,6 +595,7 @@ describe('MapPopup_', () => {
         await nextTick()
 
         expect(engine.listenerCount('move')).toBe(0)
+        expect(engine.listenerCount('moveend')).toBe(0)
         expect(engine.listenerCount('zoomstart')).toBe(0)
         expect(engine.listenerCount('zoomend')).toBe(0)
         expect(engine.listenerCount('click')).toBe(0)
@@ -617,7 +608,7 @@ describe('MapPopup_', () => {
     })
 
     it('never listens for clicks when hidden before the opening task ends', async () => {
-        const outcome = show(bus, engine)
+        const outcome = show(engine)
         MapPopup_.hide()
 
         await nextTick()
@@ -627,7 +618,6 @@ describe('MapPopup_', () => {
     })
 
     it('rejects and leaves nothing mounted when wiring the popup fails', async () => {
-        window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
         const subscribe = engine.engine.on
         engine.engine.on = (event: string, handler: () => void) => {
             if (event === 'zoomend') throw new Error('engine destroyed')
@@ -650,7 +640,7 @@ describe('MapPopup_', () => {
 
     it('still tears down when the engine has already been destroyed', async () => {
         engine = makeEngine({ offThrows: true })
-        const outcome = show(bus, engine)
+        const outcome = show(engine)
 
         MapPopup_.hide()
         await nextTick()
@@ -661,7 +651,6 @@ describe('MapPopup_', () => {
     })
 
     it('rejects a request whose fields are not what they claim', async () => {
-        window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
 
         const noAnchor = track(
             MapPopup_.show(
@@ -692,8 +681,7 @@ describe('MapPopup_', () => {
         expect(popups()).toHaveLength(0)
     })
 
-    it('rejects an anchor outside the geographic range', async () => {
-        window.mmgisAPI = bus.api as unknown as Window['mmgisAPI']
+    it('rejects a latitude off the globe', async () => {
 
         const offGlobe = track(
             MapPopup_.show(
@@ -701,23 +689,32 @@ describe('MapPopup_', () => {
                 engine.engine as never
             )
         )
-        const offMeridian = track(
+        await nextTick()
+
+        // Finite, so nothing downstream complains: Mercator clamps it to the
+        // pole and opens the popup somewhere the caller never asked for.
+        expect(offGlobe).toEqual([OUT_OF_RANGE])
+        expect(popups()).toHaveLength(0)
+    })
+
+    it('accepts a longitude past the antimeridian', async () => {
+
+        // What a map panned across the antimeridian hands out. It projects to
+        // the pixel the caller meant, one world east of the prime copy.
+        const outcome = track(
             MapPopup_.show(
-                request({ latlng: { lat: 0, lng: -181 } }),
+                request({ latlng: { lat: 0, lng: 190 } }),
                 engine.engine as never
             )
         )
         await nextTick()
 
-        // Both are finite, so nothing downstream complains: the projection
-        // clamps them and opens the popup somewhere the caller never asked for.
-        expect(offGlobe).toEqual([OUT_OF_RANGE])
-        expect(offMeridian).toEqual([OUT_OF_RANGE])
-        expect(popups()).toHaveLength(0)
+        expect(outcome).toEqual([])
+        expect(popups()).toHaveLength(1)
     })
 
     it('leaves an open popup alone when a later request is invalid', async () => {
-        const outcome = show(bus, engine, { html: '<p>Crater A</p>' })
+        const outcome = show(engine, { html: '<p>Crater A</p>' })
 
         const invalid = track(
             MapPopup_.show(
@@ -739,7 +736,7 @@ describe('MapPopup_', () => {
     // what is on screen is still its own.
     describe('retracting is scoped to whoever opened the popup', () => {
         it("closes the caller's own popup and nobody else's", async () => {
-            const outcome = show(bus, engine, {}, 'aoi')
+            const outcome = show(engine, {}, 'aoi')
 
             // Another plugin's hide finds a popup that is not theirs, and a
             // caller with no handle — the console, an embedding page — is not
@@ -760,7 +757,7 @@ describe('MapPopup_', () => {
 
         it('keeps an anonymous popup and a plugin\'s apart', async () => {
             // "No caller" is a value of its own on both sides.
-            const outcome = show(bus, engine)
+            const outcome = show(engine)
 
             expect(MapPopup_.hideForCaller('aoi')).toBe(false)
             await nextTick()
@@ -781,8 +778,8 @@ describe('MapPopup_', () => {
         // request takes it whoever the last one belonged to. Ownership decides
         // who may retract, never who may open.
         it("lets a plugin's popup replace another plugin's", async () => {
-            const first = show(bus, engine, { html: '<p>AOI</p>' }, 'aoi')
-            const second = show(bus, engine, { html: '<p>Draw</p>' }, 'draw')
+            const first = show(engine, { html: '<p>AOI</p>' }, 'aoi')
+            const second = show(engine, { html: '<p>Draw</p>' }, 'draw')
             await nextTick()
 
             expect(first).toEqual(['closed'])
@@ -803,7 +800,7 @@ describe('MapPopup_', () => {
     // pass on content that had never been filtered at all.
     describe('what a card is allowed to hold', () => {
         it('mounts the plugin markup in a shadow root of its own', () => {
-            show(bus, engine, { html: '<p>Crater A</p>' })
+            show(engine, { html: '<p>Crater A</p>' })
 
             // Nothing in the card's own tree, so a stylesheet the author
             // writes styles their content and stops there.
@@ -817,7 +814,7 @@ describe('MapPopup_', () => {
             // head, and the head is not what the sanitizer returns, so without
             // asking for the body the one place an author is most likely to
             // write their stylesheet is the one place it would vanish from.
-            show(bus, engine, {
+            show(engine, {
                 html: '<style>@keyframes pulse { to { opacity: 0.5 } } .dot:hover { color: red }</style><p class="dot">Crater A</p>',
             })
 
@@ -830,7 +827,7 @@ describe('MapPopup_', () => {
             // and the card answers with which button was pressed and nothing
             // else — so a field is markup like any other, and a card built
             // around one comes back whole rather than blank.
-            show(bus, engine, {
+            show(engine, {
                 html: '<form action="https://evil.test"><p>Pick one</p><button>Press me</button><select><option>Only</option></select><input value="x"><textarea>Type</textarea></form><canvas width="10"></canvas>',
             })
 
@@ -847,7 +844,7 @@ describe('MapPopup_', () => {
             // DOMPurify keeps its own list of those tags, and naming a
             // `FORBID_CONTENTS` of our own would replace that list rather than
             // extend it, leaving the raw text of an `xmp` to read as prose.
-            show(bus, engine, {
+            show(engine, {
                 html: '<p>Crater A</p><xmp>rm -rf /</xmp>',
             })
 
@@ -859,7 +856,7 @@ describe('MapPopup_', () => {
             // A popover promotes itself above the app's panels, where neither
             // the card's clipping nor its paint containment can follow. It is
             // the one thing DOMPurify passes that a card cannot contain.
-            show(bus, engine, {
+            show(engine, {
                 html: '<button popovertarget="p">Open</button><div id="p" popover>Top layer</div><p>Crater A</p>',
             })
 
@@ -871,7 +868,7 @@ describe('MapPopup_', () => {
             // DOMPurify's defaults answer this one; the assertions are here so
             // an upgrade that stopped answering it is a failure and not a
             // surprise in the field.
-            show(bus, engine, {
+            show(engine, {
                 html: '<iframe src="https://evil.test"></iframe><object data="x"></object><embed src="x"><p>Crater A</p>',
             })
 
@@ -882,7 +879,7 @@ describe('MapPopup_', () => {
         })
 
         it('refuses script, handlers, and urls that run something', () => {
-            show(bus, engine, {
+            show(engine, {
                 html: '<p onclick="alert(1)">Crater A</p><script>alert(2)</script><a href="javascript:alert(3)">go</a><img src=x onerror="alert(4)">',
             })
 
@@ -892,7 +889,7 @@ describe('MapPopup_', () => {
         })
 
         it('keeps static svg whole and refuses the elements that only animate', () => {
-            show(bus, engine, {
+            show(engine, {
                 html: '<svg viewBox="0 0 10 10"><title>Rose</title><desc>A compass rose</desc><defs><linearGradient id="g"><stop offset="0" stop-color="#000"/></linearGradient><filter id="f"><feFlood flood-color="#fff" flood-opacity="0.5"/><feDropShadow dx="1" dy="1"/><feGaussianBlur stdDeviation="2"/></filter><clipPath id="c"><rect width="4" height="4"/></clipPath></defs><g clip-path="url(#c)"><path d="M0 0 L10 10" vector-effect="non-scaling-stroke" pointer-events="none"/><text dominant-baseline="middle">N</text></g></svg>',
             })
 
@@ -904,7 +901,7 @@ describe('MapPopup_', () => {
             expect(markup).toContain('stdDeviation="2"')
             expect(markup).toContain('viewBox="0 0 10 10"')
 
-            show(bus, engine, {
+            show(engine, {
                 html: '<svg><rect><animate attributeName="x" dur="1s" to="10"/><set attributeName="y" to="4"/></rect></svg>',
             })
 
@@ -918,7 +915,7 @@ describe('MapPopup_', () => {
             // Representative rather than exhaustive: what a card may carry is
             // DOMPurify's own curated answer, and this is the part of it the
             // popup's own contract would notice the loss of.
-            show(bus, engine, {
+            show(engine, {
                 html: '<img src="a.png" alt="Crater A from orbit"><video controls><track kind="captions" srclang="en" label="English" src="c.vtt"></video><p id="a" class="b" data-feature="crater-a" role="note" aria-label="Crater A" style="color: red">A<sub>1</sub> <del>old</del><ins>new</ins></p><math><mfrac><mi>a</mi><mn>2</mn></mfrac></math><table><tr><td colspan="2">Cell</td></tr></table>',
             })
 
@@ -941,7 +938,7 @@ describe('MapPopup_', () => {
         const link = () => contentRoot().querySelector('a')!
 
         it('sends every link that goes anywhere to a tab of its own', () => {
-            show(bus, engine, {
+            show(engine, {
                 // A target the author asked for is overridden — stripping it
                 // would make this worse, the link then navigating in place —
                 // and an empty `href` goes out too: it resolves to the document
@@ -954,15 +951,16 @@ describe('MapPopup_', () => {
             expect(anchors[0].getAttribute('rel')).toBe('noopener noreferrer')
             expect(anchors[1].getAttribute('target')).toBe('_blank')
             expect(anchors[1].getAttribute('rel')).toBe('noopener noreferrer')
-            // A bare fragment is a jump within the content, resolving inside
-            // the shadow root, so it reaches neither the app's ids nor
-            // anywhere off the page.
+            // A bare fragment navigates nothing, so it is left alone. Fragment
+            // lookup never enters a shadow tree, so it reaches none of the
+            // card's own ids either; the most it can do is name an element of
+            // the app, which is inert here.
             expect(anchors[2].getAttribute('target')).toBeNull()
             expect(anchors[2].getAttribute('rel')).toBeNull()
         })
 
         it('sends an svg link out the same way', () => {
-            show(bus, engine, {
+            show(engine, {
                 html: '<svg><a xlink:href="https://example.test"><rect width="4" height="4"/></a></svg>',
             })
 
@@ -970,11 +968,42 @@ describe('MapPopup_', () => {
             expect(link().getAttribute('rel')).toBe('noopener noreferrer')
         })
 
+        // An `<area href>` is a link wearing an image map, and the sanitizer
+        // passes `<map>`/`<area>` through.
+        it('sends an image map area out the same way', () => {
+            show(engine, {
+                html: '<img src="a.png" usemap="#m" alt="Crater A"><map name="m"><area shape="rect" coords="0,0,4,4" href="https://example.test" alt="Crater A"></map>',
+            })
+
+            const area = contentRoot().querySelector('area')!
+            expect(area.getAttribute('target')).toBe('_blank')
+            expect(area.getAttribute('rel')).toBe('noopener noreferrer')
+
+            const click = new MouseEvent('click', {
+                bubbles: true,
+                composed: true,
+                cancelable: true,
+            })
+            area.removeAttribute('target')
+            const open = vi
+                .spyOn(window, 'open')
+                .mockImplementation(() => null)
+            area.dispatchEvent(click)
+
+            expect(click.defaultPrevented).toBe(true)
+            expect(open).toHaveBeenCalledWith(
+                'https://example.test',
+                '_blank',
+                'noopener,noreferrer'
+            )
+            open.mockRestore()
+        })
+
         it('refuses at the click anything that would still navigate in place', () => {
             const open = vi
                 .spyOn(window, 'open')
                 .mockImplementation(() => null)
-            show(bus, engine, { html: '<a href="https://example.test">go</a>' })
+            show(engine, { html: '<a href="https://example.test">go</a>' })
             // Whatever put it back — a mutation the walk never saw — the click
             // is the last place to catch it.
             link().removeAttribute('target')
@@ -998,7 +1027,7 @@ describe('MapPopup_', () => {
         it('refuses a submit outright', () => {
             // A form reaches the card whole, `action` and all, so the guard is
             // what keeps the controls inside it inert rather than dangerous.
-            show(bus, engine, {
+            show(engine, {
                 html: '<form action="https://evil.test"><input name="q"><button type="submit">Go</button></form>',
             })
 
@@ -1042,7 +1071,7 @@ describe('MapPopup_', () => {
             document.querySelector<HTMLElement>('.mmgis-map-popup__close')!
 
         it('names itself as a dialog the keyboard is working in', () => {
-            show(bus, engine, { title: 'Drawn rectangle' })
+            show(engine, { title: 'Drawn rectangle' })
 
             expect(card().getAttribute('role')).toBe('dialog')
             // No `aria-modal`, which would say the app behind the card is
@@ -1054,7 +1083,7 @@ describe('MapPopup_', () => {
         })
 
         it('closes on Escape and answers as a dismissal', async () => {
-            const outcome = show(bus, engine, { html: '<p>Crater A</p>' })
+            const outcome = show(engine, { html: '<p>Crater A</p>' })
             // The app closes its own things on Escape too, and the innermost
             // thing open is the one the key was meant for.
             const alsoListening: string[] = []
@@ -1071,7 +1100,7 @@ describe('MapPopup_', () => {
         })
 
         it('wraps a Tab at either end of the card, and off the card itself', () => {
-            show(bus, engine, {
+            show(engine, {
                 html: '<a href="https://example.test">Crater A</a>',
                 primaryAction: { label: 'Analyze' },
             })
@@ -1096,7 +1125,7 @@ describe('MapPopup_', () => {
             // though its contents sat where the host does, so a trap that read
             // the card's light DOM alone would put its last stop ahead of the
             // plugin's links and let a Tab out of the dialog from there.
-            show(bus, engine, {
+            show(engine, {
                 html: '<a href="https://a.test">One</a><a href="https://b.test">Two</a>',
             })
             const links = Array.from(contentRoot().querySelectorAll('a'))
@@ -1116,7 +1145,7 @@ describe('MapPopup_', () => {
         it("counts the form controls in the plugin's own markup", () => {
             // A card may hold a field, so a trap that named only the chrome's
             // buttons would let a Tab out of the dialog through one.
-            show(bus, engine, {
+            show(engine, {
                 html: '<input name="q"><textarea name="notes"></textarea><input name="off" disabled>',
             })
             const field = contentRoot().querySelector('input')!
@@ -1139,7 +1168,7 @@ describe('MapPopup_', () => {
         // where it sent focus — and not the browser's answer to the key.
         // Whether focus stays in the card is a real browser's to answer.
         it('passes over the stops a closed disclosure is holding', () => {
-            show(bus, engine, {
+            show(engine, {
                 html: '<a href="https://a.test">One</a><details><summary>More</summary><a href="https://b.test">Inside</a></details>',
             })
             const summary = contentRoot().querySelector('summary')!
@@ -1161,7 +1190,7 @@ describe('MapPopup_', () => {
             // A card carries its author's own styles, so anything in it can be
             // hidden and stay in the markup — and `-1` is the only negative
             // tabindex the selector can spell, so any other means the same.
-            show(bus, engine, {
+            show(engine, {
                 html: '<a href="https://a.test">One</a><a href="https://b.test" style="display: none">Gone</a><a href="https://c.test" style="visibility: hidden">Gone too</a><div tabindex="-2">Pointer only</div>',
             })
             const one = contentRoot().querySelector('a')!
@@ -1175,7 +1204,7 @@ describe('MapPopup_', () => {
 
         it('keeps focus on a card that has nothing to hand it to', () => {
             // A card of nothing but prose still holds the keyboard.
-            show(bus, engine, { title: 'Drawn rectangle', html: undefined })
+            show(engine, { title: 'Drawn rectangle', html: undefined })
             card().removeChild(closeButton())
 
             const tab = press('Tab')
@@ -1189,7 +1218,7 @@ describe('MapPopup_', () => {
             document.body.appendChild(opener)
             opener.focus()
 
-            const outcome = show(bus, engine, { html: '<p>Crater A</p>' })
+            const outcome = show(engine, { html: '<p>Crater A</p>' })
             // Focus lands on the card rather than a control inside it, so what
             // a screen reader reads first is the card's own name.
             expect(document.activeElement).toBe(card())
@@ -1205,8 +1234,8 @@ describe('MapPopup_', () => {
             document.body.appendChild(opener)
             opener.focus()
 
-            show(bus, engine, { html: '<p>First</p>' })
-            show(bus, engine, { html: '<p>Second</p>' })
+            show(engine, { html: '<p>First</p>' })
+            show(engine, { html: '<p>Second</p>' })
             MapPopup_.hide()
 
             expect(document.activeElement).toBe(opener)
@@ -1220,7 +1249,7 @@ describe('MapPopup_', () => {
             document.body.append(opener, elsewhere)
             opener.focus()
 
-            show(bus, engine, { html: '<p>Crater A</p>' })
+            show(engine, { html: '<p>Crater A</p>' })
             elsewhere.focus()
             MapPopup_.hide()
 
@@ -1241,11 +1270,12 @@ describe('MapPopup_', () => {
 
         it('puts the card beside the map container rather than inside it', () => {
             const host = hostTheMap()
-            show(bus, engine)
+            show(engine)
 
-            // Beside the map and after it, which is what paints the card over
-            // the map without claiming a stacking level the app's panels
-            // would then have to beat.
+            // Beside the map rather than inside it, so a press on the card
+            // never reaches the container the engines listen on, and after it,
+            // so the card sits last among the map's own siblings while the
+            // positioned panel regions still paint over it.
             expect(card().parentElement).toBe(host)
             expect(engine.engine.getContainer().contains(card())).toBe(false)
             expect(host.lastElementChild).toBe(card())
@@ -1253,7 +1283,7 @@ describe('MapPopup_', () => {
 
         it('keeps a press on the card out of the map click pipeline', async () => {
             hostTheMap()
-            const outcome = show(bus, engine, {
+            const outcome = show(engine, {
                 primaryAction: { label: 'Analyze' },
             })
             const reachedTheMap: string[] = []
@@ -1274,21 +1304,32 @@ describe('MapPopup_', () => {
     })
 
     describe('the rules the card cannot be laid out without', () => {
+        // Comments go first: they name the very properties the assertions
+        // below look for, so a rule would read as carrying one it discusses.
         const css = readFileSync(
             'src/essence/Basics/MapPopup_/MapPopup.css',
             'utf8'
-        )
-        /** The declarations of the rule whose selector list holds `selector`. */
+        ).replace(/\/\*[\s\S]*?\*\//g, '')
+        /**
+         * The declarations of every rule whose selector list holds
+         * `selector`, joined — every one of them, so a second rule that
+         * undoes the first is read too. A selector no rule carries is an
+         * assertion against nothing, so it throws rather than answering with
+         * the empty string a renamed class would otherwise pass.
+         */
         const declarations = (selector: string): string => {
-            const rule = css
+            const rules = css
                 .split('}')
-                .find((block) =>
+                .filter((block) =>
                     block
                         .split('{')[0]
                         .split(',')
                         .some((one) => one.trim().endsWith(selector))
                 )
-            return rule?.split('{')[1] ?? ''
+                .map((block) => block.split('{')[1] ?? '')
+            if (rules.length === 0)
+                throw new Error(`No rule in MapPopup.css matches ${selector}`)
+            return rules.join('\n')
         }
 
         it('clips the card, caps it at the viewport, and scrolls the overflow', () => {
@@ -1307,10 +1348,13 @@ describe('MapPopup_', () => {
             expect(declarations('.mmgis-map-popup')).toContain('contain: paint')
         })
 
-        it('claims a stacking context but no level of its own', () => {
-            // Containment makes the card a stacking context, but at
-            // `z-index: auto` it still paints where tree order puts it, so the
-            // panels the app lays over the map paint over the card too.
+        it('is a positioned box with no stacking level of its own', () => {
+            // Positioned, so the card paints over the map without asking for a
+            // level. At `z-index: auto`, so anything the app means to paint
+            // over the card has to be positioned and carry one itself.
+            expect(declarations('.mmgis-map-popup')).toContain(
+                'position: fixed'
+            )
             expect(declarations('.mmgis-map-popup')).not.toContain('z-index')
         })
     })

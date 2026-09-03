@@ -287,6 +287,11 @@ export interface IMapEngine<
 
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).
+     *
+     * Every engine reports `click`, `move` and `moveend`, while `zoomstart`
+     * and `zoomend` are per-engine, so anything that has to follow the view
+     * listens for `move` and `moveend` and treats the zoom pair as a
+     * refinement it may never be given.
      */
     on(
         eventName: string,
