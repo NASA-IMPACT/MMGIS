@@ -8,10 +8,8 @@
 // Is this stored value one of the keys API/Backend/Upload/uploadRouter.js
 // writes when the S3 asset bucket is configured? This is a copy of
 // ASSETS_UPLOAD_KEY in API/Backend/Upload/validate.js; see it for the shape
-// this matches and why. The Essence bundle has no import path into a CommonJS
-// module run by Node, and configure/src/core/upload.js carries a third copy
-// for the CMS bundle. tests/unit/uploadKeyClassifier.spec.js runs one table of
-// values through all three and fails if they classify any of them differently.
+// this matches, why, and why each bundle carries its own copy.
+// configure/src/core/upload.js carries the third.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
 
 // What URL should the page request for a stored value? Four cases, checked

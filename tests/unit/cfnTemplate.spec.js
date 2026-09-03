@@ -138,7 +138,7 @@ test.describe('renderCfnTemplate', () => {
         expect(dist.DefaultRootObject).toBe('index.html')
         expect(
             dist.DefaultCacheBehavior.CachePolicyId,
-            'must be a policy whose maximum TTL is a year or more, or this edge caps the immutable Cache-Control tier (this id is the managed CachingOptimized)'
+            "changing this id means re-checking the policy's Maximum TTL by hand: below a year, this edge caps the immutable Cache-Control tier (this id is the managed CachingOptimized)"
         ).toBe('658327ea-f89d-4fab-a63d-7e88639e58f6')
         const associations = dist.DefaultCacheBehavior.FunctionAssociations
         expect(associations).toHaveLength(1)

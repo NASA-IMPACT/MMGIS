@@ -25,7 +25,6 @@ import path from 'path'
 const ROUTER_PATH = '../../API/Backend/Upload/uploadRouter.js'
 const MODE_PATH = '../../API/Backend/Utils/deploymentMode.js'
 const MISSIONS_DIR = path.join(__dirname, '../../Missions')
-const { ASSETS_UPLOAD_KEY } = require('../../API/Backend/Upload/validate')
 
 const ENV_KEYS = ['MMGIS_DEPLOYMENT_MODE', 'MMGIS_SHARED_ASSET_BUCKET']
 
@@ -152,10 +151,6 @@ test.describe('upload router lean-mode S3 storage', () => {
                     `^assets/${mission}/CardPlugin/uploads/[0-9a-f-]{36}\\.png$`
                 )
             )
-            // And the shape every consumer of the stored value classifies as
-            // an upload key: miss it and the dashboard resolves the path
-            // against the mission folder instead of the dashboard root.
-            expect(ASSETS_UPLOAD_KEY.test(body.path)).toBe(true)
 
             expect(s3.calls.length).toBe(1)
             const cmd = s3.calls[0]
@@ -166,6 +161,17 @@ test.describe('upload router lean-mode S3 storage', () => {
             expect(cmd.input.ContentType).toBe('image/png')
             expect(Buffer.compare(cmd.input.Body, PNG_BYTES)).toBe(0)
             expect(cmd.input.ContentLength).toBe(PNG_BYTES.length)
+            // Exactly these, nothing more: publishing copies the object with
+            // MetadataDirective REPLACE, which restates this set and drops
+            // anything else, so a header added here would vanish on the copy
+            // (scripts/lib/aws-provision.js copyPrefix).
+            expect(Object.keys(cmd.input).sort()).toEqual([
+                'Body',
+                'Bucket',
+                'ContentLength',
+                'ContentType',
+                'Key',
+            ])
 
             // No partial/parallel write under Missions/.
             expect(fs.existsSync(path.join(MISSIONS_DIR, mission))).toBe(false)

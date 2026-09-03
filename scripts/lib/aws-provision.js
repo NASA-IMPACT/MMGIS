@@ -464,17 +464,15 @@ function contentTypeForFile(filePath) {
 // tests/unit/webpackHashedOutput.spec.js), and plugin uploads under
 // assets/<mission>/<subdir>/uploads/, which the upload router names
 // crypto.randomUUID() and never overwrites (API/Backend/Upload/uploadRouter.js).
-// Everything else — the keys that really do change in place on republish, which
-// is every stable-named runtime asset outside those two immutable prefixes —
-// falls back to a short TTL. scripts/build.js copyPublicFolder copies public/
-// and dist/ into build/ verbatim, so nothing arriving that way is
-// content-hashed either (tests/unit/publicHasNoHashedDirs.spec.js).
+// Everything else falls back to a short TTL. scripts/build.js copyPublicFolder
+// copies public/ into build/ verbatim, so nothing arriving that way is
+// content-hashed either (tests/unit/publicHasNoHashedDirs.spec.js). The Cesium
+// tree is the bulk of that, and the short tier is where it belongs: its
+// filenames are stable and their contents change on a release bump.
 //
-// Neither cacheable tier says "public": CloudFront caches on max-age alone, and
-// omitting it keeps a conforming shared cache from ever serving these
-// password-gated responses to another request (RFC 9111 §3.5; reuse would take
-// public, must-revalidate or s-maxage, none of which we send). What the tiers
-// mean for a customer fronting the dashboard is in
+// Neither cacheable tier says "public", which keeps these password-gated
+// responses out of shared caches. What the tiers mean for a customer fronting
+// the dashboard is in
 // docs/infrastructure/serving-a-dashboard-from-your-domain.md.
 function cacheControlForKey(key) {
   if (
@@ -591,26 +589,40 @@ function buildCopySource(bucket, key) {
   return `${bucket}/${encodedKey}`;
 }
 
-// Content-Type for a copied object: the CONTENT_TYPES mapping when the
-// extension is one it names, otherwise the source object's own header read
-// with HeadObject, and octet-stream when the source carries none either.
-async function copiedContentType({ s3, sourceBucket, key }) {
+// The headers a copied object should carry. Content-Type comes from the
+// CONTENT_TYPES mapping when the extension is one it names; otherwise the
+// source object's own headers are read with HeadObject, which gives its
+// Content-Type (octet-stream when it carries none) plus whichever of
+// Content-Encoding, Content-Disposition and Content-Language it was stored
+// with — headers a REPLACE copy would otherwise drop.
+const COPIED_STORAGE_HEADERS = [
+  "ContentEncoding",
+  "ContentDisposition",
+  "ContentLanguage",
+];
+async function copiedHeaders({ s3, sourceBucket, key }) {
   const mapped = CONTENT_TYPES[path.extname(key).toLowerCase()];
-  if (mapped != null) return mapped;
+  if (mapped != null) return { ContentType: mapped };
   const head = await s3.send(
     new HeadObjectCommand({ Bucket: sourceBucket, Key: key })
   );
-  return head.ContentType || "application/octet-stream";
+  const headers = {
+    ContentType: head.ContentType || "application/octet-stream",
+  };
+  COPIED_STORAGE_HEADERS.forEach((field) => {
+    if (head[field]) headers[field] = head[field];
+  });
+  return headers;
 }
 
 // Same-key copies every object under `prefix` from sourceBucket into
 // destBucket, giving each copy the Cache-Control tier for its key. COPY (the
 // default) cannot set headers the source object never had, so that takes
 // MetadataDirective: REPLACE, which rewrites the metadata of every key under
-// the prefix — Content-Encoding, Content-Disposition and any x-amz-meta-* are
-// dropped unless restated alongside Content-Type. Nothing sets those: the
-// upload router writes ContentType alone. Returns the number of objects
-// copied.
+// the prefix — anything not restated alongside Content-Type is dropped, x-amz-
+// meta-* included. The upload router writes Content-Type alone; a hand-placed
+// object keeps the storage headers copiedHeaders restates for it. Returns the
+// number of objects copied.
 async function copyPrefix({ sourceBucket, destBucket, prefix }) {
   const { s3 } = getClients();
   let copied = 0;
@@ -624,7 +636,7 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
       })
     );
     for (const obj of list.Contents || []) {
-      const contentType = await copiedContentType({
+      const headers = await copiedHeaders({
         s3,
         sourceBucket,
         key: obj.Key,
@@ -635,7 +647,7 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
           Key: obj.Key,
           CopySource: buildCopySource(sourceBucket, obj.Key),
           MetadataDirective: "REPLACE",
-          ContentType: contentType,
+          ...headers,
           CacheControl: cacheControlForKey(obj.Key),
         })
       );

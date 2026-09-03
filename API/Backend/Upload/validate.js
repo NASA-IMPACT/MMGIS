@@ -23,10 +23,11 @@ const IMAGE_MIME_TO_EXT = {
 // the wrong root.
 //
 // This is the documented home of that shape. src/pre/uploadKey.ts and
-// configure/src/core/upload.js each carry a copy — separate frontend bundles
-// with no import path into this CommonJS module;
-// tests/unit/uploadKeyClassifier.spec.js runs one table of values through all
-// three and fails if they classify any of them differently.
+// configure/src/core/upload.js each carry a copy because both frontend bundles
+// restrict imports to their own src/ (webpack's ModuleScopePlugin), which puts
+// this file out of reach of either. tests/unit/uploadKeyClassifier.spec.js runs
+// one table of values through all three and fails if they classify any of them
+// differently.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 
 // Map an upload mimetype to a safe file extension using the given allow-list,

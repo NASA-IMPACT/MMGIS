@@ -1020,9 +1020,7 @@ test.describe('cacheControlForKey', () => {
     // [key, expected Cache-Control]. Three tiers: revalidate-always for the
     // entry page and the baked config, immutable for the content-addressed
     // keys (hashed webpack output and the never-overwritten plugin uploads),
-    // a short TTL for everything else. The upload-key half of the immutable
-    // tier belongs to tests/unit/uploadKeyClassifier.spec.js, which checks it
-    // against the other two copies of that classifier.
+    // a short TTL for everything else.
     const TIERS = [
         ['index.html', 'no-cache'],
         ['build/index.html', 'no-cache'],
@@ -1030,6 +1028,7 @@ test.describe('cacheControlForKey', () => {
         ['build/static/js/main.abc123.js', 'max-age=31536000, immutable'],
         ['build/static/css/x.css', 'max-age=31536000, immutable'],
         ['build/static/media/a.png', 'max-age=31536000, immutable'],
+        ['assets/M/S/uploads/x.png', 'max-age=31536000, immutable'],
         ['build/asset-manifest.json', 'max-age=300'],
         // Under build/static but not content-hashed, so explicitly NOT
         // immutable.
@@ -1144,10 +1143,13 @@ test.describe('copyPrefix', () => {
     const UPLOAD_UUID = '6f1e2a3c-4b5d-4e6f-8a9b-0c1d2e3f4a5b'
     const UPLOAD_KEY = `assets/TestMission/CardPlugin/uploads/${UPLOAD_UUID}.png`
 
-    // What each mocked source object carries as its own Content-Type, for the
+    // What each mocked source object carries as its own headers, for the
     // extensions the table does not name. An empty head is a source with none.
     const SOURCE_HEADS = {
-        'assets/TestMission/scan.tif': { ContentType: 'image/tiff' },
+        'assets/TestMission/scan.tif': {
+            ContentType: 'image/tiff',
+            ContentEncoding: 'gzip',
+        },
         'assets/TestMission/untyped.bin': {},
     }
 
@@ -1238,6 +1240,11 @@ test.describe('copyPrefix', () => {
         expect([...heads].sort()).toEqual(Object.keys(SOURCE_HEADS).sort())
         expect(copied['assets/TestMission/scan.tif'].ContentType).toBe(
             'image/tiff'
+        )
+        // The same head carries the storage headers a REPLACE copy would
+        // otherwise drop, so they ride along onto the copy.
+        expect(copied['assets/TestMission/scan.tif'].ContentEncoding).toBe(
+            'gzip'
         )
         // ...which is where a source with no Content-Type of its own lands.
         expect(copied['assets/TestMission/untyped.bin'].ContentType).toBe(
