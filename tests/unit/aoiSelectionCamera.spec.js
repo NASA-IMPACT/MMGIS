@@ -1,5 +1,6 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
+    featureBounds,
     featureCentroid,
     selectionFitBounds,
     selectionPopupAnchor,
@@ -148,6 +149,41 @@ test.describe('featureCentroid', () => {
     test('has no centroid for a geometry with no vertices to average', () => {
         expect(featureCentroid(geometry('LineString', []))).toBeNull()
         expect(featureCentroid({ type: 'Feature', properties: {} })).toBeNull()
+    })
+})
+
+test.describe('featureBounds', () => {
+    const geometry = (type, coordinates) => ({
+        type: 'Feature',
+        properties: {},
+        geometry: { type, coordinates },
+    })
+
+    test('envelopes a polygon ring', () => {
+        expect(featureBounds(squareFeature(0, 0, 10, 20))).toEqual([0, 0, 10, 20])
+    })
+
+    // The bounds decide whether the camera is asked to frame the selection and
+    // whether the anchor gets a view to fall back on, so every geometry the
+    // centroid supports has to reach that path too.
+    test('envelopes the lines and the point, as the centroid does', () => {
+        expect(
+            featureBounds(geometry('LineString', [[0, 0], [10, 4], [20, 8]]))
+        ).toEqual([0, 0, 20, 8])
+        expect(
+            featureBounds(
+                geometry('MultiLineString', [
+                    [[0, 0], [2, 0]],
+                    [[-1, 4], [2, 6]],
+                ])
+            )
+        ).toEqual([-1, 0, 2, 6])
+        expect(featureBounds(geometry('Point', [3, 7]))).toEqual([3, 7, 3, 7])
+    })
+
+    test('has no bounds for a geometry with no vertices', () => {
+        expect(featureBounds(geometry('LineString', []))).toBeNull()
+        expect(featureBounds({ type: 'Feature', properties: {} })).toBeNull()
     })
 })
 
@@ -375,7 +411,9 @@ test.describe('AOITool._applySelection camera behavior', () => {
             secondMoveend
         )
 
-        secondMoveend({ longitude: -89, latitude: 32.5, zoom: 5 })
+        // A view state nowhere near the selection's centroid, so a handler
+        // that forwarded it as the anchor is caught here.
+        secondMoveend({ longitude: 12, latitude: -4, zoom: 6 })
         const popups = calls.filter((c) => c.name === 'map:showPopup')
         expect(popups).toHaveLength(1)
         expect(popups[0].payload.title).toBe('Second')

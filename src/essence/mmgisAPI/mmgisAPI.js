@@ -1026,8 +1026,8 @@ var mmgisAPI = {
      * `request` is here too, but unprefixed — it names another provider, not
      * one of this plugin's. Going through the handle is what stamps the
      * plugin's id on the request, so prefer it to `mmgisAPI.request`: some
-     * providers answer differently, or not at all, when they cannot tell who
-     * is asking. For subscribing (on), use mmgisAPI directly with full paths.
+     * providers answer differently when they cannot tell who is asking. For
+     * subscribing (on), use mmgisAPI directly with full paths.
      *
      * @param {string} pluginId - Unique plugin identifier (e.g., 'draw', 'info', 'layers')
      * @returns {Object} Scoped API with emit, provide, request, getVars and

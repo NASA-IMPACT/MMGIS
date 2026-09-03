@@ -923,11 +923,13 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         }
     }
 
+    /** The shapes the adapter registers a terra-draw mode for. */
+    const DRAW_SHAPES = ['point', 'linestring', 'polygon', 'rectangle', 'circle']
+
     /**
      * Stands in for terra-draw, which disables double-click zoom as it starts a
-     * mode and leaves it disabled when the mode stops — and throws rather than
-     * stopping a mode twice, leaving whatever it stopped the first time in
-     * place.
+     * mode, leaves it disabled when the mode stops, and throws when asked for a
+     * mode it has none of.
      */
     function makeTerraDraw(doubleClickZoom) {
         let started = false
@@ -935,11 +937,13 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
             get enabled() { return started },
             start: () => { started = true },
             clear: () => { },
-            setMode: () => { doubleClickZoom?.disable() },
-            stop: () => {
-                if (!started) throw new Error('Mode must be started to be stopped')
-                started = false
+            setMode: (mode) => {
+                if (!DRAW_SHAPES.includes(mode)) {
+                    throw new Error('No mode with this name present')
+                }
+                doubleClickZoom?.disable()
             },
+            stop: () => { started = false },
         }
     }
 
@@ -1164,6 +1168,19 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         const { adapter } = setupDrawing({ doubleClickZoom: zoom })
 
         adapter.disableDrawing()
+
+        expect(zoom.enabled()).toBe(true)
+    })
+
+    // `map:enableDrawing` takes its shape straight off the bus, so a plugin can
+    // ask for one no mode was registered for. terra-draw throws on the lookup,
+    // with double-click zoom already taken for a session that will never end to
+    // give it back.
+    test('gives double-click zoom back when the mode fails to start', () => {
+        const zoom = makeDoubleClickZoom()
+        const { adapter } = setupDrawing({ doubleClickZoom: zoom })
+
+        expect(() => adapter.enableDrawing('freehand')).toThrow()
 
         expect(zoom.enabled()).toBe(true)
     })

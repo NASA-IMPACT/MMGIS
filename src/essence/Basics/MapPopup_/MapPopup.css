@@ -23,11 +23,13 @@
     width: max-content;
     min-width: 220px;
     max-width: 320px;
-    /* A card is never taller than the viewport it is placed in: nothing
-       scrolls a card that hangs past the bottom edge into view, so its actions
-       row would be out of reach. The 16px is the 8px margin MapPopup_ keeps
-       at an edge, counted at the top and at the bottom. The column lets the
-       content take whatever room the actions row leaves. */
+    /* A card is never taller than the room it is placed in: nothing scrolls a
+       card that hangs past the bottom edge into view, so its actions row would
+       be out of reach. This is the cap until the anchor first projects;
+       MapPopup_ then replaces it with the height of the visible map. The 16px
+       is the 8px margin MapPopup_ keeps at an edge, counted at the top and at
+       the bottom. The column lets the content take whatever room the actions
+       row leaves. */
     display: flex;
     flex-direction: column;
     max-height: calc(100vh - 16px);
