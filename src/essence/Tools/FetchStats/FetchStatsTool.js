@@ -3,8 +3,8 @@
  *
  * pluginId: 'fetch-stats' — declared in this plugin's config.json. The tool
  * controller mints the plugin-scoped bus handle from it and injects it as
- * `FetchStatsTool.api` before make() runs, which is what prefixes the emits
- * below with `plugin:fetch-stats:`.
+ * `FetchStatsTool.api` before this plugin runs any of its own code, which is
+ * what prefixes the emits below with `plugin:fetch-stats:`.
  *
  * Listens to:
  *   - plugin:aoi:analysisAOIReady   { feature }
@@ -38,11 +38,19 @@ const FetchStatsTool = {
     MMGISInterface: null,
     _api: null,
     _cleanups: [],
+    made: false,
 
-    // No initialize(): the controller calls make() on every load, and a
-    // make() that ran twice would subscribe twice and answer one AOI
-    // selection with two analysis runs.
+    // This plugin has no UI, so the classic layout never calls make() for it:
+    // initialize() is the only hook it gets there. The modern layout calls
+    // both, hence the guard in make() — a second subscription would answer one
+    // AOI selection with two analysis runs.
+    initialize() {
+        this.make(null)
+    },
+
     make(targetId) {
+        if (this.made) return
+        this.made = true
         this.MMGISInterface = new interfaceWithMMGIS(this, targetId)
         // The controller minted this tool's bus handle before make() ran. The
         // stand-in mirrors the handle's shape so environments that mount the
@@ -71,6 +79,7 @@ const FetchStatsTool = {
     },
 
     destroy() {
+        this.made = false
         this._cleanups.forEach((fn) => fn())
         this._cleanups = []
         this.MMGISInterface?.separateFromMMGIS()
