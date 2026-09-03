@@ -8,8 +8,58 @@
     color: var(--theme-color-ink, #1b1b1b);
     font-family: 'Lato', sans-serif;
 
+    /* "Add layer from URL" trigger, pinned above the scrolling legend list */
+    &__header {
+        flex: 0 0 auto;
+        padding: var(--theme-spacing-1, 0.5rem);
+    }
+
+    &__add-layer {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--theme-spacing-05, 0.25rem);
+        width: 100%;
+        padding: var(--theme-spacing-1, 0.5rem);
+        background: transparent;
+        border: 1px solid var(--theme-color-primary-lighter, #c4dbfa);
+        border-radius: var(--theme-radius-md, 4px);
+        color: var(--theme-color-primary, #137480);
+        font-family: inherit;
+        font-size: var(--theme-font-size-2xs, 14px);
+        font-weight: var(--theme-font-weight-normal, 400);
+        cursor: pointer;
+        transition: background 0.12s ease;
+
+        &:hover {
+            background: var(--theme-color-primary-lightest, #eaf0fd);
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #137480);
+            outline-offset: 1px;
+        }
+    }
+
+    &__add-layer-icon {
+        flex: 0 0 auto;
+        width: 16px;
+        height: 16px;
+        background-color: currentColor;
+        -webkit-mask-image: url('../../geo/icons/add.svg');
+        mask-image: url('../../geo/icons/add.svg');
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+    }
+
     &__content {
         flex: 1;
+        /* Scrolls under the header rather than pushing the panel taller */
+        min-height: 0;
         /* Inset so hovered legend cards don't butt against the panel edges */
         padding: var(--theme-spacing-1, 0.5rem);
         overflow-y: auto;

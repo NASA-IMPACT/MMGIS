@@ -1,8 +1,11 @@
 {
+    "defaults": {
+        "variables": {}
+    },
     "defaultIcon": "add",
     "description": "Add an external layer (WMS/WMTS/XYZ/GeoJSON) to the map for the current session.",
     "descriptionFull": {
-        "title": "An 'Add layer from URL' form in a floating panel over the map. It starts hidden — any plugin reveals it by emitting the 'addTempLayer:show' bus event; its close button hides it again. Added layers are session-only and lost on reload."
+        "title": "An 'Add layer from URL' form in a floating panel over the map. It starts hidden — reveal it with the core action 'plugins:show:AddTempLayerTool'; its close button hides it again. Added layers are session-only and lost on reload."
     },
     "hasVars": false,
     "name": "AddTempLayer",

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ShareFormatFlags } from './types'
 import { getShareMenuItems } from './getShareMenuItems'
-import { SHARE_MENU_ICONS } from './icons'
+import { SHARE_MENU_ICONS, ShareMapIcon } from './icons'
 
 export type ShareMenuProps = {
     /** Which downloadable formats are enabled. The link is always shown. */
@@ -142,6 +142,11 @@ export function ShareMenu({
                 aria-controls={open ? menuId : undefined}
                 onClick={handleTriggerClick}
             >
+                <ShareMapIcon
+                    className="share-menu__trigger-icon"
+                    aria-hidden="true"
+                    focusable="false"
+                />
                 <span>Share map</span>
             </button>
 

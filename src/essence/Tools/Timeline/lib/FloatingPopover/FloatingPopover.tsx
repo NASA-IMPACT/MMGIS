@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import './FloatingPopover.css'
 
 export interface FloatingPopoverProps {
     anchorRef: React.RefObject<HTMLElement | null>
