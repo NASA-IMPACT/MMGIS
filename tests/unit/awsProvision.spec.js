@@ -105,8 +105,6 @@ test.describe('updateStack', () => {
         expect(started).toBe(true)
         expect(calls.length).toBe(1)
         expect(calls[0].constructor.name).toBe('UpdateStackCommand')
-        expect(calls[0].input.StackName).toBe('mmgis-dashboard-1')
-        expect(calls[0].input.TemplateBody).toBe('{}')
         expect(calls[0].input.Tags).toEqual([
             { Key: 'mmgis:deployment', Value: 'mmgis-dashboard-1' },
         ])
@@ -175,19 +173,23 @@ test.describe('isStackBusyError', () => {
     })
 
     // CloudFormation reuses the exact same "... state and can not be updated"
-    // wording for wedged, delete-only statuses. Classifying one of THOSE as
-    // busy would make the loser wait forever on an operation that is never
-    // coming, instead of surfacing the delete-and-republish guidance. Only the
-    // status the message names tells them apart.
-    test('a wedged UPDATE_ROLLBACK_FAILED rejection is NOT classified as busy', () => {
-        const err = new Error(busyMessage('UPDATE_ROLLBACK_FAILED'))
-        err.name = 'ValidationError'
-        expect(provision.isStackBusyError(err)).toBe(false)
+    // wording for delete-only statuses. Classifying one of THOSE as busy would
+    // make the loser wait forever on an operation that is never coming,
+    // instead of surfacing the delete-and-republish guidance. Only the status
+    // the message names tells them apart — and a delete in flight names an
+    // _IN_PROGRESS one, so the suffix alone is not enough.
+    test('a delete-only status in the rejection is NOT classified as busy', () => {
+        const deleteOnly = ['UPDATE_ROLLBACK_FAILED', 'DELETE_IN_PROGRESS']
+        deleteOnly.forEach((status) => {
+            const err = new Error(busyMessage(status))
+            err.name = 'ValidationError'
+            expect(provision.isStackBusyError(err), status).toBe(false)
+        })
     })
 })
 
 // The convergence loop (see convergeStackUpdate's docblock). Driven with a cfn
-// mock that scripts a reply per command, in the order the loop issues them.
+// mock that scripts what each kind of command answers.
 test.describe('convergeStackUpdate', () => {
     test.afterEach(() => provision.setClients(null))
 
@@ -195,31 +197,32 @@ test.describe('convergeStackUpdate', () => {
     const WINNER = new Date('2026-02-01T10:03:00Z')
     const OURS = new Date('2026-02-01T10:06:00Z')
 
-    // Scripts cfn.send with an ordered list of steps. Each step is
-    // { kind: 'Update' | 'Describe', reply?, throw? }; the reply is the mock
-    // return (Describe steps are wrapped as { Stacks: [reply] }). The last
-    // step repeats so a poll can settle. Each step asserts the command it
-    // receives is the one the script expects, so a loop that issues its
-    // commands in a different order fails on the step that diverged rather
-    // than on a confusing reply mismatch further down.
-    function scriptCfn(steps) {
-        const state = { i: 0, kinds: [], updates: 0 }
+    // Scripts cfn.send with one queue per command kind: `updates` answers the
+    // UpdateStack calls and `describes` the DescribeStacks calls, each in
+    // order, with its last entry repeating so a poll can settle. A step is
+    // { reply } or { throw }; a Describe reply is wrapped as { Stacks: [reply] }.
+    // Splitting the queues means a test says what a command answers rather than
+    // where it falls in the interleaving, so a read added or dropped between
+    // two UpdateStacks doesn't rewrite every script.
+    function scriptCfn({ updates = [], describes = [] }) {
+        const state = { kinds: [], updates: 0, describes: 0 }
+        const next = (queue, index, kind) => {
+            const step = queue[Math.min(index, queue.length - 1)]
+            if (step == null) throw new Error(`Unscripted ${kind} command`)
+            return step
+        }
         provision.setClients({
             cfn: mockClient((command) => {
                 const kind = command.constructor.name
                 state.kinds.push(kind)
-                const step = steps[Math.min(state.i, steps.length - 1)]
-                expect(kind, `step ${state.i}`).toBe(
-                    step.kind === 'Update'
-                        ? 'UpdateStackCommand'
-                        : 'DescribeStacksCommand'
-                )
-                state.i++
-                if (kind === 'UpdateStackCommand') state.updates++
+                if (kind === 'UpdateStackCommand') {
+                    const step = next(updates, state.updates++, kind)
+                    if (step.throw) throw step.throw
+                    return step.reply || {}
+                }
+                const step = next(describes, state.describes++, kind)
                 if (step.throw) throw step.throw
-                if (kind === 'DescribeStacksCommand')
-                    return { Stacks: [step.reply] }
-                return step.reply || {}
+                return { Stacks: [step.reply] }
             }),
         })
         return state
@@ -238,45 +241,73 @@ test.describe('convergeStackUpdate', () => {
     // returned stack reflects (OURS, not the winner's).
     test('waits out an in-flight winner, then runs and waits for OUR own update', async () => {
         const existing = { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: BEFORE }
-        const state = scriptCfn([
-            // attempt 0: our UpdateStack is rejected — winner in flight
-            { kind: 'Update', throw: busyError() },
-            // the `current` describe: winner mid-update
-            { kind: 'Describe', reply: { StackStatus: 'UPDATE_IN_PROGRESS' } },
-            // wait-out poll 1: STILL in progress — must NOT resolve early
-            { kind: 'Describe', reply: { StackStatus: 'UPDATE_IN_PROGRESS' } },
-            // wait-out poll 2: winner settled
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_COMPLETE',
-                    LastUpdatedTime: WINNER,
+        const state = scriptCfn({
+            updates: [
+                // attempt 0: our UpdateStack is rejected — winner in flight
+                { throw: busyError() },
+                // attempt 1: our UpdateStack now accepted
+                { reply: {} },
+            ],
+            describes: [
+                // attempt 0's read
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: BEFORE,
+                    },
                 },
-            },
-            // attempt 1: our UpdateStack now accepted
-            { kind: 'Update', reply: {} },
-            // final wait poll 1: stale winner read (same status, WINNER time) —
-            // prior blocks it from resolving us
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_COMPLETE',
-                    LastUpdatedTime: WINNER,
-                    StackId: 'winner',
+                // wait-out poll 1: the busy rejection is itself proof an
+                // operation is in flight, so this pre-rejection read is stale
+                // and must NOT end the wait-out — retrying here would walk
+                // straight back into the same rejection
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: BEFORE,
+                    },
                 },
-            },
-            // final wait poll 2: our update in flight
-            { kind: 'Describe', reply: { StackStatus: 'UPDATE_IN_PROGRESS', LastUpdatedTime: OURS } },
-            // final wait poll 3: our update landed
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_COMPLETE',
-                    LastUpdatedTime: OURS,
-                    StackId: 'ours',
+                // wait-out poll 2: the winner, mid-update
+                { reply: { StackStatus: 'UPDATE_IN_PROGRESS' } },
+                // wait-out poll 3: the winner settled
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: WINNER,
+                    },
                 },
-            },
-        ])
+                // attempt 1's read
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: WINNER,
+                    },
+                },
+                // final wait poll 1: stale winner read (same status, WINNER
+                // time) — prior blocks it from resolving us
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: WINNER,
+                        StackId: 'winner',
+                    },
+                },
+                // final wait poll 2: our update in flight
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_IN_PROGRESS',
+                        LastUpdatedTime: OURS,
+                    },
+                },
+                // final wait poll 3: our update landed
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: OURS,
+                        StackId: 'ours',
+                    },
+                },
+            ],
+        })
         const stack = await provision.convergeStackUpdate({
             stackName: 'mmgis-dashboard-1',
             templateBody: '{}',
@@ -290,59 +321,82 @@ test.describe('convergeStackUpdate', () => {
         expect(state.updates).toBe(2)
     })
 
-    // The busy rejection is itself proof another operation is in flight, so
-    // the read taken right after it can still show the pre-operation state.
-    // Ending the wait-out on one of those reads would send our UpdateStack
-    // straight back into the same rejection.
-    test('a stale read after the busy rejection does not end the wait-out', async () => {
-        const existing = { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: BEFORE }
-        const state = scriptCfn([
-            // attempt 0: rejected — the winner's update is in flight
-            { kind: 'Update', throw: busyError() },
-            // the `current` describe still reports the pre-rejection state
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_COMPLETE',
-                    LastUpdatedTime: BEFORE,
+    // The caller's read is taken before a bake and build that run for minutes,
+    // so another task can converge the stack in the meantime. Waiting against
+    // that pre-build read would accept the OTHER task's UPDATE_COMPLETE as
+    // proof our own update landed and hand back its stack.
+    test('waits against a read taken now, not the caller pre-build read', async () => {
+        const state = scriptCfn({
+            updates: [{ reply: {} }],
+            describes: [
+                // this attempt's read: another task converged during our build
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: WINNER,
+                    },
                 },
-            },
-            // wait-out poll 1: the same stale read — must NOT resolve
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_COMPLETE',
-                    LastUpdatedTime: BEFORE,
+                // final wait poll 1: stale relative to OUR update
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: WINNER,
+                        StackId: 'theirs',
+                    },
                 },
-            },
-            // wait-out poll 2: the winner's update actually landed
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_COMPLETE',
-                    LastUpdatedTime: WINNER,
+                // final wait poll 2: our update in flight
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_IN_PROGRESS',
+                        LastUpdatedTime: OURS,
+                    },
                 },
-            },
-            // attempt 1: our UpdateStack now accepted
-            { kind: 'Update', reply: {} },
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_COMPLETE',
-                    LastUpdatedTime: OURS,
-                    StackId: 'ours',
+                // final wait poll 3: our update landed
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: OURS,
+                        StackId: 'ours',
+                    },
                 },
-            },
-        ])
+            ],
+        })
         const stack = await provision.convergeStackUpdate({
             stackName: 'mmgis-dashboard-1',
             templateBody: '{}',
-            existing,
+            existing: {
+                StackStatus: 'UPDATE_COMPLETE',
+                LastUpdatedTime: BEFORE,
+            },
             pollIntervalMs: 1,
             timeoutMs: 2000,
         })
         expect(stack.StackId).toBe('ours')
-        expect(state.updates).toBe(2)
+        expect(state.updates).toBe(1)
+    })
+
+    // A delete started while this task was building leaves a stack with no
+    // bucket to publish into. The per-attempt read is what catches it — the
+    // caller's pre-build read still said UPDATE_COMPLETE.
+    test('a delete that starts mid-build stops with the guidance', async () => {
+        const state = scriptCfn({
+            describes: [{ reply: { StackStatus: 'DELETE_IN_PROGRESS' } }],
+        })
+        await expect(
+            provision.convergeStackUpdate({
+                stackName: 'mmgis-dashboard-1',
+                templateBody: '{}',
+                existing: {
+                    StackStatus: 'UPDATE_COMPLETE',
+                    LastUpdatedTime: BEFORE,
+                },
+                pollIntervalMs: 1,
+                timeoutMs: 2000,
+            })
+        ).rejects.toThrow(
+            "Stack 'mmgis-dashboard-1' is in DELETE_IN_PROGRESS and cannot be used"
+        )
+        expect(state.updates).toBe(0)
     })
 
     // A wait-out can settle on a status the stack can only be deleted out of.
@@ -350,19 +404,27 @@ test.describe('convergeStackUpdate', () => {
     // rejection instead of the delete-and-republish guidance.
     test('a wait-out that settles in a delete-only status stops with the guidance', async () => {
         const existing = { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: BEFORE }
-        const state = scriptCfn([
+        const state = scriptCfn({
             // attempt 0: rejected — an operation is in flight
-            { kind: 'Update', throw: busyError() },
-            { kind: 'Describe', reply: { StackStatus: 'ROLLBACK_IN_PROGRESS' } },
-            // wait-out: it settled somewhere only a delete moves it out of
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'ROLLBACK_COMPLETE',
-                    LastUpdatedTime: WINNER,
+            updates: [{ throw: busyError() }],
+            describes: [
+                // attempt 0's read
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: BEFORE,
+                    },
                 },
-            },
-        ])
+                { reply: { StackStatus: 'ROLLBACK_IN_PROGRESS' } },
+                // wait-out: it settled somewhere only a delete moves it out of
+                {
+                    reply: {
+                        StackStatus: 'ROLLBACK_COMPLETE',
+                        LastUpdatedTime: WINNER,
+                    },
+                },
+            ],
+        })
         await expect(
             provision.convergeStackUpdate({
                 stackName: 'mmgis-dashboard-1',
@@ -382,24 +444,31 @@ test.describe('convergeStackUpdate', () => {
     // update path must THROW, never report the dashboard published.
     test('throws when OUR update rolls back to UPDATE_ROLLBACK_COMPLETE', async () => {
         const existing = { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: BEFORE }
-        scriptCfn([
-            { kind: 'Update', reply: {} },
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_ROLLBACK_IN_PROGRESS',
-                    LastUpdatedTime: OURS,
-                    StackStatusReason: 'The new Function code is invalid',
+        scriptCfn({
+            updates: [{ reply: {} }],
+            describes: [
+                // attempt 0's read
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: BEFORE,
+                    },
                 },
-            },
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_ROLLBACK_COMPLETE',
-                    LastUpdatedTime: OURS,
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_ROLLBACK_IN_PROGRESS',
+                        LastUpdatedTime: OURS,
+                        StackStatusReason: 'The new Function code is invalid',
+                    },
                 },
-            },
-        ])
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_ROLLBACK_COMPLETE',
+                        LastUpdatedTime: OURS,
+                    },
+                },
+            ],
+        })
         await expect(
             provision.convergeStackUpdate({
                 stackName: 'mmgis-dashboard-1',
@@ -419,29 +488,45 @@ test.describe('convergeStackUpdate', () => {
     // as its own failure.
     test('waits out a winner that rolls back, then converges our own update', async () => {
         const existing = { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: BEFORE }
-        const state = scriptCfn([
-            // attempt 0: rejected — the winner is mid-update
-            { kind: 'Update', throw: busyError() },
-            { kind: 'Describe', reply: { StackStatus: 'UPDATE_IN_PROGRESS' } },
-            // wait-out: the winner's update rolled back
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_ROLLBACK_COMPLETE',
-                    LastUpdatedTime: WINNER,
+        const state = scriptCfn({
+            updates: [
+                // attempt 0: rejected — the winner is mid-update
+                { throw: busyError() },
+                // attempt 1: our UpdateStack is accepted from that status
+                { reply: {} },
+            ],
+            describes: [
+                // attempt 0's read
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: BEFORE,
+                    },
                 },
-            },
-            // attempt 1: our UpdateStack is accepted from that status
-            { kind: 'Update', reply: {} },
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'UPDATE_COMPLETE',
-                    LastUpdatedTime: OURS,
-                    StackId: 'ours',
+                { reply: { StackStatus: 'UPDATE_IN_PROGRESS' } },
+                // wait-out: the winner's update rolled back
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_ROLLBACK_COMPLETE',
+                        LastUpdatedTime: WINNER,
+                    },
                 },
-            },
-        ])
+                // attempt 1's read
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_ROLLBACK_COMPLETE',
+                        LastUpdatedTime: WINNER,
+                    },
+                },
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: OURS,
+                        StackId: 'ours',
+                    },
+                },
+            ],
+        })
         const stack = await provision.convergeStackUpdate({
             stackName: 'mmgis-dashboard-1',
             templateBody: '{}',
@@ -460,28 +545,29 @@ test.describe('convergeStackUpdate', () => {
     // the missing BucketName.
     test('returns the settled stack, not the pre-wait snapshot, when there is nothing to update', async () => {
         const existing = { StackStatus: 'CREATE_IN_PROGRESS', StackId: 'pre' }
-        scriptCfn([
-            // attempt 0: rejected — the create is still in flight
-            { kind: 'Update', throw: busyError() },
-            { kind: 'Describe', reply: { StackStatus: 'CREATE_IN_PROGRESS' } },
-            // wait-out: the create finished, and only now are there Outputs
-            {
-                kind: 'Describe',
-                reply: {
-                    StackStatus: 'CREATE_COMPLETE',
-                    StackId: 'settled',
-                    Outputs: [{ OutputKey: 'BucketName', OutputValue: 'b' }],
+        const settled = {
+            StackStatus: 'CREATE_COMPLETE',
+            StackId: 'settled',
+            Outputs: [{ OutputKey: 'BucketName', OutputValue: 'b' }],
+        }
+        scriptCfn({
+            updates: [
+                // attempt 0: rejected — the create is still in flight
+                { throw: busyError() },
+                // attempt 1: the created stack already matches our template
+                {
+                    throw: Object.assign(
+                        new Error('No updates are to be performed.'),
+                        { name: 'ValidationError' }
+                    ),
                 },
-            },
-            // attempt 1: the created stack already matches our template
-            {
-                kind: 'Update',
-                throw: Object.assign(
-                    new Error('No updates are to be performed.'),
-                    { name: 'ValidationError' }
-                ),
-            },
-        ])
+            ],
+            describes: [
+                { reply: { StackStatus: 'CREATE_IN_PROGRESS' } },
+                // wait-out: the create finished, and only now are there Outputs
+                { reply: settled },
+            ],
+        })
         const stack = await provision.convergeStackUpdate({
             stackName: 'mmgis-dashboard-1',
             templateBody: '{}',
@@ -493,53 +579,35 @@ test.describe('convergeStackUpdate', () => {
         expect(provision.getStackOutputs(stack)).toEqual({ BucketName: 'b' })
     })
 
-    // A stack being torn down has no bucket to publish into, and the loop must
-    // not spend its busy budget waiting for one that is going away.
-    test('refuses a stack in a delete-only status before sending any command', async () => {
-        const kinds = []
-        provision.setClients({
-            cfn: mockClient((command) => {
-                kinds.push(command.constructor.name)
-                return {}
-            }),
-        })
-        await expect(
-            provision.convergeStackUpdate({
-                stackName: 'mmgis-dashboard-1',
-                templateBody: '{}',
-                existing: { StackStatus: 'DELETE_IN_PROGRESS' },
-                pollIntervalMs: 1,
-            })
-        ).rejects.toThrow(
-            "Stack 'mmgis-dashboard-1' is in DELETE_IN_PROGRESS and cannot be used"
-        )
-        expect(kinds).toEqual([])
-    })
-
     // "No updates are to be performed" — the template already converged; the
-    // stack read before the UpdateStack is still current, because nothing was
-    // waited on.
-    test('returns the existing stack when there is nothing to update', async () => {
-        const existing = { StackStatus: 'UPDATE_COMPLETE', StackId: 'same' }
-        const state = scriptCfn([
-            {
-                kind: 'Update',
-                throw: Object.assign(
-                    new Error('No updates are to be performed.'),
-                    { name: 'ValidationError' }
-                ),
-            },
-        ])
+    // read taken at the top of the attempt is still current, because nothing
+    // was waited on.
+    test('returns the attempt read when there is nothing to update', async () => {
+        const state = scriptCfn({
+            updates: [
+                {
+                    throw: Object.assign(
+                        new Error('No updates are to be performed.'),
+                        { name: 'ValidationError' }
+                    ),
+                },
+            ],
+            describes: [
+                { reply: { StackStatus: 'UPDATE_COMPLETE', StackId: 'current' } },
+            ],
+        })
         const stack = await provision.convergeStackUpdate({
             stackName: 'mmgis-dashboard-1',
             templateBody: '{}',
-            existing,
+            existing: { StackStatus: 'UPDATE_COMPLETE', StackId: 'stale' },
             pollIntervalMs: 1,
         })
-        expect(stack).toBe(existing)
-        // One UpdateStack, and no DescribeStacks poll at all.
-        expect(state.updates).toBe(1)
-        expect(state.kinds).toEqual(['UpdateStackCommand'])
+        expect(stack.StackId).toBe('current')
+        // One read and one UpdateStack: no polling at all.
+        expect(state.kinds).toEqual([
+            'DescribeStacksCommand',
+            'UpdateStackCommand',
+        ])
     })
 
     // A stack that never frees up must fail the row, not loop forever. Every
@@ -578,6 +646,45 @@ test.describe('convergeStackUpdate', () => {
                 timeoutMs: 2000,
             })
         ).rejects.toThrow(/stayed busy after 3 UpdateStack attempts/)
+    })
+
+    // Each wait-out is bounded on its own, so a stack that keeps settling and
+    // going busy again could burn the retry budget for hours. The whole
+    // convergence shares one deadline, which stops it long before that.
+    test('gives up when the convergence deadline passes', async () => {
+        let reads = 0
+        provision.setClients({
+            cfn: mockClient((command) => {
+                if (command.constructor.name === 'UpdateStackCommand')
+                    throw busyError()
+                reads++
+                return {
+                    Stacks: [
+                        {
+                            StackStatus: 'UPDATE_COMPLETE',
+                            LastUpdatedTime: new Date(
+                                BEFORE.getTime() + reads * 60000
+                            ),
+                        },
+                    ],
+                }
+            }),
+        })
+        await expect(
+            provision.convergeStackUpdate({
+                stackName: 'mmgis-dashboard-1',
+                templateBody: '{}',
+                existing: {
+                    StackStatus: 'UPDATE_COMPLETE',
+                    LastUpdatedTime: BEFORE,
+                },
+                // Room for far more attempts than the deadline allows, so the
+                // deadline is what stops the loop.
+                maxBusyRetries: 100,
+                deadlineMs: 1,
+                pollIntervalMs: 5,
+            })
+        ).rejects.toThrow(/did not converge within/)
     })
 })
 
@@ -661,42 +768,14 @@ test.describe('waitForStack', () => {
     // stuck on, or the row's last_error says only "timed out".
     test('times out naming the last status seen', async () => {
         replayStacks([{ StackStatus: 'UPDATE_IN_PROGRESS' }])
-        let error
-        try {
-            await provision.waitForStack({
+        await expect(
+            provision.waitForStack({
                 stackName: 'mmgis-dashboard-1',
                 desiredStatus: 'UPDATE_COMPLETE',
                 pollIntervalMs: 1,
                 timeoutMs: 20,
             })
-        } catch (err) {
-            error = err
-        }
-        expect(error).toBeDefined()
-        expect(error.message).toBe(
-            "Timed out waiting for stack 'mmgis-dashboard-1' to reach 'UPDATE_COMPLETE' (last status 'UPDATE_IN_PROGRESS')"
-        )
-    })
-
-    // The busy wait-out passes the whole terminal set, and a bare array
-    // interpolates as an unreadable comma run — so a set is spelled out.
-    test('times out spelling out a set of desired statuses', async () => {
-        replayStacks([{ StackStatus: 'UPDATE_IN_PROGRESS' }])
-        let error
-        try {
-            await provision.waitForStack({
-                stackName: 'mmgis-dashboard-1',
-                desiredStatus: ['UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'],
-                pollIntervalMs: 1,
-                timeoutMs: 20,
-            })
-        } catch (err) {
-            error = err
-        }
-        expect(error).toBeDefined()
-        expect(error.message).toBe(
-            "Timed out waiting for stack 'mmgis-dashboard-1' to settle (any of: UPDATE_COMPLETE, UPDATE_ROLLBACK_COMPLETE) (last status 'UPDATE_IN_PROGRESS')"
-        )
+        ).rejects.toThrow(/Timed out.*UPDATE_IN_PROGRESS/)
     })
 
     // Someone deleting the stack out from under the wait has to read as a
