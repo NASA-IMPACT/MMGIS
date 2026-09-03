@@ -1145,6 +1145,15 @@ function onEachFeatureDefault(feature, layer) {
     ) {
         //Add a click event to send the data to the info tab
         layer.on('click', (e) => {
+            // Leaflet runs a feature's own listeners before the map's, so the
+            // engine's click reporting is not in the way here: without this,
+            // a vertex placed on a feature — or the click that finishes the
+            // shape on one — would open it in Info.
+            if (
+                Map_.engine?.isDrawing?.() ||
+                Map_.engine?.ownsDrawEndClick?.(e.originalEvent)
+            )
+                return
             featureDefaultClick(feature, layer, e)
         })
     }

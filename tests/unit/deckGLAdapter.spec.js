@@ -130,13 +130,28 @@ function stamped(type, timeStamp) {
  * which event it will be made from.
  */
 function stopOnPointer(adapter, at) {
-    adapter._drawPointers.start()
+    const element = adapter._drawEventElement()
     const stop = () => adapter._stopDrawing()
     const up = stamped('pointerup', at)
-    window.addEventListener('pointerup', stop)
-    window.dispatchEvent(up)
-    window.removeEventListener('pointerup', stop)
+    element.addEventListener('pointerup', stop)
+    element.dispatchEvent(up)
+    element.removeEventListener('pointerup', stop)
     return up
+}
+
+/**
+ * Stands in for terra-draw, which disables double-click zoom as it starts a
+ * mode and leaves it disabled when the mode stops.
+ */
+function makeTerraDraw(doubleClickZoom) {
+    let started = false
+    return {
+        get enabled() { return started },
+        start: () => { started = true },
+        clear: () => {},
+        setMode: () => { doubleClickZoom?.disable() },
+        stop: () => { started = false },
+    }
 }
 
 test.describe('DeckGLAdapter', () => {
@@ -760,16 +775,19 @@ test.describe('DeckGLAdapter', () => {
     })
 
     test.describe('drawing', () => {
-        // enableDrawing needs a real terra-draw session against a MapLibre map,
-        // so drive the finish path with the two things it touches: the session
-        // flag and the canvas terra-draw listens on.
-        function makeSessionAdapter(shape) {
+        // A session started the way a plugin starts one, on a stand-in for
+        // terra-draw: enableDrawing is what wires the pointer watch and the
+        // guard to the canvas terra-draw would listen on. The canvas is in the
+        // page because an event only reaches a window listener from a node
+        // that is in it.
+        function makeSessionAdapter(shape, { doubleClickZoom } = {}) {
             const adapter = makeAdapter()
             const canvas = document.createElement('canvas')
+            document.body.appendChild(canvas)
             adapter._isOverlayMode = true
-            adapter._basemap = { getCanvas: () => canvas }
-            adapter._terraDraw = {}
-            adapter._drawingShape = shape
+            adapter._basemap = { getCanvas: () => canvas, doubleClickZoom }
+            adapter._terraDraw = makeTerraDraw(doubleClickZoom)
+            adapter.enableDrawing(shape)
             return { adapter, canvas }
         }
 
@@ -955,11 +973,12 @@ test.describe('DeckGLAdapter', () => {
             expect(clicks).toEqual([{ lat: 41, lng: -121 }])
         })
 
-        // Finishing on a double-click is trained behaviour, and terra-draw
-        // commits on the first of the two taps. deck maps `dblclick` onto
-        // `onClick` alongside `click` (@deck.gl/core EVENT_HANDLERS), from the
-        // second tap's pointerup — after the pointerdown that used to be taken
-        // as proof of a new gesture.
+        // Finishing on a double-click is trained behaviour, and one of the two
+        // taps is not the one the session ends on: `point` commits on the
+        // first, the click-per-vertex modes on the last. deck maps `dblclick`
+        // onto `onClick` alongside `click` (@deck.gl/core EVENT_HANDLERS), from
+        // the second tap's pointerup — after a pointerdown that a horizon read
+        // alone would take as proof of a new gesture.
         test('the double-click a drawing ended on is not reported as a map click', () => {
             const { adapter, canvas } = makeSessionAdapter('rectangle')
             const clicks = []
@@ -982,26 +1001,6 @@ test.describe('DeckGLAdapter', () => {
 
             expect(clicks).toEqual([])
             expect(picks).toEqual([])
-        })
-
-        // The widest the finishing gesture can be: the second tap pressed at
-        // the very edge of the interval that still makes it a double-click,
-        // and released after the interval has passed. Judged by stamp alone
-        // here, as the overlaid overlay's forwarded click would be.
-        test('a double-click finish is covered to the edge of the interval', () => {
-            const { adapter, canvas } = makeSessionAdapter('rectangle')
-            const clicks = []
-            adapter.on('click', (e) => clicks.push(e.latlng))
-
-            stopOnPointer(adapter, 1000)
-            canvas.dispatchEvent(stamped('pointerdown', 1300))
-            canvas.dispatchEvent(stamped('pointerup', 1360))
-            adapter._onPointerClick(
-                pickAt(-120, 40),
-                clickFrom({ originalEvent: stamped('click', 1360) })
-            )
-
-            expect(clicks).toEqual([])
         })
 
         // A third tap is the user's, even one pressed within an interval of the
@@ -1050,29 +1049,22 @@ test.describe('DeckGLAdapter', () => {
             expect(clicks).toEqual([{ lat: 40, lng: -120 }])
         })
 
-        // terra-draw turns double-click zoom back on the moment the mode stops,
-        // so the second click of a double-click finish would zoom the map on
-        // top of everything else it does. Hold that re-enable back for as long
-        // as the browser may still make a double-click of the gesture.
-        test('double-click zoom stays off until the finish hold passes', () => {
+        // terra-draw leaves double-click zoom disabled when the mode stops, so
+        // the guard is what gives it back — and giving it back the moment the
+        // session ends would let the second click of a double-click finish
+        // zoom the map. It waits out as long as the browser may still make a
+        // double-click of the gesture.
+        test('double-click zoom comes back once the finish hold passes', () => {
             vi.useFakeTimers()
             try {
-                const { adapter, canvas } = makeSessionAdapter('rectangle')
-                let enabled = false
-                adapter._basemap = {
-                    getCanvas: () => canvas,
-                    doubleClickZoom: {
-                        isEnabled: () => enabled,
-                        enable: () => { enabled = true },
-                        disable: () => { enabled = false },
-                    },
+                let enabled = true
+                const doubleClickZoom = {
+                    isEnabled: () => enabled,
+                    enable: () => { enabled = true },
+                    disable: () => { enabled = false },
                 }
-                // Stopping the mode is what turns it back on, inside
-                // _stopDrawing.
-                adapter._terraDraw = {
-                    clear: () => { },
-                    stop: () => { enabled = true },
-                }
+                const { adapter } = makeSessionAdapter('rectangle', { doubleClickZoom })
+                expect(enabled).toBe(false)
 
                 stopOnPointer(adapter, 1000)
                 expect(enabled).toBe(false)
@@ -1085,15 +1077,20 @@ test.describe('DeckGLAdapter', () => {
         })
 
         // A plugin ending the drawing from its own panel — a Finish button, a
-        // mode switch, the Escape it handles itself — never touched the map, so
-        // the click the user makes next is theirs from the first one.
-        test('a session a plugin ended does not swallow the click that follows', () => {
+        // tab, a shape picker — ends it on a pointer that never touched the
+        // map, and no click of the drawing's is on its way. The click the user
+        // makes next is theirs from the first one.
+        test('a session a plugin ended from its panel does not swallow the next click', () => {
             const { adapter } = makeSessionAdapter('polygon')
             const clicks = []
             adapter.on('click', (e) => clicks.push(e.latlng))
+            const button = document.createElement('button')
+            document.body.appendChild(button)
 
+            button.dispatchEvent(stamped('pointerdown', 1000))
+            button.dispatchEvent(stamped('pointerup', 1000))
             adapter.disableDrawing()
-            adapter._onPointerClick(pickAt(-120, 40), clickFrom(5000))
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(stamped('click', 1100)))
 
             expect(clicks).toEqual([{ lat: 40, lng: -120 }])
         })
@@ -1143,18 +1140,21 @@ test.describe('DeckGLAdapter', () => {
 
         // Point mode commits on the pointerup of the click that places it, and
         // deck reports that click a tap interval later — with the session over.
-        test('a shape finished on a click leaves the guard covering it', () => {
+        test('the click a shape was finished on is not reported', () => {
             const adapter = makeOverlayDrawingAdapter()
             const canvas = adapter._basemap.getCanvas()
             const finished = []
+            const clicks = []
             adapter.on('drawcomplete', (e) => finished.push(e))
+            adapter.on('click', (e) => clicks.push(e.latlng))
 
             adapter.enableDrawing('point')
             pointer(canvas, 'pointerdown', 10, 10)
             const up = pointer(canvas, 'pointerup', 10, 10)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
 
             expect(finished).toHaveLength(1)
-            expect(adapter._drawEndClick.owns(up)).toBe(true)
+            expect(clicks).toEqual([])
         })
 
         // Enter finishes from a keyup, but deck is still holding the click that

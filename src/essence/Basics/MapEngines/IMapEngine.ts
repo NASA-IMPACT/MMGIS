@@ -292,6 +292,10 @@ export interface IMapEngine<
      * and `zoomend` are per-engine, so anything that has to follow the view
      * listens for `move` and `moveend` and treats the zoom pair as a
      * refinement it may never be given.
+     *
+     * Clicks belonging to a drawing session are not reported: neither the ones
+     * the session takes as vertices, nor the ones its finishing gesture leaves
+     * the engine to deliver once the session is over.
      */
     on(
         eventName: string,
@@ -413,6 +417,18 @@ export interface IMapEngine<
      * Whether a drawing session is currently active.
      */
     isDrawing(): boolean
+
+    /**
+     * Whether the click made from `source` belongs to the drawing session that
+     * just ended — the finishing gesture's clicks, which the engine delivers
+     * after the session is over.
+     *
+     * `source` is the native DOM event the click was made from. For consumers
+     * that hear clicks from the map library directly rather than through
+     * {@link on}, which filters them out already. Optional: an engine that
+     * cannot be drawn on need not answer.
+     */
+    ownsDrawEndClick?(source: unknown): boolean
 
     /**
      * Attach an HTML overlay anchored to a geographic point.
