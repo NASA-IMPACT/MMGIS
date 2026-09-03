@@ -115,6 +115,6 @@ describe('the request client', () => {
 
     test('names nobody when none is given', async () => {
         await mmgisRequest('map:hidePopup')
-        expect(request.mock.calls[0][2]).toBeUndefined()
+        expect(request).toHaveBeenCalledWith('map:hidePopup', undefined, undefined)
     })
 })

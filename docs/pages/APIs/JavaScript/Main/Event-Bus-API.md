@@ -171,7 +171,7 @@ That declaration is the tool's whole identity — the same string names it on th
 
 > **Note:** An id must match `/^[a-z][a-z0-9-]*$/`, and no two tools may answer to the same one: the build refuses to generate the tool registry, and loading a mission whose live tools resolve to one id throws, both naming the pair that collided. One identity means one instance — a mission cannot run two instances of the same tool.
 
-Both layouts mint from the same declared id, so a tool answers to one identity whichever one loads it. The modern layout mints a handle each time it loads the tool and releases it when the tool is destroyed. The classic layout mints once per page load, holds the handle for the mission, and releases it on a mission swap without minting a replacement — a classic tool that must outlive a swap has to subscribe on `window.mmgisAPI` directly.
+Both layouts mint from the same declared id, so a tool answers to one identity whichever one loads it. The modern layout mints a handle each time it loads the tool and releases it when the tool is destroyed. The classic layout mints once per page load, holds the handle for the mission, and releases it on a mission swap without minting a replacement — a classic tool's `provide`d handlers and its `plugin:{id}:getVars` go off the bus at that point and do not come back; its `mmgisAPI.on` subscriptions are untouched.
 
 The scoped API is available on `this.api` in your tool's `initialize()` and `make()` functions:
 
