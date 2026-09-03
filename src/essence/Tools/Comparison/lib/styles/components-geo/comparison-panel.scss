@@ -11,6 +11,23 @@
 // follows the AOI tool, so the two read as one system — 2px corners, a muted
 // tab strip the selected tab lifts out of in white, white fields, and a
 // primary tint for hover with solid primary for the selected state.
+//
+// Icons are the design set's own files under ../../geo/icons, drawn as masks
+// rather than as inline markup: the file supplies the shape and the element's
+// own colour fills it, so a glyph follows its control through hover, pressed
+// and disabled without a second copy of the artwork.
+
+// Paint `$file` as a glyph `$size` across, in whatever colour the element
+// carries.
+@mixin masked-icon($file, $size) {
+    flex: 0 0 auto;
+    display: block;
+    width: $size;
+    height: $size;
+    background-color: currentColor;
+    -webkit-mask: url('../../geo/icons/#{$file}') no-repeat center / contain;
+    mask: url('../../geo/icons/#{$file}') no-repeat center / contain;
+}
 
 .blocks-comparison {
     box-sizing: border-box;
@@ -58,15 +75,12 @@
     }
 
     &__brand-icon {
-        flex: 0 0 auto;
-        display: block;
-        width: 24px;
-        height: 24px;
+        @include masked-icon('compare.svg', 24px);
         color: var(--theme-color-ink, #1c1d1f);
     }
 
     &__brand-title {
-        font-size: var(--theme-font-size-sm, 16px);
+        font-size: var(--theme-font-size-2xs, 14px);
         font-weight: var(--theme-font-weight-semibold, 600);
         line-height: 1.6;
         color: var(--theme-color-ink, #1c1d1f);
@@ -84,22 +98,29 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: var(--theme-spacing-1, 8px);
-        padding: var(--theme-spacing-05, 4px) var(--theme-spacing-105, 12px);
+        gap: var(--theme-spacing-05, 4px);
+        padding: var(--theme-spacing-05, 4px) 10px;
         background: var(--theme-color-primary, #005ea2);
         border: 0;
         border-radius: 0;
         color: var(--theme-color-white, #ffffff);
         font-family: inherit;
         font-size: 10px;
-        font-weight: var(--theme-font-weight-semibold, 600);
+        font-weight: var(--theme-font-weight-bold, 700);
         line-height: 1.6;
-        letter-spacing: 0.02em;
+        letter-spacing: 0.025em;
+        text-transform: uppercase;
         cursor: pointer;
         transition: background-color 0.12s ease;
 
         &:hover {
             background: var(--theme-color-primary-dark, #1a4480);
+        }
+
+        // The glyph is read at the icon's own size rather than shrunk to the
+        // chip's, which is set below the theme's smallest type step.
+        .mdi {
+            font-size: 12px;
         }
     }
 
@@ -129,24 +150,24 @@
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: var(--theme-spacing-205, 20px);
-        padding: var(--theme-spacing-205, 20px) var(--theme-spacing-2, 16px);
+        gap: var(--theme-spacing-105, 0.75rem);
+        padding: var(--theme-spacing-105, 0.75rem) var(--theme-spacing-105, 0.75rem);
         overflow-y: auto;
     }
 
     // ── Tab toggle ──────────────────────────────────────────────────────────
-    // The tab strip is framed as a single field, with the tabs dividing it. The
-    // strip itself is the muted ground; the selected tab lifts out of it in
-    // white, which is what separates the two without a rule between them.
+    // A muted tray the two tabs sit in. The gutter around and between them is
+    // what lets the selected tab read as a card lifted out of the tray, which
+    // is what separates the two without a rule between them.
     &__tabs {
         display: flex;
         flex-shrink: 0;
+        gap: var(--theme-spacing-05, 0.25rem);
         width: 100%;
         min-width: 0;
+        padding: var(--theme-spacing-05, 0.25rem);
         background: var(--theme-color-base-lightest, #f1f3f6);
-        border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
         border-radius: var(--theme-radius-sm, 2px);
-        overflow: hidden;
     }
 
     &__tab {
@@ -155,10 +176,9 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 6px;
+        gap: 2px;
         min-width: 0;
-        min-height: 65px;
-        padding: 10px var(--theme-spacing-105, 12px);
+        padding: var(--theme-spacing-1, 8px) var(--theme-spacing-05, 0.25rem);
         background: transparent;
         border: 0;
         cursor: pointer;
@@ -181,6 +201,7 @@
         &--active:hover:not(:disabled) {
             background: var(--theme-color-white, #ffffff);
             color: var(--theme-color-ink, #1c1d1f);
+            box-shadow: 0 1px 2px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
         }
 
         &:disabled {
@@ -200,7 +221,7 @@
     &__field-label {
         font-size: var(--theme-font-size-3xs, 12px);
         font-weight: var(--theme-font-weight-semibold, 600);
-        color: var(--theme-color-base-dark, #565c65);
+        color: var(--theme-color-base, #71767a);
     }
 
     &__select-wrapper {
@@ -221,7 +242,7 @@
         border-radius: var(--theme-radius-sm, 2px);
         font-family: inherit;
         font-size: var(--theme-font-size-3xs, 12px);
-        font-weight: var(--theme-font-weight-semibold, 600);
+        font-weight: var(--theme-font-weight-normal, 400);
         color: var(--theme-color-ink, #1c1d1f);
         cursor: pointer;
 
@@ -252,7 +273,7 @@
         width: 100%;
         max-height: 40vh;
         overflow-y: auto;
-        padding: var(--theme-spacing-05, 4px);
+        padding: var(--theme-spacing-05, 0.25rem);
         background: var(--theme-color-white, #ffffff);
         border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
         border-radius: var(--theme-radius-sm, 2px);
@@ -267,8 +288,9 @@
     &__option {
         display: flex;
         align-items: center;
+        gap: var(--theme-spacing-1, 0.5rem);
         width: 100%;
-        padding: var(--theme-spacing-05, 4px) var(--theme-spacing-1, 8px);
+        padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-1, 0.5rem);
         background: transparent;
         border: 0;
         color: var(--theme-color-base-dark, #565c65);
@@ -278,19 +300,35 @@
         transition: background-color 0.15s ease, color 0.15s ease;
 
         &:hover {
-            background: var(--theme-color-primary-lightest, #e6f4f6);
-            color: var(--theme-color-primary, #1c67e3);
+            background: var(--theme-color-primary-lightest, #eff6fb);
+            color: var(--theme-color-primary, #005ea2);
         }
 
         &:focus-visible {
-            outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
+            outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #005ea2);
             outline-offset: -2px;
         }
 
+        // The row the field is already showing, marked the way pointing at a
+        // row marks it — the tick is what separates the two.
         &--selected {
-            color: var(--theme-color-ink, #1c1d1f);
-            font-weight: var(--theme-font-weight-semibold, 600);
+            background: var(--theme-color-primary-lightest, #eff6fb);
+            color: var(--theme-color-primary, #005ea2);
         }
+    }
+
+    // The wording takes the row's width and gives up what it cannot fit, so a
+    // long layer name never pushes the tick off the end of the row.
+    &__option-title {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    &__option-check {
+        @include masked-icon('check.svg', 14px);
     }
 
     &__select-caret {
@@ -309,16 +347,24 @@
         gap: var(--theme-spacing-1, 8px);
         width: 100%;
 
-        // The row holding a date is a field like the layer dropdowns, so it is
-        // framed like one.
+        // Both rows hold a date the same way, so the row already reading one
+        // is framed as a field like the layer dropdowns rather than singled
+        // out.
         &--primary .blocks-comparison__date-selector {
             background: var(--theme-color-white, #ffffff);
             border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
         }
 
-        // The compare row reads as an empty slot until a date fills it, so its
-        // border stays dashed whether or not one has been picked.
+        // The compare row is a slot waiting to be filled, so it is dashed while
+        // it is empty and settles into a field like the layer dropdowns once a
+        // date is in it.
         &--compare .blocks-comparison__date-selector {
+            background: var(--theme-color-white, #ffffff);
+            border: var(--theme-border-width-sm, 1px) solid var(--theme-color-base-lighter, #dfe1e2);
+        }
+
+        &--compare .blocks-comparison__date-selector--unset {
+            background: transparent;
             border: var(--theme-border-width-sm, 1px) dashed var(--theme-color-primary, #005ea2);
         }
     }
@@ -348,7 +394,7 @@
         justify-content: center;
         border: var(--theme-border-width-sm, 1px) dashed var(--theme-color-base-light, #a9aeb1);
         font-size: var(--theme-font-size-3xs, 12px);
-        font-weight: var(--theme-font-weight-semibold, 600);
+        font-weight: var(--theme-font-weight-normal, 400);
         color: var(--theme-color-base, #71767a);
     }
 
@@ -360,7 +406,7 @@
     & &__date-selector .date-text {
         font-family: inherit;
         font-size: var(--theme-font-size-3xs, 12px);
-        font-weight: var(--theme-font-weight-semibold, 600);
+        font-weight: var(--theme-font-weight-normal, 400);
         color: var(--theme-color-ink, #1c1d1f);
     }
 
@@ -384,7 +430,7 @@
 
     &__hint {
         margin: 0;
-        font-size: var(--theme-font-size-2xs, 14px);
+        font-size: var(--theme-font-size-3xs, 0.75rem);
         font-weight: var(--theme-font-weight-normal, 400);
         line-height: 1.6;
         color: var(--theme-color-base-dark, #565c65);
@@ -396,6 +442,18 @@
         align-items: center;
         justify-content: space-between;
         width: 100%;
+        padding-top: var(--theme-spacing-05, 0.25rem);
+    }
+
+    // The two ways the map can be split, each named by its own glyph.
+    &__layout-icon {
+        &--swipe {
+            @include masked-icon('slider.svg', 18px);
+        }
+
+        &--sideBySide {
+            @include masked-icon('side-by-side.svg', 18px);
+        }
     }
 
     &__actions-group {

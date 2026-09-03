@@ -181,7 +181,15 @@ export function LayerSelect({
                             }}
                             onKeyDown={(e) => onOptionKeyDown(e, index)}
                         >
-                            {layer.title}
+                            <span className="blocks-comparison__option-title">
+                                {layer.title}
+                            </span>
+                            {layer.id === value && (
+                                <span
+                                    className="blocks-comparison__option-check"
+                                    aria-hidden="true"
+                                />
+                            )}
                         </button>
                     ))}
                 </div>

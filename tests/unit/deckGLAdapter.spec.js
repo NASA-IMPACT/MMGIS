@@ -220,13 +220,14 @@ test.describe('DeckGLAdapter', () => {
             expect(stored.opacity).toBe(0.4)
         })
 
-        test('setLayerOpacity returns the instance carrying the new opacity', () => {
+        test('setLayerOpacity replaces the stored layer and returns nothing', () => {
             const adapter = makeAdapter()
             const original = makeLayer('opacity-layer')
             adapter.addLayer(original)
-            const updated = adapter.setLayerOpacity(original, 0.25)
-            expect(updated.opacity).toBe(0.25)
-            expect(updated).not.toBe(original)
+            expect(adapter.setLayerOpacity(original, 0.25)).toBeUndefined()
+            const stored = adapter.getLayers().find((l) => l.id === 'opacity-layer')
+            expect(stored.opacity).toBe(0.25)
+            expect(stored).not.toBe(original)
             expect(original.opacity).toBeUndefined()
         })
 
@@ -238,11 +239,10 @@ test.describe('DeckGLAdapter', () => {
             expect(stored.opacity).toBe(0)
         })
 
-        test('setLayerOpacity clones an unmounted layer without adding it to the map', () => {
+        test('setLayerOpacity is a no-op for a layer the engine does not hold', () => {
             const adapter = makeAdapter()
             const offMap = makeLayer('hidden-layer')
-            const updated = adapter.setLayerOpacity(offMap, 0.6)
-            expect(updated.opacity).toBe(0.6)
+            expect(adapter.setLayerOpacity(offMap, 0.6)).toBeUndefined()
             expect(adapter.hasLayer('hidden-layer')).toBe(false)
         })
 
@@ -251,7 +251,7 @@ test.describe('DeckGLAdapter', () => {
             expect(adapter.setLayerOpacity('nonexistent', 0.5)).toBeUndefined()
         })
 
-        test('setLayerOpacity on a value with nothing to clone returns undefined without throwing', () => {
+        test('setLayerOpacity on a non-layer value returns undefined without throwing', () => {
             const adapter = makeAdapter()
             expect(() => adapter.setLayerOpacity(false, 0.5)).not.toThrow()
             expect(adapter.setLayerOpacity(false, 0.5)).toBeUndefined()
@@ -604,6 +604,52 @@ test.describe('DeckGLAdapter', () => {
             adapter._isOverlayMode = false
             adapter._deck = null
             await expect(adapter.captureScreenshot()).rejects.toThrow(/no active map/)
+        })
+    })
+
+    // Under the deck.gl engine MMGIS still builds `data`, `image`, `video` and
+    // `velocity` layers as native Leaflet objects, and callers hand every
+    // registry entry to the active engine. Such an object has no deck `id`, so
+    // addLayer files it under `undefined`, and no `clone`, which the layer sync
+    // calls on every entry it mounts.
+    test.describe('a registry entry that is not a deck layer', () => {
+        function makeStandaloneAdapter() {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = false
+            adapter._deck = { setProps: vi.fn() }
+            return adapter
+        }
+
+        // A Leaflet tile layer's opacity surface — enough shape to be mistaken
+        // for a registry entry, with none of a deck layer's.
+        const makeLeafletish = () => ({
+            opacity: null,
+            setOpacity(o) { this.opacity = o },
+        })
+
+        test('is accepted by addLayer without throwing', () => {
+            const adapter = makeStandaloneAdapter()
+            expect(() => adapter.addLayer(makeLeafletish())).not.toThrow()
+        })
+
+        test('is left out of the layers handed to deck', () => {
+            const adapter = makeStandaloneAdapter()
+            adapter.addLayer(makeLayer('l1'))
+            adapter.addLayer(makeLeafletish())
+
+            const sent = adapter._deck.setProps.mock.calls.at(-1)[0].layers
+            expect(sent.map((l) => l.id)).toEqual(['l1'])
+        })
+
+        test('is left out of the layers handed to an interleaved overlay', () => {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = true
+            adapter._overlay = { setProps: vi.fn(), finalize: vi.fn() }
+            adapter.addLayer(makeLayer('l1'))
+            adapter.addLayer(makeLeafletish())
+
+            const sent = adapter._overlay.setProps.mock.calls.at(-1)[0].layers
+            expect(sent.map((l) => l.id)).toEqual(['l1'])
         })
     })
 
