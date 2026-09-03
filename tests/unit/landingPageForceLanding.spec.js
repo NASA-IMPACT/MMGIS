@@ -46,15 +46,14 @@ test('a lone mission loads straight through when the flag is absent', () => {
     expect(s.init).toHaveBeenCalled()
 })
 
-// Either casing, and with or without a value: all four spellings are the
-// same request — hold the mission list up instead of auto-loading.
-test.each(['forcelanding', 'forceLanding', 'forcelanding=1', 'forceLanding=1'])(
-    '?%s holds the mission list up',
-    (query) => {
-        initAt(query)
-        expect(document.querySelector('.landingPage')).not.toBeNull()
-    }
-)
+// Which spellings of the flag count is landingFlags' business, and its own
+// table in tests/unit/landingFlags.spec.js walks them. What the landing page
+// owns is the response: a recognized flag holds the mission list up instead
+// of auto-loading the lone mission.
+test('?forcelanding holds the mission list up', () => {
+    initAt('forcelanding')
+    expect(document.querySelector('.landingPage')).not.toBeNull()
+})
 
 test('a static build strips both spellings from its URL', () => {
     // A static dashboard only ever shows its baked mission, so the flag is

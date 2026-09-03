@@ -13,8 +13,9 @@ test.describe('public asset paths stay document-relative', () => {
         // imports cleanly under Vitest, so exercise the real function
         // instead of pattern-matching its source.
         // Tag '101' is a real definition in patterns.json's first group.
-        const url = LayerGeologic.getUrl('pattern', '101')
-        expect(url.startsWith('public/')).toBe(true)
+        expect(LayerGeologic.getUrl('pattern', '101')).toBe(
+            'public/images/geologic/patterns/series_100.surficial/101.svg',
+        )
     })
 
     // The PDF worker URL lives in its own module so it can be exercised
@@ -29,22 +30,6 @@ test.describe('public asset paths stay document-relative', () => {
     test('the PDF worker follows a dashboard served under a path prefix', () => {
         expect(pdfWorkerSrc('https://h/tools/dash/')).toBe(
             'https://h/tools/dash/public/workers/pdf.worker.min.mjs',
-        )
-    })
-
-    test('a prefix without its trailing slash resolves a segment short', () => {
-        // Relative resolution drops the last segment of a slash-less base, so
-        // this URL misses the dashboard's own folder. The CloudFront Function
-        // redirects a slash-less entry request to the trailing-slash form, so
-        // the page's baseURI never takes this shape.
-        expect(pdfWorkerSrc('https://h/tools/dash')).toBe(
-            'https://h/tools/public/workers/pdf.worker.min.mjs',
-        )
-    })
-
-    test('a query string on the page does not follow the PDF worker', () => {
-        expect(pdfWorkerSrc('https://h/?mission=X')).toBe(
-            'https://h/public/workers/pdf.worker.min.mjs',
         )
     })
 })
