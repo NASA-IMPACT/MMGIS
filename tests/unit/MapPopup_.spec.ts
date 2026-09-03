@@ -114,9 +114,20 @@ const cardText = () =>
 const buttons = () => document.querySelectorAll('.mmgis-map-popup__button')
 /** Where MapPopup_ parks a card that has nowhere on screen to be. */
 const PARKED = 'translate(-100000px, -100000px)'
-/** Give the card a real size; jsdom reports every element as 0x0. */
+/**
+ * Give the card a real size; jsdom reports every element as 0x0. jsdom also
+ * applies no styles, so the stub honours the `max-height` MapPopup_ sets the
+ * way a browser's own layout would.
+ */
 const sizeCard = (width: number, height: number) => {
-    card().getBoundingClientRect = () => ({ width, height }) as DOMRect
+    const element = card()
+    element.getBoundingClientRect = () => {
+        const cap = parseFloat(element.style.maxHeight)
+        return {
+            width,
+            height: Number.isNaN(cap) ? height : Math.min(height, cap),
+        } as DOMRect
+    }
 }
 const nextTick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -255,7 +266,6 @@ describe('MapPopup_', () => {
         })
 
         it('rejects a request with neither a title nor html to show', async () => {
-    
             const empty = track(
                 MapPopup_.show(
                     { latlng: { lat: 45, lng: -120 } } as MapPopupRequest,
@@ -423,30 +433,55 @@ describe('MapPopup_', () => {
         expect(card().style.transform).toBe('translate(300px, 62px)')
     })
 
-    it('keeps a card flipped below a low anchor inside the map', () => {
+    it('caps a card taller than the map so it fits inside the map', () => {
         engine = makeEngine({ point: { x: 300, y: 200 }, containerTop: 0 })
         show(engine)
-        // Taller than the room above its anchor, so it flips below it.
+        // Taller than the room above its anchor, so it flips below it, and
+        // taller than the 600px map, so uncapped it would end 862px down it
+        // with its actions row out of reach under the bottom panel region.
         sizeCard(200, 650)
 
         engine.fire('move')
 
-        // Left where the flip put it, at 212, the card would end 862px down a
-        // 600px map with its actions row out of reach, so both clamps bite and
-        // the top one wins, at the 8px margin.
+        // The map less the 8px margin at each edge, and the card placed at the
+        // top margin, so it ends at 592 — inside the map.
+        expect(card().style.maxHeight).toBe('584px')
         expect(card().style.transform).toBe('translate(300px, 8px)')
+        expect(8 + card().getBoundingClientRect().height).toBeLessThanOrEqual(
+            600
+        )
     })
 
-    it('clamps the card to the viewport when its anchor sits near an edge', () => {
+    it("clamps the card to the map's left edge when its anchor sits near it", () => {
         engine = makeEngine({ point: { x: 5, y: 200 }, containerLeft: 0 })
         show(engine)
         sizeCard(200, 100)
 
         engine.fire('move')
 
-        // Centering on x=5 would push the card off screen, so it stops at the
-        // 8px margin.
+        // Centring on x=5 would push the card past the map's left edge, so it
+        // stops at the 8px margin.
         expect(card().style.transform).toBe('translate(8px, 138px)')
+    })
+
+    it('pins the card to the near edge of a map too narrow to hold it', () => {
+        // Both side panels open on a small window leaves a strip of map
+        // narrower than the card's 220px minimum.
+        engine = makeEngine({
+            point: { x: 150, y: 200 },
+            containerLeft: 0,
+            containerTop: 0,
+            containerWidth: 200,
+        })
+        show(engine)
+        sizeCard(200, 100)
+
+        engine.fire('move')
+
+        // There is no placement that honours both edges, so the card takes the
+        // left margin and spills off the right rather than the other way
+        // about, which would put its close control off the map.
+        expect(card().style.transform).toBe('translate(8px, 88px)')
     })
 
     // The layout lays panels over the map's edges, and those panels are
@@ -664,7 +699,6 @@ describe('MapPopup_', () => {
     })
 
     it('rejects a request whose fields are not what they claim', async () => {
-
         const noAnchor = track(
             MapPopup_.show(
                 { html: '<p>No anchor</p>' } as MapPopupRequest,
@@ -695,7 +729,6 @@ describe('MapPopup_', () => {
     })
 
     it('rejects a latitude off the globe', async () => {
-
         const offGlobe = track(
             MapPopup_.show(
                 request({ latlng: { lat: 200, lng: 0 } }),
@@ -711,7 +744,6 @@ describe('MapPopup_', () => {
     })
 
     it('accepts a longitude past the antimeridian', async () => {
-
         // What a map panned across the antimeridian hands out. It projects to
         // the pixel the caller meant, one world east of the prime copy.
         const outcome = track(

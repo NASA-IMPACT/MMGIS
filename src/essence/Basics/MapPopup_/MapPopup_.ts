@@ -136,6 +136,15 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 /**
+ * Hold `value` between `lo` and `hi`. `lo` wins when the two cross, which is a
+ * map with less room than the card needs: the card pins to the near edge and
+ * spills past the far one, rather than being pushed clean off the near edge.
+ */
+function clampBetween(value: number, lo: number, hi: number): number {
+    return hi <= lo ? lo : Math.min(Math.max(value, lo), hi)
+}
+
+/**
  * Whitespace counts as blank: a label of spaces reads as a filled button with
  * nothing on it, which is the very thing `normalizeAction` exists to refuse.
  */
@@ -799,7 +808,6 @@ const MapPopup_ = {
                 y: number
             }
             const container = open.engine.getContainer().getBoundingClientRect()
-            const card = open.card.getBoundingClientRect()
 
             // The projection is relative to the map container, while the
             // card is placed by a fixed position and so lives in viewport
@@ -825,11 +833,25 @@ const MapPopup_ = {
             // off screen with it — and the viewport alone is not enough
             // either, because the layout lays panels over the map's edges and
             // those panels are positioned, so a card that spills past the map
-            // is painted over and its buttons swallowed.
+            // is painted over and its buttons swallowed. This is the compact
+            // layout, where the map is a grid cell with the panel regions
+            // around it; in the overlay layout the panels float inside the
+            // map's own rect, so a card can still land under one.
             const boundsLeft = Math.max(container.left, 0)
             const boundsTop = Math.max(container.top, 0)
             const boundsRight = Math.min(containerRight, window.innerWidth)
             const boundsBottom = Math.min(containerBottom, window.innerHeight)
+
+            // Hold the card to the room the clamps below have to place it in,
+            // so a tall one scrolls its body rather than hanging past an edge
+            // with its actions row under a panel. Set before the card is
+            // measured, so the height read back is the capped one. The
+            // stylesheet's viewport-sized cap covers the card until the
+            // anchor first projects.
+            const cardRoom = boundsBottom - boundsTop - 2 * VIEWPORT_MARGIN
+            if (cardRoom > 0) open.card.style.maxHeight = `${cardRoom}px`
+
+            const card = open.card.getBoundingClientRect()
 
             const above = anchorTop - card.height - ANCHOR_GAP
             // Flip below the anchor when the card would clip the top edge.
@@ -840,26 +862,20 @@ const MapPopup_ = {
             // A tall card flipped below a low anchor would otherwise hang past
             // the bottom edge, and nothing scrolls down to it — the document
             // is pinned — so its actions row would be unreachable and the
-            // request it answers could never be settled. The top edge wins the
-            // tie, since the card's own max-height keeps it short enough that
-            // both clamps can be honoured.
+            // request it answers could never be settled.
             const top = onMap
-                ? Math.max(
-                      Math.min(
-                          flipped,
-                          boundsBottom - card.height - VIEWPORT_MARGIN
-                      ),
-                      boundsTop + VIEWPORT_MARGIN
+                ? clampBetween(
+                      flipped,
+                      boundsTop + VIEWPORT_MARGIN,
+                      boundsBottom - card.height - VIEWPORT_MARGIN
                   )
                 : flipped
 
             const halfCard = card.width / 2
             const center = onMap
-                ? Math.min(
-                      Math.max(
-                          anchorLeft,
-                          boundsLeft + halfCard + VIEWPORT_MARGIN
-                      ),
+                ? clampBetween(
+                      anchorLeft,
+                      boundsLeft + halfCard + VIEWPORT_MARGIN,
                       boundsRight - halfCard - VIEWPORT_MARGIN
                   )
                 : anchorLeft

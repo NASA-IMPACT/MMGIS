@@ -680,7 +680,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * overlay system, so we own the DOM node directly: append to the
      * container, project lat/lng -> pixel on every view change, reposition.
      *
-     * @deprecated Superseded by the `map:showPopup` provider.
+     * @deprecated See {@link IMapEngine.addOverlay}: card-shaped content
+     * belongs to the `map:showPopup` provider, while an anchored bare node
+     * with no chrome and no close of its own stays here.
      */
     addOverlay(options: OverlayOptions): void {
         if (!options?.id) {
@@ -1347,9 +1349,16 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // the map's own: terra-draw disables it from here to the end of the
         // session, and the guard is what gives it back.
         this._drawEndClick.holdDoubleClickZoom(this._doubleClickZoom())
-        if (!td.enabled) td.start()
-        td.clear()
-        td.setMode(shape)
+        try {
+            if (!td.enabled) td.start()
+            td.clear()
+            td.setMode(shape)
+        } catch (err) {
+            // terra-draw throws on a shape it has no mode for, and a session
+            // that never started has no end to give double-click zoom back at.
+            this._drawEndClick.dispose()
+            throw err
+        }
         this._drawingShape = shape
         this._drawPointers.start(this._drawEventElement())
         this._syncLayers()
