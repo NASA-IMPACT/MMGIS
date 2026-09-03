@@ -1175,14 +1175,44 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     // `map:enableDrawing` takes its shape straight off the bus, so a plugin can
     // ask for one no mode was registered for. terra-draw throws on the lookup,
     // with double-click zoom already taken for a session that will never end to
-    // give it back.
-    test('gives double-click zoom back when the mode fails to start', () => {
+    // give it back — and with its listeners already back on the map, routed to
+    // whichever mode the failed one was replacing. Left running, that mode
+    // draws under the cursor of a map whose adapter reports no drawing at all.
+    test('leaves nothing running when the mode fails to start', () => {
         const zoom = makeDoubleClickZoom()
         const { adapter } = setupDrawing({ doubleClickZoom: zoom })
 
         expect(() => adapter.enableDrawing('freehand')).toThrow()
 
         expect(zoom.enabled()).toBe(true)
+        expect(adapter._terraDraw.enabled).toBe(false)
+        expect(adapter.isDrawing()).toBe(false)
+    })
+
+    // Switching shape restarts the session on the engine's own account. A
+    // `drawcancel` there reads as the user backing out, and a plugin acting on
+    // one — dropping its selection, closing its panel — undoes the drawing the
+    // user is still in the middle of setting up.
+    test('switching shape starts the new session without cancelling', () => {
+        const { adapter } = setupDrawing({ shape: 'polygon' })
+        const events = []
+        adapter.on('drawstart', (e) => events.push(['drawstart', e.shape]))
+        adapter.on('drawcancel', (e) => events.push(['drawcancel', e.shape]))
+
+        adapter.enableDrawing('rectangle')
+
+        expect(events).toEqual([['drawstart', 'rectangle']])
+        expect(adapter.isDrawing()).toBe(true)
+    })
+
+    test('disableDrawing cancels the session it ends', () => {
+        const { adapter } = setupDrawing({ shape: 'polygon' })
+        const cancels = []
+        adapter.on('drawcancel', (e) => cancels.push(e.shape))
+
+        adapter.disableDrawing()
+
+        expect(cancels).toEqual(['polygon'])
     })
 
     // The guard gives double-click zoom back, it does not hand it out: a map
