@@ -41,6 +41,11 @@ import MapLogo from './Ancillary/MapLogo'
 import Attributions from './Ancillary/Attributions'
 //import Swap from './Ancillary/Swap'
 import QueryURL from './Ancillary/QueryURL'
+import {
+    hasForceLanding,
+    hasPreview,
+    buildMissionUrl,
+} from './Ancillary/landingFlags'
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import TimeUI from './Basics/TimeControl_/TimeUI'
 import calls from '../pre/calls'
@@ -344,24 +349,27 @@ var essence = {
         if (
             urlSplit.length == 1 ||
             swapping ||
-            // Both casings count, and the flag counts wherever it sits in the
-            // query string, matching how the landing page reads it.
-            QueryURL.getSingleQueryVariable('forcelanding') !== false ||
-            QueryURL.getSingleQueryVariable('forceLanding') !== false ||
-            QueryURL.getSingleQueryVariable('_preview') !== false
+            hasForceLanding() ||
+            hasPreview()
         ) {
             //then no parameters or old ones
             // Use DB mission name for deeplinks (config._dbMissionName if available)
             const missionForUrl = config._dbMissionName || config.msv.mission
-            // Name the loaded mission and drop the flags that asked for it,
-            // leaving the rest of the deeplink (`on`, `mapLat`, …) in place
-            // for QueryURL.queryURL() below to read.
-            const missionUrl = new URL(window.location)
-            missionUrl.searchParams.delete('forcelanding')
-            missionUrl.searchParams.delete('forceLanding')
-            missionUrl.searchParams.delete('_preview')
-            missionUrl.searchParams.set('mission', missionForUrl)
-            window.history.replaceState('', '', missionUrl)
+            // Name the loaded mission and drop the flags that asked for it.
+            // A swap keeps nothing else: the pairs in the URL (`on`, `mapLat`,
+            // …) point at the mission being left, and queryURL() below skips
+            // them for that reason. Otherwise they stay for queryURL() to read.
+            window.history.replaceState(
+                '',
+                '',
+                buildMissionUrl({
+                    search: window.location.search,
+                    pathnameHref:
+                        window.location.origin + window.location.pathname,
+                    mission: missionForUrl,
+                    keepParams: !swapping,
+                })
+            )
             L_.url = window.location.href
         }
 
