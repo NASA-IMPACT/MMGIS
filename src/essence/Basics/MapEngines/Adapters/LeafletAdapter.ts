@@ -1030,11 +1030,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Register a handler called when the user clicks a rendered feature.
      * Hangs off the adapter's map click listener; on each click iterates
      * registered vector layers to find the topmost feature under the cursor.
-     * Returns an unsubscribe function. Replace semantics: calling again with a
-     * new handler detaches the prior listener first.
+     * Returns an unsubscribe function. Replace semantics: calling again
+     * replaces the handler.
      */
     onFeatureClick(handler: FeatureInteractionHandler): () => void {
-        this._featureClickListener = null
         const listener = (e: any) => {
             const result = this._pickFeatureAtLatLng(e.latlng)
             handler({
