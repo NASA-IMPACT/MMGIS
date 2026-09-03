@@ -1,4 +1,5 @@
-import { test, expect } from 'vitest'
+import { afterAll, test, expect } from 'vitest'
+import path from 'path'
 
 // Pins the premise of the immutable Cache-Control tier in
 // scripts/lib/aws-provision.js: every production filename webpack writes under
@@ -7,11 +8,18 @@ import { test, expect } from 'vitest'
 // filename lands in the immutable tier, where customers' CloudFront edges would
 // pin it for a year.
 //
-// configuration/env.js throws without NODE_ENV, and building the config
-// installs its own crypto.createHash, so the variable is set here and the
-// require stays inside this one spec file.
+// configuration/env.js throws without NODE_ENV, so the variable is set here
+// and put back afterwards. Building the config also patches
+// crypto.createHash process-wide, which anything else in the same worker would
+// then inherit, so the require stays inside this one spec file.
+const NODE_ENV_BEFORE = process.env.NODE_ENV
 process.env.NODE_ENV = 'production'
 const CONFIG = require('../../configuration/webpack.config.js')('production')
+
+afterAll(() => {
+    if (NODE_ENV_BEFORE === undefined) delete process.env.NODE_ENV
+    else process.env.NODE_ENV = NODE_ENV_BEFORE
+})
 
 const HASH_TOKEN = /\[contenthash|\[hash/
 
@@ -30,10 +38,14 @@ function mediaNames(rules, found = []) {
     return found
 }
 
-function pluginNamed(name) {
-    const plugin = CONFIG.plugins.find(
+function pluginsNamed(name) {
+    return CONFIG.plugins.filter(
         (p) => p && p.constructor && p.constructor.name === name
     )
+}
+
+function pluginNamed(name) {
+    const plugin = pluginsNamed(name)[0]
     expect(plugin, `no ${name} in the production config`).toBeDefined()
     return plugin
 }
@@ -62,9 +74,18 @@ test.describe('webpack production output is content-hashed', () => {
         // CopyPlugin passes files through under their own names, so a
         // destination under static/js, static/css or static/media would drop a
         // stable name into the immutable tier. Cesium's copies go to
-        // static/cesium, which is on the five-minute tier.
-        pluginNamed('CopyPlugin').patterns.forEach((pattern) => {
-            expect(pattern.to).not.toMatch(/^static\/(js|css|media)\//)
+        // static/cesium, which is on the five-minute tier. Destinations are
+        // built with path.join, so they carry the platform's separator.
+        const copiers = pluginsNamed('CopyPlugin')
+        expect(
+            copiers.length,
+            'no CopyPlugin in the production config'
+        ).toBeGreaterThan(0)
+        copiers.forEach((copier) => {
+            copier.patterns.forEach((pattern) => {
+                const to = String(pattern.to).split(path.sep).join('/')
+                expect(to).not.toMatch(/^static\/(js|css|media)(\/|$)/)
+            })
         })
     })
 })

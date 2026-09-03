@@ -230,7 +230,10 @@ function renderCfnTemplate({ password } = {}) {
               // AWS managed policy: CachingOptimized — minimum TTL 1 s,
               // default 86400 s, maximum 31536000 s. The Cache-Control tiers
               // in scripts/lib/aws-provision.js rely on that maximum being at
-              // least a year, or the edge would cap the immutable tier.
+              // least a year, or the edge would cap the immutable tier. The
+              // minimum overrides the no-cache tier here, so the entry page
+              // and the baked config are at most a second stale at this edge
+              // rather than revalidated on every request.
               CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6",
               FunctionAssociations: [
                 {

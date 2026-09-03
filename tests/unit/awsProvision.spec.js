@@ -904,7 +904,9 @@ test.describe('cacheControlForKey', () => {
     // [key, expected Cache-Control]. Three tiers: revalidate-always for the
     // entry page and the baked config, immutable for the content-addressed
     // keys (hashed webpack output and the never-overwritten plugin uploads),
-    // a short TTL for everything else.
+    // a short TTL for everything else. The upload-key half of the immutable
+    // tier belongs to tests/unit/uploadKeyClassifier.spec.js, which checks it
+    // against the other two copies of that classifier.
     const TIERS = [
         ['index.html', 'no-cache'],
         ['build/index.html', 'no-cache'],
@@ -915,23 +917,11 @@ test.describe('cacheControlForKey', () => {
         ],
         ['build/static/css/x.css', 'public, max-age=31536000, immutable'],
         ['build/static/media/a.png', 'public, max-age=31536000, immutable'],
-        ['Missions/M/Data/waypoints.csv', 'public, max-age=300'],
+        ['build/asset-manifest.json', 'public, max-age=300'],
         // Under build/static but not content-hashed, so explicitly NOT
         // immutable.
         ['build/static/cesium/Cesium.js', 'public, max-age=300'],
         ['public/workers/pdf.worker.min.mjs', 'public, max-age=300'],
-        // The upload router names every object crypto.randomUUID().<ext> and
-        // never overwrites, so the key is content-addressed in practice.
-        [
-            'assets/M/CardPlugin/uploads/a.png',
-            'public, max-age=31536000, immutable',
-        ],
-        // Under assets/ but not the writer's shape (no /uploads/ segment two
-        // levels down), so it stays on the fallback tier.
-        ['assets/M/CardPlugin/icon.png', 'public, max-age=300'],
-        // A lookalike: "uploads" here is the mission segment, not the
-        // router's directory, so it is not the content-addressed shape.
-        ['assets/uploads/a.png', 'public, max-age=300'],
     ]
 
     TIERS.forEach(([key, expected]) => {
@@ -995,15 +985,17 @@ test.describe('uploadDirectory', () => {
         })
     })
 
-    test('skips the files filter rejects, by their unprefixed key', async () => {
+    test('skips the files filter rejects, by their prefixed key', async () => {
         await withUploadFixture(async (dir, puts) => {
+            // The filter names the prefixed key, so it fails to match — and
+            // nothing is skipped — if the filter is handed the relative one.
             fs.writeFileSync(path.join(dir, 'index.html'), '<html></html>')
             fs.writeFileSync(path.join(dir, 'keep.txt'), 'keep')
             const count = await provision.uploadDirectory({
                 bucket: 'dash',
                 dir,
                 prefix: 'public/',
-                filter: (key) => key !== 'index.html',
+                filter: (key) => key !== 'public/index.html',
             })
             expect(count).toBe(1)
             expect(puts.map((input) => input.Key)).toEqual(['public/keep.txt'])
@@ -1082,11 +1074,7 @@ test.describe('copyPrefix', () => {
         expect(copies[2].CopySource).toBe(
             'shared/assets/TestMission/with%20space.png'
         )
-        // CopyObject's default (COPY) keeps the source's metadata and cannot
-        // add the Cache-Control the source never had; REPLACE can, and in turn
-        // obliges the copy to restate its Content-Type. Tier coverage lives in
-        // the cacheControlForKey table — this pins the wiring at this site,
-        // across both tiers a copied object can land on.
+        // REPLACE lets the copy carry its own Cache-Control and Content-Type.
         expect(copies[0].MetadataDirective).toBe('REPLACE')
         expect(copies[0].ContentType).toBe('image/png')
         expect(copies[0].CacheControl).toBe(

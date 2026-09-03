@@ -424,6 +424,15 @@ const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 // under build/static/cesium, so a republish that bumps the MMGIS version can
 // leave a customer's edge pairing a new bundle with a copy of those up to five
 // minutes old.
+//
+// The two cacheable tiers say "public" because every response sits behind
+// Basic auth, and RFC 7234 lets a shared cache store a response to an
+// Authorization-bearing request only when it is marked that way — the
+// customer's own CloudFront is a shared cache keyed on Authorization, so
+// "public" is what lets it cache at all. The cost is that any other shared
+// cache on a visitor's path, a corporate proxy say, may also store the
+// immutable and five-minute tiers and serve them to someone who never
+// authenticated; the no-cache tier revalidates and so 401s there.
 function cacheControlForKey(key) {
   if (
     key === "index.html" ||
@@ -455,8 +464,9 @@ function walkDirectory(dir, baseDir) {
 }
 
 // Uploads every file under `dir` to `bucket`, keys relative to `dir`
-// (optionally prefixed). `filter` receives that relative key and keeps the
-// file when it returns true. Returns the number of files uploaded.
+// (optionally prefixed). `filter` receives the prefixed key — the same string
+// cacheControlForKey is given — and keeps the file when it returns true.
+// Returns the number of files uploaded.
 async function uploadDirectory({
   bucket,
   dir,
@@ -466,7 +476,7 @@ async function uploadDirectory({
 }) {
   const { s3 } = getClients();
   const files = filter
-    ? walkDirectory(dir).filter((file) => filter(file.key))
+    ? walkDirectory(dir).filter((file) => filter(`${prefix}${file.key}`))
     : walkDirectory(dir);
   let index = 0;
   async function worker() {
@@ -509,11 +519,13 @@ async function uploadFile({ bucket, key, filePath }) {
   );
 }
 
-// Invalidates paths on our own distribution, the only one this reaches. The
-// Cache-Control tiers already cover most of it there — index.html and
-// config.json revalidate every request, and hashed bundles arrive under new
-// names — so this is what closes the gap for the five-minute tier. Any other
-// edge in front of the dashboard is governed by those headers alone.
+// Invalidates paths on our own distribution, the only one this reaches. Its
+// cache policy is the managed CachingOptimized, whose Minimum TTL of 1 s
+// overrides the no-cache tier at this edge, so index.html and config.json are
+// bounded at a second stale rather than revalidated; the fallback tier is
+// bounded at five minutes. Hashed bundles need nothing, arriving under new
+// names, so the "/*" invalidation is what clears those two tiers here. Any
+// other edge in front of the dashboard is governed by the headers alone.
 async function createInvalidation({ distributionId, paths = ["/*"] }) {
   const { cloudfront } = getClients();
   await cloudfront.send(
@@ -538,7 +550,12 @@ function buildCopySource(bucket, key) {
 }
 
 // Same-key copies every object under `prefix` from sourceBucket into
-// destBucket. Returns the number of objects copied.
+// destBucket, giving each copy the Cache-Control tier for its key. COPY (the
+// default) cannot set headers the source object never had, so that takes
+// MetadataDirective: REPLACE, which drops the source's entire metadata set —
+// Content-Encoding, Content-Disposition and any x-amz-meta-* are lost unless
+// restated alongside Content-Type. Nothing sets those: the upload router
+// writes ContentType alone. Returns the number of objects copied.
 async function copyPrefix({ sourceBucket, destBucket, prefix }) {
   const { s3 } = getClients();
   let copied = 0;
@@ -557,13 +574,8 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
           Bucket: destBucket,
           Key: obj.Key,
           CopySource: buildCopySource(sourceBucket, obj.Key),
-          // COPY (the default) cannot set new headers on the copy, so
-          // REPLACE is required to add a Cache-Control the source object
-          // never had — and REPLACE means supplying ContentType too.
-          // REPLACE drops the source's entire metadata set, not just its
-          // Content-Type: Content-Encoding, Content-Disposition and any
-          // x-amz-meta-* are lost unless restated here. Nothing sets those:
-          // the upload router writes ContentType alone.
+          // REPLACE so the copy carries the Cache-Control and Content-Type
+          // set here rather than the source's metadata.
           MetadataDirective: "REPLACE",
           ContentType: contentTypeForFile(obj.Key),
           CacheControl: cacheControlForKey(obj.Key),
