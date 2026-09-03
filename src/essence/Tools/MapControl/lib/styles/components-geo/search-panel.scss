@@ -1,35 +1,41 @@
+/* Search Panel
+   The geocode query field and its results on a popover surface. FloatingPopover
+   owns placement, stacking and the gap to the trigger. */
 .blocks-search-panel {
-    margin-top: var(--theme-spacing-05, 0.25rem);
     min-width: 220px;
     max-height: 320px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     background: var(--theme-color-white, #ffffff);
-    border-radius: var(--theme-radius-lg, 0.5rem);
-    box-shadow: 0 4px 16px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
-    font-family: var(--theme-font-ui);
+    border-radius: var(--theme-radius-0, 0);
+    font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue', sans-serif);
 
     &__row {
         flex-shrink: 0;
         padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
     }
 
+    /* Borderless: a filled ground marks the field instead, and focus is shown
+       by an outline rather than by moving a border color. */
     &__input {
         width: 100%;
         box-sizing: border-box;
         padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-1, 0.5rem);
-        border: 1px solid var(--theme-color-base-light, #a9aeb1);
-        border-radius: var(--theme-radius-md, 0.25rem);
-        background: var(--theme-color-white, #ffffff);
-        color: var(--theme-color-ink, #1b1b1b);
-        font-family: var(--theme-font-ui);
+        border: none;
+        /* Stated, not left to the initial value: Safari rounds type=search. */
+        border-radius: var(--theme-radius-0, 0);
+        -webkit-appearance: none;
+        appearance: none;
+        background: var(--theme-color-base-lightest, #f6f6f6);
+        color: var(--theme-color-ink, #17171b);
+        font-family: inherit;
         font-size: var(--theme-font-size-2xs, 0.88rem);
         outline: none;
 
         &:focus {
-            border-color: var(--theme-color-primary, #0e7482);
-            box-shadow: 0 0 0 2px var(--theme-color-primary-light, #87bac1);
+            outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
+            outline-offset: -2px;
         }
     }
 
@@ -37,7 +43,7 @@
         flex-shrink: 0;
         padding: var(--theme-spacing-1, 0.5rem) var(--theme-spacing-105, 0.75rem);
         font-size: var(--theme-font-size-3xs, 0.75rem);
-        color: var(--theme-color-base, #71767a);
+        color: var(--theme-color-base, #77777a);
     }
 
     &__result {
@@ -50,17 +56,27 @@
         border: none;
         cursor: pointer;
         text-align: left;
-        transition: background 0.1s ease;
+        color: var(--theme-color-base, #77777a);
+        transition: background-color 0.1s ease, color 0.1s ease;
 
         &:hover {
-            background: var(--theme-color-base-lightest, #f1f3f6);
+            background: var(--theme-color-primary-lightest, #eaf0fd);
+            color: var(--theme-color-primary, #1c67e3);
+        }
+
+        /* Core's global `*:focus { outline: none }` strips the native ring, so
+           the panel restores one for keyboard users. */
+        &:focus-visible {
+            outline: var(--theme-border-width-md, 2px) solid var(--theme-color-primary, #1c67e3);
+            outline-offset: -2px;
         }
     }
 
+    /* Takes the result row's color so it follows the hover state. */
     &__label {
         flex: 1;
         font-size: var(--theme-font-size-2xs, 0.88rem);
-        color: var(--theme-color-ink, #1b1b1b);
+        color: inherit;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;

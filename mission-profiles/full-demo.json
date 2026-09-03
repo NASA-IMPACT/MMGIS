@@ -21,13 +21,41 @@
   "on": [
     "Title",
     "LayerManager",
+    "AddTempLayer",
     "AOI",
     "Card",
     "Chart",
     "FetchStats",
-    "ShareExport"
+    "ShareExport",
+    "LayerFilterThemes",
+    "LayerFilter",
+    "Comparison"
   ],
   "overrides": {
+    "LayerFilterThemes": {
+      "variables": {
+        "themes": [
+          {
+            "id": "need",
+            "label": "Need",
+            "iconSource": "link",
+            "iconUrl": "/public/images/layerfilterthemes/need.svg"
+          },
+          {
+            "id": "hazard",
+            "label": "Hazard",
+            "iconSource": "link",
+            "iconUrl": "/public/images/layerfilterthemes/hazard.svg"
+          },
+          {
+            "id": "event",
+            "label": "Event",
+            "iconSource": "link",
+            "iconUrl": "/public/images/layerfilterthemes/event.svg"
+          }
+        ]
+      }
+    },
     "Card": {
       "variables": {
         "cards": [
@@ -117,7 +145,7 @@
       "panels": [
         {
           "position": "left",
-          "priority": 1,
+          "priority": 2,
           "layoutType": "stacked",
           "hasHeader": false,
           "stateConstraints": {
@@ -144,9 +172,78 @@
             "Title",
             "Card"
           ]
+        },
+        {
+          "position": "left",
+          "priority": 0,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false,
+            "supportedOrientation": "vertical"
+          },
+          "panelTools": [
+            "LayerFilterThemes"
+          ],
+          "id": "leftmost-panel",
+          "title": "",
+          "dimensions": {
+            "focusedWidth": "",
+            "expandedSize": "62"
+          }
+        },
+        {
+          "position": "left",
+          "priority": 1,
+          "layoutType": "stacked",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "capabilities": {
+            "resizable": false,
+            "supportedOrientation": "vertical"
+          },
+          "panelTools": [
+            "LayerFilter"
+          ],
+          "id": "filter-panel",
+          "title": "",
+          "dimensions": {
+            "focusedWidth": "",
+            "expandedSize": "320"
+          }
         }
       ],
       "floatingPanels": [
+        {
+          "position": "float-top-left",
+          "hasHeader": false,
+          "stateConstraints": {
+            "allowedStates": [
+              "collapsed",
+              "expanded"
+            ],
+            "defaultState": "expanded"
+          },
+          "panelTools": [
+            "Comparison"
+          ],
+          "id": "float-compare",
+          "dimensions": {
+            "defaultWidth": "350px",
+            "minWidth": "350px"
+          }
+        },
         {
           "position": "float-top-right",
           "hasHeader": false,
@@ -158,7 +255,8 @@
             "defaultState": "expanded"
           },
           "panelTools": [
-            "ShareExport"
+            "ShareExport",
+            "AddTempLayer"
           ],
           "id": "float-share"
         },

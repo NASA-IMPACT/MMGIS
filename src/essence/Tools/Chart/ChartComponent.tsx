@@ -1,6 +1,5 @@
 import React, { useEffect, useRef } from 'react'
 import ChartJS from 'chart.js/auto'
-import './theme.css'
 import './ChartComponent.css'
 import {
     AnalysisData,
@@ -143,12 +142,15 @@ function Histogram({ stats }: { stats: AssetStats }) {
         const canvas = canvasRef.current
         if (!canvas || bins.length === 0) return
 
+        // The canvas is painted by script rather than by the stylesheet, so the
+        // design tokens are read off the element instead of referenced. Each
+        // fallback is the horizon value, matching ChartComponent.css.
         const styles = getComputedStyle(canvas)
         const themeVar = (name: string, fallback: string) =>
             styles.getPropertyValue(name).trim() || fallback
-        const accent = themeVar('--chart-accent', '#137480')
-        const grid = themeVar('--chart-border', '#dfe1e2')
-        const muted = themeVar('--chart-fg-muted', '#565c65')
+        const accent = themeVar('--theme-color-primary', '#1c67e3')
+        const grid = themeVar('--theme-color-base-lighter', '#e3e3e3')
+        const muted = themeVar('--theme-color-base-dark', '#58585b')
 
         chartRef.current = new ChartJS(canvas, {
             type: 'bar',

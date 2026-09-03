@@ -1,0 +1,94 @@
+/* Popover Menu
+   A list of actions on a popover surface. FloatingPopover owns placement and
+   stacking; the surface chrome matches the panel's other portaled popovers. */
+.blocks-popover-menu {
+    display: flex;
+    flex-direction: column;
+    padding: var(--theme-spacing-05, 0.25rem);
+    background: var(--theme-color-white, #ffffff);
+    border: 1px solid var(--theme-color-base-lighter, #dfe1e2);
+    box-shadow: 0 4px 12px var(--theme-color-shadow, rgba(0, 0, 0, 0.15));
+    font-family: var(--theme-font-body, 'Public Sans Web', sans-serif);
+
+    &__item {
+        display: flex;
+        align-items: center;
+        gap: var(--theme-spacing-1, 0.5rem);
+        width: 100%;
+        padding: var(--theme-spacing-05, 0.25rem) var(--theme-spacing-1, 0.5rem);
+        background: transparent;
+        border: none;
+        color: var(--theme-color-base-dark, #565c65);
+        font-family: inherit;
+        font-size: var(--theme-font-size-2xs, 0.75rem);
+        line-height: 1.6;
+        text-align: left;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: background-color 0.15s ease, color 0.15s ease;
+
+        &:hover {
+            background: var(--theme-color-primary-lightest, #e6f4f6);
+            color: var(--theme-color-primary, #1c67e3);
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-primary, #1c67e3);
+            outline-offset: -2px;
+        }
+
+        /* Inert, but still reachable by keyboard and pointer so its title can
+           explain the absence. */
+        &--disabled {
+            color: var(--theme-color-base-light, #a9aeb1);
+            cursor: default;
+
+            &:hover {
+                background: transparent;
+                color: var(--theme-color-base-light, #a9aeb1);
+            }
+
+            /* The icon carries its own colour, so the label's lighter tint
+               does not reach it through currentColor — it is lightened here
+               by name. */
+            .blocks-popover-menu__icon {
+                color: var(--theme-color-base-light, #a9aeb1);
+            }
+        }
+    }
+
+    &__divider {
+        height: 1px;
+        margin: var(--theme-spacing-05, 0.25rem) 0;
+        background: var(--theme-color-base-lighter, #dfe1e2);
+    }
+
+    /* Exported SVGs used as masks. The mask is painted with currentColor, which
+       resolves against the colour set here rather than the item's, so the icon
+       sits a shade off the label; states that need to move it say so by name. */
+    &__icon {
+        display: block;
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        background-color: currentColor;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        color: var(--theme-color-base, #565c65);
+        margin-right: var(--theme-spacing-05, 0.25rem);
+
+        &--zoom-to-layer {
+            -webkit-mask-image: url('../../geo/icons/zoom-to-layer.svg');
+            mask-image: url('../../geo/icons/zoom-to-layer.svg');
+        }
+
+        &--compare-layer {
+            -webkit-mask-image: url('../../geo/icons/compare-layer.svg');
+            mask-image: url('../../geo/icons/compare-layer.svg');
+        }
+    }
+}

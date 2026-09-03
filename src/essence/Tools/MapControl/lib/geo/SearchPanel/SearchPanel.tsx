@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React from 'react'
 import type { GeocodeResult } from '../../types'
 
 export type SearchPanelProps = {
@@ -10,18 +10,12 @@ export type SearchPanelProps = {
 }
 
 export function SearchPanel({ query, results, loading, onQueryChange, onSelect }: SearchPanelProps) {
-    const inputRef = useRef<HTMLInputElement>(null)
-
-    // Auto-focus the input when the panel mounts (i.e. when search opens).
-    useEffect(() => {
-        inputRef.current?.focus()
-    }, [])
-
+    // Presentational only: the surface hosting the panel places focus, which on
+    // open lands on the query field as the first focusable control here.
     return (
         <div className="blocks-search-panel">
             <div className="blocks-search-panel__row">
                 <input
-                    ref={inputRef}
                     type="search"
                     className="blocks-search-panel__input"
                     placeholder="Search location…"

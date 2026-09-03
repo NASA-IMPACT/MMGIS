@@ -4,6 +4,7 @@ import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/Deck
 // index.ts transitively imports LeafletAdapter -> leaflet, which references a global
 // `window` at module-eval time and fails in this Node test context.
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
+import { drawModeKeyEvents } from '../../src/essence/Basics/MapEngines/Adapters/DrawingHelpers.ts'
 
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
     const adapter = new DeckGLAdapter()
@@ -43,6 +44,41 @@ test.describe('DeckGLAdapter', () => {
             expect(state.zoom).toBe(4)
             expect(state.bearing).toBe(0)
             expect(state.pitch).toBe(0)
+        })
+    })
+
+    test.describe('getBounds', () => {
+        // Standalone deck derives bounds from the container, so it needs a
+        // sized element; the view is deliberately wider than it is tall.
+        const boundsFor = (bearing = 0) => {
+            const adapter = makeAdapter({ longitude: -95, latitude: 35, zoom: 5 })
+            adapter._isOverlayMode = false
+            adapter._viewState.bearing = bearing
+            adapter._container = { offsetWidth: 800, offsetHeight: 400 }
+            return adapter.getBounds()
+        }
+
+        test('standalone mode brackets the centre south-west to north-east', () => {
+            const b = boundsFor()
+            expect(b.southWest.lat).toBeLessThan(35)
+            expect(b.northEast.lat).toBeGreaterThan(35)
+            expect(b.southWest.lng).toBeLessThan(-95)
+            expect(b.northEast.lng).toBeGreaterThan(-95)
+        })
+
+        test('standalone mode returns the same envelope rotated half a turn', () => {
+            // At bearing 180 the bottom-left pixel unprojects north-east of
+            // the top-right one. Reading only those two corners inverts both
+            // axes, and every containment test against these bounds then gives
+            // the opposite answer.
+            const upright = boundsFor()
+            const rotated = boundsFor(180)
+            expect(rotated.southWest.lat).toBeLessThan(rotated.northEast.lat)
+            expect(rotated.southWest.lng).toBeLessThan(rotated.northEast.lng)
+            expect(rotated.southWest.lat).toBeCloseTo(upright.southWest.lat, 6)
+            expect(rotated.northEast.lat).toBeCloseTo(upright.northEast.lat, 6)
+            expect(rotated.southWest.lng).toBeCloseTo(upright.southWest.lng, 6)
+            expect(rotated.northEast.lng).toBeCloseTo(upright.northEast.lng, 6)
         })
     })
 
@@ -184,13 +220,14 @@ test.describe('DeckGLAdapter', () => {
             expect(stored.opacity).toBe(0.4)
         })
 
-        test('setLayerOpacity returns the instance carrying the new opacity', () => {
+        test('setLayerOpacity replaces the stored layer and returns nothing', () => {
             const adapter = makeAdapter()
             const original = makeLayer('opacity-layer')
             adapter.addLayer(original)
-            const updated = adapter.setLayerOpacity(original, 0.25)
-            expect(updated.opacity).toBe(0.25)
-            expect(updated).not.toBe(original)
+            expect(adapter.setLayerOpacity(original, 0.25)).toBeUndefined()
+            const stored = adapter.getLayers().find((l) => l.id === 'opacity-layer')
+            expect(stored.opacity).toBe(0.25)
+            expect(stored).not.toBe(original)
             expect(original.opacity).toBeUndefined()
         })
 
@@ -202,11 +239,10 @@ test.describe('DeckGLAdapter', () => {
             expect(stored.opacity).toBe(0)
         })
 
-        test('setLayerOpacity clones an unmounted layer without adding it to the map', () => {
+        test('setLayerOpacity is a no-op for a layer the engine does not hold', () => {
             const adapter = makeAdapter()
             const offMap = makeLayer('hidden-layer')
-            const updated = adapter.setLayerOpacity(offMap, 0.6)
-            expect(updated.opacity).toBe(0.6)
+            expect(adapter.setLayerOpacity(offMap, 0.6)).toBeUndefined()
             expect(adapter.hasLayer('hidden-layer')).toBe(false)
         })
 
@@ -215,7 +251,7 @@ test.describe('DeckGLAdapter', () => {
             expect(adapter.setLayerOpacity('nonexistent', 0.5)).toBeUndefined()
         })
 
-        test('setLayerOpacity on a value with nothing to clone returns undefined without throwing', () => {
+        test('setLayerOpacity on a non-layer value returns undefined without throwing', () => {
             const adapter = makeAdapter()
             expect(() => adapter.setLayerOpacity(false, 0.5)).not.toThrow()
             expect(adapter.setLayerOpacity(false, 0.5)).toBeUndefined()
@@ -257,6 +293,24 @@ test.describe('DeckGLAdapter', () => {
                 'above',
                 'aoi:selection',
             ])
+        })
+
+        // Map_ registers every layer it builds with the active engine, and
+        // under this engine it still builds data, image, video and velocity
+        // layers with Leaflet. Every sync clones what the engine holds, so
+        // one such entry in the registry took the whole map down rather than
+        // just the layer that could not be built.
+        test('registerLayer declines a layer this engine cannot draw', () => {
+            const adapter = makeAdapter()
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+            adapter.registerLayer('velocity', { setOpacity() {} })
+
+            expect(adapter.getLayers()).toHaveLength(0)
+            expect(warn).toHaveBeenCalledTimes(1)
+            expect(warn.mock.calls[0][0]).toContain('velocity')
+
+            warn.mockRestore()
         })
 
         test('a re-sort keeps two layers with no z-index in the order they were added', () => {
@@ -318,9 +372,9 @@ test.describe('DeckGLAdapter', () => {
     test.describe('drawing overlay stacking', () => {
         const ANCHOR_ID = 'td-polygon'
 
-        // Enough of the maplibre Map surface for TerraDrawMapLibreGLAdapter to
-        // construct, register its layers, and tear them down. Registered ids are
-        // tracked so getLayer() answers like a real style does.
+        // Just enough of the maplibre Map API for TerraDrawMapLibreGLAdapter
+        // to construct, register its layers, and tear them down. Registered ids
+        // are tracked so getLayer() answers the way a real style would.
         function makeDrawingBasemap() {
             const canvas = document.createElement('canvas')
             const container = document.createElement('div')
@@ -338,6 +392,9 @@ test.describe('DeckGLAdapter', () => {
                 getLayer: (id) => (styleLayers.has(id) ? { id } : undefined),
                 getSource: () => ({ setData: () => {} }),
                 setStyle: vi.fn(() => styleLayers.clear()),
+                off: vi.fn(),
+                removeControl: vi.fn(),
+                remove: vi.fn(),
                 version: '5.8.0',
             }
         }
@@ -346,7 +403,7 @@ test.describe('DeckGLAdapter', () => {
             const adapter = makeAdapter()
             adapter._isOverlayMode = true
             adapter._basemap = makeDrawingBasemap()
-            adapter._overlay = { setProps: vi.fn() }
+            adapter._overlay = { setProps: vi.fn(), finalize: vi.fn() }
             return adapter
         }
 
@@ -409,6 +466,15 @@ test.describe('DeckGLAdapter', () => {
             adapter.enableDrawing('polygon')
             adapter.setBasemapStyle('https://example.com/style.json')
             expect(adapter.isDrawing()).toBe(false)
+            expect(cancels).toEqual([{ shape: 'polygon' }])
+        })
+
+        test('destroy cancels the live drawing session', () => {
+            const adapter = makeDrawingAdapter()
+            const cancels = []
+            adapter.on('drawcancel', (e) => cancels.push(e))
+            adapter.enableDrawing('polygon')
+            adapter.destroy()
             expect(cancels).toEqual([{ shape: 'polygon' }])
         })
 
@@ -556,6 +622,145 @@ test.describe('DeckGLAdapter', () => {
             adapter._isOverlayMode = false
             adapter._deck = null
             await expect(adapter.captureScreenshot()).rejects.toThrow(/no active map/)
+        })
+    })
+
+    // Under the deck.gl engine MMGIS still builds `data`, `image`, `video` and
+    // `velocity` layers as native Leaflet objects, and callers hand every
+    // registry entry to the active engine. Such an object has no deck `id`, so
+    // addLayer files it under `undefined`, and no `clone`, which the layer sync
+    // calls on every entry it mounts.
+    test.describe('a registry entry that is not a deck layer', () => {
+        function makeStandaloneAdapter() {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = false
+            adapter._deck = { setProps: vi.fn() }
+            return adapter
+        }
+
+        // A Leaflet tile layer's opacity surface — enough shape to be mistaken
+        // for a registry entry, with none of a deck layer's.
+        const makeLeafletish = () => ({
+            opacity: null,
+            setOpacity(o) { this.opacity = o },
+        })
+
+        test('is accepted by addLayer without throwing', () => {
+            const adapter = makeStandaloneAdapter()
+            expect(() => adapter.addLayer(makeLeafletish())).not.toThrow()
+        })
+
+        test('is left out of the layers handed to deck', () => {
+            const adapter = makeStandaloneAdapter()
+            adapter.addLayer(makeLayer('l1'))
+            adapter.addLayer(makeLeafletish())
+
+            const sent = adapter._deck.setProps.mock.calls.at(-1)[0].layers
+            expect(sent.map((l) => l.id)).toEqual(['l1'])
+        })
+
+        test('is left out of the layers handed to an interleaved overlay', () => {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = true
+            adapter._overlay = { setProps: vi.fn(), finalize: vi.fn() }
+            adapter.addLayer(makeLayer('l1'))
+            adapter.addLayer(makeLeafletish())
+
+            const sent = adapter._overlay.setProps.mock.calls.at(-1)[0].layers
+            expect(sent.map((l) => l.id)).toEqual(['l1'])
+        })
+    })
+
+    test.describe('drawing', () => {
+        // enableDrawing needs a real terra-draw session against a MapLibre map,
+        // so drive the finish path with the two things it touches: the session
+        // flag and the canvas terra-draw listens on.
+        function makeSessionAdapter(shape) {
+            const adapter = makeAdapter()
+            const canvas = document.createElement('canvas')
+            adapter._isOverlayMode = true
+            adapter._basemap = { getCanvas: () => canvas }
+            adapter._terraDraw = {}
+            adapter._drawingShape = shape
+            return { adapter, canvas }
+        }
+
+        function makeDrawingAdapter({ finishes }) {
+            const { adapter, canvas } = makeSessionAdapter('polygon')
+            const keys = []
+            canvas.addEventListener('keyup', (e) => {
+                keys.push(e.key)
+                // terra-draw ends the session synchronously when it commits.
+                if (finishes) adapter._drawingShape = null
+            })
+            return { adapter, keys }
+        }
+
+        // A terra-draw mode acts on a keyup only when the key matches its
+        // configured keyEvents, so let the real bindings decide the commit.
+        function makeKeyBoundAdapter(shape) {
+            const { adapter, canvas } = makeSessionAdapter(shape)
+            const keyEvents = drawModeKeyEvents(shape)
+            canvas.addEventListener('keyup', (e) => {
+                if (e.key === keyEvents.finish) adapter._drawingShape = null
+            })
+            return adapter
+        }
+
+        test('finishDrawing commits through the element terra-draw listens on', () => {
+            const { adapter, keys } = makeDrawingAdapter({ finishes: true })
+            expect(adapter.finishDrawing()).toBe(true)
+            expect(keys).toEqual(['Enter'])
+        })
+
+        test('finishDrawing leaves an unfinishable drawing in progress', () => {
+            const { adapter } = makeDrawingAdapter({ finishes: false })
+            let cancelled = false
+            adapter.on('drawcancel', () => { cancelled = true })
+            expect(adapter.finishDrawing()).toBe(false)
+            expect(cancelled).toBe(false)
+            expect(adapter.isDrawing()).toBe(true)
+        })
+
+        test('finishDrawing is a no-op with no session', () => {
+            expect(makeAdapter().finishDrawing()).toBe(false)
+        })
+
+        // With one click placed, a rectangle spans no area and a circle has
+        // the mode's minimum radius, and neither shape has a finish key to
+        // commit that with.
+        test('Enter cannot finish a one-click rectangle or circle', () => {
+            for (const shape of ['rectangle', 'circle']) {
+                const adapter = makeKeyBoundAdapter(shape)
+                expect(adapter.finishDrawing()).toBe(false)
+                expect(adapter.isDrawing()).toBe(true)
+            }
+        })
+
+        test('Enter still finishes the click-per-vertex shapes', () => {
+            for (const shape of ['polygon', 'linestring']) {
+                expect(makeKeyBoundAdapter(shape).finishDrawing()).toBe(true)
+            }
+        })
+
+        // With the map focused, the user's real Enter reaches terra-draw on top
+        // of the plugin that already asked to finish. The session is over by
+        // then, so the adapter sends nothing a second time — and terra-draw's
+        // own close() bails on a mode it has already finished.
+        test('finishing again after the session ended dispatches nothing', () => {
+            const { adapter, keys } = makeDrawingAdapter({ finishes: true })
+            expect(adapter.finishDrawing()).toBe(true)
+            expect(adapter.finishDrawing()).toBe(false)
+            expect(keys).toEqual(['Enter'])
+        })
+
+        test('disableDrawing emits drawcancel once', () => {
+            const { adapter } = makeDrawingAdapter({ finishes: false })
+            const shapes = []
+            adapter.on('drawcancel', (e) => shapes.push(e.shape))
+            adapter.disableDrawing()
+            adapter.disableDrawing()
+            expect(shapes).toEqual(['polygon'])
         })
     })
 

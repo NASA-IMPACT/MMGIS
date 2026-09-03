@@ -143,6 +143,13 @@ if (window.mmgisAPI.hasHandler('map:getCenter')) {
 }
 ```
 
+This asks whether this build of core offers the capability, not whether core is
+currently in a state to serve it. The panel and plugin providers, for instance,
+register at page load and read `true` with no layout mounted at all. Use it to
+guard against a core too old to know the name; read the request's own answer —
+an empty listing, or a `layout-inactive` refusal — for whether there is
+anything there right now.
+
 ---
 
 ## Plugin Scoped API
@@ -329,6 +336,42 @@ window.mmgisAPI.on('legend:made', ({ layerName, legendData }) => {
 })
 ```
 
+### Panel and Plugin Events
+
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `panels:changed` | `{ panels }` | Fired whenever the panel layout changes — a panel registered or unregistered, changed state, lost a tool, or was resized — and once with an empty listing when the layout is torn down |
+| `plugins:changed` | `{ plugins }` | Fired whenever a plugin is shown, hidden, loaded or unloaded by command, once after a batch of plugins loads with the layout, and once with an empty listing when the layout is torn down |
+
+`panels` carries the same listing [`panels:getAll`](#panel-and-plugin-providers)
+returns, and `plugins` the same listing `plugins:getAll` returns, so there is
+nothing to re-request. Setting something to the state it already holds is a
+quiet no-op — no event fires.
+
+Tearing a layout down — a mission swap, for instance — fires each event once
+more, carrying an empty listing. The bus outlives the layout, so a plugin that
+subscribed is still subscribed after the panels and plugins it was following
+are gone; the empty listing is what tells it so. Only that final listing goes
+out, never the intermediate half-dismantled layouts, and a request made from
+here on agrees with it: `panels:getAll` and `plugins:getAll` return empty
+listings and every panel or plugin command refuses with `layout-inactive`.
+
+So a subscriber cannot assume a panel or plugin it knows about is still in the
+listing it receives:
+
+```javascript
+window.mmgisAPI.on('panels:changed', ({ panels }) => {
+    const mine = panels.find((p) => p.id === 'left-panel')
+    // Absent once the panel is unregistered, and once the layout is torn down.
+    if (mine == null) return
+    console.log(`left-panel is now ${mine.state}`)
+})
+```
+
+A component that seeds from `panels:getAll` and also subscribes to
+`panels:changed` must guard the seed so it cannot overwrite state an event
+has already delivered — the request can resolve after a later event lands.
+
 ### WebSocket Events
 
 | Event | Payload | Description |
@@ -428,6 +471,94 @@ if (mousePos) {
 }
 ```
 
+### Panel and Plugin Providers
+
+| Provider | Params | Returns | Description |
+|----------|--------|---------|-------------|
+| `panels:getAll` | none | `PanelInfo[]` | Every panel in the layout, ordered by priority |
+| `panels:setState` | `{ panelId, state }` | `CommandResult` | Move a panel to `collapsed`, `expanded`, `iconified` or `focused` |
+| `panels:show` | `{ panelId }` | `CommandResult` | Restore a collapsed panel to its last visible state |
+| `panels:hide` | `{ panelId }` | `CommandResult` | Collapse a panel without destroying its contents |
+| `plugins:getAll` | none | `PluginInfo[]` | Every plugin the layout knows, with its lifecycle state |
+| `plugins:setState` | `{ pluginId, state }` | `CommandResult` | Move a plugin to `unloaded`, `hidden` or `visible` |
+| `plugins:show` | `{ pluginId }` | `CommandResult` | Reveal a plugin, loading it first if it is unloaded |
+| `plugins:hide` | `{ pluginId }` | `CommandResult` | Hide a plugin, preserving its instance and state |
+
+Each `PanelInfo` carries what it takes to target one: `id`, `position`, current
+`state`, and the `toolIds` it holds — which is how a plugin recognizes the panel
+it lives in.
+Each `PluginInfo` carries `id` and `state`.
+
+`show` and `hide` are thin sugar over `setState` — they resolve a target state
+rather than flipping whatever they find. `panels:show` restores the panel's
+`lastVisibleState`; `plugins:show` resolves to `visible`, loading the plugin
+first if it is unloaded. `panels:hide` and `plugins:hide` always target
+`collapsed`/`hidden`.
+
+`panels:show` only ever lifts a panel out of `collapsed`. Anything else already
+counts as visible, so the panel is left exactly where it is and the result
+reports `changed: false` — which is what stops it from moving a panel the user
+expanded down to whatever smaller state the configuration defaults to.
+
+`iconified` counts as visible under that rule, and every stock layout starts its
+left panel there. So "reveal the panel I live in" is two steps, not one: show
+it, then read the `state` the result carries and ask for a larger one if an
+icon rail is not enough. Reading the result is the general pattern — `show`
+reports where the panel actually ended up, which is not always where the caller
+wanted it.
+
+```javascript
+const shown = await window.mmgisAPI.request('panels:show', { panelId: 'left-panel' })
+if (shown.ok && shown.state === 'iconified') {
+    await window.mmgisAPI.request('panels:setState', {
+        panelId: 'left-panel',
+        state: 'expanded',
+    })
+}
+```
+
+Every command returns a `CommandResult` rather than a bare boolean:
+
+```ts
+{ ok: true,  state: 'collapsed', changed: true }
+{ ok: false, reason: 'not-found' | 'state-not-allowed' | 'no-visible-state'
+                   | 'layout-inactive' | 'bad-request' | 'load-failed'
+                   | 'transition-failed' }
+```
+
+`not-found` is an unknown id. `state-not-allowed` is a transition the panel's
+own configuration forbids — a float panel refusing `iconified`, for example.
+`no-visible-state` is a `panels:show` with no allowed state left to restore to.
+`bad-request` is a malformed payload: a missing or non-string id, or a state
+name outside the vocabulary in the table above. Note the difference between the
+last two — a state that does not exist anywhere is `bad-request`, your mistake,
+while a real state this particular target forbids is `state-not-allowed`. The
+payload is judged first, so a command carrying both an unknown id and an
+unrecognised state reports `bad-request`. `load-failed` is any `plugins:*` command
+that must load an unloaded plugin first and fails to. `transition-failed` is
+core failing to carry out a transition it accepted — distinct from
+`not-found`, which means the id named nothing. `layout-inactive` covers
+two cases a caller cannot distinguish — a core too old to have registered the
+handler, or a core that has it but currently has no layout mounted — and
+deliberately collapses them, since both mean the same thing to a caller: there
+is nothing to command.
+
+Commands name the state they want rather than flipping whatever they find, so a
+control drawn from a listing read moments earlier still lands on the state the
+click asked for, and a failed request is safe to retry. Asking for the state
+something already holds succeeds with `changed: false` and broadcasts nothing.
+
+```javascript
+const panels = await window.mmgisAPI.request('panels:getAll')
+const mine = panels.find((p) => p.toolIds.includes('myPlugin'))
+
+const result = await window.mmgisAPI.request(
+    mine.state === 'collapsed' ? 'panels:show' : 'panels:hide',
+    { panelId: mine.id }
+)
+if (!result.ok) console.warn(`Refused: ${result.reason}`)
+```
+
 ### App Providers
 
 | Provider | Params | Returns | Description |
@@ -455,7 +586,7 @@ console.log(`Current mission: ${missionPath}`)
 
 Events and providers follow a namespace:action pattern:
 
-- **Core namespaces**: `map:`, `layers:`, `time:`, `globe:`, `app:`
+- **Core namespaces**: `map:`, `layers:`, `time:`, `globe:`, `panels:`, `plugins:`, `app:`
 - **Plugin namespaces**: `plugin:pluginName:`
 - **Custom namespaces**: `custom:yourNamespace:`
 
@@ -464,6 +595,62 @@ Examples:
 - `layer:visibilityChange` - Core layer event
 - `plugin:draw:getActiveFeature` - DrawTool plugin provider
 - `custom:analytics:trackEvent` - Custom event for external integration
+
+---
+
+## Config Action Strings
+
+Some tools accept an action as a plain string in their mission configuration —
+Title's action buttons, for instance — rather than wiring a handler in code.
+These strings resolve through one shared resolver
+(`src/essence/Tools/_shared/actions/resolveAction.ts`), so config authors read
+the same request names documented above instead of a second, tool-specific
+vocabulary.
+
+| Form | Resolves to |
+|------|-------------|
+| `https://…` or `http://…` | Opens in a new tab (`noopener,noreferrer`) |
+| `panels:show:<panelId>` / `panels:hide:<panelId>` | `request('panels:show' \| 'panels:hide', { panelId })` |
+| `plugins:show:<pluginId>` / `plugins:hide:<pluginId>` | `request('plugins:show' \| 'plugins:hide', { pluginId })` |
+| anything else | `emit(action)` as a plain event |
+
+```javascript
+// Title tool config
+{
+    "actionButtonLink": "panels:hide:left-panel"
+}
+```
+
+Only these four single-target verbs are expressible as a config string —
+`setState` takes both a target and a state, which a colon-delimited string has
+no escaping rules for. A mission that needs a specific target state does it in
+code, not config.
+
+A target may itself contain colons; everything after the verb is taken as the
+target whole, so `panels:hide:group:left` hides a panel literally named
+`group:left`, not a group called `left`. Under a reserved namespace (`panels:`,
+`plugins:`, `core:`, matched exactly — `Panels:hide:left` is not treated as a
+core action), an unrecognized verb or a missing target is reported with
+`console.warn` naming the supported actions, rather than silently falling
+through to `emit` — a typo under a reserved namespace is a config mistake
+worth surfacing, not a custom event.
+
+`core:` is reserved outright: it defines no verbs, so any `core:<verb>:<target>`
+string — including the `core:showPlugin:<id>`, `core:togglePanel`, and
+`core:unloadPlugin` syntax some mission configs still use — is reported with
+`console.warn` and the list of supported actions above, rather than falling
+through to a plain `emit` that nothing listens for. There is no drop-in
+replacement for every verb: panels only expose separate show/hide actions,
+and unloading a plugin needs a state argument that a colon-delimited string
+can't carry — those calls belong in code, not a config string.
+
+A string with no colon at all has no namespace, so it resolves like any other
+non-core action — a plain `emit` of exactly what was written. That is legal
+but seldom what an author means: every tool publishes under
+`plugin:<toolId>:`, so a bare word like `refresh` emits an event named
+`refresh` that no tool listener is subscribed to. It is emitted anyway and
+reported with `console.warn`, naming the fully qualified form instead —
+otherwise the button looks wired up and does nothing.
 
 ---
 

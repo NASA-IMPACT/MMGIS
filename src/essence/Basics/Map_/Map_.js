@@ -26,6 +26,8 @@ import {
     resolveDeckCOGFileUrl,
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
+import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
+import { handOffLayerToEngine } from '../Layers_/engineLayerHandoff'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -44,6 +46,10 @@ import {
     DeckGLAdapter,
 } from '../MapEngines/index'
 import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import MapComparison from './MapComparison'
+
+import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
+import georaster from 'georaster'
 
 let L = window.L
 
@@ -52,8 +58,6 @@ let essenceFina = function () {}
 mapEngineRegistry.register(MAP_ENGINE.LEAFLET, LeafletAdapter)
 mapEngineRegistry.register(MAP_ENGINE.DECKGL, DeckGLAdapter)
 
-import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
-import georaster from 'georaster'
 
 // The default color ramp used for image layer types
 const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
@@ -293,18 +297,17 @@ let Map_ = {
                     return true
                 }),
                 // Drawing — wraps the IMapEngine drawing primitives from spec 013
-                window.mmgisAPI.provide('map:enableDrawing', ({ shape, options } = {}) => {
-                    engine.enableDrawing(shape, options)
+                window.mmgisAPI.provide('map:enableDrawing', ({ shape } = {}) => {
+                    engine.enableDrawing(shape)
                     return true
                 }),
                 window.mmgisAPI.provide('map:disableDrawing', () => {
                     engine.disableDrawing()
                     return true
                 }),
-                window.mmgisAPI.provide('map:finishDrawing', () => {
+                window.mmgisAPI.provide('map:finishDrawing', () =>
                     engine.finishDrawing()
-                    return true
-                }),
+                ),
                 window.mmgisAPI.provide('map:isDrawing', () => engine.isDrawing()),
                 // Layer management — engine-agnostic CRUD on vector layers
                 window.mmgisAPI.provide('map:createLayer', (spec) => {
@@ -409,6 +412,11 @@ let Map_ = {
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
         }
+
+        // Initialise comparison controller with the active engine so it can
+        // inject the divider DOM, delegate rendering calls, and register its
+        // own `map:comparison:*` providers on the event bus.
+        MapComparison.init(engine)
 
         //Make our layers
         makeLayers(L_.layers.dataFlat)
@@ -693,11 +701,7 @@ let Map_ = {
                 L_.layers.data[L_._layersOrdered[hasIndex[i]]].type === 'image'
             ) {
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].setZIndex(
-                    L_._layersOrdered.length +
-                        1 -
-                        L_._layersOrdered.indexOf(
-                            L_._layersOrdered[hasIndex[i]]
-                        )
+                    L_.layerZIndex(L_._layersOrdered[hasIndex[i]])
                 )
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].clearCache()
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].redraw()
@@ -710,11 +714,7 @@ let Map_ = {
         // They're separate because its better to only change the raster z-index
         for (let i = 0; i < hasIndexRaster.length; i++) {
             L_.layers.layer[L_._layersOrdered[hasIndexRaster[i]]].setZIndex(
-                L_._layersOrdered.length +
-                    1 -
-                    L_._layersOrdered.indexOf(
-                        L_._layersOrdered[hasIndexRaster[i]]
-                    )
+                L_.layerZIndex(L_._layersOrdered[hasIndexRaster[i]])
             )
         }
 
@@ -752,13 +752,9 @@ let Map_ = {
             if (typeof cb === 'function') cb()
             return true
         }
-
-        // We need to find and remove all points on the map that belong to the layer
-        // Not sure if there is a cleaner way of doing this
         for (var i = L_._layersOrdered.length - 1; i >= 0; i--) {
             if (
                 L_.layers.data[L_._layersOrdered[i]] &&
-                L_.layers.data[L_._layersOrdered[i]].type == 'vector' &&
                 L_.layers.data[L_._layersOrdered[i]].name == layerObj.name
             ) {
                 // Original
@@ -924,6 +920,26 @@ let Map_ = {
 }
 
 //Takes an array of layer objects and makes them map layers
+/**
+ * Hand a layer that has just been built to the main map's engine, in the
+ * state the mission configured it. See handOffLayerToEngine. Layers that were
+ * never built — a header, a globe-only model, a failed load — are ignored
+ * there.
+ *
+ * Main map only: `Map_.engine` is always the main map's, so a secondary ctx
+ * would collide with its entry under the same uuid.
+ */
+function handOffToEngine(layerObj, ctx) {
+    if (ctx.default !== true) return
+    handOffLayerToEngine(
+        Map_.engine,
+        layerObj.name,
+        Map_.nativeLayer(ctx.layerRegistry.layer[layerObj.name]),
+        L_.layerZIndex(layerObj.name),
+        ctx.layerRegistry.on[layerObj.name] === true
+    )
+}
+
 function makeLayers(layersObj) {
     //Make each layer (backwards to maintain draw order)
     for (var i = layersObj.length - 1; i >= 0; i--) {
@@ -983,7 +999,7 @@ async function makeLayer(
                     )
                     break
                 case 'tile':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 case 'vectortile':
                     makeVectorTileLayer(layerObj, mapContext)
@@ -1024,19 +1040,23 @@ async function makeLayer(
                     break
                 case 'TileLayer':
                 case 'BitmapLayer':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 case 'MVTLayer':
                     makeVectorTileLayer(layerObj, mapContext)
                     break
                 case 'PointCloudLayer':
                 case 'Tile3DLayer':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 default:
                     console.warn('Unknown layer type: ' + layerObj.type)
             }
         }
+
+        // Every builder above is awaited, so the layer exists by now. Image
+        // and video finish on their own schedule and hand off themselves.
+        handOffToEngine(layerObj, mapContext)
 
         // release hold on layer
         L_._layersBeingMade[layerName] = false
@@ -1392,9 +1412,10 @@ async function makeVectorLayer(
             }
 
             // Only Leaflet vector layers reach here — the deck.gl branch above
-            // returns first. Attachments are therefore Leaflet-only, which is
-            // why L_.setLayerOpacity skips its sublayer pass for engine-owned
-            // layers.
+            // returns first. Attachments are therefore Leaflet-only:
+            // L_.layers.attachments has no entry for a deck.gl-built layer, so
+            // L_.setLayerOpacity's per-attachment loop has nothing to iterate
+            // for one.
             ctx.layerRegistry.attachments[layerObj.name] = vl.sublayers
             ctx.layerRegistry.layer[layerObj.name] = vl.layer
 
@@ -1670,6 +1691,23 @@ async function makeTileLayer(layerObj, mapContext = null) {
                 // ?? not ||: an opacity of 0 is a real value, not "default to 1"
                 opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             })
+            // Map_.engine is always the MAIN map's engine. A non-default ctx
+            // targets a different map with its own registry, so registering
+            // into Map_.engine here would collide with the main map's entry
+            // under the same uuid. Guarded to the main path only.
+            if (ctx.default === true) {
+                // The layer kind supplies how it rebuilds; the engine executes
+                // it. Registered here because this is where the deckRaster
+                // classification happens.
+                //
+                // No registerLayer call here, unlike the Leaflet tail below:
+                // a deck layer already carries its own id and the engine
+                // adopts it when added, so only the refresher is missing.
+                Map_.engine.setLayerRefresher(
+                    layerObj.name,
+                    makeDeckCOGRefresher(layerObj.name, layerObj)
+                )
+            }
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()
             return
@@ -1718,6 +1756,34 @@ async function makeTileLayer(layerObj, mapContext = null) {
                               ),
                       },
         })
+
+        // A plain deck tile layer takes one static URL, so the per-tile params
+        // Leaflet adds in getTileUrl have to be baked in on every refresh too.
+        // Registered here, on the domain side, because compileTileUrl is not
+        // generic — it branches on MMGIS service prefixes (stac-collection,
+        // COG, titiler-url) and injects COG fields. An adapter must not know
+        // any of that; it only knows it has a function to call.
+        // Guarded to the main map for the same reason registerLayer below is:
+        // Map_.engine is always the MAIN map's engine, so a non-default ctx
+        // would collide with the main map's entry under the same uuid.
+        if (ctx.default === true) {
+            Map_.engine.setLayerRefresher(
+                layerObj.name,
+                (layer, refreshCtx) => {
+                    // No source URL, or one that compiles to nothing: return
+                    // nothing so the engine keeps the instance it holds.
+                    // Handing deck an empty url would blank the layer.
+                    if (refreshCtx.url == null) return
+                    const compiled = compileTileUrl(
+                        refreshCtx.url,
+                        refreshCtx.tileOptions ?? {}
+                    )
+                    if (!compiled) return
+                    return layer.clone({ data: compiled })
+                }
+            )
+        }
+
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
         return
@@ -2312,12 +2378,14 @@ function makeImageLayer(layerObj, mapContext = null) {
             L_.layers.layer[layerObj.name].clearCache()
 
             L_.layers.layer[layerObj.name].setZIndex(
-                L_._layersOrdered.length +
-                    1 -
-                    L_._layersOrdered.indexOf(layerObj.name)
+                L_.layerZIndex(layerObj.name)
             )
 
             L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
+
+            // Here, not in makeLayer: this builder finishes after that
+            // hand-off has already run.
+            handOffToEngine(layerObj, ctx)
 
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()
@@ -2410,12 +2478,14 @@ function makeVideoLayer(layerObj, mapContext = null) {
         }
 
         L_.layers.layer[layerObj.name].setZIndex(
-            L_._layersOrdered.length +
-                1 -
-                L_._layersOrdered.indexOf(layerObj.name)
+            L_.layerZIndex(layerObj.name)
         )
 
         L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
+
+        // Here, not in makeLayer: this builder finishes after that hand-off
+        // has already run.
+        handOffToEngine(layerObj, ctx)
 
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()

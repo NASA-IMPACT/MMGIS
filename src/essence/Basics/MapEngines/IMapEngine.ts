@@ -6,7 +6,7 @@ import {
     FitBoundsOptions,
     MapInitOptions,
 } from './types/view'
-import { LayerOptions, OverlayOptions } from './types/layers'
+import { LayerOptions, OverlayOptions, RefreshContext } from './types/layers'
 import {
     MapEventHandler,
     MapEventOptions,
@@ -14,7 +14,6 @@ import {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from './types/events'
 import { MapEngineType } from './types/engine'
 
@@ -202,6 +201,55 @@ export interface IMapEngine<
     updateLayer(layer: TLayer | string, options: Partial<LayerOptions>): TLayer
 
     /**
+     * Take ownership of an externally-built native layer under `id`, so
+     * id-addressed methods can find it. Holding is not drawing on either
+     * engine; {@link setLayerVisibility} decides what is shown.
+     */
+    registerLayer(id: string, layer: TLayer): void
+
+    /**
+     * Register how one layer recomputes itself, or pass null to clear.
+     *
+     * Called by the module that owns the layer kind, at creation — never by
+     * an adapter, which stays layer-type-agnostic. The engine invokes it with
+     * the live instance and remains its owner; the function must not retain
+     * it.
+     *
+     * deck.gl layers are immutable, so a refresher returns a replacement and
+     * the engine adopts it (returning nothing keeps what's held). Leaflet
+     * layers are mutable and already on the map, so a refresher mutates in
+     * place and any return value is ignored. The signature stays
+     * `TLayer | void` for that reason; the Leaflet adapter narrows its own
+     * parameter to void.
+     */
+    setLayerRefresher(
+        id: string,
+        refresh: ((layer: TLayer, ctx: RefreshContext) => TLayer | void) | null
+    ): void
+
+    /**
+     * Re-render a layer from its current configuration.
+     *
+     * The single update entry point for time changes, colormap/rescale changes
+     * and any other "your config moved, redraw" event. Callers never branch on
+     * the active engine or renderer.
+     *
+     * @returns Whether the engine had a layer to refresh.
+     */
+    refreshLayer(id: string, ctx?: RefreshContext): boolean
+
+    /**
+     * Show or hide a layer the engine already holds. A no-op for one it does
+     * not.
+     *
+     * Hiding never gives up the hold: a hidden layer stays addressable by id,
+     * so an opacity write or a {@link refreshLayer} while it is off lands on
+     * the instance shown next, and callers never replay settings at show
+     * time. How "off" is implemented differs per engine and stays there.
+     */
+    setLayerVisibility(layer: TLayer | string, visible: boolean): void
+
+    /**
      * Set the z index of a layer to control draw order.
      */
     setLayerZIndex(layer: TLayer | string, zIndex: number): void
@@ -217,14 +265,25 @@ export interface IMapEngine<
     bringToBack(layer: TLayer | string): void
 
     /**
-     * Set the opacity of a layer.
+     * Set a layer's opacity. Both engines return nothing — each owns its
+     * instance and applies the change internally: Leaflet mutates in place,
+     * deck.gl replaces the instance it holds. Callers never adopt a
+     * replacement.
      *
-     * Engines with immutable layer objects (deck.gl) return the instance that
-     * carries the new opacity; callers holding a reference to the layer must
-     * replace it with the returned one. Engines that mutate in place (Leaflet)
-     * return nothing.
+     * `fillOpacity` is not honoured uniformly, deliberately: Leaflet applies
+     * it to the fill of layers that paint one separately from their stroke
+     * (`setStyle`'s `fillOpacity`). deck.gl has no separate fill channel —
+     * its single `opacity` prop scales stroke and fill together, so the value
+     * is accepted here to satisfy the signature but subsumed into `opacity`.
+     *
+     * @param options.fillOpacity - Absolute fill opacity, not a multiplier.
+     * Defaults to `opacity`. See per-engine note above.
      */
-    setLayerOpacity(layer: TLayer | string, opacity: number): TLayer | void
+    setLayerOpacity(
+        layer: TLayer | string,
+        opacity: number,
+        options?: { fillOpacity?: number }
+    ): void
 
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).
@@ -316,8 +375,16 @@ export interface IMapEngine<
      *   - `drawvertex`   payload: {@link DrawVertexEvent} (committed vertices only)
      *   - `drawcomplete` payload: {@link DrawCompleteEvent}
      *   - `drawcancel`   payload: {@link DrawCancelEvent}
+     *
+     * Keys: an engine binds Enter as a finish key for polygon and linestring
+     * only, on the map element, which hears it while it has focus. Rectangle
+     * and circle bind no finish key — they commit on their second click, and
+     * {@link finishDrawing} returns false for them. No engine binds Escape or
+     * any other key. Whoever starts a drawing owns the keys that end it and
+     * drives the session with {@link finishDrawing} and
+     * {@link disableDrawing}, from wherever its own UI holds focus.
      */
-    enableDrawing(shape: DrawShape, options?: DrawingOptions): void
+    enableDrawing(shape: DrawShape): void
 
     /**
      * End the active drawing session, removing any in-progress preview
@@ -329,15 +396,13 @@ export interface IMapEngine<
     /**
      * Commit the current in-progress drawing as a Feature.
      *
-     * Emits `drawcomplete` when the current vertices form a valid shape and
-     * `drawcancel` when they do not (e.g. polygon with fewer than 3 vertices).
-     * Either way the session ends; isDrawing() returns false afterward.
-     *
-     * This is what plugin "Confirm" buttons should call. Adapters that auto-
-     * finish on a built-in interaction (e.g. polygon double-click) call this
-     * internally too — there is one finalisation path.
+     * When the current vertices form a valid shape, emits `drawcomplete`, ends
+     * the session and returns true. When they do not (e.g. polygon with fewer
+     * than 3 vertices), the drawing is left in progress and it returns false —
+     * finishing early must not discard the user's work. With no session active
+     * it is a no-op that also returns false.
      */
-    finishDrawing(): void
+    finishDrawing(): boolean
 
     /**
      * Whether a drawing session is currently active.
@@ -362,4 +427,71 @@ export interface IMapEngine<
      * removes the DOM node from the container. No-op if the id is unknown.
      */
     removeOverlay(id: string): void
+
+    // ── Comparison / swipe ────────────────────────────────────────────────────
+
+    /**
+     * Enable (or reconfigure) side-by-side swipe comparison mode.
+     * Renders each side's layer set into its own canvas stacked over the map and
+     * reveals them on either side of a draggable divider; the underlying basemap
+     * stays shared and all other data layers are hidden. Calling again while
+     * already enabled re-applies the (possibly changed) layer sets.
+     * Optional per-side date overrides for time-enabled layers are a follow-up.
+     */
+    enableComparison?(config: ComparisonConfig): void
+
+    /** Disable comparison mode and restore the normal single-viewport view. */
+    disableComparison?(): void
+
+    /**
+     * Move the comparison divider to `pos` (0–1 fraction of container width).
+     * No-op if comparison mode is off.
+     */
+    setComparisonDivider?(pos: number): void
+
+    /**
+     * Switch between the two ways the sides can share the viewport. Rebuilds
+     * the rendering surfaces, keeping the layer sets and the divider where
+     * they are. No-op if comparison mode is off.
+     */
+    setComparisonLayout?(layout: ComparisonLayout): void
+
+    /** Returns true when comparison mode is currently active. */
+    isComparisonEnabled?(): boolean
+
+    /** The layout comparison is currently drawn in. */
+    getComparisonLayout?(): ComparisonLayout
+}
+
+/**
+ * How the two comparison sides share the map viewport.
+ *
+ * - `'swipe'` — one camera, one basemap. Both sides draw the same view and the
+ *   divider wipes between them, so a place is seen under one layer or the
+ *   other.
+ * - `'sideBySide'` — two cameras locked to the same centre and zoom, each with
+ *   its own basemap, in panes that meet at the divider without overlapping. A
+ *   place is seen under both layers at once, once per pane.
+ */
+export type ComparisonLayout = 'swipe' | 'sideBySide'
+
+/** Configuration for {@link IMapEngine.enableComparison}. */
+export interface ComparisonConfig {
+    /** deck.gl layer IDs (= MMGIS layer names) to render on the left side. */
+    leftLayerIds: string[]
+    /** deck.gl layer IDs (= MMGIS layer names) to render on the right side. */
+    rightLayerIds: string[]
+    /** Defaults to the layout already in effect, or `'swipe'` on first enable. */
+    layout?: ComparisonLayout
+    /**
+     * Layer props to override on the left side only, keyed by layer id — how a
+     * side is drawn from a source the other side does not share, such as a
+     * different date's tiles. Props are engine-level (`data`, `geotiff`); the
+     * engine applies what it is given and never derives them. `id` is not among
+     * them: a clone is paired to its layer by id, and overriding it breaks the
+     * pairing the renderer diffs on.
+     */
+    leftLayerProps?: Record<string, Record<string, unknown>>
+    /** As {@link ComparisonConfig.leftLayerProps}, for the right side. */
+    rightLayerProps?: Record<string, Record<string, unknown>>
 }

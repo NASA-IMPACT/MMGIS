@@ -1,10 +1,11 @@
 import { ToolOrientation, ToolMetadata } from '../../ToolController_/types/tool';
-import { 
+import {
     PanelPosition,
     EdgePanelPosition,
     FloatPanelPosition,
     PanelState,
-    PanelLayoutType,    
+    PanelLayoutType,
+    CommandRefusalReason,
 } from './layout';
 
 /**
@@ -193,6 +194,15 @@ export interface FloatPanelConfig extends BasePanelConfig {
 
     /** Floats can't be drag-resized; `resizable` must be false/omitted */
     capabilities?: Omit<PanelCapabilities, 'resizable'> & { resizable?: false };
+
+    /**
+     * Whether the layout paints no surface for this panel — no background,
+     * border or shadow on the panel, and none on the cards behind its tools.
+     * Tools keep whatever surfaces they draw themselves, so a tool that brings
+     * its own boxes (map controls, for instance) sits directly on the map.
+     * Default: false
+     */
+    transparent?: boolean;
 }
 
 /**
@@ -244,6 +254,19 @@ export interface PanelStateObject {
     lastVisibleState?: PanelState;
 }
 
+/** Result of a state-changing panel command. */
+export type PanelCommandResult =
+    | { ok: true; state: PanelState; changed: boolean }
+    | { ok: false; reason: CommandRefusalReason };
+
+/** The public shape of a panel — everything a caller needs to target one. */
+export type PanelInfo = {
+    id: string;
+    position: string;
+    state: PanelState;
+    toolIds: string[];
+};
+
 /**
  * Interface for the PanelManager singleton.
  * Manages all panel regions and their states.
@@ -266,6 +289,12 @@ export interface PanelManager {
      * @throws Error if panel not found
      */
     unregisterPanel(panelId: string): void;
+
+    /**
+     * Drop every panel at once, as a layout teardown does.
+     * Broadcasts the resulting empty layout once rather than once per panel.
+     */
+    clear(): void;
 
     /**
      * Add a tool to a panel region.
@@ -307,14 +336,23 @@ export interface PanelManager {
     getToolsForPanel(panelId: string): ToolMetadata[];
 
     /**
+     * Whether a panel may enter the given state.
+     *
+     * @param panelId Panel identifier
+     * @param newState Candidate state
+     * @returns true if the transition is allowed
+     */
+    canSetState(panelId: string, newState: PanelState): boolean;
+
+    /**
      * Change a panel's visual state.
      * Validates transition is allowed based on stateConstraints.
      *
      * @param panelId Panel identifier
      * @param newState Target state
-     * @throws Error if transition is not allowed
+     * @returns Command result: `{ ok: true, state, changed }` or `{ ok: false, reason }`
      */
-    setPanelState(panelId: string, newState: PanelState): void;
+    setPanelState(panelId: string, newState: PanelState): PanelCommandResult;
 
     /**
      * When in iconified or focused state, focus on a specific tool.
@@ -328,16 +366,14 @@ export interface PanelManager {
     focusTool(panelId: string, toolId: string): void;
 
     /**
-     * Toggle a panel's collapsed state.
+     * Restore a collapsed panel to a visible state.
      * Behavior depends on current state and constraints:
      * - collapsed -> last visible state (or default state, or first available visible state)
-     * - iconified/focused/expanded -> collapsed
-     * 
+     *
      * @param panelId Panel identifier
-     * @throws Error if panel not found
-     * @throws Error if toggle cannot be performed due to state constraints
+     * @returns Command result: `{ ok: true, state, changed }` or `{ ok: false, reason }`
      */
-    togglePanelCollapsed(panelId: string): void;
+    showPanel(panelId: string): PanelCommandResult;
 
     /**
      * Get all panels for a specific position, ordered by priority.
@@ -356,12 +392,19 @@ export interface PanelManager {
     getAllPanelsByPriority(): PanelStateObject[];
 
     /**
-     * Notify UI layer that panel state has changed and layout needs updating.
+     * Public projection of every panel, ordered by priority.
+     *
+     * @returns Frozen array of the public panel shape
+     */
+    list(): PanelInfo[];
+
+    /**
+     * Broadcast that panel state has changed and layout needs updating.
      * Should be called whenever:
      * - Panel state changes
      * - Panel is added/removed
      */
-    notifyLayoutChanged(): void;
+    notifyChanged(): void;
 
     /**
      * Validate if a tool is compatible with a panel.

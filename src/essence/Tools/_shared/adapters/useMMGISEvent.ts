@@ -1,14 +1,11 @@
 import { useEffect } from 'react'
 import { mmgisOn } from './mmgisAPI'
 
-// LayerManager still carries a local copy of this hook; migrating it here is
-// tracked in https://github.com/NASA-IMPACT/MMGIS/issues/202.
-export const useMMGISEvent = (
-    eventName: string,
+/** Subscribe to a bus event for the lifetime of the component. Pass a stable
+ *  handler (useCallback) or the subscription churns every render. */
+export function useMMGISEvent(
+    event: string,
     handler: (payload?: unknown) => void,
-): void => {
-    useEffect(() => {
-        const cleanup = mmgisOn(eventName, handler)
-        return cleanup
-    }, [eventName, handler])
+): void {
+    useEffect(() => mmgisOn(event, handler), [event, handler])
 }

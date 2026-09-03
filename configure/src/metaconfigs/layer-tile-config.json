@@ -657,6 +657,23 @@
       ]
     },
     {
+      "name": "Properties",
+      "rows": [
+        {
+          "components": [
+            {
+              "field": "properties",
+              "name": "Properties (JSON)",
+              "description": "Filterable metadata used by the LayerFilter plugin, e.g. { \"theme\": [\"hazard\"], \"hazard\": \"flood\", \"sector\": \"water\", \"location\": \"north_america\", \"year\": \"2024\" }. Usually populated from STAC. Keys are the layer.properties keys the LayerFilter plugin matches on.",
+              "type": "json",
+              "width": 12,
+              "height": "240px"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Information",
       "rows": [
         {

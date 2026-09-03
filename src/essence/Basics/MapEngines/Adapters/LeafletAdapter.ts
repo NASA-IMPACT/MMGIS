@@ -29,6 +29,7 @@ import {
     TileLayerOptions,
     MarkerOptions,
     OverlayOptions,
+    RefreshContext,
 } from '../types/layers'
 import { IMapEngineMarkers } from '../IMapEngineMarkers'
 import {
@@ -46,7 +47,12 @@ import {
     TerraDrawCircleMode,
 } from 'terra-draw'
 import { TerraDrawLeafletAdapter } from 'terra-draw-leaflet-adapter'
-import { extractVerticesFromGeometry } from './DrawingHelpers'
+import {
+    committedVerticesFromChange,
+    drawModeKeyEvents,
+    drawStyles,
+    validateDrawnLineString,
+} from './DrawingHelpers'
 import { getMapScreenshot } from './LeafletScreenshot'
 import {
     MapEventHandler,
@@ -55,7 +61,6 @@ import {
     FeaturePickResult,
     QueryFeaturesOptions,
     DrawShape,
-    DrawingOptions,
 } from '../types/events'
 import { MapEngineType } from '../types/engine'
 
@@ -82,6 +87,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * Registry of layers by ID
      */
     private _layers: Map<string, any> = new Map()
+
+    /**
+     * Per-layer refresh hooks, keyed the same way as {@link _layers}. They
+     * mutate in place and return nothing — see {@link setLayerRefresher}.
+     */
+    private _refreshers: Map<string, (layer: any, ctx: RefreshContext) => void> = new Map()
 
     /**
      * Registry of markers by ID
@@ -292,6 +303,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     destroy(): void {
         if (!this._map) return
 
+        // End a live session the normal way, while its listeners are still
+        // attached, so its initiator hears `drawcancel` and stops driving a
+        // session that is about to have no engine.
+        this.disableDrawing()
+
         this._removeBasemapLayer()
 
         this._eventHandlers.forEach((handler, eventName) => {
@@ -314,12 +330,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             try { this._terraDraw.stop() } catch { /* ignore */ }
             this._terraDraw = null
         }
-        this._drawingShape = null
 
         this._detachFeatureClickListener()
         this._detachFeatureHoverListeners()
 
         this._layers.clear()
+        this._refreshers.clear()
         this._markers.clear()
 
         this._map.remove()
@@ -617,11 +633,20 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return Array.from(this._layers.values())
     }
 
+    /**
+     * Whether the layer is currently on the map.
+     *
+     * Both forms ask the map, never the registry: `_layers` holds every
+     * MMGIS-built tile layer whether or not it is on the map, so membership
+     * there does not answer "is it on the map". `hasLayer(id)` and
+     * `hasLayer(layerObject)` must not disagree, because mmgisAPI's
+     * `map:hasLayer` exposes this answer publicly.
+     */
     hasLayer(layer: any | string): boolean {
-        if (typeof layer === 'string') {
-            return this._layers.has(layer)
-        }
-        return this._map.hasLayer(layer)
+        const leafletLayer =
+            typeof layer === 'string' ? this._layers.get(layer) : layer
+        if (!leafletLayer) return false
+        return this._map?.hasLayer(leafletLayer) === true
     }
 
     /**
@@ -689,8 +714,14 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             if (leafletLayer) {
                 this._map.removeLayer(leafletLayer)
                 this._layers.delete(layer)
+                this._refreshers.delete(layer)
             }
         } else {
+            // Deliberately keeps the registration. Map_.rmNotNull removes
+            // layers by object every time one is toggled off, and a toggled-off
+            // layer still has to be refreshable — TimeControl.reloadLayer's
+            // `evenIfOff` path depends on it. Only the id form, which means
+            // "destroy this layer", drops the entry.
             this._map.removeLayer(layer)
         }
     }
@@ -746,6 +777,61 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return leafletLayer
     }
 
+    registerLayer(id: string, layer: any): void {
+        // resolveLeafletLayerId reads _mmgisId, so stamp it: the layer must be
+        // findable by object as well as by id.
+        if (layer != null && typeof layer === 'object') layer._mmgisId = id
+        this._layers.set(id, layer)
+    }
+
+    /**
+     * Mutates the layer in place; any return value is ignored. See
+     * {@link IMapEngine.setLayerRefresher}.
+     */
+    setLayerRefresher(
+        id: string,
+        refresh: ((layer: any, ctx: RefreshContext) => void) | null
+    ): void {
+        if (refresh == null) this._refreshers.delete(id)
+        else this._refreshers.set(id, refresh)
+    }
+
+    refreshLayer(id: string, ctx: RefreshContext = {}): boolean {
+        const layer = this._layers.get(id)
+        if (!layer) return false
+
+        // Return value deliberately ignored — see setLayerRefresher above.
+        const refresh = this._refreshers.get(id)
+        if (refresh) {
+            refresh(layer, {
+                url: ctx.url,
+                tileOptions: ctx.tileOptions,
+                force: ctx.force,
+            })
+            return true
+        }
+
+        // A Leaflet tile layer recompiles its URL per tile from this.options,
+        // which is what refresh() merges tileOptions into — that is why Leaflet
+        // keeps its tile cache where deck.gl cannot.
+        if (typeof layer.refresh !== 'function') return false
+        layer.refresh(ctx.url, ctx.force === true, ctx.tileOptions)
+        return true
+    }
+
+    /**
+     * Visibility is map membership here; the registry entry is untouched
+     * either way. See {@link IMapEngine.setLayerVisibility}.
+     */
+    setLayerVisibility(layer: any | string, visible: boolean): void {
+        const leafletLayer = this._layers.get(resolveLeafletLayerId(layer))
+        if (!leafletLayer) return
+
+        const onMap = this._map?.hasLayer(leafletLayer) === true
+        if (visible && !onMap) this._map.addLayer(leafletLayer)
+        else if (!visible && onMap) this._map.removeLayer(leafletLayer)
+    }
+
     setLayerZIndex(layer: any | string, zIndex: number): void {
         const leafletLayer = typeof layer === 'string' ? this._layers.get(layer) : layer
         if (leafletLayer && typeof leafletLayer.setZIndex === 'function') {
@@ -767,10 +853,25 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         }
     }
 
-    setLayerOpacity(layer: any | string, opacity: number): void {
+    setLayerOpacity(
+        layer: any | string,
+        opacity: number,
+        options?: { fillOpacity?: number }
+    ): void {
         const leafletLayer = typeof layer === 'string' ? this._layers.get(layer) : layer
-        if (leafletLayer && typeof leafletLayer.setOpacity === 'function') {
+        if (!leafletLayer) return
+
+        // Tile, image and video layers carry a whole-element opacity; vector
+        // layers have to be re-styled, and paint stroke and fill separately.
+        if (typeof leafletLayer.setOpacity === 'function') {
             leafletLayer.setOpacity(opacity)
+            return
+        }
+        if (typeof leafletLayer.setStyle === 'function') {
+            leafletLayer.setStyle({
+                opacity,
+                fillOpacity: options?.fillOpacity ?? opacity,
+            })
         }
     }
 
@@ -929,20 +1030,35 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         this._featureHoverOutListener = null
     }
 
-    private _ensureTerraDraw(options: DrawingOptions): TerraDraw {
+    private _ensureTerraDraw(): TerraDraw {
         if (this._terraDraw) return this._terraDraw
 
-        const finishKey = 'Enter'
-        const cancelKey = options.cancelOnEscape === false ? null : 'Escape'
+        // The drawing is rendered in the theme's accent, at the stroke width
+        // a committed shape is drawn with; terra-draw's own defaults supply
+        // the opacities.
+        const styles = drawStyles()
 
         const td = new TerraDraw({
             adapter: new TerraDrawLeafletAdapter({ lib: L, map: this._map }),
             modes: [
-                new TerraDrawPointMode(),
-                new TerraDrawLineStringMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawPolygonMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawRectangleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
-                new TerraDrawCircleMode({ keyEvents: { finish: finishKey, cancel: cancelKey } }),
+                new TerraDrawPointMode({ styles: styles.point }),
+                new TerraDrawLineStringMode({
+                    keyEvents: drawModeKeyEvents('linestring'),
+                    validation: validateDrawnLineString,
+                    styles: styles.linestring,
+                }),
+                new TerraDrawPolygonMode({
+                    keyEvents: drawModeKeyEvents('polygon'),
+                    styles: styles.polygon,
+                }),
+                new TerraDrawRectangleMode({
+                    keyEvents: drawModeKeyEvents('rectangle'),
+                    styles: styles.rectangle,
+                }),
+                new TerraDrawCircleMode({
+                    keyEvents: drawModeKeyEvents('circle'),
+                    styles: styles.circle,
+                }),
             ],
         })
 
@@ -961,13 +1077,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
         const onChange = (ids: any[], type: string) => {
             if (type !== 'create' && type !== 'update') return
-            if (!this._drawingShape) return
-            const lastId = ids[ids.length - 1]
-            const snap = td.getSnapshotFeature(lastId)
-            if (!snap) return
-            const vertices = extractVerticesFromGeometry(snap.geometry as GeoJSON.Geometry)
-            if (!vertices) return
-            this.emit('drawvertex', { shape: this._drawingShape, vertices })
+            const shape = this._drawingShape
+            if (!shape) return
+            const vertices = committedVerticesFromChange(shape, ids, (id) =>
+                td.getSnapshotFeature(id)
+            )
+            if (vertices) this.emit('drawvertex', { shape, vertices })
         }
 
         td.on('finish', onFinish)
@@ -981,17 +1096,22 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return td
     }
 
-    enableDrawing(shape: DrawShape, options: DrawingOptions = {}): void {
+    enableDrawing(shape: DrawShape): void {
         if (this._drawingShape) {
             this.disableDrawing()
         }
 
-        const td = this._ensureTerraDraw(options)
+        const td = this._ensureTerraDraw()
         if (!td.enabled) td.start()
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
         this.emit('drawstart', { shape })
+    }
+
+    /** The element terra-draw's Leaflet adapter attaches its listeners to. */
+    private _drawEventElement(): HTMLElement | null {
+        return this._map?.getContainer?.() ?? null
     }
 
     /**
@@ -1021,16 +1141,19 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * terra-draw modes commit on `Enter` via their `keyEvents.finish` binding.
      * There's no programmatic-finish API yet (see
      * https://github.com/JamesLMilner/terra-draw), so we dispatch a synthetic
-     * keydown to the map container — the mode's keyboard handler picks it up
-     * and emits `finish` if the geometry is valid. If it isn't (e.g. polygon
-     * with <3 vertices), the dispatch is a no-op and we fall through to
-     * cancel.
+     * keyup on the map container — the element terra-draw listens on. The
+     * mode emits `finish` if the geometry is valid, which ends the session; if
+     * it isn't (e.g. polygon with <3 vertices), the dispatch is a no-op and the
+     * session is left untouched. Rectangle and circle bind no finish key at
+     * all (see {@link drawModeKeyEvents}), so they only ever finish on their
+     * second click.
      */
-    finishDrawing(): void {
-        if (!this._drawingShape || !this._terraDraw) return
-        const evt = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
-        this._container?.dispatchEvent(evt)
-        if (this._drawingShape) this.disableDrawing()
+    finishDrawing(): boolean {
+        if (!this._drawingShape || !this._terraDraw) return false
+        this._drawEventElement()?.dispatchEvent(
+            new KeyboardEvent('keyup', { key: 'Enter' })
+        )
+        return !this.isDrawing()
     }
 
     isDrawing(): boolean {

@@ -11,25 +11,30 @@ const { default: L_ } = await import(
 )
 
 /**
- * L_.addVisible is the startup path for layers a mission configures visible. It
- * has to rank every one of them through the engine, the same set of layers
- * toggleLayerHelper ranks when a layer is turned back on: an unranked layer
- * sorts above the ranked stack in DeckGLAdapter, so a startup layer left
- * unranked jumps above its neighbours the first time one of them is re-ranked.
+ * L_.addVisible is what puts a mission's visible layers on screen — at
+ * startup, and again after a re-order or a rebuild. Creation has already
+ * handed every layer to the engine, ranked and hidden, so this shows them and
+ * re-ranks them against the current order.
  *
- * deck.gl missions configure a layer by its deck.gl class name, so the ranking
- * must not be gated on the MMGIS type strings.
+ * It addresses the engine by uuid rather than by the native object, so the
+ * engine acts on the instance it holds: re-adding the object built at
+ * creation would drop whatever the layer has been refreshed to since.
+ *
+ * deck.gl missions configure a layer by its deck.gl class name, so neither
+ * step may be gated on the MMGIS type strings.
  */
 
 // A deck.gl layer carries deck's `props` and never Leaflet's `options`.
 const makeDeckLayer = (id) => ({ id, props: {} })
 
 let setLayerZIndex
+let setLayerVisibility
 
 const setEngine = () => {
     setLayerZIndex = vi.fn()
+    setLayerVisibility = vi.fn()
     L_.Map_ = {
-        engine: { addLayer: vi.fn(), setLayerZIndex },
+        engine: { addLayer: vi.fn(), setLayerZIndex, setLayerVisibility },
         nativeLayer: (layer) =>
             layer && layer._deckLayer != null ? layer._deckLayer : layer,
     }
@@ -52,11 +57,30 @@ const setLayers = (configs) => {
 }
 
 const rankOf = (name) =>
-    setLayerZIndex.mock.calls.find(([layer]) => layer.id === name)?.[1]
+    setLayerZIndex.mock.calls.find(([id]) => id === name)?.[1]
+
+const shown = () =>
+    setLayerVisibility.mock.calls
+        .filter(([, visible]) => visible === true)
+        .map(([id]) => id)
 
 describe('L_.addVisible layer ranking', () => {
     beforeEach(() => {
         setEngine()
+    })
+
+    test('shows each layer by uuid, not by the object built at creation', () => {
+        setLayers([
+            { name: 'Vec', type: 'GeoJsonLayer', url: 'vec.geojson' },
+            { name: 'Base', type: 'TileLayer', url: '{z}/{x}/{y}.png' },
+        ])
+
+        L_.addVisible(null)
+
+        expect(shown()).toEqual(['Base', 'Vec'])
+        expect(L_.Map_.engine.addLayer).not.toHaveBeenCalledWith(
+            expect.objectContaining({ id: 'Vec' })
+        )
     })
 
     test('ranks a layer configured by its deck.gl class name', () => {
