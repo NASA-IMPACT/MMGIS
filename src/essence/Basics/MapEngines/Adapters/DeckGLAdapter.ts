@@ -324,17 +324,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _warnedNonDeckLayers = new Set<string>()
 
     /**
-     * Whether the engine holds a real deck.gl layer under `id`. Warns once per
-     * id when it holds something else — see {@link updateLayer}.
+     * Whether `candidate` is a real deck.gl layer — the one thing this engine
+     * can hold, because every sync clones what it holds and a Leaflet object
+     * has no `clone`. Under this engine MMGIS still builds `data`, `image`,
+     * `video` and `velocity` layers with Leaflet, and callers hand those here
+     * like any other; held, one would throw on every later change rather than
+     * fail alone. Warns once per id.
      */
-    private _holdsDeckLayer(id: string, existing: unknown): boolean {
-        if (typeof (existing as Layer)?.clone === 'function') return true
-        if (existing != null && !this._warnedNonDeckLayers.has(id)) {
+    private _holdsDeckLayer(id: string, candidate: unknown): boolean {
+        if (typeof (candidate as Layer)?.clone === 'function') return true
+        if (candidate != null && !this._warnedNonDeckLayers.has(id)) {
             this._warnedNonDeckLayers.add(id)
             console.warn(
-                `DeckGLAdapter: layer "${id}" is not a deck.gl layer, so it cannot be ` +
-                `updated. It was built with Leaflet because this engine has no builder ` +
-                `for its type. The update was skipped.`
+                `DeckGLAdapter: layer "${id}" is not a deck.gl layer, so this engine ` +
+                `can neither hold nor update it. It was built with Leaflet because ` +
+                `this engine has no builder for its type. The call was skipped.`
             )
         }
         return false
@@ -1039,16 +1043,27 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return [...this._layers.values()]
     }
 
+    /**
+     * Whether the layer is currently drawn — not whether the registry holds
+     * it, which is also true of layers that are off. mmgisAPI publishes this
+     * as `map:hasLayer`, so both engines must give the same answer for a
+     * hidden layer.
+     */
     hasLayer(layer: Layer | string): boolean {
         const id = typeof layer === 'string' ? layer : layer.id
-        return this._layers.has(id)
+        const existing = this._layers.get(id)
+        if (!existing) return false
+        // Absent means drawn.
+        return (existing.props as { visible?: boolean })?.visible !== false
     }
 
     /**
      * Add a pre-built deck.gl layer to the map. The layer's `id` property is
-     * used as the registry key.
+     * used as the registry key. Anything this engine cannot hold is declined —
+     * see {@link _holdsDeckLayer}.
      */
     addLayer(layer: Layer): void {
+        if (!this._holdsDeckLayer(layer?.id, layer)) return
         this._layers.set(layer.id, layer)
         this._syncLayers()
     }
@@ -1100,10 +1115,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return updated
     }
 
+    /**
+     * Take ownership of a pre-built layer under `id`. Registering does not
+     * show it — visibility is a separate prop this engine owns.
+     */
     registerLayer(id: string, layer: Layer): void {
-        // For deck.gl, holding a layer is rendering it — there is no
-        // "registered but not on the map" state. Keyed by the caller's id
-        // rather than layer.id so the two can never drift apart.
+        if (!this._holdsDeckLayer(id, layer)) return
+        // Keyed by the caller's id rather than layer.id so the two cannot drift.
         this._layers.set(id, layer)
         this._syncLayers()
     }
@@ -1137,6 +1155,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (next) this._layers.set(id, next)
         this._syncLayers()
         return true
+    }
+
+    /**
+     * On this engine the registry is also the render list, so visibility is a
+     * prop rather than membership: a hidden layer stays held, and deck.gl
+     * skips drawing it. See {@link IMapEngine.setLayerVisibility}.
+     */
+    setLayerVisibility(layer: Layer | string, visible: boolean): void {
+        const id = resolveLayerId(layer)
+        const existing = this._layers.get(id)
+        if (!existing) return
+        if (!this._holdsDeckLayer(id, existing)) return
+
+        this._layers.set(id, existing.clone({ visible }) as Layer)
+        this._syncLayers()
     }
 
     /**
@@ -2175,18 +2208,25 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * layer it finalizes, so a mounted instance is single-use and the registry
      * holds descriptors rather than the instances on screen.
      *
-     * Entries that cannot be cloned are left out. Under the deck.gl engine
-     * MMGIS still builds `data`, `image`, `video` and `velocity` layers as
-     * native Leaflet objects — ENGINE_LAYER_SUPPORT has no deck builder for
-     * them — and callers hand every registry entry to the active engine. Such
-     * an object carries no deck `id`, so {@link addLayer} files it under
-     * `undefined`; deck.gl could not render it in any case.
+     * Holding a layer is not drawing it: hidden layers stay in the registry,
+     * where an opacity write or a refresh still reaches them, but are left out
+     * of the render list. deck.gl stops drawing a layer marked
+     * `visible: false` yet still runs its lifecycle, so a hidden tile layer
+     * handed over would go on requesting tiles.
      */
     private _syncLayers(): void {
         const layers = this._comparisonEnabled
             ? []
             : [...this._layers.values()]
+                  // Belt and braces: registerLayer and addLayer already
+                  // decline these, but one reaching the clone below would
+                  // take the whole map down rather than fail alone.
                   .filter((layer) => typeof layer.clone === 'function')
+                  .filter(
+                      (layer) =>
+                          (layer.props as { visible?: boolean })?.visible !==
+                          false
+                  )
                   .map((layer) => layer.clone({}) as Layer)
         if (this._isOverlayMode) {
             this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })

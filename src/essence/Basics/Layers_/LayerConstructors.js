@@ -1319,11 +1319,7 @@ const pairings = (geojson, layerObj, leafletLayerObject) => {
                                     .layer
                     }
                     L_.Map_.map.addLayer(layerMain)
-                    layerMain.setZIndex(
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(layerObj.name)
-                    )
+                    layerMain.setZIndex(L_.layerZIndex(layerObj.name))
                 }
             }
             layer.off = () => {

@@ -3,6 +3,7 @@ import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
+import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
@@ -202,6 +203,29 @@ async function refreshTileLayer(uuid, updateOptions) {
         console.error(`layers:refresh failed for "${uuid}"`, err)
         return false
     }
+}
+
+/**
+ * Brings a layer just switched on up to the current time.
+ *
+ * TimeControl reloads only layers that are switched on, so time steps taken
+ * while a layer is off pass it by and it would otherwise draw with the range
+ * it was last shown with.
+ *
+ * Through `reloadLayer` rather than the raster tile pipeline, because that is
+ * the only path resolving time for a vector or vectortile layer. Guarded on
+ * the layer actually being behind, which also keeps this to once per toggle:
+ * some layer types pass two show paths, and `reloadLayer` stamps
+ * `time.current` so the second finds the layer current.
+ *
+ * @param {object} s - Layer config.
+ */
+async function catchUpLayerTime(s) {
+    if (s.time?.enabled !== true) return
+    if (s.time.current === L_.TimeControl_.currentTime) return
+
+    // evenIfOff: the layer is still recorded as off while the toggle runs.
+    await L_.TimeControl_.reloadLayer(s, true)
 }
 
 const L_ = {
@@ -711,6 +735,16 @@ const L_ = {
         }
         return nextUrl
     },
+    /**
+     * A layer's rank in the engine's draw order: first in `_layersOrdered`
+     * draws on top. One derivation, shared by creation and re-ordering.
+     *
+     * @param {string} name - Layer UUID.
+     * @returns {number}
+     */
+    layerZIndex: function (name) {
+        return L_._layersOrdered.length + 1 - L_._layersOrdered.indexOf(name)
+    },
     //Takes in config layer obj
     //Toggles a layer on and off and accounts for sublayers
     //Takes in a config layer object
@@ -791,17 +825,8 @@ const L_ = {
                             $('.drawToolContextMenuHeaderClose').click()
                         } catch (err) {}
                     }
-                    if (
-                        L_.Map_.engine &&
-                        L_.Map_.engine.engineType !== 'leaflet'
-                    ) {
-                        L_.Map_.engine.updateLayer(
-                            L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                            { visible: false }
-                        )
-                    } else {
-                        L_.Map_.rmNotNull(L_.layers.layer[s.name])
-                    }
+                    CursorInfo.hide(true)
+                    L_.Map_.engine.setLayerVisibility(s.name, false)
                     if (L_.layers.attachments[s.name]) {
                         for (let sub in L_.layers.attachments[s.name]) {
                             switch (L_.layers.attachments[s.name][sub].type) {
@@ -885,11 +910,7 @@ const L_ = {
                                                     sub
                                                 ].layer
                                             ),
-                                            L_._layersOrdered.length +
-                                                1 -
-                                                L_._layersOrdered.indexOf(
-                                                    s.name
-                                                )
+                                            L_.layerZIndex(s.name)
                                         )
                                         break
                                     case 'labels':
@@ -921,11 +942,7 @@ const L_ = {
                                                     sub
                                                 ].layer
                                             ),
-                                            L_._layersOrdered.length +
-                                                1 -
-                                                L_._layersOrdered.indexOf(
-                                                    s.name
-                                                )
+                                            L_.layerZIndex(s.name)
                                         )
                                         break
                                 }
@@ -933,20 +950,10 @@ const L_ = {
                         }
                     }
 
-                    const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                    if (L_.Map_.engine.engineType !== 'leaflet') {
-                        if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
-                            L_.Map_.engine.addLayer(nativeLayer)
-                        }
-                    } else {
-                        L_.Map_.engine.addLayer(nativeLayer)
-                    }
-                    L_.Map_.engine.setLayerZIndex(
-                        L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(s.name)
-                    )
+                    // Before showing, not after: a layer that is behind still
+                    // holds the URL it was built with, placeholders and all.
+                    await catchUpLayerTime(s)
+                    L_.Map_.engine.setLayerVisibility(s.name, true)
                 }
 
                 if (s.type === 'tile') {
@@ -1013,9 +1020,7 @@ const L_ = {
                     )
                     L_.Map_.engine.setLayerZIndex(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(s.name)
+                        L_.layerZIndex(s.name)
                     )
                 } else {
                     let hadToMake = false
@@ -1049,20 +1054,10 @@ const L_ = {
                                         }
                                     })
                             }
-                            const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                            if (L_.Map_.engine.engineType !== 'leaflet') {
-                                if (!L_.Map_.engine.updateLayer(nativeLayer, { visible: true })) {
-                                    L_.Map_.engine.addLayer(nativeLayer)
-                                }
-                            } else {
-                                L_.Map_.engine.addLayer(nativeLayer)
-                            }
-                            L_.Map_.engine.setLayerZIndex(
-                                L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                                L_._layersOrdered.length +
-                                    1 -
-                                    L_._layersOrdered.indexOf(s.name)
-                            )
+                            // Before showing, not after: a layer that is behind still
+                            // holds the URL it was built with, placeholders and all.
+                            await catchUpLayerTime(s)
+                            L_.Map_.engine.setLayerVisibility(s.name, true)
                         }
 
                         if (s.type === 'image') {
@@ -1246,9 +1241,7 @@ const L_ = {
                         )
                         L_.Map_.engine.setLayerZIndex(
                             L_.Map_.nativeLayer(sublayer.layer),
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(layerName)
+                            L_.layerZIndex(layerName)
                         )
                         break
                     case 'labels':
@@ -1261,9 +1254,7 @@ const L_ = {
                         )
                         L_.Map_.engine.setLayerZIndex(
                             L_.Map_.nativeLayer(sublayer.layer),
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(layerName)
+                            L_.layerZIndex(layerName)
                         )
                         L_.setSublayerOpacity(layerName, sublayerName)
                         break
@@ -1383,24 +1374,17 @@ const L_ = {
                                 }
                             }
                         }
-                        engine.addLayer(
-                            L_.Map_.nativeLayer(
-                                L_.layers.layer[L_.layers.dataFlat[i].name]
-                            )
+                        // By uuid, so the engine acts on the instance it
+                        // holds rather than the object built at creation,
+                        // which may since have been refreshed.
+                        engine.setLayerVisibility(
+                            L_.layers.dataFlat[i].name,
+                            true
                         )
-                        // Rank every layer the same way toggleLayerHelper does,
-                        // so the stack follows z-index order at start instead of
-                        // element order and a later toggle re-sorts against
-                        // ranks that are already assigned.
+                        // Re-ranked because this also runs after a re-order.
                         engine.setLayerZIndex(
-                            L_.Map_.nativeLayer(
-                                L_.layers.layer[L_.layers.dataFlat[i].name]
-                            ),
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(
-                                    L_.layers.dataFlat[i].name
-                                )
+                            L_.layers.dataFlat[i].name,
+                            L_.layerZIndex(L_.layers.dataFlat[i].name)
                         )
 
                         // Ensure video layers start muted when added to map
@@ -3572,9 +3556,7 @@ const L_ = {
 
                             if (sub === 'image_overlays') {
                                 subUpdateLayers[sub].layer.setZIndex(
-                                    L_._layersOrdered.length +
-                                        1 -
-                                        L_._layersOrdered.indexOf(layerName)
+                                    L_.layerZIndex(layerName)
                                 )
                             }
                         }
