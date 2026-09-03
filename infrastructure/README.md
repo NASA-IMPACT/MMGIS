@@ -55,7 +55,10 @@ value in them is production-tested. They are **kept in place**: they document
 where each Terraform value came from.
 `cloudfront-function.js` is different: it is the deployed source, not
 provenance — the publish generator (`scripts/lib/cfn-template.js`) reads and
-templates it at render time (see `tests/unit/infrastructure.spec.js`).
+templates it at render time. `tests/unit/cloudfrontFunction.spec.js` drives the
+rendered function's behaviour and holds it to the runtime's ES5 and size
+limits; `tests/unit/cfnTemplate.spec.js` covers the header strip and the
+placeholder bake.
 Nothing else here is applied directly anymore.
 One deliberate divergence: the recipes inject all five `DB_*` keys from an
 app-shaped DB secret (`<DB_SECRET_ARN>`) that the module has since retired —
