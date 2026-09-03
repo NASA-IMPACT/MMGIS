@@ -37,7 +37,7 @@ test('a lone mission loads straight through when the flag is absent', () => {
 
 // Either casing, and with or without a value: all four spellings are the
 // same request — hold the mission list up instead of auto-loading.
-test.each(['forcelanding', 'forceLanding', 'forcelanding=1'])(
+test.each(['forcelanding', 'forceLanding', 'forcelanding=1', 'forceLanding=1'])(
     '?%s holds the mission list up',
     (query) => {
         initAt(query)
