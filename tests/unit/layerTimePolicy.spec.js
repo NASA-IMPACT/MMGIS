@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import {
     resolveTimePolicy,
+    resolveTemporalExtent,
     parseISODuration,
 } from '../../src/essence/Basics/TimeControl_/layerTimePolicy'
 
@@ -72,6 +73,180 @@ describe('layer time policy', () => {
             expect(resolveTimePolicy('now  +  P1D', { now: NOW })).toBe(
                 '2026-08-26T15:42:31Z',
             )
+        })
+    })
+
+    describe('resolveTemporalExtent', () => {
+        test('without an interval both policies resolve, nothing snaps', () => {
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: '2026-08-15T00:00:00Z',
+                        dataEndTime: 'now',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({
+                start: '2026-08-15T00:00:00Z',
+                end: '2026-08-25T15:42:31Z',
+            })
+        })
+
+        test('a 7-day cadence begun ten days ago ends three days ago, not now', () => {
+            // NOW is Aug 25; steps land Aug 15, Aug 22, (Aug 29 is future).
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: '2026-08-15T00:00:00Z',
+                        dataEndTime: 'now',
+                        interval: 'P7D',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({
+                start: '2026-08-15T00:00:00Z',
+                end: '2026-08-22T00:00:00Z',
+            })
+        })
+
+        test('an end exactly on a step stays put', () => {
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: '2026-08-01T00:00:00Z',
+                        dataEndTime: '2026-08-15T00:00:00Z',
+                        interval: 'P7D',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({
+                start: '2026-08-01T00:00:00Z',
+                end: '2026-08-15T00:00:00Z',
+            })
+        })
+
+        test('a concrete off-step end also floors — no data exists there', () => {
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: '2026-08-01T00:00:00Z',
+                        dataEndTime: '2026-08-20T00:00:00Z',
+                        interval: 'P7D',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({
+                start: '2026-08-01T00:00:00Z',
+                end: '2026-08-15T00:00:00Z',
+            })
+        })
+
+        test('monthly cadence steps by calendar months, not fixed ms', () => {
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: '2026-01-15T00:00:00Z',
+                        dataEndTime: 'now',
+                        interval: 'P1M',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({
+                start: '2026-01-15T00:00:00Z',
+                end: '2026-08-15T00:00:00Z',
+            })
+        })
+
+        test('monthly cadence stays anchored to the start day-of-month', () => {
+            // Jan 31 + N months in one calendar operation: Jul 31 fits,
+            // Aug 31 is past NOW. Iterated stepping would have drifted
+            // to Mar 3 at the first short month.
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: '2026-01-31T00:00:00Z',
+                        dataEndTime: 'now',
+                        interval: 'P1M',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({
+                start: '2026-01-31T00:00:00Z',
+                end: '2026-07-31T00:00:00Z',
+            })
+        })
+
+        test('policy start anchors the grid too', () => {
+            // start = now - P1M = Jul 25 15:42:31; weekly steps reach
+            // Aug 22 15:42:31 before overshooting NOW.
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: 'now - P1M',
+                        dataEndTime: 'now',
+                        interval: 'P7D',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({
+                start: '2026-07-25T15:42:31Z',
+                end: '2026-08-22T15:42:31Z',
+            })
+        })
+
+        test('an end before the start clamps to the start', () => {
+            expect(
+                resolveTemporalExtent(
+                    {
+                        dataStartTime: '2026-08-20T00:00:00Z',
+                        dataEndTime: '2026-08-10T00:00:00Z',
+                        interval: 'P1D',
+                    },
+                    { now: NOW },
+                ),
+            ).toEqual({
+                start: '2026-08-20T00:00:00Z',
+                end: '2026-08-20T00:00:00Z',
+            })
+        })
+
+        test.each([['every tuesday'], ['P0D'], ['PT0S']])(
+            'interval %s is ignored, never breaking the extent',
+            (interval) => {
+                expect(
+                    resolveTemporalExtent(
+                        {
+                            dataStartTime: '2026-08-15T00:00:00Z',
+                            dataEndTime: 'now',
+                            interval,
+                        },
+                        { now: NOW },
+                    ),
+                ).toEqual({
+                    start: '2026-08-15T00:00:00Z',
+                    end: '2026-08-25T15:42:31Z',
+                })
+            },
+        )
+
+        test('an interval without a start has no anchor — end unsnapped', () => {
+            expect(
+                resolveTemporalExtent(
+                    { dataEndTime: 'now', interval: 'P7D' },
+                    { now: NOW },
+                ),
+            ).toEqual({ start: null, end: '2026-08-25T15:42:31Z' })
+        })
+
+        test('an absent time block resolves to a null extent', () => {
+            expect(resolveTemporalExtent(undefined, { now: NOW })).toEqual({
+                start: null,
+                end: null,
+            })
+            expect(resolveTemporalExtent(null, { now: NOW })).toEqual({
+                start: null,
+                end: null,
+            })
         })
     })
 })
