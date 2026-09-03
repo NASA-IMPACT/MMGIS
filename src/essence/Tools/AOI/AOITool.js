@@ -139,6 +139,12 @@ const AOITool = {
     _drawKeyHandler: null,
     // Cancels the deferred popup show while the camera is still moving.
     _pendingPopup: null,
+    // The selection a drawing session took the card away from, held until the
+    // session either replaces it or is backed out of.
+    _suspendedAOI: null,
+    // True across the request that swaps one draw shape for another, whose
+    // cancel is this plugin's own doing rather than the user backing out.
+    _switchingShape: false,
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -189,7 +195,7 @@ const AOITool = {
                 const off = bus.on(event, handler)
                 this._cleanups.push(typeof off === 'function' ? off : () => { })
             }
-            subscribe('map:drawstart',     () => this._onDrawStart())
+            subscribe('map:drawstart',     (e) => this._onDrawStart(e))
             subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
@@ -234,6 +240,10 @@ const AOITool = {
         }
 
         this._cancelPendingPopup()
+        // Nothing of the selection outlives the tool, so the cancel below has
+        // no card to put back.
+        this._suspendedAOI = null
+        this._switchingShape = false
 
         // Fire-and-forget: cancel any active drawing session via the bus.
         this._removeDrawKeys()
@@ -406,23 +416,38 @@ const AOITool = {
 
     _onDrawShapeChange(shape) {
         this._setState({ drawShape: shape, drawVerticesCount: 0 })
-        this._api?.request('map:enableDrawing', { shape })
-            .catch((err) => console.warn('[AOI] enableDrawing failed', err))
+        // The engines end any live session before starting the new one, and
+        // both events reach the handlers below from inside this request. The
+        // cancel among them is the shape swap, not the user backing out, so it
+        // leaves the suspended selection suspended.
+        this._switchingShape = true
+        try {
+            this._api?.request('map:enableDrawing', { shape })
+                .catch((err) => console.warn('[AOI] enableDrawing failed', err))
+        } finally {
+            this._switchingShape = false
+        }
     },
 
     /**
-     * A new selection is being made, so the previous one goes now: its card
-     * would otherwise sit over the map for the whole session, taking the
-     * Escape and Enter the session needs and offering to analyze an area the
-     * user is in the middle of replacing. The selection goes with the card —
-     * it has no other controls, so leaving it behind would strand it.
+     * Arming a session is not the same act as replacing the selection, so the
+     * selection stays until a vertex actually lands. Its card cannot: it would
+     * sit over the map for the whole session, taking the Escape and Enter the
+     * session needs and offering to analyze an area being replaced.
      */
-    _onDrawStart() {
+    _onDrawStart(e) {
         this._cancelPendingPopup()
+        this._suspendedAOI = this._state.currentAOI
         this._hidePopup()
-        this._clearSelection()
         this._installDrawKeys()
-        this._setState({ isDrawing: true, drawVerticesCount: 0 })
+        this._setState({
+            isDrawing: true,
+            // The shape the engine started, which is what tells the panel
+            // which session is live after a mid-session switch — that switch
+            // cancels the old session, and the cancel resets the shape.
+            drawShape: e?.shape ?? this._state.drawShape,
+            drawVerticesCount: 0,
+        })
     },
 
     /**
@@ -462,6 +487,11 @@ const AOITool = {
     },
 
     _onDrawVertex(e) {
+        // The first vertex is where the replacement begins, so this is where
+        // the previous selection goes: every shape reports its first committed
+        // vertex — a polygon's first click, a rectangle's first corner, a
+        // circle's centre, the point itself — before it can complete.
+        this._dropSuspendedSelection()
         const count = Array.isArray(e?.vertices) ? e.vertices.length : 0
         this._setState({ drawVerticesCount: count })
     },
@@ -470,7 +500,13 @@ const AOITool = {
         this._removeDrawKeys()
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
         const feature = e?.feature
-        if (!feature) return
+        if (!feature) {
+            // Nothing was drawn, so the session leaves the previous selection
+            // as it found it.
+            this._restoreSuspendedSelection()
+            return
+        }
+        this._suspendedAOI = null
         const label = feature.properties?.shape
             ? `Drawn ${feature.properties.shape}`
             : 'Drawn area'
@@ -480,6 +516,28 @@ const AOITool = {
     _onDrawCancelEvent() {
         this._removeDrawKeys()
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
+        if (!this._switchingShape) this._restoreSuspendedSelection()
+    },
+
+    /** Let go of the selection a session suspended: it is being replaced. */
+    _dropSuspendedSelection() {
+        if (!this._suspendedAOI) return
+        this._suspendedAOI = null
+        this._clearSelection()
+    },
+
+    /**
+     * Put back the card of a selection a session suspended without replacing.
+     * The selection never left the map, so its centroid is still in view and
+     * the anchor needs no view to fall back on.
+     */
+    _restoreSuspendedSelection() {
+        const aoi = this._suspendedAOI
+        this._suspendedAOI = null
+        if (!aoi || this._state.currentAOI !== aoi) return
+        const c = featureCentroid(aoi.feature)
+        if (!c) return
+        this._showPopup(aoi.label, selectionPopupAnchor({ lat: c[1], lng: c[0] }))
     },
 
     // ── Inspect mode ───────────────────────────────────────────────────────────
@@ -610,7 +668,7 @@ const AOITool = {
         }).catch((err) => console.warn('[AOI] failed to add selection layer', err))
 
         this._state.currentAOI = { feature, source, label }
-        this._api?.emit('areaDrawn', { feature, source })
+        api?.emit('areaDrawn', { feature, source })
 
         const c = featureCentroid(feature)
         // `view` keeps the popup on-screen when the camera does not move; omit

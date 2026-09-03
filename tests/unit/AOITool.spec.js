@@ -308,7 +308,9 @@ describe('AOITool popup outcomes', () => {
         api.emit('map:moveend')
         await flush()
 
-        expect(warn).toHaveBeenCalled()
+        // Named, because a selection warns from four other places: any of
+        // them would satisfy a bare "warned about something".
+        expect(warn).toHaveBeenCalledWith('[AOI] showPopup failed', expect.any(Error))
         expect(api.getSelection()).toMatchObject({ feature: SQUARE })
 
         // The next selection still gets its card: the rejected show left no
@@ -363,25 +365,6 @@ describe('AOITool popup lifecycle', () => {
             api.namesOf('map:removeLayer').map((r) => r.payload.id)
         ).toContain('aoi:selection')
         expect(AOITool._state.currentAOI).toBeNull()
-    })
-
-    test('a drawing session takes the previous selection and its popup away', async () => {
-        await selectAndOpen(SQUARE, 'Alabama')
-        expect(api.hasOpenPopup()).toBe(true)
-        api.reset()
-
-        api.emit('map:drawstart', { shape: 'polygon' })
-        await flush()
-
-        // The card would otherwise sit over the map for the whole session,
-        // holding the Escape and Enter the session needs and offering to
-        // analyze the area being replaced.
-        expect(api.hasOpenPopup()).toBe(false)
-        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
-        // And the selection goes with it: the card holds its only controls, so
-        // leaving it behind would strand it.
-        expect(api.getSelection()).toBeNull()
-        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(1)
     })
 
     test('destroy disarms a show already waiting on the camera', async () => {
@@ -459,6 +442,121 @@ describe('AOITool popup lifecycle', () => {
         expect(api.namesOf('map:showPopup')).toHaveLength(0)
     })
 
+})
+
+// Picking a shape arms a session; it does not choose an area. What these pin
+// is where along a session the previous selection is actually given up, and
+// what the user is left with when the session ends without a drawing.
+describe('AOITool drawing sessions', () => {
+    const VERTEX = { shape: 'polygon', vertices: [{ lat: 1, lng: 1 }] }
+
+    test('arming a session retracts the card and keeps the selection', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        expect(api.hasOpenPopup()).toBe(true)
+        api.reset()
+
+        api.emit('map:drawstart', { shape: 'polygon' })
+        await flush()
+
+        // The card cannot stay: it would sit over the map for the whole
+        // session, holding the Escape and Enter the session needs and offering
+        // to analyze the area being replaced.
+        expect(api.hasOpenPopup()).toBe(false)
+        expect(api.namesOf('map:hidePopup')).toHaveLength(1)
+        // The selection can, and must — nothing has replaced it yet, and a
+        // selection dropped here has no undo.
+        expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(0)
+    })
+
+    test('backing out before any vertex puts the card back', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.emit('map:drawstart', { shape: 'polygon' })
+        await flush()
+        api.reset()
+
+        api.emit('map:drawcancel', { shape: 'polygon' })
+        await flush()
+
+        // At the selection's own centroid, and with no camera step: the
+        // selection never left the map, so it is still in view.
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.title).toBe('Alabama')
+        expect(shows[0].payload.latlng).toEqual({ lat: 5, lng: 5 })
+        expect(api.hasOpenPopup()).toBe(true)
+        expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+    })
+
+    test('the first vertex is where the previous selection goes', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.emit('map:drawstart', { shape: 'polygon' })
+        await flush()
+        api.reset()
+
+        api.emit('map:drawvertex', VERTEX)
+        await flush()
+
+        expect(api.getSelection()).toBeNull()
+        expect(api.emitsOf('plugin:aoi:drawingCleared')).toHaveLength(1)
+        expect(
+            api.namesOf('map:removeLayer').map((r) => r.payload.id)
+        ).toContain('aoi:selection')
+
+        // Backing out from here has nothing left to put back.
+        api.reset()
+        api.emit('map:drawcancel', { shape: 'polygon' })
+        await flush()
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
+    })
+
+    test('a finished drawing gets its own card', async () => {
+        await selectAndOpen(SQUARE, 'Alabama')
+        api.emit('map:drawstart', { shape: 'polygon' })
+        api.emit('map:drawvertex', VERTEX)
+        await flush()
+        api.reset()
+
+        api.emit('map:drawcomplete', { feature: FAR_SQUARE })
+        await flush()
+        api.emit('map:moveend')
+        await flush()
+
+        const shows = api.namesOf('map:showPopup')
+        expect(shows).toHaveLength(1)
+        expect(shows[0].payload.title).toBe('Drawn area')
+        expect(shows[0].payload.latlng).toEqual({ lat: 25, lng: 25 })
+        expect(api.getSelection()).toMatchObject({ feature: FAR_SQUARE, source: 'draw' })
+    })
+
+    // Both engines end the live session inside `enableDrawing` before starting
+    // the new one, so a shape switch delivers a cancel and then a start.
+    test('switching shape mid-session keeps the session and its new shape', async () => {
+        api.requestImpl.set('map:enableDrawing', ({ shape }) => {
+            if (AOITool._state.isDrawing) {
+                api.emit('map:drawcancel', { shape: AOITool._state.drawShape })
+            }
+            api.emit('map:drawstart', { shape })
+            return true
+        })
+        await selectAndOpen(SQUARE, 'Alabama')
+
+        AOITool._onDrawShapeChange('polygon')
+        await flush()
+        expect(AOITool._state).toMatchObject({ isDrawing: true, drawShape: 'polygon' })
+        api.reset()
+
+        AOITool._onDrawShapeChange('rectangle')
+        await flush()
+
+        // Without the shape the start carries, the panel falls back to the
+        // shape picker while a rectangle session is running.
+        expect(AOITool._state).toMatchObject({ isDrawing: true, drawShape: 'rectangle' })
+        // The cancel in the middle is the swap, not the user backing out, so
+        // the suspended card is not put back only to be retracted again.
+        expect(api.namesOf('map:showPopup')).toHaveLength(0)
+        expect(api.getSelection()).toMatchObject({ feature: SQUARE })
+    })
 })
 
 // One popup slot, and core decides whose popup a `map:hidePopup` reaches. AOI
