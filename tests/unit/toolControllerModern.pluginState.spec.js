@@ -41,6 +41,9 @@ afterEach(() => {
     // singletons shared by every test in this file; without resetting them a
     // plugin loaded or hidden by one test leaks into the next test's fixture.
     ToolControllerModern_.destroyAllTools()
+    // The name -> id and binding -> id maps are module-level too; an empty
+    // config map empties them.
+    ToolControllerModern_.buildToolConfigMap([])
     document.body.innerHTML = ''
     vi.restoreAllMocks()
 })
@@ -198,4 +201,31 @@ test('tearing down an empty layout says nothing', () => {
     ToolControllerModern_.destroyAllTools()
 
     expect(seen).toEqual([])
+})
+
+// `plugins:show:DrawTool` is the documented form of the action a config author
+// writes on a button, and a panel's `panelTools` accepts the same three ways of
+// naming a tool. The lifecycle commands have to read all three too, or a stored
+// config that names a tool by its registry binding stops finding it.
+test('a lifecycle command reads a tool named by its binding or its name', () => {
+    ToolControllerModern_.buildToolConfigMap([
+        { name: 'Fake Tool', js: 'FakeTool' },
+    ])
+
+    expect(ToolControllerModern_.getPluginState('FakeTool')).toBe('unloaded')
+    expect(ToolControllerModern_.setPluginState('FakeTool', 'visible'))
+        .toEqual({ ok: true, state: 'visible', changed: true })
+    expect(ToolControllerModern_.isPluginLoaded('Fake Tool')).toBe(true)
+    expect(ToolControllerModern_.isPluginHidden('fake')).toBe(false)
+})
+
+// Nothing resolves an unknown string, so it reaches the registries as written
+// and is reported under the name the caller used.
+test('an unresolvable name is still not-found', () => {
+    ToolControllerModern_.buildToolConfigMap([
+        { name: 'Fake Tool', js: 'FakeTool' },
+    ])
+
+    expect(ToolControllerModern_.setPluginState('GhostTool', 'visible'))
+        .toEqual({ ok: false, reason: 'not-found' })
 })

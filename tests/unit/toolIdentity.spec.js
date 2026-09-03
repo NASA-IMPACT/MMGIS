@@ -87,8 +87,10 @@ function loadStatsTool() {
 
 afterEach(() => {
     // loadedTools and the lifecycle registries are module-level singletons, so
-    // a tool one test leaves loaded answers for the next test's.
+    // a tool one test leaves loaded answers for the next test's. So are the
+    // name -> id and binding -> id maps, which an empty config map empties.
     ToolControllerModern_.destroyAllTools()
+    ToolControllerModern_.buildToolConfigMap([])
     document.body.innerHTML = ''
     calls.length = 0
     vi.restoreAllMocks()
@@ -168,8 +170,7 @@ describe('resolving a tool config to its two names', () => {
     })
 
     // A panel's `panelTools` names its tools however the config author wrote
-    // them, and the binding is what the id used to be, so configs written
-    // against older builds keep placing their tools.
+    // them: the display name, the canonical id, or the registry binding.
     test('a panel finds a tool by name, by id, or by module binding', () => {
         const { getToolData } = ToolControllerModern_.buildToolConfigMap([statsConfig])
 
@@ -181,15 +182,27 @@ describe('resolving a tool config to its two names', () => {
 })
 
 describe('a tool the controller loads', () => {
-    test('is reached by its module but registered under its id', () => {
+    test('is registered under its id, whichever of its names is asked for', () => {
+        ToolControllerModern_.buildToolConfigMap([statsConfig])
         loadStatsTool()
 
         expect(ToolControllerModern_.isPluginLoaded('fetch-stats')).toBe(true)
-        expect(ToolControllerModern_.isPluginLoaded('FetchStatsTool')).toBe(false)
+        // The registries are keyed by the id alone; a lifecycle command naming
+        // the tool any other way is resolved to it first.
+        expect(ToolControllerModern_.isPluginLoaded('FetchStatsTool')).toBe(true)
+        expect(ToolControllerModern_.isPluginLoaded('Fetch Stats')).toBe(true)
         expect(ToolControllerModern_.listPlugins()).toContainEqual({
             id: 'fetch-stats',
             state: 'visible',
         })
+    })
+
+    // Resolution is a lookup in the mission's own config map, so a binding no
+    // mission configured is nobody.
+    test('is not reached by a binding the mission never configured', () => {
+        loadStatsTool()
+
+        expect(ToolControllerModern_.isPluginLoaded('FetchStatsTool')).toBe(false)
     })
 
     test('lands in the card the interface rendered for that id', () => {
