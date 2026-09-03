@@ -77,7 +77,7 @@ One limit: **resolving `now` discards that it was `now`.** The resolver returns 
 
 ## Period length: `time.interval` and `time.isPeriodic`
 
-A time-enabled layer may carry two more fields in its `time` block: `interval`, an ISO 8601 duration such as `P1D` or `P1M` giving the length of one period, and `isPeriodic`, whether the data repeats on that cadence. The VEDA STAC Source action writes them from the collection's `dashboard:time_interval` and `dashboard:is_periodic`, and nothing else writes them. The export legend reads `interval`, snapping the cursor to the period holding it — `2025-06` for a monthly layer. Nothing reads `isPeriodic`.
+A time-enabled layer may carry two more fields in its `time` block: `interval`, an ISO 8601 duration such as `P1D` or `P1M` giving the length of one period, and `isPeriodic`, whether the data repeats on that cadence. The VEDA STAC Source action writes them from the collection's `dashboard:time_interval` and `dashboard:is_periodic`, and nothing else writes them. The export legend reads `interval` for three things: it sets the period the row snaps the cursor to — `2025-06` for a monthly layer — it sets how precisely every date on that row prints, and it is ignored for the `Showing` line when it is shorter than an hour. Nothing reads `isPeriodic`.
 
 ## Export time
 
@@ -93,10 +93,21 @@ Each row carries one date line, and every date line names what kind of date it i
 
 For a **time-enabled layer**, `time.enabled` is the whole test. The URL is not inspected: core appends `datetime=` and `starttime=` to URLs that carry no placeholder, so a placeholder test would drop most of a mission's stack. Such a layer's cursor is its own `time.end` when `time.type` is `local`, and the Time Control's `time:getCurrent` otherwise; its window start is its own `time.start`, or `time:getStart`. Then:
 
-- With a usable `time.interval`, the row shows the period holding the cursor, labelled **Showing**. `P1Y`, `P1M`, and `P1D` are the UTC year, month, or day containing it and print compactly: `Showing 2025-06`. Any other duration is stepped forward from the layer's resolved `dataStartTime` and prints as `Showing <start> → <end>`, where the end is the period's last second rather than the boundary the next period starts on. With no `dataStartTime` to anchor on, a cursor sitting before that anchor, or an interval that will not parse, the row falls through to the next rule. The period arithmetic lives in `layerPeriod.ts`, on top of the ISO-duration parsing core owns in `layerTimePolicy.ts`.
+- With a usable `time.interval` of an hour or longer, the row shows the period holding the cursor, labelled **Showing**. `P1Y`, `P1M`, and `P1D` are the UTC year, month, or day containing it and print as one value: `Showing 2025-06`. Any other duration is stepped forward from the layer's resolved `dataStartTime` and prints as `Showing <start> → <end>` with the end inclusive, so a P7D period reads `2025-06-01 → 2025-06-07`. When both ends print as the same label — a `PT1H` period at hour precision, say — the row shows that label once rather than `X → X`. A period that is not calendar-aligned still prints at its unit's precision and so can read wider than it is: a two-year period starting mid-2025 prints as `2025 → 2027`. With no `dataStartTime` to anchor on, a cursor sitting before that anchor, an interval shorter than an hour, or an interval that will not parse, the row falls through to the next rule. An interval under an hour is not a period at all but a collection of individually timestamped scenes, so it earns no `Showing` line. The period arithmetic lives in `layerPeriod.ts`, on top of the ISO-duration parsing core owns in `layerTimePolicy.ts`.
 - Otherwise the row shows the span the map actually requested, **Requested** `<window start> → <cursor>` — or `Requested up to <cursor>` when the window start is missing or sits within a day of 1970-01-01, which is where Point mode puts it.
 - Without a cursor, the row shows no date line.
 
 A layer that is **not time-enabled** shows its Data Time Extent, resolved for every layer in one `layers:getTemporalExtent` call: `Collected <start> → <end>`, or `Collected from <start>` / `Collected until <end>` for a half-open extent. No extent means no date line.
 
-Every timestamp on the band goes through `time:formatTime`, so the dates read the way the mission's own time UI writes them; the compact calendar labels are periods rather than timestamps and are printed as they are. `renderLegendBand.ts` draws each date line under its row's name, and the header lines under the mission name.
+**How precisely a row's dates print** is decided by the layer's `time.interval`, not by the mission's time format. A daily collection has no business printing seconds. The smallest unit in the interval sets the precision:
+
+| Smallest unit in `time.interval` | Prints as |
+| --- | --- |
+| years | `2026` |
+| months | `2026-07` |
+| days or weeks | `2026-07-03` |
+| hours | `2026-07-03 06:00Z` |
+| minutes or seconds | `2026-07-03T06:12:22Z` |
+| no interval, or unparseable | `2026-07-03` |
+
+Every date on a row, whether in a `Showing`, `Requested`, or `Collected` line, prints at that precision, and a range prints both ends at it. The two header lines are the exception: the cursor and the export time are instants, not periods, and go through core — the cursor through `time:getCurrentFormatted`, the export time through `time:formatTime` — so they read the way the mission's own Time Control writes them. `renderLegendBand.ts` draws each date line under its row's name, and the header lines under the mission name.

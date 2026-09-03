@@ -2,6 +2,11 @@ import { getVisibleLayersWithLegends } from './getVisibleLayersWithLegends'
 import { resolveColormapColors } from './resolveColormapColors'
 import { filterLayersForExportView } from './filterLayersForExportView'
 import { layerPeriodFor } from './layerPeriod'
+import { formatAtPrecision, formatPeriodEnd } from './datePrecision'
+import {
+    parseISODuration,
+    type Duration,
+} from '../../../Basics/TimeControl_/layerTimePolicy'
 import {
     mmgisGetViewState,
     mmgisGetLayerConfigs,
@@ -47,8 +52,6 @@ export type ExportLegendModel = {
     rows: ExportLegendRow[]
 }
 
-type FormatTime = (time: string) => Promise<string | null>
-
 /** The cursor a layer's tiles were requested at, and the window start that
  *  request ran from. */
 type TimeCursor = { cursor: string | null; windowStart: string | null }
@@ -78,23 +81,6 @@ const temporalExtents = async (): Promise<Record<
     }
 }
 
-/**
- * Formats through core (`time:formatTime`) so a date on the band reads the
- * same way as the mission's own time UI, and so the d3-vs-moment rule behind
- * that lives in exactly one place. Repeated timestamps — the cursor and
- * window shared by every layer that follows it — are requested once.
- */
-const missionTimeFormatter = (): FormatTime => {
-    const pending = new Map<string, Promise<string | null>>()
-    return (time: string) => {
-        const cached = pending.get(time)
-        if (cached) return cached
-        const request = mmgisFormatTime(time)
-        pending.set(time, request)
-        return request
-    }
-}
-
 // Point mode on the slider sets the window start to the epoch, rebuilt from
 // local date components — so it arrives shifted by the browser's UTC offset,
 // at most ±14 hours either side of 1970-01-01. Nothing on the bus says which
@@ -107,40 +93,37 @@ const isOpenEndedStart = (windowStart: string | null): boolean => {
     return Number.isNaN(ms) ? false : Math.abs(ms) < 86_400_000
 }
 
-// A period's `end` is the boundary the next period starts on, so printing it
-// would make a P7D period read as eight days.
-const lastInstantOf = (end: string): string =>
-    new Date(Date.parse(end) - 1000).toISOString()
-
 /**
  * The date line for a layer that follows the slider. A layer serving whole
  * periods gets the period holding the cursor; everything else gets the span
  * the map actually requested, which runs from the window start to the cursor
  * and never to the window's right edge.
  */
-const slidingDateLine = async (
+const slidingDateLine = (
     interval: string | null,
     { cursor, windowStart }: TimeCursor,
     anchor: string | null,
-    formatTime: FormatTime,
-): Promise<string | null> => {
+    precision: Duration | null,
+): string | null => {
     const period = layerPeriodFor(interval, cursor, anchor)
     if (period?.kind === 'calendar') return `Showing ${period.label}`
     if (period?.kind === 'range') {
-        const [start, end] = await Promise.all([
-            formatTime(period.start),
-            formatTime(lastInstantOf(period.end)),
-        ])
-        if (start && end) return `Showing ${start} → ${end}`
+        // Both ends of a range are instants a period was built from, so both
+        // format. A period shorter than the precision its interval prints at
+        // collapses to one label, and printing `X → X` would only look like
+        // a mistake.
+        const start = formatAtPrecision(precision, period.start)
+        const end = formatPeriodEnd(precision, period.end)
+        return start === end ? `Showing ${start}` : `Showing ${start} → ${end}`
     }
     // A window with no cursor in it has no truthful wording: nothing says
     // where in the window the map was asked to stop.
     if (!cursor) return null
-    const cursorText = await formatTime(cursor)
+    const cursorText = formatAtPrecision(precision, cursor)
     if (!cursorText) return null
     const startText = isOpenEndedStart(windowStart)
         ? null
-        : await formatTime(windowStart)
+        : formatAtPrecision(precision, windowStart)
     return startText
         ? `Requested ${startText} → ${cursorText}`
         : `Requested up to ${cursorText}`
@@ -151,15 +134,15 @@ const slidingDateLine = async (
  * collected, as far as the mission authored it. A half-open extent stays
  * half-open rather than being closed with a date nobody supplied.
  */
-const collectedDateLine = async (
+const collectedDateLine = (
     extent: TemporalExtent | undefined,
-    formatTime: FormatTime,
-): Promise<string | null> => {
+    precision: Duration | null,
+): string | null => {
     if (!extent) return null
-    const [start, end] = await Promise.all([
-        extent.start ? formatTime(extent.start) : null,
-        extent.end ? formatTime(extent.end) : null,
-    ])
+    const start = extent.start
+        ? formatAtPrecision(precision, extent.start)
+        : null
+    const end = extent.end ? formatAtPrecision(precision, extent.end) : null
     if (start && end) return `Collected ${start} → ${end}`
     if (start) return `Collected from ${start}`
     if (end) return `Collected until ${end}`
@@ -168,19 +151,23 @@ const collectedDateLine = async (
 
 /**
  * Every date line names what kind of date it is, so a bare `A → B` can never
- * be read as a claim about when the pixels were collected. Null when no date
- * can be had, which is always safer than a borrowed one.
+ * be read as a claim about when the pixels were collected. How precisely its
+ * dates print is the layer's own `time.interval`'s business, whichever line
+ * it ends up on. Null when no date can be had, which is always safer than a
+ * borrowed one.
  */
-const dateLineFor = async (
+const dateLineFor = (
     cfg: LayerConfig | undefined,
     extent: TemporalExtent | undefined,
     globalCursor: TimeCursor,
-    formatTime: FormatTime,
-): Promise<string | null> => {
+): string | null => {
     const time = cfg?.time
     try {
+        const interval =
+            typeof time?.interval === 'string' ? time.interval : null
+        const precision = interval ? parseISODuration(interval.trim()) : null
         if (time?.enabled !== true) {
-            return await collectedDateLine(extent, formatTime)
+            return collectedDateLine(extent, precision)
         }
         // A 'local' layer keeps its own window and is not restamped when the
         // slider moves; everything else follows the global cursor.
@@ -188,11 +175,11 @@ const dateLineFor = async (
             time.type === 'local'
                 ? { cursor: time.end ?? null, windowStart: time.start ?? null }
                 : globalCursor
-        return await slidingDateLine(
-            typeof time.interval === 'string' ? time.interval : null,
+        return slidingDateLine(
+            interval,
             cursor,
             extent?.start ?? null,
-            formatTime,
+            precision,
         )
     } catch (err) {
         console.warn('[export legend] could not build a layer date line', err)
@@ -202,10 +189,12 @@ const dateLineFor = async (
 
 /**
  * The band's own lines, under the mission name: where the slider sat, and
- * when the picture was made. The export time is the one date always
- * available, so an unformattable one prints raw rather than going missing.
+ * when the picture was made. Both are instants rather than periods, so they
+ * go through core's own formatter and read the way the mission's Time
+ * Control writes a date. The export time is the one date always available,
+ * so an unformattable one prints raw rather than going missing.
  */
-const buildHeaderLines = async (formatTime: FormatTime): Promise<string[]> => {
+const buildHeaderLines = async (): Promise<string[]> => {
     const lines: string[] = []
     try {
         const cursor = await mmgisGetCurrentTimeFormatted()
@@ -219,7 +208,7 @@ const buildHeaderLines = async (formatTime: FormatTime): Promise<string[]> => {
     const now = new Date().toISOString()
     let exported: string | null = null
     try {
-        exported = await formatTime(now)
+        exported = await mmgisFormatTime(now)
     } catch (err) {
         console.warn('[export legend] could not format the export time', err)
     }
@@ -290,18 +279,16 @@ export const getExportLegendModel = async (): Promise<ExportLegendModel> => {
     // Drops the layers that paint nothing (opacity 0); panel/LayerManager
     // listings stay unfiltered, so this is export-only.
     const legendLayers = filterLayersForExportView(layers)
-    const formatTime = missionTimeFormatter()
     const [headerLines, rows] = await Promise.all([
-        buildHeaderLines(formatTime),
+        buildHeaderLines(),
         Promise.all(
-            legendLayers.map(async (layer) =>
+            legendLayers.map((layer) =>
                 toRow(
                     layer,
-                    await dateLineFor(
+                    dateLineFor(
                         layerConfigs?.[layer.id],
                         extents?.[layer.id],
                         globalCursor,
-                        formatTime,
                     ),
                 ),
             ),

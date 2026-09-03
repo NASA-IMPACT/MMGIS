@@ -43,8 +43,9 @@ const baseLayer = (overrides) => ({
     ...overrides,
 })
 
-// The mission's own time.format lives in core; the model only asks core to
-// apply it, so the fake here just marks that a timestamp went through it.
+// The mission's own time.format lives in core, and only the header's export
+// time is rendered through it, so the fake here just marks that a timestamp
+// went through core.
 const formatted = (time) => `fmt(${time})`
 
 const CURSOR = '2026-08-25T00:00:00Z'
@@ -230,7 +231,7 @@ describe('getExportLegendModel', () => {
         expect(model.rows[0]).toEqual({
             kind: 'plain',
             title: 'Basemap',
-            dateLine: `Collected from ${formatted('2016-01-01T00:00:00Z')}`,
+            dateLine: 'Collected from 2016-01-01',
         })
     })
 
@@ -267,8 +268,11 @@ describe('getExportLegendModel', () => {
         // sight — `time.enabled` is the only signal worth reading.
         const appended = 'stac-collection:no2-monthly'
 
+        // None of these layers carries an interval, so their dates print to
+        // the day.
         const requested = (start, cursor) =>
-            `Requested ${formatted(start)} → ${formatted(cursor)}`
+            `Requested ${start.slice(0, 10)} → ${cursor.slice(0, 10)}`
+        const upTo = (cursor) => `Requested up to ${cursor.slice(0, 10)}`
 
         test('a placeholder-free time-enabled layer still gets a date line', async () => {
             const rows = await rowsFor({
@@ -310,7 +314,7 @@ describe('getExportLegendModel', () => {
             const rows = await rowsFor({
                 live: { url: templated, time: { enabled: true, type: 'global' } },
             })
-            expect(rows[0].dateLine).toBe(`Requested up to ${formatted(CURSOR)}`)
+            expect(rows[0].dateLine).toBe(upTo(CURSOR))
         })
 
         // Point mode rebuilds the epoch from local date components, so east
@@ -322,7 +326,7 @@ describe('getExportLegendModel', () => {
             const rows = await rowsFor({
                 live: { url: templated, time: { enabled: true, type: 'global' } },
             })
-            expect(rows[0].dateLine).toBe(`Requested up to ${formatted(CURSOR)}`)
+            expect(rows[0].dateLine).toBe(upTo(CURSOR))
         })
 
         // ...and west of it, where that same shifted epoch lands in 1969.
@@ -333,7 +337,7 @@ describe('getExportLegendModel', () => {
             const rows = await rowsFor({
                 live: { url: templated, time: { enabled: true, type: 'global' } },
             })
-            expect(rows[0].dateLine).toBe(`Requested up to ${formatted(CURSOR)}`)
+            expect(rows[0].dateLine).toBe(upTo(CURSOR))
         })
 
         // Only a start beside the epoch is Point mode's doing. A window a
@@ -355,7 +359,7 @@ describe('getExportLegendModel', () => {
             const rows = await rowsFor({
                 live: { url: templated, time: { enabled: true, type: 'global' } },
             })
-            expect(rows[0].dateLine).toBe(`Requested up to ${formatted(CURSOR)}`)
+            expect(rows[0].dateLine).toBe(upTo(CURSOR))
         })
 
         test('no cursor and no window means no date line', async () => {
@@ -400,32 +404,39 @@ describe('getExportLegendModel', () => {
             ])
         })
 
-        // A calendar label is the period itself, not a mission-formatted
-        // timestamp, so it never goes through core's formatter.
-        test('a calendar label is not sent to the time formatter', async () => {
+        // A row's dates print at the layer's own period precision, which is
+        // not the mission's time format: nothing on a row goes through core.
+        test('no row date is sent to the time formatter', async () => {
             vi.mocked(mmgisGetCurrentTime).mockResolvedValue(
                 '2025-06-15T09:00:00Z',
             )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                fixed: { start: '2016-05-01T00:00:00Z', end: null },
+            })
             await rowsFor({
                 monthly: {
                     url: appended,
                     time: { enabled: true, type: 'global', interval: 'P1M' },
                 },
+                live: { url: appended, time: { enabled: true, type: 'global' } },
+                fixed: { url: appended, time: { enabled: false } },
             })
             const formatterArgs = vi
                 .mocked(mmgisFormatTime)
                 .mock.calls.map(([time]) => time)
             expect(formatterArgs).not.toContain('2025-06-15T09:00:00Z')
+            expect(formatterArgs).not.toContain(WINDOW_START)
+            expect(formatterArgs).not.toContain('2016-05-01T00:00:00Z')
         })
 
         // The period ends where the next one starts, so the printed end is
-        // its last second: a P7D period must read as seven days, not eight.
+        // the last day it covers: a P7D period reads as seven days, not eight.
         test('an off-calendar interval anchors on the layer data start time', async () => {
             vi.mocked(mmgisGetCurrentTime).mockResolvedValue(
-                '2025-01-10T06:00:00Z',
+                '2025-06-04T06:00:00Z',
             )
             vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
-                weekly: { start: '2025-01-01T00:00:00Z', end: null },
+                weekly: { start: '2025-06-01T00:00:00Z', end: null },
             })
             const rows = await rowsFor({
                 weekly: {
@@ -433,36 +444,89 @@ describe('getExportLegendModel', () => {
                     time: { enabled: true, type: 'global', interval: 'P7D' },
                 },
             })
+            expect(rows[0].dateLine).toBe('Showing 2025-06-01 → 2025-06-07')
+        })
+
+        test('a six-hourly period prints both its ends to the hour', async () => {
+            vi.mocked(mmgisGetCurrentTime).mockResolvedValue(
+                '2025-01-01T05:30:00Z',
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                sixHourly: { start: '2025-01-01T00:00:00Z', end: null },
+            })
+            const rows = await rowsFor({
+                sixHourly: {
+                    url: appended,
+                    time: { enabled: true, type: 'global', interval: 'PT6H' },
+                },
+            })
             expect(rows[0].dateLine).toBe(
-                `Showing ${formatted('2025-01-08T00:00:00.000Z')} → ${formatted(
-                    '2025-01-14T23:59:59.000Z',
-                )}`,
+                'Showing 2025-01-01 00:00Z → 2025-01-01 05:00Z',
             )
         })
 
-        // Half a range is worse than none: an end core cannot render drops
-        // the whole Showing line rather than printing a dangling arrow.
-        test('an unformattable period end falls back to the request', async () => {
+        // A period an hour long prints to the hour, so both its ends are the
+        // same label and `X → X` would read as a mistake.
+        test('a period whose ends print alike shows one label', async () => {
             vi.mocked(mmgisGetCurrentTime).mockResolvedValue(
-                '2025-01-10T06:00:00Z',
+                '2025-01-01T05:30:00Z',
             )
             vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
-                weekly: { start: '2025-01-01T00:00:00Z', end: null },
+                hourly: { start: '2025-01-01T00:00:00Z', end: null },
             })
-            vi.mocked(mmgisFormatTime).mockImplementation(async (time) =>
-                time == null || time === '2025-01-14T23:59:59.000Z'
-                    ? null
-                    : formatted(time),
-            )
             const rows = await rowsFor({
-                weekly: {
+                hourly: {
                     url: appended,
-                    time: { enabled: true, type: 'global', interval: 'P7D' },
+                    time: { enabled: true, type: 'global', interval: 'PT1H' },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Showing 2025-01-01 05:00Z')
+        })
+
+        // An interval under an hour is a run of individually timestamped
+        // scenes, not a period — but it still says how precisely to print.
+        test('a sub-hour interval falls through to the request in full', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                rapid: { start: '2015-03-13T00:00:00Z', end: null },
+            })
+            const rows = await rowsFor({
+                rapid: {
+                    url: appended,
+                    time: { enabled: true, type: 'global', interval: 'PT1S' },
                 },
             })
             expect(rows[0].dateLine).toBe(
-                requested(WINDOW_START, '2025-01-10T06:00:00Z'),
+                'Requested 2015-03-13T00:00:00Z → 2026-08-25T00:00:00Z',
             )
+        })
+
+        // How precisely a row prints is the layer's interval's business, not
+        // the mission time format's.
+        test('a fallen-through row prints at its interval precision', async () => {
+            const rows = await rowsFor({
+                yearly: {
+                    url: appended,
+                    time: { enabled: true, type: 'global', interval: 'P2Y' },
+                },
+                monthly: {
+                    url: appended,
+                    time: { enabled: true, type: 'global', interval: 'P3M' },
+                },
+                weekly: {
+                    url: appended,
+                    time: { enabled: true, type: 'global', interval: 'P2W' },
+                },
+                hourly: {
+                    url: appended,
+                    time: { enabled: true, type: 'global', interval: 'PT6H' },
+                },
+            })
+            expect(rows.map((row) => row.dateLine)).toEqual([
+                'Requested 2015 → 2026',
+                'Requested 2015-03 → 2026-08',
+                'Requested 2015-03-13 → 2026-08-25',
+                'Requested 2015-03-13 00:00Z → 2026-08-25 00:00Z',
+            ])
         })
 
         test('an off-calendar interval with nothing to anchor on falls back to the request', async () => {
@@ -502,11 +566,25 @@ describe('getExportLegendModel', () => {
                     time: { enabled: false },
                 },
             })
-            expect(rows[0].dateLine).toBe(
-                `Collected ${formatted('2016-05-01T00:00:00Z')} → ${formatted(
-                    '2016-09-01T00:00:00Z',
-                )}`,
-            )
+            expect(rows[0].dateLine).toBe('Collected 2016-05-01 → 2016-09-01')
+        })
+
+        // A layer that ignores the slider can still carry an interval, and it
+        // still decides how precisely the collected dates print.
+        test('an untimed monthly layer prints its extent to the month', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                fixed: {
+                    start: '2016-05-01T00:00:00Z',
+                    end: '2016-09-01T00:00:00Z',
+                },
+            })
+            const rows = await rowsFor({
+                fixed: {
+                    url: 'https://host/{z}/{x}/{y}.png',
+                    time: { enabled: false, interval: 'P1M' },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Collected 2016-05 → 2016-09')
         })
 
         test('a half-open extent reads as open-ended, not as a range', async () => {
@@ -521,8 +599,8 @@ describe('getExportLegendModel', () => {
                 neither: { url: 'https://host/c' },
             })
             expect(rows.map((row) => row.dateLine)).toEqual([
-                `Collected from ${formatted('2016-05-01T00:00:00Z')}`,
-                `Collected until ${formatted('2016-09-01T00:00:00Z')}`,
+                'Collected from 2016-05-01',
+                'Collected until 2016-09-01',
                 null,
             ])
         })
@@ -534,20 +612,6 @@ describe('getExportLegendModel', () => {
             expect(rows[0].dateLine).toBeNull()
         })
 
-        // The cursor's own window is shared by every following layer, so it
-        // is formatted once however many rows read it.
-        test('the same timestamp is only sent to core once', async () => {
-            await rowsFor({
-                a: { url: templated, time: { enabled: true, type: 'global' } },
-                b: { url: templated, time: { enabled: true, type: 'global' } },
-            })
-            const times = vi
-                .mocked(mmgisFormatTime)
-                .mock.calls.map(([time]) => time)
-            expect(times.filter((time) => time === WINDOW_START)).toHaveLength(1)
-            expect(times.filter((time) => time === CURSOR)).toHaveLength(1)
-        })
-
         test('asks core for every layer extent in one call', async () => {
             await rowsFor({
                 a: { url: 'https://host/a' },
@@ -556,16 +620,7 @@ describe('getExportLegendModel', () => {
             expect(vi.mocked(mmgisGetTemporalExtents).mock.calls).toEqual([[]])
         })
 
-        test('a null from the formatter gets no date line and no crash', async () => {
-            vi.mocked(mmgisFormatTime).mockResolvedValue(null)
-            const rows = await rowsFor({
-                live: { url: templated, time: { enabled: true, type: 'global' } },
-            })
-            expect(rows).toHaveLength(1)
-            expect(rows[0].dateLine).toBeNull()
-        })
-
-        test('a throwing time bus leaves the rows intact without a date line', async () => {
+        test('a throwing time bus only costs the rows that follow it', async () => {
             vi.mocked(mmgisGetTimeStart).mockRejectedValue(new Error('no time'))
             vi.mocked(mmgisGetCurrentTime).mockRejectedValue(
                 new Error('no time'),
@@ -579,6 +634,8 @@ describe('getExportLegendModel', () => {
             vi.mocked(mmgisFormatTime).mockRejectedValue(new Error('bad format'))
             const rows = await rowsFor({
                 live: { url: templated, time: { enabled: true, type: 'global' } },
+                // A local layer carries its own window, and an untimed layer
+                // its own extent, so neither is lost with the global cursor.
                 own: {
                     url: templated,
                     time: {
@@ -588,11 +645,13 @@ describe('getExportLegendModel', () => {
                         end: '2020-02-01T00:00:00Z',
                     },
                 },
-                // The untimed branch has to catch its own rejection too, or
-                // the whole band goes down with the one row that failed.
                 fixed: { url: templated, time: { enabled: false } },
             })
-            expect(rows.map((row) => row.dateLine)).toEqual([null, null, null])
+            expect(rows.map((row) => row.dateLine)).toEqual([
+                null,
+                requested('2020-01-01T00:00:00Z', '2020-02-01T00:00:00Z'),
+                'Collected 2016-05-01 → 2016-09-01',
+            ])
         })
 
         test('a throwing extent sweep leaves the rows intact', async () => {
@@ -614,9 +673,7 @@ describe('getExportLegendModel', () => {
                 orphan: { start: '2016-05-01T00:00:00Z', end: null },
             })
             const model = await getExportLegendModel()
-            expect(model.rows[0].dateLine).toBe(
-                `Collected from ${formatted('2016-05-01T00:00:00Z')}`,
-            )
+            expect(model.rows[0].dateLine).toBe('Collected from 2016-05-01')
         })
     })
 

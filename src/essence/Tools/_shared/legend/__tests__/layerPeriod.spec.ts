@@ -215,6 +215,30 @@ describe('layerPeriodFor rejections', () => {
         ).toBeNull()
     })
 
+    // An interval under an hour is not a cadence of periods but a run of
+    // individually timestamped scenes, so there is no period to name.
+    test('is null for an interval shorter than an hour', () => {
+        const cursor = '2025-01-01T05:30:00Z'
+        const anchor = '2025-01-01T00:00:00Z'
+        expect(layerPeriodFor('PT1S', cursor, anchor)).toBeNull()
+        expect(layerPeriodFor('PT30M', cursor, anchor)).toBeNull()
+        expect(layerPeriodFor('PT59M59S', cursor, anchor)).toBeNull()
+    })
+
+    test('an hour itself is still a period', () => {
+        expect(
+            layerPeriodFor(
+                'PT1H',
+                '2025-01-01T05:30:00Z',
+                '2025-01-01T00:00:00Z',
+            ),
+        ).toEqual({
+            kind: 'range',
+            start: '2025-01-01T05:00:00.000Z',
+            end: '2025-01-01T06:00:00.000Z',
+        })
+    })
+
     test('is null without a cursor to place', () => {
         expect(layerPeriodFor('P1M', null, '2020-01-01T00:00:00Z')).toBeNull()
         expect(

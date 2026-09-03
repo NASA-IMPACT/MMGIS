@@ -90,8 +90,9 @@ const fixedLengthMs = (duration: Duration): number | null => {
  * stepped forward from `anchor` — the layer's resolved data start — because
  * nothing else says where the layer's periods begin. Null whenever the
  * interval, the cursor, or (for an anchored duration) the anchor is missing
- * or unreadable, or the cursor sits before the anchor: the caller then falls
- * back to printing the span the map requested.
+ * or unreadable, the interval is shorter than an hour, or the cursor sits
+ * before the anchor: the caller then falls back to printing the span the map
+ * requested.
  */
 export const layerPeriodFor = (
     interval: string | null | undefined,
@@ -101,6 +102,11 @@ export const layerPeriodFor = (
     const duration =
         typeof interval === 'string' ? parseISODuration(interval.trim()) : null
     if (!duration) return null
+    // Anything under an hour is not a cadence of periods but a run of
+    // individually timestamped scenes, and naming a period around one would
+    // claim a coverage the layer never had.
+    const length = fixedLengthMs(duration)
+    if (length !== null && length < 3_600_000) return null
     const cursorMs = toMs(cursor)
     if (cursorMs === null) return null
 
@@ -110,14 +116,13 @@ export const layerPeriodFor = (
     const anchorMs = toMs(anchor)
     if (anchorMs === null || cursorMs < anchorMs) return null
 
-    const lengthMs = fixedLengthMs(duration)
-    if (lengthMs !== null) {
-        const steps = Math.floor((cursorMs - anchorMs) / lengthMs)
-        const start = anchorMs + steps * lengthMs
+    if (length !== null) {
+        const steps = Math.floor((cursorMs - anchorMs) / length)
+        const start = anchorMs + steps * length
         return {
             kind: 'range',
             start: new Date(start).toISOString(),
-            end: new Date(start + lengthMs).toISOString(),
+            end: new Date(start + length).toISOString(),
         }
     }
 
