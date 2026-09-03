@@ -23,6 +23,7 @@ const {
   S3Client,
   PutObjectCommand,
   CopyObjectCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
 } = require("@aws-sdk/client-s3");
@@ -426,13 +427,11 @@ const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 // minutes old.
 //
 // The two cacheable tiers say "public" because every response sits behind
-// Basic auth, and RFC 7234 lets a shared cache store a response to an
-// Authorization-bearing request only when it is marked that way — the
-// customer's own CloudFront is a shared cache keyed on Authorization, so
-// "public" is what lets it cache at all. The cost is that any other shared
-// cache on a visitor's path, a corporate proxy say, may also store the
-// immutable and five-minute tiers and serve them to someone who never
-// authenticated; the no-cache tier revalidates and so 401s there.
+// Basic auth, and RFC 7234 §3.2 lets a shared cache reuse a response to an
+// Authorization-bearing request only when it carries must-revalidate, public
+// or s-maxage, so "public" removes any conformance question. What a customer
+// fronting the dashboard gets from that is spelled out in
+// docs/infrastructure/serving-a-dashboard-from-your-domain.md.
 function cacheControlForKey(key) {
   if (
     key === "index.html" ||
@@ -520,12 +519,11 @@ async function uploadFile({ bucket, key, filePath }) {
 }
 
 // Invalidates paths on our own distribution, the only one this reaches. Its
-// cache policy is the managed CachingOptimized, whose Minimum TTL of 1 s
-// overrides the no-cache tier at this edge, so index.html and config.json are
-// bounded at a second stale rather than revalidated; the fallback tier is
-// bounded at five minutes. Hashed bundles need nothing, arriving under new
-// names, so the "/*" invalidation is what clears those two tiers here. Any
-// other edge in front of the dashboard is governed by the headers alone.
+// cache policy (see the CachePolicyId in scripts/lib/cfn-template.js) leaves
+// the entry page, the baked config and the fallback tier holdable at this
+// edge; hashed bundles need nothing, arriving under new names, so the "/*"
+// invalidation is what clears those tiers here. Any other edge in front of
+// the dashboard is governed by the headers alone.
 async function createInvalidation({ distributionId, paths = ["/*"] }) {
   const { cloudfront } = getClients();
   await cloudfront.send(
@@ -549,13 +547,26 @@ function buildCopySource(bucket, key) {
   return `${bucket}/${encodedKey}`;
 }
 
+// Content-Type for a copied object: the CONTENT_TYPES mapping when the
+// extension is one it names, otherwise the source object's own header read
+// with HeadObject, and octet-stream when the source carries none either.
+async function copiedContentType({ s3, sourceBucket, key }) {
+  if (CONTENT_TYPES[path.extname(key).toLowerCase()] != null)
+    return contentTypeForFile(key);
+  const head = await s3.send(
+    new HeadObjectCommand({ Bucket: sourceBucket, Key: key })
+  );
+  return head.ContentType || "application/octet-stream";
+}
+
 // Same-key copies every object under `prefix` from sourceBucket into
 // destBucket, giving each copy the Cache-Control tier for its key. COPY (the
 // default) cannot set headers the source object never had, so that takes
-// MetadataDirective: REPLACE, which drops the source's entire metadata set —
-// Content-Encoding, Content-Disposition and any x-amz-meta-* are lost unless
-// restated alongside Content-Type. Nothing sets those: the upload router
-// writes ContentType alone. Returns the number of objects copied.
+// MetadataDirective: REPLACE, which rewrites the metadata of every key under
+// the prefix — Content-Encoding, Content-Disposition and any x-amz-meta-* are
+// dropped unless restated alongside Content-Type. Nothing sets those: the
+// upload router writes ContentType alone. Returns the number of objects
+// copied.
 async function copyPrefix({ sourceBucket, destBucket, prefix }) {
   const { s3 } = getClients();
   let copied = 0;
@@ -569,15 +580,18 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
       })
     );
     for (const obj of list.Contents || []) {
+      const contentType = await copiedContentType({
+        s3,
+        sourceBucket,
+        key: obj.Key,
+      });
       await s3.send(
         new CopyObjectCommand({
           Bucket: destBucket,
           Key: obj.Key,
           CopySource: buildCopySource(sourceBucket, obj.Key),
-          // REPLACE so the copy carries the Cache-Control and Content-Type
-          // set here rather than the source's metadata.
           MetadataDirective: "REPLACE",
-          ContentType: contentTypeForFile(obj.Key),
+          ContentType: contentType,
           CacheControl: cacheControlForKey(obj.Key),
         })
       );

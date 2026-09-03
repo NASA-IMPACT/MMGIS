@@ -271,9 +271,11 @@ async function main() {
     // bucket must mirror that layout: the webpack output under build/,
     // the repo's public/ assets under public/, and index.html at the
     // root (the distribution's default root object).
-    // Both filters skip a copy of the un-rendered Pug template: scripts/build.js
-    // writes one into build/ beside the page, and public/index.html is the
-    // source the build renders from. The rendered page is uploaded below.
+    // Both filters skip a template that still carries the raw #{...}
+    // placeholders: build/index.pug is the Pug conversion scripts/build.js
+    // writes into build/, and public/index.html is the HTML template the
+    // build renders from. Either one served as-is would hand a visitor the
+    // placeholders un-interpolated. The rendered page is uploaded below.
     const uploadedBuild = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "build"),

@@ -1031,6 +1031,7 @@ test.describe('copyPrefix', () => {
 
     test('same-key copies every object under the prefix', async () => {
         const copies = []
+        const heads = []
         provision.setClients({
             s3: mockClient((command) => {
                 const name = command.constructor.name
@@ -1044,9 +1045,16 @@ test.describe('copyPrefix', () => {
                             },
                             { Key: 'assets/TestMission/icon.png' },
                             { Key: 'assets/TestMission/with space.png' },
+                            { Key: 'assets/TestMission/photo.jpg' },
+                            // An extension the Content-Type table does not name.
+                            { Key: 'assets/TestMission/scan.tif' },
                         ],
                         IsTruncated: false,
                     }
+                }
+                if (name === 'HeadObjectCommand') {
+                    heads.push(command.input.Key)
+                    return { ContentType: 'image/tiff' }
                 }
                 if (name === 'CopyObjectCommand') {
                     copies.push(command.input)
@@ -1060,7 +1068,7 @@ test.describe('copyPrefix', () => {
             destBucket: 'dash',
             prefix: 'assets/TestMission/',
         })
-        expect(count).toBe(3)
+        expect(count).toBe(5)
         // Same keys in the destination bucket
         expect(copies[1].Bucket).toBe('dash')
         expect(copies[1].Key).toBe('assets/TestMission/icon.png')
@@ -1076,13 +1084,18 @@ test.describe('copyPrefix', () => {
         )
         // REPLACE lets the copy carry its own Cache-Control and Content-Type.
         expect(copies[0].MetadataDirective).toBe('REPLACE')
-        expect(copies[0].ContentType).toBe('image/png')
+        // An upload key gets the immutable tier, everything else the short one.
         expect(copies[0].CacheControl).toBe(
             'public, max-age=31536000, immutable'
         )
-        expect(copies[1].MetadataDirective).toBe('REPLACE')
-        expect(copies[1].ContentType).toBe('image/png')
         expect(copies[1].CacheControl).toBe('public, max-age=300')
+        // A mapped extension is typed from the key alone...
+        expect(copies[1].ContentType).toBe('image/png')
+        expect(copies[3].ContentType).toBe('image/jpeg')
+        // ...and only an unmapped one costs a HeadObject, which is what keeps
+        // the source's own type instead of downgrading it to octet-stream.
+        expect(heads).toEqual(['assets/TestMission/scan.tif'])
+        expect(copies[4].ContentType).toBe('image/tiff')
     })
 })
 

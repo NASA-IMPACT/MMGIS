@@ -50,13 +50,16 @@ test.describe('upload-key classification', () => {
 
     // The publish gives a matched key the immutable tier, because the upload
     // router names those files crypto.randomUUID() and never overwrites one.
-    // The rooted row is not a key the publish can ever see — S3 object keys
-    // have no leading slash — so it lands on the short tier here.
-    test.each(VALUES)('cacheControlForKey: %s', (value, key) => {
-        expect(cacheControlForKey(value)).toBe(
-            key !== null && !value.startsWith('/')
-                ? 'public, max-age=31536000, immutable'
-                : 'public, max-age=300',
-        )
-    })
+    // The rooted row sits out: S3 object keys have no leading slash, so it is
+    // not a value this classifier is ever handed.
+    test.each(VALUES.filter(([value]) => !value.startsWith('/')))(
+        'cacheControlForKey: %s',
+        (value, key) => {
+            expect(cacheControlForKey(value)).toBe(
+                key !== null
+                    ? 'public, max-age=31536000, immutable'
+                    : 'public, max-age=300',
+            )
+        },
+    )
 })

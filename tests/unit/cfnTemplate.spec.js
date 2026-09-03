@@ -136,6 +136,11 @@ test.describe('renderCfnTemplate', () => {
             template.Resources.DashboardDistribution.Properties
                 .DistributionConfig
         expect(dist.DefaultRootObject).toBe('index.html')
+        // The managed CachingOptimized policy, whose maximum TTL of a year is
+        // what lets the immutable Cache-Control tier survive this edge.
+        expect(dist.DefaultCacheBehavior.CachePolicyId).toBe(
+            '658327ea-f89d-4fab-a63d-7e88639e58f6'
+        )
         const associations = dist.DefaultCacheBehavior.FunctionAssociations
         expect(associations).toHaveLength(1)
         expect(associations[0].EventType).toBe('viewer-request')

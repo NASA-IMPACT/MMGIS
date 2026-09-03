@@ -1,4 +1,5 @@
 import { afterAll, test, expect } from 'vitest'
+import crypto from 'crypto'
 import path from 'path'
 
 // Pins the premise of the immutable Cache-Control tier in
@@ -11,29 +12,33 @@ import path from 'path'
 // configuration/env.js throws without NODE_ENV, so the variable is set here
 // and put back afterwards. Building the config also patches
 // crypto.createHash process-wide, which anything else in the same worker would
-// then inherit, so the require stays inside this one spec file.
+// then inherit, so the original is captured here and restored too.
 const NODE_ENV_BEFORE = process.env.NODE_ENV
+const CREATE_HASH_BEFORE = crypto.createHash
 process.env.NODE_ENV = 'production'
 const CONFIG = require('../../configuration/webpack.config.js')('production')
 
 afterAll(() => {
     if (NODE_ENV_BEFORE === undefined) delete process.env.NODE_ENV
     else process.env.NODE_ENV = NODE_ENV_BEFORE
+    crypto.createHash = CREATE_HASH_BEFORE
 })
 
 const HASH_TOKEN = /\[contenthash|\[hash/
 
-// Every loader `options.name` that emits into static/media, however the rules
-// are nested — the production asset loaders sit inside a `oneOf`.
-function mediaNames(rules, found = []) {
+// Every emitted-file name pattern in the rules, however they are nested — the
+// production asset loaders sit inside a `oneOf`. Loaders name their output
+// with `options.name`; webpack 5 asset modules use `generator.filename`.
+function emittedNames(rules, found = []) {
     const list = rules || []
     list.forEach((rule) => {
         if (!rule) return
-        mediaNames(rule.oneOf, found)
-        mediaNames(rule.rules, found)
+        emittedNames(rule.oneOf, found)
+        emittedNames(rule.rules, found)
         const name = rule.options && rule.options.name
-        if (typeof name === 'string' && name.startsWith('static/media/'))
-            found.push(name)
+        if (typeof name === 'string') found.push(name)
+        const generated = rule.generator && rule.generator.filename
+        if (typeof generated === 'string') found.push(generated)
     })
     return found
 }
@@ -51,23 +56,32 @@ function pluginNamed(name) {
 }
 
 test.describe('webpack production output is content-hashed', () => {
-    test('output.filename and output.chunkFilename carry a hash', () => {
+    test('output.filename and output.chunkFilename land hashed under static/js', () => {
         expect(CONFIG.output.filename).toMatch(HASH_TOKEN)
+        expect(CONFIG.output.filename).toMatch(/^static\/js\//)
         expect(CONFIG.output.chunkFilename).toMatch(HASH_TOKEN)
+        expect(CONFIG.output.chunkFilename).toMatch(/^static\/js\//)
     })
 
-    test("MiniCssExtractPlugin's filenames carry a hash", () => {
+    test("MiniCssExtractPlugin's filenames land hashed under static/css", () => {
         const options = pluginNamed('MiniCssExtractPlugin').options
         expect(options.filename).toMatch(HASH_TOKEN)
+        expect(options.filename).toMatch(/^static\/css\//)
         expect(options.chunkFilename).toMatch(HASH_TOKEN)
+        expect(options.chunkFilename).toMatch(/^static\/css\//)
     })
 
-    test('the media loaders name files with a hash', () => {
+    test('every rule names its emitted files hashed under static/media', () => {
         // The url-loader (small images, inlined below a size limit) and the
-        // catch-all file-loader both emit into static/media.
-        const names = mediaNames(CONFIG.module.rules)
-        expect(names.length).toBeGreaterThanOrEqual(2)
-        names.forEach((name) => expect(name).toMatch(HASH_TOKEN))
+        // catch-all file-loader both emit into static/media; every prefix in
+        // the immutable tier has to be hashed, so a rule emitting elsewhere
+        // under a hashless name is caught here too.
+        const names = emittedNames(CONFIG.module.rules)
+        expect(names.length).toBeGreaterThan(0)
+        names.forEach((name) => {
+            expect(name).toMatch(/^static\/media\//)
+            expect(name).toMatch(HASH_TOKEN)
+        })
     })
 
     test('no copied file lands under a hashed prefix', () => {
