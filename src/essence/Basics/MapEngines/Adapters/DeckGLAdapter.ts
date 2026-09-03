@@ -1357,9 +1357,16 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // the map's own: terra-draw disables it from here to the end of the
         // session, and the guard is what gives it back.
         this._drawEndClick.holdDoubleClickZoom(this._doubleClickZoom())
-        if (!td.enabled) td.start()
-        td.clear()
-        td.setMode(shape)
+        try {
+            if (!td.enabled) td.start()
+            td.clear()
+            td.setMode(shape)
+        } catch (err) {
+            // terra-draw throws on a shape it has no mode for, and a session
+            // that never started has no end to give double-click zoom back at.
+            this._drawEndClick.dispose()
+            throw err
+        }
         this._drawingShape = shape
         this._drawPointers.start(this._drawEventElement())
         this._syncLayers()
