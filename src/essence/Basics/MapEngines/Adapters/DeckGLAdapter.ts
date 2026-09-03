@@ -1033,9 +1033,22 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         return [...this._layers.values()]
     }
 
+    /**
+     * Whether the layer is currently drawn.
+     *
+     * Membership of `_layers` is not the answer: this engine holds a layer
+     * from creation and hides it with a prop, so the registry also contains
+     * layers that are off. The Leaflet adapter asks its map the same
+     * question, and mmgisAPI publishes the answer as `map:hasLayer`, so the
+     * two must agree about a hidden layer.
+     */
     hasLayer(layer: Layer | string): boolean {
         const id = typeof layer === 'string' ? layer : layer.id
-        return this._layers.has(id)
+        const existing = this._layers.get(id)
+        if (!existing) return false
+        // Absent means drawn: a layer handed over without anyone saying
+        // otherwise is on the map.
+        return (existing.props as { visible?: boolean })?.visible !== false
     }
 
     /**
@@ -1102,9 +1115,16 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     }
 
     registerLayer(id: string, layer: Layer): void {
-        // For deck.gl, holding a layer is rendering it — there is no
-        // "registered but not on the map" state. Keyed by the caller's id
-        // rather than layer.id so the two can never drift apart.
+        // Anything this engine cannot draw is declined rather than held: Map_
+        // registers every layer it builds, and under this engine it still
+        // builds `data`, `image`, `video` and `velocity` layers with Leaflet.
+        // Held, one of those breaks far more than itself, because every sync
+        // clones every registered layer and a Leaflet object has no `clone`.
+        if (!this._holdsDeckLayer(id, layer)) return
+
+        // Keyed by the caller's id rather than layer.id so the two can never
+        // drift apart. Registering does not show the layer: visibility is a
+        // prop this engine owns, set through setLayerVisibility.
         this._layers.set(id, layer)
         this._syncLayers()
     }
@@ -1138,6 +1158,21 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         if (next) this._layers.set(id, next)
         this._syncLayers()
         return true
+    }
+
+    /**
+     * On this engine the registry is also the render list, so visibility is a
+     * prop rather than membership: a hidden layer stays held, and deck.gl
+     * skips drawing it. See {@link IMapEngine.setLayerVisibility}.
+     */
+    setLayerVisibility(layer: Layer | string, visible: boolean): void {
+        const id = resolveLayerId(layer)
+        const existing = this._layers.get(id)
+        if (!existing) return
+        if (!this._holdsDeckLayer(id, existing)) return
+
+        this._layers.set(id, existing.clone({ visible }) as Layer)
+        this._syncLayers()
     }
 
     /**
@@ -2164,7 +2199,19 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _syncLayers(): void {
         const layers = this._comparisonEnabled
             ? []
-            : [...this._layers.values()].map((layer) => layer.clone({}) as Layer)
+            : [...this._layers.values()]
+                  // Hidden layers are withheld, not handed over as
+                  // `visible: false`. deck.gl stops *drawing* an invisible
+                  // layer but still runs its lifecycle, so a hidden TileLayer
+                  // left in the render list goes on requesting tiles for a
+                  // layer nobody asked to see. The registry keeps holding it,
+                  // which is what an opacity write or a refresh addresses.
+                  .filter(
+                      (layer) =>
+                          (layer.props as { visible?: boolean })?.visible !==
+                          false
+                  )
+                  .map((layer) => layer.clone({}) as Layer)
         if (this._isOverlayMode) {
             this._overlay?.setProps({ layers: this._anchorBelowDrawing(layers) })
         } else {

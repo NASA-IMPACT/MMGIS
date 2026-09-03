@@ -244,6 +244,20 @@ export interface IMapEngine<
     refreshLayer(id: string, ctx?: RefreshContext): boolean
 
     /**
+     * Show or hide a layer the engine already holds.
+     *
+     * Hiding never gives up the hold: a hidden layer stays addressable by id,
+     * so an opacity write or a {@link refreshLayer} while it is off lands on
+     * the instance that is shown next. Callers therefore never replay
+     * settings at show time, and never branch on the engine to do it — the
+     * two engines disagree about what "off" means (Leaflet takes the layer
+     * off the map, deck.gl flips a prop) and that disagreement stays here.
+     *
+     * A no-op for a layer the engine does not hold.
+     */
+    setLayerVisibility(layer: TLayer | string, visible: boolean): void
+
+    /**
      * Set the z index of a layer to control draw order.
      */
     setLayerZIndex(layer: TLayer | string, zIndex: number): void

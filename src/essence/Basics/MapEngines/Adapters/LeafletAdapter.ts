@@ -819,6 +819,20 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         return true
     }
 
+    /**
+     * On this engine visibility is map membership, so showing and hiding are
+     * `addLayer`/`removeLayer` against the native map. The registry entry is
+     * untouched either way — see {@link IMapEngine.setLayerVisibility}.
+     */
+    setLayerVisibility(layer: any | string, visible: boolean): void {
+        const leafletLayer = this._layers.get(resolveLeafletLayerId(layer))
+        if (!leafletLayer) return
+
+        const onMap = this._map?.hasLayer(leafletLayer) === true
+        if (visible && !onMap) this._map.addLayer(leafletLayer)
+        else if (!visible && onMap) this._map.removeLayer(leafletLayer)
+    }
+
     setLayerZIndex(layer: any | string, zIndex: number): void {
         const leafletLayer = typeof layer === 'string' ? this._layers.get(layer) : layer
         if (leafletLayer && typeof leafletLayer.setZIndex === 'function') {
