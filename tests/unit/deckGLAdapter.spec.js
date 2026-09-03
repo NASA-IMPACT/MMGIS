@@ -115,18 +115,28 @@ function makeOverlayDrawingAdapter() {
     return adapter
 }
 
+/** A DOM event stamped as the browser would stamp one made at `timeStamp`. */
+function stamped(type, timeStamp) {
+    const event = new Event(type)
+    Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+    return event
+}
+
 /**
- * End a drawing session the way a click on the map does. terra-draw commits
- * from inside the pointerup, so the adapter's pointer watch is looking at that
- * very event as the session ends — which is what tells the guard a click of
- * the drawing's is still to come.
+ * End a drawing session the way a click on the map does, and return the
+ * pointerup it ended on. terra-draw commits from inside the pointerup, so the
+ * adapter's pointer watch is looking at that very event as the session ends —
+ * which is what tells the guard a click of the drawing's is still to come, and
+ * which event it will be made from.
  */
-function stopOnPointer(adapter) {
+function stopOnPointer(adapter, at) {
     adapter._drawPointers.start()
     const stop = () => adapter._stopDrawing()
+    const up = stamped('pointerup', at)
     window.addEventListener('pointerup', stop)
-    window.dispatchEvent(new Event('pointerup'))
+    window.dispatchEvent(up)
     window.removeEventListener('pointerup', stop)
+    return up
 }
 
 test.describe('DeckGLAdapter', () => {
@@ -835,6 +845,11 @@ test.describe('DeckGLAdapter', () => {
         // A deck pick, whose `coordinate` is in [lng, lat] order.
         const pickAt = (lng, lat) => ({ coordinate: [lng, lat], x: 12, y: 34 })
 
+        // The input event deck hands `onClick` alongside the pick. Its
+        // `srcEvent` is the DOM event the click was recognised from: for
+        // deck's own recognizers, the pointerup object itself.
+        const clickFrom = (srcEvent) => ({ srcEvent })
+
         // deck reports a click through its `click` recognizer, which waits for
         // a double-click to fail before it fires, so the click terra-draw
         // committed the shape on arrives long after the session it ended — with
@@ -850,129 +865,196 @@ test.describe('DeckGLAdapter', () => {
             adapter.onFeatureClick((result) => picks.push(result))
 
             // terra-draw commits on pointerup, and the adapter ends the session
-            // there and then — this is what deck calls afterwards.
-            stopOnPointer(adapter)
-            adapter._onPointerClick(pickAt(-120, 40))
+            // there and then — this is what deck calls afterwards, made from
+            // that very pointerup.
+            const up = stopOnPointer(adapter, 1000)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
 
             expect(clicks).toEqual([])
             expect(picks).toEqual([])
         })
 
-        // A pointer that goes down more than a tap interval after the finish is
-        // too late to be the second tap of a double-click that ended the
-        // drawing, so it is the user's own next gesture. deck reports its click
-        // a further interval later, once the double-click that would have
-        // outranked it has failed.
-        test('the click that starts the next gesture is still reported', () => {
-            vi.useFakeTimers()
-            try {
-                const { adapter, canvas } = makeSessionAdapter('rectangle')
-                const clicks = []
-                adapter.on('click', (e) => clicks.push(e.latlng))
-
-                stopOnPointer(adapter)
-                vi.advanceTimersByTime(400)
-                canvas.dispatchEvent(new Event('pointerdown'))
-                vi.advanceTimersByTime(50)
-                canvas.dispatchEvent(new Event('pointerup'))
-                vi.advanceTimersByTime(300)
-                adapter._onPointerClick(pickAt(-120, 40))
-
-                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
-            } finally {
-                vi.useRealTimers()
-            }
-        })
-
-        // Finishing on a double-click is trained behaviour, and terra-draw
-        // commits on the first of the two taps. deck maps `dblclick` onto
-        // `onClick` alongside `click` (@deck.gl/core EVENT_HANDLERS), and
-        // because it wires the two recognizers to require each other's failure,
-        // the winner emits a tap interval after the second tap's pointerup —
-        // half a second after the drawing was committed, and after the
-        // pointerdown that used to be taken as proof of a new gesture.
-        test('the double-click a drawing ended on is not reported as a map click', () => {
-            vi.useFakeTimers()
-            try {
-                const { adapter, canvas } = makeSessionAdapter('rectangle')
-                const clicks = []
-                const picks = []
-                adapter.on('click', (e) => clicks.push(e.latlng))
-                adapter.onFeatureClick((result) => picks.push(result))
-
-                // Tap 1's pointerup is where terra-draw commits; the guard's
-                // own listeners only go on from here, so that pointerup is not
-                // one of the events it sees.
-                stopOnPointer(adapter)
-
-                // Tap 2, inside the 300ms interval that makes the pair a
-                // double-click.
-                vi.advanceTimersByTime(150)
-                canvas.dispatchEvent(new Event('pointerdown'))
-                vi.advanceTimersByTime(50)
-                canvas.dispatchEvent(new Event('pointerup'))
-
-                // The recognizer's own wait, and then the click.
-                vi.advanceTimersByTime(300)
-                adapter._onPointerClick(pickAt(-120, 40))
-
-                expect(clicks).toEqual([])
-                expect(picks).toEqual([])
-            } finally {
-                vi.useRealTimers()
-            }
-        })
-
-        // The widest the finishing gesture can be: the second tap released at
-        // the very edge of the interval that still makes it a double-click,
-        // and deck's recognizer waiting a full interval on top of that.
-        test('a double-click finish is covered to the edge of the interval', () => {
-            vi.useFakeTimers()
-            try {
-                const { adapter, canvas } = makeSessionAdapter('rectangle')
-                const clicks = []
-                adapter.on('click', (e) => clicks.push(e.latlng))
-
-                stopOnPointer(adapter)
-                vi.advanceTimersByTime(250)
-                canvas.dispatchEvent(new Event('pointerdown'))
-                vi.advanceTimersByTime(49)
-                canvas.dispatchEvent(new Event('pointerup'))
-                vi.advanceTimersByTime(300)
-                adapter._onPointerClick(pickAt(-120, 40))
-
-                expect(clicks).toEqual([])
-            } finally {
-                vi.useRealTimers()
-            }
-        })
-
-        // The click a finishing gesture was covered for does not always come:
-        // a pointerup deck reads as the end of a drag produces none. The window
-        // closes on its own so the guard cannot sit there absorbing the user's
-        // clicks indefinitely.
-        test('the guard stops absorbing once the finish window has passed', () => {
+        // How late deck delivers that click is not the guard's to know: the
+        // recognizer's timer runs as late as the main thread lets it, and a
+        // `drawcomplete` handler that renders something heavy holds it up well
+        // past any window measured on the clock. The click is still made from
+        // the pointerup the session ended on, whenever it lands.
+        test('the click a drawing ended on is not reported however late deck delivers it', () => {
             vi.useFakeTimers()
             try {
                 const { adapter } = makeSessionAdapter('rectangle')
                 const clicks = []
                 adapter.on('click', (e) => clicks.push(e.latlng))
 
-                stopOnPointer(adapter)
-                vi.advanceTimersByTime(600)
-                adapter._onPointerClick(pickAt(-120, 40))
+                const up = stopOnPointer(adapter, 1000)
+                vi.advanceTimersByTime(5000)
+                adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
 
-                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+                expect(clicks).toEqual([])
             } finally {
                 vi.useRealTimers()
             }
         })
 
+        // A click need not be the pointerup object itself to be the drawing's.
+        // One the browser stamped with that pointerup — the native click the
+        // overlaid overlay forwards inside a MapLibre event — was released
+        // before the drawing's gesture was over, however late it is delivered.
+        test('a click stamped with the finishing pointerup is not reported however late it lands', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter } = makeSessionAdapter('rectangle')
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                stopOnPointer(adapter, 1000)
+                vi.advanceTimersByTime(5000)
+                adapter._onPointerClick(
+                    pickAt(-120, 40),
+                    clickFrom({ originalEvent: stamped('click', 1000) })
+                )
+
+                expect(clicks).toEqual([])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // A pointer that goes down more than a tap interval after the finish is
+        // too late to be the second tap of a double-click that ended the
+        // drawing, so it is the user's own next gesture, and the click made
+        // from its pointerup is theirs.
+        test('the click that starts the next gesture is still reported', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            stopOnPointer(adapter, 1000)
+            canvas.dispatchEvent(stamped('pointerdown', 1400))
+            const up = stamped('pointerup', 1450)
+            canvas.dispatchEvent(up)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        })
+
+        // The user's next gesture can begin while deck is still holding the
+        // drawing's click. Both land after it, each made from its own pointerup.
+        test('the drawing\'s click and the user\'s are told apart by source, not order', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            const finish = stopOnPointer(adapter, 1000)
+            canvas.dispatchEvent(stamped('pointerdown', 1400))
+            const next = stamped('pointerup', 1450)
+            canvas.dispatchEvent(next)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(finish))
+            adapter._onPointerClick(pickAt(-121, 41), clickFrom(next))
+
+            expect(clicks).toEqual([{ lat: 41, lng: -121 }])
+        })
+
+        // Finishing on a double-click is trained behaviour, and terra-draw
+        // commits on the first of the two taps. deck maps `dblclick` onto
+        // `onClick` alongside `click` (@deck.gl/core EVENT_HANDLERS), from the
+        // second tap's pointerup — after the pointerdown that used to be taken
+        // as proof of a new gesture.
+        test('the double-click a drawing ended on is not reported as a map click', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            const picks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+            adapter.onFeatureClick((result) => picks.push(result))
+
+            // Tap 1's pointerup is where terra-draw commits; the guard's own
+            // listeners only go on from here, so that pointerup is not one of
+            // the events it sees.
+            stopOnPointer(adapter, 1000)
+
+            // Tap 2, inside the tap interval that makes the pair a double-click.
+            canvas.dispatchEvent(stamped('pointerdown', 1150))
+            const up = stamped('pointerup', 1200)
+            canvas.dispatchEvent(up)
+
+            // The recognizer's click, made from the second tap.
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
+
+            expect(clicks).toEqual([])
+            expect(picks).toEqual([])
+        })
+
+        // The widest the finishing gesture can be: the second tap pressed at
+        // the very edge of the interval that still makes it a double-click,
+        // and released after the interval has passed. Judged by stamp alone
+        // here, as the overlaid overlay's forwarded click would be.
+        test('a double-click finish is covered to the edge of the interval', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            stopOnPointer(adapter, 1000)
+            canvas.dispatchEvent(stamped('pointerdown', 1300))
+            canvas.dispatchEvent(stamped('pointerup', 1360))
+            adapter._onPointerClick(
+                pickAt(-120, 40),
+                clickFrom({ originalEvent: stamped('click', 1360) })
+            )
+
+            expect(clicks).toEqual([])
+        })
+
+        // A third tap is the user's, even one pressed within an interval of the
+        // second: the drawing's clicks run to where their gesture began.
+        test('a third tap after a double-click finish is reported', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            stopOnPointer(adapter, 1000)
+            canvas.dispatchEvent(stamped('pointerdown', 1150))
+            const second = stamped('pointerup', 1200)
+            canvas.dispatchEvent(second)
+            canvas.dispatchEvent(stamped('pointerdown', 1400))
+            const third = stamped('pointerup', 1440)
+            canvas.dispatchEvent(third)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(second))
+            adapter._onPointerClick(pickAt(-121, 41), clickFrom(third))
+
+            expect(clicks).toEqual([{ lat: 41, lng: -121 }])
+        })
+
+        // The click a finishing gesture was covered for does not always come:
+        // a pointerup deck reads as the end of a drag produces none. Nothing is
+        // left absorbing — the user's next click is stamped past the horizon.
+        test('a finish that produced no click leaves the user\'s next one reported', () => {
+            const { adapter } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            stopOnPointer(adapter, 1000)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(stamped('pointerup', 1300)))
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        })
+
+        // A click that came from no DOM event was no gesture of the drawing's.
+        test('a click with no source event is reported', () => {
+            const { adapter } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            stopOnPointer(adapter, 1000)
+            adapter._onPointerClick(pickAt(-120, 40))
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        })
+
         // terra-draw turns double-click zoom back on the moment the mode stops,
         // so the second click of a double-click finish would zoom the map on
         // top of everything else it does. Hold that re-enable back for as long
-        // as the guard is still absorbing the same gesture's clicks.
-        test('double-click zoom stays off until the finish window closes', () => {
+        // as the browser may still make a double-click of the gesture.
+        test('double-click zoom stays off until the finish hold passes', () => {
             vi.useFakeTimers()
             try {
                 const { adapter, canvas } = makeSessionAdapter('rectangle')
@@ -992,7 +1074,7 @@ test.describe('DeckGLAdapter', () => {
                     stop: () => { enabled = true },
                 }
 
-                stopOnPointer(adapter)
+                stopOnPointer(adapter, 1000)
                 expect(enabled).toBe(false)
 
                 vi.advanceTimersByTime(600)
@@ -1011,7 +1093,7 @@ test.describe('DeckGLAdapter', () => {
             adapter.on('click', (e) => clicks.push(e.latlng))
 
             adapter.disableDrawing()
-            adapter._onPointerClick(pickAt(-120, 40))
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(5000))
 
             expect(clicks).toEqual([{ lat: 40, lng: -120 }])
         })
@@ -1032,15 +1114,16 @@ test.describe('DeckGLAdapter', () => {
     // drive real terra-draw sessions, so the answer comes from the events the
     // way it does on a real map.
     test.describe('drawing - the clicks a finish leaves behind', () => {
-        const pointer = (canvas, type, x, y) =>
-            canvas.dispatchEvent(
-                new PointerEvent(type, {
-                    clientX: x,
-                    clientY: y,
-                    bubbles: true,
-                    isPrimary: true,
-                })
-            )
+        const pointer = (canvas, type, x, y) => {
+            const event = new PointerEvent(type, {
+                clientX: x,
+                clientY: y,
+                bubbles: true,
+                isPrimary: true,
+            })
+            canvas.dispatchEvent(event)
+            return event
+        }
 
         /** A two-vertex linestring, one click short of a finish. */
         const drawLine = (adapter, canvas) => {
@@ -1049,11 +1132,14 @@ test.describe('DeckGLAdapter', () => {
             pointer(canvas, 'pointerup', 10, 10)
             pointer(canvas, 'pointermove', 50, 50)
             pointer(canvas, 'pointerdown', 50, 50)
-            pointer(canvas, 'pointerup', 50, 50)
+            return pointer(canvas, 'pointerup', 50, 50)
         }
 
         // A deck pick, whose `coordinate` is in [lng, lat] order.
         const pickAt = (lng, lat) => ({ coordinate: [lng, lat], x: 12, y: 34 })
+
+        // The input event deck hands `onClick`, made from `pointerup`.
+        const clickFrom = (pointerup) => ({ srcEvent: pointerup })
 
         // Point mode commits on the pointerup of the click that places it, and
         // deck reports that click a tap interval later — with the session over.
@@ -1065,10 +1151,10 @@ test.describe('DeckGLAdapter', () => {
 
             adapter.enableDrawing('point')
             pointer(canvas, 'pointerdown', 10, 10)
-            pointer(canvas, 'pointerup', 10, 10)
+            const up = pointer(canvas, 'pointerup', 10, 10)
 
             expect(finished).toHaveLength(1)
-            expect(adapter._drawEndClick.pending).toBe(true)
+            expect(adapter._drawEndClick.owns(up)).toBe(true)
         })
 
         // Enter finishes from a keyup, but deck is still holding the click that
@@ -1086,15 +1172,16 @@ test.describe('DeckGLAdapter', () => {
                 adapter.on('drawcomplete', (e) => finished.push(e))
                 adapter.on('click', (e) => clicks.push(e.latlng))
 
-                drawLine(adapter, canvas)
+                const lastVertex = drawLine(adapter, canvas)
                 vi.advanceTimersByTime(100)
                 canvas.dispatchEvent(
                     new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })
                 )
 
-                // deck's recognizer, a tap interval after that last pointerup.
+                // deck's recognizer, a tap interval after that last pointerup,
+                // hands over the click it made from it.
                 vi.advanceTimersByTime(200)
-                adapter._onPointerClick(pickAt(-120, 40))
+                adapter._onPointerClick(pickAt(-120, 40), clickFrom(lastVertex))
 
                 expect(finished).toHaveLength(1)
                 expect(clicks).toEqual([])
@@ -1123,14 +1210,13 @@ test.describe('DeckGLAdapter', () => {
                 )
 
                 expect(finished).toHaveLength(1)
-                expect(adapter._drawEndClick.pending).toBe(false)
 
                 // The user's own next click, deck reporting it an interval
                 // after the gesture as always.
-                canvas.dispatchEvent(new Event('pointerdown'))
-                canvas.dispatchEvent(new Event('pointerup'))
+                pointer(canvas, 'pointerdown', 80, 80)
+                const up = pointer(canvas, 'pointerup', 80, 80)
                 vi.advanceTimersByTime(300)
-                adapter._onPointerClick(pickAt(-120, 40))
+                adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
 
                 expect(clicks).toEqual([{ lat: 40, lng: -120 }])
             } finally {
