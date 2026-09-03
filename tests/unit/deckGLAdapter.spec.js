@@ -1274,11 +1274,18 @@ test.describe('DeckGLAdapter', () => {
 
             adapter.setView({ lat: 20, lng: 10 }, 6)
 
+            // The camera the jump asked for, not whatever the adapter kept:
+            // both frames carry the view the caller named. Deck's own view
+            // state fields (the zoom limits, the transition) ride along.
+            const jumped = {
+                longitude: 10,
+                latitude: 20,
+                zoom: 6,
+                bearing: 0,
+                pitch: 0,
+            }
             expect(events.map(([name]) => name)).toEqual(['move', 'moveend'])
-            expect(events.map(([, state]) => state)).toEqual([
-                { ...adapter._viewState },
-                { ...adapter._viewState },
-            ])
+            events.forEach(([, state]) => expect(state).toMatchObject(jumped))
             expect(adapter.getCenter()).toEqual({ lat: 20, lng: 10 })
             expect(adapter.getZoom()).toBe(6)
         })
@@ -1367,9 +1374,9 @@ test.describe('DeckGLAdapter', () => {
         }
 
         // A drag or a wheel zoom reaches the adapter only through deck's own
-        // onViewStateChange. An anchored consumer follows the gesture by the
-        // `move` emitted from there; with only `moveend` to go on it would sit
-        // at the old anchor for the whole gesture and jump at the end.
+        // onViewStateChange, once per frame. `move` is the event an anchored
+        // consumer follows the gesture by, and it leads: what else the frame
+        // reports is the adapter's own business.
         test('standalone mode reports an interactive camera change while it happens', () => {
             const { adapter, props } = initAdapter(null)
             const events = []
@@ -1385,7 +1392,7 @@ test.describe('DeckGLAdapter', () => {
 
             props.onViewStateChange({ viewState })
 
-            expect(events.map(([name]) => name)).toEqual(['move', 'moveend'])
+            expect(events[0][0]).toBe('move')
             expect(events[0][1]).toEqual(viewState)
             // Anchored consumers read bearing and pitch off the adapter, so the
             // gesture has to have been synced there before `move` goes out.

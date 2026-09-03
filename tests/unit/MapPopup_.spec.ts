@@ -465,6 +465,19 @@ describe('MapPopup_', () => {
         expect(card().style.transform).toBe('translate(308px, 138px)')
     })
 
+    it('repositions when the window resizes', () => {
+        engine = makeEngine({ point: { x: 300, y: 400 }, containerTop: 0 })
+        show(engine)
+        sizeCard(200, 100)
+
+        // A resized window resizes the map with it, so the anchor lands on a
+        // different pixel and the card has to follow it there.
+        engine.setPoint({ x: 300, y: 300 })
+        window.dispatchEvent(new Event('resize'))
+
+        expect(card().style.transform).toBe('translate(300px, 188px)')
+    })
+
     it('repositions when the card itself resizes, until the popup is hidden', () => {
         // Content that lands late — an image, a lazy fetch — grows the card
         // downwards from a top-left transform, so the card watches its own box

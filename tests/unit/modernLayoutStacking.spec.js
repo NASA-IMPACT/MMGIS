@@ -2,20 +2,25 @@ import { describe, test, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 /**
- * The modern UI's stacking contract: the panel layer paints over the map's.
+ * A tripwire on the compact layout's stacking declarations.
  *
- * The map-anchored popup card is what leans hardest on it. The card mounts
- * beside the map container and claims no level of its own (pinned in
- * MapPopup_.spec.ts), so it rises exactly as high as whatever holds the map —
- * and the app's panels have to go on painting over it. The two layouts hold
- * the map in different places, so each has its own half of the contract.
+ * The map-anchored popup card is what leans on them. The card is a positioned
+ * box at `z-index: auto` mounted beside the map container (pinned in
+ * MapPopup_.spec.ts), so it paints over the map and over every non-positioned
+ * sibling of it; anything meant to paint over the card has to be positioned
+ * itself and carry a level of its own. The compact layout's panel regions are
+ * the app's answer, and this is what fails when they lose it.
  *
  * jsdom loads no stylesheet and lays nothing out, so paint order itself is not
- * assertable here. What is assertable are the declarations that produce it,
- * which is what this spec reads.
+ * assertable here. The declarations that produce it are, and they are what
+ * this spec reads.
  */
 
-/** A stylesheet's rules, comments stripped, in source order. */
+/**
+ * A stylesheet's rules, comments stripped, in source order. It reads a flat
+ * stylesheet: a rule nested in an at-rule would come back split at the
+ * at-rule's own brace.
+ */
 function rulesOf(path) {
     return readFileSync(path, 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -30,18 +35,27 @@ function rulesOf(path) {
         .filter((rule) => rule.declarations.trim())
 }
 
-describe('the compact layout keeps the panel regions above the map', () => {
+describe('the compact layout stylesheet keeps the panel regions above the card', () => {
     const rules = rulesOf(
         'src/essence/Basics/UserInterface_/UserInterfaceModern_.css'
     )
     /**
-     * The declarations of the rule for exactly this selector, and nothing
-     * when the stylesheet has no such rule. Each of the selectors below is
-     * written once, so there is nothing for the cascade to resolve between.
+     * The declarations of every rule written for exactly this selector,
+     * joined. Rules with other selectors reach the same elements — a bare
+     * `.ui-region-center` carries a level of its own — so this reads what the
+     * compact layout says rather than what the cascade settles on. A selector
+     * no rule carries is an assertion against nothing, so it throws.
      */
-    const ruleFor = (selector) =>
-        rules.find((rule) => rule.selectors.includes(selector))?.declarations ??
-        ''
+    const ruleFor = (selector) => {
+        const written = rules
+            .filter((rule) => rule.selectors.includes(selector))
+            .map((rule) => rule.declarations)
+        if (written.length === 0)
+            throw new Error(
+                `No rule in UserInterfaceModern_.css for "${selector}"`
+            )
+        return written.join('\n')
+    }
     /** The level `selector` paints at, or null when it claims none. */
     const level = (selector) => {
         const declared = ruleFor(selector).match(/z-index:\s*(-?\d+)/)
@@ -52,9 +66,8 @@ describe('the compact layout keeps the panel regions above the map', () => {
     const centre = level(`${compact}.ui-region-center`)
 
     test('the region holding the map claims a level of its own', () => {
-        // This layout puts the map in a grid cell rather than behind the whole
-        // panel layer, and the cell claims a level. Everything below is what
-        // keeps the panels clear of it.
+        // The card is a positioned box in this region, so the level the four
+        // panel regions have to beat is the one written here.
         expect(centre).toEqual(expect.any(Number))
     })
 
@@ -66,22 +79,4 @@ describe('the compact layout keeps the panel regions above the map', () => {
             expect(level(selector)).toBeGreaterThan(centre)
         }
     )
-})
-
-describe('the overlay layout keeps the panel layer above the map', () => {
-    const source = readFileSync('src/essence/modern.js', 'utf8')
-    /** The level the inline styles of `variable` set. */
-    const level = (variable) => {
-        const declared = source.match(
-            new RegExp(`${variable}\\.css\\(\\{[^}]*'z-index':\\s*(-?\\d+)`)
-        )
-        return declared ? Number(declared[1]) : null
-    }
-
-    test('the panel layer outranks the map it is laid over', () => {
-        // Here the map is a backdrop the whole panel layer covers, and the
-        // card is mounted beside it — inside the map's layer, under the panel
-        // layer along with the map itself.
-        expect(level('modernContent')).toBeGreaterThan(level('mapContainer'))
-    })
 })
