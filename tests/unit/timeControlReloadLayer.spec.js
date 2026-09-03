@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest'
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest'
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
 
 /**
@@ -78,6 +78,14 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
             .default
         Map_ = (await import('../../src/essence/Basics/Map_/Map_')).default
         L_ = (await import('../../src/essence/Basics/Layers_/Layers_')).default
+    })
+
+    // Here rather than at the end of each case: a case that fails partway
+    // would otherwise leave its console spy and its fetch stub standing, and
+    // every case after it would be judged against them.
+    afterEach(() => {
+        vi.restoreAllMocks()
+        vi.unstubAllGlobals()
     })
 
     // A deck.gl layer object has no Leaflet `refresh`/`options`.
@@ -162,6 +170,110 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         expect(layer.url).toBe(originalUrl)
     })
 
+    // A layer that is not a raster tile takes its substituted URL on the
+    // config, because the refresh reads the layer object. Baking a failed
+    // urlReplacement in there would cost the layer its `{key}` for good: the
+    // service could recover and there would be nothing left to fill.
+    test('keeps a urlReplacement key on the config when the service fails', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const configUrl = 'https://example.com/{scene}/flood.geojson'
+        const layer = {
+            name: 'Flood Extent',
+            type: 'vector',
+            url: configUrl,
+            controlled: false,
+            time: { ...timeConfig },
+            variables: {
+                urlReplacements: {
+                    scene: {
+                        on: 'timeChange',
+                        url: 'https://example.com/scenes',
+                        type: 'POST',
+                        body: {},
+                        return: 'scene',
+                    },
+                },
+            },
+        }
+        registerDeckLayer(layer)
+        // Read at call time: reloadLayer puts the config URL back before it
+        // returns, so the layer object no longer carries what it was given.
+        const refreshedWith = []
+        Map_.refreshLayer.mockImplementation(async (layerObj) => {
+            refreshedWith.push(layerObj.url)
+            return true
+        })
+
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => {
+                throw new Error('service down')
+            })
+        )
+        await TimeControl.reloadLayer(layer)
+
+        expect(refreshedWith[0]).toContain('MMGIS_UNRESOLVED')
+        expect(layer.url).toBe(configUrl)
+
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => ({
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                json: async () => ({ scene: 'S2A_202206' }),
+            }))
+        )
+        await TimeControl.reloadLayer(layer)
+
+        expect(refreshedWith[1]).toBe(
+            'https://example.com/S2A_202206/flood.geojson'
+        )
+    })
+
+    /**
+     * `time.current` records the time a layer was last refreshed at, and
+     * callers use it to tell a layer that is up to date from one that has
+     * fallen behind. reloadLayer skips a layer that is switched off, so
+     * stamping one on the way past claims a refresh that never happened —
+     * and the layer then looks current forever, however far the time bar
+     * moves while it is off.
+     */
+    test('does not stamp a layer whose refresh it skipped', async () => {
+        const layer = makeNO2Layer('TileLayer')
+        registerDeckLayer(layer)
+        L_.layers.on[layer.name] = false
+        layer.time.current = undefined
+        TimeControl.currentTime = '2026-06-01T00:00:00Z'
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(refreshLayer).not.toHaveBeenCalled()
+        expect(layer.time.current).toBeUndefined()
+    })
+
+    test('stamps a layer it did refresh', async () => {
+        const layer = makeNO2Layer('TileLayer')
+        registerDeckLayer(layer)
+        TimeControl.currentTime = '2026-06-01T00:00:00Z'
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(layer.time.current).toBe('2026-06-01T00:00:00Z')
+    })
+
+    test('stamps a layer that is off when told to reload it anyway', async () => {
+        const layer = makeNO2Layer('TileLayer')
+        registerDeckLayer(layer)
+        L_.layers.on[layer.name] = false
+        TimeControl.currentTime = '2026-06-01T00:00:00Z'
+
+        await TimeControl.reloadLayer(layer, true)
+
+        expect(refreshLayer).toHaveBeenCalled()
+        expect(layer.time.current).toBe('2026-06-01T00:00:00Z')
+    })
+
     // The point of this test: a deckRaster COG config and a plain tile config
     // differ only in `cogRendererMode`. If the call site still branched on
     // that (or on engine/renderer type) to decide how to update the layer,
@@ -215,7 +327,6 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
 
         expect(warn).toHaveBeenCalledTimes(1)
         expect(warn.mock.calls[0][0]).toContain('NO2 Monthly')
-        warn.mockRestore()
     })
 
     test('stays quiet when the engine refreshed the layer', async () => {
@@ -226,6 +337,159 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         await TimeControl.reloadLayer(layer)
 
         expect(warn).not.toHaveBeenCalled()
-        warn.mockRestore()
+    })
+})
+
+/**
+ * performTimeUrlReplacements fetches a value from a service and splices it
+ * into the URL. Layer creation, time reload and layers:refresh all await it,
+ * so it has to settle whatever the service does — a call that never settles
+ * leaves every one of them waiting forever — and it has to hand back a URL
+ * with no `{key}` left in it, because Leaflet's URL template throws on one.
+ */
+describe('TimeControl.performTimeUrlReplacements', () => {
+    let TimeControl
+    let warn
+
+    beforeEach(async () => {
+        vi.resetModules()
+        TimeControl = (await import('../../src/essence/Basics/TimeControl_/TimeControl'))
+            .default
+        warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+        vi.restoreAllMocks()
+        vi.unstubAllGlobals()
+    })
+
+    const makeSceneLayer = () => ({
+        name: 'Flood Extent',
+        url: 'https://example.com/{scene}/{z}/{x}/{y}.png',
+        time: { ...timeConfig },
+        variables: {
+            urlReplacements: {
+                scene: {
+                    on: 'timeChange',
+                    url: 'https://example.com/scenes',
+                    type: 'POST',
+                    body: { from: '{starttime}', to: '{endtime}' },
+                    return: 'scene',
+                },
+            },
+        },
+    })
+
+    const UNRESOLVED_URL = 'https://example.com/MMGIS_UNRESOLVED/{z}/{x}/{y}.png'
+
+    const answer = (body, ok = true) => ({ ok, status: ok ? 200 : 500, statusText: ok ? 'OK' : 'Internal Server Error', json: async () => body })
+
+    test('asks the service with the layer time range and splices its answer into the URL', async () => {
+        const fetch = vi.fn(async () => answer({ scene: 'S2A_202206' }))
+        vi.stubGlobal('fetch', fetch)
+        const layer = makeSceneLayer()
+
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+
+        expect(url).toBe('https://example.com/S2A_202206/{z}/{x}/{y}.png')
+        expect(fetch.mock.calls[0][1].body).toBe('{"from":"202201","to":"202206"}')
+        expect(warn).not.toHaveBeenCalled()
+    })
+
+    // vitest's own timeout is the hang detector here: a promise that never
+    // settles fails this test rather than passing it vacuously.
+    test('substitutes a marker and warns when the service is unreachable', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => {
+                throw new Error('service down')
+            })
+        )
+        const layer = makeSceneLayer()
+
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+
+        expect(url).toBe(UNRESOLVED_URL)
+        expect(warn).toHaveBeenCalledTimes(1)
+        expect(warn.mock.calls[0][0]).toContain('Flood Extent')
+    })
+
+    test('substitutes a marker and warns when the service answers with an error status', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => answer({ detail: 'no such collection' }, false)))
+        const layer = makeSceneLayer()
+
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+
+        expect(url).toBe(UNRESOLVED_URL)
+        expect(warn).toHaveBeenCalledTimes(1)
+    })
+
+    test('substitutes a marker and warns when the answer has no value to splice in', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => answer({ scenes: [] })))
+        const layer = makeSceneLayer()
+
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+
+        expect(url).toBe(UNRESOLVED_URL)
+        expect(warn).toHaveBeenCalledTimes(1)
+    })
+
+    // The hang the deadline exists for: a server that accepts the connection
+    // and then says nothing. Nothing else ends this fetch, so the abort is
+    // the only thing that can settle the call — shortened here so the test
+    // does not sit out the real 15 s.
+    test('substitutes a marker and warns when the service never answers', async () => {
+        const realTimeout = AbortSignal.timeout.bind(AbortSignal)
+        vi.spyOn(AbortSignal, 'timeout').mockImplementation(() =>
+            realTimeout(10)
+        )
+        const fetch = vi.fn(
+            (url, options) =>
+                new Promise((_, reject) => {
+                    options.signal.addEventListener('abort', () =>
+                        reject(options.signal.reason)
+                    )
+                })
+        )
+        vi.stubGlobal('fetch', fetch)
+        const layer = makeSceneLayer()
+
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+
+        expect(url).toBe(UNRESOLVED_URL)
+        expect(warn).toHaveBeenCalledTimes(1)
+        // Not a fetch that failed for some other reason: the request really
+        // carried a signal, and that signal is what fired.
+        expect(fetch.mock.calls[0][1].signal.aborted).toBe(true)
+    })
+
+    // 0 and '' are values a service can legitimately return, so "no value"
+    // has to mean absent rather than falsy.
+    test('splices in a value the service returns as 0', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => answer({ scene: 0 })))
+        const layer = makeSceneLayer()
+
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+
+        expect(url).toBe('https://example.com/0/{z}/{x}/{y}.png')
+        expect(warn).not.toHaveBeenCalled()
+    })
+
+    test('substitutes a marker and warns when the answer is not JSON', async () => {
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () => ({
+                ok: true,
+                json: async () => {
+                    throw new SyntaxError('Unexpected token <')
+                },
+            }))
+        )
+        const layer = makeSceneLayer()
+
+        const url = await TimeControl.performTimeUrlReplacements(layer.url, layer, false)
+
+        expect(url).toBe(UNRESOLVED_URL)
+        expect(warn).toHaveBeenCalledTimes(1)
     })
 })
