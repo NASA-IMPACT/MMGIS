@@ -23,7 +23,9 @@ export type LayerConfig = {
     time?: {
         enabled?: boolean
         /** As authored: a concrete ISO datetime or a policy string ("now",
-         *  "now - P1D"). Ask mmgisGetTemporalExtents for the dates. */
+         *  "now - P1D"). A periodic layer may also carry an `interval`
+         *  cadence, already folded into the resolved extent. Ask
+         *  mmgisGetTemporalExtents for the dates. */
         dataStartTime?: string
         dataEndTime?: string
         [key: string]: unknown
