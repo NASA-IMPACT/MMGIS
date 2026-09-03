@@ -179,30 +179,43 @@ test('a refused command is reported rather than dropped', async () => {
     await unmount()
 })
 
-// Each icon value the upload field can hold reaches the rail by a different
-// route, and only one of the three wants the mission path in front of it.
-const iconSrc = (src: string, missionPath: string | null) =>
-    withResolvedIcons(
-        [{ id: 't', label: 'T', icon: { kind: 'image', src } }],
-        missionPath,
-    )[0].icon?.src
-
-test('an asset-bucket key stays slash-less', () => {
-    // The dashboard page resolves it against its own root, so a leading slash
-    // or a mission prefix would point it at a file that is not there.
+// Which stored value resolves to which URL is the shared resolver's business
+// (tests/unit/uploadKeyClassifier.spec.js); what the rail owns is handing it
+// every image icon and nothing else.
+test('an image icon is resolved against the mission path', () => {
     expect(
-        iconSrc('assets/M/LayerFilterThemes/uploads/x.svg', 'Missions/M/'),
-    ).toBe('assets/M/LayerFilterThemes/uploads/x.svg')
+        withResolvedIcons(
+            [
+                {
+                    id: 't',
+                    label: 'T',
+                    icon: {
+                        kind: 'image',
+                        src: 'LayerFilterThemes/uploads/x.svg',
+                    },
+                },
+            ],
+            'Missions/M/',
+        ),
+    ).toEqual([
+        {
+            id: 't',
+            label: 'T',
+            icon: {
+                kind: 'image',
+                src: 'Missions/M/LayerFilterThemes/uploads/x.svg',
+            },
+        },
+    ])
 })
 
-test('a mission-relative value gains the mission path', () => {
-    expect(iconSrc('LayerFilterThemes/uploads/x.svg', 'Missions/M/')).toBe(
-        'Missions/M/LayerFilterThemes/uploads/x.svg',
-    )
-})
+test('a theme the resolver has nothing to say about is returned as it came', () => {
+    // An MDI glyph names no file, and a theme may carry no icon at all;
+    // either way the entry passes through untouched.
+    const themes = [
+        { id: 'm', label: 'M', icon: { kind: 'mdi' as const, name: 'alert' } },
+        { id: 'n', label: 'N' },
+    ]
 
-test('a linked icon is untouched', () => {
-    expect(iconSrc('https://cdn.example.com/x.svg', 'Missions/M/')).toBe(
-        'https://cdn.example.com/x.svg',
-    )
+    expect(withResolvedIcons(themes, 'Missions/M/')).toEqual(themes)
 })
