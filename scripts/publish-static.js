@@ -2,7 +2,8 @@
  * publish-static.js
  * ECS publish-task entrypoint for the lean Deployments feature
  * (run as `node scripts/publish-static.js` from the repo root, in the same
- * image as the admin app — PR 11 provisions the task definition).
+ * image as the admin app; the ECS task definition that runs it lives in
+ * infrastructure/terraform/modules/mmgis-environment/).
  *
  * Driven by environment:
  *   MMGIS_DEPLOYMENT_ID     - the deployments row to publish (required)
@@ -39,7 +40,7 @@ const { applyTimeBakeGuard } = require("./lib/bake-guards");
 const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
 
-const { requireEnv, UNUSABLE_STACK_STATUSES } = provision;
+const { requireEnv } = provision;
 
 function log(message) {
   console.log(`[publish-static] ${message}`);
@@ -117,6 +118,17 @@ async function main() {
     const stackName =
       deployment.stack_name || stackNameForDeployment(deployment.id);
 
+    // Read the stack first so an "update" of something that was never
+    // published fails in seconds, ahead of the bake and build below.
+    // Idempotent re-run: a previous attempt may have created the stack (or a
+    // prior update converged it) — reuse it instead of dying on
+    // CloudFormation's AlreadyExistsException.
+    const existing = await provision.describeStack({ stackName });
+    if (ACTION === "update" && existing == null)
+      throw new Error(
+        `Stack '${stackName}' does not exist — publish before updating`
+      );
+
     // 1. Bake the mission config into the bundle
     log(`Baking mission '${mission}' for deployment ${deployment.id}...`);
     const baked = await buildBakedConfig(mission);
@@ -141,30 +153,10 @@ async function main() {
     const templateBody = renderCfnTemplate({
       password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
     });
-    // Idempotent re-run: a previous attempt may have created the stack (or a
-    // prior update converged it) — reuse it instead of dying on
-    // CloudFormation's AlreadyExistsException.
-    const existing = await provision.describeStack({ stackName });
-    // Preflight: a stack in a delete-only dead-end state gets actionable
-    // guidance, never a wait and never a busy misclassification. This runs
-    // before either action's dispatch below.
-    if (
-      existing != null &&
-      UNUSABLE_STACK_STATUSES.indexOf(existing.StackStatus) !== -1
-    )
-      throw new Error(
-        `Stack '${stackName}' is in ${existing.StackStatus} and cannot be used — ` +
-          "delete the deployment and publish it again (this mints a new URL)"
-      );
-    if (ACTION === "update" && existing == null)
-      throw new Error(
-        `Stack '${stackName}' does not exist — publish before updating`
-      );
     let stack;
-    // Converging is provision's single retry loop: UpdateStack, wait out any
-    // concurrent operation and retry our own update, then wait for our update
-    // to reach UPDATE_COMPLETE. It is a no-op on an unchanged template, and
-    // its busy loop waits out a create another attempt left in flight.
+    // An existing stack is converged rather than reused as-is: the template
+    // this run renders has to reach it, and converging is what keeps two
+    // simultaneous republishes safe.
     if (existing == null) {
       log(`Creating stack '${stackName}'...`);
       await provision.createStack({ stackName, templateBody });

@@ -54,6 +54,10 @@ function setClients(clients) {
 
 /* ------------------------------ CloudFormation ------------------------------ */
 
+// Gap between DescribeStacks polls, and between a busy rejection and the
+// retry that follows it.
+const DEFAULT_POLL_INTERVAL_MS = 15000;
+
 const TERMINAL_STACK_STATUSES = [
   "CREATE_COMPLETE",
   "CREATE_FAILED",
@@ -62,9 +66,8 @@ const TERMINAL_STACK_STATUSES = [
   "DELETE_COMPLETE",
   "DELETE_FAILED",
   "UPDATE_COMPLETE",
-  // Where an update with rollback disabled leaves a stack. Terminal and
-  // permanently stuck: only a ContinueUpdateRollback or a delete moves it,
-  // so waiting on it can only ever burn the timeout.
+  // Where an update with rollback disabled leaves a stack; waiting on it can
+  // only ever burn the timeout.
   "UPDATE_FAILED",
   "UPDATE_ROLLBACK_COMPLETE",
   "UPDATE_ROLLBACK_FAILED",
@@ -98,6 +101,17 @@ const UNUSABLE_STACK_STATUSES = [
   "DELETE_FAILED",
   "DELETE_IN_PROGRESS",
 ];
+
+// Throws the actionable "delete and republish" guidance when `stack` rests in
+// a delete-only status, so a wedged stack never reads as a raw CloudFormation
+// rejection or as another task merely being busy.
+function assertStackUsable({ stackName, stack }) {
+  if (UNUSABLE_STACK_STATUSES.indexOf(stack.StackStatus) !== -1)
+    throw new Error(
+      `Stack '${stackName}' is in ${stack.StackStatus} and cannot be used — ` +
+        "delete the deployment and publish it again (this mints a new URL)"
+    );
+}
 
 async function createStack({ stackName, templateBody }) {
   const { cfn } = getClients();
@@ -201,12 +215,18 @@ async function waitForStack({
   stackName,
   desiredStatus = "CREATE_COMPLETE",
   prior = null,
-  pollIntervalMs = 15000,
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
   timeoutMs = 30 * 60 * 1000,
 }) {
   const desired = Array.isArray(desiredStatus)
     ? desiredStatus
     : [desiredStatus];
+  // How the timeout message names what the wait was after: one status is
+  // quoted, a set is spelled out.
+  const desiredLabel =
+    desired.length > 1
+      ? `settle (any of: ${desired.join(", ")})`
+      : `reach '${desired[0]}'`;
   const startedAt = Date.now();
   // CloudFormation usually puts the failure reason on the IN_PROGRESS
   // rollback status and leaves the terminal one empty, so remember the last
@@ -236,7 +256,7 @@ async function waitForStack({
     }
     if (Date.now() - startedAt > timeoutMs)
       throw new Error(
-        `Timed out waiting for stack '${stackName}' to reach '${desiredStatus}' (last status '${stack.StackStatus}')` +
+        `Timed out waiting for stack '${stackName}' to ${desiredLabel} (last status '${stack.StackStatus}')` +
           (lastReason ? `: ${lastReason}` : "")
       );
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
@@ -247,32 +267,32 @@ async function waitForStack({
 // for our update to finish. Returns the converged Stack, or the latest read
 // of it when there is nothing to update.
 //
-// A stack resting in an UNUSABLE_STACK_STATUSES state is turned away up
-// front, so an isStackBusyError here is only ever a concurrent republish. On
-// that race we wait the other task's operation out and retry our OWN
-// UpdateStack, so this run's template — not merely the winner's — converges;
-// `maxBusyRetries` bounds the wait.
+// Every attempt starts on a stack assertStackUsable has cleared, so an
+// isStackBusyError here is only ever a concurrent republish. On that race we
+// wait the other task's operation out and retry our OWN UpdateStack, so this
+// run's template — not merely the winner's — converges; `maxBusyRetries`
+// bounds the wait.
 async function convergeStackUpdate({
   stackName,
   templateBody,
   existing,
   maxBusyRetries = 10,
   log = () => {},
-  // Forwarded to both waitForStack calls; undefined lets waitForStack apply its
-  // own defaults (production passes neither — tests inject a tiny interval).
-  pollIntervalMs,
+  // Forwarded to both waitForStack calls, and used as the pause between a busy
+  // rejection and the retry (production takes the defaults — tests inject a
+  // tiny interval).
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
   timeoutMs,
 }) {
-  if (UNUSABLE_STACK_STATUSES.indexOf(existing.StackStatus) !== -1)
-    throw new Error(
-      `Stack '${stackName}' is in ${existing.StackStatus} and cannot be used — ` +
-        "delete the deployment and publish it again (this mints a new URL)"
-    );
   // The read just before our own UpdateStack, passed as `prior` to the
   // converge wait and returned as-is when there is nothing to update; a
   // wait-out advances it to the other task's settled state.
   let preUpdate = existing;
   for (let attempt = 0; ; attempt++) {
+    // Checked per attempt, not just once: a wait-out can settle on a
+    // delete-only status, which earns the guidance rather than an UpdateStack
+    // that CloudFormation would reject with its own opaque wording.
+    assertStackUsable({ stackName, stack: preUpdate });
     let started;
     try {
       started = await updateStack({ stackName, templateBody });
@@ -290,14 +310,22 @@ async function convergeStackUpdate({
       );
       // Resolve on whatever status the other operation settles at (a rollback
       // settles at UPDATE_ROLLBACK_COMPLETE, which is still updatable) and let
-      // the retry's UpdateStack judge it. No `prior`: nothing this run has
-      // started yet, so every read is real.
+      // the next attempt judge it. The busy rejection is itself proof an
+      // operation is in flight, so the read taken before it is stale: pass it
+      // as `prior` and poll through reads that still match it.
       preUpdate = await waitForStack({
         stackName,
         desiredStatus: TERMINAL_STACK_STATUSES,
+        prior: {
+          status: preUpdate.StackStatus,
+          lastUpdatedTime: preUpdate.LastUpdatedTime,
+        },
         pollIntervalMs,
         timeoutMs,
       });
+      // The winner's operation only just settled; give CloudFormation a beat
+      // before asking it to accept ours.
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
       continue;
     }
     // "No updates are to be performed" — the template already converged.
@@ -539,8 +567,9 @@ function requireEnv(name) {
 
 // Starts the ECS publish task (scripts/publish-static.js) for a deployment.
 // The task definition, cluster, and network configuration come from env
-// (provisioned by PR 11). Throws when configuration is missing or RunTask
-// fails — callers record the error on the deployment row.
+// (provisioned by infrastructure/terraform/modules/mmgis-environment/).
+// Throws when configuration is missing or RunTask fails — callers record the
+// error on the deployment row.
 async function runPublishTask({ deploymentId, action }) {
   const cluster = requireEnv("MMGIS_PUBLISH_ECS_CLUSTER");
   const taskDefinition = requireEnv("MMGIS_PUBLISH_TASK_DEFINITION");
@@ -599,7 +628,6 @@ module.exports = {
   createStack,
   updateStack,
   isStackBusyError,
-  UNUSABLE_STACK_STATUSES,
   describeStack,
   waitForStack,
   convergeStackUpdate,
