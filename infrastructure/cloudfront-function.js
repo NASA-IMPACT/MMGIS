@@ -98,14 +98,11 @@ function handler(event) {
             // encodeURIComponent throw; that pair alone is dropped.
             var UNSAFE_KEY_G = /[^A-Za-z0-9%\-_.~!$'()*+,;:@\/?]+/g;
             var UNSAFE_VALUE_G = /[^A-Za-z0-9%\-_.~!$'()*+,;=:@\/?]+/g;
-            var escapeRun = function (run) {
-                return encodeURIComponent(run);
-            };
             var parts = [];
             for (var key in qs) {
                 var safeKey;
                 try {
-                    safeKey = key.replace(UNSAFE_KEY_G, escapeRun);
+                    safeKey = key.replace(UNSAFE_KEY_G, encodeURIComponent);
                 } catch (keyErr) {
                     continue;
                 }
@@ -119,7 +116,7 @@ function handler(event) {
                     try {
                         safeVal = values[i].value.replace(
                             UNSAFE_VALUE_G,
-                            escapeRun
+                            encodeURIComponent
                         );
                     } catch (valErr) {
                         continue;
