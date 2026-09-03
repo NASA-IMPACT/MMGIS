@@ -210,6 +210,47 @@ test.describe('busyStatusOf', () => {
     })
 })
 
+// The guard every publish and every converge attempt runs before touching a
+// stack it found.
+test.describe('assertStackUsable', () => {
+    const check = (status) => () =>
+        provision.assertStackUsable({
+            stackName: 'mmgis-dashboard-1',
+            stack: { StackStatus: status },
+        })
+
+    // A stack resting in one of these can only be deleted, so the publish
+    // stops with guidance an operator can act on instead of driving
+    // CloudFormation into its own opaque rejection.
+    const unusable = [
+        'CREATE_FAILED',
+        'ROLLBACK_COMPLETE',
+        'ROLLBACK_IN_PROGRESS',
+        'ROLLBACK_FAILED',
+        'UPDATE_ROLLBACK_FAILED',
+        'UPDATE_FAILED',
+        'DELETE_FAILED',
+        'DELETE_IN_PROGRESS',
+        'REVIEW_IN_PROGRESS',
+    ]
+    unusable.forEach((status) => {
+        test(`${status} earns the delete-and-republish guidance`, () => {
+            expect(check(status)).toThrow(
+                `Stack 'mmgis-dashboard-1' is in ${status} and cannot be used`
+            )
+        })
+    })
+
+    // Both still own a working bucket and distribution — an update that rolled
+    // back left the ones it started from in place — so both are publishable.
+    const usable = ['CREATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE']
+    usable.forEach((status) => {
+        test(`${status} is left alone`, () => {
+            expect(check(status)).not.toThrow()
+        })
+    })
+})
+
 // The convergence loop (see convergeStackUpdate's docblock). Driven with a cfn
 // mock that scripts what each kind of command answers.
 test.describe('convergeStackUpdate', () => {
@@ -372,36 +413,13 @@ test.describe('convergeStackUpdate', () => {
         ])
     })
 
-    // Another task can converge the stack moments before this attempt reads
-    // it. Its UPDATE_COMPLETE must not be accepted as proof our own update
-    // landed — that would hand the caller the other task's stack.
-    test('waits for OUR update, not a read another task already converged', async () => {
+    // The caller has just read the stack to choose this branch, so it hands
+    // that read on rather than making the first attempt repeat it.
+    test("the caller's fresh read stands in for the first attempt's own", async () => {
         const state = scriptCfn({
             updates: [{ reply: {} }],
             describes: [
-                // this attempt's read: another task converged just before it
-                {
-                    reply: {
-                        StackStatus: 'UPDATE_COMPLETE',
-                        LastUpdatedTime: WINNER,
-                    },
-                },
-                // final wait poll 1: stale relative to OUR update
-                {
-                    reply: {
-                        StackStatus: 'UPDATE_COMPLETE',
-                        LastUpdatedTime: WINNER,
-                        StackId: 'theirs',
-                    },
-                },
-                // final wait poll 2: our update in flight
-                {
-                    reply: {
-                        StackStatus: 'UPDATE_IN_PROGRESS',
-                        LastUpdatedTime: OURS,
-                    },
-                },
-                // final wait poll 3: our update landed
+                // the converge wait's poll: our update landed
                 {
                     reply: {
                         StackStatus: 'UPDATE_COMPLETE',
@@ -414,11 +432,13 @@ test.describe('convergeStackUpdate', () => {
         const stack = await provision.convergeStackUpdate({
             stackName: 'mmgis-dashboard-1',
             templateBody: '{}',
+            fresh: { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: BEFORE },
             pollIntervalMs: 1,
             timeoutMs: 2000,
         })
         expect(stack.StackId).toBe('ours')
-        expect(state.updates).toBe(1)
+        // No read of its own before the UpdateStack.
+        expect(state.describes).toBe(1)
     })
 
     // A delete started while this task was baking and building leaves a stack
@@ -639,11 +659,8 @@ test.describe('convergeStackUpdate', () => {
         })
         expect(stack.StackId).toBe('settled')
         expect(provision.getStackOutputs(stack)).toEqual({ BucketName: 'b' })
-        // Two UpdateStack attempts (rejected, then "no updates") over three
-        // reads: one at the top of each attempt, plus the poll that ended the
-        // wait-out.
+        // Two UpdateStack attempts: rejected as busy, then "no updates".
         expect(state.updates).toBe(2)
-        expect(state.describes).toBe(3)
     })
 
     // A stack that never frees up must fail the row, not loop forever.
@@ -675,7 +692,9 @@ test.describe('convergeStackUpdate', () => {
                 deadlineMs: 1,
                 pollIntervalMs: 5,
             })
-        ).rejects.toThrow(/did not converge within/)
+            // The operator reads this off the row, so the budget it names is
+            // in minutes rather than milliseconds.
+        ).rejects.toThrow(/did not converge within its \d+-minute deadline/)
     })
 
     // A wait the shared deadline cut short rejects with an ordinary poll
@@ -864,6 +883,28 @@ test.describe('waitForStack prior', () => {
         expect(stack.StackStatus).toBe('UPDATE_COMPLETE')
     })
 
+    // CloudFormation stamps a LastUpdatedTime on the pre-update status the
+    // moment an update starts, so a timestamp alone does not mean the stack has
+    // moved. While the prior status is one the wait would never resolve on, the
+    // stack has to leave it either way — so a read still showing it is stale
+    // however new its timestamp, and treating it as fresh would fail a
+    // converging update on its own pre-update CREATE_COMPLETE.
+    test('a prior status outside the desired set stays stale however new its timestamp', async () => {
+        replayStacks([
+            { StackStatus: 'CREATE_COMPLETE', LastUpdatedTime: AFTER },
+            { StackStatus: 'UPDATE_IN_PROGRESS', LastUpdatedTime: AFTER },
+            { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: AFTER },
+        ])
+        const stack = await provision.waitForStack({
+            stackName: 'mmgis-dashboard-1',
+            desiredStatus: 'UPDATE_COMPLETE',
+            prior: { status: 'CREATE_COMPLETE', lastUpdatedTime: undefined },
+            pollIntervalMs: 1,
+            timeoutMs: 500,
+        })
+        expect(stack.StackStatus).toBe('UPDATE_COMPLETE')
+    })
+
     // The ordinary republish, converging inside one poll interval: the
     // desired status and the stale status are the SAME string, so only
     // LastUpdatedTime separates the pre-update read from the converged one.
@@ -893,11 +934,11 @@ test.describe('waitForStack prior', () => {
         expect(stack.StackId).toBe('post')
     })
 
-    // The mirror image: an update that rolls back lands on the same status
-    // it started from, and once LastUpdatedTime has advanced that is this
-    // run's own failure — it has to throw with the reason instead of being
-    // tolerated until the 30-minute timeout.
-    test('a rollback back to the prior status fails once LastUpdatedTime has advanced', async () => {
+    // The mirror image: an update that rolls back lands back on the status it
+    // started from. Once a read has shown the stack somewhere else, that
+    // return is this run's own failure — it has to throw with the reason
+    // instead of being tolerated as staleness until the 30-minute timeout.
+    test('a return to the prior status fails once a read has shown the stack moving', async () => {
         replayStacks([
             { StackStatus: 'UPDATE_ROLLBACK_COMPLETE', LastUpdatedTime: BEFORE },
             {
