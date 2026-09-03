@@ -1,64 +1,8 @@
 import { test, expect } from 'vitest'
 import {
-    resolveImageUrl,
     resolveLinkUrl,
     buildCardData,
 } from '../../../src/essence/Tools/Card/adapters/buildCardData.ts'
-
-test.describe('resolveImageUrl', () => {
-    test('returns empty string for empty input', () => {
-        expect(resolveImageUrl('', 'Missions/MSL/')).toBe('')
-        expect(resolveImageUrl(undefined, 'Missions/MSL/')).toBe('')
-    })
-
-    test('passes through absolute and data URLs', () => {
-        expect(resolveImageUrl('https://x/y.png', 'Missions/MSL/')).toBe(
-            'https://x/y.png',
-        )
-        expect(resolveImageUrl('http://x/y.png', 'Missions/MSL/')).toBe(
-            'http://x/y.png',
-        )
-        expect(
-            resolveImageUrl('data:image/png;base64,AAAA', 'Missions/MSL/'),
-        ).toBe('data:image/png;base64,AAAA')
-    })
-
-    test('an already-rooted value that is not an upload shape passes through unchanged', () => {
-        expect(resolveImageUrl('/already/rooted.png', 'Missions/MSL/')).toBe(
-            '/already/rooted.png',
-        )
-    })
-
-    test('prefixes mission-relative paths with the mission path', () => {
-        expect(
-            resolveImageUrl('CardPlugin/uploads/a.png', 'Missions/MSL/'),
-        ).toBe('Missions/MSL/CardPlugin/uploads/a.png')
-    })
-
-    test('tolerates a null mission path', () => {
-        expect(resolveImageUrl('CardPlugin/uploads/a.png', null)).toBe(
-            'CardPlugin/uploads/a.png',
-        )
-    })
-
-    test('leaves dashboard-root-relative assets/ paths unprefixed', () => {
-        expect(
-            resolveImageUrl(
-                'assets/M/CardPlugin/uploads/a.png',
-                'Missions/M/',
-            ),
-        ).toBe('assets/M/CardPlugin/uploads/a.png')
-    })
-
-    test('rebases rooted /assets/ paths to the dashboard-relative form', () => {
-        expect(
-            resolveImageUrl(
-                '/assets/M/CardPlugin/uploads/a.png',
-                'Missions/M/',
-            ),
-        ).toBe('assets/M/CardPlugin/uploads/a.png')
-    })
-})
 
 test.describe('buildCardData', () => {
     test('returns empty array for missing/invalid input', () => {

@@ -9,9 +9,7 @@ import { buildPreviewSrc } from '../../configure/src/core/upload.js'
 // the regex. A value one treats as an upload key and another as a
 // mission-relative path renders a broken image only at runtime. What each
 // consumer then does with a matched key differs by design and is asserted
-// per classifier below. The third classifier, cacheControlForKey in
-// scripts/lib/aws-provision.js, is added to this table by the PR that
-// introduces it.
+// per classifier below.
 
 const MISSION = 'M'
 const MISSION_PATH = 'Missions/M/'
