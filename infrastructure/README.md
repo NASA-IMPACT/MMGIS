@@ -293,7 +293,7 @@ it from the real login password (the full note lives in
   [`../docs/infrastructure/serving-a-dashboard-from-your-domain.md`](../docs/infrastructure/serving-a-dashboard-from-your-domain.md).
   Nothing is configured on our side — the customer's own CloudFront forwards
   the request and declares the path. After an edge-function change, an
-  existing dashboard picks it up via a republish (the `update` action).
+  existing dashboard picks it up via a republish with either action.
 
 ## Placeholders in the recipe JSON
 

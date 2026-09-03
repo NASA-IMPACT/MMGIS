@@ -151,20 +151,6 @@ test.describe('updateStack', () => {
     })
 })
 
-// Statuses a stack can only be deleted out of, never published onto.
-test.describe('UNUSABLE_STACK_STATUSES', () => {
-    test('holds the delete-only statuses and not the reusable rollback', () => {
-        const unusable = provision.UNUSABLE_STACK_STATUSES
-        // A stack on its way out has no bucket to publish into.
-        expect(unusable).toContain('DELETE_IN_PROGRESS')
-        // Terminal and stuck: only a ContinueUpdateRollback or a delete moves it.
-        expect(unusable).toContain('UPDATE_FAILED')
-        // At rest here the bucket and distribution still work, and
-        // CloudFormation accepts an UpdateStack.
-        expect(unusable).not.toContain('UPDATE_ROLLBACK_COMPLETE')
-    })
-})
-
 test.describe('isStackBusyError', () => {
     const busyMessage = (status) =>
         'Stack:arn:aws:cloudformation:us-west-2:111122223333:stack/mmgis-dashboard-1/abc ' +
@@ -306,6 +292,94 @@ test.describe('convergeStackUpdate', () => {
         // Our own UpdateStack ran twice (rejected, then accepted): the loser
         // did not merely ride the winner's update.
         expect(state.updates).toBe(2)
+    })
+
+    // The busy rejection is itself proof another operation is in flight, so
+    // the read taken right after it can still show the pre-operation state.
+    // Ending the wait-out on one of those reads would send our UpdateStack
+    // straight back into the same rejection.
+    test('a stale read after the busy rejection does not end the wait-out', async () => {
+        const existing = { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: BEFORE }
+        const state = scriptCfn([
+            // attempt 0: rejected — the winner's update is in flight
+            { kind: 'Update', throw: busyError() },
+            // the `current` describe still reports the pre-rejection state
+            {
+                kind: 'Describe',
+                reply: {
+                    StackStatus: 'UPDATE_COMPLETE',
+                    LastUpdatedTime: BEFORE,
+                },
+            },
+            // wait-out poll 1: the same stale read — must NOT resolve
+            {
+                kind: 'Describe',
+                reply: {
+                    StackStatus: 'UPDATE_COMPLETE',
+                    LastUpdatedTime: BEFORE,
+                },
+            },
+            // wait-out poll 2: the winner's update actually landed
+            {
+                kind: 'Describe',
+                reply: {
+                    StackStatus: 'UPDATE_COMPLETE',
+                    LastUpdatedTime: WINNER,
+                },
+            },
+            // attempt 1: our UpdateStack now accepted
+            { kind: 'Update', reply: {} },
+            {
+                kind: 'Describe',
+                reply: {
+                    StackStatus: 'UPDATE_COMPLETE',
+                    LastUpdatedTime: OURS,
+                    StackId: 'ours',
+                },
+            },
+        ])
+        const stack = await provision.convergeStackUpdate({
+            stackName: 'mmgis-dashboard-1',
+            templateBody: '{}',
+            existing,
+            pollIntervalMs: 1,
+            timeoutMs: 2000,
+        })
+        expect(stack.StackId).toBe('ours')
+        expect(state.updates).toBe(2)
+    })
+
+    // A wait-out can settle on a status the stack can only be deleted out of.
+    // Retrying UpdateStack there would surface CloudFormation's own opaque
+    // rejection instead of the delete-and-republish guidance.
+    test('a wait-out that settles in a delete-only status stops with the guidance', async () => {
+        const existing = { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: BEFORE }
+        const state = scriptCfn([
+            // attempt 0: rejected — an operation is in flight
+            { kind: 'Update', throw: busyError() },
+            { kind: 'Describe', reply: { StackStatus: 'ROLLBACK_IN_PROGRESS' } },
+            // wait-out: it settled somewhere only a delete moves it out of
+            {
+                kind: 'Describe',
+                reply: {
+                    StackStatus: 'ROLLBACK_COMPLETE',
+                    LastUpdatedTime: WINNER,
+                },
+            },
+        ])
+        await expect(
+            provision.convergeStackUpdate({
+                stackName: 'mmgis-dashboard-1',
+                templateBody: '{}',
+                existing,
+                pollIntervalMs: 1,
+                timeoutMs: 2000,
+            })
+        ).rejects.toThrow(
+            "Stack 'mmgis-dashboard-1' is in ROLLBACK_COMPLETE and cannot be used"
+        )
+        // No second UpdateStack: the retry is abandoned, not attempted.
+        expect(state.updates).toBe(1)
     })
 
     // An update that rolls back lands on UPDATE_ROLLBACK_COMPLETE — the
@@ -477,13 +551,23 @@ test.describe('convergeStackUpdate', () => {
     // loop only stops on the maxBusyRetries bound.
     test('gives up after maxBusyRetries when the stack stays busy', async () => {
         const existing = { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: BEFORE }
+        // Each read carries a newer LastUpdatedTime than the one before it, so
+        // every wait-out sees the operation it waited on land instead of
+        // polling a read it has to treat as stale.
+        let reads = 0
         provision.setClients({
             cfn: mockClient((command) => {
                 if (command.constructor.name === 'UpdateStackCommand')
                     throw busyError()
+                reads++
                 return {
                     Stacks: [
-                        { StackStatus: 'UPDATE_COMPLETE', LastUpdatedTime: WINNER },
+                        {
+                            StackStatus: 'UPDATE_COMPLETE',
+                            LastUpdatedTime: new Date(
+                                BEFORE.getTime() + reads * 60000
+                            ),
+                        },
                     ],
                 }
             }),
@@ -539,9 +623,7 @@ test.describe('waitForStack', () => {
     })
 
     // An out-of-band `update-stack --disable-rollback` leaves a real stack
-    // here: terminal and stuck until someone continues the rollback or
-    // deletes it. It can never reach the desired status, so the terminal check
-    // has to end the wait rather than let it burn the full 30 minutes.
+    // here, and it can never reach the desired status.
     test('throws promptly on UPDATE_FAILED rather than polling until the timeout', async () => {
         const state = replayStacks([
             {
@@ -597,6 +679,27 @@ test.describe('waitForStack', () => {
         expect(error).toBeDefined()
         expect(error.message).toBe(
             "Timed out waiting for stack 'mmgis-dashboard-1' to reach 'UPDATE_COMPLETE' (last status 'UPDATE_IN_PROGRESS')"
+        )
+    })
+
+    // The busy wait-out passes the whole terminal set, and a bare array
+    // interpolates as an unreadable comma run — so a set is spelled out.
+    test('times out spelling out a set of desired statuses', async () => {
+        replayStacks([{ StackStatus: 'UPDATE_IN_PROGRESS' }])
+        let error
+        try {
+            await provision.waitForStack({
+                stackName: 'mmgis-dashboard-1',
+                desiredStatus: ['UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'],
+                pollIntervalMs: 1,
+                timeoutMs: 20,
+            })
+        } catch (err) {
+            error = err
+        }
+        expect(error).toBeDefined()
+        expect(error.message).toBe(
+            "Timed out waiting for stack 'mmgis-dashboard-1' to settle (any of: UPDATE_COMPLETE, UPDATE_ROLLBACK_COMPLETE) (last status 'UPDATE_IN_PROGRESS')"
         )
     })
 
