@@ -71,16 +71,20 @@ test.describe('webpack production output is content-hashed', () => {
         expect(options.chunkFilename).toMatch(/^static\/css\//)
     })
 
-    test('every rule names its emitted files hashed under static/media', () => {
-        // The url-loader (small images, inlined below a size limit) and the
-        // catch-all file-loader both emit into static/media; every prefix in
-        // the immutable tier has to be hashed, so a rule emitting elsewhere
-        // under a hashless name is caught here too.
+    test('every rule names its emitted files with a content hash', () => {
+        // Every rule has to hash, wherever it emits: a hashless name lands in
+        // the immutable tier if it goes to one of those three prefixes, and
+        // collides with the previous release's file if it does not. The
+        // url-loader (small images, inlined below a size limit) and the
+        // catch-all file-loader are the rules that reach an immutable prefix,
+        // and static/media is the only one they may use — js and css belong to
+        // the compiler's own output.
         const names = emittedNames(CONFIG.module.rules)
         expect(names.length).toBeGreaterThan(0)
         names.forEach((name) => {
-            expect(name).toMatch(/^static\/media\//)
             expect(name).toMatch(HASH_TOKEN)
+            if (/^static\/(js|css|media)\//.test(name))
+                expect(name).toMatch(/^static\/media\//)
         })
     })
 

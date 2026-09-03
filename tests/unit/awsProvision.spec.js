@@ -990,23 +990,20 @@ test.describe('cacheControlForKey', () => {
         ['index.html', 'no-cache'],
         ['build/index.html', 'no-cache'],
         ['Missions/M/config.json', 'no-cache'],
-        [
-            'build/static/js/main.abc123.js',
-            'public, max-age=31536000, immutable',
-        ],
-        ['build/static/css/x.css', 'public, max-age=31536000, immutable'],
-        ['build/static/media/a.png', 'public, max-age=31536000, immutable'],
-        ['build/asset-manifest.json', 'public, max-age=300'],
+        ['build/static/js/main.abc123.js', 'max-age=31536000, immutable'],
+        ['build/static/css/x.css', 'max-age=31536000, immutable'],
+        ['build/static/media/a.png', 'max-age=31536000, immutable'],
+        ['build/asset-manifest.json', 'max-age=300'],
         // Under build/static but not content-hashed, so explicitly NOT
         // immutable.
-        ['build/static/cesium/Cesium.js', 'public, max-age=300'],
-        ['public/workers/pdf.worker.min.mjs', 'public, max-age=300'],
+        ['build/static/cesium/Cesium.js', 'max-age=300'],
+        ['public/workers/pdf.worker.min.mjs', 'max-age=300'],
     ]
 
-    TIERS.forEach(([key, expected]) => {
-        test(`'${key}' -> '${expected}'`, () => {
-            expect(provision.cacheControlForKey(key)).toBe(expected)
-        })
+    // No tier says "public": the responses are password-gated, and CloudFront
+    // caches on max-age alone.
+    test.each(TIERS)("'%s' -> '%s'", (key, expected) => {
+        expect(provision.cacheControlForKey(key)).toBe(expected)
     })
 })
 
@@ -1058,7 +1055,7 @@ test.describe('uploadDirectory', () => {
             // path 'static/js/main.abc123.js' falls through to max-age=300 —
             // so this fails if the tier is read off anything but the key.
             expect(byKey['build/static/js/main.abc123.js'].CacheControl).toBe(
-                'public, max-age=31536000, immutable'
+                'max-age=31536000, immutable'
             )
             expect(byKey['build/index.html'].CacheControl).toBe('no-cache')
         })
@@ -1105,6 +1102,26 @@ test.describe('uploadFile', () => {
 test.describe('copyPrefix', () => {
     // The upload router names every file crypto.randomUUID() + the extension.
     const UPLOAD_UUID = '6f1e2a3c-4b5d-4e6f-8a9b-0c1d2e3f4a5b'
+    const UPLOAD_KEY = `assets/TestMission/CardPlugin/uploads/${UPLOAD_UUID}.png`
+
+    // What each mocked source object carries as its own Content-Type, for the
+    // extensions the table does not name. An empty head is a source with none.
+    const SOURCE_HEADS = {
+        'assets/TestMission/scan.tif': { ContentType: 'image/tiff' },
+        'assets/TestMission/untyped.bin': {},
+    }
+
+    const SOURCE_KEYS = [
+        // The shape the upload router writes.
+        UPLOAD_KEY,
+        'assets/TestMission/icon.png',
+        'assets/TestMission/with space.png',
+        'assets/TestMission/photo.jpg',
+        ...Object.keys(SOURCE_HEADS),
+    ]
+
+    const byKey = (copies) =>
+        Object.fromEntries(copies.map((input) => [input.Key, input]))
 
     test.afterEach(() => provision.setClients(null))
 
@@ -1117,23 +1134,13 @@ test.describe('copyPrefix', () => {
                 if (name === 'ListObjectsV2Command') {
                     expect(command.input.Prefix).toBe('assets/TestMission/')
                     return {
-                        Contents: [
-                            // The shape the upload router writes.
-                            {
-                                Key: `assets/TestMission/CardPlugin/uploads/${UPLOAD_UUID}.png`,
-                            },
-                            { Key: 'assets/TestMission/icon.png' },
-                            { Key: 'assets/TestMission/with space.png' },
-                            { Key: 'assets/TestMission/photo.jpg' },
-                            // An extension the Content-Type table does not name.
-                            { Key: 'assets/TestMission/scan.tif' },
-                        ],
+                        Contents: SOURCE_KEYS.map((Key) => ({ Key })),
                         IsTruncated: false,
                     }
                 }
                 if (name === 'HeadObjectCommand') {
                     heads.push(command.input.Key)
-                    return { ContentType: 'image/tiff' }
+                    return SOURCE_HEADS[command.input.Key]
                 }
                 if (name === 'CopyObjectCommand') {
                     copies.push(command.input)
@@ -1147,34 +1154,90 @@ test.describe('copyPrefix', () => {
             destBucket: 'dash',
             prefix: 'assets/TestMission/',
         })
-        expect(count).toBe(5)
+        expect(count).toBe(SOURCE_KEYS.length)
+        const copied = byKey(copies)
         // Same keys in the destination bucket
-        expect(copies[1].Bucket).toBe('dash')
-        expect(copies[1].Key).toBe('assets/TestMission/icon.png')
+        expect(Object.keys(copied).sort()).toEqual([...SOURCE_KEYS].sort())
+        const icon = copied['assets/TestMission/icon.png']
+        expect(icon.Bucket).toBe('dash')
         // CopySource is "bucket/key" with the separators left intact —
         // NOT encodeURIComponent of the whole string (that would turn the
         // slashes into %2F and break the copy).
-        expect(copies[1].CopySource).toBe('shared/assets/TestMission/icon.png')
+        expect(icon.CopySource).toBe('shared/assets/TestMission/icon.png')
         // Special chars inside a segment are encoded; the "/" separators
         // and the bucket/key boundary are preserved.
-        expect(copies[2].Key).toBe('assets/TestMission/with space.png')
-        expect(copies[2].CopySource).toBe(
+        expect(copied['assets/TestMission/with space.png'].CopySource).toBe(
             'shared/assets/TestMission/with%20space.png'
         )
         // REPLACE lets the copy carry its own Cache-Control and Content-Type.
-        expect(copies[0].MetadataDirective).toBe('REPLACE')
+        expect(copied[UPLOAD_KEY].MetadataDirective).toBe('REPLACE')
         // An upload key gets the immutable tier, everything else the short one.
-        expect(copies[0].CacheControl).toBe(
-            'public, max-age=31536000, immutable'
+        expect(copied[UPLOAD_KEY].CacheControl).toBe(
+            'max-age=31536000, immutable'
         )
-        expect(copies[1].CacheControl).toBe('public, max-age=300')
+        expect(icon.CacheControl).toBe('max-age=300')
         // A mapped extension is typed from the key alone...
-        expect(copies[1].ContentType).toBe('image/png')
-        expect(copies[3].ContentType).toBe('image/jpeg')
+        expect(icon.ContentType).toBe('image/png')
+        expect(copied['assets/TestMission/photo.jpg'].ContentType).toBe(
+            'image/jpeg'
+        )
         // ...and only an unmapped one costs a HeadObject, which is what keeps
-        // the source's own type instead of downgrading it to octet-stream.
-        expect(heads).toEqual(['assets/TestMission/scan.tif'])
-        expect(copies[4].ContentType).toBe('image/tiff')
+        // the source's own type instead of downgrading it to octet-stream...
+        expect(heads).toEqual(Object.keys(SOURCE_HEADS))
+        expect(copied['assets/TestMission/scan.tif'].ContentType).toBe(
+            'image/tiff'
+        )
+        // ...which is where a source with no Content-Type of its own lands.
+        expect(copied['assets/TestMission/untyped.bin'].ContentType).toBe(
+            'application/octet-stream'
+        )
+    })
+
+    test('copies the pages after the first the same way', async () => {
+        // A prefix holding more than a page of objects lists truncated, and
+        // every later page has to be copied under the same rules — a loop that
+        // stopped after page one would leave those objects behind in the
+        // shared bucket, missing from the published dashboard.
+        const copies = []
+        const tokens = []
+        provision.setClients({
+            s3: mockClient((command) => {
+                const name = command.constructor.name
+                if (name === 'ListObjectsV2Command') {
+                    tokens.push(command.input.ContinuationToken)
+                    if (command.input.ContinuationToken == null)
+                        return {
+                            Contents: [{ Key: 'assets/TestMission/one.png' }],
+                            IsTruncated: true,
+                            NextContinuationToken: 'page-two',
+                        }
+                    return {
+                        Contents: [{ Key: 'assets/TestMission/two.png' }],
+                        // A last page can still name a token; IsTruncated is
+                        // what ends the loop.
+                        IsTruncated: false,
+                        NextContinuationToken: 'page-three',
+                    }
+                }
+                if (name === 'CopyObjectCommand') {
+                    copies.push(command.input)
+                    return {}
+                }
+                throw new Error(`Unexpected command ${name}`)
+            }),
+        })
+        const count = await provision.copyPrefix({
+            sourceBucket: 'shared',
+            destBucket: 'dash',
+            prefix: 'assets/TestMission/',
+        })
+        expect(count).toBe(2)
+        expect(tokens).toEqual([undefined, 'page-two'])
+        const pageTwo = byKey(copies)['assets/TestMission/two.png']
+        expect(pageTwo.Bucket).toBe('dash')
+        expect(pageTwo.MetadataDirective).toBe('REPLACE')
+        expect(pageTwo.CacheControl).toBe('max-age=300')
+        expect(pageTwo.ContentType).toBe('image/png')
     })
 })
 

@@ -33,6 +33,10 @@ const {
   CreateInvalidationCommand,
 } = require("@aws-sdk/client-cloudfront");
 
+// The classifier for plugin-upload object keys, taken from the router that
+// writes them.
+const { ASSETS_UPLOAD_KEY } = require("../../API/Backend/Upload/validate");
+
 let _clients = null;
 
 function getClients() {
@@ -431,12 +435,6 @@ function contentTypeForFile(filePath) {
   );
 }
 
-// The object keys API/Backend/Upload/uploadRouter.js writes for plugin
-// uploads: "assets/", exactly two path segments, then "/uploads/". The same
-// classifier lives in src/pre/uploadKey.ts and configure/src/core/upload.js;
-// tests/unit/uploadKeyClassifier.spec.js runs one table through all three.
-const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
-
 // Cache-Control tier for a published-dashboard object key. The entry page and
 // baked config must revalidate on every request (a fronting cache we cannot
 // invalidate may otherwise pin an old release for a day); two classes are
@@ -446,17 +444,18 @@ const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 // assets/<mission>/<subdir>/uploads/, which the upload router names
 // crypto.randomUUID() and never overwrites (API/Backend/Upload/uploadRouter.js).
 // Everything else — the keys that really do change in place on republish —
-// falls back to a short TTL. Two runtime families sit in that fallback under
-// stable names, the pdf.js worker under public/workers and the Cesium tree
-// under build/static/cesium, so a republish that bumps the MMGIS version can
-// leave a customer's edge pairing a new bundle with a copy of those up to five
-// minutes old.
+// falls back to a short TTL. Every stable-named runtime asset outside those two
+// immutable prefixes sits in that fallback: the pdf.js worker, the Cesium tree,
+// the fonts, the ffmpeg core. scripts/build.js copyPublicFolder copies public/
+// into build/ verbatim, so nothing arriving that way is content-hashed either
+// (tests/unit/publicHasNoHashedDirs.spec.js). A republish that bumps the MMGIS
+// version can therefore leave a customer's edge pairing a new bundle with a copy
+// of those roughly five minutes old, up to about ten while our own invalidation
+// propagates.
 //
-// The two cacheable tiers say "public" because every response sits behind
-// Basic auth, and RFC 7234 §3.2 lets a shared cache reuse a response to an
-// Authorization-bearing request only when it carries must-revalidate, public
-// or s-maxage, so "public" removes any conformance question. What a customer
-// fronting the dashboard gets from that is spelled out in
+// Neither cacheable tier says "public": CloudFront caches on max-age alone, and
+// omitting it keeps a conforming shared cache from storing these password-gated
+// responses at all (RFC 9111 §3.5) — see
 // docs/infrastructure/serving-a-dashboard-from-your-domain.md.
 function cacheControlForKey(key) {
   if (
@@ -469,8 +468,8 @@ function cacheControlForKey(key) {
     /^build\/static\/(js|css|media)\//.test(key) ||
     ASSETS_UPLOAD_KEY.test(key)
   )
-    return "public, max-age=31536000, immutable";
-  return "public, max-age=300";
+    return "max-age=31536000, immutable";
+  return "max-age=300";
 }
 
 function walkDirectory(dir, baseDir) {
@@ -577,8 +576,8 @@ function buildCopySource(bucket, key) {
 // extension is one it names, otherwise the source object's own header read
 // with HeadObject, and octet-stream when the source carries none either.
 async function copiedContentType({ s3, sourceBucket, key }) {
-  if (CONTENT_TYPES[path.extname(key).toLowerCase()] != null)
-    return contentTypeForFile(key);
+  const mapped = CONTENT_TYPES[path.extname(key).toLowerCase()];
+  if (mapped != null) return mapped;
   const head = await s3.send(
     new HeadObjectCommand({ Bucket: sourceBucket, Key: key })
   );

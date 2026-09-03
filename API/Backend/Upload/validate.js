@@ -11,6 +11,14 @@ const IMAGE_MIME_TO_EXT = {
     'image/svg+xml': 'svg',
 };
 
+// The object keys ./uploadRouter.js writes for plugin uploads when the S3
+// asset bucket is configured: "assets/", exactly two path segments, then
+// "/uploads/". src/pre/uploadKey.ts and configure/src/core/upload.js each
+// carry a copy — separate frontend bundles with no import path into this
+// CommonJS module; tests/unit/uploadKeyClassifier.spec.js runs one table of
+// values through all three and fails if they classify any of them differently.
+const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
+
 // Map an upload mimetype to a safe file extension using the given allow-list,
 // or null if the type is not allowed.
 function extensionForMime(mimeType, allowedMimeToExt = IMAGE_MIME_TO_EXT) {
@@ -38,6 +46,7 @@ const isValidSubdir = isSafePathSegment;
 
 module.exports = {
     IMAGE_MIME_TO_EXT,
+    ASSETS_UPLOAD_KEY,
     extensionForMime,
     isSafePathSegment,
     isValidMission,

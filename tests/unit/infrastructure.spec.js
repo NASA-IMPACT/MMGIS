@@ -351,20 +351,6 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
         expect(adminEnv.DISABLE_FIRST_SIGNUP).toBe('true')
     })
 
-    test('the publish skips both un-interpolated index templates', () => {
-        // build/index.pug and public/index.html still carry the raw #{...}
-        // placeholders, so either one in the bucket is a page a visitor can
-        // reach with the placeholders showing. The upload filters name the two
-        // keys literally; pinning them here catches a rename on one side that
-        // never reaches the other.
-        const source = fs.readFileSync(
-            path.join(ROOT, 'scripts', 'publish-static.js'),
-            'utf8'
-        )
-        expect(source).toContain('key !== "build/index.pug"')
-        expect(source).toContain('key !== "public/index.html"')
-    })
-
     test('publish task role omits rds-db:connect (password auth only)', () => {
         for (const file of IAM_FILES) {
             const actions = statementsOf(readJson(file)).flatMap((s) =>

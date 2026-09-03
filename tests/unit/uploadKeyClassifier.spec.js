@@ -5,10 +5,12 @@ import { buildPreviewSrc } from '../../configure/src/core/upload.js'
 const { cacheControlForKey } = require('../../scripts/lib/aws-provision')
 
 // One table of stored values, run through every copy of the upload-key
-// classifier: the app bundle, the Configure SPA and the publish scripts. None
-// of the three can share a module with the others, so each carries its own
-// regex; what they must agree on is which values are upload keys written by
-// API/Backend/Upload/uploadRouter.js, not the bytes of the regex. A value one
+// classifier: the app bundle, the Configure SPA and API/Backend/Upload/
+// validate.js — the CommonJS copy beside the router that writes the keys, and
+// the one the publish scripts require. Neither frontend bundle can import that
+// module, so each carries its own regex; what they must agree on is which
+// values are upload keys written by API/Backend/Upload/uploadRouter.js, not the
+// bytes of the regex. A value one
 // treats as an upload key and another as a mission-relative path renders a
 // broken image only at runtime. What each consumer then does with a matched
 // key differs by design and is asserted per classifier below.
@@ -57,8 +59,8 @@ test.describe('upload-key classification', () => {
         (value, key) => {
             expect(cacheControlForKey(value)).toBe(
                 key !== null
-                    ? 'public, max-age=31536000, immutable'
-                    : 'public, max-age=300',
+                    ? 'max-age=31536000, immutable'
+                    : 'max-age=300',
             )
         },
     )
