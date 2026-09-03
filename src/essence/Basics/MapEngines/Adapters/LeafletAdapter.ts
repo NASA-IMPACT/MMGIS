@@ -1344,7 +1344,9 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * L.marker + L.divIcon quirks (0×0 hit box, interactive-flag CSS
      * surprises) that diverged from the deck.gl behaviour.
      *
-     * @deprecated Superseded by the `map:showPopup` provider.
+     * @deprecated See {@link IMapEngine.addOverlay}: card-shaped content
+     * belongs to the `map:showPopup` provider, while an anchored bare node
+     * with no chrome and no close of its own stays here.
      */
     addOverlay(options: OverlayOptions): void {
         if (!options?.id) {

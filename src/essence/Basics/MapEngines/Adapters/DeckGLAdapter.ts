@@ -680,7 +680,9 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * overlay system, so we own the DOM node directly: append to the
      * container, project lat/lng -> pixel on every view change, reposition.
      *
-     * @deprecated Superseded by the `map:showPopup` provider.
+     * @deprecated See {@link IMapEngine.addOverlay}: card-shaped content
+     * belongs to the `map:showPopup` provider, while an anchored bare node
+     * with no chrome and no close of its own stays here.
      */
     addOverlay(options: OverlayOptions): void {
         if (!options?.id) {
