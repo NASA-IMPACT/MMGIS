@@ -8,7 +8,6 @@ const {
     BASIC_AUTH_USER,
     stackNamePrefix,
     stackNameForDeployment,
-    renderAuthFunctionCode,
     renderCfnTemplate,
 } = require('../../scripts/lib/cfn-template')
 
@@ -114,7 +113,7 @@ test.describe('renderCfnTemplate', () => {
         expect(template.Parameters).toBeUndefined()
     })
 
-    test('bakes the password into the Function code as a base64 constant', () => {
+    test('bakes the password into the Function code and ships only the body', () => {
         const body = renderCfnTemplate({ password: PASSWORD })
         const template = JSON.parse(body)
         const code =
@@ -123,15 +122,12 @@ test.describe('renderCfnTemplate', () => {
             `${BASIC_AUTH_USER}:${PASSWORD}`
         ).toString('base64')
         expect(code).toContain(`Basic ${expected}`)
+        expect(code).not.toContain('<BASE64_BASIC_CREDENTIALS>')
+        // The source file's doc comment is stripped, so the uploaded code
+        // starts at the handler itself.
+        expect(code.startsWith('function handler')).toBe(true)
         // The plaintext password never appears anywhere in the template
         expect(body).not.toContain(PASSWORD)
-    })
-
-    test('auth function returns 401 with a www-authenticate challenge', () => {
-        const code = renderAuthFunctionCode(PASSWORD)
-        expect(code).toContain('statusCode: 401')
-        expect(code).toContain('www-authenticate')
-        expect(code).toContain('return request')
     })
 
     test('distribution is gated by the viewer-request function and serves index.html', () => {

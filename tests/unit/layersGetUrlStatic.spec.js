@@ -35,7 +35,7 @@ test.describe('L_.getUrl static-build guard', () => {
         expect(url).toBe('Missions/M/cogs/a.tif')
     })
 
-    test('server, non-Docker: throughTileServer tile climbs (existing behavior)', () => {
+    test('server, non-Docker: throughTileServer tile climbs', () => {
         window.mmgisglobal = { SERVER: 'node', IS_DOCKER: 'false' }
         const url = L_.getUrl('tile', 'tiles/{z}/{x}/{y}.png', {
             throughTileServer: true,
@@ -43,7 +43,7 @@ test.describe('L_.getUrl static-build guard', () => {
         expect(url).toBe('../../Missions/M/tiles/{z}/{x}/{y}.png')
     })
 
-    test('server, Docker: throughTileServer tile roots to / (existing behavior)', () => {
+    test('server, Docker: throughTileServer tile roots to /', () => {
         window.mmgisglobal = { SERVER: 'node', IS_DOCKER: 'true' }
         const url = L_.getUrl('tile', 'tiles/{z}/{x}/{y}.png', {
             throughTileServer: true,
