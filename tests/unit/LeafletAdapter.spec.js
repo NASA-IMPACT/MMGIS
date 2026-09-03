@@ -67,6 +67,10 @@ function makeMockLeafletMap() {
     }
 }
 
+// setup() stubs the global document, so the real one is kept from before any
+// test runs — the specs that need a live DOM node build it from this.
+const domDocument = globalThis.document
+
 function setup() {
     const fakeContainer = { querySelector: () => null }
     const mockMap = makeMockLeafletMap()
@@ -884,30 +888,22 @@ test.describe('LeafletAdapter - on / off', () => {
 test.describe('LeafletAdapter - the click a drawing ended on', () => {
 
     /**
-     * Stands in for the map container terra-draw and the guard listen on.
-     * Removal matches on the capture flag the way the DOM does, so a listener
-     * taken off with the other one stays attached. `fire` dispatches an event
-     * object, so the guard sees the same one Leaflet will later hand over.
+     * The map container terra-draw and the guard listen on. A real element, in
+     * the page, because an event only reaches the watch's window listener from
+     * a node that is in it. Listeners are counted so a spec can say the guard
+     * let go of the container.
      */
-    function makeEventTarget() {
-        const listeners = []
-        return {
-            addEventListener: (type, fn, capture = false) => {
-                listeners.push({ type, fn, capture: !!capture })
-            },
-            removeEventListener: (type, fn, capture = false) => {
-                const i = listeners.findIndex(
-                    (l) => l.type === type && l.fn === fn && l.capture === !!capture
-                )
-                if (i !== -1) listeners.splice(i, 1)
-            },
-            fire: (event) => {
-                listeners
-                    .filter((l) => l.type === event.type)
-                    .forEach((l) => l.fn(event))
-            },
-            listenerCount: () => listeners.length,
-        }
+    function makeMapContainer() {
+        const element = domDocument.createElement('div')
+        domDocument.body.appendChild(element)
+        const add = element.addEventListener.bind(element)
+        const remove = element.removeEventListener.bind(element)
+        let count = 0
+        element.addEventListener = (...args) => { count++; add(...args) }
+        element.removeEventListener = (...args) => { count--; remove(...args) }
+        element.listenerCount = () => count
+        element.fire = (event) => element.dispatchEvent(event)
+        return element
     }
 
     /** A DOM event stamped as the browser would stamp one made at `timeStamp`. */
@@ -918,8 +914,8 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     }
 
     /** The map's double-click zoom handler, reporting the state it is left in. */
-    function makeDoubleClickZoom() {
-        let enabled = false
+    function makeDoubleClickZoom(initial = true) {
+        let enabled = initial
         return {
             enabled: () => enabled,
             enable: () => { enabled = true },
@@ -928,17 +924,21 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     }
 
     /**
-     * Stands in for terra-draw, which turns double-click zoom back on as it
-     * stops the mode — and throws rather than stopping a mode twice, leaving
-     * whatever it stopped the first time in place.
+     * Stands in for terra-draw, which disables double-click zoom as it starts a
+     * mode and leaves it disabled when the mode stops — and throws rather than
+     * stopping a mode twice, leaving whatever it stopped the first time in
+     * place.
      */
-    function makeTerraDraw(doubleClickZoom, { started = true } = {}) {
+    function makeTerraDraw(doubleClickZoom) {
+        let started = false
         return {
+            get enabled() { return started },
+            start: () => { started = true },
             clear: () => { },
+            setMode: () => { doubleClickZoom?.disable() },
             stop: () => {
                 if (!started) throw new Error('Mode must be started to be stopped')
                 started = false
-                doubleClickZoom.enable()
             },
         }
     }
@@ -949,24 +949,26 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
      * that very event as the session ends — which is what tells the guard a
      * click of the drawing's is still to come, and the stamp it will carry.
      */
-    function stopOnPointer(adapter, at) {
-        adapter._drawPointers.start()
+    function stopOnPointer(adapter, container, at) {
         const stop = () => adapter._stopDrawing()
-        window.addEventListener('pointerup', stop)
-        window.dispatchEvent(stamped('pointerup', at))
-        window.removeEventListener('pointerup', stop)
+        container.addEventListener('pointerup', stop)
+        container.fire(stamped('pointerup', at))
+        container.removeEventListener('pointerup', stop)
     }
 
     /**
-     * An adapter mid-rectangle, with the map's click subscribers captured so a
-     * spec can deliver the click itself, carrying as `originalEvent` the
-     * native click it came from — either an event object the container has
-     * seen, or a bare stamp for one it has not.
+     * An adapter mid-drawing, built the way a plugin builds one — through
+     * `enableDrawing`, so the pointer watch and the guard are wired to the
+     * container the real ones would be. The map's click subscribers are
+     * captured so a spec can deliver the click itself, carrying as
+     * `originalEvent` the native click it came from — either an event object
+     * the container has seen, or a bare stamp for one it has not.
      */
-    function setupDrawing() {
+    function setupDrawing({ shape = 'rectangle', doubleClickZoom } = {}) {
         const { mockMap } = setupWithLayerMocks()
-        const container = makeEventTarget()
+        const container = makeMapContainer()
         mockMap.getContainer = () => container
+        if (doubleClickZoom) mockMap.doubleClickZoom = doubleClickZoom
         const adapter = new LeafletAdapter()
         adapter.init({ containerId: 'map' })
 
@@ -983,7 +985,8 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         const picks = []
         adapter.on('click', (e) => clicks.push(e.latlng))
         adapter.onFeatureClick((result) => picks.push(result))
-        adapter._drawingShape = 'rectangle'
+        adapter._terraDraw = makeTerraDraw(doubleClickZoom)
+        adapter.enableDrawing(shape)
 
         return {
             adapter,
@@ -1017,18 +1020,6 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         expect(picks).toEqual([])
     })
 
-    // The session check must not reach past clicks: the drawing's own events
-    // are emitted through this same wrapper while the session is live.
-    test('a session does not hold back the drawing events themselves', () => {
-        const { adapter } = setupDrawing()
-        const vertices = []
-        adapter.on('drawvertex', (e) => vertices.push(e.shape))
-
-        adapter.emit('drawvertex', { shape: 'rectangle' })
-
-        expect(vertices).toEqual(['rectangle'])
-    })
-
     // terra-draw commits a shape on `pointerup`, and the native `click` that
     // finished it reaches Leaflet right after — by which time the session is
     // over. Reporting it hands every consumer a map click the user never made,
@@ -1037,7 +1028,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     test('is not reported as a map click', () => {
         const { adapter, container, clicks, picks, click } = setupDrawing()
 
-        stopOnPointer(adapter, 1000)
+        stopOnPointer(adapter, container, 1000)
         const native = stamped('click', 1000)
         container.fire(native)
         click(native)
@@ -1055,7 +1046,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         try {
             const { adapter, container, clicks, click } = setupDrawing()
 
-            stopOnPointer(adapter, 1000)
+            stopOnPointer(adapter, container, 1000)
             vi.advanceTimersByTime(5000)
             const native = stamped('click', 1000)
             container.fire(native)
@@ -1073,9 +1064,9 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     test('is not reported when only its stamp says it is the drawing\'s', () => {
         vi.useFakeTimers()
         try {
-            const { adapter, clicks, click } = setupDrawing()
+            const { adapter, container, clicks, click } = setupDrawing()
 
-            stopOnPointer(adapter, 1000)
+            stopOnPointer(adapter, container, 1000)
             vi.advanceTimersByTime(5000)
             click(1000)
 
@@ -1085,17 +1076,18 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         }
     })
 
-    // Finishing on a double-click is trained behaviour, and terra-draw commits
-    // on the first of the two clicks. Leaflet has no double-click
+    // Finishing on a double-click is trained behaviour, and one of the two taps
+    // is not the one the session ends on: `point` commits on the first, the
+    // click-per-vertex modes on the last. Leaflet has no double-click
     // disambiguation — `_fireDOMEvent` fires a map `click` for every native
-    // click — so the second one arrives as an ordinary click, from a gesture
+    // click — so that leftover tap arrives as an ordinary click, from a gesture
     // the user made to finish the drawing rather than to click the map.
     test('swallows both clicks of a double-click finish', () => {
         const { adapter, container, clicks, picks, click } = setupDrawing()
 
         // Tap 1: terra-draw commits on its pointerup, and the native click
         // that follows is the one the guard was first written for.
-        stopOnPointer(adapter, 1000)
+        stopOnPointer(adapter, container, 1000)
         const first = stamped('click', 1000)
         container.fire(first)
         click(first)
@@ -1117,7 +1109,7 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     test('reports the click of the user\'s next gesture', () => {
         const { adapter, container, clicks, picks, click } = setupDrawing()
 
-        stopOnPointer(adapter, 1000)
+        stopOnPointer(adapter, container, 1000)
         const first = stamped('click', 1000)
         container.fire(first)
         click(first)
@@ -1133,9 +1125,9 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
 
     // A click that came from no DOM event was no gesture of the drawing's.
     test('reports a click with no source event', () => {
-        const { adapter, mockMap, clicks } = setupDrawing()
+        const { adapter, container, mockMap, clicks } = setupDrawing()
 
-        stopOnPointer(adapter, 1000)
+        stopOnPointer(adapter, container, 1000)
         mockMap.fire('click', {
             latlng: { lat: 40, lng: -120 },
             containerPoint: { x: 12, y: 34 },
@@ -1144,21 +1136,49 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         expect(clicks).toEqual([{ lat: 40, lng: -120 }])
     })
 
-    // The guard gives double-click zoom back, it does not hand it out: a map
-    // that had it off — the session having ended with terra-draw already
-    // stopped, so nothing turned it on — must still have it off once the
-    // window closes. Enabling regardless would give every deployment that
-    // configures double-click zoom off the behaviour it turned down, from the
-    // user's first drawing to the end of the session.
-    test('leaves double-click zoom off when it was off as the session ended', () => {
+    // terra-draw leaves double-click zoom disabled when the mode stops, so
+    // whoever ended the session is the one that has to give it back — and a
+    // double-click finish must not zoom the map on its way out, so the guard
+    // holds it until the gesture can no longer become one.
+    test('gives double-click zoom back once the finish hold passes', () => {
         vi.useFakeTimers()
         try {
-            const { adapter, mockMap } = setupDrawing()
             const zoom = makeDoubleClickZoom()
-            mockMap.doubleClickZoom = zoom
-            adapter._terraDraw = makeTerraDraw(zoom, { started: false })
+            const { adapter, container } = setupDrawing({ doubleClickZoom: zoom })
+            expect(zoom.enabled()).toBe(false)
 
-            stopOnPointer(adapter, 1000)
+            stopOnPointer(adapter, container, 1000)
+            expect(zoom.enabled()).toBe(false)
+
+            vi.advanceTimersByTime(600)
+            expect(zoom.enabled()).toBe(true)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // A session that leaves no click behind leaves nothing to zoom either, so
+    // there is nothing to wait for.
+    test('gives double-click zoom back at once when no click is owed', () => {
+        const zoom = makeDoubleClickZoom()
+        const { adapter } = setupDrawing({ doubleClickZoom: zoom })
+
+        adapter.disableDrawing()
+
+        expect(zoom.enabled()).toBe(true)
+    })
+
+    // The guard gives double-click zoom back, it does not hand it out: a map
+    // configured without it must still be without it once the hold passes.
+    // Enabling regardless would give every deployment that turns double-click
+    // zoom off the behaviour it turned down, from the user's first drawing on.
+    test('leaves double-click zoom off when the map had it off', () => {
+        vi.useFakeTimers()
+        try {
+            const zoom = makeDoubleClickZoom(false)
+            const { adapter, container } = setupDrawing({ doubleClickZoom: zoom })
+
+            stopOnPointer(adapter, container, 1000)
             vi.advanceTimersByTime(600)
 
             expect(zoom.enabled()).toBe(false)
@@ -1167,27 +1187,44 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         }
     })
 
-    // Two sessions can end inside one window — a drawing cancelled, another
-    // started and cancelled straight after — and the second arming reads the
-    // handler again to know what to give back. By then the guard is the one
-    // holding double-click zoom down, so what it reads must be the state from
-    // before that: taking its own disable for the map's setting would leave
-    // double-click zoom off for the rest of the session.
+    // A plugin can start the next drawing while the last one's hold is still
+    // running — switching shape does exactly that. Handing double-click zoom
+    // back in the middle of a live session would let a double-clicked vertex
+    // zoom the map.
+    test('holds double-click zoom through a session started inside the hold', () => {
+        vi.useFakeTimers()
+        try {
+            const zoom = makeDoubleClickZoom()
+            const { adapter, container } = setupDrawing({ doubleClickZoom: zoom })
+
+            stopOnPointer(adapter, container, 1000)
+            adapter.enableDrawing('polygon')
+            vi.advanceTimersByTime(600)
+
+            expect(adapter.isDrawing()).toBe(true)
+            expect(zoom.enabled()).toBe(false)
+        } finally {
+            vi.useRealTimers()
+        }
+    })
+
+    // What the second session reads off the handler is the guard's own disable,
+    // so the state it gives back has to be the one it took in the first place:
+    // taking its own disable for the map's setting would leave double-click
+    // zoom off for the rest of the page's life.
     test('gives back the double-click zoom state from before it held it down', () => {
         vi.useFakeTimers()
         try {
-            const { adapter, mockMap } = setupDrawing()
             const zoom = makeDoubleClickZoom()
-            mockMap.doubleClickZoom = zoom
-            adapter._terraDraw = makeTerraDraw(zoom)
+            const { adapter, container } = setupDrawing({ doubleClickZoom: zoom })
 
-            stopOnPointer(adapter, 1000)
+            stopOnPointer(adapter, container, 1000)
             expect(zoom.enabled()).toBe(false)
 
-            // A second session, ending while the first hold is still on.
+            // A second session, started and ended while the first hold is on.
             vi.advanceTimersByTime(100)
-            adapter._drawingShape = 'polygon'
-            stopOnPointer(adapter, 1100)
+            adapter.enableDrawing('polygon')
+            stopOnPointer(adapter, container, 1100)
 
             vi.advanceTimersByTime(600)
             expect(zoom.enabled()).toBe(true)
@@ -1204,12 +1241,10 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
     test('lets go of the container and double-click zoom when the adapter is destroyed', () => {
         vi.useFakeTimers()
         try {
-            const { adapter, mockMap, container } = setupDrawing()
             const zoom = makeDoubleClickZoom()
-            mockMap.doubleClickZoom = zoom
-            adapter._terraDraw = makeTerraDraw(zoom)
+            const { adapter, container } = setupDrawing({ doubleClickZoom: zoom })
 
-            stopOnPointer(adapter, 1000)
+            stopOnPointer(adapter, container, 1000)
             expect(container.listenerCount()).toBe(3)
             expect(zoom.enabled()).toBe(false)
 
@@ -1222,15 +1257,19 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         }
     })
 
-    // A plugin ending the drawing from its own panel — a Finish button, a
-    // mode switch, the Escape it handles itself — never touched the map, so
-    // the click the user makes next is theirs from the first one. The same
-    // arm-with-no-recent-pointer path covers a session ended on Enter.
-    test('a session a plugin ended does not swallow the click that follows', () => {
+    // A plugin ending the drawing from its own panel — a Finish button, a tab,
+    // a shape picker — ends it on a pointer that never touched the map, and no
+    // click of the drawing's is on its way. The click the user makes next is
+    // theirs from the first one.
+    test('a session a plugin ended from its panel does not swallow the next click', () => {
         const { adapter, clicks, picks, click } = setupDrawing()
+        const button = domDocument.createElement('button')
+        domDocument.body.appendChild(button)
 
+        button.dispatchEvent(stamped('pointerdown', 1000))
+        button.dispatchEvent(stamped('pointerup', 1000))
         adapter.disableDrawing()
-        click(5000)
+        click(stamped('click', 1100))
 
         expect(clicks).toEqual([{ lat: 40, lng: -120 }])
         expect(picks).toHaveLength(1)
