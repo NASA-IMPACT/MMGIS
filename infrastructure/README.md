@@ -298,6 +298,12 @@ it from the real login password (the full note lives in
   the request and declares the path. After an edge-function change, an
   existing dashboard picks the change up on its next Update — the Publish
   button always creates a new dashboard.
+- **A wedged dashboard stack is replaced, not repaired.** When a publish or
+  update fails with `Stack '<name>' is in <STATUS> and cannot be used`,
+  CloudFormation will not move that stack on from the status the error names —
+  delete the deployment and publish it again. What comes back is a new stack
+  with a new CloudFront URL, so a customer serving that dashboard from their
+  own domain has to re-point their origin at it.
 
 ## Placeholders in the recipe JSON
 

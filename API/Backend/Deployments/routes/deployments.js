@@ -8,6 +8,7 @@ const router = express.Router();
 const logger = require("../../../logger");
 const Deployments = require("../models/deployment");
 const STATUS = Deployments.STATUS;
+const { updateRefusalFor } = require("../updateRefusal");
 
 const triggerWebhooks = require("../../Webhooks/processes/triggerwebhooks");
 
@@ -111,21 +112,6 @@ router.post("/publish", async function (req, res) {
   }
 });
 
-// Row statuses that claim a publish task or a teardown is running. The row
-// alone doesn't settle it: a task killed before its error handler runs leaves
-// the row sitting in one of these forever, and nothing else ever moves it — so
-// an update is refused only when the live stack backs the row up, by reporting
-// an operation still in flight or by not being there at all — a publish whose
-// CreateStack has not gone out yet leaves nothing for an update to converge.
-// A row resting on a settled stack passes, whatever it says. (A `deleted` row
-// is also off limits, but it has no stack left to converge and so earns its
-// own answer.)
-const UPDATE_IN_FLIGHT_STATUSES = [
-  STATUS.PROVISIONING,
-  STATUS.UPDATING,
-  STATUS.DELETING,
-];
-
 // POST /api/deployments/:id/update
 // Re-bakes against the mission's current configuration, converges the
 // CloudFormation stack (re-baking the current dashboards password into the
@@ -141,21 +127,9 @@ router.post("/:id/update", async function (req, res) {
     // Read the live stack alongside the row (this also flips a `deleting` row
     // whose stack is already gone to `deleted`).
     const row = await withLiveStatus(deployment);
-    if (row.status === STATUS.DELETED) {
-      res.status(409).send({
-        status: "failure",
-        message: "Deployment was deleted; publish it again",
-      });
-      return;
-    }
-    if (
-      UPDATE_IN_FLIGHT_STATUSES.indexOf(row.status) !== -1 &&
-      (row.stack_status == null || row.stack_status.endsWith("_IN_PROGRESS"))
-    ) {
-      res.status(409).send({
-        status: "failure",
-        message: `Deployment is ${row.status}; wait for it to finish`,
-      });
+    const refusal = updateRefusalFor(row);
+    if (refusal != null) {
+      res.status(409).send({ status: "failure", message: refusal.message });
       return;
     }
 
