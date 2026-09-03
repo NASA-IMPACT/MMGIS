@@ -1389,7 +1389,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // has stopped, because stopping is what turns double-click zoom back
         // on for the guard to hold back again.
         this._drawEndClick.arm(
-            this._drawPointers.pendingClickFrom,
+            this._drawPointers.pendingClick,
             this._drawEventElement(),
             (this._basemap as any)?.doubleClickZoom
         )
@@ -2063,10 +2063,15 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     /**
      * Report a click deck picked, unless the drawing session owns it: the ones
      * terra-draw is taking as vertices, and the ones deck was still holding as
-     * the session ended (see {@link DrawEndClickGuard}).
+     * the session ended (see {@link DrawEndClickGuard}). deck passes the input
+     * event the click was recognised from alongside the pick; its `srcEvent`
+     * is the DOM event the guard matches the click against.
      */
-    private _onPointerClick = (info: PickingInfo): void => {
-        if (this._drawingShape || this._drawEndClick.pending) return
+    private _onPointerClick = (
+        info: PickingInfo,
+        event?: { srcEvent?: unknown }
+    ): void => {
+        if (this._drawingShape || this._drawEndClick.owns(event?.srcEvent)) return
         this._featureClickHandler?.(pickInfoToResult(info))
         this._emitClick(info)
     }

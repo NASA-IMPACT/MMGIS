@@ -933,7 +933,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
      * DeckGLAdapter's own click path does.
      */
     private _onMapClick = (e: any): void => {
-        if (this._drawingShape || this._drawEndClick.pending) return
+        if (this._drawingShape || this._drawEndClick.owns(e?.originalEvent)) return
         this._featureClickListener?.(e)
         this._clickListeners.forEach((listener) => listener(e))
     }
@@ -1200,7 +1200,7 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
         // what turns double-click zoom back on for the guard to hold back
         // again.
         this._drawEndClick.arm(
-            this._drawPointers.pendingClickFrom,
+            this._drawPointers.pendingClick,
             this._drawEventElement(),
             (this._map as any)?.doubleClickZoom
         )
