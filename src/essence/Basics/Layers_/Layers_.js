@@ -8,7 +8,11 @@ import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { isRasterTileLayerType, MAP_ENGINE } from '../MapEngines/types/engine'
+import {
+    isRasterTileLayerType,
+    MAP_ENGINE,
+    toCanonicalLayerType,
+} from '../MapEngines/types/engine'
 import {
     getActiveTileLevel,
     getTileLevelUrl,
@@ -26,6 +30,14 @@ import $ from 'jquery'
 
 // Provider cleanup functions for re-initialization
 let _providerCleanups = []
+
+/**
+ * Canonical layer types whose deck.gl builders read the legend as a style
+ * specification. Others carry a legend purely for display. Membership is
+ * tested through toCanonicalLayerType, which folds each deck.gl class name
+ * onto its MMGIS type.
+ */
+const LEGEND_STYLED = new Set(['vector', 'vectortile'])
 
 /**
  * What a layer's COG colormap supports: whether it has one to draw a legend
@@ -694,17 +706,6 @@ const L_ = {
         }
     },
     /**
-     * Layer types whose deck.gl builders read the legend as a style
-     * specification. Others carry a legend purely for display.
-     */
-    _legendStyledTypes: [
-        'vector',
-        'query',
-        'vectortile',
-        'GeoJsonLayer',
-        'MVTLayer',
-    ],
-    /**
      * Rebuild a layer that was built before its legend arrived.
      *
      * A legend given as a `legend:` CSV path is fetched asynchronously, so it
@@ -728,7 +729,7 @@ const L_ = {
 
         const layerObj = L_.layers.data[name]
         if (layerObj == null) return
-        if (!L_._legendStyledTypes.includes(layerObj.type)) return
+        if (!LEGEND_STYLED.has(toCanonicalLayerType(layerObj.type))) return
 
         // A plain display legend compiles to nothing, and most legends are
         // exactly that. Rebuilding every layer that has one would be a lot of

@@ -65,7 +65,9 @@ describe('L_.applyLateLegendStyling', () => {
         expect(refreshLayer.mock.calls[0][0].name).toBe('co2')
     })
 
-    test.each([['vector'], ['query'], ['vectortile'], ['GeoJsonLayer'], ['MVTLayer']])(
+    // Both spellings of each type: a Leaflet mission configures the MMGIS
+    // type, a deck.gl one the deck.gl class name.
+    test.each([['vector'], ['vectortile'], ['GeoJsonLayer'], ['MVTLayer']])(
         'rebuilds a %s layer',
         (type) => {
             setup({ type })
@@ -88,11 +90,16 @@ describe('L_.applyLateLegendStyling', () => {
         expect(refreshLayer).not.toHaveBeenCalled()
     })
 
-    test('does not rebuild a layer type that ignores the legend', () => {
-        setup({ type: 'tile' })
-        L_.applyLateLegendStyling('co2')
-        expect(refreshLayer).not.toHaveBeenCalled()
-    })
+    // 'query' is a vector layer on Leaflet but has no deck.gl builder at all,
+    // so under this engine there is never a built layer to rebuild.
+    test.each([['tile'], ['query']])(
+        'does not rebuild a %s layer, which ignores the legend',
+        (type) => {
+            setup({ type })
+            L_.applyLateLegendStyling('co2')
+            expect(refreshLayer).not.toHaveBeenCalled()
+        }
+    )
 
     test('does not rebuild a layer that was never built', () => {
         // It reads the legend itself whenever it is built.
