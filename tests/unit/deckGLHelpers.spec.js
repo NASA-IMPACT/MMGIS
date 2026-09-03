@@ -370,7 +370,9 @@ test.describe('DeckGLHelpers', () => {
             expect(layer.props.binary).toBe(true)
         })
 
-        test('lets a mission override the tile decoding format', () => {
+        test('lets a buildDeckLayer caller override the tile decoding format', () => {
+            // An adapter-internal channel: no makeLayer call site forwards
+            // a layer's own nativeOptions, so a mission cannot reach it.
             const layer = buildDeckLayer('binary-override', {
                 type: 'vectortile',
                 url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
