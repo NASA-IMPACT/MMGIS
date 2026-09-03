@@ -374,10 +374,11 @@ export interface IMapEngine<
      * Circle: first click sets center, second click sets radius. The
      *   completed feature is a 32-segment Polygon approximation.
      *
-     * Calling `enableDrawing` while a session is already active first
-     * disables the prior session (emitting `drawcancel`), then starts a new
-     * one — there is never more than one drawing session at a time on an
-     * engine.
+     * Calling `enableDrawing` while a session is already active ends the
+     * prior session and starts a new one — there is never more than one
+     * drawing session at a time on an engine. The swap emits no `drawcancel`:
+     * `drawstart` for the new shape is the whole of it, so a consumer
+     * switching shape hears only the shape it asked for.
      *
      * Engines emit four lifecycle events through the existing `on(name, …)`:
      *   - `drawstart`    payload: {@link DrawStartEvent}

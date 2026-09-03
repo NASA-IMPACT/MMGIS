@@ -967,11 +967,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             } else {
                 this._map.off(eventName)
             }
-            this._eventHandlers.forEach((wrappedHandler, key) => {
+            for (const key of this._eventHandlers.keys()) {
                 if (key.startsWith(eventName + '_')) {
                     this._eventHandlers.delete(key)
                 }
-            })
+            }
         } else {
             const key = `${eventName}_${handler.toString()}`
             const entry = this._eventHandlers.get(key)
@@ -1165,8 +1165,10 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     }
 
     enableDrawing(shape: DrawShape): void {
+        // Swapping the engine's own mode is not the user backing out of a
+        // drawing, so the restart ends the previous session without emitting.
         if (this._drawingShape) {
-            this.disableDrawing()
+            this._stopDrawing()
         }
 
         const td = this._ensureTerraDraw()
@@ -1179,8 +1181,12 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             td.clear()
             td.setMode(shape)
         } catch (err) {
-            // terra-draw throws on a shape it has no mode for, and a session
-            // that never started has no end to give double-click zoom back at.
+            // terra-draw throws on a shape it has no mode for, from a start
+            // that has already put its listeners back on the map routed to
+            // whichever mode it was last in. Stopping unregisters them, and a
+            // session that never began has no end to give double-click zoom
+            // back at.
+            try { td.stop() } catch { /* nothing started */ }
             this._drawEndClick.dispose()
             throw err
         }
@@ -1201,10 +1207,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
 
     /**
      * Tear down the terra-draw session and clear in-progress geometry
-     * without emitting any lifecycle event. Used by both the user-facing
-     * cancel path ({@link disableDrawing}) and the internal finish path
-     * ({@link enableDrawing}'s `onFinish`) so the latter can emit
-     * `drawcomplete` instead of `drawcancel`.
+     * without emitting any lifecycle event. Only the user-facing cancel path
+     * ({@link disableDrawing}) adds the `drawcancel`; the engine's own ends —
+     * the finish in {@link _ensureTerraDraw} that emits `drawcomplete`
+     * instead, and {@link enableDrawing} restarting into another shape — end
+     * the session with no event of their own.
      */
     private _stopDrawing(): DrawShape | null {
         if (!this._drawingShape) return null

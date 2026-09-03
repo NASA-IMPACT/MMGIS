@@ -139,6 +139,16 @@ function stopOnPointer(adapter, at) {
     return up
 }
 
+/** The basemap's double-click zoom handler, reporting the state it is left in. */
+function makeDoubleClickZoom(initial = true) {
+    let enabled = initial
+    return {
+        isEnabled: () => enabled,
+        enable: () => { enabled = true },
+        disable: () => { enabled = false },
+    }
+}
+
 /** The shapes the adapter registers a terra-draw mode for. */
 const DRAW_SHAPES = ['point', 'linestring', 'polygon', 'rectangle', 'circle']
 
@@ -1066,20 +1076,15 @@ test.describe('DeckGLAdapter', () => {
         test('double-click zoom comes back once the finish hold passes', () => {
             vi.useFakeTimers()
             try {
-                let enabled = true
-                const doubleClickZoom = {
-                    isEnabled: () => enabled,
-                    enable: () => { enabled = true },
-                    disable: () => { enabled = false },
-                }
-                const { adapter } = makeSessionAdapter('rectangle', { doubleClickZoom })
-                expect(enabled).toBe(false)
+                const zoom = makeDoubleClickZoom()
+                const { adapter } = makeSessionAdapter('rectangle', { doubleClickZoom: zoom })
+                expect(zoom.isEnabled()).toBe(false)
 
                 stopOnPointer(adapter, 1000)
-                expect(enabled).toBe(false)
+                expect(zoom.isEnabled()).toBe(false)
 
                 vi.advanceTimersByTime(600)
-                expect(enabled).toBe(true)
+                expect(zoom.isEnabled()).toBe(true)
             } finally {
                 vi.useRealTimers()
             }
@@ -1088,19 +1093,35 @@ test.describe('DeckGLAdapter', () => {
         // `map:enableDrawing` takes its shape straight off the bus, so a plugin
         // can ask for one no mode was registered for. terra-draw throws on the
         // lookup, with double-click zoom already taken for a session that will
-        // never end to give it back.
-        test('double-click zoom comes back when the mode fails to start', () => {
-            let enabled = true
-            const doubleClickZoom = {
-                isEnabled: () => enabled,
-                enable: () => { enabled = true },
-                disable: () => { enabled = false },
-            }
-            const { adapter } = makeSessionAdapter('rectangle', { doubleClickZoom })
+        // never end to give it back — and with its listeners already back on
+        // the canvas, routed to whichever mode the failed one was replacing.
+        // Left running, that mode draws under the cursor of a map whose
+        // adapter reports no drawing at all.
+        test('leaves nothing running when the mode fails to start', () => {
+            const zoom = makeDoubleClickZoom()
+            const { adapter } = makeSessionAdapter('rectangle', { doubleClickZoom: zoom })
 
             expect(() => adapter.enableDrawing('freehand')).toThrow()
 
-            expect(enabled).toBe(true)
+            expect(zoom.isEnabled()).toBe(true)
+            expect(adapter._terraDraw.enabled).toBe(false)
+            expect(adapter.isDrawing()).toBe(false)
+        })
+
+        // Switching shape restarts the session on the engine's own account. A
+        // `drawcancel` there reads as the user backing out, and a plugin
+        // acting on one — dropping its selection, closing its panel — undoes
+        // the drawing the user is still in the middle of setting up.
+        test('switching shape starts the new session without cancelling', () => {
+            const { adapter } = makeSessionAdapter('polygon')
+            const events = []
+            adapter.on('drawstart', (e) => events.push(['drawstart', e.shape]))
+            adapter.on('drawcancel', (e) => events.push(['drawcancel', e.shape]))
+
+            adapter.enableDrawing('rectangle')
+
+            expect(events).toEqual([['drawstart', 'rectangle']])
+            expect(adapter.isDrawing()).toBe(true)
         })
 
         // A plugin ending the drawing from its own panel — a Finish button, a

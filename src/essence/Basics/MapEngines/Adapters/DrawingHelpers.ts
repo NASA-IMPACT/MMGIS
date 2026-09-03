@@ -429,8 +429,7 @@ export class DrawEndClickGuard {
      * @param pointer The pointer event the clicks belong to, as
      * {@link DrawPointerWatch.pendingClick} found it, or null when the session
      * leaves no click behind — then whatever the user does next is theirs,
-     * double-click zoom goes back at once, and the previous cover, if any,
-     * stands; it is event time, so the user's next click is stamped past it.
+     * double-click zoom goes back at once, and no cover is left standing.
      * @param element The element the engine's pointer events reach. Without one
      * the guard stays out of the way: an engine with no map cannot be
      * delivering clicks.

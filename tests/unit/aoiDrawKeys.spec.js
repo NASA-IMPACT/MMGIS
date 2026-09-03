@@ -44,9 +44,13 @@ beforeEach(() => {
     window.mmgisAPI = {
         request: (name) => {
             requests.push(name)
-            return Promise.resolve(
-                name === 'map:finishDrawing' ? finishSucceeds : true
-            )
+            if (name === 'map:finishDrawing') {
+                return Promise.resolve(finishSucceeds)
+            }
+            // There is no camera behind these specs, and "no view" is an
+            // answer the popup anchoring understands — `true` is not.
+            if (name === 'map:getBounds') return Promise.resolve(null)
+            return Promise.resolve(true)
         },
         forPlugin: () => ({
             emit: () => { },
@@ -63,6 +67,10 @@ beforeEach(() => {
 afterEach(() => {
     AOITool._removeDrawKeys()
     AOITool._state.isDrawing = false
+    // The module is shared across these specs, so a selection one of them
+    // completed must not be one the next one's session suspends.
+    AOITool._state.currentAOI = null
+    AOITool._suspendedAOI = null
     AOITool._api = null
     document.body.innerHTML = ''
     delete AOITool.api
