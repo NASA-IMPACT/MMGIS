@@ -1108,6 +1108,22 @@ test.describe('DeckGLAdapter', () => {
             expect(adapter.isDrawing()).toBe(false)
         })
 
+        // The restart ends the running session before it asks for the new
+        // mode, so a shape the engine has no mode for destroys the drawing the
+        // plugin is mid-way through. With no `drawstart` behind it, the cancel
+        // is the only word that plugin gets that the session it is showing
+        // hints for is gone.
+        test('cancels the session a failed shape switch ended', () => {
+            const { adapter } = makeSessionAdapter('polygon')
+            const cancels = []
+            adapter.on('drawcancel', (e) => cancels.push(e.shape))
+
+            expect(() => adapter.enableDrawing('freehand')).toThrow()
+
+            expect(cancels).toEqual(['polygon'])
+            expect(adapter.isDrawing()).toBe(false)
+        })
+
         // Switching shape restarts the session on the engine's own account. A
         // `drawcancel` there reads as the user backing out, and a plugin
         // acting on one — dropping its selection, closing its panel — undoes

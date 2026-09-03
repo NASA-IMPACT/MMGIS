@@ -82,9 +82,10 @@ export interface DrawCompleteEvent {
 }
 
 /**
- * Payload for the `drawcancel` engine event. Fires when the drawing's
- * initiator called `disableDrawing()` mid-draw — including the Escape it
- * handles itself.
+ * Payload for the `drawcancel` engine event. Fires when a live session ends
+ * without a completed feature: the initiator's `disableDrawing()` (the Escape
+ * the engine handles itself included), a basemap style swap, the engine being
+ * destroyed, or a shape switch whose new mode failed to start.
  */
 export interface DrawCancelEvent {
     shape: DrawShape
