@@ -55,6 +55,7 @@ import {
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import { stylize } from './Ancillary/Stylize'
 import { mmgisAPI_ } from './mmgisAPI/mmgisAPI'
+import { isStaticBuild } from '../pre/capabilities'
 
 import { validateModernConfig, sanitizeText } from './Validators/DashboardConfigValidator'
 
@@ -153,6 +154,10 @@ class ModernInterface {
      * - Mission is being swapped
      * - Force landing or preview mode is active
      *
+     * A static build is exempt: it serves the one mission baked into it, so
+     * its URL never names a mission and the URL LandingPage stripped of the
+     * landing flags is the last word.
+     *
      * @param {MissionConfig} config - Mission configuration
      * @param {boolean} swapping - Whether this is a mission swap
      * @private
@@ -160,6 +165,8 @@ class ModernInterface {
      */
     _updateMissionUrl(config, swapping) {
         const noQuery = window.location.search.replace(/^\?/, '') === ''
+
+        if (isStaticBuild()) return
 
         if (noQuery || swapping || hasForceLanding() || hasPreview()) {
             // Use DB mission name for deeplinks (config._dbMissionName if available)

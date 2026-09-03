@@ -346,11 +346,15 @@ var essence = {
         //Make sure url matches mission
         var urlSplit = window.location.href.split('?')
 
+        // A static build serves the one mission baked into it, so its URL
+        // never names a mission; LandingPage clears the landing flags there
+        // and that stripped URL is the last word.
         if (
-            urlSplit.length == 1 ||
-            swapping ||
-            hasForceLanding() ||
-            hasPreview()
+            !isStaticBuild() &&
+            (urlSplit.length == 1 ||
+                swapping ||
+                hasForceLanding() ||
+                hasPreview())
         ) {
             //then no parameters or old ones
             // Use DB mission name for deeplinks (config._dbMissionName if available)

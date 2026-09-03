@@ -733,6 +733,19 @@ setups.getBackendSetups(function (setups) {
       // passing to it an array of LDAP group names (which were loaded
       // from the permissions.json file at the top of the file).
 
+      // The page's asset URLs are document-relative, so they only resolve
+      // under the prefix when the address bar carries the trailing slash.
+      // Express matches both forms here, so the slashed form is handed on to
+      // the renderer below instead of redirecting to itself.
+      if (ROOT_PATH) {
+        app.get(ROOT_PATH, (req, res, next) => {
+          if (req.path !== ROOT_PATH) return next();
+          const q = req.originalUrl.indexOf("?");
+          const query = q === -1 ? "" : req.originalUrl.slice(q);
+          res.redirect(301, `${ROOT_PATH}/${query}`);
+        });
+      }
+
       app.get(
         `${ROOT_PATH}/`,
         ensureUser(),
