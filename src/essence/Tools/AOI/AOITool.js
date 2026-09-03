@@ -1,7 +1,7 @@
 /**
  * AOI plugin — MMGIS wrapper.
  *
- * Pluggable contract (see specs/012-aoi-plugin/plan.md and PLUGIN-DEVELOPMENT-GUIDE.md):
+ * Pluggable contract:
  *
  *   pluginId: 'aoi'
  *
@@ -11,7 +11,7 @@
  *     - drawingCleared     {}
  *
  *   Provides (auto-prefixed plugin:aoi:):
- *     - getCurrentSelection -> { feature, source } | null
+ *     - getCurrentSelection -> { feature, source, label } | null
  *
  *   Listens to:
  *     - map:drawstart / drawvertex /
@@ -46,7 +46,7 @@ import {
     featureCentroid,
     featureBounds,
     selectionFitBounds,
-    selectionTooltipAnchor,
+    selectionPopupAnchor,
 } from './aoiHelpers'
 import { loadBoundaries } from './aoiBoundaryLoader'
 
@@ -182,10 +182,11 @@ const AOITool = {
                 this._setState({ searchLoading: false, searchDisabled: true })
             })
 
-        const api = window.mmgisAPI
-        if (api?.on) {
+        // Subscriptions are on the global bus; only requests need the handle.
+        const bus = window.mmgisAPI
+        if (bus?.on) {
             const subscribe = (event, handler) => {
-                const off = api.on(event, handler)
+                const off = bus.on(event, handler)
                 this._cleanups.push(typeof off === 'function' ? off : () => { })
             }
             subscribe('map:drawstart',     () => this._onDrawStart())
@@ -236,7 +237,7 @@ const AOITool = {
 
         // Fire-and-forget: cancel any active drawing session via the bus.
         this._removeDrawKeys()
-        window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
+        this._api?.request('map:disableDrawing').catch(() => { })
 
         this._removeSelectionLayer()
         this._hideInspectBoundaries()
@@ -370,7 +371,7 @@ const AOITool = {
         if (prev === 'draw') {
             // Cancel any in-flight drawing session when leaving Draw mode.
             // The bus handler is a no-op if no session is active.
-            window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
+            this._api?.request('map:disableDrawing').catch(() => { })
         }
 
         this._setState({ mode: nextMode })
@@ -405,11 +406,21 @@ const AOITool = {
 
     _onDrawShapeChange(shape) {
         this._setState({ drawShape: shape, drawVerticesCount: 0 })
-        window.mmgisAPI?.request?.('map:enableDrawing', { shape })
+        this._api?.request('map:enableDrawing', { shape })
             .catch((err) => console.warn('[AOI] enableDrawing failed', err))
     },
 
+    /**
+     * A new selection is being made, so the previous one goes now: its card
+     * would otherwise sit over the map for the whole session, taking the
+     * Escape and Enter the session needs and offering to analyze an area the
+     * user is in the middle of replacing. The selection goes with the card —
+     * it has no other controls, so leaving it behind would strand it.
+     */
     _onDrawStart() {
+        this._cancelPendingPopup()
+        this._hidePopup()
+        this._clearSelection()
         this._installDrawKeys()
         this._setState({ isDrawing: true, drawVerticesCount: 0 })
     },
@@ -436,9 +447,9 @@ const AOITool = {
                 target?.closest?.(KEY_OWNING_ROLE_SELECTOR)
             ) return
             if (evt.key === 'Escape') {
-                window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
+                this._api?.request('map:disableDrawing').catch(() => { })
             } else if (evt.key === 'Enter') {
-                window.mmgisAPI?.request?.('map:finishDrawing').catch(() => { })
+                this._api?.request('map:finishDrawing').catch(() => { })
             }
         }
         document.addEventListener('keydown', this._drawKeyHandler)
@@ -476,7 +487,7 @@ const AOITool = {
     _showInspectBoundaries() {
         const entries = this._state.searchAllEntries
         if (!entries.length) return
-        const api = window.mmgisAPI
+        const api = this._api
         if (!api?.request) return
 
         // Sort largest-area first so big polygons (e.g. "United States") render
@@ -505,7 +516,7 @@ const AOITool = {
     },
 
     _hideInspectBoundaries() {
-        window.mmgisAPI?.request?.('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
+        this._api?.request('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
             .catch(() => { })
     },
 
@@ -586,8 +597,11 @@ const AOITool = {
         // long after that deferred dismissal has fired.
         this._hidePopup()
 
-        const api = window.mmgisAPI
-        api?.request?.('map:createLayer', {
+        // Requests go through AOI's handle so core sees who asked; the bus
+        // events are subscribed on the global, which is where `on`/`off` live.
+        const api = this._api
+        const bus = window.mmgisAPI
+        api?.request('map:createLayer', {
             id: SELECTION_LAYER_ID,
             type: 'vector',
             geojson: { type: 'FeatureCollection', features: [feature] },
@@ -605,13 +619,13 @@ const AOITool = {
             if (c) {
                 this._showPopup(
                     label,
-                    selectionTooltipAnchor({ lat: c[1], lng: c[0] }, view)
+                    selectionPopupAnchor({ lat: c[1], lng: c[0] }, view)
                 )
             }
         }
 
         const bbox = featureBounds(feature)
-        if (bbox && api?.request && api?.on && api?.off) {
+        if (bbox && api?.request && bus?.on && bus?.off) {
             // Pending from here on, before the camera is even read: a teardown
             // or a superseding selection during that async hop must drop this
             // popup. `disarm` is filled in only if the show waits on the camera.
@@ -660,10 +674,10 @@ const AOITool = {
                     // Safety net: an engine that skips moveend on a
                     // programmatic fit still gets its popup.
                     const timer = setTimeout(oneShot, 1500)
-                    api.on('map:moveend', oneShot)
+                    bus.on('map:moveend', oneShot)
                     disarm = () => {
                         clearTimeout(timer)
-                        api.off('map:moveend', oneShot)
+                        bus.off('map:moveend', oneShot)
                     }
 
                     api.request('map:fitBounds', fit).catch((err) => {
@@ -702,7 +716,7 @@ const AOITool = {
 
     _removeSelectionLayer() {
         // removeLayer is idempotent; no need for a hasLayer pre-check.
-        window.mmgisAPI?.request?.('map:removeLayer', { id: SELECTION_LAYER_ID })
+        this._api?.request('map:removeLayer', { id: SELECTION_LAYER_ID })
             .catch(() => { })
     },
 
@@ -735,10 +749,11 @@ const AOITool = {
             // failure to show the popup.
             .then(
                 ({ action } = {}) => {
-                    // Cancel, the X and a click on the map all abandon the
-                    // selection; 'closed' means something else took the popup
-                    // slot — AOI retracting it, or another plugin showing its
-                    // own — which leaves the selection alone.
+                    // Cancel, the X, Escape and a click on the map all abandon
+                    // the selection; 'closed' means the card went for some
+                    // other reason — AOI retracting it, another plugin taking
+                    // the slot, or core tearing the popup down — which leaves
+                    // the selection alone.
                     if (action === 'primary') this._onAnalyze()
                     else if (action === 'secondary' || action === 'dismiss') {
                         this._clearSelection()
