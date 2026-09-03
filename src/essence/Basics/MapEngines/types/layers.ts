@@ -23,6 +23,14 @@ export interface LayerOptions {
      * carrying such rows, the engine styles from `style` alone.
      */
     legend?: unknown
+    /**
+     * Whether the mission configures a legend at all, including one still
+     * being fetched. Distinct from `legend` above, which is the legend once it
+     * has arrived: a `legend:` CSV path routinely lands after the layer is
+     * built, and a vector tile layer has to know at build time — see the
+     * `vectortile` case in buildDeckLayer.
+     */
+    legendConfigured?: boolean
     metadata?: Record<string, unknown>
 }
 

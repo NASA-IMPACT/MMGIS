@@ -313,9 +313,16 @@ function parseWmsUrl(url: string): {
  */
 function resolveStyleAccessors(
     style: Record<string, unknown>,
-    legendData?: unknown
+    legendData?: unknown,
+    legendConfigured?: boolean
 ) {
     const legend = compileLegendStyle(legendData)
+
+    // A digest of the compiled legend, for the `vectortile` case's
+    // updateTriggers. deck.gl compares accessor props as always equal, so an
+    // accessor closing over a different legend needs a trigger value that
+    // differs before it is re-run. Legends are a handful of rows.
+    const legendFingerprint = legend ? JSON.stringify(legend) : ''
 
     const staticFillColor = hexToRgba(
         style.fillColor as string | undefined,
@@ -407,11 +414,14 @@ function resolveStyleAccessors(
           }
         : staticPointRadius
 
-    // Whether anything above actually reads a feature property. Vector tile
-    // layers need this to pick a tile decoding format: see the `vectortile`
-    // case in buildDeckLayer.
+    // Whether the layer ever reads a feature property. Vector tile layers
+    // need this to pick a tile decoding format: see the `vectortile` case in
+    // buildDeckLayer. A configured legend counts even before it has arrived,
+    // because the layer built without it is the one deck.gl settles the
+    // format on.
     const readsFeatureProperties = Boolean(
         legend ||
+            legendConfigured ||
             fillColorProp ||
             fillOpacityProp ||
             colorProp ||
@@ -426,6 +436,7 @@ function resolveStyleAccessors(
         getLineWidth,
         getPointRadius,
         readsFeatureProperties,
+        legendFingerprint,
     }
 }
 
@@ -570,7 +581,8 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 getLineWidth,
                 getPointRadius,
                 readsFeatureProperties,
-            } = resolveStyleAccessors(style, o.legend)
+                legendFingerprint,
+            } = resolveStyleAccessors(style, o.legend, o.legendConfigured)
 
             return new MVTLayer({
                 id,
@@ -594,6 +606,13 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 // fast path. Picking, autoHighlight and uniqueIdProperty all
                 // work in either mode - MVTLayer carries a branch for each,
                 // and GlobeView already forces this same setting.
+                //
+                // Read from what the mission configures rather than from the
+                // legend in hand, because deck.gl reads this prop once, in
+                // initializeState, and a layer rebuilt under the same id when
+                // its legend lands late is an update rather than a fresh
+                // initialisation. The cost is that a legend configured for
+                // display alone also gives up the binary fast path.
                 binary: !readsFeatureProperties,
                 getFillColor,
                 getLineColor,
@@ -605,6 +624,18 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 // invisible. Line width above already pins its unit; points
                 // were missed.
                 pointRadiusUnits: 'pixels',
+                // A legend arriving late rebuilds the layer under the same id,
+                // which reaches deck.gl as a prop update. Accessor props
+                // compare as always equal there, so without a trigger value
+                // that changed, the colours already generated for every loaded
+                // tile would stand. Keyed per accessor rather than `all`:
+                // TileLayer reads `all` and `getTileData` as a data change and
+                // would refetch every tile instead of restyling the ones it
+                // holds.
+                updateTriggers: {
+                    getFillColor: legendFingerprint,
+                    getLineColor: legendFingerprint,
+                },
                 ...(o.nativeOptions ?? {}),
             } as ConstructorParameters<typeof MVTLayer>[0]) as unknown as Layer
         }

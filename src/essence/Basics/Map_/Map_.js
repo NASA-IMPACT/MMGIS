@@ -1916,6 +1916,13 @@ function makeVectorTileLayer(layerObj, mapContext = null) {
             // The legend doubles as a style specification; see makeVectorLayer
             // for the caveat on legends fetched from a `legend:` CSV path.
             legend: L_.layers.data[layerObj.name]?._legend,
+            // Whether one is configured at all, which the builder needs even
+            // when the legend itself has not arrived yet: a vector tile layer
+            // settles its tile decoding format the first time deck.gl
+            // initialises it and never revisits it.
+            legendConfigured: Boolean(
+                layerObj.legend ?? layerObj.variables?.legend
+            ),
             interactive: true,
             nativeOptions: {
                 autoHighlight: layerObj.style?.hoverHighlight === true,

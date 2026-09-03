@@ -557,6 +557,77 @@ test.describe('DeckGLHelpers', () => {
             ).toEqual([0, 0, 0, 255])
         })
 
+        // A legend given as a `legend:` CSV path is fetched after its layer
+        // has been built, and the rebuild that follows reaches deck.gl as an
+        // update to a layer it already holds under that id — not a fresh one.
+        // Two things have to survive that, and neither does by default:
+        // `binary` is read once in MVTLayer.initializeState, and colour
+        // attributes are regenerated only on a data change or an updateTrigger
+        // whose value differs. Issue #345.
+        test.describe('a legend that lands after the layer is built', () => {
+            const lateLayer = (id, extra = {}) =>
+                buildDeckLayer(id, {
+                    type: 'vectortile',
+                    url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                    style: { fillColor: '#00ff00', fillOpacity: 1 },
+                    ...extra,
+                })
+
+            test('decodes as GeoJSON from the first build when one is configured', () => {
+                // The decision has to come from the configuration, because the
+                // legend itself is not here yet and the format never changes
+                // after this.
+                const layer = lateLayer('late-binary', { legendConfigured: true })
+                expect(layer.props.binary).toBe(false)
+            })
+
+            test('costs a display-only legend the binary fast path', () => {
+                // Known and accepted: a configured legend cannot be told from
+                // a styling one until it arrives, and by then the format is
+                // settled. Recorded here so the trade-off is not a surprise.
+                const layer = lateLayer('late-binary-display', {
+                    legendConfigured: true,
+                    legend: [{ color: '#ff0000', value: 'Stations' }],
+                })
+                expect(layer.props.binary).toBe(false)
+            })
+
+            test('triggers a colour regeneration when the legend changes', () => {
+                const without = lateLayer('late-trigger-none')
+                const with_ = lateLayer('late-trigger-ramp', { legend: co2Ramp })
+                // Different values, so deck.gl sees the trigger change and
+                // re-runs the accessors over every tile already loaded.
+                expect(with_.props.updateTriggers.getFillColor).not.toBe(
+                    without.props.updateTriggers.getFillColor
+                )
+                expect(with_.props.updateTriggers.getLineColor).not.toBe(
+                    without.props.updateTriggers.getLineColor
+                )
+            })
+
+            test('leaves the trigger alone for an unchanged legend', () => {
+                // Every refresh rebuilds the layer; only a legend that really
+                // changed should cost a regeneration.
+                const a = lateLayer('late-trigger-a', { legend: co2Ramp })
+                const b = lateLayer('late-trigger-b', {
+                    legend: co2Ramp.map((row) => ({ ...row })),
+                })
+                expect(a.props.updateTriggers.getFillColor).toBe(
+                    b.props.updateTriggers.getFillColor
+                )
+            })
+
+            test('keeps the triggers off the keys TileLayer reads as new data', () => {
+                // `all` and `getTileData` make TileLayer refetch every tile
+                // rather than restyle the ones it holds.
+                const layer = lateLayer('late-trigger-keys', { legend: co2Ramp })
+                expect(Object.keys(layer.props.updateTriggers).sort()).toEqual([
+                    'getFillColor',
+                    'getLineColor',
+                ])
+            })
+        })
+
         test('keeps colour accessors static when the legend styles nothing', () => {
             const layer = buildDeckLayer('legend-none', {
                 type: 'vectortile',
