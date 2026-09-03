@@ -13,7 +13,7 @@ The examples below use the path `/tools/dashboard`; substitute your own everywhe
    - all query strings in the cache key,
    - Minimum TTL 0,
    - Maximum TTL 31536000 (one year) or more,
-   - Default TTL — any value; every response carries its own `Cache-Control`.
+   - Default TTL — any value.
 
 3. **Add two cache behaviors** pointing at that origin, both using that cache policy:
    - path pattern `/tools/dashboard` — exact, no wildcard,
@@ -47,13 +47,17 @@ Every dashboard is password-protected, so every row also sits behind the passwor
 
 **The header** tells us how much of the forwarded path is yours. CloudFront forwards the full path exactly as the visitor typed it, so our side receives `/tools/dashboard/index.html` and needs to know that `/tools/dashboard` is prefix, not content. We remove exactly what the header declares and serve the file. If the header is missing or doesn't match the path, every request under the path fails with a 403 immediately — a loud failure on purpose, instead of quietly serving the wrong files. (It's a 403 rather than a 404 because the rejection comes from our storage layer, which answers "access denied.")
 
-**`Authorization` in the cache key:** dashboards are password-protected, and your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential. Our cacheable responses are marked `public`, which is what lets a shared cache hold a response to a request that carried an `Authorization` header at all (RFC 7234 §3.2) — so your CloudFront keeps them under that per-credential key, and any other shared cache between you and the visitor may hold the long-lived tiers too: the bundles and uploaded images, and the supporting files for five minutes. Every visitor needs that password — there is no unauthenticated mode today — and the same password opens every dashboard published from the same MMGIS environment, so give it only to an audience you would hand every one of those dashboards to. Never publish it on a page.
+**`Authorization` in the cache key:** dashboards are password-protected, and your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential. Every visitor needs that password — there is no unauthenticated mode today — and the same password opens every dashboard published from the same MMGIS environment, so give it only to an audience you would hand every one of those dashboards to. Never publish it on a page.
+
+**Nothing is marked for shared caches.** Our responses carry no `public` in their `Cache-Control`. Your CloudFront caches them anyway, on `max-age` alone, under the per-credential key you just configured — that is how CloudFront behaves. An intermediary proxy that follows the standard to the letter will not store them at all, because the requests carry an `Authorization` header (RFC 9111 §3.5). Password-gated files stay out of caches we know nothing about.
 
 **All query strings in the cache key:** a policy that drops query strings never sends them to us. A deep link like `/tools/dashboard?view=2` then reaches us stripped of its `?view=2`, and the address we redirect the visitor to has lost it for good.
 
-**Minimum TTL 0:** managed policies impose a minimum cache time that overrides what our responses ask for. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next. A floor above 0 also holds the entry page and the mission configuration, which we mark to revalidate before every use (`no-cache`, not `no-store`); at 0 a republish reaches your domain with no purge on your side — those two immediately, the supporting files within about five minutes of the publish completing.
+**Minimum TTL 0:** managed policies impose a minimum cache time that overrides what our responses ask for. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next. A floor above 0 also holds the entry page and the mission configuration, which we mark to revalidate before every use (`no-cache`, not `no-store`); at 0 a republish reaches your domain with no purge on your side — those two immediately, the supporting files roughly five minutes after the publish completes, up to about ten while our own invalidation propagates.
 
 **Maximum TTL a year:** the files whose names are content-fingerprinted — the JS, CSS and media bundles, and the images uploaded into the dashboard, each stored under a name that is never reused — are cacheable forever (`immutable`), and a policy maximum below a year would cap them at whatever it sets. CloudFront has no single "obey the origin" switch: Minimum TTL 0 stops the policy raising our floor, and a Maximum TTL of at least a year stops it capping the immutable tier.
+
+**Default TTL:** every file we serve carries its own `Cache-Control`, so the policy default never decides how long one is held.
 
 **HTTPS only to the origin:** the dashboard's password rides on the `Authorization` header of every request you forward. Over plain HTTP it would cross the internet unencrypted.
 
