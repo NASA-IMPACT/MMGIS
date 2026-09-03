@@ -6,7 +6,7 @@ import Attributions from '../../Ancillary/Attributions'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
-import { resolveTimePolicy } from '../TimeControl_/layerTimePolicy'
+import { resolveTemporalExtent } from '../TimeControl_/layerTimePolicy'
 import { isRasterTileLayerType } from '../MapEngines/types/engine'
 import {
     getActiveTileLevel,
@@ -27,13 +27,8 @@ import $ from 'jquery'
 let _providerCleanups = []
 
 // Resolved at call time so an open-ended "now" is fresh on every ask.
-const temporalExtentFor = (uuid) => {
-    const time = L_.layers.data[uuid]?.time
-    return {
-        start: resolveTimePolicy(time?.dataStartTime),
-        end: resolveTimePolicy(time?.dataEndTime),
-    }
-}
+const temporalExtentFor = (uuid) =>
+    resolveTemporalExtent(L_.layers.data[uuid]?.time)
 
 /**
  * What a layer's COG colormap supports: whether it has one to draw a legend
