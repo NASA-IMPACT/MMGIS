@@ -1,6 +1,7 @@
 import { test, expect, describe } from 'vitest'
 import {
     buildDeckCOGLayer,
+    deckCOGProps,
     resolveNoDataValue,
     resolveRgbTextureFormat,
 } from '../../src/essence/Basics/MapEngines/Adapters/DeckCOGLayer.ts'
@@ -119,5 +120,38 @@ describe('resolveRgbTextureFormat', () => {
     test('uint maps to unorm so the existing unorm sampler reads it correctly', () => {
         expect(resolveRgbTextureFormat({ count: 4 }, tags(8))).toContain('unorm')
         expect(resolveRgbTextureFormat({ count: 4 }, tags(16))).toContain('unorm')
+    })
+})
+
+describe('deckCOGProps', () => {
+    const options = {
+        rawCogUrl: 'https://example.com/a.tif',
+        layerObj: { minZoom: '3', maxZoom: '12', cogColormap: 'plasma', cogMin: 0, cogMax: 10 },
+        opacity: 0.4,
+    }
+
+    test('produces exactly the props buildDeckCOGLayer constructs with', () => {
+        const props = deckCOGProps('l1', options)
+        const layer = buildDeckCOGLayer('l1', options)
+        Object.keys(props).forEach((key) => {
+            // Closures differ by identity; compare what is comparable.
+            if (typeof props[key] === 'function') {
+                expect(typeof layer.props[key]).toBe('function')
+            } else {
+                expect(layer.props[key]).toEqual(props[key])
+            }
+        })
+    })
+
+    test('carries the id, url and opacity a refresh has to preserve', () => {
+        const props = deckCOGProps('l1', options)
+        expect(props.id).toBe('l1')
+        expect(props.geotiff).toBe('https://example.com/a.tif')
+        expect(props.opacity).toBe(0.4)
+    })
+
+    test('defaults opacity to 1 but keeps an explicit 0', () => {
+        expect(deckCOGProps('l1', { ...options, opacity: undefined }).opacity).toBe(1)
+        expect(deckCOGProps('l1', { ...options, opacity: 0 }).opacity).toBe(0)
     })
 })

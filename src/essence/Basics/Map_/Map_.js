@@ -26,6 +26,7 @@ import {
     resolveDeckCOGFileUrl,
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
+import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -44,6 +45,10 @@ import {
     DeckGLAdapter,
 } from '../MapEngines/index'
 import { buildDeckLayer, buildDeckCOGLayer } from '../MapEngines/Adapters/DeckGLHelpers'
+import MapComparison from './MapComparison'
+
+import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
+import georaster from 'georaster'
 
 let L = window.L
 
@@ -52,8 +57,6 @@ let essenceFina = function () {}
 mapEngineRegistry.register(MAP_ENGINE.LEAFLET, LeafletAdapter)
 mapEngineRegistry.register(MAP_ENGINE.DECKGL, DeckGLAdapter)
 
-import GeoRasterLayer from '../../../external/georaster-layer-for-leaflet/georaster-layer-for-leaflet.ts'
-import georaster from 'georaster'
 
 // The default color ramp used for image layer types
 const IMAGE_DEFAULT_COLOR_RAMP = 'binary'
@@ -408,6 +411,11 @@ let Map_ = {
                 if (typeof off === 'function') _providerCleanups.push(off)
             }
         }
+
+        // Initialise comparison controller with the active engine so it can
+        // inject the divider DOM, delegate rendering calls, and register its
+        // own `map:comparison:*` providers on the event bus.
+        MapComparison.init(engine)
 
         //Make our layers
         makeLayers(L_.layers.dataFlat)
@@ -1391,9 +1399,10 @@ async function makeVectorLayer(
             }
 
             // Only Leaflet vector layers reach here — the deck.gl branch above
-            // returns first. Attachments are therefore Leaflet-only, which is
-            // why L_.setLayerOpacity skips its sublayer pass for facade-managed
-            // layers.
+            // returns first. Attachments are therefore Leaflet-only:
+            // L_.layers.attachments has no entry for a deck.gl-built layer, so
+            // L_.setLayerOpacity's per-attachment loop has nothing to iterate
+            // for one.
             ctx.layerRegistry.attachments[layerObj.name] = vl.sublayers
             ctx.layerRegistry.layer[layerObj.name] = vl.layer
 
@@ -1669,6 +1678,23 @@ async function makeTileLayer(layerObj, mapContext = null) {
                 // ?? not ||: an opacity of 0 is a real value, not "default to 1"
                 opacity: ctx.layerRegistry.opacity[layerObj.name] ?? 1,
             })
+            // Map_.engine is always the MAIN map's engine. A non-default ctx
+            // targets a different map with its own registry, so registering
+            // into Map_.engine here would collide with the main map's entry
+            // under the same uuid. Guarded to the main path only.
+            if (ctx.default === true) {
+                // The layer kind supplies how it rebuilds; the engine executes
+                // it. Registered here because this is where the deckRaster
+                // classification happens.
+                //
+                // No registerLayer call here, unlike the Leaflet tail below:
+                // a deck layer already carries its own id and the engine
+                // adopts it when added, so only the refresher is missing.
+                Map_.engine.setLayerRefresher(
+                    layerObj.name,
+                    makeDeckCOGRefresher(layerObj.name, layerObj)
+                )
+            }
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()
             return
@@ -1717,6 +1743,34 @@ async function makeTileLayer(layerObj, mapContext = null) {
                               ),
                       },
         })
+
+        // A plain deck tile layer takes one static URL, so the per-tile params
+        // Leaflet adds in getTileUrl have to be baked in on every refresh too.
+        // Registered here, on the domain side, because compileTileUrl is not
+        // generic — it branches on MMGIS service prefixes (stac-collection,
+        // COG, titiler-url) and injects COG fields. An adapter must not know
+        // any of that; it only knows it has a function to call.
+        // Guarded to the main map for the same reason registerLayer below is:
+        // Map_.engine is always the MAIN map's engine, so a non-default ctx
+        // would collide with the main map's entry under the same uuid.
+        if (ctx.default === true) {
+            Map_.engine.setLayerRefresher(
+                layerObj.name,
+                (layer, refreshCtx) => {
+                    // No source URL, or one that compiles to nothing: return
+                    // nothing so the engine keeps the instance it holds.
+                    // Handing deck an empty url would blank the layer.
+                    if (refreshCtx.url == null) return
+                    const compiled = compileTileUrl(
+                        refreshCtx.url,
+                        refreshCtx.tileOptions ?? {}
+                    )
+                    if (!compiled) return
+                    return layer.clone({ data: compiled })
+                }
+            )
+        }
+
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
         return
@@ -1741,6 +1795,19 @@ async function makeTileLayer(layerObj, mapContext = null) {
         bounds: bb,
         variables: layerObj.variables || {},
     })
+
+    // The engine addresses layers by id; a Leaflet layer MMGIS built itself
+    // carries none until registered, so without this refreshLayer cannot find
+    // it and time reload silently stops working. Guarded to the main map: a
+    // secondary ctx has its own map/registry, and registering here would
+    // collide with the main map's entry under the same uuid. The `?.` is
+    // needed because only the deck branch above assumes Map_.engine is set.
+    if (ctx.default === true) {
+        Map_.engine?.registerLayer(
+            layerObj.name,
+            ctx.layerRegistry.layer[layerObj.name]
+        )
+    }
 
     // Add to map
     if (ctx.default != true) {

@@ -12,16 +12,15 @@ const { default: L_ } = await import(
 )
 
 /**
- * L_.setLayerOpacity dispatches on which API the layer object answers to, not
- * on the layer's configured type: under a non-Leaflet engine the registry holds
- * a mix of facade-managed layers (vector, tile, vectortile) and Leaflet-built
- * ones (velocity, model, data, image, video). Facade-managed layers are
- * immutable in deck.gl, so the facade returns a replacement the registry must
- * adopt.
+ * L_.setLayerOpacity no longer branches on the layer's shape: every registry
+ * entry that is not the load-failure sentinel or an aggregate array is handed
+ * to the active engine's setLayerOpacity, once per compound part (main layer,
+ * then each attachment). Which engine is active, and what shape its native
+ * layer objects carry, is the engine's business, not the caller's.
  */
 
-// A deck.gl Layer stands in as any facade-managed object: it has `props`, never
-// `options`, and cannot be mutated in place.
+// A deck.gl Layer stands in as a non-Leaflet native layer: it has `props`,
+// never `options`.
 const makeEngineLayer = (id, opacity) => ({ id, props: { opacity } })
 
 // A Leaflet layer always carries `options` and mutates in place.
@@ -50,164 +49,150 @@ const resetRegistry = () => {
     L_.activeFeature = null
 }
 
-describe('L_.setLayerOpacity engine dispatch', () => {
-    beforeEach(() => {
-        resetRegistry()
-        L_.Map_ = null
+describe('L_.setLayerOpacity asks the engine per part', () => {
+    beforeEach(resetRegistry)
+
+    test('every layer goes through the engine, whichever engine is active', () => {
+        for (const engineType of [MAP_ENGINE.LEAFLET, MAP_ENGINE.DECKGL]) {
+            const setLayerOpacity = vi.fn()
+            setEngine(engineType, setLayerOpacity)
+            L_.layers.layer.a = makeLeafletLayer()
+            L_.setLayerOpacity('a', 0.5)
+            expect(setLayerOpacity).toHaveBeenCalledTimes(1)
+        }
     })
 
-    test('facade-managed layer is routed through the facade', () => {
-        const setLayerOpacity = vi.fn(() => makeEngineLayer('vec', 0.4))
-        setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)
-        const original = makeEngineLayer('vec', 1)
-        L_.layers.layer.vec = original
+    test('passes the configured fill opacity scaled by the new opacity', () => {
+        const setLayerOpacity = vi.fn()
+        setEngine(MAP_ENGINE.LEAFLET, setLayerOpacity)
+        L_.layers.layer.a = makeLeafletLayer()
+        L_.layers.data.a = { style: { fillOpacity: 0.4 } }
 
-        L_.setLayerOpacity('vec', 0.4)
-
-        expect(setLayerOpacity).toHaveBeenCalledWith(original, 0.4)
-    })
-
-    test('the instance returned by the engine replaces the registry entry', () => {
-        const replacement = makeEngineLayer('vec', 0.4)
-        setEngine(MAP_ENGINE.DECKGL, () => replacement)
-        L_.layers.layer.vec = makeEngineLayer('vec', 1)
-
-        L_.setLayerOpacity('vec', 0.4)
-
-        expect(L_.layers.layer.vec).toBe(replacement)
-        expect(L_.layers.opacity.vec).toBe(0.4)
-    })
-
-    test('the registry entry is kept when the engine returns nothing', () => {
-        setEngine(MAP_ENGINE.DECKGL, () => undefined)
-        const original = makeEngineLayer('vec', 1)
-        L_.layers.layer.vec = original
-
-        L_.setLayerOpacity('vec', 0.4)
-
-        expect(L_.layers.layer.vec).toBe(original)
-        expect(L_.layers.opacity.vec).toBe(0.4)
+        L_.setLayerOpacity('a', 0.5)
+        expect(setLayerOpacity.mock.calls[0][2]).toEqual({ fillOpacity: 0.2 })
     })
 
     test('an opacity of 0 reaches the engine rather than being read as unset', () => {
-        const setLayerOpacity = vi.fn(() => makeEngineLayer('vec', 0))
-        setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)
-        L_.layers.layer.vec = makeEngineLayer('vec', 1)
-
-        L_.setLayerOpacity('vec', 0)
-
-        expect(setLayerOpacity).toHaveBeenCalledWith(expect.anything(), 0)
-        expect(L_.layers.opacity.vec).toBe(0)
-    })
-
-    test('a Leaflet-built layer under a deck.gl engine stays on the Leaflet path', () => {
-        const setLayerOpacity = vi.fn()
-        setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)
-        const velocity = makeLeafletLayer()
-        L_.layers.layer.wind = velocity
-
-        L_.setLayerOpacity('wind', 0.3)
-
-        expect(setLayerOpacity).not.toHaveBeenCalled()
-        expect(velocity.options.opacity).toBe(0.3)
-    })
-
-    test('every layer stays on the Leaflet path under the Leaflet engine', () => {
         const setLayerOpacity = vi.fn()
         setEngine(MAP_ENGINE.LEAFLET, setLayerOpacity)
-        const leafletLayer = makeLeafletLayer()
-        L_.layers.layer.vec = leafletLayer
-
-        L_.setLayerOpacity('vec', 0.3)
-
-        expect(setLayerOpacity).not.toHaveBeenCalled()
-        expect(leafletLayer.options.opacity).toBe(0.3)
+        L_.layers.layer.a = makeLeafletLayer()
+        L_.setLayerOpacity('a', 0)
+        expect(setLayerOpacity.mock.calls[0][1]).toBe(0)
+        expect(L_.layers.opacity.a).toBe(0)
     })
 
-    test('a facade-managed layer is left alone before Map_ is initialized', () => {
+    test('asks the engine once per attachment as well as for the main layer', () => {
+        const setLayerOpacity = vi.fn()
+        setEngine(MAP_ENGINE.LEAFLET, setLayerOpacity)
+        L_.layers.layer.a = makeLeafletLayer()
+        const labels = makeLeafletLayer()
+        L_.layers.attachments.a = { labels: { type: 'labels', layer: labels } }
+
+        L_.setLayerOpacity('a', 0.5)
+        expect(setLayerOpacity).toHaveBeenCalledTimes(2)
+        expect(setLayerOpacity.mock.calls[1][0]).toBe(labels)
+    })
+
+    test('uncertainty ellipses keep their own dimming factors', () => {
+        const setLayerOpacity = vi.fn()
+        setEngine(MAP_ENGINE.LEAFLET, setLayerOpacity)
+        L_.layers.layer.a = makeLeafletLayer()
+        L_.layers.data.a = { style: { fillOpacity: 1 } }
+        const ellipses = makeLeafletLayer()
+        L_.layers.attachments.a = {
+            uncertainty_ellipses: { type: 'uncertainty_ellipses', layer: ellipses },
+        }
+
+        L_.setLayerOpacity('a', 0.5)
+        const [, opacity, options] = setLayerOpacity.mock.calls[1]
+        expect(opacity).toBeCloseTo(0.4)   // 0.5 * 0.8
+        expect(options.fillOpacity).toBeCloseTo(0.125) // 0.5 * 1 * 0.25
+    })
+
+    test('skips model attachments, which have no 2D layer', () => {
+        const setLayerOpacity = vi.fn()
+        setEngine(MAP_ENGINE.LEAFLET, setLayerOpacity)
+        L_.layers.layer.a = makeLeafletLayer()
+        L_.layers.attachments.a = { models: { type: 'model', layer: makeLeafletLayer() } }
+
+        L_.setLayerOpacity('a', 0.5)
+        expect(setLayerOpacity).toHaveBeenCalledTimes(1)
+    })
+
+    test('a load-failure sentinel (false) skips the engine but still records opacity', () => {
+        const setLayerOpacity = vi.fn()
+        setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)
+        L_.layers.layer.a = false
+        L_.setLayerOpacity('a', 0.5)
+        expect(setLayerOpacity).not.toHaveBeenCalled()
+        expect(L_.layers.opacity.a).toBe(0.5)
+    })
+
+    test('an aggregate registry entry (array of layers) is not routed to the engine', () => {
+        const setLayerOpacity = vi.fn()
+        setEngine(MAP_ENGINE.LEAFLET, setLayerOpacity)
+        L_.layers.layer.a = [makeLeafletLayer(), makeLeafletLayer()]
+        L_.setLayerOpacity('a', 0.5)
+        expect(setLayerOpacity).not.toHaveBeenCalled()
+        expect(L_.layers.opacity.a).toBe(0.5)
+    })
+
+    test('is a no-op on the engine before Map_ is initialized', () => {
         L_.Map_ = null
-        L_.layers.layer.vec = makeEngineLayer('vec', 1)
-
-        expect(() => L_.setLayerOpacity('vec', 0.4)).not.toThrow()
-        expect(L_.layers.opacity.vec).toBe(0.4)
+        L_.layers.layer.a = makeLeafletLayer()
+        expect(() => L_.setLayerOpacity('a', 0.5)).not.toThrow()
+        expect(L_.layers.opacity.a).toBe(0.5)
     })
 
-    test('a load-failure sentinel (false) under deck.gl skips the engine and keeps the registry write', () => {
-        const setLayerOpacity = vi.fn()
-        setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)
-        L_.layers.layer.vec = false
+    // The registry is the sole source of truth for opacity — getLayerOpacity
+    // reads it and layer creation seeds itself from it — so the write must not
+    // sit behind calls that can throw, such as an attachment's.
+    test('records the opacity even when an engine call throws', () => {
+        const setLayerOpacity = vi.fn(() => {
+            throw new Error('attachment blew up')
+        })
+        setEngine(MAP_ENGINE.LEAFLET, setLayerOpacity)
+        L_.layers.layer.a = makeLeafletLayer()
 
-        expect(() => L_.setLayerOpacity('vec', 0.4)).not.toThrow()
-
-        expect(setLayerOpacity).not.toHaveBeenCalled()
-        expect(L_.layers.layer.vec).toBe(false)
-        expect(L_.layers.opacity.vec).toBe(0.4)
-    })
-
-    test('an aggregate registry entry (array of Leaflet layers) is not routed to the engine', () => {
-        const setLayerOpacity = vi.fn()
-        setEngine(MAP_ENGINE.DECKGL, setLayerOpacity)
-        L_.layers.layer.arrows = [makeLeafletLayer(), makeLeafletLayer()]
-
-        expect(() => L_.setLayerOpacity('arrows', 0.4)).not.toThrow()
-
-        expect(setLayerOpacity).not.toHaveBeenCalled()
-        expect(L_.layers.opacity.arrows).toBe(0.4)
+        expect(() => L_.setLayerOpacity('a', 0.5)).toThrow()
+        expect(L_.layers.opacity.a).toBe(0.5)
     })
 })
 
-describe('L_.getLayerOpacity engine dispatch', () => {
-    beforeEach(() => {
-        resetRegistry()
-        L_.Map_ = null
+describe('L_.getLayerOpacity reads the registry', () => {
+    beforeEach(resetRegistry)
+
+    test('reads a Leaflet layer from the registry, not its options', () => {
+        setEngine(MAP_ENGINE.LEAFLET, vi.fn())
+        const layer = makeLeafletLayer()
+        layer.options.style.opacity = 0.9 // a stale mirror must not win
+        L_.layers.layer.a = layer
+        L_.layers.opacity.a = 0.3
+        expect(L_.getLayerOpacity('a')).toBe(0.3)
     })
 
-    test('reads a facade-managed layer from the registry', () => {
-        setEngine(MAP_ENGINE.DECKGL, () => undefined)
-        L_.layers.layer.vec = makeEngineLayer('vec', 1)
-        L_.layers.opacity.vec = 0.25
-
-        expect(L_.getLayerOpacity('vec')).toBe(0.25)
+    test('reads an engine-owned layer from the registry', () => {
+        setEngine(MAP_ENGINE.DECKGL, vi.fn())
+        L_.layers.layer.a = makeEngineLayer('a', 1)
+        L_.layers.opacity.a = 0.25
+        expect(L_.getLayerOpacity('a')).toBe(0.25)
     })
 
-    test('reads 0 from the registry rather than falling back to 1', () => {
-        setEngine(MAP_ENGINE.DECKGL, () => undefined)
-        L_.layers.layer.vec = makeEngineLayer('vec', 0)
-        L_.layers.opacity.vec = 0
-
-        expect(L_.getLayerOpacity('vec')).toBe(0)
+    test('reads 0 rather than falling back to 1', () => {
+        setEngine(MAP_ENGINE.LEAFLET, vi.fn())
+        L_.layers.layer.a = makeLeafletLayer()
+        L_.layers.opacity.a = 0
+        expect(L_.getLayerOpacity('a')).toBe(0)
     })
 
-    test('defaults to 1 when the registry has no entry for the layer', () => {
-        setEngine(MAP_ENGINE.DECKGL, () => undefined)
-        L_.layers.layer.vec = makeEngineLayer('vec', 1)
-
-        expect(L_.getLayerOpacity('vec')).toBe(1)
-    })
-
-    test('round-trips through setLayerOpacity', () => {
-        setEngine(MAP_ENGINE.DECKGL, (layer, opacity) =>
-            makeEngineLayer('vec', opacity)
-        )
-        L_.layers.layer.vec = makeEngineLayer('vec', 1)
-
-        L_.setLayerOpacity('vec', 0.6)
-
-        expect(L_.getLayerOpacity('vec')).toBe(0.6)
-    })
-
-    test('reads a Leaflet layer from its own style under a deck.gl engine', () => {
-        setEngine(MAP_ENGINE.DECKGL, () => undefined)
-        const velocity = makeLeafletLayer()
-        velocity.options.style.opacity = 0.7
-        L_.layers.layer.wind = velocity
-
-        expect(L_.getLayerOpacity('wind')).toBe(0.7)
+    test('defaults to 1 when the registry has no entry', () => {
+        setEngine(MAP_ENGINE.LEAFLET, vi.fn())
+        L_.layers.layer.a = makeLeafletLayer()
+        expect(L_.getLayerOpacity('a')).toBe(1)
     })
 
     test('returns 0 for a layer that has not been built', () => {
-        setEngine(MAP_ENGINE.DECKGL, () => undefined)
-
+        setEngine(MAP_ENGINE.LEAFLET, vi.fn())
         expect(L_.getLayerOpacity('missing')).toBe(0)
     })
 })
