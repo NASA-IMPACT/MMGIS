@@ -625,6 +625,52 @@ test.describe('DeckGLAdapter', () => {
         })
     })
 
+    // Under the deck.gl engine MMGIS still builds `data`, `image`, `video` and
+    // `velocity` layers as native Leaflet objects, and callers hand every
+    // registry entry to the active engine. Such an object has no deck `id`, so
+    // addLayer files it under `undefined`, and no `clone`, which the layer sync
+    // calls on every entry it mounts.
+    test.describe('a registry entry that is not a deck layer', () => {
+        function makeStandaloneAdapter() {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = false
+            adapter._deck = { setProps: vi.fn() }
+            return adapter
+        }
+
+        // A Leaflet tile layer's opacity surface — enough shape to be mistaken
+        // for a registry entry, with none of a deck layer's.
+        const makeLeafletish = () => ({
+            opacity: null,
+            setOpacity(o) { this.opacity = o },
+        })
+
+        test('is accepted by addLayer without throwing', () => {
+            const adapter = makeStandaloneAdapter()
+            expect(() => adapter.addLayer(makeLeafletish())).not.toThrow()
+        })
+
+        test('is left out of the layers handed to deck', () => {
+            const adapter = makeStandaloneAdapter()
+            adapter.addLayer(makeLayer('l1'))
+            adapter.addLayer(makeLeafletish())
+
+            const sent = adapter._deck.setProps.mock.calls.at(-1)[0].layers
+            expect(sent.map((l) => l.id)).toEqual(['l1'])
+        })
+
+        test('is left out of the layers handed to an interleaved overlay', () => {
+            const adapter = makeAdapter()
+            adapter._isOverlayMode = true
+            adapter._overlay = { setProps: vi.fn(), finalize: vi.fn() }
+            adapter.addLayer(makeLayer('l1'))
+            adapter.addLayer(makeLeafletish())
+
+            const sent = adapter._overlay.setProps.mock.calls.at(-1)[0].layers
+            expect(sent.map((l) => l.id)).toEqual(['l1'])
+        })
+    })
+
     test.describe('drawing', () => {
         // enableDrawing needs a real terra-draw session against a MapLibre map,
         // so drive the finish path with the two things it touches: the session

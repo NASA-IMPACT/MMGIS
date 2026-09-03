@@ -73,6 +73,24 @@ function FiltersIcon() {
 }
 
 /**
+ * Tick marking the option a single-select filter currently holds. The glyph is
+ * the design set's own file, painted as a mask so it takes the row's colour.
+ */
+function CheckIcon() {
+    return <span className="blocks-layer-filter__check" aria-hidden="true" />
+}
+
+/**
+ * Classes for a menu row. The row the field is already showing is marked the
+ * way pointing at a row marks it — the tick is what separates the two.
+ */
+function rowClass(isSelected: boolean): string {
+    return `blocks-layer-filter__row${
+        isSelected ? ' blocks-layer-filter__row--selected' : ''
+    }`
+}
+
+/**
  * Shared dropdown shell (per the designs — native selects can't render count
  * badges or chips): a select-styled trigger and a menu floated over the page.
  *
@@ -184,16 +202,14 @@ function EnumeratedField({
                 {!multi && (
                     <button
                         type="button"
-                        className="blocks-layer-filter__row"
+                        className={rowClass(selected.length === 0)}
                         onClick={() => {
                             onChange(filter.id, '')
                             setOpen(false)
                         }}
                     >
                         <span>{filter.allLabel ?? 'All'}</span>
-                        {selected.length === 0 && (
-                            <span className="blocks-layer-filter__check">✓</span>
-                        )}
+                        {selected.length === 0 && <CheckIcon />}
                     </button>
                 )}
                 {options.map((opt) => {
@@ -224,7 +240,7 @@ function EnumeratedField({
                         <button
                             key={opt.value}
                             type="button"
-                            className="blocks-layer-filter__row"
+                            className={rowClass(isSelected)}
                             onClick={() => {
                                 onChange(filter.id, opt.value)
                                 setOpen(false)
@@ -232,9 +248,7 @@ function EnumeratedField({
                         >
                             <span>{opt.value}</span>
                             <Badge>{opt.count}</Badge>
-                            {isSelected && (
-                                <span className="blocks-layer-filter__check">✓</span>
-                            )}
+                            {isSelected && <CheckIcon />}
                         </button>
                     )
                 })}
@@ -314,7 +328,7 @@ function EntryField({
                         <button
                             key={opt.value}
                             type="button"
-                            className="blocks-layer-filter__row"
+                            className={rowClass(selected === opt.value)}
                             onClick={() => {
                                 onChange(filter.id, opt.value)
                                 setOpen(false)
@@ -326,9 +340,7 @@ function EntryField({
                                 </span>
                             )}
                             <span>{entry?.title ?? opt.value}</span>
-                            {selected === opt.value && (
-                                <span className="blocks-layer-filter__check">✓</span>
-                            )}
+                            {selected === opt.value && <CheckIcon />}
                         </button>
                     )
                 })}

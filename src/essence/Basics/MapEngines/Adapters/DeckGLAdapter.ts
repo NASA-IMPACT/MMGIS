@@ -2195,11 +2195,34 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Each sync mounts fresh clones: deck.gl leaves `internalState` set on a
      * layer it finalizes, so a mounted instance is single-use and the registry
      * holds descriptors rather than the instances on screen.
+     *
+     * Two kinds of entry are left out of the render list.
+     *
+     * Anything that cannot be cloned. Under the deck.gl engine MMGIS still
+     * builds `data`, `image`, `video` and `velocity` layers as native Leaflet
+     * objects — ENGINE_LAYER_SUPPORT has no deck builder for them — and
+     * callers hand every registry entry to the active engine.
+     * {@link registerLayer} and {@link addLayer} both decline such an object,
+     * so none should reach here; the check stays because one that did would
+     * throw on the clone below and take the whole map down rather than fail
+     * alone.
+     *
+     * Anything hidden. Holding a layer is not drawing it: deck.gl stops
+     * drawing a layer marked `visible: false` but still runs its lifecycle, so
+     * a hidden tile layer left in this list goes on requesting tiles. It stays
+     * in the registry — that is what an opacity write or a refresh while the
+     * layer is off addresses — and rejoins this list when it is shown.
      */
     private _syncLayers(): void {
         const layers = this._comparisonEnabled
             ? []
             : [...this._layers.values()]
+                  // Anything this engine cannot clone is left out. registerLayer
+                  // and addLayer already decline such a layer, so nothing should
+                  // reach here — kept because every entry is cloned below, and
+                  // one that cannot be would take the whole map down rather than
+                  // fail alone.
+                  .filter((layer) => typeof layer.clone === 'function')
                   // Hidden layers are withheld, not handed over as
                   // `visible: false`. deck.gl stops *drawing* an invisible
                   // layer but still runs its lifecycle, so a hidden TileLayer

@@ -20,18 +20,26 @@ import type { ComparisonLayout } from '../lib/types'
  * left off the payload rather than sent as null; MapComparison.enable defaults
  * both dates to null, so the two forms are identical on the wire and this is a
  * tidier payload, not a different instruction.
+ *
+ * The labels are what core writes onto the map either side of the divider. A
+ * side pinned to a date carries that date and the rest carry their layer's
+ * title, so the map says what it is showing without the panel being read.
  */
 export const enableComparison = async ({
     leftLayers,
     rightLayers,
     leftDate = null,
     rightDate = null,
+    leftLabel = '',
+    rightLabel = '',
     layout,
 }: {
     leftLayers: string[]
     rightLayers: string[]
     leftDate?: string | null
     rightDate?: string | null
+    leftLabel?: string
+    rightLabel?: string
     layout: ComparisonLayout
 }): Promise<void> => {
     await mmgisRequest('map:comparison:enable', {
@@ -39,8 +47,27 @@ export const enableComparison = async ({
         rightLayers,
         ...(leftDate == null ? {} : { leftDate }),
         ...(rightDate == null ? {} : { rightDate }),
+        leftLabel,
+        rightLabel,
         layout,
     })
+}
+
+/**
+ * Rename the two sides without touching what they draw.
+ *
+ * A caption is chrome over the finished render, so it follows the timeline as
+ * the user moves it. Re-enabling for that would re-clone both sides' layers for
+ * a wording change, which is why this is its own call.
+ */
+export const setComparisonLabels = async ({
+    left,
+    right,
+}: {
+    left: string
+    right: string
+}): Promise<void> => {
+    await mmgisRequest('map:comparison:setLabels', { left, right })
 }
 
 /** Tear down comparison and restore the normal single view. */
