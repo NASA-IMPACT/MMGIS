@@ -9,6 +9,8 @@ export type ColorRampSwatchProps = {
     reversed: boolean
     selected: boolean
     titilerUrl?: string | null
+    /** Ramps that resolve without a request. */
+    localColormaps?: Record<string, string[]> | null
     /** Scroll container the visibility check measures against. */
     rootRef: RefObject<HTMLElement | null>
     onSelect: (name: string) => void
@@ -27,6 +29,7 @@ function ColorRampSwatchComponent({
     reversed,
     selected,
     titilerUrl,
+    localColormaps,
     rootRef,
     onSelect,
 }: ColorRampSwatchProps) {
@@ -54,7 +57,13 @@ function ColorRampSwatchComponent({
         return () => observer.disconnect()
     }, [hasAppeared, rootRef])
 
-    const { colors } = useColormapColors(name, reversed, titilerUrl, hasAppeared)
+    const { colors } = useColormapColors(
+        name,
+        reversed,
+        titilerUrl,
+        hasAppeared,
+        localColormaps,
+    )
 
     return (
         <button

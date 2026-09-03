@@ -43,6 +43,7 @@ const editableCogLayer = (): Layer => ({
         defaultColormap: 'viridis',
         units: 'm',
         titilerUrl: null,
+        localColormaps: null,
     },
 })
 

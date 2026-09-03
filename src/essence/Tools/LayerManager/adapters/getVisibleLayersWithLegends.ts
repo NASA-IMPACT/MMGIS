@@ -5,6 +5,7 @@ import {
     mmgisGetTiTilerUrls,
     type CogCapabilities,
 } from '../../_shared/adapters/mmgisAPI'
+import { buildLocalColormapTable } from '../../../Basics/Colormaps/localColormaps'
 import { buildLayerLegendData } from './buildLayerLegendData'
 import type { Layer } from '../lib/types'
 
@@ -24,6 +25,9 @@ export const getVisibleLayersWithLegends = async ({
         mmgisGetTiTilerUrls(),
     ])
 
+    // Memoized upstream — every layer shares one table rather than a copy.
+    const localColormaps = buildLocalColormapTable()
+
     const result: Layer[] = []
     for (const layerName of Object.keys(layerConfigs)) {
         const cfg = layerConfigs[layerName]
@@ -40,6 +44,7 @@ export const getVisibleLayersWithLegends = async ({
                 isVisible,
                 cogCapabilities?.[layerName] as CogCapabilities | undefined,
                 titilerUrls?.[layerName] ?? null,
+                localColormaps,
             ),
         )
     }

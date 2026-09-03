@@ -27,6 +27,8 @@ export type ColorRampPickerProps = {
     max: number
     units?: string | null
     titilerUrl?: string | null
+    /** Ramps available without a service; when set, the whole vocabulary. */
+    localColormaps?: Record<string, string[]> | null
     onColormapChange?: (layerId: string, colormap: string) => void
     onRescaleChange?: (layerId: string, min: number, max: number) => void
 }
@@ -46,6 +48,7 @@ export function ColorRampPicker({
     max,
     units,
     titilerUrl,
+    localColormaps,
     onColormapChange,
     onRescaleChange,
 }: ColorRampPickerProps) {
@@ -67,10 +70,15 @@ export function ColorRampPicker({
     // with any casing, while the service reports and accepts lowercase.
     const selectedBase = getBaseColormapName(colormap).toLowerCase()
 
+    const localRampNames = useMemo(
+        () => (localColormaps ? Object.keys(localColormaps) : null),
+        [localColormaps],
+    )
+
     const {
         colormaps: availableColormaps,
         loading: colormapsLoading,
-    } = useAvailableColormaps(titilerUrl)
+    } = useAvailableColormaps(titilerUrl, localRampNames)
 
     // The service reports each ramp twice, forward and reversed; direction is
     // the toggle's job, so only the forward names are listed.
@@ -237,6 +245,7 @@ export function ColorRampPicker({
                                 reversed={reversed}
                                 selected={name.toLowerCase() === selectedBase}
                                 titilerUrl={titilerUrl}
+                                localColormaps={localColormaps}
                                 rootRef={listRef}
                                 onSelect={handleSelect}
                             />

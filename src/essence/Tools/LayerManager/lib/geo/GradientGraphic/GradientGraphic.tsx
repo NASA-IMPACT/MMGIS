@@ -47,6 +47,7 @@ export function GradientGraphic({ stops, min, max, unit, cog }: GradientGraphicP
         isReversedColormap(cog?.colormap),
         cog?.titilerUrl,
         hasCogSettings,
+        cog?.localColormaps,
     )
 
     const handleMouseMove = useCallback(

@@ -18,6 +18,12 @@ export type CogData = {
   defaultColormap: string
   units: string | null
   titilerUrl: string | null
+  /**
+   * Ramps this layer can be given without a service, as name -> CSS colors,
+   * and then its whole vocabulary. Null means its ramps belong to the tiling
+   * service that paints it.
+   */
+  localColormaps: Record<string, string[]> | null
 }
 
 export type Layer = {
