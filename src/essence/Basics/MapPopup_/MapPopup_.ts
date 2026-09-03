@@ -7,7 +7,7 @@ import './MapPopup.css'
 
 /** Gap in pixels between the anchor point and the card. */
 const ANCHOR_GAP = 12
-/** How close in pixels the card may come to a viewport edge. */
+/** How close in pixels the card may come to an edge of the map it sits on. */
 const VIEWPORT_MARGIN = 8
 
 /**
@@ -24,15 +24,8 @@ const VIEWPORT_MARGIN = 8
 const PARKED = 'translate(-100000px, -100000px)'
 
 /**
- * The namespace an SVG link keeps its target in. SVG 1.1 spells the attribute
- * `xlink:href`, and content written against it is still what most drawing
- * tools export.
- */
-const XLINK_NAMESPACE = 'http://www.w3.org/1999/xlink'
-
-/**
  * What a card may hand focus to, in the order a Tab moves through it. Which of
- * them a Tab actually reaches is {@link focusStops}' to settle: an element the
+ * them a Tab actually reaches is {@link isTabStop}'s to settle: an element the
  * selector names can still be hidden, or held out of the sequence.
  *
  * The controls are named for both sides of the card. The chrome contributes
@@ -71,7 +64,7 @@ const FOCUS_STOP = [
  * by {@link guardNavigation}. What must not reach past the card is the top
  * layer, which is what the `FORBID_ATTR` below is for.
  */
-export const POPUP_SANITIZE_CONFIG = {
+const POPUP_SANITIZE_CONFIG = {
     // DOMPurify's defaults strip `<style>` whole, tag and rules alike. An
     // author's own stylesheet is the point of mounting content in a shadow
     // root, where the rules reach the card's content and stop there, so it is
@@ -151,17 +144,17 @@ function isNonBlankString(value: unknown): value is string {
 }
 
 /**
- * The geographic range an anchor has to fall inside. A coordinate outside it
- * is not a place: the projection silently clamps it, so the popup would open
- * somewhere the caller never asked for.
+ * Whether the anchor names a latitude a map can project. Web Mercator clamps
+ * one past a pole, so a card anchored there would open somewhere the caller
+ * never asked for.
+ *
+ * Longitude is left alone. A map panned across the antimeridian hands out
+ * longitudes past ±180 — a bounds' east edge, a click, a view's centre — and
+ * each projects to the pixel the caller meant, one world east or west of the
+ * prime copy. Refusing them would refuse the anchors those maps are made of.
  */
 function isAnchorInRange(latlng: { lat: number; lng: number }): boolean {
-    return (
-        latlng.lat >= -90 &&
-        latlng.lat <= 90 &&
-        latlng.lng >= -180 &&
-        latlng.lng <= 180
-    )
+    return latlng.lat >= -90 && latlng.lat <= 90
 }
 
 /**
@@ -200,19 +193,22 @@ function buildActionButton(
     return button
 }
 
-/** Where a link points, in either of the two spellings SVG and HTML use. */
+/**
+ * Where a link points, in either of the two spellings SVG and HTML use. SVG
+ * 1.1 spells it `xlink:href`, which is what most drawing tools still export,
+ * and which is the qualified name the attribute carries whether the parser
+ * put it in the xlink namespace or left it a plain attribute.
+ */
 function linkTarget(anchor: Element): string | null {
-    return (
-        anchor.getAttribute('href') ??
-        anchor.getAttributeNS(XLINK_NAMESPACE, 'href') ??
-        anchor.getAttribute('xlink:href')
-    )
+    return anchor.getAttribute('href') ?? anchor.getAttribute('xlink:href')
 }
 
 /**
- * Whether following a link would take the browser somewhere other than a spot
- * inside the card. A bare fragment is a jump within the content — and one that
- * resolves inside the shadow root, so it cannot reach an id in the app either.
+ * Whether following a link would take the browser away from where it already
+ * is. A bare fragment goes nowhere: fragment lookup never enters a shadow
+ * tree, so a `#` link in a card reaches none of the card's own ids, and the
+ * most it can do is name an element of the app and put the fragment in the
+ * address bar, which is inert here.
  *
  * Everything else goes somewhere, an empty `href` included: it resolves to the
  * document the app is running in, so following one reloads the whole app.
@@ -227,6 +223,8 @@ function leavesTheCard(href: string | null): href is string {
  * A plain `<a href>` in a card navigates the whole app away, taking the map,
  * the session and every other plugin with it, so a card cannot be allowed to
  * hold one. The `rel` keeps the app out of reach of wherever the link points.
+ * `<area href>` is the same link wearing an image map, and the sanitizer
+ * passes `<map>` and `<area>` through, so the walk covers both.
  *
  * A walk over the sanitized markup rather than a DOMPurify hook, which is the
  * same choice `Markdown_` makes for the same reason: hooks are registered on
@@ -234,7 +232,7 @@ function leavesTheCard(href: string | null): href is string {
  * in the app.
  */
 function sendLinksToTheirOwnTab(content: DocumentFragment): void {
-    content.querySelectorAll('a').forEach((anchor) => {
+    content.querySelectorAll('a, area').forEach((anchor) => {
         if (!leavesTheCard(linkTarget(anchor))) return
         anchor.setAttribute('target', '_blank')
         anchor.setAttribute('rel', 'noopener noreferrer')
@@ -262,7 +260,11 @@ function guardNavigation(event: Event): void {
         return
     }
     for (const node of event.composedPath()) {
-        if (!(node instanceof Element) || node.localName !== 'a') continue
+        if (
+            !(node instanceof Element) ||
+            (node.localName !== 'a' && node.localName !== 'area')
+        )
+            continue
         const href = linkTarget(node)
         if (!leavesTheCard(href)) return
         if (node.getAttribute('target') === '_blank') return
@@ -512,10 +514,10 @@ function trapTab(card: HTMLElement, event: KeyboardEvent): void {
  * A card inside the container would hand the map its own clicks — the engines
  * listen on the container they were given, so a press on a button would read
  * as a press on the map and dismiss the very popup it was aimed at. A sibling
- * is out of that path while still sitting in the map's layer, which is what
- * lets the app paint over the card: the panels it lays over the map claim a
- * stacking level of their own, and the card claims none of its own, so the
- * card rises no higher than the map it belongs to.
+ * is out of that path while still sitting in the map's layer. The card is a
+ * positioned box at `z-index: auto`, so it paints over the map without asking
+ * for a level; anything the app means to paint over the card has to be
+ * positioned itself and carry a level, which is what the panel regions do.
  *
  * A container with no parent — a bare embedding, a test harness — leaves the
  * body as the only host there is.
@@ -576,7 +578,7 @@ const MapPopup_ = {
         if (!isAnchorInRange(request.latlng)) {
             return Promise.reject(
                 new Error(
-                    '[MapPopup] Invalid request: latlng must hold a lat within ±90 and a lng within ±180.'
+                    '[MapPopup] Invalid request: latlng must hold a lat within ±90.'
                 )
             )
         }
@@ -648,6 +650,10 @@ const MapPopup_ = {
             // what a screen reader reads first is the card's own name.
             popup.card.focus({ preventScroll: true })
             engine.on('move', reposition)
+            // `moveend` as well as `move`: deck.gl's comparison panes report
+            // a camera only when it settles, so a card following `move` alone
+            // would sit still while a pane is dragged.
+            engine.on('moveend', reposition)
             engine.on('zoomstart', hideForZoom)
             engine.on('zoomend', reposition)
             window.addEventListener('resize', reposition)
@@ -723,6 +729,7 @@ const MapPopup_ = {
 
             try {
                 open.engine.off('move', reposition)
+                open.engine.off('moveend', reposition)
                 open.engine.off('zoomstart', hideForZoom)
                 open.engine.off('zoomend', reposition)
                 open.offClick()
@@ -812,31 +819,48 @@ const MapPopup_ = {
                 point.y >= 0 &&
                 point.y <= container.height
 
+            // Where a card that stays put is allowed to be: the map, cut down
+            // to what of it is on screen. The map alone is not enough — a card
+            // held inside a container scrolled half off screen would sit half
+            // off screen with it — and the viewport alone is not enough
+            // either, because the layout lays panels over the map's edges and
+            // those panels are positioned, so a card that spills past the map
+            // is painted over and its buttons swallowed.
+            const boundsLeft = Math.max(container.left, 0)
+            const boundsTop = Math.max(container.top, 0)
+            const boundsRight = Math.min(containerRight, window.innerWidth)
+            const boundsBottom = Math.min(containerBottom, window.innerHeight)
+
             const above = anchorTop - card.height - ANCHOR_GAP
-            // Flip below the anchor when the card would clip the viewport top.
+            // Flip below the anchor when the card would clip the top edge.
             const flipped =
-                above < VIEWPORT_MARGIN ? anchorTop + ANCHOR_GAP : above
+                above < boundsTop + VIEWPORT_MARGIN
+                    ? anchorTop + ANCHOR_GAP
+                    : above
             // A tall card flipped below a low anchor would otherwise hang past
-            // the bottom of the viewport, and nothing scrolls down to it — the
-            // document is pinned — so its actions row would be unreachable and
-            // the request it answers could never be settled. The top edge wins
-            // the tie, since the card's own max-height keeps it short enough
-            // that both clamps can be honoured.
+            // the bottom edge, and nothing scrolls down to it — the document
+            // is pinned — so its actions row would be unreachable and the
+            // request it answers could never be settled. The top edge wins the
+            // tie, since the card's own max-height keeps it short enough that
+            // both clamps can be honoured.
             const top = onMap
                 ? Math.max(
                       Math.min(
                           flipped,
-                          window.innerHeight - card.height - VIEWPORT_MARGIN
+                          boundsBottom - card.height - VIEWPORT_MARGIN
                       ),
-                      VIEWPORT_MARGIN
+                      boundsTop + VIEWPORT_MARGIN
                   )
                 : flipped
 
             const halfCard = card.width / 2
             const center = onMap
                 ? Math.min(
-                      Math.max(anchorLeft, halfCard + VIEWPORT_MARGIN),
-                      window.innerWidth - halfCard - VIEWPORT_MARGIN
+                      Math.max(
+                          anchorLeft,
+                          boundsLeft + halfCard + VIEWPORT_MARGIN
+                      ),
+                      boundsRight - halfCard - VIEWPORT_MARGIN
                   )
                 : anchorLeft
             const left = center - halfCard

@@ -20,14 +20,15 @@ export interface MapPopupAction {
 }
 
 /**
- * What to show and where. Only the anchor is required: a card is free to be a
- * heading over two buttons, or a body with none. A request holding neither a
- * title nor html has nothing to show and is rejected.
+ * What to show and where. The anchor is required, and so is one of the title
+ * and the html: a card is free to be a heading over two buttons or a body with
+ * none, but a request holding neither has nothing to show and is rejected.
  */
 export interface MapPopupRequest {
     /**
-     * Map coordinate the popup is anchored to. One outside ±90 lat or ±180
-     * lng is rejected rather than clamped onto the edge of the map.
+     * Map coordinate the popup is anchored to. A latitude outside ±90 is
+     * rejected rather than clamped onto the pole. Longitude is unbounded: a
+     * map panned across the antimeridian anchors past ±180.
      */
     latlng: { lat: number; lng: number }
     /**
