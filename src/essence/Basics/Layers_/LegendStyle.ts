@@ -12,11 +12,11 @@
  * configured for exactly this purpose (see issue #345). It lives here instead
  * so every renderer resolves the same configuration the same way.
  *
- * The work is split in two so callers can pay the grouping and sorting cost
- * once: `compileLegendStyle` digests the legend into ramps and lookup tables
- * of normalised colours, and `resolveLegendStyle` — the half that runs once
- * per feature, whenever a renderer styles it — does lookup and interpolation
- * only.
+ * The work is split in two so callers can pay the grouping, sorting and
+ * colour-parsing cost once: `compileLegendStyle` digests the legend into ramps
+ * and lookup tables of colours already normalised and parsed, and
+ * `resolveLegendStyle` — the half that runs once per feature, whenever a
+ * renderer styles it — does lookup and interpolation only.
  *
  * Both halves are pure, and neither touches the DOM: colours are parsed with
  * d3-color rather than by measuring a throwaway element, so this module works
@@ -52,12 +52,15 @@ export interface LegendStyleResult {
 }
 
 /**
- * A ramp stop, already normalised to its 0-1 position along the ramp. Its
- * colour is normalised too — see {@link normaliseColor}.
+ * A ramp stop, already normalised to its 0-1 position along the ramp, and its
+ * colour held in both forms the module needs: the CSS spelling handed back to
+ * a renderer, and the components interpolation reads.
  */
 interface ColorStop {
     position: number
     color: string
+    /** Null when {@link colorToRgb} could not read the colour. */
+    rgb: Rgb | null
 }
 
 /** A legend row matched by exact value, with its colours normalised. */
@@ -92,19 +95,19 @@ interface Rgb {
 
 // Helper function to interpolate between two colors using RGB
 function interpolateColor(
-    color1: string,
-    color2: string,
+    from: ColorStop,
+    to: ColorStop,
     factor: number
 ): string | undefined {
-    if (!color1 || !color2) return color1 || color2
+    if (!from.color || !to.color) return from.color || to.color
 
     // Ensure factor is between 0 and 1
     factor = Math.max(0, Math.min(1, factor))
 
-    const rgb1 = colorToRgb(color1)
-    const rgb2 = colorToRgb(color2)
+    const rgb1 = from.rgb
+    const rgb2 = to.rgb
 
-    if (!rgb1 || !rgb2) return color1 // Fallback if color parsing fails
+    if (!rgb1 || !rgb2) return from.color // Fallback if color parsing fails
 
     // Interpolate each RGB component
     const r = Math.round(rgb1.r + (rgb2.r - rgb1.r) * factor)
@@ -152,11 +155,7 @@ function interpolateMultipleColors(
                     : (clampedValue - currentStop.position) / stopRange
 
             // Interpolate between the two colors
-            return interpolateColor(
-                currentStop.color,
-                nextStop.color,
-                localFactor
-            )
+            return interpolateColor(currentStop, nextStop, localFactor)
         }
     }
 
@@ -204,6 +203,18 @@ function colorToRgb(color: string): Rgb | null {
     if (isNaN(r) || isNaN(g) || isNaN(b)) return null
 
     return { r: Math.round(r), g: Math.round(g), b: Math.round(b) }
+}
+
+/**
+ * Both halves of a ramp stop's colour, settled at compile time.
+ *
+ * Parsing here rather than in the interpolator keeps d3-color off the render
+ * path. The stops never change, but interpolation runs for every feature a
+ * layer draws, and it reparsed the pair its value landed between each time.
+ */
+function compileStopColor(color: string): Omit<ColorStop, 'position'> {
+    const css = normaliseColor(color) as string
+    return { color: css, rgb: colorToRgb(css) }
 }
 
 /**
@@ -290,7 +301,7 @@ export function compileLegendStyle(
                     .filter((e) => e.entry.color)
                     .map((e) => ({
                         position: positionOf(e.numericValue),
-                        color: normaliseColor(e.entry.color) as string,
+                        ...compileStopColor(e.entry.color as string),
                     })),
                 // Stroke stops fall back to the entry's fill colour, so a
                 // legend authored with fill colours alone still produces a
@@ -299,9 +310,9 @@ export function compileLegendStyle(
                     .filter((e) => e.entry.strokecolor || e.entry.color)
                     .map((e) => ({
                         position: positionOf(e.numericValue),
-                        color: normaliseColor(
-                            e.entry.strokecolor || e.entry.color
-                        ) as string,
+                        ...compileStopColor(
+                            (e.entry.strokecolor || e.entry.color) as string
+                        ),
                     })),
             }
         }
