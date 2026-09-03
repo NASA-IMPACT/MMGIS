@@ -120,6 +120,14 @@ const c = {
     type: "POST",
     url: "stac/collections/:collection/bulk_items",
   },
+  vedastac_inspect: {
+    type: "POST",
+    url: "api/stac/vedastac/inspect",
+  },
+  vedastac_fill: {
+    type: "POST",
+    url: "api/stac/vedastac/fill",
+  },
   stac_export_collection: {
     type: "GET",
     url: "api/stac/collections/:collection/export",
