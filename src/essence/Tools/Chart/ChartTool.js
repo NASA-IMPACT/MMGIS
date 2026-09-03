@@ -23,23 +23,17 @@ import ChartComponent from './ChartComponent'
 import { mmgisShowPlugin, mmgisSetPluginState } from '../_shared/adapters/mmgisAPI'
 
 // ── Module-level state ────────────────────────────────────────────────────────
-// MMGIS tools are mutually exclusive, so when FetchStats emits `analysisReady`,
-// Chart's `make()` hasn't run yet. The bus listeners have to live at module
-// scope to catch the emit; we stash the latest payload here and replay it
-// to the instance once it mounts.
+// FetchStats can emit `analysisReady` before Chart's `make()` has ever run, so
+// the bus listeners have to live at module scope to catch the emit; we stash
+// the latest payload here and replay it to the instance once it mounts.
 let _instance = null
 let _latestAnalysisData = null
 let _subscribed = false
 
+/** Stashes the latest results, renders them, and brings the panel on screen. */
 function _onAnalysisReady(payload) {
     _latestAnalysisData = payload?.analysisData ?? null
-    if (_instance && _instance._reactRoot) {
-        _instance._render()
-        return
-    }
-    // Auto-open the Chart panel. Chart is registered `startUnloaded: true`,
-    // so make() hasn't run yet — showPlugin loads it into its existing
-    // container and reveals it in one call.
+    if (_instance && _instance._reactRoot) _instance._render()
     mmgisShowPlugin('ChartTool')
         .then((result) => {
             if (!result.ok) {

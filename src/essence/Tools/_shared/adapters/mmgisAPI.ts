@@ -237,6 +237,15 @@ export const mmgisGetTiTilerUrls = (): Promise<Record<
     )
 }
 
+/**
+ * Where the active mission's files are served from, e.g. `Missions/MSL/`.
+ * Uploads configured through the Configure page are stored as paths relative
+ * to this. Null before a mission loads, or against a core without the handler.
+ */
+export const mmgisGetMissionPath = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('app:getMissionPath')
+}
+
 /** Whether the mission has time enabled at all. */
 export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')
@@ -370,6 +379,28 @@ export const mmgisOnPluginsChanged = (
     mmgisOn(PANEL_PLUGIN_EVENTS.pluginsChanged, (payload) =>
         handler(((payload as { plugins?: PluginInfo[] })?.plugins) ?? []),
     )
+
+/**
+ * The time window's opening instant as an ISO string. Null both when core has
+ * no such handler and when the mission's timeline is enabled but not yet
+ * seeded, so callers that need to tell those apart ask mmgisIsTimeEnabled.
+ *
+ * TimeControl registers this during mission load, after tools can mount; drive
+ * the first call with useMMGISHandlerReady rather than requesting at mount.
+ */
+export const mmgisGetTimeStart = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getStart')
+}
+
+/** The time window's closing instant; same null cases as mmgisGetTimeStart. */
+export const mmgisGetTimeEnd = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getEnd')
+}
+
+/** Where the timeline currently sits; same null cases as mmgisGetTimeStart. */
+export const mmgisGetTimeCurrent = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getCurrent')
+}
 
 /**
  * Copies text to the clipboard via core's app:copyText handler; true on

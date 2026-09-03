@@ -24,7 +24,10 @@ import {
     addAlphaChannel,
     texture as textureUtils,
 } from '@developmentseed/deck.gl-geotiff'
-import type { GetTileDataOptions } from '@developmentseed/deck.gl-geotiff'
+import type {
+    COGLayerProps,
+    GetTileDataOptions,
+} from '@developmentseed/deck.gl-geotiff'
 import type { GeoTIFF, Overview } from '@developmentseed/geotiff'
 import type {
     MinimalTileData,
@@ -395,25 +398,29 @@ function makeRenderTile(opts: {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the client-side COG layer for the deck.gl engine's makeTileLayer path.
+ * What creation and refresh both need to derive a COG layer's props.
  *
- * A plain `COGLayer` — the colormap/rescale behaviour rides on the
- * `getTileData` and `renderTile` props rather than a subclass, so there is no
- * layer-owned GPU state to keep in sync (see `colormapTextures`).
- *
- * @param id        - Layer id (layer name from layerObj).
- * @param options   - Raw COG file URL + layer config. `rawCogUrl` is the bare
- *                    `.tif` URL with no TiTiler host or query params
- *                    (resolveTileLayerSource's `fileUrl`).
+ * `rawCogUrl` is the bare `.tif` URL with no TiTiler host or query params
+ * (resolveTileLayerSource's `fileUrl`). `layerObj` is the layer's mission
+ * config, taken loosely because it is parsed from JSON.
  */
-export function buildDeckCOGLayer(
+export type DeckCOGOptions = {
+    rawCogUrl: string
+    layerObj: Record<string, any>
+    opacity?: number
+}
+
+/**
+ * The complete prop bag for a client-side COG layer, derived from current
+ * config. Creation and every refresh go through this one function so a
+ * colormap default can never be computed two different ways — which also
+ * makes this the one place a typed return is worth having: it is checked
+ * against COGLayer's own props, so a misspelled prop fails to compile.
+ */
+export function deckCOGProps(
     id: string,
-    options: {
-        rawCogUrl: string
-        layerObj: Record<string, any>
-        opacity?: number
-    }
-): Layer {
+    options: DeckCOGOptions
+): COGLayerProps<TileData> {
     const l = options.layerObj
     const colormapName = (l.currentCogColormap ?? l.cogColormap ?? 'viridis') as string
     const rescaleMin = Number(l.currentCogMin ?? l.cogMin ?? 0)
@@ -424,7 +431,7 @@ export function buildDeckCOGLayer(
     const minZoom = parseInt(l.minZoom)
     const maxZoom = parseInt(l.maxZoom)
 
-    return new COGLayer<TileData>({
+    return {
         id,
         geotiff: options.rawCogUrl,
         opacity: options.opacity ?? 1,
@@ -434,8 +441,10 @@ export function buildDeckCOGLayer(
         // skip its default inferRenderPipeline, which throws for float COGs
         // ('non-unsigned integers not yet supported').
         // The config nodata (if any) overrides the file's GDAL_NODATA.
-        getTileData: (image, opts) =>
-            cogGetTileData(image, { ...opts, noDataOverride: nodata }),
+        getTileData: (
+            image: GeoTIFF | Overview,
+            opts: GetTileDataOptions
+        ) => cogGetTileData(image, { ...opts, noDataOverride: nodata }),
         renderTile: makeRenderTile({ colormapName, rescaleMin, rescaleMax }),
         updateTriggers: {
             // Re-runs renderTile for already-loaded tiles (no refetch) when the
@@ -443,5 +452,21 @@ export function buildDeckCOGLayer(
             // comes from the file's GDAL_NODATA tag, fixed for a given URL.
             renderTile: [colormapName, rescaleMin, rescaleMax],
         },
-    }) as unknown as Layer
+    }
+}
+
+/**
+ * Build the client-side COG layer for the deck.gl engine's makeTileLayer path.
+ *
+ * A plain `COGLayer` — the colormap/rescale behaviour rides on the
+ * `getTileData` and `renderTile` props rather than a subclass, so there is no
+ * layer-owned GPU state to keep in sync (see `colormapTextures`).
+ *
+ * @param id        - Layer id (layer name from layerObj).
+ * @param options   - Raw COG file URL + layer config, see {@link DeckCOGOptions}.
+ */
+export function buildDeckCOGLayer(id: string, options: DeckCOGOptions): Layer {
+    return new COGLayer<TileData>(
+        deckCOGProps(id, options)
+    ) as unknown as Layer
 }

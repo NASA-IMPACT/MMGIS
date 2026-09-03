@@ -85,5 +85,10 @@
             -webkit-mask-image: url('../../geo/icons/zoom-to-layer.svg');
             mask-image: url('../../geo/icons/zoom-to-layer.svg');
         }
+
+        &--compare-layer {
+            -webkit-mask-image: url('../../geo/icons/compare-layer.svg');
+            mask-image: url('../../geo/icons/compare-layer.svg');
+        }
     }
 }
