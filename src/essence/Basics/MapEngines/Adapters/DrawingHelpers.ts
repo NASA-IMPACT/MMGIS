@@ -384,8 +384,9 @@ export class DrawEndClickGuard {
     }
 
     /**
-     * Take the map's double-click zoom for a drawing session that is starting,
-     * and give it back once the session's clicks are through ({@link arm}).
+     * Open a drawing session: drop the cover the last one left, and take the
+     * map's double-click zoom to give back once this session's clicks are
+     * through ({@link arm}).
      *
      * Call before the mode starts: terra-draw disables the handler as a mode
      * starts and leaves it disabled when the mode stops, so this is the last
@@ -397,7 +398,6 @@ export class DrawEndClickGuard {
      * @param handler The map's handler, when it has one.
      */
     holdDoubleClickZoom(handler?: DoubleClickZoomHandler | null): void {
-        if (!handler) return
         if (this._holdTimer) {
             clearTimeout(this._holdTimer)
             this._holdTimer = null
@@ -407,6 +407,12 @@ export class DrawEndClickGuard {
         // gesture on the element release the hold mid-session.
         this._ownedUntil = 0
         this._gestureOwned = false
+        // Nothing to hold, so a hold still standing from the last session goes
+        // back now rather than waiting out a timer this cleared.
+        if (!handler) {
+            this._release()
+            return
+        }
         if (!this._zoom) {
             this._zoomWasEnabled =
                 handler.enabled?.() ?? handler.isEnabled?.() ?? true
@@ -424,7 +430,7 @@ export class DrawEndClickGuard {
      * {@link DrawPointerWatch.pendingClick} found it, or null when the session
      * leaves no click behind — then whatever the user does next is theirs,
      * double-click zoom goes back at once, and the previous cover, if any,
-     * stands until its own hold runs out.
+     * stands; it is event time, so the user's next click is stamped past it.
      * @param element The element the engine's pointer events reach. Without one
      * the guard stays out of the way: an engine with no map cannot be
      * delivering clicks.
