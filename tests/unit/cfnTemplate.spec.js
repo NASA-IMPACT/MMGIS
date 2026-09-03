@@ -183,4 +183,13 @@ test.describe('renderCfnTemplate', () => {
             template.Resources.DashboardBucket.Properties
         ).not.toHaveProperty('BucketName')
     })
+
+    test('the auth function auto-publishes to LIVE', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        // Without this an UpdateStack only changes the DEVELOPMENT stage, and
+        // the distribution keeps serving the old password.
+        expect(
+            template.Resources.DashboardAuthFunction.Properties.AutoPublish
+        ).toBe(true)
+    })
 })

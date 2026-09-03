@@ -90,15 +90,15 @@ function handler(event) {
             // a control character) is escaped into its %XX form here, so
             // the pair survives instead of being dropped. '%' is inside
             // the safe set, so an already-encoded value passes through
-            // byte-identical rather than double-encoding. The match is an
-            // unanchored run of disallowed characters — a run, so a
-            // surrogate pair encodes as the one character it is — which
-            // means it never leans on how '$' treats a trailing newline.
-            // A lone surrogate cannot be encoded at all and makes
-            // encodeURIComponent throw; that pair alone is dropped.
+            // byte-identical rather than double-encoding. A lone surrogate
+            // cannot be encoded at all and makes encodeURIComponent throw;
+            // that pair alone is dropped.
             var UNSAFE_KEY_G = /[^A-Za-z0-9%\-_.~!$'()*+,;:@\/?]+/g;
             var UNSAFE_VALUE_G = /[^A-Za-z0-9%\-_.~!$'()*+,;=:@\/?]+/g;
             var parts = [];
+            // Property order, not the order the request carried: integer-like
+            // keys come first and repeated keys group together. Nothing a
+            // dashboard reads depends on where a parameter sits.
             for (var key in qs) {
                 var safeKey;
                 try {

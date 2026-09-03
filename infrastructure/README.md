@@ -55,7 +55,10 @@ value in them is production-tested. They are **kept in place**: they document
 where each Terraform value came from.
 `cloudfront-function.js` is different: it is the deployed source, not
 provenance — the publish generator (`scripts/lib/cfn-template.js`) reads and
-templates it at render time (see `tests/unit/infrastructure.spec.js`).
+templates it at render time. `tests/unit/cloudfrontFunction.spec.js` drives the
+rendered function's behaviour and holds it to the runtime's ES5 and size
+limits; `tests/unit/cfnTemplate.spec.js` covers the header strip and the
+placeholder bake.
 Nothing else here is applied directly anymore.
 One deliberate divergence: the recipes inject all five `DB_*` keys from an
 app-shaped DB secret (`<DB_SECRET_ARN>`) that the module has since retired —
@@ -295,6 +298,12 @@ it from the real login password (the full note lives in
   the request and declares the path. After an edge-function change, an
   existing dashboard picks the change up on its next Update — the Publish
   button always creates a new dashboard.
+- **A wedged dashboard stack is replaced, not repaired.** When a publish or
+  update fails with `Stack '<name>' is in <STATUS> and cannot be used`,
+  CloudFormation will not move that stack on from the status the error names —
+  delete the deployment and publish it again. What comes back is a new stack
+  with a new CloudFront URL, so a customer serving that dashboard from their
+  own domain has to re-point their origin at it.
 
 ## Placeholders in the recipe JSON
 

@@ -42,7 +42,8 @@ test.describe('dashboard CloudFront Function behavior', () => {
     test('the rendered function stays under the cloudfront-js-1.0 10KB limit', () => {
         // cloudfront-js-1.0 caps a viewer-request function's code at 10 KB;
         // exceeding it fails the CreateFunction call at deploy time, not here.
-        expect(code.length).toBeLessThan(10240)
+        // The cap is on bytes, and the source carries non-ASCII characters.
+        expect(Buffer.byteLength(code)).toBeLessThan(10240)
     })
 
     test('with no declared prefix, requests pass through unchanged', () => {

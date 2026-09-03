@@ -340,7 +340,6 @@ var essence = {
 
         //Make sure url matches mission
         var urlSplit = window.location.href.split('?')
-        var url = urlSplit[0]
 
         if (
             urlSplit.length == 1 ||
@@ -349,16 +348,20 @@ var essence = {
             // query string, matching how the landing page reads it.
             QueryURL.getSingleQueryVariable('forcelanding') !== false ||
             QueryURL.getSingleQueryVariable('forceLanding') !== false ||
-            (urlSplit[1] && urlSplit[1].split('=')[0] === '_preview')
+            QueryURL.getSingleQueryVariable('_preview') !== false
         ) {
             //then no parameters or old ones
             // Use DB mission name for deeplinks (config._dbMissionName if available)
             const missionForUrl = config._dbMissionName || config.msv.mission
-            url =
-                window.location.href.split('?')[0] +
-                '?mission=' +
-                missionForUrl
-            window.history.replaceState('', '', url)
+            // Name the loaded mission and drop the flags that asked for it,
+            // leaving the rest of the deeplink (`on`, `mapLat`, …) in place
+            // for QueryURL.queryURL() below to read.
+            const missionUrl = new URL(window.location)
+            missionUrl.searchParams.delete('forcelanding')
+            missionUrl.searchParams.delete('forceLanding')
+            missionUrl.searchParams.delete('_preview')
+            missionUrl.searchParams.set('mission', missionForUrl)
+            window.history.replaceState('', '', missionUrl)
             L_.url = window.location.href
         }
 

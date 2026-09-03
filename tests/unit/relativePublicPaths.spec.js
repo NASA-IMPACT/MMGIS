@@ -1,11 +1,10 @@
 import { test, expect } from 'vitest'
-import fs from 'fs'
-import path from 'path'
 import LayerGeologic from '../../src/essence/Basics/Layers_/LayerGeologic/LayerGeologic.js'
+import { pdfWorkerSrc } from '../../src/essence/Basics/Viewer_/pdfWorkerSrc.js'
 
-// PDFViewer.jsx and LayerGeologic.js fetch public/ assets by URL; a leading
-// slash would send the request to the customer's domain root when the
-// dashboard is served under a path prefix, so the paths must stay
+// The PDF worker and LayerGeologic's patterns are public/ assets fetched by
+// URL; a leading slash would send the request to the customer's domain root
+// when the dashboard is served under a path prefix, so the paths must stay
 // document-relative.
 
 test.describe('public asset paths stay document-relative', () => {
@@ -18,13 +17,24 @@ test.describe('public asset paths stay document-relative', () => {
         expect(url.startsWith('public/')).toBe(true)
     })
 
-    test('PDFViewer.jsx does not root its worker path', () => {
-        // A source tripwire, not a behavioral import: importing the component
-        // would drag react-pdf and its worker setup into the test environment.
-        const source = fs.readFileSync(
-            path.join(__dirname, '../../src/essence/Basics/Viewer_/PDFViewer.jsx'),
-            'utf8',
+    // The PDF worker URL lives in its own module so it can be exercised
+    // without importing the component, which would drag react-pdf and its
+    // worker setup into the test environment.
+    test('the PDF worker sits under the page root', () => {
+        expect(pdfWorkerSrc('https://h/')).toBe(
+            'https://h/public/workers/pdf.worker.min.mjs',
         )
-        expect(source).not.toMatch(/['"`]\/public/)
+    })
+
+    test('the PDF worker follows a dashboard served under a path prefix', () => {
+        expect(pdfWorkerSrc('https://h/tools/dash/')).toBe(
+            'https://h/tools/dash/public/workers/pdf.worker.min.mjs',
+        )
+    })
+
+    test('a query string on the page does not follow the PDF worker', () => {
+        expect(pdfWorkerSrc('https://h/?mission=X')).toBe(
+            'https://h/public/workers/pdf.worker.min.mjs',
+        )
     })
 })
