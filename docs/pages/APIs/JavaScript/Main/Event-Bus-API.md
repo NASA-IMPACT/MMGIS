@@ -240,7 +240,7 @@ const api = window.mmgisAPI.forPlugin('my-plugin')
 await api.request('map:hidePopup')
 ```
 
-Prefer this to `window.mmgisAPI.request(...)`: some providers answer differently, or not at all, for a caller they cannot identify. A request made straight on `mmgisAPI` carries no id, so `map:hidePopup` retracts only a popup that was opened the same anonymous way.
+Prefer this to `window.mmgisAPI.request(...)`: some providers answer differently for a caller they cannot identify. A request made straight on `mmgisAPI` carries no id, so `map:hidePopup` retracts only a popup that was opened the same anonymous way.
 
 ### Metadata Properties
 
@@ -510,7 +510,7 @@ The result is `{ action }`:
 | `'dismiss'` | The user dismissed the popup with the X, with Escape, or with a click elsewhere on the map |
 | `'closed'` | The popup went away without the user acting on it: another `map:showPopup` replaced it, `map:hidePopup` retracted it, a plugin was torn down, or the mission switched |
 
-Ownership decides who may *retract* a popup, never who may open one. A request made through a plugin's handle carries the plugin's id (see Scoped `request` above), and `map:hidePopup` retracts only the popup its own caller opened — answering `false` when the slot holds someone else's popup, or nothing — so it is safe to call blind on teardown. Prefer the handle to a bare `mmgisAPI.request(...)`: an id-less request opens a popup that any other id-less caller can retract.
+Ownership decides who may *retract* a popup, never who may open one. A request made through a plugin's handle carries the plugin's id (see Scoped `request` above), and `map:hidePopup` retracts only the popup its own caller opened — answering `false` when the slot holds someone else's popup, or nothing — so a plugin asking through its own handle can call it blind on teardown. Prefer the handle to a bare `mmgisAPI.request(...)`: an id-less request opens a popup that any other id-less caller can retract, and an id-less blind hide on teardown can retract theirs.
 
 The request rejects — showing nothing — when it is invalid (`latlng` must hold finite numbers in range, `title` and `html` must be strings when given, and one of the two must be there) or when the popup could not be mounted. A title of nothing but whitespace reads as no title, and a card with a title takes its accessible name from it rather than from the generic one a title-less card carries. An action renders only when its `label` is a non-empty string; two actions render as equal-width buttons with the primary first, and a lone action takes the primary styling whichever field it arrived in, still answering with its own slot. The popup tracks its anchor as the map pans and hides for the length of the 2D engine's zoom animation, returning once the zoom settles.
 
@@ -520,15 +520,15 @@ A click elsewhere on the map dismisses the popup on the task after that click, a
 
 `html` is sanitized with DOMPurify's defaults and mounted in a shadow root of its own, which is what makes a card an author's to style: a `<style>` inside `html` is honoured, and its rules — `:hover`, `@keyframes`, all of it — reach the card's content and stop there. The app around the card is untouched, and the theme's custom properties and the card's typography still cross the boundary inwards, so a card that styles nothing looks like the app it opened over.
 
-In: text and structure, tables, `<details>`/`<summary>`, `<img>`, `<picture>`, `<video>`, `<audio>`, `<track>`, MathML, and the whole of static SVG — gradients, patterns, masks, markers, filters and the `fe*` primitives included — carrying `class`, `id`, `style`, `data-*`, `aria-*` and `role`. Form controls and `<canvas>` render too, as inert content: the contract carries no script, so nothing reads a field back or paints a canvas, and a `<form>` that tries to submit is stopped before it can navigate.
+In: text and structure, tables, `<details>`/`<summary>`, `<img>`, `<picture>`, `<video>`, `<audio>`, `<track>`, `<map>`/`<area>` image maps, MathML, and the whole of static SVG — gradients, patterns, masks, markers, filters and the `fe*` primitives included — carrying `class`, `id`, `style`, `data-*`, `aria-*` and `role`. Form controls and `<canvas>` render too, as inert content: the contract carries no script, so nothing reads a field back or paints a canvas, and a `<form>` that tries to submit is stopped before it can navigate.
 
 Out: whatever DOMPurify's defaults refuse — scripts, event handlers, `javascript:` urls, `<iframe>`, `<object>`, `<embed>` and the SMIL animation elements — and, on top of them, the `popover` and `popovertarget` attributes, which would lift content into the browser's top layer where the card's clipping cannot follow. The one default the card overrides in the other direction is `<style>`, which DOMPurify strips whole and the card gives back, the shadow root being what makes a stylesheet safe to hand an author.
 
-A link that goes anywhere opens in a tab of its own: the core sets `target="_blank"` and `rel="noopener noreferrer"` on every `href` — and every SVG `xlink:href` — that is not a bare `#fragment`, so following a link in a card never navigates the app away. A bare fragment resolves inside the card's own shadow root, so it reaches neither the app's ids nor anywhere off the page.
+A link that goes anywhere opens in a tab of its own: the core sets `target="_blank"` and `rel="noopener noreferrer"` on every `<a>` and `<area>` `href` — and every SVG `xlink:href` — that is not a bare `#fragment`, so following a link in a card never navigates the app away. A bare fragment is left as the author wrote it. Fragment lookup never enters a shadow tree, so a `#` link in a card reaches none of the card's own ids; the most it can do is select an element of the app by id and put the fragment in the address bar, which navigates nothing.
 
 **The card as a dialog**
 
-An open popup is a dialog. It carries `role="dialog"`, focus moves onto the card as it opens, Tab and Shift+Tab cycle within it — through the plugin's own links and controls in their place — and focus returns to whatever held it when the popup closes, unless the user has moved focus somewhere of their own in the meantime. Escape closes the popup and answers `'dismiss'`, exactly as the X does. A card with a `title` takes its accessible name from it; one without carries `aria-label="Map popup"`.
+An open popup is a dialog. It carries `role="dialog"`, focus moves onto the card as it opens, Tab and Shift+Tab cycle within it — through the plugin's own links and controls in their place — and focus returns to whatever held it when the popup closes, unless the user has moved focus somewhere of their own in the meantime. Escape, pressed while focus is inside the card, closes the popup and answers `'dismiss'`, exactly as the X does. A card with a `title` takes its accessible name from it; one without carries `aria-label="Map popup"`.
 
 Focus is trapped, but nothing is laid over the rest of the app: a pointer is still free to click anywhere while a popup is open.
 

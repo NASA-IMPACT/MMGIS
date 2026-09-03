@@ -12,12 +12,11 @@
     position: fixed;
     top: 0;
     left: 0;
-    /* A stacking context of its own — paint containment makes one — but no
-       level of its own, so the card paints where tree order puts it: after
-       the map container it is mounted beside, which is all covering the map
-       takes, while everything the app lays over the map — panels, the layer
-       manager, a modal — claims a level and so goes on painting over the
-       card. */
+    /* A positioned box at `z-index: auto`: it paints in the positioned step,
+       above every non-positioned sibling whatever tree order says, so the
+       card covers the map without asking for a level. Anything the app means
+       to paint over the card — the panel regions, a modal — has to be
+       positioned itself and carry a level of its own. */
     box-sizing: border-box;
     /* Shrink to fit the content: the card is placed by a transform, so it has
        no containing block to resolve a percentage width against. */
@@ -27,9 +26,8 @@
     /* A card is never taller than the viewport it is placed in: nothing
        scrolls a card that hangs past the bottom edge into view, so its actions
        row would be out of reach. The 16px is the 8px margin MapPopup_ keeps
-       between the card and a viewport edge, counted at the top and at the
-       bottom. The column lets the content take whatever room the actions row
-       leaves. */
+       at an edge, counted at the top and at the bottom. The column lets the
+       content take whatever room the actions row leaves. */
     display: flex;
     flex-direction: column;
     max-height: calc(100vh - 16px);

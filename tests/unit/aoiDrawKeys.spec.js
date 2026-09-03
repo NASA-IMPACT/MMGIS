@@ -28,6 +28,16 @@ function appendTo(body, tag, attributes = {}) {
     return el
 }
 
+/**
+ * Start a session the way `map:drawstart` does, and drop the bookkeeping that
+ * comes with it — starting one retracts the previous selection's card — so
+ * `requests` holds only what the keys asked for.
+ */
+function startSession() {
+    AOITool._onDrawStart()
+    requests.length = 0
+}
+
 beforeEach(() => {
     requests = []
     finishSucceeds = true
@@ -38,12 +48,22 @@ beforeEach(() => {
                 name === 'map:finishDrawing' ? finishSucceeds : true
             )
         },
+        forPlugin: () => ({
+            emit: () => { },
+            provide: () => () => { },
+            request: (name, data) => window.mmgisAPI.request(name, data),
+        }),
     }
+    // These specs drive the session directly rather than through `make()`, so
+    // hand the tool the handle `make()` would have given it — every request it
+    // makes goes through that.
+    AOITool._api = window.mmgisAPI.forPlugin('aoi')
 })
 
 afterEach(() => {
     AOITool._removeDrawKeys()
     AOITool._state.isDrawing = false
+    AOITool._api = null
     document.body.innerHTML = ''
     delete AOITool.api
     delete window.mmgisAPI
@@ -51,13 +71,13 @@ afterEach(() => {
 
 test.describe('AOI draw-session keys', () => {
     test('Escape cancels the drawing from anywhere on the page', () => {
-        AOITool._onDrawStart()
+        startSession()
         press('Escape')
         expect(requests).toEqual(['map:disableDrawing'])
     })
 
     test('Enter finishes the drawing from anywhere on the page', () => {
-        AOITool._onDrawStart()
+        startSession()
         press('Enter')
         expect(requests).toEqual(['map:finishDrawing'])
     })
@@ -67,7 +87,7 @@ test.describe('AOI draw-session keys', () => {
     // terra-draw hears are the two halves of one press, and must not read as
     // two finishes.
     test('both keys work with the map element focused', () => {
-        AOITool._onDrawStart()
+        startSession()
         const canvas = appendTo(document.body, 'canvas')
         press('Enter', canvas)
         release('Enter', canvas)
@@ -79,7 +99,7 @@ test.describe('AOI draw-session keys', () => {
     // Clicking a panel control moves focus off the map, which is exactly where
     // terra-draw stops hearing anything.
     test('both keys work with a panel control focused', () => {
-        AOITool._onDrawStart()
+        startSession()
         const button = appendTo(document.body, 'button')
         press('Enter', button)
         press('Escape', button)
@@ -87,7 +107,7 @@ test.describe('AOI draw-session keys', () => {
     })
 
     test('leaves the keys to whatever field they were typed in', () => {
-        AOITool._onDrawStart()
+        startSession()
         // jsdom parses contenteditable but never sets isContentEditable, so
         // stand in for the flag a browser would have raised here.
         const editable = appendTo(document.body, 'div', { contenteditable: 'true' })
@@ -108,7 +128,7 @@ test.describe('AOI draw-session keys', () => {
     // must survive an Escape aimed at one of those — including one aimed at a
     // control nested inside it.
     test('leaves the keys to a component that closes on Escape', () => {
-        AOITool._onDrawStart()
+        startSession()
         for (const role of ['dialog', 'menu', 'listbox', 'combobox']) {
             const owner = appendTo(document.body, 'div', { role })
             const nested = appendTo(owner, 'button')
@@ -120,7 +140,7 @@ test.describe('AOI draw-session keys', () => {
     })
 
     test('ignores a key held down long enough to repeat', () => {
-        AOITool._onDrawStart()
+        startSession()
         press('Enter', document.body, { repeat: true })
         press('Escape', document.body, { repeat: true })
         expect(requests).toEqual([])
@@ -131,7 +151,7 @@ test.describe('AOI draw-session keys', () => {
     // stays in drawing state with the keys still live.
     test('keeps drawing when the shape has too few vertices to finish', async () => {
         finishSucceeds = false
-        AOITool._onDrawStart()
+        startSession()
         press('Enter')
         expect(await window.mmgisAPI.request('map:finishDrawing')).toBe(false)
         expect(AOITool._state.isDrawing).toBe(true)
@@ -144,7 +164,7 @@ test.describe('AOI draw-session keys', () => {
     })
 
     test('stops listening once the drawing completes', () => {
-        AOITool._onDrawStart()
+        startSession()
         AOITool._onDrawComplete({
             feature: {
                 type: 'Feature',
@@ -162,7 +182,7 @@ test.describe('AOI draw-session keys', () => {
     })
 
     test('stops listening once the drawing is cancelled', () => {
-        AOITool._onDrawStart()
+        startSession()
         AOITool._onDrawCancelEvent()
         requests = []
         press('Escape')
@@ -170,7 +190,7 @@ test.describe('AOI draw-session keys', () => {
     })
 
     test('stops listening when the tool goes away', () => {
-        AOITool._onDrawStart()
+        startSession()
         AOITool.destroy()
         requests = []
         press('Escape')
@@ -178,8 +198,8 @@ test.describe('AOI draw-session keys', () => {
     })
 
     test('installs a single listener however often a session starts', () => {
-        AOITool._onDrawStart()
-        AOITool._onDrawStart()
+        startSession()
+        startSession()
         press('Escape')
         expect(requests).toEqual(['map:disableDrawing'])
     })
@@ -193,17 +213,14 @@ test.describe('AOI draw-session keys', () => {
             handlers[event] = handler
             return () => delete handlers[event]
         }
-        // The controller injects the plugin-scoped handle before make() runs;
-        // nothing here goes through it, so an inert one is enough.
-        AOITool.api = {
-            emit: () => { },
-            provide: () => () => { },
-            request: () => Promise.resolve(undefined),
-        }
+        // The controller injects the plugin-scoped handle before make() runs,
+        // and every request the session makes goes through it.
+        AOITool.api = window.mmgisAPI.forPlugin('aoi')
         appendTo(document.body, 'div', { id: 'toolPanel' })
         AOITool.make('toolPanel')
 
         handlers['map:drawstart']({ shape: 'polygon' })
+        requests.length = 0
         press('Escape')
         expect(requests).toEqual(['map:disableDrawing'])
 

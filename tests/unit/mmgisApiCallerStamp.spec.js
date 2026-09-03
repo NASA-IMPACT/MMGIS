@@ -77,10 +77,12 @@ test.describe('the caller a request arrives with', () => {
     // prefixed. Prefixing it would put `map:showPopup` out of reach.
     test('does not come with the plugin prefix emit and provide add', async () => {
         const calls = recorder('map:somethingCoreOwns')
+        // Standing where a prefixed request would land instead.
+        const prefixed = recorder('plugin:aoi:map:somethingCoreOwns')
 
         await mmgisAPI.forPlugin('aoi').request('map:somethingCoreOwns')
 
         expect(calls).toHaveLength(1)
-        expect(mmgisAPI.hasHandler('plugin:aoi:map:somethingCoreOwns')).toBe(false)
+        expect(prefixed).toEqual([])
     })
 })

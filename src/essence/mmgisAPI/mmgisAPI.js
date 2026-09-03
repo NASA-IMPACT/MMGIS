@@ -977,9 +977,9 @@ var mmgisAPI = {
      * handler as it was written. Plugins do not pass this themselves:
      * `forPlugin`'s `request` stamps it, which is the whole reason it is worth
      * anything.
-     * @returns {Promise<*>} - Promise that resolves to handler's response
-     * @throws {Error} - If no handler is registered for the request name, or
-     * if `options` is given as anything but an object
+     * @returns {Promise<*>} - Promise that resolves to handler's response, and
+     * rejects when no handler is registered for the request name or `options`
+     * is given as anything but an object
      * @example
      * const center = await mmgisAPI.request('map:getCenter');
      * const layers = await mmgisAPI.request('layers:getVisible');
@@ -990,7 +990,10 @@ var mmgisAPI = {
         // read as no caller at all: an unstamped request opens a popup the
         // plugin that asked for it can never retract, and nothing downstream
         // is in a position to notice.
-        if (options != null && typeof options !== 'object') {
+        if (
+            options != null &&
+            (typeof options !== 'object' || Array.isArray(options))
+        ) {
             throw new Error(
                 '[mmgisAPI] request options must be an object: request(name, data, { caller })'
             )

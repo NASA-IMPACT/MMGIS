@@ -79,6 +79,7 @@ import {
 import { TerraDrawMapLibreGLAdapter } from 'terra-draw-maplibre-gl-adapter'
 import {
     committedVerticesFromChange,
+    DoubleClickZoomHandler,
     DrawEndClickGuard,
     drawModeKeyEvents,
     DrawPointerWatch,
@@ -1342,13 +1343,22 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 'MapInitOptions.basemap to use drawing.'
             )
         }
+        // Handed over before the mode starts, while double-click zoom is still
+        // the map's own: terra-draw disables it from here to the end of the
+        // session, and the guard is what gives it back.
+        this._drawEndClick.holdDoubleClickZoom(this._doubleClickZoom())
         if (!td.enabled) td.start()
         td.clear()
         td.setMode(shape)
         this._drawingShape = shape
-        this._drawPointers.start()
+        this._drawPointers.start(this._drawEventElement())
         this._syncLayers()
         this._emitEvent('drawstart', { shape })
+    }
+
+    private _doubleClickZoom(): DoubleClickZoomHandler | undefined {
+        return (this._basemap as { doubleClickZoom?: DoubleClickZoomHandler })
+            ?.doubleClickZoom
     }
 
     /** The element terra-draw's MapLibre adapter attaches its listeners to. */
@@ -1375,13 +1385,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         // recognizers hold each one back a tap interval to see whether a
         // double-click is coming, so both the click that ended the session and
         // the one that placed its last vertex can arrive after this. The watch
-        // is what knows which of those is still owed. Armed after terra-draw
-        // has stopped, because stopping is what turns double-click zoom back
-        // on for the guard to hold back again.
+        // is what knows which of those is still owed. Arming is also what puts
+        // double-click zoom back on the clock, so it happens on every end of a
+        // session.
         this._drawEndClick.arm(
             this._drawPointers.pendingClick,
-            this._drawEventElement(),
-            (this._basemap as any)?.doubleClickZoom
+            this._drawEventElement()
         )
         this._drawPointers.stop()
         this._syncLayers()
@@ -1414,6 +1423,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
 
     isDrawing(): boolean {
         return this._drawingShape !== null
+    }
+
+    ownsDrawEndClick(source: unknown): boolean {
+        return this._drawEndClick.owns(source)
     }
 
     onFeatureClick(handler: FeatureInteractionHandler): () => void {

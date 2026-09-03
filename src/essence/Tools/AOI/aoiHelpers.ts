@@ -204,31 +204,36 @@ export function featureCentroid(f: Feature): [number, number] | null {
         const c = g.coordinates as [number, number]
         return [c[0], c[1]]
     }
-    if (g.type === 'Polygon' || g.type === 'MultiPolygon') {
-        const rings: number[][][] =
-            g.type === 'Polygon'
-                ? (g.coordinates as number[][][])
-                : ((g.coordinates as number[][][][]).flat() as number[][][])
-        let sx = 0
-        let sy = 0
-        let n = 0
-        for (const ring of rings) {
-            const last = ring.length - 1
-            const stopAt =
-                ring.length > 1 &&
-                ring[0][0] === ring[last][0] &&
-                ring[0][1] === ring[last][1]
-                    ? last
-                    : ring.length
-            for (let i = 0; i < stopAt; i++) {
-                sx += ring[i][0]
-                sy += ring[i][1]
-                n++
-            }
+    // Every other supported geometry is a list of vertex lists — rings for the
+    // polygons, the line itself for the linestrings — and all of them get the
+    // same vertex mean.
+    let parts: number[][][] | null = null
+    if (g.type === 'Polygon') parts = g.coordinates as number[][][]
+    else if (g.type === 'MultiPolygon')
+        parts = (g.coordinates as number[][][][]).flat() as number[][][]
+    else if (g.type === 'LineString') parts = [g.coordinates as number[][]]
+    else if (g.type === 'MultiLineString') parts = g.coordinates as number[][][]
+    if (!parts) return null
+
+    let sx = 0
+    let sy = 0
+    let n = 0
+    for (const part of parts) {
+        // A closed ring repeats its first vertex as its last; count it once.
+        const last = part.length - 1
+        const stopAt =
+            part.length > 1 &&
+            part[0][0] === part[last][0] &&
+            part[0][1] === part[last][1]
+                ? last
+                : part.length
+        for (let i = 0; i < stopAt; i++) {
+            sx += part[i][0]
+            sy += part[i][1]
+            n++
         }
-        return n > 0 ? [sx / n, sy / n] : null
     }
-    return null
+    return n > 0 ? [sx / n, sy / n] : null
 }
 
 export function featureBounds(f: Feature): [number, number, number, number] | null {
@@ -347,7 +352,7 @@ export function selectionFitBounds(
 }
 
 /**
- * Pick where to anchor the selection tooltip. The tooltip holds the only
+ * Pick where to anchor the selection's popup card. The card holds the only
  * Analyze and Cancel buttons a selection has, so mounting it off-screen
  * strands the selection.
  *
@@ -360,7 +365,7 @@ export function selectionFitBounds(
  * Pass no view once the camera has been fitted to the selection — the centroid
  * is on-screen by then.
  */
-export function selectionTooltipAnchor(
+export function selectionPopupAnchor(
     centroid: { lat: number; lng: number },
     view?: ViewBounds | null
 ): { lat: number; lng: number } {

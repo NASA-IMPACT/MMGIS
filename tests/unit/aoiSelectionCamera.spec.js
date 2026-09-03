@@ -1,7 +1,8 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
+    featureCentroid,
     selectionFitBounds,
-    selectionTooltipAnchor,
+    selectionPopupAnchor,
 } from '../../src/essence/Tools/AOI/aoiHelpers.ts'
 import AOITool from '../../src/essence/Tools/AOI/AOITool.js'
 
@@ -113,26 +114,63 @@ test.describe('selectionFitBounds', () => {
     })
 })
 
-test.describe('selectionTooltipAnchor', () => {
+test.describe('featureCentroid', () => {
+    const geometry = (type, coordinates) => ({
+        type: 'Feature',
+        properties: {},
+        geometry: { type, coordinates },
+    })
+
+    test('averages a polygon ring, counting its repeated closing vertex once', () => {
+        expect(featureCentroid(squareFeature(0, 0, 10, 20))).toEqual([5, 10])
+    })
+
+    // `drawShapes: linestring` is a supported mission config, and the popup
+    // card holds the only Analyze and Cancel a selection has — no centroid, no
+    // card, and the drawn line cannot be analyzed or cleared.
+    test('averages a linestring, which is what a drawn line selects on', () => {
+        expect(
+            featureCentroid(geometry('LineString', [[0, 0], [10, 4], [20, 8]]))
+        ).toEqual([10, 4])
+    })
+
+    test('averages every part of a multilinestring', () => {
+        expect(
+            featureCentroid(
+                geometry('MultiLineString', [
+                    [[0, 0], [2, 0]],
+                    [[0, 4], [2, 4]],
+                ])
+            )
+        ).toEqual([1, 2])
+    })
+
+    test('has no centroid for a geometry with no vertices to average', () => {
+        expect(featureCentroid(geometry('LineString', []))).toBeNull()
+        expect(featureCentroid({ type: 'Feature', properties: {} })).toBeNull()
+    })
+})
+
+test.describe('selectionPopupAnchor', () => {
     const centroid = { lat: 35, lng: -95 }
 
     test('keeps a centroid that is inside the view', () => {
-        expect(selectionTooltipAnchor(centroid, view)).toEqual(centroid)
+        expect(selectionPopupAnchor(centroid, view)).toEqual(centroid)
     })
 
     test('keeps the centroid when no view is supplied (camera was fitted)', () => {
-        expect(selectionTooltipAnchor(centroid)).toEqual(centroid)
+        expect(selectionPopupAnchor(centroid)).toEqual(centroid)
     })
 
     test('falls back to the view centre for an off-screen centroid (Alaska)', () => {
-        expect(selectionTooltipAnchor({ lat: 58.4, lng: -139.3 }, view)).toEqual({
+        expect(selectionPopupAnchor({ lat: 58.4, lng: -139.3 }, view)).toEqual({
             lat: 35,
             lng: -95,
         })
     })
 
     test('falls back for a centroid off-screen in latitude only', () => {
-        expect(selectionTooltipAnchor({ lat: 5, lng: -95 }, view)).toEqual({
+        expect(selectionPopupAnchor({ lat: 5, lng: -95 }, view)).toEqual({
             lat: 35,
             lng: -95,
         })
@@ -143,7 +181,7 @@ test.describe('selectionTooltipAnchor', () => {
             southWest: { lat: 30, lng: 0 },
             northEast: { lat: 40, lng: 400 },
         }
-        expect(selectionTooltipAnchor({ lat: 80, lng: 5 }, overwide)).toEqual({
+        expect(selectionPopupAnchor({ lat: 80, lng: 5 }, overwide)).toEqual({
             lat: 35,
             lng: 200,
         })
@@ -154,7 +192,7 @@ test.describe('selectionTooltipAnchor', () => {
             southWest: { lat: 30, lng: 170 },
             northEast: { lat: 40, lng: -170 },
         }
-        expect(selectionTooltipAnchor({ lat: 58.4, lng: -139.3 }, wrapped)).toEqual({
+        expect(selectionPopupAnchor({ lat: 58.4, lng: -139.3 }, wrapped)).toEqual({
             lat: 35,
             lng: 180,
         })
@@ -177,16 +215,17 @@ test.describe('AOITool._applySelection camera behavior', () => {
             on: vi.fn(),
             off: vi.fn(),
         }
-        // The popup requests go through the plugin's handle, which is what
-        // stamps them with the plugin's id. The controller injects it as
-        // `api` and `make()` copies it to `_api`; these specs drive
-        // `_applySelection` on its own, so both are set by hand.
-        AOITool.api = {
+        // Every request goes through the plugin's handle, which is what stamps
+        // it with the plugin's id. The controller mints the handle from the bus
+        // and injects it as `api`, and `make()` copies it to `_api`; these
+        // specs drive `_applySelection` on its own, so both are set by hand.
+        window.mmgisAPI.forPlugin = (pluginId) => ({
             emit: () => { },
             provide: () => () => { },
             request: (name, data) =>
-                window.mmgisAPI.request(name, data, { caller: 'aoi' }),
-        }
+                window.mmgisAPI.request(name, data, { caller: pluginId }),
+        })
+        AOITool.api = window.mmgisAPI.forPlugin('aoi')
         AOITool._api = AOITool.api
         return calls
     }
@@ -238,7 +277,8 @@ test.describe('AOITool._applySelection camera behavior', () => {
                     { lat: 32, lng: -98 },
                     { lat: 38, lng: -80 },
                 ],
-            })
+            }),
+            { caller: 'aoi' }
         )
         // The popup waits for the camera; this mock never fires moveend, so
         // the fallback timer mounts it — at the centroid, now framed.
@@ -262,8 +302,10 @@ test.describe('AOITool._applySelection camera behavior', () => {
         expect(names(calls)).not.toContain('map:showPopup')
 
         // Map_ re-emits moveend with the engine's view state, so the handler
-        // must drop that payload rather than pass it on as a ViewBounds.
-        onMoveend({ longitude: -89, latitude: 35, zoom: 6 })
+        // must drop that payload rather than pass it on as a ViewBounds. The
+        // numbers in it are nowhere near the selection's centroid, so a
+        // handler that read the card's anchor off them would be caught here.
+        onMoveend({ longitude: 12, latitude: -4, zoom: 6 })
         // At the centroid: the camera has framed the selection, so no anchor
         // fallback applies.
         expect(
