@@ -165,7 +165,7 @@ export function MapControlBar({
                     </div>
                 )}
                 {hasZoom && (
-                    <div className="blocks-map-control__group">
+                    <div className="blocks-map-control__group blocks-map-control__group--pair">
                         <button type="button" className="blocks-map-control__btn" onClick={onZoomOut} title="Zoom out">
                             <MinusIcon />
                         </button>

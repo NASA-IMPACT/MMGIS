@@ -668,6 +668,104 @@ test.describe('dashboard CloudFront Function behavior', () => {
         expect(result.headers.location.value).toBe('/d/v/?debug')
     })
 
+    // The rebuild concatenates keys and values into the Location raw, so a
+    // pair that arrived decoded rather than percent-encoded is escaped back
+    // into wire form — it keeps its data instead of breaking the URL apart
+    // and instead of being dropped.
+    test('a value carrying a raw & or # is escaped, not dropped', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: {
+                    a: { value: '1' },
+                    evil: { value: 'x&injected=1' },
+                    frag: { value: 'y#nope' },
+                    b: { value: '2' },
+                },
+            })
+        )
+        // The '=' inside evil's value is safe in a value position and stays
+        // literal; only the '&' and '#' — the characters that would forge a
+        // param break or a fragment — are escaped.
+        expect(result.headers.location.value).toBe(
+            '/d/v/?a=1&evil=x%26injected=1&frag=y%23nope&b=2'
+        )
+    })
+
+    // Escaping is per value, not per key: the one unsafe value in a
+    // multiValue list is escaped in place, and that key's other values are
+    // untouched.
+    test('an unsafe value in a multiValue param is escaped in place', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: {
+                    a: { value: '1' },
+                    b: {
+                        value: '2',
+                        multiValue: [
+                            { value: '2' },
+                            { value: 'x&injected=1' },
+                            { value: '4' },
+                        ],
+                    },
+                },
+            })
+        )
+        expect(result.headers.location.value).toBe(
+            '/d/v/?a=1&b=2&b=x%26injected=1&b=4'
+        )
+    })
+
+    test('a key carrying a raw # is escaped', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: { 'a#b': { value: '1' }, ok: { value: '2' } },
+            })
+        )
+        expect(result.headers.location.value).toBe('/d/v/?a%23b=1&ok=2')
+    })
+
+    // A lone surrogate has no UTF-8 encoding, so encodeURIComponent throws on
+    // it. A throw inside a CloudFront Function fails the request outright, so
+    // that one pair falls back to the old drop behavior and the redirect is
+    // still issued.
+    test('a value that cannot be encoded is dropped, not thrown on', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: {
+                    a: { value: '1' },
+                    bad: { value: 'x\uD800y' },
+                    b: { value: '2' },
+                },
+            })
+        )
+        expect(result.statusCode).toBe(302)
+        expect(result.headers.location.value).toBe('/d/v/?a=1&b=2')
+    })
+
+    // Pins the wire-form delivery the rebuild relies on for percent-ambiguity
+    // ('%' is left alone so encoded values survive): if the runtime ever
+    // started handing values over decoded, these fail loudly rather than
+    // letting %26/%3D be silently mangled into a param break or an '='.
+    test('percent-encoded values pass through byte-identical', () => {
+        const result = handler(
+            makeEvent('/d/v', {
+                prefix: '/d/v',
+                querystring: {
+                    q: { value: 'a%20b' },
+                    t: { value: 'a%26b%23c' },
+                    e: { value: 'k%3Dv' },
+                },
+            })
+        )
+        expect(result.headers.location.value).toBe(
+            '/d/v/?q=a%20b&t=a%26b%23c&e=k%3Dv'
+        )
+    })
+
     test('trailing slash on the declared prefix is normalized', () => {
         const result = handler(
             makeEvent('/d/v/x.png', { prefix: '/d/v/' })
@@ -768,7 +866,7 @@ test.describe('dashboard CloudFront Function behavior', () => {
         // A real parse rather than a keyword-blocklist regex: it also
         // catches ES6+ shapes a regex would miss (classes, for-of/for-const,
         // spread, shorthand methods) and needs no upkeep as the source grows.
-        const acorn = require('acorn')
-        expect(() => acorn.parse(code, { ecmaVersion: 5 })).not.toThrow()
+        const espree = require('espree')
+        expect(() => espree.parse(code, { ecmaVersion: 5 })).not.toThrow()
     })
 })

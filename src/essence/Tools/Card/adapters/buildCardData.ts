@@ -8,33 +8,45 @@ export type RawCard = {
     linkUrl?: string
 }
 
-// Matches the lean-mode upload writer's own key shape exactly:
-// "assets/<mission>/<subdir>/uploads/<file>" (see
-// API/Backend/Upload/uploadRouter.js) — two path segments between "assets/"
-// and "/uploads/", not just "contains /uploads/ somewhere". This declassifies
-// lookalikes such as "assets/uploads/x.png" (a plugin whose own subdir is
-// literally "assets"), which falls through to the mission-relative branch
-// instead of being misread as the writer's shape.
+// Is this stored value one of our lean-mode uploads? Those are written by
+// API/Backend/Upload/uploadRouter.js and always look exactly like
 //
-// Mirrored by ASSETS_UPLOAD_KEY in configure/src/core/upload.js, which
-// classifies the same stored values for the CMS's preview. The two live in
-// separate bundles (app and Configure SPA) so they cannot share a module;
-// tests/unit/uploadPreviewSrc.spec.js fails if they diverge.
+//   assets/<mission>/<subdir>/uploads/<file>
+//
+// so this matches "assets/", then exactly two path segments, then
+// "/uploads/". The exactness matters: a plugin whose subdir happens to be
+// named "assets" would store ordinary mission-relative values like
+// "assets/uploads/x.png", and a looser test ("starts with assets/") would
+// grab those too and resolve them against the wrong root. Requiring both
+// middle segments keeps the two shapes apart.
+//
+// The Configure app needs the same test for its upload previews, but it is
+// a separate bundle that can't import from this one, so the regex is
+// written twice: here and ASSETS_UPLOAD_KEY in configure/src/core/upload.js.
+// tests/unit/uploadPreviewSrc.spec.js fails if the two copies ever differ.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
 
-// Resolves a stored card image value to a renderable URL.
-// Mission-relative paths (e.g. "CardPlugin/uploads/a.png") are prefixed with
-// the mission path (e.g. "Missions/MSL/"); absolute/data URLs pass through
-// unchanged. Values matching ASSETS_UPLOAD_KEY above — e.g.
-// "assets/MSL/CardPlugin/uploads/a.png" — are relative to the dashboard's
-// own root rather than the mission, so they are returned relative to the
-// document base instead of being mission-prefixed — correct both in a
-// published dashboard (whose entry URL always ends in "/") and in admin mode
-// (which serves from the origin root). A legacy rooted "/assets/..." value
-// is rebased to that same slash-less shape before the test. Anything else —
-// including an "assets/" value that doesn't match the writer's shape — falls
-// through: an already-rooted path passes through unchanged, and everything
-// else is treated as mission-relative.
+// Turns a stored card image value into the URL the <img> tag should use.
+// The stored value can be one of four things, checked in this order:
+//
+//   - a full URL ("https://..." or "data:...") — used as-is.
+//
+//   - a lean-mode upload key ("assets/MSL/CardPlugin/uploads/a.png" — the
+//     shape ASSETS_UPLOAD_KEY matches) — returned still slash-less, so the
+//     browser resolves it against the page's own folder. That folder is
+//     always the dashboard's root: the page is only ever served as
+//     <root>/ or <root>/index.html (the slash-less entry URL gets
+//     redirected), and the admin serves from the origin root. A legacy
+//     value from before the slash-less contract ("/assets/...") is the
+//     same thing with a leading slash; the slash is stripped before the
+//     test so it takes this branch too.
+//
+//   - any other rooted path ("/somewhere/else.png") — used as-is.
+//
+//   - anything else ("CardPlugin/uploads/a.png") — a mission-relative path,
+//     prefixed with the mission path ("Missions/MSL/"). This includes an
+//     "assets/..." value that doesn't match the writer's exact shape, on
+//     purpose — see the regex comment above.
 export function resolveImageUrl(
     image: string | undefined | null,
     missionPath: string | null,

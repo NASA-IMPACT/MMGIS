@@ -31,6 +31,11 @@ async function initializeLayout(config, missions) {
     }
 }
 
+// Both casings count, matching how modern.js reads the same flag
+const hasForceLanding = () =>
+    QueryURL.getSingleQueryVariable('forcelanding') !== false ||
+    QueryURL.getSingleQueryVariable('forceLanding') !== false
+
 export default {
     init: function (missions, forceError, forceConfig) {
         if (forceError) {
@@ -39,7 +44,7 @@ export default {
         }
 
         // Skip loading the landing page if the preview mode is controlling the config
-        if (QueryURL.getSingleQueryVariable('_preview')) {
+        if (QueryURL.getSingleQueryVariable('_preview') !== false) {
             if (typeof mmgisAPI_.onLoadCallback === 'function') {
                 mmgisAPI_.onLoadCallback()
                 mmgisAPI_.onLoadCallback = null
@@ -48,8 +53,7 @@ export default {
         }
 
         var missionUrl
-        var forceLanding =
-            QueryURL.getSingleQueryVariable('forcelanding') || false
+        var forceLanding = hasForceLanding()
 
         if (!forceConfig) {
             missionUrl = QueryURL.checkIfMission()
@@ -69,12 +73,13 @@ export default {
             missionUrl = mmgisglobal.MAIN_MISSION
             forceLanding = false
             if (
-                QueryURL.getSingleQueryVariable('mission') ||
-                QueryURL.getSingleQueryVariable('forcelanding')
+                QueryURL.getSingleQueryVariable('mission') !== false ||
+                hasForceLanding()
             ) {
                 const strippedUrl = new URL(window.location)
                 strippedUrl.searchParams.delete('mission')
                 strippedUrl.searchParams.delete('forcelanding')
+                strippedUrl.searchParams.delete('forceLanding')
                 history.replaceState(null, '', strippedUrl)
             }
         }

@@ -1,11 +1,10 @@
-// Step-1 theme rail (narrow far-left panel). Spec pulled from Figma
-// (node 4505:36933, Disasters Portal) — token-based so it stays reusable across
-// themes:
-//   rail bg          = --theme-color-primary-dark (#0d313d)
-//   item text/icon   = --theme-color-white
-//   selected item    = white fill, --theme-color-primary-dark text/icon,
-//                      4px --theme-color-secondary (#c91b6e) bar across the top
+// Step-1 theme rail (narrow far-left panel). Token-based so it stays reusable
+// across themes:
+//   rail bg          = --theme-color-ink (the theme's darkest surface)
+//   chevron + items  = --theme-color-base-lighter, white on hover
+//   selected item    = white fill, --theme-color-ink text/icon
 //   label            = --theme-font-mono (DM Mono), 10px / 1.6, uppercase
+// A chevron for opening/closing the neighbouring panel sits above the themes.
 
 // The rail is short but must paint the full-height dark strip. The left-panel
 // body defaults to `overflow-y: auto`, so filling the height made it overflow by
@@ -16,7 +15,7 @@
 // modern layout's own `.ui-region-left .ui-panel-body { overflow-y: auto }`
 // rule on specificity and lose on source order, so the scrollbar stayed.
 .ui-region-left .ui-panel:has(.blocks-theme-rail) {
-    background: var(--theme-color-primary-dark, #0d313d);
+    background: var(--theme-color-ink, #17171b);
 }
 .ui-region-left .ui-panel-body:has(.blocks-theme-rail) {
     padding: 0;
@@ -35,7 +34,65 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: var(--theme-color-primary-dark, #0d313d);
+    background: var(--theme-color-ink, #17171b);
+
+    // Opens/closes the neighbouring panel. Sits above the themes and outside
+    // their group, so it takes no part in their arrow-key navigation.
+    &__collapse {
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 48px;
+        padding: var(--theme-spacing-105, 12px) var(--theme-spacing-05, 4px);
+        border: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+        background: transparent;
+        // Matches the categories below it, so the rail reads as one set of
+        // controls rather than a bright button above a gray list.
+        color: var(--theme-color-base-lighter, #e3e3e3);
+        cursor: pointer;
+        transition: background 0.12s ease, color 0.12s ease;
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.12);
+            color: var(--theme-color-white, #ffffff);
+        }
+
+        &:focus {
+            outline: none;
+        }
+        &:focus-visible {
+            outline: 2px solid var(--theme-color-secondary, #f64137);
+            outline-offset: -2px;
+        }
+    }
+
+    // The chevron is drawn pointing away from the panel it drives, so it reads
+    // as "open". Closing it is the same glyph turned around — a rotation rather
+    // than a mirror, so the two states have a half-turn to animate between.
+    &__collapse-icon {
+        flex: none;
+        display: block;
+        width: 14px;
+        height: 14px;
+        color: inherit;
+        transition: transform 0.2s ease;
+
+        &--close {
+            transform: rotate(180deg);
+        }
+    }
+
+    // Scrolls on its own if a mission configures more themes than fit, so the
+    // chevron stays pinned at the top.
+    &__themes {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow-y: auto;
+    }
 
     &__item {
         box-sizing: border-box;
@@ -49,16 +106,18 @@
         padding: var(--theme-spacing-2, 16px) var(--theme-spacing-105, 12px);
         border: none;
         background: transparent;
-        color: var(--theme-color-white, #ffffff);
+        // Light gray rather than white: the unselected categories sit back a
+        // step, leaving the white fill to mark the selected one.
+        color: var(--theme-color-base-lighter, #e3e3e3);
         cursor: pointer;
-        transition: background 0.12s ease;
+        transition: background 0.12s ease, color 0.12s ease;
 
-        // Hover: only lightens the background; text stays white, no indicator.
-        // A translucent white wash rather than a palette token — it lightens
-        // relative to whatever the rail is painted with, so it survives a
-        // theme swap. (The token this used to use, --theme-color-primary-dark,
-        // resolves to the rail's own background, so hover changed nothing on
-        // unselected items.)
+        // Hover lightens the background and brings the category up to full
+        // white, so pointing at one previews the selected treatment. No
+        // indicator beyond that.
+        // The wash is a translucent white rather than a palette token — it
+        // lightens relative to whatever the rail is painted with, so it
+        // survives a theme swap.
         // Guarded against the selected item: a bare `&:hover` (0,2,0) outranks
         // `&--active` (0,1,0), so hovering the selected item repainted it with
         // the rail's own background and left its dark text on a dark fill —
@@ -66,40 +125,70 @@
         // depending on source order the way an `&--active:hover` override would.
         &:not(#{&}--active):hover {
             background: rgba(255, 255, 255, 0.12);
+            color: var(--theme-color-white, #ffffff);
         }
 
         &--active {
             // Selected: just inverts — white fill + dark text/icon. No bars.
             background: var(--theme-color-white, #ffffff);
-            color: var(--theme-color-primary-dark, #0d313d);
+            color: var(--theme-color-ink, #17171b);
         }
 
-        // Selection is shown by the fill + magenta bar, so drop the default
-        // (blue) focus ring on click. Keep a visible ring for keyboard only.
+        // Selection is shown by the inverted fill, so drop the default (blue)
+        // focus ring on click. Keep a visible ring for keyboard only.
         &:focus {
             outline: none;
         }
         &:focus-visible {
-            outline: 2px solid var(--theme-color-secondary, #c91b6e);
+            outline: 2px solid var(--theme-color-secondary, #f64137);
             outline-offset: -2px;
         }
     }
 
+    // Sized as a box so it holds either mark: a configured image or an MDI
+    // glyph.
     &__icon {
+        flex: none;
+        display: block;
+        width: 24px;
+        height: 24px;
         font-size: 24px;
         line-height: 1;
         color: inherit; // white normally, dark when the item is active
+    }
+
+    // A configured image is painted as a mask filled with the item's own color,
+    // so one uploaded file covers both rail states. The `mask-image` itself is
+    // set inline, per theme.
+    &__icon--image {
+        background-color: currentColor;
+        mask-repeat: no-repeat;
+        mask-position: center;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        -webkit-mask-size: contain;
     }
 
     &__label {
         margin: 0;
         color: inherit;
         font-family: var(--theme-font-mono, 'DM Mono', monospace);
+        // 10px / 1.6 is finer than the type scale's smallest step — the rail is
+        // only 66px wide and the labels have to fit on one line.
         font-size: 10px;
         font-weight: var(--theme-font-weight-semibold, 600);
         line-height: 1.6;
         text-align: center;
         text-transform: uppercase;
         letter-spacing: 0.3px;
+    }
+}
+
+// The chevron's half-turn is decoration — the icon's direction still reads
+// correctly without it, so drop the motion rather than shorten it.
+@media (prefers-reduced-motion: reduce) {
+    .blocks-theme-rail__collapse-icon {
+        transition: none;
     }
 }
