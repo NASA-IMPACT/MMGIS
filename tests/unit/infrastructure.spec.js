@@ -533,11 +533,10 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
     // boundary caps all of CloudFront in one DashboardCloudFront statement,
     // hence the two Sids.
     //
-    // The origin-access-control pair covers a template edit that changes the
-    // OAC: CloudFormation reads the existing config before it replaces it, so
-    // an UpdateStack that touches the resource needs both the read and the
-    // write, and a role holding only create/read/delete would fail mid-update
-    // and roll the stack back.
+    // The origin-access-control read/update pair is headroom for a future OAC
+    // change: the current template's OAC properties are all constants, so no
+    // republish exercises them. Pinning it in all three layers keeps the pair
+    // from drifting apart, so the edit that does need it finds it everywhere.
     // [publish-role + module Sid, boundary Sid, action]
     const CONVERGE_GRANTS = [
         ['DashboardStackLifecycle', 'DashboardStacks', 'cloudformation:UpdateStack'],
