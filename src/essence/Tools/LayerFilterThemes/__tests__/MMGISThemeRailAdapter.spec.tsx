@@ -1,6 +1,9 @@
 import React, { act } from 'react'
 import { test, expect, vi, beforeEach, afterEach } from 'vitest'
-import { MMGISThemeRailAdapter } from '../MMGISThemeRailAdapter'
+import {
+    MMGISThemeRailAdapter,
+    withResolvedIcons,
+} from '../MMGISThemeRailAdapter'
 import { mount, click } from '../../_shared/__tests__/reactHarness'
 
 // The rail's chrome icon is an SVG imported as a React component, which the
@@ -174,4 +177,32 @@ test('a refused command is reported rather than dropped', async () => {
     )
     warn.mockRestore()
     await unmount()
+})
+
+// Each icon value the upload field can hold reaches the rail by a different
+// route, and only one of the three wants the mission path in front of it.
+const iconSrc = (src: string, missionPath: string | null) =>
+    withResolvedIcons(
+        [{ id: 't', label: 'T', icon: { kind: 'image', src } }],
+        missionPath,
+    )[0].icon?.src
+
+test('an asset-bucket key stays slash-less', () => {
+    // The dashboard page resolves it against its own root, so a leading slash
+    // or a mission prefix would point it at a file that is not there.
+    expect(
+        iconSrc('assets/M/LayerFilterThemes/uploads/x.svg', 'Missions/M/'),
+    ).toBe('assets/M/LayerFilterThemes/uploads/x.svg')
+})
+
+test('a mission-relative value gains the mission path', () => {
+    expect(iconSrc('LayerFilterThemes/uploads/x.svg', 'Missions/M/')).toBe(
+        'Missions/M/LayerFilterThemes/uploads/x.svg',
+    )
+})
+
+test('a linked icon is untouched', () => {
+    expect(iconSrc('https://cdn.example.com/x.svg', 'Missions/M/')).toBe(
+        'https://cdn.example.com/x.svg',
+    )
 })

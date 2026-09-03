@@ -345,7 +345,10 @@ var essence = {
         if (
             urlSplit.length == 1 ||
             swapping ||
-            (urlSplit[1] && urlSplit[1].split('=')[0] === 'forcelanding') ||
+            // Both casings count, and the flag counts wherever it sits in the
+            // query string, matching how the landing page reads it.
+            QueryURL.getSingleQueryVariable('forcelanding') !== false ||
+            QueryURL.getSingleQueryVariable('forceLanding') !== false ||
             (urlSplit[1] && urlSplit[1].split('=')[0] === '_preview')
         ) {
             //then no parameters or old ones

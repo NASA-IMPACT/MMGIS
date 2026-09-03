@@ -9,10 +9,6 @@ export type RawCard = {
     linkUrl?: string
 }
 
-// A card's stored image value is resolved like any other mission asset, under
-// the name the Card tool and its spec use for it.
-export { resolveMissionAssetUrl as resolveImageUrl }
-
 // Resolves a stored card link to an href that points where the author meant.
 // A link is either internal to the app or an absolute external http(s) link:
 //   - root-relative internal links ("/view", "//cdn/x") pass through untouched;
