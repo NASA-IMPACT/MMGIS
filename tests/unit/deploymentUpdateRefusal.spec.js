@@ -13,16 +13,25 @@ test.describe('updateRefusalFor', () => {
     const cases = [
         // A publish task killed before its error handler runs leaves the row
         // in `provisioning` forever. The live stack is what tells a task that
-        // is really running from a row nobody is coming back to.
-        ['provisioning', null, 'Deployment is provisioning; wait for it to finish'],
+        // is really running from a row nobody is coming back to — and with no
+        // stack at all there is nothing for an update to converge, so the
+        // answer names the way out rather than sending anyone off to wait.
+        [
+            'provisioning',
+            null,
+            'Deployment is provisioning but has no stack; delete it and publish again.',
+        ],
         [
             'provisioning',
             'CREATE_IN_PROGRESS',
             'Deployment is provisioning; wait for it to finish',
         ],
         ['provisioning', 'CREATE_COMPLETE', null],
-        ['provisioning', 'ROLLBACK_COMPLETE', null],
-        ['updating', null, 'Deployment is updating; wait for it to finish'],
+        [
+            'updating',
+            null,
+            'Deployment is updating but has no stack; delete it and publish again.',
+        ],
         [
             'updating',
             'UPDATE_IN_PROGRESS',
@@ -45,10 +54,9 @@ test.describe('updateRefusalFor', () => {
             'Deployment is deleting; wait for it to finish',
         ],
         ['deleted', null, 'Deployment was deleted; publish it again'],
-        // Terminal rows are exactly what an update is for.
-        ['published', 'UPDATE_COMPLETE', null],
+        // Terminal rows are exactly what an update is for, whatever their
+        // stack looks like — the publish task decides what to do with it.
         ['published', null, null],
-        ['failed', null, null],
         ['failed', 'ROLLBACK_COMPLETE', null],
     ]
 

@@ -11,9 +11,7 @@ const STATUS = require("./models/deployment").STATUS;
 // task killed before its error handler runs leaves the row sitting in one of
 // them forever, and nothing else ever moves it — so they are refused only when
 // the live stack backs the row up, by reporting an operation still in flight or
-// by not being there at all (a publish whose CreateStack has not gone out yet
-// leaves nothing for an update to converge). A row resting on a settled stack
-// passes.
+// by not being there at all. A row resting on a settled stack passes.
 //
 // `deleting` gets no such reprieve: teardown empties the bucket before
 // DeleteStack, so the stack reads as settled for most of a delete, and a
@@ -33,8 +31,13 @@ function updateRefusalFor(row) {
     return {
       message: `Could not read the deployment's stack: ${row.stack_status_error}`,
     };
-  if (row.stack_status == null || row.stack_status.endsWith("_IN_PROGRESS"))
-    return { message: wait };
+  // No stack behind a row that claims an operation is running: there is
+  // nothing for an update to converge, and nothing left to wait for.
+  if (row.stack_status == null)
+    return {
+      message: `Deployment is ${row.status} but has no stack; delete it and publish again.`,
+    };
+  if (row.stack_status.endsWith("_IN_PROGRESS")) return { message: wait };
   return null;
 }
 
