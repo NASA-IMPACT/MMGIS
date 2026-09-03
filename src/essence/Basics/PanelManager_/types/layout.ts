@@ -37,6 +37,16 @@ export type PanelPosition = EdgePanelPosition | FloatPanelPosition
 export const FLOAT_POSITIONS = new Set(Object.values(FLOAT_POSITION))
 
 /**
+ * Positions whose panels stack their tools along the vertical axis and scroll
+ * that way. Only these support a pinned region, since pinning means holding
+ * tools at the top while the rest of the stack scrolls under them.
+ */
+export const PINNABLE_POSITIONS: Set<string> = new Set([
+    EDGE_POSITION.LEFT,
+    EDGE_POSITION.RIGHT,
+])
+
+/**
  * Visual states of a panel:
  * - collapsed: Hidden completely, takes no space in the viewport
  * - iconified: Shows tool icons only in a toolbar/sidebar

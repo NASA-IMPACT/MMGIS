@@ -161,6 +161,16 @@ interface BasePanelConfig {
      * Can be tool names (e.g., "Title") or tool IDs (e.g., "Title_instance1") for multiple instances.
      */
     panelTools?: string[];
+
+    /**
+     * Tools held in the panel's pinned region: they render above `panelTools`
+     * and stay put while the rest of the panel scrolls. Same name-or-ID
+     * vocabulary as `panelTools`, and a tool belongs to one list or the other.
+     *
+     * Only honoured on left/right panels (see PINNABLE_POSITIONS); elsewhere
+     * the tools still join the panel, just not pinned.
+     */
+    pinnedTools?: string[];
 }
 
 /**
@@ -254,6 +264,13 @@ export interface PanelStateObject {
     tools: Map<string, ToolMetadata>;
 
     /**
+     * IDs of the tools in the panel's pinned region, in render order.
+     * A subset of `tools` — pinned tools are ordinary members of the panel
+     * that additionally render in the non-scrolling region above the body.
+     */
+    pinnedToolIds: string[];
+
+    /**
      * Current actual size in pixels (dynamically updated).
      * Useful for animations, transitions, and layout calculations.
      */
@@ -263,6 +280,15 @@ export interface PanelStateObject {
      * The last non-collapsed state the panel was in.
      */
     lastVisibleState?: PanelState;
+}
+
+/** Options accepted when adding a tool to a panel. */
+export interface AddToolOptions {
+    /**
+     * Place the tool in the panel's pinned region rather than its scrolling
+     * body. Ignored by panels that can't pin.
+     */
+    pinned?: boolean;
 }
 
 /** Result of a state-changing panel command. */
@@ -314,10 +340,11 @@ export interface PanelManager {
      *
      * @param panelId ID of the panel to add tool to
      * @param toolMetadata Tool metadata (orientation, compatibility, etc.)
+     * @param options Placement options, e.g. `{ pinned: true }`
      * @throws Error if tool is incompatible with panel
      * @throws Error if panel is at max capacity
      */
-    addToolToPanel(panelId: string, toolMetadata: ToolMetadata): void;
+    addToolToPanel(panelId: string, toolMetadata: ToolMetadata, options?: AddToolOptions): void;
 
     /**
      * Remove a tool from a panel.
@@ -345,6 +372,31 @@ export interface PanelManager {
      * @returns Array of tool metadata or empty array if panel not found
      */
     getToolsForPanel(panelId: string): ToolMetadata[];
+
+    /**
+     * Whether this panel supports a pinned region at all.
+     *
+     * @param panelId Panel identifier
+     * @returns true if tools may be pinned in this panel
+     */
+    canPinTools(panelId: string): boolean;
+
+    /**
+     * Tools in the panel's pinned region, in render order.
+     *
+     * @param panelId Panel identifier
+     * @returns Array of tool metadata, empty if the panel has no pinned tools
+     */
+    getPinnedToolsForPanel(panelId: string): ToolMetadata[];
+
+    /**
+     * Tools in the panel's scrolling body — every tool that isn't pinned,
+     * in assignment order.
+     *
+     * @param panelId Panel identifier
+     * @returns Array of tool metadata or empty array if panel not found
+     */
+    getScrollingToolsForPanel(panelId: string): ToolMetadata[];
 
     /**
      * Whether a panel may enter the given state.

@@ -97,6 +97,7 @@ Each panel in the `panels` array must include these fields:
 | `capabilities` | Object | No | Panel capabilities (orientation, resizing, max tools) |
 | `dimensions` | Object | No | Size configuration for different states |
 | `tools` | Array | No | Array of tool names to assign to this panel |
+| `pinnedTools` | Array | No | Tool names to hold in the panel's pinned region, above the scrolling body. Left/right panels only |
 | `hasHeader` | Boolean | No | Whether panel has a header with title and control buttons |
 | `overlay` | Boolean | No | Whether panel overlays map (default: true) or pushes it aside |
 
@@ -169,6 +170,35 @@ Array of tool names that should be assigned to this panel:
 ```
 
 Tool names must match the `name` field in the mission's `tools` array.
+
+### pinnedTools
+
+Tool names that belong in the panel's **pinned region** — a block at the top of
+the panel that holds its place while everything below it scrolls:
+
+```json
+{
+  "pinnedTools": ["Map Control"],
+  "tools": ["Layers", "Legend", "Info"]
+}
+```
+
+Pinned tools render above the panel body, in the order listed, and the panel's
+scrollbar starts below them. A panel that pins nothing looks and behaves exactly
+as one without the field — no reserved space, no extra chrome.
+
+Notes:
+
+- Only left and right panels have a pinned region. Naming pinned tools on a
+  top, bottom or floating panel places them in the panel body instead, with a
+  console warning.
+- In a `"tabbed"` panel the pinned region sits above the tab bar, so pinned
+  tools stay visible while switching tabs.
+- A tool belongs to one list or the other. A name in both stays pinned.
+- Pinned tools are still tools in the panel: they count towards
+  `capabilities.maxTools` and appear in the iconified icon bar.
+- The region is sized by its content and has no height cap — pin more than the
+  panel can show and the scrolling area is what gives way.
 
 ## State Constraints
 
@@ -367,6 +397,9 @@ Specify tools directly in each panel configuration:
   ]
 }
 ```
+
+Tools listed in a panel's `pinnedTools` are assigned first, so the pinned
+region keeps its configured order.
 
 ### 2. Automatic Assignment (Fallback)
 

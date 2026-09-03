@@ -175,6 +175,12 @@ const ToolControllerModern_ = {
     /**
      * Assign tools explicitly defined in panel configurations
      *
+     * A panel names its tools in two ordered lists: `pinnedTools`, which
+     * render in the panel's non-scrolling region, and `panelTools`, which
+     * render in the scrolling body below it. Pinned entries are assigned first
+     * so the pinned region keeps its configured order, and a tool named in both
+     * lists stays pinned rather than being placed twice.
+     *
      * @param {Array} registeredPanels - List of registered panels
      * @param {Function} getToolData - Function to get tool data by name or ID
      * @param {Set} assignedToolIds - Set to track assigned tool IDs
@@ -182,13 +188,21 @@ const ToolControllerModern_ = {
     assignExplicitTools: function (registeredPanels, getToolData, assignedToolIds) {
         registeredPanels.forEach(panelState => {
             const panelConfig = panelState.config
+            const pinnedTools = panelConfig.pinnedTools || []
             const panelTools = panelConfig.panelTools || []
 
-            if (panelTools.length > 0) {
-                logger.debug(`Explicit assignment for panel "${panelConfig.id}":`, panelTools)
+            if (pinnedTools.length > 0 && !PanelManager_.canPinTools(panelConfig.id)) {
+                logger.warn(
+                    `Panel "${panelConfig.id}" (${panelConfig.position}) has no pinned region — ` +
+                    `its pinned tools are assigned to the panel body instead`
+                )
             }
 
-            panelTools.forEach(toolIdentifier => {
+            if (pinnedTools.length > 0 || panelTools.length > 0) {
+                logger.debug(`Explicit assignment for panel "${panelConfig.id}":`, { pinnedTools, panelTools })
+            }
+
+            const assignToPanel = (toolIdentifier, pinned) => {
                 const toolData = getToolData(toolIdentifier)
 
                 if (!toolData) {
@@ -199,6 +213,13 @@ const ToolControllerModern_ = {
                 try {
                     const { metadata } = toolData
 
+                    // A tool named in both of a panel's lists belongs to the
+                    // list that claimed it first, which is the pinned one.
+                    if (PanelManager_.getPanelState(panelConfig.id)?.tools.has(metadata.id)) {
+                        logger.warn(`Tool "${metadata.name}" is listed twice in panel "${panelConfig.id}" — keeping the first placement`)
+                        return
+                    }
+
                     // Check compatibility
                     if (!PanelManager_.isToolCompatible(panelConfig.id, metadata)) {
                         logger.warn(`Tool "${metadata.name}" is not compatible with panel "${panelConfig.id}"`)
@@ -206,12 +227,15 @@ const ToolControllerModern_ = {
                     }
 
                     // Add tool to panel
-                    PanelManager_.addToolToPanel(panelConfig.id, metadata)
+                    PanelManager_.addToolToPanel(panelConfig.id, metadata, { pinned })
                     assignedToolIds.add(metadata.id)
                 } catch (error) {
                     logger.error(`Failed to add tool "${toolIdentifier}" to panel "${panelConfig.id}":`, error)
                 }
-            })
+            }
+
+            pinnedTools.forEach(toolIdentifier => assignToPanel(toolIdentifier, true))
+            panelTools.forEach(toolIdentifier => assignToPanel(toolIdentifier, false))
         })
     },
 
@@ -270,7 +294,7 @@ const ToolControllerModern_ = {
     /**
      * Assign tools to panels based on dashboard configuration
      * Tools are assigned in two passes:
-     * 1. Explicit assignment via panel.tools arrays
+     * 1. Explicit assignment via each panel's pinnedTools and panelTools arrays
      * 2. Fallback assignment for unassigned tools (if tool.on !== false)
      *
      * @param {Array} tools - Array of tool configurations from mission config
@@ -289,7 +313,7 @@ const ToolControllerModern_ = {
         logger.debug('Starting tool assignment...')
         logger.debug(`${tools.length} tools configured, ${registeredPanels.length} panels registered`)
 
-        // First pass: Assign tools based on panel.toolNames array
+        // First pass: Assign tools named by the panels themselves
         ToolControllerModern_.assignExplicitTools(registeredPanels, getToolData, assignedToolIds)
 
         // Second pass: Assign remaining tools to compatible panels (fallback)
