@@ -91,13 +91,13 @@ Publish, Update, and Delete actions live on a new Deployments page in `/configur
 1. Admin clicks **Publish** in new Deployments page; `/api/deployments/publish` receives `{ mission, name }`.
 2. Admin server inserts a `provisioning` row in the new `deployments` table, spawns an ECS RunTask, returns `{ deployment_id, status }`.
 3. Task reads the mission config from Postgres, bakes it into a source file, runs the theme build (`npm run build:themes`, which emits `dist/` CSS + fonts), then Webpack (`STATIC_MODE=true`) to create the bundle. The `dist/` assets are baked in so themed dashboards render with their CSS/fonts.
-4. Task calls CFN `CreateStack` with a rendered template (bucket + distribution + Function, password baked into the Function source). Stack name encodes the dashboard ID for idempotency.
-5. Task polls `DescribeStacks` until `CREATE_COMPLETE` (~5–10 min; distribution provisioning dominates).
+4. Task renders the template (bucket + distribution + Function, password baked into the Function source) and, when no stack exists yet, calls CFN `CreateStack`; where one already does — a retried publish, or an update — it converges that stack with `UpdateStack` instead. Stack name encodes the dashboard ID for idempotency.
+5. Task polls `DescribeStacks` until the stack settles — `CREATE_COMPLETE` for a new one (~5–10 min; distribution provisioning dominates), `UPDATE_COMPLETE` for a converged one.
 6. Task uploads the bundle to the stack's bucket via `PutObject`.
 7. Task updates the row to `published` with `stack_arn` and `cloudfront_url`. Exits.
 8. SPA polling sees `published`, surfaces the URL.
 
-**Update:** `POST /api/deployments/:id/update` re-bakes the bundle from the current mission config, calls CFN `UpdateStack` with the freshly rendered template — converging the stack's infrastructure to current values, including re-baking the current dashboards password into the auth Function — and polls to `UPDATE_COMPLETE`, then PutObjects the new assets to the existing bucket. The CloudFront distribution is not replaced — same `deployment_id`, same stack, same URL. The row's `updated_at` reflects the latest republish. The same ECS RunTask shape as Publish, with `UpdateStack` + polling in place of `CreateStack` + polling.
+**Update:** `POST /api/deployments/:id/update` re-bakes the bundle from the current mission config, calls CFN `UpdateStack` with the freshly rendered template — converging the stack's infrastructure to current values, including re-baking the current dashboards password into the auth Function — and polls to `UPDATE_COMPLETE`, then PutObjects the new assets to the existing bucket. The CloudFront distribution is not replaced — same `deployment_id`, same stack, same URL. The row's `updated_at` reflects the latest republish. The same ECS RunTask shape as Publish; the only difference is that Update requires the stack to already exist, where Publish creates one when it does not.
 
 **Delete:** `DELETE /api/deployments/:id` marks the row `deleting`, empties the bucket (its name from `settings.bucket`, falling back to the stack's `BucketName` output for a delete mid-provision), then calls `DeleteStack`. CFN handles the 15–30 min teardown. The row flips to `deleted` on the next read where `DescribeStacks` 404s.
 

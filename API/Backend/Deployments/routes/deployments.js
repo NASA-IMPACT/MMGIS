@@ -111,6 +111,16 @@ router.post("/publish", async function (req, res) {
   }
 });
 
+// Statuses an update can't start from because a publish task or a teardown is
+// already in flight — the caller's move is to wait. (A `deleted` row is also
+// off limits, but it has no stack left to converge and so earns its own
+// answer.)
+const UPDATE_IN_FLIGHT_STATUSES = [
+  STATUS.PROVISIONING,
+  STATUS.UPDATING,
+  STATUS.DELETING,
+];
+
 // POST /api/deployments/:id/update
 // Re-bakes against the mission's current configuration, converges the
 // CloudFormation stack (re-baking the current dashboards password into the
@@ -121,6 +131,20 @@ router.post("/:id/update", async function (req, res) {
     const deployment = await Deployments.findByPk(req.params.id);
     if (deployment == null) {
       res.send({ status: "failure", message: "Deployment not found." });
+      return;
+    }
+    if (UPDATE_IN_FLIGHT_STATUSES.indexOf(deployment.status) !== -1) {
+      res.status(409).send({
+        status: "failure",
+        message: `Deployment is ${deployment.status}; wait for it to finish`,
+      });
+      return;
+    }
+    if (deployment.status === STATUS.DELETED) {
+      res.status(409).send({
+        status: "failure",
+        message: "Deployment was deleted; publish it again",
+      });
       return;
     }
 
