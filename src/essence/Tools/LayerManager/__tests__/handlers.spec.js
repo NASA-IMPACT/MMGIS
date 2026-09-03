@@ -5,6 +5,8 @@ import {
     setColormap,
     setRescale,
     zoomToLayer,
+    compareLayer,
+    showAddLayer,
 } from '../adapters/handlers.ts'
 import {
     ZOOM_TO_LAYER_PADDING,
@@ -28,6 +30,9 @@ const setupMock = (responses = {}, emitCalls = []) => {
     }
     return { emitCalls, requests }
 }
+
+// showAddLayer fires its request without returning it.
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 const EDITABLE = { hasColormap: true, canChangeColormap: true }
 // What an image layer reports: a ramp to show, but nothing to change.
@@ -258,6 +263,42 @@ test.describe('handlers', () => {
         await zoomToLayer('layerA')
 
         expect(requests).toHaveLength(0)
+        warn.mockRestore()
+    })
+
+    test('compareLayer announces the layer on the bus', () => {
+        const { emitCalls, requests } = setupMock()
+        compareLayer('layerA')
+
+        expect(emitCalls).toEqual([
+            {
+                event: 'plugin:comparison:startWithLayer',
+                payload: { layerId: 'layerA' },
+            },
+        ])
+        expect(requests).toHaveLength(0)
+    })
+
+    test('showAddLayer commands the layout to reveal the form', async () => {
+        const { emitCalls, requests } = setupMock({
+            'plugins:show': { ok: true, state: 'visible', changed: true },
+        })
+        showAddLayer()
+        await flush()
+
+        expect(requests).toEqual([
+            { name: 'plugins:show', params: { pluginId: 'addtemplayer' } },
+        ])
+        expect(emitCalls).toHaveLength(0)
+    })
+
+    test('showAddLayer logs a refusal instead of dropping it', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        setupMock({ 'plugins:show': { ok: false, reason: 'not-found' } })
+        showAddLayer()
+        await flush()
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('not-found'))
         warn.mockRestore()
     })
 })

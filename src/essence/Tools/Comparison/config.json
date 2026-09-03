@@ -1,0 +1,39 @@
+{
+    "defaults": {
+        "variables": {}
+    },
+    "defaultIcon": "compare-horizontal",
+    "description": "Compare two layers, or the same layers across two dates, wiped under a divider or side by side.",
+    "descriptionFull": {
+        "title": "A comparison tool that reads two layers against each other on the map, or the same layers at two different dates. Swipe draws one view and wipes between the two behind a draggable divider; side-by-side splits the map into two panes locked to the same centre and zoom, so both are read at once. Compare layers is entered contextually from a layer's three-dots (kebab) menu via 'Compare layer', then a second layer is picked. Compare dates reads every visible layer at the timeline's own date against the same layers at a second date picked in the panel; editing either date moves the other side or the timeline with it. Layers whose source templates a time — raster tiles, WMS, STAC, COG, and vector tiles — differ across the two dates, while vector GeoJSON layers draw the same on both sides. Completely independent: it drives the core comparison capability and reads layers and time purely through the mmgisAPI event bus.",
+        "example": {}
+    },
+    "hasVars": false,
+    "name": "Comparison",
+    "id": "comparison",
+    "toolbarPriority": 7,
+    "width": 350,
+    "height": 0,
+    "paths": {
+        "ComparisonTool": "essence/Tools/Comparison/ComparisonTool"
+    },
+    "metadata": {
+        "icon": "compare-horizontal",
+        "requiredOrientation": "vertical",
+        "compatiblePositions": [
+            "float-top-left",
+            "float-top-center",
+            "float-top-right",
+            "float-bottom-left",
+            "float-bottom-center",
+            "float-bottom-right",
+            "left",
+            "right"
+        ],
+        "preferredPosition": "float-top-left",
+        "modernLayoutSupport": true,
+        "startUnloaded": true,
+        "width": 350,
+        "height": 0
+    }
+}

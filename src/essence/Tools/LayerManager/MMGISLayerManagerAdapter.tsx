@@ -13,6 +13,8 @@ import {
     setColormap,
     setRescale,
     zoomToLayer,
+    compareLayer,
+    showAddLayer,
 } from './adapters/handlers'
 import { mmgisGetLayerBounds } from '../_shared/adapters/mmgisAPI'
 
@@ -76,6 +78,8 @@ export function MMGISLayerManagerAdapter() {
             onRescaleChange={(id, mn, mx) => { report('setRescale', setRescale(id, mn, mx, refresh)) }}
             onZoomToLayer={(id) => { report('zoomToLayer', zoomToLayer(id)) }}
             canZoomToLayer={canZoomToLayer}
+            onCompareLayer={compareLayer}
+            onAddLayer={showAddLayer}
         />
     )
 }

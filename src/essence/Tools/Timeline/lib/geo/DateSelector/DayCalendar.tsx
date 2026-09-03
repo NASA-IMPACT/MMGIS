@@ -16,7 +16,7 @@ export const DayCalendar: React.FC<DayCalendarProps> = ({
     endTime,
     onSelect,
 }) => {
-    const [viewMonth, setViewMonth] = useState(() => moment(value).startOf('month'))
+    const [viewMonth, setViewMonth] = useState(() => moment.utc(value).startOf('month'))
 
     // Walk real dates rather than counting from a table, so the month's length
     // follows the calendar itself — leap years and DST months included.
@@ -83,7 +83,7 @@ export const DayCalendar: React.FC<DayCalendarProps> = ({
     // Accepts a month name, an abbreviation, or its number.
     const handleMonthInput = (text: string) => {
         setMonthText(text)
-        const parsed = moment(text.trim(), ['MMMM', 'MMM', 'MM', 'M'], true)
+        const parsed = moment.utc(text.trim(), ['MMMM', 'MMM', 'MM', 'M'], true)
         if (!parsed.isValid()) return
         const target = viewMonth.clone().month(parsed.month())
         if (overlapsRange(target)) setViewMonth(target)

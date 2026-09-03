@@ -5,13 +5,27 @@ import { TimeMode } from '../../types'
 import { ChevronLeft, ChevronRight } from '../../icons/Chevron'
 import { snapMonthToRange } from '../../utils/timeUtils'
 import { DayCalendar } from './DayCalendar'
+import './DateSelector.css'
 
 export interface DateSelectorProps {
     selectedDate: Date
     startTime: Date
     endTime: Date
     timeMode?: TimeMode
+    /** Appended to the root element, so an embedding layout can style it. */
+    className?: string
+    /**
+     * Wording shown on the button until the user picks a date, so an unchosen
+     * `selectedDate` reads as an invitation rather than as a value they
+     * picked. The calendar still opens around `selectedDate` throughout.
+     */
+    placeholder?: string
     onDateChange: (date: Date) => void
+    /**
+     * Renders a "Compare date" action beside the date, wired to this handler.
+     * When omitted, neither the action nor its divider is drawn.
+     */
+    onCompareClick?: () => void
 }
 
 // The granularity each time mode selects; a picked value covers this whole
@@ -28,9 +42,15 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     startTime,
     endTime,
     timeMode = 'DAY',
+    className,
+    placeholder,
     onDateChange,
+    onCompareClick,
 }) => {
     const [isOpen, setIsOpen] = useState(false)
+    // `selectedDate` is a real Date even before the user commits to it, so
+    // only this separates a seeded value from a chosen one.
+    const [hasPicked, setHasPicked] = useState(false)
     // YEAR and MONTH drive their own fields; DAY and HOUR use the native inputs.
     const [yearInput, setYearInput] = useState('')
     const [monthIndex, setMonthIndex] = useState(0)
@@ -38,19 +58,19 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     const [error, setError] = useState<string | null>(null)
     const buttonRef = useRef<HTMLButtonElement>(null)
 
-    const minYear = moment(startTime).year()
-    const maxYear = moment(endTime).year()
+    const minYear = moment.utc(startTime).year()
+    const maxYear = moment.utc(endTime).year()
 
     // Format the selected date for display. Deliberately not formatDateByMode:
     // the axis labels a tick within a visible range and can stay terse, while
     // this reads on its own and always carries the year.
     let formattedDate = moment.utc(selectedDate).format('MMM D, YYYY')
     if (timeMode === 'YEAR') {
-        formattedDate = moment(selectedDate).format('YYYY')
+        formattedDate = moment.utc(selectedDate).format('YYYY')
     } else if (timeMode === 'MONTH') {
-        formattedDate = moment(selectedDate).format('MMMM YYYY')
+        formattedDate = moment.utc(selectedDate).format('MMMM YYYY')
     } else if (timeMode === 'HOUR') {
-        formattedDate = moment(selectedDate).format('MMM D, YYYY, HH:mm')
+        formattedDate = moment.utc(selectedDate).format('MMM D, YYYY, HH:mm')
     }
 
     const popoverTitle =
@@ -73,7 +93,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
         const nextOpen = !isOpen
         setIsOpen(nextOpen)
         if (nextOpen) {
-            const selected = moment(selectedDate)
+            const selected = moment.utc(selectedDate)
             setYearInput(selected.format('YYYY'))
             setMonthIndex(selected.month())
             setInputValue(selected.format(getFormatPattern()))
@@ -110,24 +130,25 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
         if (date > endTime) date = new Date(endTime)
 
         setError(null)
+        setHasPicked(true)
         onDateChange(date)
         if (closeAfter) setIsOpen(false)
     }
 
     const commitYearMonth = (year: number, month: number, closeAfter = false) => {
         if (timeMode !== 'MONTH') {
-            commit(moment({ year, month: 0, day: 1 }), closeAfter)
+            commit(moment.utc({ year, month: 0, day: 1 }), closeAfter)
             return
         }
         const snapped = snapMonthToRange(year, month, startTime, endTime)
         if (snapped !== month) setMonthIndex(snapped)
-        commit(moment({ year, month: snapped, day: 1 }), closeAfter)
+        commit(moment.utc({ year, month: snapped, day: 1 }), closeAfter)
     }
 
     const commitHour = (datePart: string, timePart: string) => {
         // Either half can be momentarily empty while being edited.
         if (!datePart || !timePart) return
-        let candidate = moment(`${datePart}T${timePart}`)
+        let candidate = moment.utc(`${datePart}T${timePart}`)
         if (!candidate.isValid()) {
             setError('Enter a valid date')
             return
@@ -138,12 +159,12 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
         // boundary rather than being refused.
         const day = candidate.clone()
         if (candidate.toDate() < startTime && day.endOf('day').toDate() >= startTime) {
-            candidate = moment(startTime)
+            candidate = moment.utc(startTime)
         } else if (
             candidate.toDate() > endTime &&
             day.startOf('day').toDate() <= endTime
         ) {
-            candidate = moment(endTime)
+            candidate = moment.utc(endTime)
         }
 
         setInputValue(candidate.format('YYYY-MM-DDTHH:mm'))
@@ -169,7 +190,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     }
 
     const stepYear = (delta: number) => {
-        const base = hasYear ? yearNumber : moment(selectedDate).year()
+        const base = hasYear ? yearNumber : moment.utc(selectedDate).year()
         const next = Math.min(maxYear, Math.max(minYear, base + delta))
         setYearInput(String(next).padStart(4, '0'))
         commitYearMonth(next, monthIndex)
@@ -187,7 +208,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     // A month is selectable when any part of it falls inside the timeline range.
     const isMonthInRange = (month: number) => {
         if (!hasYear) return true
-        const start = moment({ year: yearNumber, month, day: 1 })
+        const start = moment.utc({ year: yearNumber, month, day: 1 })
         return (
             start.clone().endOf('month').toDate() >= startTime &&
             start.toDate() <= endTime
@@ -204,7 +225,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
             }
             commitYearMonth(yearNumber, monthIndex, true)
         } else {
-            commit(moment(inputValue), true)
+            commit(moment.utc(inputValue), true)
         }
     }
 
@@ -245,7 +266,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
     )
 
     return (
-        <div className="date-selector">
+        <div className={className ? `date-selector ${className}` : 'date-selector'}>
             <div className="date-selector-display">
                 <button
                     ref={buttonRef}
@@ -265,14 +286,23 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                     >
                         <path d="M6 2H14V0H16V2H19V20H1V2H4V0H6V2ZM3 18H17V8H3V18ZM3 6H17V4H3V6Z" />
                     </svg>
-                    <span className="date-text">{formattedDate}</span>
+                    <span className="date-text">
+                        {hasPicked ? formattedDate : placeholder || formattedDate}
+                    </span>
                 </button>
 
-                <div className="date-selector-divider"></div>
-
-                <button className="compare-date-button" type="button">
-                    Compare date
-                </button>
+                {onCompareClick && (
+                    <>
+                        <div className="date-selector-divider"></div>
+                        <button
+                            className="compare-date-button"
+                            type="button"
+                            onClick={onCompareClick}
+                        >
+                            Compare date
+                        </button>
+                    </>
+                )}
             </div>
 
             <FloatingPopover
@@ -322,7 +352,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                         )}
 
                         {timeMode === 'HOUR' && (() => {
-                            const current = moment(inputValue || selectedDate)
+                            const current = moment.utc(inputValue || selectedDate)
                             const datePart = current.format('YYYY-MM-DD')
                             const timePart = current.format('HH:mm')
                             return (
@@ -333,7 +363,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                                         endTime={endTime}
                                         onSelect={(date) =>
                                             commitHour(
-                                                moment(date).format('YYYY-MM-DD'),
+                                                moment.utc(date).format('YYYY-MM-DD'),
                                                 timePart
                                             )
                                         }
@@ -354,7 +384,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                                 value={selectedDate}
                                 startTime={startTime}
                                 endTime={endTime}
-                                onSelect={(date) => commit(moment(date), true)}
+                                onSelect={(date) => commit(moment.utc(date), true)}
                             />
                         )}
 

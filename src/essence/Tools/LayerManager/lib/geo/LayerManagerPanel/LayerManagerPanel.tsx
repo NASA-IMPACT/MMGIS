@@ -17,6 +17,9 @@ export type LayerManagerPanelProps = {
     onRescaleChange?: (layerId: string, min: number, max: number) => void
     onZoomToLayer?: LayerLegendListProps['onZoomToLayer']
     canZoomToLayer?: LayerLegendListProps['canZoomToLayer']
+    onCompareLayer?: LayerLegendListProps['onCompareLayer']
+    /** Opens the host's "add layer" surface. No handler, no button. */
+    onAddLayer?: () => void
 }
 
 export function LayerManagerPanel({
@@ -30,9 +33,26 @@ export function LayerManagerPanel({
     onRescaleChange,
     onZoomToLayer,
     canZoomToLayer,
+    onCompareLayer,
+    onAddLayer,
 }: LayerManagerPanelProps) {
     return (
         <div className="blocks-layer-manager">
+            {onAddLayer && (
+                <div className="blocks-layer-manager__header">
+                    <button
+                        type="button"
+                        className="blocks-layer-manager__add-layer"
+                        onClick={onAddLayer}
+                    >
+                        <span
+                            className="blocks-layer-manager__add-layer-icon"
+                            aria-hidden="true"
+                        />
+                        <span>Add layer from URL</span>
+                    </button>
+                </div>
+            )}
             <div className="blocks-layer-manager__content">
                 {loading ? (
                     <div className="blocks-layer-manager__loading">
@@ -49,6 +69,7 @@ export function LayerManagerPanel({
                         onRescaleChange={onRescaleChange}
                         onZoomToLayer={onZoomToLayer}
                         canZoomToLayer={canZoomToLayer}
+                        onCompareLayer={onCompareLayer}
                     />
                 )}
             </div>
