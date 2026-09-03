@@ -9,13 +9,22 @@ vi.mock('../../src/essence/modern', () => ({ default: { init: vi.fn() } }))
 vi.mock('../../src/essence/mmgisAPI/mmgisAPI', () => ({ mmgisAPI_: {} }))
 vi.mock('../../src/external/attributions', () => ({ default: [] }))
 vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
-vi.mock('../../src/pre/calls', () => ({ default: { api: vi.fn() } }))
+// The config fetch answers with a classic-mode config, so a straight-through
+// load reaches essence.init.
+vi.mock('../../src/pre/calls', () => ({
+    default: {
+        api: vi.fn((verb, params, onSuccess) =>
+            onSuccess({ msv: { mission: 'OnlyMission' } })
+        ),
+    },
+}))
 vi.mock('../../src/pre/capabilities', () => ({
     isStaticBuild: vi.fn(() => false),
 }))
 
 import LandingPage from '../../src/essence/LandingPage/LandingPage'
 import { isStaticBuild } from '../../src/pre/capabilities'
+import s from '../../src/essence/essence'
 
 const MISSIONS = ['OnlyMission']
 
@@ -27,12 +36,14 @@ const initAt = (query) => {
 beforeEach(() => {
     document.body.innerHTML = ''
     window.mmgisglobal = { version: '0.0.0', MAIN_MISSION: '' }
+    vi.clearAllMocks()
     isStaticBuild.mockReturnValue(false)
 })
 
 test('a lone mission loads straight through when the flag is absent', () => {
     initAt('')
     expect(document.querySelector('.landingPage')).toBeNull()
+    expect(s.init).toHaveBeenCalled()
 })
 
 // Either casing, and with or without a value: all four spellings are the

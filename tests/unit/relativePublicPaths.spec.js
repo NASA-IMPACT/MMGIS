@@ -32,6 +32,16 @@ test.describe('public asset paths stay document-relative', () => {
         )
     })
 
+    test('a prefix without its trailing slash resolves a segment short', () => {
+        // Relative resolution drops the last segment of a slash-less base, so
+        // this URL misses the dashboard's own folder. The CloudFront Function
+        // redirects a slash-less entry request to the trailing-slash form, so
+        // the page's baseURI never takes this shape.
+        expect(pdfWorkerSrc('https://h/tools/dash')).toBe(
+            'https://h/tools/public/workers/pdf.worker.min.mjs',
+        )
+    })
+
     test('a query string on the page does not follow the PDF worker', () => {
         expect(pdfWorkerSrc('https://h/?mission=X')).toBe(
             'https://h/public/workers/pdf.worker.min.mjs',

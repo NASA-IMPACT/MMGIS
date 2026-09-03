@@ -3,6 +3,11 @@ import { isStaticBuild } from '../../pre/capabilities'
 import modern from '../modern'
 import $ from 'jquery'
 import QueryURL from '../Ancillary/QueryURL'
+import {
+    hasForceLanding,
+    hasPreview,
+    buildMissionUrl,
+} from '../Ancillary/landingFlags'
 import calls from '../../pre/calls'
 import { mmgisAPI_ } from '../mmgisAPI/mmgisAPI'
 import attributions from '../../external/attributions'
@@ -31,11 +36,6 @@ async function initializeLayout(config, missions) {
     }
 }
 
-// Both casings count, matching how modern.js reads the same flag
-const hasForceLanding = () =>
-    QueryURL.getSingleQueryVariable('forcelanding') !== false ||
-    QueryURL.getSingleQueryVariable('forceLanding') !== false
-
 export default {
     init: function (missions, forceError, forceConfig) {
         if (forceError) {
@@ -44,7 +44,7 @@ export default {
         }
 
         // Skip loading the landing page if the preview mode is controlling the config
-        if (QueryURL.getSingleQueryVariable('_preview') !== false) {
+        if (hasPreview()) {
             if (typeof mmgisAPI_.onLoadCallback === 'function') {
                 mmgisAPI_.onLoadCallback()
                 mmgisAPI_.onLoadCallback = null
@@ -76,11 +76,16 @@ export default {
                 QueryURL.getSingleQueryVariable('mission') !== false ||
                 hasForceLanding()
             ) {
-                const strippedUrl = new URL(window.location)
-                strippedUrl.searchParams.delete('mission')
-                strippedUrl.searchParams.delete('forcelanding')
-                strippedUrl.searchParams.delete('forceLanding')
-                history.replaceState(null, '', strippedUrl)
+                history.replaceState(
+                    null,
+                    '',
+                    buildMissionUrl({
+                        search: window.location.search,
+                        pathnameHref:
+                            window.location.origin + window.location.pathname,
+                        keepParams: true,
+                    })
+                )
             }
         }
 
