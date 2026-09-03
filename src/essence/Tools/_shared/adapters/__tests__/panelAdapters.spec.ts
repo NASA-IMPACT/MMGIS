@@ -27,6 +27,9 @@ afterEach(() => {
     delete (window as any).mmgisAPI
 })
 
+// The trailing `undefined` in these assertions is the options slot: the panel
+// and plugin wrappers name no caller, so every plugin on them reaches core
+// anonymously.
 describe('panel adapters', () => {
     test('getPanels resolves an empty list when core has no handler', async () => {
         ;(window as any).mmgisAPI.hasHandler = () => false
@@ -38,7 +41,7 @@ describe('panel adapters', () => {
         const panels = [{ id: 'left', position: 'left', state: 'expanded', toolIds: [] }]
         request.mockResolvedValue(panels)
         expect(await mmgisGetPanels()).toEqual(panels)
-        expect(request).toHaveBeenCalledWith('panels:getAll', undefined)
+        expect(request).toHaveBeenCalledWith('panels:getAll', undefined, undefined)
     })
 
     test('getPlugins resolves an empty list when core has no handler', async () => {
@@ -50,37 +53,37 @@ describe('panel adapters', () => {
         const plugins = [{ id: 'DrawTool', state: 'visible' }]
         request.mockResolvedValue(plugins)
         expect(await mmgisGetPlugins()).toEqual(plugins)
-        expect(request).toHaveBeenCalledWith('plugins:getAll', undefined)
+        expect(request).toHaveBeenCalledWith('plugins:getAll', undefined, undefined)
     })
 
     test('setPanelState passes the panelId and state', async () => {
         await mmgisSetPanelState('left', 'expanded')
-        expect(request).toHaveBeenCalledWith('panels:setState', { panelId: 'left', state: 'expanded' })
+        expect(request).toHaveBeenCalledWith('panels:setState', { panelId: 'left', state: 'expanded' }, undefined)
     })
 
     test('showPanel passes the panelId', async () => {
         await mmgisShowPanel('left')
-        expect(request).toHaveBeenCalledWith('panels:show', { panelId: 'left' })
+        expect(request).toHaveBeenCalledWith('panels:show', { panelId: 'left' }, undefined)
     })
 
     test('hidePanel passes the panelId', async () => {
         await mmgisHidePanel('left')
-        expect(request).toHaveBeenCalledWith('panels:hide', { panelId: 'left' })
+        expect(request).toHaveBeenCalledWith('panels:hide', { panelId: 'left' }, undefined)
     })
 
     test('setPluginState passes the pluginId and state', async () => {
         await mmgisSetPluginState('draw', 'hidden')
-        expect(request).toHaveBeenCalledWith('plugins:setState', { pluginId: 'draw', state: 'hidden' })
+        expect(request).toHaveBeenCalledWith('plugins:setState', { pluginId: 'draw', state: 'hidden' }, undefined)
     })
 
     test('showPlugin passes the pluginId', async () => {
         await mmgisShowPlugin('draw')
-        expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'draw' })
+        expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'draw' }, undefined)
     })
 
     test('hidePlugin passes the pluginId', async () => {
         await mmgisHidePlugin('draw')
-        expect(request).toHaveBeenCalledWith('plugins:hide', { pluginId: 'draw' })
+        expect(request).toHaveBeenCalledWith('plugins:hide', { pluginId: 'draw' }, undefined)
     })
 
     test('a command falls back to layout-inactive when core has no handler', async () => {
@@ -112,6 +115,6 @@ describe('the request client', () => {
 
     test('names nobody when none is given', async () => {
         await mmgisRequest('map:hidePopup')
-        expect(request).toHaveBeenCalledWith('map:hidePopup', undefined)
+        expect(request.mock.calls[0][2]).toBeUndefined()
     })
 })

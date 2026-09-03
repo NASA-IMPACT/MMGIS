@@ -61,12 +61,9 @@ export const mmgisRequest = async <T = unknown>(
     options?: RequestOptions,
 ): Promise<T | null> => {
     if (!window.mmgisAPI?.request) return null
-    // The options slot is filled only when there is something to put in it, so
-    // an unstamped request is the plain two-argument call.
-    const result = options
-        ? await window.mmgisAPI.request(name, params, options)
-        : await window.mmgisAPI.request(name, params)
-    return result as T
+    // Core reads an absent options object as no caller, so an unstamped request
+    // passes `undefined` through rather than dropping the argument.
+    return (await window.mmgisAPI.request(name, params, options)) as T
 }
 
 export const mmgisOn = (event: string, handler: (payload?: unknown) => void): EventCleanup => {

@@ -151,20 +151,14 @@ describe('the checked-in tool manifests', () => {
         }
     })
 
-    it('give the modern tools their canonical ids', () => {
+    // One entry per branch over the real manifests: a declared id the binding
+    // could never have produced, and a binding with no declared id at all.
+    // toolIdLiterals.spec.js is what guards the rest of the table, and it
+    // reports which tool moved.
+    it('give the checked-in tools their canonical ids', () => {
         expect(buildToolIds(tools)).toMatchObject({
-            AOITool: 'aoi',
             FetchStatsTool: 'fetch-stats',
-            ChartTool: 'chart',
-            CardTool: 'card',
-            LayerFilterTool: 'layerfilter',
-            LayerFilterThemesTool: 'layerfilterthemes',
-            LayerManagerTool: 'layermanager',
-            MapControlTool: 'mapcontrol',
-            ShareExportTool: 'shareexport',
-            TimelineTool: 'timeline',
-            TitleTool: 'title',
-            AddTempLayerTool: 'addtemplayer',
+            DrawTool: 'draw',
         })
     })
 })

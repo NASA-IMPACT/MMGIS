@@ -47,9 +47,13 @@ describe('emitFilterChange contract', () => {
 
     test('applies the full listed-flag complement after interaction, headers skipped', () => {
         emitFilterChange('hazard', { hazardFilter: 'flood' }, ['uuid-flood'], LAYERS, true)
-        expect(request).toHaveBeenCalledExactlyOnceWith('layers:setListed', {
-            updates: { 'uuid-flood': true, 'uuid-fire': false },
-            source: 'layerfilter',
-        })
+        expect(request).toHaveBeenCalledExactlyOnceWith(
+            'layers:setListed',
+            {
+                updates: { 'uuid-flood': true, 'uuid-fire': false },
+                source: 'layerfilter',
+            },
+            undefined
+        )
     })
 })

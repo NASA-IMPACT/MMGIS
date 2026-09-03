@@ -37,7 +37,11 @@ test('a fresh analysisReady payload asks the bus to show the Chart plugin', asyn
 
     listeners['plugin:fetch-stats:analysisReady']({ analysisData: { layerA: {} } })
 
-    expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'chart' })
+    expect(request).toHaveBeenCalledWith(
+        'plugins:show',
+        { pluginId: 'chart' },
+        undefined
+    )
 })
 
 test('closing the panel unloads the Chart plugin', async () => {
@@ -45,8 +49,12 @@ test('closing the panel unloads the Chart plugin', async () => {
 
     ChartTool._onClose()
 
-    expect(request).toHaveBeenCalledWith('plugins:setState', {
-        pluginId: 'chart',
-        state: 'unloaded',
-    })
+    expect(request).toHaveBeenCalledWith(
+        'plugins:setState',
+        {
+            pluginId: 'chart',
+            state: 'unloaded',
+        },
+        undefined
+    )
 })

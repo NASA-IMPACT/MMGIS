@@ -35,7 +35,11 @@ test('the close button hides the plugin over the bus', async () => {
     expect(closeButton).not.toBeNull()
     await click(closeButton as Element)
 
-    expect(request).toHaveBeenCalledWith('plugins:hide', { pluginId: TOOL_ID })
+    expect(request).toHaveBeenCalledWith(
+        'plugins:hide',
+        { pluginId: TOOL_ID },
+        undefined
+    )
     await unmount()
 })
 
