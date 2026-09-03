@@ -397,7 +397,17 @@ var TimeControl = {
         if (L_.layers.layer[layer.name] === null) return false
 
         const layerTimeFormat = formatLayerTime(layer.time?.format)
-        layer.time.current = TimeControl.currentTime // keeps track of when layer was refreshed
+
+        // Records the time this layer was refreshed at — and only when it is
+        // actually going to be, which is what the gates below decide. Stamped
+        // unconditionally it claims a refresh that never happened: a layer
+        // switched off is skipped, so it would go on looking current however
+        // far the time bar moved while it was off, and a caller asking
+        // "is this layer behind?" would always be told no.
+        const willRefresh =
+            (evenIfControlled === true || layer.controlled !== true) &&
+            (L_.layers.on[layer.name] || evenIfOff)
+        if (willRefresh) layer.time.current = TimeControl.currentTime
 
         // The config URL is the template — `{starttime}`, `{endtime}` and a
         // urlReplacement's `{key}` all live in it. The branches below

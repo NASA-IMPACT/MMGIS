@@ -231,6 +231,49 @@ describe('TimeControl.reloadLayer with the deck.gl engine', () => {
         )
     })
 
+    /**
+     * `time.current` records the time a layer was last refreshed at, and
+     * callers use it to tell a layer that is up to date from one that has
+     * fallen behind. reloadLayer skips a layer that is switched off, so
+     * stamping one on the way past claims a refresh that never happened —
+     * and the layer then looks current forever, however far the time bar
+     * moves while it is off.
+     */
+    test('does not stamp a layer whose refresh it skipped', async () => {
+        const layer = makeNO2Layer('TileLayer')
+        registerDeckLayer(layer)
+        L_.layers.on[layer.name] = false
+        layer.time.current = undefined
+        TimeControl.currentTime = '2026-06-01T00:00:00Z'
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(refreshLayer).not.toHaveBeenCalled()
+        expect(layer.time.current).toBeUndefined()
+    })
+
+    test('stamps a layer it did refresh', async () => {
+        const layer = makeNO2Layer('TileLayer')
+        registerDeckLayer(layer)
+        TimeControl.currentTime = '2026-06-01T00:00:00Z'
+
+        await TimeControl.reloadLayer(layer)
+
+        expect(layer.time.current).toBe('2026-06-01T00:00:00Z')
+    })
+
+    test('stamps a layer that is off when told to reload it anyway', async () => {
+        const layer = makeNO2Layer('TileLayer')
+        registerDeckLayer(layer)
+        L_.layers.on[layer.name] = false
+        TimeControl.currentTime = '2026-06-01T00:00:00Z'
+
+        await TimeControl.reloadLayer(layer, true)
+
+        expect(refreshLayer).toHaveBeenCalled()
+        expect(layer.time.current).toBe('2026-06-01T00:00:00Z')
+    })
+
     // The point of this test: a deckRaster COG config and a plain tile config
     // differ only in `cogRendererMode`. If the call site still branched on
     // that (or on engine/renderer type) to decide how to update the layer,

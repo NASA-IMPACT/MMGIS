@@ -3,6 +3,7 @@ import F_ from '../Formulae_/Formulae_'
 import Description from '../../Ancillary/Description'
 import Search from '../../Ancillary/Search'
 import Attributions from '../../Ancillary/Attributions'
+import CursorInfo from '../../Ancillary/CursorInfo'
 import ToolController_ from '../../Basics/ToolController_/ToolController_'
 import LayerGeologic from './LayerGeologic/LayerGeologic'
 import ServiceUrls from '../ServiceUrls/ServiceUrls'
@@ -205,36 +206,32 @@ async function refreshTileLayer(uuid, updateOptions) {
 }
 
 /**
- * Shows a layer on an engine that hides a toggled-off layer instead of
- * removing it. Which of two states the layer is in decides what happens:
+ * Brings a layer just switched on up to the current time.
  *
- * - held (shown before): flip it visible again. Anything changed while it was
- *   hidden reached the held instance already.
- * - not held (configured off at load, never shown): the engine adopts the
- *   instance built at creation. Any opacity or config change made since only
- *   reached the registry, so re-apply the opacity and re-run the layer's
- *   refresher — otherwise the map shows creation-time values while the panel
- *   shows the new ones.
+ * TimeControl reloads only layers that are switched on, so every time step
+ * taken while a layer is off passes it by. What the engine holds is then the
+ * range the layer was last shown with — or, for a layer that has never been
+ * shown, the range it was built with — while the time bar says otherwise.
  *
- * Either way the layer is ranked here, so the caller does not rank it again:
- * a re-sort and a full layer sync per toggle is enough.
+ * Asked for through `reloadLayer` rather than through the raster tile
+ * pipeline because that is the only path that resolves time for a vector or
+ * vectortile layer: it rewrites `layer.url` and the rebuild reads it back.
+ *
+ * Only when the layer is actually behind, so one that never went stale pays
+ * nothing for the check. That test is also what keeps the work to once per
+ * toggle: some layer types pass two show paths in a single toggle, and
+ * reloadLayer stamps `time.current` with the time it refreshed at, so the
+ * second pass finds the layer already current.
  *
  * @param {object} s - Layer config.
- * @param {object} nativeLayer - The engine's own object for `s`.
  */
-async function showLayerOnEngine(s, nativeLayer) {
-    const engine = L_.Map_.engine
-    const held = engine.updateLayer(nativeLayer, { visible: true })
-    if (!held) engine.addLayer(nativeLayer)
-    // Ranked before the refresh, not after: an unranked layer draws on top
-    // of the whole stack, and the refresh can wait on a network round trip.
-    engine.setLayerZIndex(
-        nativeLayer,
-        L_._layersOrdered.length + 1 - L_._layersOrdered.indexOf(s.name)
-    )
-    if (held) return
-    L_.setLayerOpacity(s.name, L_.layers.opacity[s.name] ?? 1)
-    await refreshTileLayer(s.name)
+async function catchUpLayerTime(s) {
+    if (s.time?.enabled !== true) return
+    if (s.time.current === L_.TimeControl_.currentTime) return
+
+    // evenIfOff: the layer is still recorded as off while the toggle runs,
+    // and reloadLayer skips a layer that is off.
+    await L_.TimeControl_.reloadLayer(s, true)
 }
 
 const L_ = {
@@ -744,6 +741,20 @@ const L_ = {
         }
         return nextUrl
     },
+    /**
+     * A layer's rank in the engine's draw order, derived from the configured
+     * stack: first in `_layersOrdered` draws on top.
+     *
+     * One derivation, used by every caller that ranks a layer — creation and
+     * re-ordering both do, and a stack that disagrees with itself draws in
+     * the wrong order.
+     *
+     * @param {string} name - Layer UUID.
+     * @returns {number}
+     */
+    layerZIndex: function (name) {
+        return L_._layersOrdered.length + 1 - L_._layersOrdered.indexOf(name)
+    },
     //Takes in config layer obj
     //Toggles a layer on and off and accounts for sublayers
     //Takes in a config layer object
@@ -824,17 +835,12 @@ const L_ = {
                             $('.drawToolContextMenuHeaderClose').click()
                         } catch (err) {}
                     }
-                    if (
-                        L_.Map_.engine &&
-                        L_.Map_.engine.engineType !== 'leaflet'
-                    ) {
-                        L_.Map_.engine.updateLayer(
-                            L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                            { visible: false }
-                        )
-                    } else {
-                        L_.Map_.rmNotNull(L_.layers.layer[s.name])
-                    }
+                    // One call on either engine. What "off" means is the
+                    // adapter's to decide — Leaflet takes the layer off the
+                    // map, deck.gl flips a prop — and either way the engine
+                    // keeps holding it, so it stays addressable while off.
+                    CursorInfo.hide(true)
+                    L_.Map_.engine.setLayerVisibility(s.name, false)
                     if (L_.layers.attachments[s.name]) {
                         for (let sub in L_.layers.attachments[s.name]) {
                             switch (L_.layers.attachments[s.name][sub].type) {
@@ -918,11 +924,7 @@ const L_ = {
                                                     sub
                                                 ].layer
                                             ),
-                                            L_._layersOrdered.length +
-                                                1 -
-                                                L_._layersOrdered.indexOf(
-                                                    s.name
-                                                )
+                                            L_.layerZIndex(s.name)
                                         )
                                         break
                                     case 'labels':
@@ -954,11 +956,7 @@ const L_ = {
                                                     sub
                                                 ].layer
                                             ),
-                                            L_._layersOrdered.length +
-                                                1 -
-                                                L_._layersOrdered.indexOf(
-                                                    s.name
-                                                )
+                                            L_.layerZIndex(s.name)
                                         )
                                         break
                                 }
@@ -966,19 +964,17 @@ const L_ = {
                         }
                     }
 
-                    const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                    if (L_.Map_.engine.engineType !== 'leaflet') {
-                        // Ranks the layer itself.
-                        await showLayerOnEngine(s, nativeLayer)
-                    } else {
-                        L_.Map_.engine.addLayer(nativeLayer)
-                        L_.Map_.engine.setLayerZIndex(
-                            nativeLayer,
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(s.name)
-                        )
-                    }
+                    // Caught up before being shown. A layer that is behind
+                    // still holds the URL it was built with, placeholders and
+                    // all, so showing it first spends a burst of tile requests
+                    // on a URL that was never going to resolve. A layer already
+                    // current skips this and appears at once.
+                    await catchUpLayerTime(s)
+                    // One call on either engine: the engine has held and ranked
+                    // this layer since creation, and was told about every
+                    // opacity and config change while it was hidden, so nothing
+                    // is re-applied here.
+                    L_.Map_.engine.setLayerVisibility(s.name, true)
                 }
 
                 if (s.type === 'tile') {
@@ -1045,9 +1041,7 @@ const L_ = {
                     )
                     L_.Map_.engine.setLayerZIndex(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name]),
-                        L_._layersOrdered.length +
-                            1 -
-                            L_._layersOrdered.indexOf(s.name)
+                        L_.layerZIndex(s.name)
                     )
                 } else {
                     let hadToMake = false
@@ -1081,19 +1075,17 @@ const L_ = {
                                         }
                                     })
                             }
-                            const nativeLayer = L_.Map_.nativeLayer(L_.layers.layer[s.name])
-                            if (L_.Map_.engine.engineType !== 'leaflet') {
-                                // Ranks the layer itself.
-                                await showLayerOnEngine(s, nativeLayer)
-                            } else {
-                                L_.Map_.engine.addLayer(nativeLayer)
-                                L_.Map_.engine.setLayerZIndex(
-                                    nativeLayer,
-                                    L_._layersOrdered.length +
-                                        1 -
-                                        L_._layersOrdered.indexOf(s.name)
-                                )
-                            }
+                            // Caught up before being shown. A layer that is behind
+                            // still holds the URL it was built with, placeholders and
+                            // all, so showing it first spends a burst of tile requests
+                            // on a URL that was never going to resolve. A layer already
+                            // current skips this and appears at once.
+                            await catchUpLayerTime(s)
+                            // One call on either engine: the engine has held and ranked
+                            // this layer since creation, and was told about every
+                            // opacity and config change while it was hidden, so nothing
+                            // is re-applied here.
+                            L_.Map_.engine.setLayerVisibility(s.name, true)
                         }
 
                         if (s.type === 'image') {
@@ -1277,9 +1269,7 @@ const L_ = {
                         )
                         L_.Map_.engine.setLayerZIndex(
                             L_.Map_.nativeLayer(sublayer.layer),
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(layerName)
+                            L_.layerZIndex(layerName)
                         )
                         break
                     case 'labels':
@@ -1292,9 +1282,7 @@ const L_ = {
                         )
                         L_.Map_.engine.setLayerZIndex(
                             L_.Map_.nativeLayer(sublayer.layer),
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(layerName)
+                            L_.layerZIndex(layerName)
                         )
                         L_.setSublayerOpacity(layerName, sublayerName)
                         break
@@ -1414,24 +1402,21 @@ const L_ = {
                                 }
                             }
                         }
-                        engine.addLayer(
-                            L_.Map_.nativeLayer(
-                                L_.layers.layer[L_.layers.dataFlat[i].name]
-                            )
+                        // Shown, not added: creation already handed every
+                        // layer to the engine. Asking by uuid also keeps the
+                        // engine on the instance it holds — re-adding the
+                        // object built at creation would drop whatever the
+                        // layer has been refreshed to since.
+                        engine.setLayerVisibility(
+                            L_.layers.dataFlat[i].name,
+                            true
                         )
-                        // Rank every layer the same way toggleLayerHelper does,
-                        // so the stack follows z-index order at start instead of
-                        // element order and a later toggle re-sorts against
-                        // ranks that are already assigned.
+                        // Re-ranked here as well as at creation, because this
+                        // runs again after a re-order, and the stack has to
+                        // follow the new configured order.
                         engine.setLayerZIndex(
-                            L_.Map_.nativeLayer(
-                                L_.layers.layer[L_.layers.dataFlat[i].name]
-                            ),
-                            L_._layersOrdered.length +
-                                1 -
-                                L_._layersOrdered.indexOf(
-                                    L_.layers.dataFlat[i].name
-                                )
+                            L_.layers.dataFlat[i].name,
+                            L_.layerZIndex(L_.layers.dataFlat[i].name)
                         )
 
                         // Ensure video layers start muted when added to map
@@ -3603,9 +3588,7 @@ const L_ = {
 
                             if (sub === 'image_overlays') {
                                 subUpdateLayers[sub].layer.setZIndex(
-                                    L_._layersOrdered.length +
-                                        1 -
-                                        L_._layersOrdered.indexOf(layerName)
+                                    L_.layerZIndex(layerName)
                                 )
                             }
                         }

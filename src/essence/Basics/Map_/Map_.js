@@ -27,6 +27,7 @@ import {
     syncTileFormatToConfig,
 } from '../Layers_/tileLayerSource'
 import { makeDeckCOGRefresher } from '../Layers_/deckCOGRefresher'
+import { handOffLayerToEngine } from '../Layers_/engineLayerHandoff'
 import { Kinds } from '../../../pre/tools'
 import DataShaders from '../../Ancillary/DataShaders'
 import calls from '../../../pre/calls'
@@ -700,11 +701,7 @@ let Map_ = {
                 L_.layers.data[L_._layersOrdered[hasIndex[i]]].type === 'image'
             ) {
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].setZIndex(
-                    L_._layersOrdered.length +
-                        1 -
-                        L_._layersOrdered.indexOf(
-                            L_._layersOrdered[hasIndex[i]]
-                        )
+                    L_.layerZIndex(L_._layersOrdered[hasIndex[i]])
                 )
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].clearCache()
                 L_.layers.layer[L_._layersOrdered[hasIndex[i]]].redraw()
@@ -717,11 +714,7 @@ let Map_ = {
         // They're separate because its better to only change the raster z-index
         for (let i = 0; i < hasIndexRaster.length; i++) {
             L_.layers.layer[L_._layersOrdered[hasIndexRaster[i]]].setZIndex(
-                L_._layersOrdered.length +
-                    1 -
-                    L_._layersOrdered.indexOf(
-                        L_._layersOrdered[hasIndexRaster[i]]
-                    )
+                L_.layerZIndex(L_._layersOrdered[hasIndexRaster[i]])
             )
         }
 
@@ -927,6 +920,36 @@ let Map_ = {
 }
 
 //Takes an array of layer objects and makes them map layers
+/**
+ * Hand a layer that has just been built to the main map's engine.
+ *
+ * Called for every layer, on either engine, whether or not it starts switched
+ * on. The engine holds each layer from creation so that an opacity write or a
+ * refresh while it is off still reaches it, and so that every caller can
+ * address it by uuid.
+ *
+ * The layer is handed over already showing whatever the mission configured,
+ * rather than hidden for `addVisible` to correct — see handOffLayerToEngine
+ * for why that ordering cannot be relied on.
+ *
+ * Layers that were never built — a header, a globe-only model, a failed load
+ * recorded as null or as the `false` sentinel — are ignored by the hand-off.
+ *
+ * Main map only. `Map_.engine` is always the main map's engine, so a
+ * secondary ctx — which has its own map and registry — would collide with the
+ * main map's entry under the same uuid.
+ */
+function handOffToEngine(layerObj, ctx) {
+    if (ctx.default !== true) return
+    handOffLayerToEngine(
+        Map_.engine,
+        layerObj.name,
+        Map_.nativeLayer(ctx.layerRegistry.layer[layerObj.name]),
+        L_.layerZIndex(layerObj.name),
+        ctx.layerRegistry.on[layerObj.name] === true
+    )
+}
+
 function makeLayers(layersObj) {
     //Make each layer (backwards to maintain draw order)
     for (var i = layersObj.length - 1; i >= 0; i--) {
@@ -986,7 +1009,7 @@ async function makeLayer(
                     )
                     break
                 case 'tile':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 case 'vectortile':
                     makeVectorTileLayer(layerObj, mapContext)
@@ -1027,19 +1050,24 @@ async function makeLayer(
                     break
                 case 'TileLayer':
                 case 'BitmapLayer':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 case 'MVTLayer':
                     makeVectorTileLayer(layerObj, mapContext)
                     break
                 case 'PointCloudLayer':
                 case 'Tile3DLayer':
-                    makeTileLayer(layerObj, mapContext)
+                    await makeTileLayer(layerObj, mapContext)
                     break
                 default:
                     console.warn('Unknown layer type: ' + layerObj.type)
             }
         }
+
+        // Every builder makeLayer waits on has recorded its layer by now, so
+        // one hand-off covers them all. The two that finish on their own
+        // schedule — image and video — hand off from their success paths.
+        handOffToEngine(layerObj, mapContext)
 
         // release hold on layer
         L_._layersBeingMade[layerName] = false
@@ -1792,19 +1820,6 @@ async function makeTileLayer(layerObj, mapContext = null) {
         variables: layerObj.variables || {},
     })
 
-    // The engine addresses layers by id; a Leaflet layer MMGIS built itself
-    // carries none until registered, so without this refreshLayer cannot find
-    // it and time reload silently stops working. Guarded to the main map: a
-    // secondary ctx has its own map/registry, and registering here would
-    // collide with the main map's entry under the same uuid. The `?.` is
-    // needed because only the deck branch above assumes Map_.engine is set.
-    if (ctx.default === true) {
-        Map_.engine?.registerLayer(
-            layerObj.name,
-            ctx.layerRegistry.layer[layerObj.name]
-        )
-    }
-
     // Add to map
     if (ctx.default != true) {
         ctx.layerRegistry.layer[layerObj.name].addTo(ctx.map)
@@ -2374,12 +2389,15 @@ function makeImageLayer(layerObj, mapContext = null) {
             L_.layers.layer[layerObj.name].clearCache()
 
             L_.layers.layer[layerObj.name].setZIndex(
-                L_._layersOrdered.length +
-                    1 -
-                    L_._layersOrdered.indexOf(layerObj.name)
+                L_.layerZIndex(layerObj.name)
             )
 
             L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
+
+            // Here rather than in makeLayer: this builder finishes on its own
+            // schedule, long after makeLayer's hand-off has run and found
+            // nothing to give the engine.
+            handOffToEngine(layerObj, ctx)
 
             L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
             allLayersLoaded()
@@ -2472,12 +2490,15 @@ function makeVideoLayer(layerObj, mapContext = null) {
         }
 
         L_.layers.layer[layerObj.name].setZIndex(
-            L_._layersOrdered.length +
-                1 -
-                L_._layersOrdered.indexOf(layerObj.name)
+            L_.layerZIndex(layerObj.name)
         )
 
         L_.setLayerOpacity(layerObj.name, L_.layers.opacity[layerObj.name])
+
+        // Here rather than in makeLayer: this builder finishes on its own
+        // schedule, long after makeLayer's hand-off has run and found nothing
+        // to give the engine.
+        handOffToEngine(layerObj, ctx)
 
         L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
         allLayersLoaded()
