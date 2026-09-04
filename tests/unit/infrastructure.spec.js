@@ -75,10 +75,14 @@ function statementBySid(roleJson, sid) {
 // Scoping an assertion to this slice proves the action lives INSIDE that
 // specific statement, and therefore under its Resource; a whole-file
 // toContain would also pass with the action in an unrelated statement.
+// A Sid that appears twice would leave the slice covering only the first
+// statement, so a second copy has to fail the assertion rather than be
+// silently skipped over.
 function sliceTerraformStatement(source, sid) {
-    const marker = new RegExp(`Sid\\s*=\\s*"${sid}"`).exec(source)
-    expect(marker, `Sid '${sid}' found`).toBeTruthy()
-    const start = marker.index
+    const pattern = `Sid\\s*=\\s*"${sid}"`
+    const found = source.match(new RegExp(pattern, 'g')) || []
+    expect(found.length, `Sid '${sid}' occurs exactly once`).toBe(1)
+    const start = new RegExp(pattern).exec(source).index
     const close = /\n {6}\},?(\n|$)/.exec(source.slice(start))
     expect(close, `statement '${sid}' closes`).toBeTruthy()
     return source.slice(start, start + close.index)

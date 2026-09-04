@@ -201,12 +201,13 @@ async function describeStack({ stackName }) {
   }
 }
 
-// True when a stack's LastUpdatedTime has moved past the one observed
-// before the operation. Absent-then-present counts: CloudFormation only
-// returns the field once a stack has been updated at least once.
+// True when a stack's LastUpdatedTime has moved past the one observed before
+// the operation. An absent time on either side is not movement: a read
+// carrying none shows nothing, and a stack that had none beforehand has never
+// been updated, so a time appearing beside an unchanged status is a read to
+// poll through rather than proof the operation landed.
 function lastUpdatedAdvanced(current, prior) {
-  if (current == null) return false;
-  if (prior == null) return true;
+  if (current == null || prior == null) return false;
   return new Date(current).getTime() > new Date(prior).getTime();
 }
 
@@ -221,12 +222,14 @@ function lastUpdatedAdvanced(current, prior) {
 // `prior` is the { status, lastUpdatedTime } read immediately BEFORE the
 // operation being waited on (pass it after an UpdateStack; the create path
 // has nothing to pass). DescribeStacks is eventually consistent, so a read
-// showing `prior`'s status is stale — polled through rather than acted on —
-// until something proves the operation landed. When `prior`'s status is one
-// the wait would resolve on, an advanced LastUpdatedTime is that proof; when
-// it is not (the stack has to move off it either way), the status alone is.
-// The FIRST read that differs from `prior` is proof enough for the rest of the
-// wait, so a status the stack returns to afterwards is taken at face value.
+// still showing `prior`'s status is stale — polled through rather than acted
+// on — until its LastUpdatedTime has advanced past `prior`'s, which only a
+// read taken after the operation started can do. Where `prior` carries no
+// LastUpdatedTime nothing can advance past it, so the status itself has to
+// change before any decision is made — which it must, since a stack the wait
+// is watching leaves its pre-operation status either way. The FIRST read that
+// differs from `prior` drops it, so a status the stack returns to afterwards
+// is taken at face value.
 async function waitForStack({
   stackName,
   desiredStatus = "CREATE_COMPLETE",
@@ -252,11 +255,7 @@ async function waitForStack({
     const stale =
       priorState != null &&
       stack.StackStatus === priorState.status &&
-      (desired.indexOf(priorState.status) === -1 ||
-        !lastUpdatedAdvanced(
-          stack.LastUpdatedTime,
-          priorState.lastUpdatedTime
-        ));
+      !lastUpdatedAdvanced(stack.LastUpdatedTime, priorState.lastUpdatedTime);
     if (!stale) {
       priorState = null;
       if (
@@ -308,30 +307,32 @@ async function convergeStackUpdate({
   // rejection and the retry (production takes the defaults — tests inject a
   // tiny interval).
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
-  timeoutMs,
 }) {
   const startedAt = Date.now();
   // What is left of the whole convergence's budget, so retries share one
   // deadline instead of each getting a fresh timeout. Floored at zero.
   const remainingMs = () => Math.max(0, deadlineMs - (Date.now() - startedAt));
-  const deadlineError = () =>
+  // `wait` is the timed-out wait this stands in for; its message names the
+  // status and reason the stack was last seen at, which is what an operator
+  // reading the row needs to act on.
+  const deadlineError = (wait) =>
     new Error(
       `Stack '${stackName}' did not converge within its ${Math.round(
         deadlineMs / 60000
-      )}-minute deadline — another operation may be stuck; try again shortly.`
+      )}-minute deadline — another operation may be stuck; try again shortly.` +
+        (wait ? ` ${wait.message}` : "")
     );
-  // Runs one waitForStack on what is left of the shared budget, capped by a
-  // caller's own `timeoutMs`. An exhausted budget, and a wait the budget cut
-  // short, both surface as the deadline rather than as one poll's timeout —
-  // so the row names the deadline it actually hit.
+  // Runs one waitForStack on what is left of the shared budget. An exhausted
+  // budget, and a wait the budget cut short, both surface as the deadline
+  // rather than as one poll's timeout — so the row names the deadline it
+  // actually hit.
   const waitWithinDeadline = async (options) => {
     const left = remainingMs();
     if (left === 0) throw deadlineError();
-    const budgetMs = timeoutMs != null ? Math.min(timeoutMs, left) : left;
     try {
-      return await waitForStack({ ...options, timeoutMs: budgetMs });
+      return await waitForStack({ ...options, timeoutMs: left });
     } catch (err) {
-      if (err.timedOut && budgetMs === left) throw deadlineError();
+      if (err.timedOut) throw deadlineError(err);
       throw err;
     }
   };
@@ -687,6 +688,7 @@ module.exports = {
   getClients,
   setClients,
   createStack,
+  UNUSABLE_STACK_STATUSES,
   assertStackUsable,
   stackMissingMessage,
   // convergeStackUpdate's own steps; exported for tests.

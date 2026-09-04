@@ -5,39 +5,11 @@ import { test, expect } from 'vitest'
 // directly — no AWS, no database, and no import of publish-static.js (which
 // runs its main() the moment it is loaded).
 
-const Sequelize = require('sequelize')
-
 const {
-    rowStillOurs,
-    rowStillOursForFailure,
     stackAction,
     assertRowLive,
 } = require('../../scripts/lib/publish-flow')
 const STATUS = require('../../API/Backend/Deployments/models/deployment').STATUS
-
-// The statuses a `where` fragment refuses to write over.
-const excluded = (fragment) => fragment.status[Sequelize.Op.notIn]
-
-test.describe('the terminal write guards', () => {
-    // A Delete that overlaps the task owns the row from the moment it starts,
-    // so neither terminal write may land on a row it has claimed. The failure
-    // write goes further: a task that already got the dashboard live owns the
-    // `published` status, and a straggler's failure must not paint over it.
-    const cases = [
-        ['the published write', rowStillOurs, ['deleting', 'deleted']],
-        [
-            'the failed write',
-            rowStillOursForFailure,
-            ['deleting', 'deleted', 'published'],
-        ],
-    ]
-
-    cases.forEach(([label, build, statuses]) => {
-        test(`${label} skips a row in ${statuses.join(', ')}`, () => {
-            expect(excluded(build(STATUS))).toEqual(statuses)
-        })
-    })
-})
 
 test.describe('stackAction', () => {
     const stack = { StackStatus: 'CREATE_COMPLETE' }

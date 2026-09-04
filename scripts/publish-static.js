@@ -214,6 +214,11 @@ async function main() {
     if (bucket == null)
       throw new Error(`Stack '${stackName}' has no BucketName output`);
 
+    // A delete can also have started during the stack wait, which is the
+    // longest step of all; filling the bucket it is about to empty only slows
+    // the teardown down. Everything below writes into that bucket.
+    assertRowLive(await readRow(), Deployments.STATUS);
+
     // 4. Same-key copy the mission's assets from the shared admin bucket
     //    so document-relative assets/<mission>/… references resolve
     //    against the dashboard's document base (the customer prefix,
@@ -300,11 +305,6 @@ async function main() {
         })
     );
     log("Interpolated static globals into index.html.");
-
-    // A delete can also have started during the stack wait, which is the
-    // longest step of all; filling the bucket it is about to empty only slows
-    // the teardown down.
-    assertRowLive(await readRow(), Deployments.STATUS);
 
     // 5. Upload the bundle. The static index references ./build/... and
     // public/... — the same paths Express mounts in server mode — so the

@@ -15,21 +15,26 @@ function statusNotIn(statuses) {
   return { status: { [Sequelize.Op.notIn]: statuses } };
 }
 
-// The `where` fragment that keeps a terminal write on a row this task is still
-// responsible for: a Delete that overlaps the task owns the row's status from
-// the moment it starts, and writing over a deleting/deleted row would raise a
+// The statuses a Delete owns: it claims the row the moment it starts, and
+// anything this task leaves behind on a deleting/deleted row would raise a
 // dashboard the operator asked to tear down.
 // `STATUS` is the deployment model's status map, passed in so this file needs
 // no database connection.
+function claimedByDelete(STATUS) {
+  return [STATUS.DELETING, STATUS.DELETED];
+}
+
+// The `where` fragment that keeps a terminal write on a row this task is still
+// responsible for.
 function rowStillOurs(STATUS) {
-  return statusNotIn([STATUS.DELETING, STATUS.DELETED]);
+  return statusNotIn(claimedByDelete(STATUS));
 }
 
 // The same fragment for the write that marks the row failed, which also leaves
 // a `published` row alone: a later task that got the dashboard live owns the
 // status, and a straggler's failure must not paint over it.
 function rowStillOursForFailure(STATUS) {
-  return statusNotIn([STATUS.DELETING, STATUS.DELETED, STATUS.PUBLISHED]);
+  return statusNotIn([...claimedByDelete(STATUS), STATUS.PUBLISHED]);
 }
 
 // What to do with the dashboard's stack, given the action the task was started
@@ -57,7 +62,7 @@ function stackAction({ action, stack, stackName, stackArn }) {
 function assertRowLive(row, STATUS) {
   if (row == null)
     throw new Error("Deployment row is gone; abandoning this publish");
-  if (row.status === STATUS.DELETING || row.status === STATUS.DELETED)
+  if (claimedByDelete(STATUS).indexOf(row.status) !== -1)
     throw new Error(`Deployment is ${row.status}; abandoning this publish`);
 }
 
