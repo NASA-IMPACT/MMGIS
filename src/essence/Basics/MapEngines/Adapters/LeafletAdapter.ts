@@ -1165,11 +1165,11 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     }
 
     enableDrawing(shape: DrawShape): void {
-        // Swapping the engine's own mode is not the user backing out of a
-        // drawing, so the restart ends the previous session without emitting —
-        // unless no new session takes its place, and the one it ended is owed
-        // its cancel after all.
-        const previous = this._stopDrawing()
+        // A live session ends here whoever asked for the new shape, and a
+        // drawing ended before it finished is a cancel.
+        if (this._drawingShape) {
+            this.disableDrawing()
+        }
 
         const td = this._ensureTerraDraw()
         // Handed over before the mode starts, while double-click zoom is still
@@ -1188,7 +1188,6 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
             // back at.
             try { td.stop() } catch { /* map already gone */ }
             this._drawEndClick.dispose()
-            if (previous) this.emit('drawcancel', { shape: previous })
             throw err
         }
         this._drawingShape = shape
@@ -1209,10 +1208,8 @@ export default class LeafletAdapter implements IMapEngine<any, any, any>, IMapEn
     /**
      * Tear down the terra-draw session and clear in-progress geometry
      * without emitting any lifecycle event. The caller decides what the end
-     * means: {@link disableDrawing} adds the `drawcancel`, the finish in
-     * {@link _ensureTerraDraw} emits `drawcomplete` instead, and the restart
-     * in {@link enableDrawing} says nothing unless the new mode fails to
-     * start, leaving no session to have restarted into.
+     * means: {@link disableDrawing} adds the `drawcancel`, and the finish in
+     * {@link _ensureTerraDraw} emits `drawcomplete` instead.
      */
     private _stopDrawing(): DrawShape | null {
         if (!this._drawingShape) return null
