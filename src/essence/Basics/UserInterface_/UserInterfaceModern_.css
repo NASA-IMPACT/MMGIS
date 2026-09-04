@@ -367,10 +367,9 @@
 
 /* Sidebar Icons */
 .ui-panel-icons {
-    /* The bar's outer size along its own axis — width for a left/right panel,
-       height for a top/bottom one. syncDOMState applies it to that axis and
-       overrides this value with the panel's iconifiedSize when one is set, so a
-       configured bar and the default one are sized by the same rule. */
+    /* The bar's outer size along its own axis: width for a left/right panel,
+       height for a top/bottom one. syncDOMState applies it to that axis, and
+       overrides it with the panel's iconifiedSize when one is set. */
     --ui-icon-bar-size: 3.5rem;
     --ui-icon-bar-padding: var(--theme-spacing-05, 0.25rem);
     /* What the buttons have to divide up once the bar's own padding is taken. */
@@ -395,9 +394,8 @@
     opacity: 1;
     cursor: pointer;
     /* The button divides up the bar's inner space: two thirds to the glyph, the
-       remaining third split between its two sides. The shares total one, so the
-       button box fills the bar exactly however wide the bar is. At the default
-       3.5rem bar that is a 2rem glyph with 0.5rem of padding. */
+       remaining third split between its sides. The shares total one, so the button
+       fills the bar at any size. A 3.5rem bar gives a 2rem glyph. */
     font-size: calc(var(--ui-icon-bar-inner, 3rem) * 2 / 3);
     padding: calc(var(--ui-icon-bar-inner, 3rem) / 6);
     border-radius: var(--theme-radius-sm, 4px);

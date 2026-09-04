@@ -41,33 +41,30 @@ export interface PanelStateConstraints {
  */
 export interface PanelDimensions {
     /**
-     * Size of the icon bar in the iconified and focused states, padding included.
-     * A number, or a numeric string, is pixels; a string with a unit is that CSS
-     * length. Prefer rem, which tracks the theme's type scale.
-     * - For left/right panels: width of the vertical icon bar
-     * - For top/bottom panels: height of the horizontal icon bar
-     * The icon buttons divide up this measure, so a smaller bar carries smaller
-     * icons. If omitted, the bar takes the default size its stylesheet sets.
+     * Size of the icon bar in the iconified and focused states, padding included:
+     * width for a left/right panel, height for a top/bottom one. A number, or a
+     * numeric string, is pixels; a string with a unit is that CSS length. The icon
+     * buttons divide up this measure, so a smaller bar carries smaller icons.
+     * Omitted, the bar takes the size its stylesheet sets.
      */
     iconifiedSize?: number | string;
 
     /**
      * Expanded-state size: height for top/bottom panels, width for left/right.
      * A number, or a numeric string, is pixels; a string with a unit is that CSS
-     * length (e.g. "320px", "40vh", "30%"). Sets the panel to exactly this size —
-     * content scrolls internally rather than resizing it. Omit, or leave empty,
-     * to size the panel to its content. A user drag-resize overrides it with a
-     * pixel currentSize.
+     * length (e.g. "320px", "40vh"). The panel is exactly this size and its content
+     * scrolls inside. Omitted or empty, the panel sizes to its content. A drag
+     * overrides it with a pixel currentSize.
      */
     expandedSize?: number | string;
 
     /**
-     * CSS sizing for floating panels — applied directly as CSS properties on the panel element.
+     * CSS sizing for floating panels, applied as properties on the panel element.
      * A number, or a numeric string, is pixels; a string with a unit is that CSS
-     * length (e.g. "50%", "40vh", "300px").
+     * length (e.g. "50%", "40vh").
      *
-     * Distinct from PanelCapabilities.minSize/maxSize, which constrain drag-resize handles
-     * (single-axis, pixels only). These apply to both axes and support all CSS units.
+     * These cover both axes and take any CSS unit, unlike
+     * PanelCapabilities.minSize/maxSize, which bound a drag on one axis in pixels.
      */
     defaultWidth?: number | string;
     defaultHeight?: number | string;
@@ -109,10 +106,9 @@ export interface PanelCapabilities {
     minSize?: number;
 
     /**
-     * Maximum size constraint (pixels). Written whenever configured: caps
-     * drag-resizing, caps a content-sized panel (one with no expandedSize) so
-     * overflow scrolls internally instead of growing the panel unbounded, and
-     * still bounds a fixed expandedSize that exceeds it.
+     * Maximum size constraint (pixels). Caps a drag, caps a content-sized panel
+     * so its overflow scrolls rather than growing the panel, and bounds an
+     * expandedSize larger than itself.
      */
     maxSize?: number;
 }

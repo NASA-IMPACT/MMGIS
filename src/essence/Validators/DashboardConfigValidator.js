@@ -35,10 +35,9 @@ const VALID_ORIENTATIONS = Object.values(TOOL_ORIENTATION)
  *   tools: [...]
  * }
  *
- * Errors are structural and make the config unusable. Warnings cover values the
- * renderer can carry on without — an unusable panel size costs that panel its
- * hint, not the mission its interface — so a caller should surface them and
- * keep going.
+ * An error is structural and leaves the config unusable. A warning covers a
+ * value the renderer can carry on without, such as an unusable panel size, and
+ * a caller should surface it and keep going.
  *
  * @param {MissionConfig} config - The complete mission config to validate
  * @returns {ValidationResult} - { valid: boolean, errors: string[], warnings: string[] }
@@ -329,9 +328,8 @@ function validatePanelConfig(panel, index, isFloat = false) {
             errors.push(`${prefix}.capabilities: "resizable" is not supported on floating panels`)
         }
 
-        // Drag bounds are advisory: an unusable one costs the panel that bound,
-        // never the mission, so it is reported as a warning and the renderer
-        // falls back to the default it would have used with none configured.
+        // Drag bounds are advisory. An unusable one is a warning, and the renderer
+        // falls back to the default it uses when none is configured.
         const minSize = toPixelNumber(cap.minSize, { allowZero: true })
         const maxSize = toPixelNumber(cap.maxSize)
 
@@ -353,11 +351,11 @@ function validatePanelConfig(panel, index, isFloat = false) {
         const dim = panel.dimensions
 
         if (isDimensionSet(dim.iconifiedSize) && toCssDimension(dim.iconifiedSize) === null) {
-            warnings.push(`${prefix}.dimensions: "iconifiedSize" must be ${DIMENSION_HINT} — got "${dim.iconifiedSize}". Sizing the icon bar to its icons instead.`)
+            warnings.push(`${prefix}.dimensions: "iconifiedSize" must be ${DIMENSION_HINT} — got "${dim.iconifiedSize}". Using the default bar size instead.`)
         }
 
-        // expandedSize and the floating-panel sizes take a number of pixels or a
-        // CSS length. An unusable one leaves the panel sized by its content.
+        // These take a number of pixels or a CSS length. An unusable one leaves
+        // the panel sized by its content.
         const cssDimFields = ['expandedSize', 'defaultWidth', 'defaultHeight', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight']
         cssDimFields.forEach(field => {
             const val = dim[field]

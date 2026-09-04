@@ -197,7 +197,7 @@
             {
               "field": "dimensions.iconifiedSize",
               "name": "Iconified Size",
-              "description": "Size of the icon bar when iconified (width for left/right, height for top/bottom). Leave empty for the default 3.5rem. A plain number is pixels (e.g. 56); add a unit to use it instead (e.g. 3.5rem), and rem keeps the bar in step with the theme's text size. The icons scale with the bar, so a smaller bar means smaller icons.",
+              "description": "Size of the icon bar when iconified (width for left/right, height for top/bottom). Leave empty for the default 3.5rem. A plain number is pixels (e.g. 56); add a unit to use it instead (e.g. 3.5rem). The icons scale with the bar, so a smaller bar means smaller icons.",
               "type": "text",
               "width": 6
             },

@@ -2,14 +2,14 @@
  * Panel dimension values.
  *
  * A panel size is authored either as a plain number of pixels or as a CSS length
- * carrying a unit. These helpers are the single place that decides what a
- * configured value means, so validation and rendering cannot disagree about it.
+ * carrying a unit. Validation and rendering both read a size through here, so
+ * they agree on what it means.
  */
 
 /**
  * Units accepted inside a dimension string. A unit outside this set is rejected
- * here rather than handed to the browser, which silently drops a declaration it
- * cannot parse and leaves the panel sized by something else entirely.
+ * rather than passed to the browser, which drops an unparsable declaration
+ * without reporting it.
  */
 export const CSS_DIMENSION_UNITS = [
     'px',
@@ -32,10 +32,9 @@ const UNIT_PATTERN = new RegExp(
 const PIXEL_PATTERN = /^(\d+(?:\.\d+)?)px$/
 
 /**
- * Whether a value carries a configured dimension at all. An absent key and an
- * empty string both mean "not set" — the Configure form writes an empty string
- * when an admin clears a field, and that must read the same as never having
- * filled it in.
+ * Whether a value carries a configured dimension. An absent key and an empty
+ * string both mean "not set": the Configure form writes an empty string for a
+ * field an admin has cleared.
  *
  * @param {*} v
  * @returns {boolean}
@@ -48,11 +47,8 @@ export function isDimensionSet(v) {
 
 /**
  * The CSS length for a configured dimension, or null when it is unset or
- * unusable. A bare number or a numeric string means pixels, matching the
- * pixel-only drag bounds it sits beside (minSize, maxSize).
- *
- * Zero is not a usable size — a panel sized to nothing is indistinguishable
- * from a broken one — so it reads as unusable rather than as "0px".
+ * unusable. A bare number or a numeric string means pixels. Zero counts as
+ * unusable: a panel sized to nothing cannot be told apart from a broken one.
  *
  * @param {*} v
  * @returns {string|null}
@@ -79,12 +75,11 @@ export function toCssDimension(v) {
 
 /**
  * The pixel count for a dimension that is only ever pixels, or null when it is
- * unset or unusable. A "300px" string is accepted so a value that picked up a
- * unit still reads back as the number the drag maths needs.
+ * unset or unusable. A "300px" string reads back as its number.
  *
  * @param {*} v
- * @param {{allowZero?: boolean}} [options] - allowZero keeps 0 as a usable
- *        value, which suits a floor (minSize) but never a cap or a size.
+ * @param {{allowZero?: boolean}} [options] - allowZero keeps 0 usable, which
+ *        suits a floor (minSize) but never a cap or a size.
  * @returns {number|null}
  */
 export function toPixelNumber(v, options = {}) {
@@ -109,7 +104,5 @@ export function toPixelNumber(v, options = {}) {
     return n
 }
 
-/**
- * The phrase used when telling an admin what a dimension field accepts.
- */
+/** What a dimension field accepts, phrased for a validation message. */
 export const DIMENSION_HINT = `a number of pixels or a CSS length with a unit (${CSS_DIMENSION_UNITS.join(', ')})`
