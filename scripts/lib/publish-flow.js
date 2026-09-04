@@ -37,8 +37,8 @@ function rowStillOursForFailure(STATUS) {
 
 // What to do with the dashboard's stack, given the action the task was started
 // with and a DescribeStacks read (`stack`, null when there is none). Returns
-// "create", "converge", or { refuse: message } for the one combination that is
-// neither.
+// `{ action: "create" | "converge" }`, plus a `refuse` message on the one
+// combination the task must not carry out.
 //
 // An existing stack is always converged: this run's template has to reach it,
 // and converging is what keeps two simultaneous republishes safe. With no
@@ -47,10 +47,13 @@ function rowStillOursForFailure(STATUS) {
 // an update of a row that HAS one would mint a second URL behind the same row,
 // which is not an update.
 function stackAction({ action, stack, stackName, stackArn }) {
-  if (stack != null) return "converge";
-  if (action === "publish" || stackArn == null) return "create";
+  if (stack != null) return { action: "converge" };
+  if (action === "publish" || stackArn == null) return { action: "create" };
   const missing = stackMissingMessage(stackName);
-  return { refuse: `${missing} — ${republishGuidance()}` };
+  return {
+    action: "converge",
+    refuse: `${missing} — ${republishGuidance()}`,
+  };
 }
 
 // Throws unless `row` is a deployment this task should still be working for.
@@ -64,9 +67,25 @@ function assertRowLive(row, STATUS) {
     throw new Error(`Deployment is ${row.status}; abandoning this publish`);
 }
 
+// Re-reads deployment `id` through the `Deployments` model, stops the task
+// when a Delete has claimed the row, and otherwise marks it as still being
+// worked on. The update endpoint reads a `provisioning`/`updating` row's age
+// as how long its task has been silent (LIVE_TASK_WINDOW_MS in
+// API/Backend/Deployments/updateRefusal.js), so the task calls this around its
+// long steps and through the copy and the uploads to keep a publish that is
+// still going from looking abandoned. Only the timestamp is written, so
+// nothing the task read earlier can paint over the row.
+async function touchRow(Deployments, id, STATUS) {
+  const row = await Deployments.findByPk(id);
+  assertRowLive(row, STATUS);
+  row.changed("updatedAt", true);
+  await row.save({ fields: ["updatedAt"] });
+}
+
 module.exports = {
   rowStillOurs,
   rowStillOursForFailure,
   stackAction,
   assertRowLive,
+  touchRow,
 };

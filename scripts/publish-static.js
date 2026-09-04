@@ -39,7 +39,7 @@ const {
   rowStillOurs,
   rowStillOursForFailure,
   stackAction,
-  assertRowLive,
+  touchRow,
 } = require("./lib/publish-flow");
 const { renderCfnTemplate, stackNameForDeployment } = require("./lib/cfn-template");
 const { applyTimeBakeGuard } = require("./lib/bake-guards");
@@ -131,20 +131,11 @@ async function main() {
     id: deployment.id,
     ...rowStillOursForFailure(Deployments.STATUS),
   };
-  // Run between the task's long steps. Stops the task when a Delete has
-  // claimed the deployment while it was working, and otherwise marks the row
-  // as still being worked on: the update endpoint reads a `provisioning`/
-  // `updating` row's age as how long its task has been silent
-  // (LIVE_TASK_WINDOW_MS in API/Backend/Deployments/updateRefusal.js), so a
-  // touch per step is what keeps a publish that is still going from looking
-  // abandoned. Only the timestamp is written, so nothing this task read
-  // earlier can paint over the row.
-  const touchLiveRow = async () => {
-    const row = await Deployments.findByPk(deployment.id);
-    assertRowLive(row, Deployments.STATUS);
-    row.changed("updatedAt", true);
-    await row.save({ fields: ["updatedAt"] });
-  };
+  // The heartbeat: run around each long step, and from inside the copy and
+  // the uploads, so the row reads as a task that is still working and a Delete
+  // that landed meanwhile stops this one (see touchRow in lib/publish-flow.js).
+  const touchLiveRow = () =>
+    touchRow(Deployments, deployment.id, Deployments.STATUS);
 
   try {
     const mission = deployment.mission;
@@ -200,17 +191,17 @@ async function main() {
     // CreateStack onto it is an AlreadyExistsException) or deleted it (a
     // converge onto it has nothing to update).
     const current = await provision.describeStack({ stackName });
-    const action = stackAction({
+    const decision = stackAction({
       action: ACTION,
       stack: current,
       stackName,
       stackArn: deployment.stack_arn,
     });
-    if (action.refuse) throw new Error(action.refuse);
+    if (decision.refuse) throw new Error(decision.refuse);
     // Provisioning is the point of no return for a Delete that landed during
     // the build: past it, a stack exists whose teardown nobody is running.
     await touchLiveRow();
-    if (action === "create") {
+    if (decision.action === "create") {
       log(`Creating stack '${stackName}'...`);
       await provision.createStack({ stackName, templateBody });
       stack = await provision.waitForStack({ stackName });
@@ -249,11 +240,13 @@ async function main() {
         sourceBucket: sharedBucket,
         destBucket: bucket,
         prefix: `assets/${missionFolderName}/`,
+        onProgress: touchLiveRow,
       });
       log(`Copied ${copied} mission asset(s) from ${sharedBucket}.`);
     } else {
       log("MMGIS_SHARED_ASSET_BUCKET not set; skipping mission asset copy.");
     }
+    await touchLiveRow();
 
     // 4.5 Interpolate the Pug placeholders in the built index. In server
     // mode Express renders build/index.pug per request, filling globals
@@ -329,12 +322,15 @@ async function main() {
       bucket,
       dir: path.join(rootDir, "build"),
       prefix: "build/",
+      onProgress: touchLiveRow,
     });
     const uploadedPublic = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "public"),
       prefix: "public/",
+      onProgress: touchLiveRow,
     });
+    await touchLiveRow();
     await provision.uploadFile({
       bucket,
       key: "index.html",
@@ -370,6 +366,8 @@ async function main() {
       });
       log("Created CloudFront invalidation (/*).");
     }
+
+    await touchLiveRow();
 
     // 6. Terminal row update
     const cloudfrontUrl =
@@ -409,8 +407,8 @@ async function main() {
   }
 }
 
-// Only the ECS task runs the publish; a require() of this file gets main()
-// without starting one.
+// The publish runs only when this file is the process the ECS task started,
+// so a require() of it never starts one.
 if (require.main === module)
   main()
     .then(() => process.exit(0))
@@ -418,5 +416,3 @@ if (require.main === module)
       console.error(`[publish-static] Failed: ${err.message}`);
       process.exit(1);
     });
-
-module.exports = { main };
