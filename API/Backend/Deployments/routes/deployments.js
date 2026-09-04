@@ -133,7 +133,23 @@ router.post("/:id/update", async function (req, res) {
       return;
     }
 
-    await deployment.update({ status: STATUS.UPDATING, last_error: null });
+    // Claim the row conditionally on the status the refusal was judged
+    // against: two clicks race here without it, and both would start a task
+    // against the same stack. The status the loser finds is one the winner
+    // wrote, so only one claim lands.
+    const [claimed] = await Deployments.update(
+      { status: STATUS.UPDATING, last_error: null },
+      { where: { id: deployment.id, status: row.status } }
+    );
+    if (claimed === 0) {
+      res
+        .status(409)
+        .send({ status: "failure", message: "Deployment is already updating" });
+      return;
+    }
+    // The claim wrote the row, not this instance; carry the new status onto it
+    // so the webhook and the response body report what the row now holds.
+    deployment.set({ status: STATUS.UPDATING, last_error: null });
 
     provision
       .runPublishTask({ deploymentId: deployment.id, action: "update" })
@@ -270,4 +286,4 @@ router.get("/:id", async function (req, res) {
   }
 });
 
-module.exports = { router, teardownDeployment };
+module.exports = { router, teardownDeployment, withLiveStatus };

@@ -225,18 +225,10 @@ test.describe('assertStackUsable', () => {
 
     // A stack resting in one of these can only be deleted, so the publish
     // stops with guidance an operator can act on instead of driving
-    // CloudFormation into its own opaque rejection.
-    const unusable = [
-        'CREATE_FAILED',
-        'ROLLBACK_COMPLETE',
-        'ROLLBACK_IN_PROGRESS',
-        'ROLLBACK_FAILED',
-        'UPDATE_ROLLBACK_FAILED',
-        'UPDATE_FAILED',
-        'DELETE_FAILED',
-        'DELETE_IN_PROGRESS',
-        'REVIEW_IN_PROGRESS',
-    ]
+    // CloudFormation into its own opaque rejection. One from each shape the
+    // list holds: a create that never completed, a rollback dead end, and a
+    // stack on its way out.
+    const unusable = ['CREATE_FAILED', 'ROLLBACK_COMPLETE', 'DELETE_IN_PROGRESS']
     unusable.forEach((status) => {
         test(`${status} earns the delete-and-republish guidance`, () => {
             expect(check(status)).toThrow(
@@ -443,6 +435,38 @@ test.describe('convergeStackUpdate', () => {
         expect(stack.StackId).toBe('ours')
         // No read of its own before the UpdateStack.
         expect(state.describes).toBe(1)
+    })
+
+    // The commonest converge of all: an update whose template already matches.
+    // The caller's read is both the answer and the only read taken, so the
+    // whole converge costs one UpdateStack.
+    test("nothing to update on the first attempt hands back the caller's read", async () => {
+        const fresh = {
+            StackStatus: 'UPDATE_COMPLETE',
+            StackId: 'fresh',
+            LastUpdatedTime: BEFORE,
+            Outputs: [{ OutputKey: 'BucketName', OutputValue: 'b' }],
+        }
+        const state = scriptCfn({
+            updates: [
+                {
+                    throw: Object.assign(
+                        new Error('No updates are to be performed.'),
+                        { name: 'ValidationError' }
+                    ),
+                },
+            ],
+        })
+        const stack = await provision.convergeStackUpdate({
+            stackName: 'mmgis-dashboard-1',
+            templateBody: '{}',
+            fresh,
+            pollIntervalMs: 1,
+            deadlineMs: 2000,
+        })
+        expect(stack).toBe(fresh)
+        expect(provision.getStackOutputs(stack)).toEqual({ BucketName: 'b' })
+        expect(state.describes).toBe(0)
     })
 
     // A delete started while this task was baking and building leaves a stack

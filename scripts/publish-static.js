@@ -156,6 +156,12 @@ async function main() {
     if (existing != null)
       provision.assertStackUsable({ stackName, stack: existing });
 
+    // Rendered alongside that read so a missing dashboards password stops the
+    // task in seconds as well; this is the body both branches below apply.
+    const templateBody = renderCfnTemplate({
+      password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
+    });
+
     // 1. Bake the mission config into the bundle
     log(`Baking mission '${mission}' for deployment ${deployment.id}...`);
     const baked = await buildBakedConfig(mission);
@@ -177,9 +183,6 @@ async function main() {
     });
 
     // 3. Provision (publish) or converge (update) the dashboard stack
-    const templateBody = renderCfnTemplate({
-      password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
-    });
     let stack;
     // Which branch to take follows a read taken now, not the one from before
     // the build: another task can have created the stack in the meantime (a

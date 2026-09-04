@@ -1,10 +1,8 @@
 /**
  * publish-flow.js
- * The decisions scripts/publish-static.js makes around its AWS work: which
- * deployment rows a terminal write may still land on, whether an action
- * creates a stack or converges one, and whether the row is still live enough
- * to keep going. They live here, apart from the task entrypoint, so each one
- * is a plain function of its inputs.
+ * The decisions scripts/publish-static.js makes around its AWS work, kept
+ * apart from the task entrypoint so each is a plain function of its inputs:
+ * loading that entrypoint runs its main().
  */
 
 const Sequelize = require("sequelize");

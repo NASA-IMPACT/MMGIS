@@ -108,14 +108,21 @@ const UNUSABLE_STACK_STATUSES = [
   "REVIEW_IN_PROGRESS",
 ];
 
+// The one wording for a stack no update will ever be accepted onto, so the
+// publish task and the update endpoint hand an operator the same sentence and
+// the same way out.
+function stackUnusableMessage(stackName, status) {
+  return (
+    `Stack '${stackName}' is in ${status} and cannot be used — ` +
+    "delete the deployment and publish it again (this mints a new URL)"
+  );
+}
+
 // Throws the actionable "delete and republish" guidance when `stack` rests in
 // one of UNUSABLE_STACK_STATUSES.
 function assertStackUsable({ stackName, stack }) {
   if (UNUSABLE_STACK_STATUSES.indexOf(stack.StackStatus) !== -1)
-    throw new Error(
-      `Stack '${stackName}' is in ${stack.StackStatus} and cannot be used — ` +
-        "delete the deployment and publish it again (this mints a new URL)"
-    );
+    throw new Error(stackUnusableMessage(stackName, stack.StackStatus));
 }
 
 // The one wording for "there is no such stack", so a caller reading it back
@@ -785,6 +792,7 @@ module.exports = {
   UNUSABLE_STACK_STATUSES,
   assertStackUsable,
   stackMissingMessage,
+  stackUnusableMessage,
   // convergeStackUpdate's own steps; exported for tests.
   updateStack,
   busyStatusOf,
