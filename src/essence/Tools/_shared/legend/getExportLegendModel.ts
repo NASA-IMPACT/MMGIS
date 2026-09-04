@@ -94,6 +94,17 @@ const isOpenEndedStart = (windowStart: string | null): boolean => {
 }
 
 /**
+ * A dated span, worded. Both ends of a span print at the same precision, so
+ * a span narrower than that precision reads the same at both ends; it says
+ * the label once, because `X → X` would only look like a mistake.
+ */
+const spanLine = (
+    verb: string,
+    start: string | null,
+    end: string | null,
+): string => (start === end ? `${verb} ${start}` : `${verb} ${start} → ${end}`)
+
+/**
  * The date line for a layer that follows the slider. A layer serving whole
  * periods gets the period holding the cursor; everything else gets the span
  * the map actually requested, which runs from the window start to the cursor
@@ -109,12 +120,10 @@ const slidingDateLine = (
     if (period?.kind === 'calendar') return `Showing ${period.label}`
     if (period?.kind === 'range') {
         // Both ends of a range are instants a period was built from, so both
-        // format. A period shorter than the precision its interval prints at
-        // collapses to one label, and printing `X → X` would only look like
-        // a mistake.
+        // format.
         const start = formatAtPrecision(precision, period.start)
         const end = formatPeriodEnd(precision, period.end)
-        return start === end ? `Showing ${start}` : `Showing ${start} → ${end}`
+        return spanLine('Showing', start, end)
     }
     // A window with no cursor in it has no truthful wording: nothing says
     // where in the window the map was asked to stop.
@@ -143,7 +152,7 @@ const collectedDateLine = (
         ? formatAtPrecision(precision, extent.start)
         : null
     const end = extent.end ? formatAtPrecision(precision, extent.end) : null
-    if (start && end) return `Collected ${start} → ${end}`
+    if (start && end) return spanLine('Collected', start, end)
     if (start) return `Collected from ${start}`
     if (end) return `Collected until ${end}`
     return null

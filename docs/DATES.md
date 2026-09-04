@@ -97,7 +97,7 @@ For a **time-enabled layer**, `time.enabled` is the whole test. The URL is not i
 - Otherwise the row shows the span the map actually requested, **Requested** `<window start> → <cursor>` — or `Requested up to <cursor>` when the window start is missing or sits within a day of 1970-01-01, which is where Point mode puts it.
 - Without a cursor, the row shows no date line.
 
-A layer that is **not time-enabled** shows its Data Time Extent, resolved for every layer in one `layers:getTemporalExtent` call: `Collected <start> → <end>`, or `Collected from <start>` / `Collected until <end>` for a half-open extent. No extent means no date line.
+A layer that is **not time-enabled** shows its Data Time Extent, resolved for every layer in one `layers:getTemporalExtent` call: `Collected <start> → <end>`, or `Collected from <start>` / `Collected until <end>` for a half-open extent. As on the `Showing` line, an extent whose two ends print as the same label — a single day's collection at day precision, say — shows that label once rather than `X → X`. No extent means no date line.
 
 **How precisely a row's dates print** is decided by the layer's `time.interval`, not by the mission's time format. A daily collection has no business printing seconds. The smallest unit in the interval sets the precision:
 

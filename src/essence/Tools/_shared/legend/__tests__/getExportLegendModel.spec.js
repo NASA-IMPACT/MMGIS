@@ -587,6 +587,40 @@ describe('getExportLegendModel', () => {
             expect(rows[0].dateLine).toBe('Collected 2016-05 → 2016-09')
         })
 
+        // An extent covering one day is one day, and `X → X` would only
+        // read as a mistake.
+        test('an extent whose ends print alike collapses to one label', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                fixed: {
+                    start: '2025-01-12T00:00:00Z',
+                    end: '2025-01-12T23:59:59Z',
+                },
+            })
+            const rows = await rowsFor({
+                fixed: {
+                    url: 'https://host/{z}/{x}/{y}.png',
+                    time: { enabled: false },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Collected 2025-01-12')
+        })
+
+        test('an extent spanning two days still prints both ends', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                fixed: {
+                    start: '2025-01-12T00:00:00Z',
+                    end: '2025-01-13T23:59:59Z',
+                },
+            })
+            const rows = await rowsFor({
+                fixed: {
+                    url: 'https://host/{z}/{x}/{y}.png',
+                    time: { enabled: false },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Collected 2025-01-12 → 2025-01-13')
+        })
+
         test('a half-open extent reads as open-ended, not as a range', async () => {
             vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
                 fromOnly: { start: '2016-05-01T00:00:00Z', end: null },
