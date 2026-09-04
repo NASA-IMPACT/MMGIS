@@ -44,7 +44,7 @@ import QueryURL from './Ancillary/QueryURL'
 import {
     hasForceLanding,
     hasPreview,
-    buildMissionUrl,
+    replaceMissionUrl,
 } from './Ancillary/landingFlags'
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import TimeUI from './Basics/TimeControl_/TimeUI'
@@ -346,9 +346,7 @@ var essence = {
         //Make sure url matches mission
         var urlSplit = window.location.href.split('?')
 
-        // A static build serves the one mission baked into it, so its URL
-        // never names a mission; LandingPage clears the landing flags there
-        // and that stripped URL is the last word.
+        // A static build is exempt (see replaceMissionUrl).
         if (
             !isStaticBuild() &&
             (urlSplit.length == 1 ||
@@ -363,17 +361,10 @@ var essence = {
             // A swap keeps nothing else: the pairs in the URL (`on`, `mapLat`,
             // …) point at the mission being left, and queryURL() below skips
             // them for that reason. Otherwise they stay for queryURL() to read.
-            window.history.replaceState(
-                '',
-                '',
-                buildMissionUrl({
-                    search: window.location.search,
-                    pathnameHref:
-                        window.location.origin + window.location.pathname,
-                    mission: missionForUrl,
-                    keepParams: !swapping,
-                })
-            )
+            replaceMissionUrl({
+                mission: missionForUrl,
+                keepParams: !swapping,
+            })
             L_.url = window.location.href
         }
 

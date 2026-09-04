@@ -57,6 +57,7 @@ const configFactory = require("../configuration/webpack.config");
 const createDevServerConfig = require("../configuration/webpackDevServer.config");
 
 const middleware = require("./middleware").middleware;
+const { rootPathRedirect } = require("./lib/rootPathRedirect");
 
 const { isFull } = require("../API/Backend/Utils/deploymentMode");
 const {
@@ -70,7 +71,11 @@ const isDevEnv = process.env.NODE_ENV === "development";
 //Username to use when not logged in
 const guestUsername = "guest";
 
-const ROOT_PATH = isDevEnv ? "" : process.env.ROOT_PATH || "";
+// No trailing slash: every use below appends its own "/…", and the entry
+// redirect compares it against req.path.
+const ROOT_PATH = isDevEnv
+  ? ""
+  : (process.env.ROOT_PATH || "").replace(/\/+$/, "");
 
 if (!(process.env.PUBLIC_URL == null || process.env.PUBLIC_URL == ""))
   logger(
@@ -734,17 +739,9 @@ setups.getBackendSetups(function (setups) {
       // from the permissions.json file at the top of the file).
 
       // The page's asset URLs are document-relative, so they only resolve
-      // under the prefix when the address bar carries the trailing slash.
-      // Express matches both forms here, so the slashed form is handed on to
-      // the renderer below instead of redirecting to itself.
-      if (ROOT_PATH) {
-        app.get(ROOT_PATH, (req, res, next) => {
-          if (req.path !== ROOT_PATH) return next();
-          const q = req.originalUrl.indexOf("?");
-          const query = q === -1 ? "" : req.originalUrl.slice(q);
-          res.redirect(301, `${ROOT_PATH}/${query}`);
-        });
-      }
+      // under the prefix when the address bar carries the trailing slash. The
+      // slashed form falls through to the renderer below.
+      app.use(rootPathRedirect(ROOT_PATH));
 
       app.get(
         `${ROOT_PATH}/`,

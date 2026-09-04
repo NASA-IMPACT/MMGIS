@@ -36,25 +36,22 @@ export async function uploadImage(file, mission, subdir) {
 // is a copy of ASSETS_UPLOAD_KEY in src/pre/uploadKey.ts, where the shape it
 // matches is explained. tests/unit/uploadKeyClassifier.spec.js runs one table
 // of values through both and fails if they classify any of them differently.
-const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
+export const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 
 // Turns a stored upload-field value into the URL the CMS's preview <img>
 // should use: the same four cases as resolveMissionAssetUrl in
 // src/pre/uploadKey.ts, in the same order, but anchored to `base` (the
-// ROOT_PATH prefix, or '/' when unset) rather than to the page. The CMS
-// cannot go document-relative: it is served under its own path (e.g.
-// '/configure/'), so a relative preview src would resolve there and 404. An
-// upload key therefore comes back as `base` + the key — the admin CloudFront
-// serves /assets/* from the shared bucket — and a mission-relative value as
-// `base` + "Missions/<mission>/" + the value. A rooted "/assets/..." value is
-// the same key with a leading slash, stripped before the test.
+// ROOT_PATH prefix, or '/' when unset) rather than left to the page. Naming
+// the root outright keeps the preview URL explicit and independent of how
+// deep the CMS is mounted. An upload key therefore comes back as `base` +
+// the key — the admin CloudFront serves /assets/* from the shared bucket —
+// and a mission-relative value as `base` + "Missions/<mission>/" + the value.
+// A rooted "/assets/..." value is the same key with a leading slash, stripped
+// before the test.
 export function buildPreviewSrc(value, mission, base) {
-    if (!value) return '';
-    // The CMS bundle is plain JavaScript and this value arrives from a
-    // hand-authored config, so the type is checked here; the app's
-    // resolveMissionAssetUrl is reached only from typed callers and carries
-    // no matching line.
-    if (typeof value !== 'string') return '';
+    // Callers feed this runtime configuration JSON, so the type is a runtime
+    // question.
+    if (typeof value !== 'string' || !value) return '';
     if (/^(https?:|data:)/i.test(value)) return value;
     const rooted = value.startsWith('/');
     const rebased = rooted ? value.slice(1) : value;

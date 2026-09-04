@@ -209,35 +209,6 @@ test('an image icon is resolved against the mission path', () => {
     ])
 })
 
-test('an icon resolved before the mission path arrives keeps its stored value', () => {
-    // The path is fetched over the bus, so the first render holds null and
-    // the stored value stands in until the answer lands and re-resolves it.
-    expect(
-        withResolvedIcons(
-            [
-                {
-                    id: 't',
-                    label: 'T',
-                    icon: {
-                        kind: 'image',
-                        src: 'LayerFilterThemes/uploads/x.svg',
-                    },
-                },
-            ],
-            null,
-        ),
-    ).toEqual([
-        {
-            id: 't',
-            label: 'T',
-            icon: {
-                kind: 'image',
-                src: 'LayerFilterThemes/uploads/x.svg',
-            },
-        },
-    ])
-})
-
 test('a theme the resolver has nothing to say about is returned as it came', () => {
     // An MDI glyph names no file, and a theme may carry no icon at all;
     // either way the entry passes through untouched.

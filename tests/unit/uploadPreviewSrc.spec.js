@@ -8,11 +8,17 @@ import { resolveMissionAssetUrl } from '../../src/pre/uploadKey.ts'
 // absolute and data values passing through unchanged, an already-rooted
 // non-upload value passing through unchanged, and — with an empty `base` —
 // both resolved branches staying root-absolute. That last one matters
-// because the SPA is served at '/configure/', so a document-relative preview
-// URL would resolve against that path and 404.
+// because a preview URL names its root outright, so it points at the same
+// file however deep the CMS is mounted.
 test.describe('buildPreviewSrc', () => {
     test('returns empty string for empty input', () => {
         expect(buildPreviewSrc('', 'M', 'http://localhost:8888/')).toBe('')
+    })
+
+    test('a value that is not a string resolves to nothing', () => {
+        // Stored values arrive as runtime configuration JSON, where a number
+        // is as possible as a string.
+        expect(buildPreviewSrc(42, 'M', 'http://localhost:8888/')).toBe('')
     })
 
     test('passes through absolute and data values unchanged', () => {
@@ -45,10 +51,9 @@ test.describe('buildPreviewSrc', () => {
     })
 
     // With no ROOT_PATH base the mission-relative branch must still produce a
-    // root-anchored URL: a document-relative "Missions/…" would resolve
-    // against the CMS's own path (the SPA is served at '/configure/') and
-    // 404. The rule both branches follow: an absent base stands in as '/',
-    // never as the empty string.
+    // root-anchored URL, so it names the same file whatever path the CMS is
+    // reached at. The rule both branches follow: an absent base stands in as
+    // '/', never as the empty string.
     test('an empty base resolves a mission-relative value root-absolute', () => {
         const src = buildPreviewSrc('CardPlugin/uploads/a.png', 'M', '')
         expect(src).toBe('/Missions/M/CardPlugin/uploads/a.png')
@@ -65,6 +70,12 @@ test.describe('resolveMissionAssetUrl', () => {
         expect(resolveMissionAssetUrl('', MISSION_PATH)).toBe('')
         expect(resolveMissionAssetUrl(undefined, MISSION_PATH)).toBe('')
         expect(resolveMissionAssetUrl(null, MISSION_PATH)).toBe('')
+    })
+
+    test('a value that is not a string resolves to nothing', () => {
+        // The declared parameter type describes the caller's intent; what
+        // actually arrives is runtime configuration JSON.
+        expect(resolveMissionAssetUrl(42, MISSION_PATH)).toBe('')
     })
 
     test('passes through absolute and data values unchanged', () => {

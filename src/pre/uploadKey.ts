@@ -20,7 +20,7 @@
 // is a separate bundle with no import path into this one.
 // tests/unit/uploadKeyClassifier.spec.js runs one table of values through
 // both and fails if they classify any of them differently.
-const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
+export const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
 
 // A matched key comes back slash-less so the browser resolves it against the
 // page's own folder, which is always the dashboard's root: the page is served
@@ -30,7 +30,9 @@ export function resolveMissionAssetUrl(
     value: string | undefined | null,
     missionPath: string | null,
 ): string {
-    if (!value) return ''
+    // Callers feed this runtime configuration JSON, so the declared type is
+    // a description rather than a guarantee.
+    if (typeof value !== 'string' || !value) return ''
     if (/^(https?:|data:)/i.test(value)) return value
     const rooted = value.startsWith('/')
     const rebased = rooted ? value.slice(1) : value
