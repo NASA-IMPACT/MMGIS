@@ -264,7 +264,7 @@ resource "aws_iam_role_policy" "publish_exec" {
 # ── Publish task role (runtime container code) ──
 resource "aws_iam_role" "publish_task" {
   name                 = "${local.name_prefix}-publish-task"
-  description          = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/delete the ${local.dashboard_prefix}* stacks and their S3/CloudFront resources, read the shared asset bucket, and read the RDS master secret at connection time to track rotation. No rds-db:connect (password auth). Lean deployment only."
+  description          = "Runtime role for the ${local.publish_family} container (scripts/publish-static.js): create/describe/update/delete the ${local.dashboard_prefix}* stacks and their S3/CloudFront resources, read the shared asset bucket, and read the RDS master secret at connection time to track rotation. No rds-db:connect (password auth). Lean deployment only."
   assume_role_policy   = local.ecs_tasks_assume_role
   permissions_boundary = var.permissions_boundary
 }
@@ -280,8 +280,8 @@ resource "aws_iam_role_policy" "publish_task" {
         Effect = "Allow"
         Action = [
           "cloudformation:CreateStack",
+          "cloudformation:UpdateStack",
           "cloudformation:DescribeStacks",
-          "cloudformation:DescribeStackEvents",
           "cloudformation:DeleteStack",
         ]
         Resource = "arn:aws:cloudformation:${local.region}:${local.account_id}:stack/${local.dashboard_prefix}*/*"
@@ -313,6 +313,7 @@ resource "aws_iam_role_policy" "publish_task" {
         Action = [
           "cloudfront:CreateDistribution",
           "cloudfront:GetDistribution",
+          "cloudfront:GetDistributionConfig",
           "cloudfront:UpdateDistribution",
           "cloudfront:DeleteDistribution",
           "cloudfront:TagResource",
@@ -328,6 +329,7 @@ resource "aws_iam_role_policy" "publish_task" {
         Action = [
           "cloudfront:CreateFunction",
           "cloudfront:PublishFunction",
+          "cloudfront:UpdateFunction",
           "cloudfront:DescribeFunction",
           "cloudfront:DeleteFunction",
           "cloudfront:GetFunction",
@@ -343,6 +345,8 @@ resource "aws_iam_role_policy" "publish_task" {
         Action = [
           "cloudfront:CreateOriginAccessControl",
           "cloudfront:GetOriginAccessControl",
+          "cloudfront:GetOriginAccessControlConfig",
+          "cloudfront:UpdateOriginAccessControl",
           "cloudfront:DeleteOriginAccessControl",
         ]
         Resource = "arn:aws:cloudfront::${local.account_id}:origin-access-control/*"

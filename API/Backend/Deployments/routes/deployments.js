@@ -112,8 +112,10 @@ router.post("/publish", async function (req, res) {
 });
 
 // POST /api/deployments/:id/update
-// Re-bakes against the mission's current configuration and replaces the
-// bundle in the existing dashboard bucket — same stack, same URL.
+// Re-bakes against the mission's current configuration, replaces the bundle in
+// the existing dashboard bucket, and converges the CloudFormation stack via
+// UpdateStack (re-baking the current dashboard password into the auth
+// Function) — same stack, same URL.
 router.post("/:id/update", async function (req, res) {
   try {
     const deployment = await Deployments.findByPk(req.params.id);

@@ -17,7 +17,7 @@ flowchart TD
     ADMIN -->|PutObject| AB
     PUB -->|"GetObject: copy mission assets"| AB
     PUB --> RDS
-    PUB -->|CreateStack| CFN["CloudFormation stack<br/>mmgis-env-dashboard-N"]
+    PUB -->|CreateStack/UpdateStack| CFN["CloudFormation stack<br/>mmgis-env-dashboard-N"]
     CFN --> DASH["Per-dashboard resources:<br/>S3 bucket + CloudFront distribution<br/>+ password-gate Function + OAC"]
 ```
 
