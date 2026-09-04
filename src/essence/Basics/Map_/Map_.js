@@ -1115,7 +1115,7 @@ function onEachFeatureDefault(feature, layer) {
             // shape on one — would open it in Info.
             if (
                 Map_.engine?.isDrawing?.() ||
-                Map_.engine?.ownsDrawEndClick?.(e.originalEvent)
+                Map_.engine?.ownsDrawEndClick(e.originalEvent)
             )
                 return
             featureDefaultClick(feature, layer, e)

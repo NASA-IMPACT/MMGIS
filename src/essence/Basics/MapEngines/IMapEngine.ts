@@ -420,10 +420,10 @@ export interface IMapEngine<
      *
      * `source` is the native DOM event the click was made from. For consumers
      * that hear clicks from the map library directly rather than through
-     * {@link on}, which filters them out already. Optional: an engine that
-     * cannot be drawn on need not answer.
+     * {@link on}, whose click path filters these clicks out already. An engine
+     * that does not support drawing returns false.
      */
-    ownsDrawEndClick?(source: unknown): boolean
+    ownsDrawEndClick(source: unknown): boolean
 
     /**
      * Attach an HTML overlay anchored to a geographic point.
