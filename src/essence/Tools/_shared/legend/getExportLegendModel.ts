@@ -2,6 +2,13 @@ import { getVisibleLayersWithLegends } from './getVisibleLayersWithLegends'
 import { resolveColormapColors } from './resolveColormapColors'
 import { filterLayersForExportView } from './filterLayersForExportView'
 import { layerPeriodFor } from './layerPeriod'
+import {
+    coverageOverlap,
+    hasDataIn,
+    clipPeriodToCoverage,
+    type Coverage,
+    type RequestSpan,
+} from './coverageOverlap'
 import { formatAtPrecision, formatPeriodEnd } from './datePrecision'
 import {
     parseISODuration,
@@ -98,44 +105,97 @@ const isOpenEndedStart = (windowStart: string | null): boolean => {
  * a span narrower than that precision reads the same at both ends; it says
  * the label once, because `X → X` would only look like a mistake.
  */
-const spanLine = (
-    verb: string,
-    start: string | null,
-    end: string | null,
-): string => (start === end ? `${verb} ${start}` : `${verb} ${start} → ${end}`)
+const spanLine = (verb: string, start: string, end: string): string =>
+    start === end ? `${verb} ${start}` : `${verb} ${start} → ${end}`
 
 /**
- * The date line for a layer that follows the slider. A layer serving whole
- * periods gets the period holding the cursor; everything else gets the span
- * the map actually requested, which runs from the window start to the cursor
- * and never to the window's right edge.
+ * The span the map asked the server for, which runs from the window start to
+ * the cursor and never to the window's right edge. All the app can say about
+ * a layer that never told it where its data exists.
+ */
+const requestedDateLine = (
+    { start, end }: RequestSpan,
+    precision: Duration | null,
+): string | null => {
+    const cursorText = formatAtPrecision(precision, end)
+    if (!cursorText) return null
+    const startText = start ? formatAtPrecision(precision, start) : null
+    return startText
+        ? `Requested ${startText} → ${cursorText}`
+        : `Requested up to ${cursorText}`
+}
+
+/**
+ * The part of a layer's coverage the request could have returned — the only
+ * range the pixels on screen can be from — narrowed to a single period, itself
+ * clipped to the coverage, when the layer serves whole periods and the
+ * cursor's period holds data. Null
+ * when the request and the coverage never meet: the server had nothing inside
+ * the span to draw, so the caller falls back to naming the request alone.
+ */
+const collectedDateLine = (
+    interval: string | null,
+    request: RequestSpan,
+    coverage: Coverage,
+    precision: Duration | null,
+): string | null => {
+    const overlap = coverageOverlap(request, coverage)
+    if (!overlap) return null
+    const period = layerPeriodFor(interval, request.end, coverage.start)
+    if (period && hasDataIn(coverage, period)) {
+        const clipped = clipPeriodToCoverage(period, coverage)
+        const start = formatAtPrecision(precision, clipped.start)
+        // A period ends where the next one starts, so what prints is the last
+        // unit it covers; a coverage end inside the period is an instant the
+        // data reaches, and prints as it is.
+        const end = clipped.endIsPeriodEnd
+            ? formatPeriodEnd(precision, clipped.end)
+            : formatAtPrecision(precision, clipped.end)
+        if (start && end) return spanLine('Collected', start, end)
+    }
+    // An overlap's ends are instants the layer's data reaches, so they print
+    // as they are.
+    const end = formatAtPrecision(precision, overlap.end)
+    if (!end) return null
+    const start = overlap.start
+        ? formatAtPrecision(precision, overlap.start)
+        : null
+    return start ? spanLine('Collected', start, end) : `Collected until ${end}`
+}
+
+/**
+ * The date line for a layer that follows the slider. Its coverage says where
+ * the layer's data exists at all and the request says what the map asked for;
+ * with both, the row can name where the pixels came from, and with only the
+ * request it can name only the request.
  */
 const slidingDateLine = (
     interval: string | null,
     { cursor, windowStart }: TimeCursor,
-    anchor: string | null,
+    extent: TemporalExtent | undefined,
     precision: Duration | null,
 ): string | null => {
-    const period = layerPeriodFor(interval, cursor, anchor)
-    if (period?.kind === 'calendar') return `Showing ${period.label}`
-    if (period?.kind === 'range') {
-        // Both ends of a range are instants a period was built from, so both
-        // format.
-        const start = formatAtPrecision(precision, period.start)
-        const end = formatPeriodEnd(precision, period.end)
-        return spanLine('Showing', start, end)
-    }
     // A window with no cursor in it has no truthful wording: nothing says
     // where in the window the map was asked to stop.
     if (!cursor) return null
-    const cursorText = formatAtPrecision(precision, cursor)
-    if (!cursorText) return null
-    const startText = isOpenEndedStart(windowStart)
-        ? null
-        : formatAtPrecision(precision, windowStart)
-    return startText
-        ? `Requested ${startText} → ${cursorText}`
-        : `Requested up to ${cursorText}`
+    const request: RequestSpan = {
+        start: isOpenEndedStart(windowStart) ? null : windowStart,
+        end: cursor,
+    }
+    const coverage: Coverage = {
+        start: extent?.start ?? null,
+        end: extent?.end ?? null,
+    }
+    if (coverage.start !== null || coverage.end !== null) {
+        const collected = collectedDateLine(
+            interval,
+            request,
+            coverage,
+            precision,
+        )
+        if (collected) return collected
+    }
+    return requestedDateLine(request, precision)
 }
 
 /**
@@ -143,7 +203,7 @@ const slidingDateLine = (
  * collected, as far as the mission authored it. A half-open extent stays
  * half-open rather than being closed with a date nobody supplied.
  */
-const collectedDateLine = (
+const extentDateLine = (
     extent: TemporalExtent | undefined,
     precision: Duration | null,
 ): string | null => {
@@ -159,8 +219,8 @@ const collectedDateLine = (
 }
 
 /**
- * Every date line names what kind of date it is, so a bare `A → B` can never
- * be read as a claim about when the pixels were collected. How precisely its
+ * Every date line opens with `Collected` or `Requested`, so a bare `A → B`
+ * can never be read as a claim about when the pixels were collected. How precisely its
  * dates print is the layer's own `time.interval`'s business, whichever line
  * it ends up on. Null when no date can be had, which is always safer than a
  * borrowed one.
@@ -176,7 +236,7 @@ const dateLineFor = (
             typeof time?.interval === 'string' ? time.interval : null
         const precision = interval ? parseISODuration(interval.trim()) : null
         if (time?.enabled !== true) {
-            return collectedDateLine(extent, precision)
+            return extentDateLine(extent, precision)
         }
         // A 'local' layer keeps its own window and is not restamped when the
         // slider moves; everything else follows the global cursor.
@@ -184,12 +244,7 @@ const dateLineFor = (
             time.type === 'local'
                 ? { cursor: time.end ?? null, windowStart: time.start ?? null }
                 : globalCursor
-        return slidingDateLine(
-            interval,
-            cursor,
-            extent?.start ?? null,
-            precision,
-        )
+        return slidingDateLine(interval, cursor, extent, precision)
     } catch (err) {
         console.warn('[export legend] could not build a layer date line', err)
         return null

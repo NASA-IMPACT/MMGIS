@@ -14,19 +14,18 @@ import {
     type Duration,
 } from '../../../Basics/TimeControl_/layerTimePolicy'
 
-export type LayerPeriod =
-    /** A whole UTC year, month, or day, ready to print compactly. */
-    | { kind: 'calendar'; label: string }
-    /**
-     * An anchored span, as ISO instants. `end` is the next period's start —
-     * the period runs up to but not including it — so consecutive periods
-     * read as a continuous line rather than leaving a gap between them.
-     */
-    | { kind: 'range'; start: string; end: string }
+/**
+ * A period, as ISO instants. `end` is the next period's start — the period
+ * runs up to but not including it — so consecutive periods read as a
+ * continuous line rather than leaving a gap between them.
+ */
+export type LayerPeriod = { start: string; end: string }
 
 // A period longer than this is not a mission cadence, it is a bug — stop
 // stepping rather than spin. ~830 years at a one-month step.
 const MAX_STEPS = 10000
+
+const DAY_MS = 86_400_000
 
 const toMs = (time: string | null | undefined): number | null => {
     if (typeof time !== 'string' || time.trim() === '') return null
@@ -34,25 +33,42 @@ const toMs = (time: string | null | undefined): number | null => {
     return Number.isNaN(ms) ? null : ms
 }
 
-const pad = (value: number): string => String(value).padStart(2, '0')
+const span = (start: number, end: number): LayerPeriod => ({
+    start: new Date(start).toISOString(),
+    end: new Date(end).toISOString(),
+})
+
+// Built off the epoch so a year is written as given: new Date(Date.UTC(y, …))
+// folds years 0 to 99 into the twentieth century. An out-of-range month rolls
+// into the next year, so December's next boundary needs no special case.
+const monthStart = (year: number, month: number): number => {
+    const date = new Date(0)
+    date.setUTCFullYear(year, month, 1)
+    return date.getTime()
+}
 
 /**
- * The compact label for a duration that is exactly one calendar unit, which
- * needs no anchor: the calendar itself supplies the boundaries.
+ * The period for a duration that is exactly one calendar unit, which needs no
+ * anchor: the calendar itself supplies the boundaries.
  */
-const calendarLabel = (duration: Duration, cursor: Date): string | null => {
+const calendarPeriod = (
+    duration: Duration,
+    cursorMs: number,
+): LayerPeriod | null => {
     const { years, months, weeks, days, hours, minutes, seconds } = duration
     const subDay = weeks + hours + minutes + seconds
+    const cursor = new Date(cursorMs)
+    const year = cursor.getUTCFullYear()
+    const month = cursor.getUTCMonth()
     if (years === 1 && months + days + subDay === 0) {
-        return `${cursor.getUTCFullYear()}`
+        return span(monthStart(year, 0), monthStart(year + 1, 0))
     }
     if (months === 1 && years + days + subDay === 0) {
-        return `${cursor.getUTCFullYear()}-${pad(cursor.getUTCMonth() + 1)}`
+        return span(monthStart(year, month), monthStart(year, month + 1))
     }
     if (days === 1 && years + months + subDay === 0) {
-        return `${cursor.getUTCFullYear()}-${pad(
-            cursor.getUTCMonth() + 1,
-        )}-${pad(cursor.getUTCDate())}`
+        const start = Math.floor(cursorMs / DAY_MS) * DAY_MS
+        return span(start, start + DAY_MS)
     }
     return null
 }
@@ -91,8 +107,8 @@ const fixedLengthMs = (duration: Duration): number | null => {
  * nothing else says where the layer's periods begin. Null whenever the
  * interval, the cursor, or (for an anchored duration) the anchor is missing
  * or unreadable, the interval is shorter than an hour, or the cursor sits
- * before the anchor: the caller then falls back to printing the span the map
- * requested.
+ * before the anchor: the caller then falls back to a range it can stand
+ * behind without a cadence.
  */
 export const layerPeriodFor = (
     interval: string | null | undefined,
@@ -110,8 +126,8 @@ export const layerPeriodFor = (
     const cursorMs = toMs(cursor)
     if (cursorMs === null) return null
 
-    const label = calendarLabel(duration, new Date(cursorMs))
-    if (label) return { kind: 'calendar', label }
+    const calendar = calendarPeriod(duration, cursorMs)
+    if (calendar) return calendar
 
     const anchorMs = toMs(anchor)
     if (anchorMs === null || cursorMs < anchorMs) return null
@@ -119,11 +135,7 @@ export const layerPeriodFor = (
     if (length !== null) {
         const steps = Math.floor((cursorMs - anchorMs) / length)
         const start = anchorMs + steps * length
-        return {
-            kind: 'range',
-            start: new Date(start).toISOString(),
-            end: new Date(start + length).toISOString(),
-        }
+        return span(start, start + length)
     }
 
     const anchorDate = new Date(anchorMs)
@@ -135,7 +147,6 @@ export const layerPeriodFor = (
         end = addTo(anchorDate, duration, steps + 1)
     }
     return {
-        kind: 'range',
         start: addTo(anchorDate, duration, steps).toISOString(),
         end: end.toISOString(),
     }

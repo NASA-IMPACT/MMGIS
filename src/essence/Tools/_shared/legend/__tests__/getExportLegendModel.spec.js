@@ -371,23 +371,41 @@ describe('getExportLegendModel', () => {
             expect(rows[0].dateLine).toBeNull()
         })
 
-        test('a monthly layer shows the calendar month holding the cursor', async () => {
+        // The cursor's month is inside the layer's coverage, so the data on
+        // screen was collected in it.
+        test('a monthly layer narrows its coverage to the month holding the cursor', async () => {
             vi.mocked(mmgisGetCurrentTime).mockResolvedValue(
                 '2025-06-15T09:00:00Z',
             )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                monthly: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2026-01-01T00:00:00Z',
+                },
+            })
             const rows = await rowsFor({
                 monthly: {
                     url: appended,
                     time: { enabled: true, type: 'global', interval: 'P1M' },
                 },
             })
-            expect(rows[0].dateLine).toBe('Showing 2025-06')
+            expect(rows[0].dateLine).toBe('Collected 2025-06')
         })
 
         test('a yearly and a daily layer label just as compactly', async () => {
             vi.mocked(mmgisGetCurrentTime).mockResolvedValue(
                 '2025-06-15T09:00:00Z',
             )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                yearly: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2026-01-01T00:00:00Z',
+                },
+                daily: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2026-01-01T00:00:00Z',
+                },
+            })
             const rows = await rowsFor({
                 yearly: {
                     url: appended,
@@ -399,9 +417,138 @@ describe('getExportLegendModel', () => {
                 },
             })
             expect(rows.map((row) => row.dateLine)).toEqual([
-                'Showing 2025',
-                'Showing 2025-06-15',
+                'Collected 2025',
+                'Collected 2025-06-15',
             ])
+        })
+
+        // A cursor parked years past everything the layer holds cannot be
+        // printed as a collection date: what the request could have returned
+        // is the coverage itself.
+        test('a cursor past the coverage falls back to the covered part of the request', async () => {
+            vi.mocked(mmgisGetTimeStart).mockResolvedValue(
+                '2010-01-01T00:00:00Z',
+            )
+            vi.mocked(mmgisGetCurrentTime).mockResolvedValue(
+                '2024-05-01T00:00:00Z',
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                yearly: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2016-12-31T00:00:00Z',
+                },
+                plain: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2016-12-31T00:00:00Z',
+                },
+            })
+            const rows = await rowsFor({
+                yearly: {
+                    url: appended,
+                    time: { enabled: true, type: 'global', interval: 'P1Y' },
+                },
+                plain: { url: appended, time: { enabled: true, type: 'global' } },
+            })
+            expect(rows.map((row) => row.dateLine)).toEqual([
+                'Collected 2015 → 2016',
+                'Collected 2015-01-01 → 2016-12-31',
+            ])
+        })
+
+        test('coverage running past the cursor ends the range at the cursor', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                ongoing: {
+                    start: '2020-01-01T00:00:00Z',
+                    end: '2030-01-01T00:00:00Z',
+                },
+            })
+            const rows = await rowsFor({
+                ongoing: {
+                    url: appended,
+                    time: { enabled: true, type: 'global' },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Collected 2020-01-01 → 2026-08-25')
+        })
+
+        // A coverage with no end reaches the cursor, so the cursor's own day
+        // is a day the layer has data for.
+        test('a half-open coverage still narrows to the cursor period', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                daily: { start: '2015-01-01T00:00:00Z', end: null },
+            })
+            const rows = await rowsFor({
+                daily: {
+                    url: appended,
+                    time: { enabled: true, type: 'global', interval: 'P1D' },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Collected 2026-08-25')
+        })
+
+        // A local layer keeps its own window, and its coverage narrows that
+        // window the same way the global cursor's is narrowed.
+        test('a local layer narrows its own window to its coverage', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                own: {
+                    start: '2015-01-01T00:00:00Z',
+                    end: '2020-01-15T00:00:00Z',
+                },
+            })
+            const rows = await rowsFor({
+                own: {
+                    url: appended,
+                    time: {
+                        enabled: true,
+                        type: 'local',
+                        start: '2020-01-01T00:00:00Z',
+                        end: '2020-02-01T00:00:00Z',
+                    },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Collected 2020-01-01 → 2020-01-15')
+        })
+
+        // The server had nothing inside the span to draw, so the app cannot
+        // say what, if anything, is on screen.
+        test('a cursor before the first scene prints only the request', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                future: { start: '2030-01-01T00:00:00Z', end: null },
+            })
+            const rows = await rowsFor({
+                future: { url: appended, time: { enabled: true, type: 'global' } },
+            })
+            expect(rows[0].dateLine).toBe(requested(WINDOW_START, CURSOR))
+        })
+
+        // Point mode asks from no particular start, so the coverage is what
+        // says how far back the request could have reached.
+        test('an open-ended request starts its range at the coverage start', async () => {
+            vi.mocked(mmgisGetTimeStart).mockResolvedValue(
+                '1970-01-01T00:00:00Z',
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                stac: { start: '2016-01-01T00:00:00Z', end: null },
+            })
+            const rows = await rowsFor({
+                stac: { url: appended, time: { enabled: true, type: 'global' } },
+            })
+            expect(rows[0].dateLine).toBe('Collected 2016-01-01 → 2026-08-25')
+        })
+
+        // Nothing bounds the past — not the request, not the coverage — so
+        // the range stays open at that end rather than inventing a start.
+        test('an open-ended request against coverage with no start reads as open', async () => {
+            vi.mocked(mmgisGetTimeStart).mockResolvedValue(
+                '1970-01-01T00:00:00Z',
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                stac: { start: null, end: '2016-09-01T00:00:00Z' },
+            })
+            const rows = await rowsFor({
+                stac: { url: appended, time: { enabled: true, type: 'global' } },
+            })
+            expect(rows[0].dateLine).toBe('Collected until 2016-09-01')
         })
 
         // A row's dates print at the layer's own period precision, which is
@@ -444,7 +591,29 @@ describe('getExportLegendModel', () => {
                     time: { enabled: true, type: 'global', interval: 'P7D' },
                 },
             })
-            expect(rows[0].dateLine).toBe('Showing 2025-06-01 → 2025-06-07')
+            expect(rows[0].dateLine).toBe('Collected 2025-06-01 → 2025-06-07')
+        })
+
+        // The layer's data stops partway through the week holding the cursor,
+        // so the printed period stops there rather than naming five days the
+        // layer has nothing for.
+        test('a period is clipped to a coverage that ends inside it', async () => {
+            vi.mocked(mmgisGetCurrentTime).mockResolvedValue(
+                '2025-01-10T00:00:00Z',
+            )
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                weekly: {
+                    start: '2025-01-01T00:00:00Z',
+                    end: '2025-01-09T23:59:59Z',
+                },
+            })
+            const rows = await rowsFor({
+                weekly: {
+                    url: appended,
+                    time: { enabled: true, type: 'global', interval: 'P7D' },
+                },
+            })
+            expect(rows[0].dateLine).toBe('Collected 2025-01-08 → 2025-01-09')
         })
 
         test('a six-hourly period prints both its ends to the hour', async () => {
@@ -461,7 +630,7 @@ describe('getExportLegendModel', () => {
                 },
             })
             expect(rows[0].dateLine).toBe(
-                'Showing 2025-01-01 00:00Z → 2025-01-01 05:00Z',
+                'Collected 2025-01-01 00:00Z → 2025-01-01 05:00Z',
             )
         })
 
@@ -480,12 +649,13 @@ describe('getExportLegendModel', () => {
                     time: { enabled: true, type: 'global', interval: 'PT1H' },
                 },
             })
-            expect(rows[0].dateLine).toBe('Showing 2025-01-01 05:00Z')
+            expect(rows[0].dateLine).toBe('Collected 2025-01-01 05:00Z')
         })
 
         // An interval under an hour is a run of individually timestamped
-        // scenes, not a period — but it still says how precisely to print.
-        test('a sub-hour interval falls through to the request in full', async () => {
+        // scenes, not a period, so it narrows nothing — but it still says how
+        // precisely to print.
+        test('a sub-hour interval never narrows the range to a period', async () => {
             vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
                 rapid: { start: '2015-03-13T00:00:00Z', end: null },
             })
@@ -496,7 +666,7 @@ describe('getExportLegendModel', () => {
                 },
             })
             expect(rows[0].dateLine).toBe(
-                'Requested 2015-03-13T00:00:00Z → 2026-08-25T00:00:00Z',
+                'Collected 2015-03-13T00:00:00Z → 2026-08-25T00:00:00Z',
             )
         })
 
@@ -529,17 +699,25 @@ describe('getExportLegendModel', () => {
             ])
         })
 
-        test('an off-calendar interval with nothing to anchor on falls back to the request', async () => {
+        // An off-calendar cadence is stepped from the coverage start, so a
+        // coverage that names no start names no periods either.
+        test('an off-calendar interval with nothing to anchor on prints the plain overlap', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                weekly: { start: null, end: '2020-01-01T00:00:00Z' },
+            })
             const rows = await rowsFor({
                 weekly: {
                     url: appended,
                     time: { enabled: true, type: 'global', interval: 'P7D' },
                 },
             })
-            expect(rows[0].dateLine).toBe(requested(WINDOW_START, CURSOR))
+            expect(rows[0].dateLine).toBe('Collected 2015-03-13 → 2020-01-01')
         })
 
-        test('an unparseable interval falls back to the request', async () => {
+        test('an unparseable interval prints the plain overlap', async () => {
+            vi.mocked(mmgisGetTemporalExtents).mockResolvedValue({
+                odd: { start: '2020-01-01T00:00:00Z', end: null },
+            })
             const rows = await rowsFor({
                 odd: {
                     url: appended,
@@ -550,7 +728,7 @@ describe('getExportLegendModel', () => {
                     },
                 },
             })
-            expect(rows[0].dateLine).toBe(requested(WINDOW_START, CURSOR))
+            expect(rows[0].dateLine).toBe('Collected 2020-01-01 → 2026-08-25')
         })
 
         test('a layer that is not time-enabled shows its authored extent', async () => {

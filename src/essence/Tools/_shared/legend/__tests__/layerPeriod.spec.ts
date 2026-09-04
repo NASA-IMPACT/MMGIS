@@ -1,46 +1,46 @@
 import { describe, test, expect } from 'vitest'
 import { layerPeriodFor } from '../layerPeriod'
 
+// A period runs from its first instant up to the first instant of the next
+// one, so a caller can tell whether a layer has any data inside it.
 describe('layerPeriodFor calendar-aligned units', () => {
     test('P1Y is the UTC year holding the cursor', () => {
         expect(layerPeriodFor('P1Y', '2025-06-15T12:00:00Z', null)).toEqual({
-            kind: 'calendar',
-            label: '2025',
+            start: '2025-01-01T00:00:00.000Z',
+            end: '2026-01-01T00:00:00.000Z',
         })
     })
 
     test('P1M snaps to the UTC month holding the cursor', () => {
         expect(layerPeriodFor('P1M', '2025-06-15T12:00:00Z', null)).toEqual({
-            kind: 'calendar',
-            label: '2025-06',
+            start: '2025-06-01T00:00:00.000Z',
+            end: '2025-07-01T00:00:00.000Z',
         })
         // The last instant of a month still belongs to that month, and the
         // first instant of the next one has already moved on.
         expect(layerPeriodFor('P1M', '2025-06-30T23:59:59Z', null)).toEqual({
-            kind: 'calendar',
-            label: '2025-06',
+            start: '2025-06-01T00:00:00.000Z',
+            end: '2025-07-01T00:00:00.000Z',
         })
         expect(layerPeriodFor('P1M', '2025-07-01T00:00:00Z', null)).toEqual({
-            kind: 'calendar',
-            label: '2025-07',
+            start: '2025-07-01T00:00:00.000Z',
+            end: '2025-08-01T00:00:00.000Z',
+        })
+    })
+
+    // December's next boundary is the following January, not a thirteenth
+    // month.
+    test('P1M in December ends on the new year', () => {
+        expect(layerPeriodFor('P1M', '2025-12-09T00:00:00Z', null)).toEqual({
+            start: '2025-12-01T00:00:00.000Z',
+            end: '2026-01-01T00:00:00.000Z',
         })
     })
 
     test('P1D is the UTC day holding the cursor', () => {
         expect(layerPeriodFor('P1D', '2025-06-15T23:30:00Z', null)).toEqual({
-            kind: 'calendar',
-            label: '2025-06-15',
-        })
-    })
-
-    test('pads single-digit months and days', () => {
-        expect(layerPeriodFor('P1M', '2025-01-05T00:00:00Z', null)).toEqual({
-            kind: 'calendar',
-            label: '2025-01',
-        })
-        expect(layerPeriodFor('P1D', '2025-01-05T00:00:00Z', null)).toEqual({
-            kind: 'calendar',
-            label: '2025-01-05',
+            start: '2025-06-15T00:00:00.000Z',
+            end: '2025-06-16T00:00:00.000Z',
         })
     })
 })
@@ -54,7 +54,6 @@ describe('layerPeriodFor anchored durations', () => {
                 '2025-01-01T00:00:00Z',
             ),
         ).toEqual({
-            kind: 'range',
             start: '2025-01-08T00:00:00.000Z',
             end: '2025-01-15T00:00:00.000Z',
         })
@@ -68,7 +67,6 @@ describe('layerPeriodFor anchored durations', () => {
                 '2025-01-01T00:00:00Z',
             ),
         ).toEqual({
-            kind: 'range',
             start: '2025-01-08T00:00:00.000Z',
             end: '2025-01-15T00:00:00.000Z',
         })
@@ -84,7 +82,6 @@ describe('layerPeriodFor anchored durations', () => {
                 '2025-01-01T00:00:00Z',
             ),
         ).toEqual({
-            kind: 'range',
             start: '2025-02-11T00:00:00.000Z',
             end: '2025-03-21T00:00:00.000Z',
         })
@@ -98,7 +95,6 @@ describe('layerPeriodFor anchored durations', () => {
                 '2025-01-01T00:00:00Z',
             ),
         ).toEqual({
-            kind: 'range',
             start: '2025-01-01T12:00:00.000Z',
             end: '2025-01-01T18:00:00.000Z',
         })
@@ -112,7 +108,6 @@ describe('layerPeriodFor anchored durations', () => {
                 '2025-01-01T00:00:00Z',
             ),
         ).toEqual({
-            kind: 'range',
             start: '2025-01-08T00:00:00.000Z',
             end: '2025-01-15T00:00:00.000Z',
         })
@@ -126,7 +121,6 @@ describe('layerPeriodFor anchored durations', () => {
                 '2025-01-01T00:00:00Z',
             ),
         ).toEqual({
-            kind: 'range',
             start: '2025-01-01T00:00:00.000Z',
             end: '2025-01-08T00:00:00.000Z',
         })
@@ -143,7 +137,6 @@ describe('layerPeriodFor anchored durations', () => {
                 '2024-01-01T00:00:00Z',
             ),
         ).toEqual({
-            kind: 'range',
             start: '2024-11-01T00:00:00.000Z',
             end: '2025-01-01T00:00:00.000Z',
         })
@@ -157,7 +150,6 @@ describe('layerPeriodFor anchored durations', () => {
                 '2020-01-01T00:00:00Z',
             ),
         ).toEqual({
-            kind: 'range',
             start: '2026-01-01T00:00:00.000Z',
             end: '2028-01-01T00:00:00.000Z',
         })
@@ -233,7 +225,6 @@ describe('layerPeriodFor rejections', () => {
                 '2025-01-01T00:00:00Z',
             ),
         ).toEqual({
-            kind: 'range',
             start: '2025-01-01T05:00:00.000Z',
             end: '2025-01-01T06:00:00.000Z',
         })
