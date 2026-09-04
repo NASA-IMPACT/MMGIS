@@ -30,7 +30,7 @@ With the two patterns above and header `X-Forwarded-Prefix: /tools/dashboard`:
 | The visitor opens | `X-Forwarded-Prefix` value | What our edge does | The visitor gets |
 |---|---|---|---|
 | `site.gov/tools/dashboard/` | `/tools/dashboard` | strips `/tools/dashboard`, serves `/index.html` | the dashboard |
-| `site.gov/tools/dashboard/js/main.js` | `/tools/dashboard` | strips `/tools/dashboard` → `/js/main.js` | the asset |
+| `site.gov/tools/dashboard/build/static/js/main.a1b2c3.js` | `/tools/dashboard` | strips `/tools/dashboard` → `/build/static/js/main.a1b2c3.js` | the asset |
 | `site.gov/tools/dashboard` *(no trailing slash)* | `/tools/dashboard` | 302 redirect to `/tools/dashboard/` | one redirect, then the dashboard |
 | `site.gov/tools/dashboard?view=2` | `/tools/dashboard` | 302 to `/tools/dashboard/?view=2` | the deep link, query string intact |
 | `site.gov/tools/dashboard-archive` *(a route of yours with a similar name)* | *(never sent)* | nothing — matches neither pattern, so it never leaves your site | your own route, unaffected |
@@ -49,7 +49,7 @@ Every dashboard is password-protected, so every row also sits behind the passwor
 
 **All query strings in the cache key:** a policy that drops query strings never sends them to us. A deep link like `/tools/dashboard?view=2` then reaches us stripped of its `?view=2`, and the address we redirect the visitor to has lost it for good.
 
-**Minimum TTL 0:** managed policies impose a minimum cache time that overrides what our responses ask for. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next.
+**Minimum TTL 0:** the managed policies you are likely to reach for impose a minimum cache time that overrides what our responses ask for. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next.
 
 **HTTPS only to the origin:** the dashboard's password rides on the `Authorization` header of every request you forward. Over plain HTTP it would cross the internet unencrypted.
 
