@@ -331,6 +331,142 @@ test.describe('DeckGLHelpers', () => {
             expect(Array.isArray(layer.props.getLineColor)).toBe(true)
         })
 
+        // Legend styling (issue #345): a legend's styleMatching entries colour
+        // features from a property value, and the deck.gl engine has to honour
+        // the same configuration the Leaflet vector path always has.
+        const co2Ramp = [
+            {
+                styleMatching: true,
+                propertyName: 'co2',
+                propertyValue: '400',
+                shape: 'continuous',
+                color: '#000000',
+            },
+            {
+                styleMatching: true,
+                propertyName: 'co2',
+                propertyValue: '440',
+                shape: 'continuous',
+                color: '#ffffff',
+            },
+        ]
+
+        const rampedLayer = (id, type, extra = {}) =>
+            buildDeckLayer(id, {
+                type,
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                geojson: { type: 'FeatureCollection', features: [] },
+                style: {
+                    fillColor: '#00ff00',
+                    fillOpacity: 1,
+                    color: '#00ff00',
+                    opacity: 1,
+                    ...extra,
+                },
+                legend: co2Ramp,
+            })
+
+        test.each([['vectortile'], ['vector']])(
+            'ramps %s fill and line colour across a numeric property',
+            (type) => {
+                const layer = rampedLayer(`legend-ramp-${type}`, type)
+                const feature = { properties: { co2: 420 } }
+                // Midway between the black and white stops. Interpolation
+                // yields an rgb() string, which has to survive the conversion
+                // to a deck.gl RGBA tuple.
+                expect(layer.props.getFillColor(feature)).toEqual([128, 128, 128, 255])
+                expect(layer.props.getLineColor(feature)).toEqual([128, 128, 128, 255])
+            }
+        )
+
+        test.each([['vectortile'], ['vector']])(
+            'clamps %s values outside the ramp to the end colours',
+            (type) => {
+                const layer = rampedLayer(`legend-clamp-${type}`, type)
+                expect(layer.props.getFillColor({ properties: { co2: -50 } })).toEqual([0, 0, 0, 255])
+                expect(layer.props.getFillColor({ properties: { co2: 9000 } })).toEqual([255, 255, 255, 255])
+            }
+        )
+
+        test.each([['vectortile'], ['vector']])(
+            'falls %s features off the ramp back to the fixed colour',
+            (type) => {
+                const layer = rampedLayer(`legend-fallback-${type}`, type)
+                // Neither invisible nor black: the layer's own fillColor.
+                expect(layer.props.getFillColor({ properties: {} })).toEqual([0, 255, 0, 255])
+                expect(layer.props.getFillColor({ properties: { co2: 'high' } })).toEqual([0, 255, 0, 255])
+                expect(layer.props.getLineColor({ properties: { co2: null } })).toEqual([0, 255, 0, 255])
+            }
+        )
+
+        test('lets legend colours outrank the *Prop colours', () => {
+            const layer = rampedLayer('legend-precedence', 'vectortile', {
+                fillColorProp: 'c',
+            })
+            expect(
+                layer.props.getFillColor({ properties: { co2: 400, c: '#ff0000' } })
+            ).toEqual([0, 0, 0, 255])
+            // With no ramp value the *Prop colour is still read.
+            expect(
+                layer.props.getFillColor({ properties: { c: '#ff0000' } })
+            ).toEqual([255, 0, 0, 255])
+        })
+
+        test('keeps the layer opacity when a legend supplies the colour', () => {
+            const layer = rampedLayer('legend-opacity', 'vectortile', {
+                fillOpacity: 0.5,
+            })
+            expect(layer.props.getFillColor({ properties: { co2: 400 } })[3]).toBe(128)
+        })
+
+        test('applies a discrete legend by exact property value', () => {
+            const layer = buildDeckLayer('legend-discrete', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#00ff00', fillOpacity: 1 },
+                legend: [
+                    {
+                        styleMatching: true,
+                        propertyName: 'kind',
+                        propertyValue: 'station',
+                        color: '#ff0000',
+                    },
+                ],
+            })
+            expect(
+                layer.props.getFillColor({ properties: { kind: 'station' } })
+            ).toEqual([255, 0, 0, 255])
+            expect(
+                layer.props.getFillColor({ properties: { kind: 'buoy' } })
+            ).toEqual([0, 255, 0, 255])
+        })
+
+        test('combines a legend colour with a per-feature opacityProp', () => {
+            const layer = rampedLayer('legend-opacityprop', 'vectortile', {
+                opacityProp: 'o',
+            })
+            const colour = layer.props.getLineColor({
+                properties: { co2: 400, o: 0.5 },
+            })
+            // Legend supplies the hue, the property supplies the alpha.
+            expect(colour).toEqual([0, 0, 0, 128])
+        })
+
+        test('leaves the fill on the fixed colour for a stroke-only legend', () => {
+            const layer = buildDeckLayer('legend-stroke-only', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#00ff00', fillOpacity: 1, color: '#00ff00', opacity: 1 },
+                legend: co2Ramp.map(({ color, ...rest }) => ({
+                    ...rest,
+                    strokecolor: color,
+                })),
+            })
+            const feature = { properties: { co2: 420 } }
+            expect(layer.props.getLineColor(feature)).toEqual([128, 128, 128, 255])
+            expect(layer.props.getFillColor(feature)).toEqual([0, 255, 0, 255])
+        })
+
         // deck.gl decodes vector tiles into a binary form by default. Verified
         // against @loaders.gl/gis and deck.gl 9.3.7: a numeric property is
         // hoisted into one tile-wide typed array covering every feature, zero
@@ -341,7 +477,14 @@ test.describe('DeckGLHelpers', () => {
         //   {properties: {layerName: 'landcover', class: 'grass', ele: 0}}
         // The string properties kept alongside omit the key entirely and there
         // is no presence mask, so a missing measurement cannot be told from a
-        // real zero. The fix is to stop asking for binary when it matters.
+        // real zero. On a live OpenMapTiles layer that painted every polygon
+        // with no `ele` in the ramp's lowest colour instead of the layer's
+        // fixed colour. The fix is to stop asking for binary when it matters.
+        test('decodes vector tiles as GeoJSON when a legend reads a property', () => {
+            const layer = rampedLayer('legend-binary-off', 'vectortile')
+            expect(layer.props.binary).toBe(false)
+        })
+
         test.each([
             ['fillColorProp', { fillColorProp: 'c' }],
             ['fillOpacityProp', { fillOpacityProp: 'fo' }],
@@ -366,6 +509,7 @@ test.describe('DeckGLHelpers', () => {
                 type: 'vectortile',
                 url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
                 style: { fillColor: '#ff00ff', radius: 5, weight: 2 },
+                legend: [{ color: '#ff0000', value: 'Stations' }],
             })
             expect(layer.props.binary).toBe(true)
         })
@@ -373,19 +517,128 @@ test.describe('DeckGLHelpers', () => {
         test('lets a buildDeckLayer caller override the tile decoding format', () => {
             // An adapter-internal channel: no makeLayer call site forwards
             // a layer's own nativeOptions, so a mission cannot reach it.
-            const layer = buildDeckLayer('binary-override', {
-                type: 'vectortile',
-                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
-                style: { fillColor: '#ff00ff', fillColorProp: 'c' },
-            })
+            const layer = rampedLayer('binary-override', 'vectortile')
             expect(layer.props.binary).toBe(false)
             const overridden = buildDeckLayer('binary-override-2', {
                 type: 'vectortile',
                 url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
-                style: { fillColor: '#ff00ff', fillColorProp: 'c' },
+                style: { fillColor: '#ff00ff' },
+                legend: co2Ramp,
                 nativeOptions: { binary: true },
             })
             expect(overridden.props.binary).toBe(true)
+        })
+
+        test('falls back to the fixed colour when the property is truly absent', () => {
+            // The shape binary:false produces: a real GeoJSON feature whose
+            // properties simply have no `co2` key.
+            const layer = rampedLayer('legend-absent-prop', 'vectortile')
+            const feature = {
+                type: 'Feature',
+                properties: { class: 'grass', subclass: 'meadow' },
+            }
+            expect(layer.props.getFillColor(feature)).toEqual([0, 255, 0, 255])
+        })
+
+        test('still ramps a feature whose value is genuinely zero', () => {
+            // The fix belongs at the decoding layer, not here: a real 0 is a
+            // real measurement and must still take its place on the ramp.
+            const layer = buildDeckLayer('legend-real-zero', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#ff00ff', fillOpacity: 1 },
+                legend: [
+                    { ...co2Ramp[0], propertyValue: '0', color: '#000000' },
+                    { ...co2Ramp[1], propertyValue: '100', color: '#ffffff' },
+                ],
+            })
+            expect(
+                layer.props.getFillColor({ properties: { co2: 0 } })
+            ).toEqual([0, 0, 0, 255])
+        })
+
+        // A legend given as a `legend:` CSV path is fetched after its layer
+        // has been built, and the rebuild that follows reaches deck.gl as an
+        // update to a layer it already holds under that id — not a fresh one.
+        // Two things have to survive that, and neither does by default:
+        // `binary` is read once in MVTLayer.initializeState, and colour
+        // attributes are regenerated only on a data change or an updateTrigger
+        // whose value differs. Issue #345.
+        test.describe('a legend that lands after the layer is built', () => {
+            const lateLayer = (id, extra = {}) =>
+                buildDeckLayer(id, {
+                    type: 'vectortile',
+                    url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                    style: { fillColor: '#00ff00', fillOpacity: 1 },
+                    ...extra,
+                })
+
+            test('decodes as GeoJSON from the first build when one is configured', () => {
+                // The decision has to come from the configuration, because the
+                // legend itself is not here yet and the format never changes
+                // after this.
+                const layer = lateLayer('late-binary', { legendConfigured: true })
+                expect(layer.props.binary).toBe(false)
+            })
+
+            test('costs a display-only legend the binary fast path', () => {
+                // Known and accepted: a configured legend cannot be told from
+                // a styling one until it arrives, and by then the format is
+                // settled. Recorded here so the trade-off is not a surprise.
+                const layer = lateLayer('late-binary-display', {
+                    legendConfigured: true,
+                    legend: [{ color: '#ff0000', value: 'Stations' }],
+                })
+                expect(layer.props.binary).toBe(false)
+            })
+
+            test('triggers a colour regeneration when the legend changes', () => {
+                const without = lateLayer('late-trigger-none')
+                const with_ = lateLayer('late-trigger-ramp', { legend: co2Ramp })
+                // Different values, so deck.gl sees the trigger change and
+                // re-runs the accessors over every tile already loaded.
+                expect(with_.props.updateTriggers.getFillColor).not.toBe(
+                    without.props.updateTriggers.getFillColor
+                )
+                expect(with_.props.updateTriggers.getLineColor).not.toBe(
+                    without.props.updateTriggers.getLineColor
+                )
+            })
+
+            test('leaves the trigger alone for an unchanged legend', () => {
+                // Every refresh rebuilds the layer; only a legend that really
+                // changed should cost a regeneration.
+                const a = lateLayer('late-trigger-a', { legend: co2Ramp })
+                const b = lateLayer('late-trigger-b', {
+                    legend: co2Ramp.map((row) => ({ ...row })),
+                })
+                expect(a.props.updateTriggers.getFillColor).toBe(
+                    b.props.updateTriggers.getFillColor
+                )
+            })
+
+            test('keeps the triggers off the keys TileLayer reads as new data', () => {
+                // `all` and `getTileData` make TileLayer refetch every tile
+                // rather than restyle the ones it holds.
+                const layer = lateLayer('late-trigger-keys', { legend: co2Ramp })
+                expect(Object.keys(layer.props.updateTriggers).sort()).toEqual([
+                    'getFillColor',
+                    'getLineColor',
+                ])
+            })
+        })
+
+        test('keeps colour accessors static when the legend styles nothing', () => {
+            const layer = buildDeckLayer('legend-none', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#00ff00' },
+                // A plain display legend: no styleMatching entries.
+                legend: [{ color: '#ff0000', value: 'Stations' }],
+            })
+            // Constants, not functions — deck.gl skips per-feature evaluation.
+            expect(Array.isArray(layer.props.getFillColor)).toBe(true)
+            expect(Array.isArray(layer.props.getLineColor)).toBe(true)
         })
 
         test('creates a ScatterplotLayer for scatterplot type', () => {

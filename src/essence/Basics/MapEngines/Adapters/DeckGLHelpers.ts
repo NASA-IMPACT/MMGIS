@@ -22,6 +22,8 @@ import { Tiles3DLoader } from '@loaders.gl/3d-tiles'
 import { WMSImageSource } from '@loaders.gl/wms'
 import { color as parseColor } from 'd3'
 
+import { compileLegendStyle, resolveLegendStyle } from '../../Layers_/LegendStyle'
+
 import type { LatLng, LatLngLike, BoundsLike, PointLike, PaddingLike } from '../types/geometry'
 import type { LayerOptions, TileLayerOptions, GeoJSONLayerOptions, VectorTileLayerOptions, PointCloudLayerOptions } from '../types/layers'
 import type { FeaturePickResult } from '../types/events'
@@ -155,16 +157,29 @@ export function pickInfoToResult(info: PickingInfo): FeaturePickResult {
 }
 
 /**
+ * The bag a feature's property names are looked up against: a GeoJSON
+ * feature's `.properties`, or a plain data record read directly.
+ * @param object - GeoJSON feature or plain data record.
+ * @returns Null when there is nothing to read properties from.
+ */
+function featureProperties(object: unknown): Record<string, unknown> | null {
+    if (object == null || typeof object !== 'object') return null
+    return (
+        (object as { properties?: Record<string, unknown> }).properties ??
+        (object as Record<string, unknown>)
+    )
+}
+
+/**
  * Reads a nested value from a GeoJSON feature or plain object by dot-notation path.
  * Checks `.properties` first, then the object itself.
  * @param object - GeoJSON feature or plain data record.
  * @param path - Dot-notation key path, e.g. `"meta.score"`.
  */
 function getPropValue(object: unknown, path: string | undefined): unknown {
-    if (!path || object == null || typeof object !== 'object') return undefined
-    const source =
-        (object as { properties?: Record<string, unknown> }).properties ??
-        (object as Record<string, unknown>)
+    if (!path) return undefined
+    const source = featureProperties(object)
+    if (source == null) return undefined
     return path
         .split('.')
         .reduce(
@@ -286,8 +301,29 @@ function parseWmsUrl(url: string): {
  * value from, and the matching flat field is the fallback for features that do
  * not carry that property. When no `*Prop` is configured the accessor is
  * returned as a plain constant, so deck.gl skips per-feature evaluation.
+ *
+ * `legendData` is the layer's legend, which doubles as a style specification
+ * (see LegendStyle). Its colours outrank both the `*Prop` and the flat fields,
+ * matching the precedence the Leaflet vector path has always applied. It is
+ * compiled here, once per layer build, because deck.gl re-runs an accessor
+ * over every feature whenever it regenerates that attribute — on a data
+ * change, on an updateTrigger change, and for each newly loaded tile — so
+ * anything hoistable belongs outside the accessor. A legend that specifies no
+ * styling leaves the constants intact.
  */
-function resolveStyleAccessors(style: Record<string, unknown>) {
+function resolveStyleAccessors(
+    style: Record<string, unknown>,
+    legendData?: unknown,
+    legendConfigured?: boolean
+) {
+    const legend = compileLegendStyle(legendData)
+
+    // A digest of the compiled legend, for the `vectortile` case's
+    // updateTriggers. deck.gl compares accessor props as always equal, so an
+    // accessor closing over a different legend needs a trigger value that
+    // differs before it is re-run. Legends are a handful of rows.
+    const legendFingerprint = legend ? JSON.stringify(legend) : ''
+
     const staticFillColor = hexToRgba(
         style.fillColor as string | undefined,
         style.fillOpacity !== undefined ? Number(style.fillOpacity) : 0.8,
@@ -309,17 +345,25 @@ function resolveStyleAccessors(style: Record<string, unknown>) {
     const radiusProp = style.radiusProp as string | undefined
 
     const getFillColor =
-        fillColorProp || fillOpacityProp
+        fillColorProp || fillOpacityProp || legend
             ? (feature: Record<string, unknown>) => {
+                  // A feature the legend does not cover — no such property,
+                  // or a non-numeric value — resolves to undefined here and
+                  // drops through to the *Prop and flat colours below, so it
+                  // keeps the layer's fixed colour rather than drawing black.
+                  const legendVal = legend
+                      ? resolveLegendStyle(legend, featureProperties(feature))?.fillColor
+                      : undefined
                   const hexVal = fillColorProp
                       ? (getPropValue(feature, fillColorProp) as string | undefined)
                       : undefined
                   const alphaVal = fillOpacityProp
                       ? getPropValue(feature, fillOpacityProp)
                       : undefined
-                  if (hexVal === undefined && alphaVal === undefined) return staticFillColor
+                  if (legendVal === undefined && hexVal === undefined && alphaVal === undefined)
+                      return staticFillColor
                   return hexToRgba(
-                      hexVal ?? (style.fillColor as string | undefined),
+                      legendVal ?? hexVal ?? (style.fillColor as string | undefined),
                       alphaVal !== undefined
                           ? Number(alphaVal)
                           : style.fillOpacity !== undefined
@@ -331,17 +375,21 @@ function resolveStyleAccessors(style: Record<string, unknown>) {
             : staticFillColor
 
     const getLineColor =
-        colorProp || opacityProp
+        colorProp || opacityProp || legend
             ? (feature: Record<string, unknown>) => {
+                  const legendVal = legend
+                      ? resolveLegendStyle(legend, featureProperties(feature))?.color
+                      : undefined
                   const hexVal = colorProp
                       ? (getPropValue(feature, colorProp) as string | undefined)
                       : undefined
                   const alphaVal = opacityProp
                       ? getPropValue(feature, opacityProp)
                       : undefined
-                  if (hexVal === undefined && alphaVal === undefined) return staticLineColor
+                  if (legendVal === undefined && hexVal === undefined && alphaVal === undefined)
+                      return staticLineColor
                   return hexToRgba(
-                      hexVal ?? (style.color as string | undefined),
+                      legendVal ?? hexVal ?? (style.color as string | undefined),
                       alphaVal !== undefined
                           ? Number(alphaVal)
                           : style.opacity !== undefined
@@ -366,11 +414,15 @@ function resolveStyleAccessors(style: Record<string, unknown>) {
           }
         : staticPointRadius
 
-    // Whether anything above actually reads a feature property. Vector tile
-    // layers need this to pick a tile decoding format: see the `vectortile`
-    // case in buildDeckLayer.
+    // Whether the layer ever reads a feature property. Vector tile layers
+    // need this to pick a tile decoding format: see the `vectortile` case in
+    // buildDeckLayer. A configured legend counts even before it has arrived,
+    // because the layer built without it is the one deck.gl settles the
+    // format on.
     const readsFeatureProperties = Boolean(
-        fillColorProp ||
+        legend ||
+            legendConfigured ||
+            fillColorProp ||
             fillOpacityProp ||
             colorProp ||
             opacityProp ||
@@ -384,6 +436,7 @@ function resolveStyleAccessors(style: Record<string, unknown>) {
         getLineWidth,
         getPointRadius,
         readsFeatureProperties,
+        legendFingerprint,
     }
 }
 
@@ -472,7 +525,7 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                     : {}
 
             const { getFillColor, getLineColor, getLineWidth, getPointRadius } =
-                resolveStyleAccessors(style)
+                resolveStyleAccessors(style, o.legend)
 
             const markerIcon = o.variables?.markerIcon
             const iconUrl = markerIcon?.iconUrl
@@ -528,7 +581,8 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 getLineWidth,
                 getPointRadius,
                 readsFeatureProperties,
-            } = resolveStyleAccessors(style)
+                legendFingerprint,
+            } = resolveStyleAccessors(style, o.legend, o.legendConfigured)
 
             return new MVTLayer({
                 id,
@@ -552,6 +606,13 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 // fast path. Picking, autoHighlight and uniqueIdProperty all
                 // work in either mode - MVTLayer carries a branch for each,
                 // and GlobeView already forces this same setting.
+                //
+                // Read from what the mission configures rather than from the
+                // legend in hand, because deck.gl reads this prop once, in
+                // initializeState, and a layer rebuilt under the same id when
+                // its legend lands late is an update rather than a fresh
+                // initialisation. The cost is that a legend configured for
+                // display alone also gives up the binary fast path.
                 binary: !readsFeatureProperties,
                 getFillColor,
                 getLineColor,
@@ -563,6 +624,18 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 // invisible. Line width above already pins its unit; points
                 // were missed.
                 pointRadiusUnits: 'pixels',
+                // A legend arriving late rebuilds the layer under the same id,
+                // which reaches deck.gl as a prop update. Accessor props
+                // compare as always equal there, so without a trigger value
+                // that changed, the colours already generated for every loaded
+                // tile would stand. Keyed per accessor rather than `all`:
+                // TileLayer reads `all` and `getTileData` as a data change and
+                // would refetch every tile instead of restyling the ones it
+                // holds.
+                updateTriggers: {
+                    getFillColor: legendFingerprint,
+                    getLineColor: legendFingerprint,
+                },
                 ...(o.nativeOptions ?? {}),
             } as ConstructorParameters<typeof MVTLayer>[0]) as unknown as Layer
         }
