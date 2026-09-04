@@ -32,7 +32,8 @@ test.describe('updateRefusalFor', () => {
         [
             'provisioning behind a stack that is gone',
             { status: 'provisioning', stack_status: null, stack_arn: ARN },
-            'Deployment is provisioning but has no stack; delete it and publish again.',
+            'Deployment is provisioning but has no stack; delete the ' +
+                'deployment and publish it again (this mints a new URL)',
         ],
         // Killed before CreateStack ever ran: no stack was minted, so no URL
         // is at stake and the update creates one.
@@ -54,7 +55,8 @@ test.describe('updateRefusalFor', () => {
         [
             'updating behind a stack that is gone',
             { status: 'updating', stack_status: null, stack_arn: ARN },
-            'Deployment is updating but has no stack; delete it and publish again.',
+            'Deployment is updating but has no stack; delete the deployment ' +
+                'and publish it again (this mints a new URL)',
         ],
         [
             'updating mid-update',
@@ -153,10 +155,35 @@ test.describe('updateRefusalFor', () => {
             { status: 'deleted', stack_status: null },
             'Deployment was deleted; publish it again',
         ],
-        // Terminal rows are exactly what an update is for, whatever their
-        // stack looks like — the publish task decides what to do with it.
+        // A row that is not mid-operation is exactly what an update is for —
+        // the publish task decides what to do with its stack.
         ['published', { status: 'published', stack_status: null }, null],
-        ['failed', { status: 'failed', stack_status: 'ROLLBACK_COMPLETE' }, null],
+        // Unless that stack is one only a delete moves. Nothing about the row
+        // makes CloudFormation accept an UpdateStack there, so a settled row
+        // meets the same wall as a busy one rather than baking and building
+        // for minutes into a rejection.
+        [
+            'failed on a stack that rolled back its create',
+            {
+                status: 'failed',
+                stack_status: 'ROLLBACK_COMPLETE',
+                stack_name: 'mmgis-dashboard-1',
+            },
+            "Stack 'mmgis-dashboard-1' is in ROLLBACK_COMPLETE and cannot be " +
+                'used — delete the deployment and publish it again (this mints a new URL)',
+        ],
+        // A timestamp that will not parse says nothing about how long ago the
+        // task last spoke, and letting it through would put a second task on
+        // the same stack.
+        [
+            'updating with an unreadable timestamp',
+            {
+                status: 'updating',
+                stack_status: 'UPDATE_COMPLETE',
+                updatedAt: 'whenever',
+            },
+            'Deployment is updating; wait for it to finish',
+        ],
     ]
 
     cases.forEach(([label, row, message]) => {

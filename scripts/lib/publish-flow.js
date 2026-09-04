@@ -1,13 +1,13 @@
 /**
  * publish-flow.js
  * The decisions scripts/publish-static.js makes around its AWS work, kept
- * apart from the task entrypoint so each is a plain function of its inputs:
- * loading that entrypoint runs its main().
+ * apart from the task entrypoint so each is a plain function of its inputs —
+ * no environment, no AWS clients, no database.
  */
 
 const Sequelize = require("sequelize");
 
-const { stackMissingMessage } = require("./aws-provision");
+const { stackMissingMessage, republishGuidance } = require("./aws-provision");
 
 function statusNotIn(statuses) {
   return { status: { [Sequelize.Op.notIn]: statuses } };
@@ -50,7 +50,7 @@ function stackAction({ action, stack, stackName, stackArn }) {
   if (stack != null) return "converge";
   if (action === "publish" || stackArn == null) return "create";
   const missing = stackMissingMessage(stackName);
-  return { refuse: `${missing} — delete this deployment and publish it again` };
+  return { refuse: `${missing} — ${republishGuidance()}` };
 }
 
 // Throws unless `row` is a deployment this task should still be working for.

@@ -340,10 +340,8 @@ test.describe('convergeStackUpdate', () => {
                         LastUpdatedTime: BEFORE,
                     },
                 },
-                // wait-out poll 1: the busy rejection is itself proof an
-                // operation is in flight, so this pre-rejection read is stale
-                // and must NOT end the wait-out — retrying here would walk
-                // straight back into the same rejection
+                // wait-out poll 1: the stale pre-rejection read, which must
+                // NOT end the wait-out (see convergeStackUpdate's docblock)
                 {
                     reply: {
                         StackStatus: 'UPDATE_COMPLETE',
@@ -555,6 +553,47 @@ test.describe('convergeStackUpdate', () => {
         )
         // No second UpdateStack: the retry is abandoned, not attempted.
         expect(state.updates).toBe(1)
+    })
+
+    // The read before an UpdateStack can be a moment too early — a delete
+    // starting right after it leaves the stack somewhere only a delete moves —
+    // and the rejection names that status. It is the freshest word on the
+    // stack, so it earns the guidance rather than CloudFormation's own wording.
+    test('a rejection naming a delete-only status stops with the guidance', async () => {
+        const state = scriptCfn({
+            updates: [
+                {
+                    throw: Object.assign(
+                        new Error(
+                            'Stack:arn:.../abc is in DELETE_IN_PROGRESS state and can not be updated.'
+                        ),
+                        { name: 'ValidationError' }
+                    ),
+                },
+            ],
+            describes: [
+                {
+                    reply: {
+                        StackStatus: 'UPDATE_COMPLETE',
+                        LastUpdatedTime: BEFORE,
+                    },
+                },
+            ],
+        })
+        await expect(
+            provision.convergeStackUpdate({
+                stackName: 'mmgis-dashboard-1',
+                templateBody: '{}',
+                pollIntervalMs: 1,
+                deadlineMs: 2000,
+            })
+        ).rejects.toThrow(
+            "Stack 'mmgis-dashboard-1' is in DELETE_IN_PROGRESS and cannot be used"
+        )
+        // Nothing is coming that an update could follow, so the loop neither
+        // waits the status out nor retries.
+        expect(state.updates).toBe(1)
+        expect(state.describes).toBe(1)
     })
 
     // An update that rolls back lands on UPDATE_ROLLBACK_COMPLETE — the
