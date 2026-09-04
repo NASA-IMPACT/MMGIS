@@ -80,7 +80,7 @@ Each panel in the `panels` array must include these fields:
   "stateConstraints": { /* ... */ },
   "capabilities": { /* ... */ },
   "dimensions": { /* ... */ },
-  "tools": ["Tool1", "Tool2"]
+  "panelTools": ["Tool1", "Tool2"]
 }
 ```
 
@@ -96,7 +96,8 @@ Each panel in the `panels` array must include these fields:
 | `stateConstraints` | Object | Yes | Defines allowed states and default state |
 | `capabilities` | Object | No | Panel capabilities (orientation, resizing, max tools) |
 | `dimensions` | Object | No | Size configuration for different states |
-| `tools` | Array | No | Array of tool names to assign to this panel |
+| `panelTools` | Array | No | Array of tool names to assign to this panel's scrolling body |
+| `pinnedTools` | Array | No | Tool names to hold in the panel's pinned region, above the scrolling body. Left/right panels only |
 | `hasHeader` | Boolean | No | Whether panel has a header with title and control buttons |
 | `overlay` | Boolean | No | Whether panel overlays map (default: true) or pushes it aside |
 
@@ -158,17 +159,46 @@ Determines how multiple tools are displayed when panel is expanded:
 - **`"stacked"`**: All tools visible simultaneously, stacked vertically/horizontally
 - **`"tabbed"`**: Tools in tabs, only active tool's content visible
 
-### tools
+### panelTools
 
-Array of tool names that should be assigned to this panel:
+Array of tool names that should be assigned to this panel's scrolling body:
 
 ```json
 {
-  "tools": ["Layers", "Legend", "Info", "Sites"]
+  "panelTools": ["Layers", "Legend", "Info", "Sites"]
 }
 ```
 
 Tool names must match the `name` field in the mission's `tools` array.
+
+### pinnedTools
+
+Tool names that belong in the panel's **pinned region** — a block at the top of
+the panel that holds its place while everything below it scrolls:
+
+```json
+{
+  "pinnedTools": ["MapControl"],
+  "panelTools": ["Layers", "Legend", "Info"]
+}
+```
+
+Pinned tools render above the panel body, in the order listed, and the panel's
+scrollbar starts below them. A panel that pins nothing looks and behaves exactly
+as one without the field — no reserved space, no extra chrome.
+
+Notes:
+
+- Only left and right panels have a pinned region. Naming pinned tools on a
+  top, bottom or floating panel places them in the panel body instead, with a
+  console warning.
+- In a `"tabbed"` panel the pinned region sits above the tab bar, so pinned
+  tools stay visible while switching tabs.
+- A tool belongs to one list or the other. A name in both stays pinned.
+- Pinned tools are still tools in the panel: they count towards
+  `capabilities.maxTools` and appear in the iconified icon bar.
+- The region is sized by its content up to 60% of the panel; past that it
+  scrolls on its own rather than crowding out the panel body.
 
 ## State Constraints
 
@@ -358,15 +388,18 @@ Specify tools directly in each panel configuration:
   "panels": [
     {
       "id": "left-panel",
-      "tools": ["Layers", "Legend", "Info"]
+      "panelTools": ["Layers", "Legend", "Info"]
     },
     {
       "id": "right-panel",
-      "tools": ["Measure", "Draw"]
+      "panelTools": ["Measure", "Draw"]
     }
   ]
 }
 ```
+
+Tools listed in a panel's `pinnedTools` are assigned first, so the pinned
+region keeps its configured order.
 
 ### 2. Automatic Assignment (Fallback)
 
@@ -405,7 +438,7 @@ Full mission configuration with four panels:
         "dimensions": {
           "expandedSize": 60
         },
-        "tools": ["Animation"]
+        "panelTools": ["Animation"]
       },
       {
         "id": "left-panel",
@@ -427,7 +460,7 @@ Full mission configuration with four panels:
           "focusedWidth": 300,
           "expandedSize": 400
         },
-        "tools": ["Layers", "Legend", "Info"]
+        "panelTools": ["Layers", "Legend", "Info"]
       },
       {
         "id": "right-panel",
@@ -449,7 +482,7 @@ Full mission configuration with four panels:
           "focusedWidth": 300,
           "expandedSize": 400
         },
-        "tools": ["Measure", "Chart", "PointCloud"]
+        "panelTools": ["Measure", "Chart", "PointCloud"]
       },
       {
         "id": "bottom-panel",
@@ -471,7 +504,7 @@ Full mission configuration with four panels:
           "focusedHeight": 200,
           "expandedSize": 300
         },
-        "tools": ["Draw", "RasterTile", "Identifier"]
+        "panelTools": ["Draw", "RasterTile", "Identifier"]
       },
       {
         "id": "timeline-panel",

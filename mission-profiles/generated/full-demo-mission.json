@@ -84,7 +84,6 @@
           "resizable": false
         },
         "panelTools": [
-          "Title",
           "Card",
           "LayerManager"
         ],
@@ -94,8 +93,7 @@
           "expandedSize": 368
         },
         "pinnedTools": [
-          "Title",
-          "Card"
+          "Title"
         ]
       },
       {

@@ -215,14 +215,22 @@ const _renderRegion = (regionName, regionPanels) => {
             panelDiv.append($('<div></div>').addClass(`ui-panel-drag-handle ui-panel-drag-handle-${regionName}`))
         }
 
+        // Pinned region, above the body so its tools hold their place while
+        // everything below them scrolls. Null unless the panel pins anything.
+        const pinnedRegion = UserInterfaceModern_.renderPinnedRegion(panel)
+        if (pinnedRegion) {
+            contentWrapper.append(pinnedRegion)
+        }
+
         // Tools rendering
-        if (panel.tools && panel.tools.size > 0) {
+        const scrollingTools = PanelManager_.getScrollingToolsForPanel(panel.id)
+        if (scrollingTools.length > 0) {
             if (panel.config.layoutType === 'tabbed') {
                 UserInterfaceModern_.renderTabbedLayout(panel, body)
             } else {
                 UserInterfaceModern_.renderStackedLayout(panel, body)
             }
-        } else {
+        } else if (!pinnedRegion) {
             body.append('<p class="ui-empty-text">No tools configured</p>')
         }
 
@@ -234,6 +242,27 @@ const _renderRegion = (regionName, regionPanels) => {
     return regionDiv
 }
 
+
+/**
+ * Builds a card per tool into `container` and queues each tool's load (or its
+ * deferred registration, for tools configured to start unloaded) for after the
+ * DOM is in place.
+ *
+ * @param {jQuery} container - Element the cards are appended to
+ * @param {Array} toolsMetadata - Tool metadata in render order
+ * @param {string} containerId - Panel container ID the cards belong to
+ */
+const _appendToolCards = (container, toolsMetadata, containerId) => {
+    toolsMetadata.forEach(toolMetadata => {
+        const { toolCard, loadTool, targetId } = UserInterfaceModern_.createToolCard(toolMetadata, containerId)
+        container.append(toolCard)
+        if (toolMetadata.startUnloaded) {
+            toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
+        } else {
+            toolLoadQueue.push(loadTool)
+        }
+    })
+}
 
 /**
  * Modern User Interface Module
@@ -368,7 +397,7 @@ const UserInterfaceModern_ = {
         const tabBar = $('<div class="ui-panel-tabs"></div>')
         const tabContentArea = $('<div class="ui-panel-tab-content-area"></div>')
 
-        const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+        const toolsMetadata = PanelManager_.getScrollingToolsForPanel(panel.id) || []
 
         // Pick the first tool that isn't starting hidden/unloaded to be the
         // active tab, so we don't land on a tab whose content is invisible.
@@ -440,18 +469,30 @@ const UserInterfaceModern_ = {
             return
         }
 
-        const toolsMetadata = PanelManager_.getToolsForPanel(panel.id) || []
+        _appendToolCards(body, PanelManager_.getScrollingToolsForPanel(panel.id), panel.containerId)
+    },
 
-        toolsMetadata.forEach(toolMetadata => {
-            const { toolCard, loadTool, targetId } = this.createToolCard(toolMetadata, panel.containerId)
-            body.append(toolCard)
-            // Queue tool loading (or deferred registration) for after DOM is fully rendered
-            if (toolMetadata.startUnloaded) {
-                toolLoadQueue.push(() => ToolControllerModern_.registerDeferred(toolMetadata, targetId))
-            } else {
-                toolLoadQueue.push(loadTool)
-            }
-        })
+    /**
+     * Renders a panel's pinned region — the tools that sit above the panel body
+     * and don't scroll with it. Cards are built exactly as stacked body cards
+     * are, so a tool behaves the same wherever it is placed.
+     *
+     * @param {Object} panel - Panel configuration object
+     * @returns {jQuery|null} The pinned region, or null if the panel pins nothing
+     */
+    renderPinnedRegion: function (panel) {
+        if (!panel || !panel.id || !panel.containerId) {
+            logger.error('Invalid panel object in renderPinnedRegion:', panel)
+            return null
+        }
+
+        const toolsMetadata = PanelManager_.getPinnedToolsForPanel(panel.id)
+        if (toolsMetadata.length === 0) return null
+
+        const pinnedRegion = $('<div class="ui-panel-pinned"></div>')
+        _appendToolCards(pinnedRegion, toolsMetadata, panel.containerId)
+
+        return pinnedRegion
     },
 
     /**
@@ -759,4 +800,4 @@ const UserInterfaceModern_ = {
 }
 
 export default UserInterfaceModern_
-export { _createPanelHeader, _createPanelIconTray }
+export { _createPanelHeader, _createPanelIconTray, _renderRegion }
