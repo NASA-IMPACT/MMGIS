@@ -244,11 +244,11 @@ var QueryURL = {
                 try {
                     return decodeURIComponent(raw)
                 } catch (e) {
-                    // A param present with no value is '' (above); one whose
-                    // value cannot be decoded (e.g. '%zz') is absent. Callers
-                    // strict-check `!== false`, so false stops such a value
-                    // short of the parseFloat/split cascades '' would flow
-                    // into — a bad `on` would turn every layer off.
+                    // Malformed percent-encoding (e.g. '%zz') must not throw
+                    // out of URL-reading code that runs during app startup.
+                    // Treat the value as absent: callers strict-check
+                    // `!== false`, and '' would flow into parseFloat/split
+                    // cascades (a bad `on` param would turn all layers off).
                     return false
                 }
             }

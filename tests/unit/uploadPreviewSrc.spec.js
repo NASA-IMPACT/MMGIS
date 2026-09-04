@@ -1,24 +1,21 @@
 import { test, expect } from 'vitest'
+import fs from 'fs'
+import path from 'path'
 import { buildPreviewSrc } from '../../configure/src/core/upload.js'
-import { resolveMissionAssetUrl } from '../../src/pre/uploadKey.ts'
 
-// Pins the parts of the Configure CMS's stored-value-to-preview-URL
-// resolution that the shared classifier table in
-// tests/unit/uploadKeyClassifier.spec.js cannot express: empty input,
-// absolute and data values passing through unchanged, an already-rooted
-// non-upload value passing through unchanged, and — with an empty `base` —
-// both resolved branches staying root-absolute. That last one matters
-// because a preview URL names its root outright, so it points at the same
-// file however deep the CMS is mounted.
+// Pins the Configure CMS's stored-value-to-preview-URL resolution: absolute
+// and data values pass through unchanged. Values matching the lean-mode
+// upload writer's own shape ("assets/<mission>/<subdir>/uploads/<file>", see
+// API/Backend/Upload/uploadRouter.js) resolve against `base` (root-absolute
+// when `base` is empty — the CMS is always server-hosted); a legacy rooted
+// "/assets/..." value is rebased to that same slash-less shape before the
+// test. Any other already-rooted value passes through unchanged; everything
+// else is a mission-relative path resolved under Missions/ — root-anchored
+// the same way, so the preview URL does not resolve against whatever path
+// the CMS happens to be visited at.
 test.describe('buildPreviewSrc', () => {
     test('returns empty string for empty input', () => {
         expect(buildPreviewSrc('', 'M', 'http://localhost:8888/')).toBe('')
-    })
-
-    test('a value that is not a string resolves to nothing', () => {
-        // Stored values arrive as runtime configuration JSON, where a number
-        // is as possible as a string.
-        expect(buildPreviewSrc(42, 'M', 'http://localhost:8888/')).toBe('')
     })
 
     test('passes through absolute and data values unchanged', () => {
@@ -42,6 +39,21 @@ test.describe('buildPreviewSrc', () => {
                 'http://localhost:8888/',
             ),
         ).toBe('/already/rooted.png')
+        // Starts with "/assets/" but carries no "/uploads/" segment, so it
+        // is not the writer's shape — stays root-relative, unresolved.
+        expect(
+            buildPreviewSrc('/assets/M/x.png', 'M', 'http://localhost:8888/'),
+        ).toBe('/assets/M/x.png')
+    })
+
+    test('resolves an assets/ upload value against the API base', () => {
+        expect(
+            buildPreviewSrc(
+                'assets/M/CardPlugin/uploads/x.png',
+                'M',
+                'http://localhost:8888/',
+            ),
+        ).toBe('http://localhost:8888/assets/M/CardPlugin/uploads/x.png')
     })
 
     test('an empty base resolves an assets/ upload value root-absolute', () => {
@@ -50,66 +62,67 @@ test.describe('buildPreviewSrc', () => {
         ).toBe('/assets/M/CardPlugin/uploads/x.png')
     })
 
+    test('a non-empty base rebases a legacy rooted /assets/ upload value', () => {
+        expect(
+            buildPreviewSrc(
+                '/assets/M/CardPlugin/uploads/x.png',
+                'M',
+                '/mmgis/',
+            ),
+        ).toBe('/mmgis/assets/M/CardPlugin/uploads/x.png')
+    })
+
+    // The upload-key classifier negatives (assets/ without /uploads/,
+    // case-sensitivity, the "assets/uploads/x.png" lookalike) are exercised
+    // in tests/unit/Card/resolveImageUrl.spec.js. The ASSETS_UPLOAD_KEY sync
+    // test below proves both bundles' classifier regexes are byte-identical,
+    // so those negatives hold for buildPreviewSrc too without duplicating them.
+
+    test('resolves mission-relative values under Missions/<mission>/', () => {
+        expect(
+            buildPreviewSrc('CardPlugin/uploads/a.png', 'M', '/mmgis/'),
+        ).toBe('/mmgis/Missions/M/CardPlugin/uploads/a.png')
+    })
+
     // With no ROOT_PATH base the mission-relative branch must still produce a
-    // root-anchored URL, so it names the same file whatever path the CMS is
-    // reached at. The rule both branches follow: an absent base stands in as
-    // '/', never as the empty string.
+    // root-anchored URL: a document-relative "Missions/…" would resolve
+    // against the CMS's own path (the SPA is served at '/configure/') and
+    // 404. The exact root-absolute value below catches a regression to
+    // `base || ''`.
     test('an empty base resolves a mission-relative value root-absolute', () => {
         const src = buildPreviewSrc('CardPlugin/uploads/a.png', 'M', '')
         expect(src).toBe('/Missions/M/CardPlugin/uploads/a.png')
     })
-
-    test('a base missing its trailing slash is given one', () => {
-        // getApiBase() hands over a trailing-slashed URL; a caller that
-        // passes a bare prefix gets the same URL rather than
-        // '/mmgisassets/…'.
-        expect(
-            buildPreviewSrc('assets/M/CardPlugin/uploads/x.png', 'M', '/mmgis'),
-        ).toBe('/mmgis/assets/M/CardPlugin/uploads/x.png')
-        expect(buildPreviewSrc('CardPlugin/uploads/a.png', 'M', '/mmgis')).toBe(
-            '/mmgis/Missions/M/CardPlugin/uploads/a.png',
-        )
-    })
 })
 
-// The same non-table cases for the app bundle's resolver: what it does with a
-// value that names no file, one that carries its own scheme, and one already
-// anchored at the site root.
-test.describe('resolveMissionAssetUrl', () => {
-    const MISSION_PATH = 'Missions/M/'
+// The upload-key classifier is necessarily duplicated: the Card tool ships in
+// the app bundle and buildPreviewSrc ships in the Configure SPA, so the two
+// cannot share a module. They must still agree on what an upload key looks
+// like — a value the CMS previews as an upload but the Card tool
+// mission-prefixes (or vice versa) renders a broken image only at runtime.
+// This reads both sources as text and fails CI the moment the literals drift.
+// It pins the CLASSIFIER only: what the two consumers then DO with a matched
+// key deliberately differs (the Card tool returns it document-relative, the
+// CMS prefixes it with its own base), so agreement of resolution is not
+// covered.
+test.describe('ASSETS_UPLOAD_KEY stays identical across both bundles', () => {
+    const SOURCES = [
+        'configure/src/core/upload.js',
+        'src/pre/uploadKey.ts',
+    ]
 
-    test('returns empty string for empty input', () => {
-        expect(resolveMissionAssetUrl('', MISSION_PATH)).toBe('')
-        expect(resolveMissionAssetUrl(undefined, MISSION_PATH)).toBe('')
-        expect(resolveMissionAssetUrl(null, MISSION_PATH)).toBe('')
-    })
-
-    test('a value that is not a string resolves to nothing', () => {
-        // The declared parameter type describes the caller's intent; what
-        // actually arrives is runtime configuration JSON.
-        expect(resolveMissionAssetUrl(42, MISSION_PATH)).toBe('')
-    })
-
-    test('passes through absolute and data values unchanged', () => {
-        expect(resolveMissionAssetUrl('https://x/y.png', MISSION_PATH)).toBe(
-            'https://x/y.png',
-        )
-        expect(
-            resolveMissionAssetUrl('data:image/png;base64,AAAA', MISSION_PATH),
-        ).toBe('data:image/png;base64,AAAA')
-    })
-
-    test('an already-rooted value that is not an upload key passes through unchanged', () => {
-        expect(resolveMissionAssetUrl('/already/rooted.png', MISSION_PATH)).toBe(
-            '/already/rooted.png',
-        )
-    })
-
-    test('an absent mission path leaves a mission-relative value as it came', () => {
-        // Callers resolve before the mission path is known, so a null path
-        // yields the stored value rather than a URL anchored nowhere.
-        expect(resolveMissionAssetUrl('Sub/uploads/x.png', null)).toBe(
-            'Sub/uploads/x.png',
-        )
+    test('both sources declare the same regex literal', () => {
+        const literals = SOURCES.map((relative) => {
+            const source = fs.readFileSync(
+                path.join(__dirname, '../..', relative),
+                'utf8',
+            )
+            const match = /const ASSETS_UPLOAD_KEY\s*=\s*(\/.+\/[a-z]*);?\s*$/m.exec(
+                source,
+            )
+            expect(match, `${relative} declares ASSETS_UPLOAD_KEY`).toBeTruthy()
+            return match[1]
+        })
+        expect(literals[1]).toBe(literals[0])
     })
 })

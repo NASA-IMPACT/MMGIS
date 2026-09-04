@@ -433,6 +433,7 @@ const getComponent = (
         </div>
       );
     case "upload": {
+      const uploadBase = getApiBase();
       return (
         <UploadField
           label={com.name}
@@ -443,7 +444,7 @@ const getComponent = (
             configuration?.msv?.mission
           }
           subdir={com.subdir}
-          base={getApiBase()}
+          base={uploadBase}
           disabled={disabled || isDisabled}
           onChange={(p) =>
             updateConfiguration(forceField || com.field, p, layer)
