@@ -3,7 +3,7 @@ import {
     fetchColormapColors,
     clearColormapCache,
     resolveTiTilerBase,
-} from '../lib/utils/colormapCache.ts'
+} from '../colormapCache.ts'
 
 const BASE = 'https://titiler.test'
 const VIRIDIS = { 0: [68, 1, 84, 255], 1: [253, 231, 37, 255] }

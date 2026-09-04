@@ -2,7 +2,8 @@ import React from 'react'
 import { useState, useCallback, useRef, type MouseEvent } from 'react'
 import { scaleLinear } from 'd3'
 import { useColormapColors } from '../../hooks/useColormapColors'
-import { buildGradientCss, isReversedColormap } from '../../utils/colormaps'
+import { buildGradientCss, isReversedColormap } from '../../../../_shared/legend/colormaps'
+import { formatLegendValue, formatLegendBound } from '../../../../_shared/legend/format'
 import type { CogData } from '../../types'
 
 export type GradientGraphicProps = {
@@ -11,27 +12,6 @@ export type GradientGraphicProps = {
     max: number | string
     unit?: { label: string } | null
     cog?: CogData | null
-}
-
-const formatLegendValue = (val: number | string): string | number => {
-    const num = Number(val)
-    if (isNaN(num)) return val
-    if (num === 0) return 0
-    if (Math.abs(num) < 9999 && Math.abs(num) > 0.0009) {
-        return parseFloat(num.toFixed(3))
-    }
-    return num.toExponential(2)
-}
-
-const formatTooltipValue = (rawVal: number, unit?: { label: string } | null): string => {
-    if (rawVal === 0) return unit?.label ? `0 ${unit.label}` : '0'
-    let value: number | string
-    if (Math.abs(rawVal) < 9999 && Math.abs(rawVal) > 0.0009) {
-        value = parseFloat(rawVal.toFixed(3))
-    } else {
-        value = rawVal.toExponential(2)
-    }
-    return unit?.label ? `${value} ${unit.label}` : String(value)
 }
 
 export function GradientGraphic({ stops, min, max, unit, cog }: GradientGraphicProps) {
@@ -88,7 +68,7 @@ export function GradientGraphic({ stops, min, max, unit, cog }: GradientGraphicP
                             className="blocks-gradient-graphic__tooltip blocks-gradient-graphic__tooltip--visible"
                             style={{ left: tooltipPos.x }}
                         >
-                            {formatTooltipValue(hoverVal, unit)}
+                            {formatLegendBound(hoverVal, unit?.label ?? null)}
                         </div>
                     )}
                 </div>

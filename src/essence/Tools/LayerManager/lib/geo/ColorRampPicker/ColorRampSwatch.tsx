@@ -1,7 +1,7 @@
 import React from 'react'
 import { memo, useEffect, useRef, useState, type RefObject } from 'react'
 import { useColormapColors } from '../../hooks/useColormapColors'
-import { buildGradientCss, formatColormapLabel } from '../../utils/colormaps'
+import { buildGradientCss, formatColormapLabel } from '../../../../_shared/legend/colormaps'
 
 export type ColorRampSwatchProps = {
     /** Forward ramp name; direction comes from `reversed`. */

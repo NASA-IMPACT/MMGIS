@@ -1,11 +1,11 @@
 import React from 'react'
 import { useState, useCallback } from 'react'
 import { LayerManagerPanel } from './lib'
-import type { Layer } from './lib/types'
+import type { Layer } from '../_shared/legend/types'
 import { useMMGISEvent } from '../_shared/adapters/useMMGISEvent'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
-import { getVisibleLayersWithLegends } from './adapters/getVisibleLayersWithLegends'
+import { getVisibleLayersWithLegends } from '../_shared/legend/getVisibleLayersWithLegends'
 import { renderDescription } from './adapters/renderDescription'
 import {
     toggleVisibility,

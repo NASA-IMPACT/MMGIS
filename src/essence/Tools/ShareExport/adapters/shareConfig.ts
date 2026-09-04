@@ -2,10 +2,14 @@
 // enabled export formats. The share link is always available; PNG and PDF are
 // each toggleable per-dashboard and default to on (so an unset/undefined value
 // is treated as enabled, matching the config's defaultChecked: true).
+//
+// includeLegend resolution lives in _shared/share/resolveIncludeLegend —
+// shared with the MapControl adapter, which toggles the same export flag.
 
 export type ShareToolVars = {
     exportPng?: boolean
     exportPdf?: boolean
+    includeLegend?: boolean
 }
 
 // Structurally identical to lib/types' ShareFormatFlags by design: the adapter

@@ -31,3 +31,6 @@ test.describe('resolveShareFormats', () => {
         ).toEqual({ png: false, pdf: false })
     })
 })
+
+// includeLegend resolution moved to _shared/share/resolveIncludeLegend,
+// shared with the MapControl adapter — see that module's own spec.

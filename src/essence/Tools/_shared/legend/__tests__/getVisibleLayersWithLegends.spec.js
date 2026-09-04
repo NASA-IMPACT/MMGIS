@@ -1,5 +1,5 @@
-import { describe, test, expect, afterEach } from 'vitest'
-import { getVisibleLayersWithLegends } from '../adapters/getVisibleLayersWithLegends.ts'
+import { describe, test, expect, afterEach, vi } from 'vitest'
+import { getVisibleLayersWithLegends } from '../getVisibleLayersWithLegends.ts'
 
 /**
  * Covers the seam between core and the legend: the COG capabilities core
@@ -25,14 +25,22 @@ const CONFIGS = {
     [BASEMAP]: { display_name: 'Basemap', cogColormap: 'viridis' },
 }
 
-const setupMock = ({ capabilities, provideCapability = true, titilerUrls }) => {
+const setupMock = ({
+    capabilities,
+    provideCapability = true,
+    titilerUrls,
+    configs = CONFIGS,
+    visible = { [DISPLACEMENT]: true, [BASEMAP]: true },
+    listed,
+}) => {
     const responses = {
-        'layers:getAllConfigs': CONFIGS,
-        'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
+        'layers:getAllConfigs': configs,
+        'layers:getVisible': visible,
         'layers:getAllOpacities': { [DISPLACEMENT]: 1, [BASEMAP]: 1 },
     }
     if (provideCapability) responses['layers:getCogCapabilities'] = capabilities
     if (titilerUrls) responses['layers:getTiTilerUrl'] = titilerUrls
+    if (listed) responses['layers:getListed'] = listed
 
     global.window = global.window || {}
     global.window.mmgisAPI = {
@@ -148,5 +156,128 @@ describe('getVisibleLayersWithLegends', () => {
         const layers = await getVisibleLayersWithLegends()
 
         expect(byId(layers, DISPLACEMENT).cog?.titilerUrl).toBeNull()
+    })
+
+    // A caller (getExportLegendModel) that already fetched
+    // layers:getAllConfigs for its own purposes can pass it straight
+    // through, so this module never re-requests it from core.
+    test('uses a provided layerConfigs instead of requesting layers:getAllConfigs itself', async () => {
+        const responses = {
+            'layers:getVisible': { [DISPLACEMENT]: true, [BASEMAP]: true },
+            'layers:getAllOpacities': { [DISPLACEMENT]: 1, [BASEMAP]: 1 },
+            'layers:getCogCapabilities': {
+                [DISPLACEMENT]: EDITABLE,
+                [BASEMAP]: NONE,
+            },
+        }
+        global.window = global.window || {}
+        global.window.mmgisAPI = {
+            request: async (name) => {
+                if (name === 'layers:getAllConfigs') {
+                    throw new Error(
+                        'layers:getAllConfigs should not be requested when layerConfigs is provided',
+                    )
+                }
+                if (responses[name] === undefined)
+                    throw new Error(`No handler for ${name}`)
+                return responses[name]
+            },
+            hasHandler: (name) => responses[name] !== undefined,
+            on: () => () => {},
+            emit: () => {},
+        }
+
+        const layers = await getVisibleLayersWithLegends({
+            layerConfigs: CONFIGS,
+        })
+
+        expect(layers).toHaveLength(2)
+        expect(byId(layers, DISPLACEMENT).cog).not.toBeNull()
+    })
+})
+
+describe('getVisibleLayersWithLegends filtering', () => {
+    afterEach(() => {
+        delete global.window.mmgisAPI
+    })
+
+    // showOnlyVisible is what keeps a toggled-off layer out of an export's
+    // legend band. Without the guard the band lists layers that are not on
+    // the map.
+    test('showOnlyVisible drops a toggled-off layer', async () => {
+        setupMock({
+            capabilities: { [DISPLACEMENT]: NONE, [BASEMAP]: NONE },
+            visible: { [DISPLACEMENT]: true, [BASEMAP]: false },
+        })
+        const layers = await getVisibleLayersWithLegends({ showOnlyVisible: true })
+
+        expect(layers.map((l) => l.id)).toEqual([DISPLACEMENT])
+        expect(byId(layers, BASEMAP)).toBeUndefined()
+    })
+
+    test('without showOnlyVisible the toggled-off layer is still listed', async () => {
+        setupMock({
+            capabilities: { [DISPLACEMENT]: NONE, [BASEMAP]: NONE },
+            visible: { [DISPLACEMENT]: true, [BASEMAP]: false },
+        })
+        const layers = await getVisibleLayersWithLegends()
+
+        expect(layers.map((l) => l.id).sort()).toEqual(
+            [DISPLACEMENT, BASEMAP].sort(),
+        )
+        expect(byId(layers, BASEMAP).visible).toBe(false)
+    })
+
+    // A `header` config is a grouping row in the layer list, not a layer, so
+    // it has nothing to draw and must never reach the band.
+    test('a header config gets no row', async () => {
+        setupMock({
+            capabilities: {},
+            configs: {
+                ...CONFIGS,
+                'Group_aaaaaaaaaaaaaaaa': { display_name: 'Group', type: 'header' },
+            },
+            visible: {
+                [DISPLACEMENT]: true,
+                [BASEMAP]: true,
+                'Group_aaaaaaaaaaaaaaaa': true,
+            },
+        })
+        const layers = await getVisibleLayersWithLegends({ showOnlyVisible: true })
+
+        expect(layers.map((l) => l.id).sort()).toEqual(
+            [DISPLACEMENT, BASEMAP].sort(),
+        )
+    })
+
+    // A layer core reports as unlisted is deliberately hidden from the layer
+    // UI, so it stays out of the legend too.
+    test('an unlisted layer gets no row', async () => {
+        setupMock({
+            capabilities: {},
+            listed: { [DISPLACEMENT]: true, [BASEMAP]: false },
+        })
+        const layers = await getVisibleLayersWithLegends({ showOnlyVisible: true })
+
+        expect(layers.map((l) => l.id)).toEqual([DISPLACEMENT])
+    })
+
+    // Fail open: core answering nothing is not "every layer is hidden".
+    // Dropping all rows on a null answer would silently empty the band.
+    test('a null visibility map keeps every layer, with a warning', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        try {
+            setupMock({ capabilities: {}, visible: null })
+            const layers = await getVisibleLayersWithLegends({
+                showOnlyVisible: true,
+            })
+
+            expect(layers.map((l) => l.id).sort()).toEqual(
+                [DISPLACEMENT, BASEMAP].sort(),
+            )
+            expect(warn).toHaveBeenCalled()
+        } finally {
+            warn.mockRestore()
+        }
     })
 })
