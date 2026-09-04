@@ -105,6 +105,21 @@ test.describe('updateRefusalFor', () => {
             "Stack 'mmgis-dashboard-1' is in DELETE_IN_PROGRESS and cannot be " +
                 'used — delete the deployment and publish it again (this mints a new URL)',
         ],
+        // A stack that settled somewhere no update will ever be accepted onto
+        // earns the same way out as one still moving there — the row's age
+        // never comes into it, since no amount of waiting makes CREATE_FAILED
+        // updatable.
+        [
+            'provisioning on a stack whose create failed',
+            {
+                status: 'provisioning',
+                stack_status: 'CREATE_FAILED',
+                stack_name: 'mmgis-dashboard-1',
+                updatedAt: NOW - 5 * MINUTE,
+            },
+            "Stack 'mmgis-dashboard-1' is in CREATE_FAILED and cannot be used " +
+                '— delete the deployment and publish it again (this mints a new URL)',
+        ],
         [
             'updating behind a rolling-back stack',
             {

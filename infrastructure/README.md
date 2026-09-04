@@ -296,9 +296,11 @@ it from the real login password (the full note lives in
   [`../docs/infrastructure/serving-a-dashboard-from-your-domain.md`](../docs/infrastructure/serving-a-dashboard-from-your-domain.md).
   Nothing is configured on our side — the customer's own CloudFront forwards
   the request and declares the path. After an edge-function change, an
-  existing dashboard picks the change up on its next Update — the Deployments
-  page's Publish button always creates a new dashboard; the config editor's
-  Publish updates the mission's existing one.
+  existing dashboard picks the change up on its next Update, and the rollout
+  path is the Deployments page's per-row **Update** button: every dashboard
+  that needs the change has to be updated individually. The same page's
+  **Publish** button always creates a new dashboard, and the config editor's
+  Publish reaches only the first non-deleted dashboard for that mission.
 - **A wedged dashboard stack is replaced, not repaired.** When a publish or
   update fails with `Stack '<name>' is in <STATUS> and cannot be used`,
   CloudFormation will not accept an update onto a stack in that status — either
