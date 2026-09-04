@@ -15,6 +15,7 @@
 import { PANEL_POSITION, PANEL_STATE, PANEL_LAYOUT_TYPE, FLOAT_POSITIONS } from '../Basics/PanelManager_/types/layout'
 import { TOOL_ORIENTATION } from '../Basics/ToolController_/types/tool'
 import { VALID_MODES, VALID_LAYOUT_STYLES } from '../types/dashboard'
+import { isDimensionSet, toCssDimension, toPixelNumber, DIMENSION_HINT } from '../Basics/PanelManager_/dimensions'
 
 // Extract valid values from TypeScript constants
 const VALID_POSITIONS = Object.values(PANEL_POSITION)
@@ -34,21 +35,26 @@ const VALID_ORIENTATIONS = Object.values(TOOL_ORIENTATION)
  *   tools: [...]
  * }
  *
+ * An error is structural and leaves the config unusable. A warning covers a
+ * value the renderer can carry on without, such as an unusable panel size, and
+ * a caller should surface it and keep going.
+ *
  * @param {MissionConfig} config - The complete mission config to validate
- * @returns {ValidationResult} - { valid: boolean, errors: string[] }
+ * @returns {ValidationResult} - { valid: boolean, errors: string[], warnings: string[] }
  */
 export function validateModernConfig(config) {
     const errors = []
+    const warnings = []
 
     if (!config || typeof config !== 'object') {
         errors.push('Config must be an object')
-        return { valid: false, errors }
+        return { valid: false, errors, warnings }
     }
 
     // Validate panelSettings
     if (!config.panelSettings || typeof config.panelSettings !== 'object') {
         errors.push('Config must have a "panelSettings" object')
-        return { valid: false, errors }
+        return { valid: false, errors, warnings }
     }
 
     const panelSettings = config.panelSettings
@@ -56,7 +62,7 @@ export function validateModernConfig(config) {
     // Validate panels array
     if (!panelSettings.panels || !Array.isArray(panelSettings.panels)) {
         errors.push('panelSettings must have a "panels" array')
-        return { valid: false, errors }
+        return { valid: false, errors, warnings }
     }
 
     if (panelSettings.panels.length === 0) {
@@ -82,8 +88,9 @@ export function validateModernConfig(config) {
     const panelIds = new Set()
     const floatPositions = new Set()
     panelSettings.panels.forEach((panel, index) => {
-        const panelErrors = validatePanelConfig(panel, index, false)
-        errors.push(...panelErrors)
+        const panelResult = validatePanelConfig(panel, index, false)
+        errors.push(...panelResult.errors)
+        warnings.push(...panelResult.warnings)
 
         if (panel.id) {
             if (panelIds.has(panel.id)) {
@@ -109,8 +116,9 @@ export function validateModernConfig(config) {
             errors.push('panelSettings.floatingPanels must be an array')
         } else {
             panelSettings.floatingPanels.forEach((panel, index) => {
-                const panelErrors = validatePanelConfig(panel, index, true)
-                errors.push(...panelErrors)
+                const panelResult = validatePanelConfig(panel, index, true)
+                errors.push(...panelResult.errors)
+                warnings.push(...panelResult.warnings)
 
                 if (panel.id) {
                     if (panelIds.has(panel.id)) {
@@ -154,7 +162,8 @@ export function validateModernConfig(config) {
 
     return {
         valid: errors.length === 0,
-        errors
+        errors,
+        warnings
     }
 }
 
@@ -165,15 +174,16 @@ export function validateModernConfig(config) {
  * @param {PanelConfig} panel - The panel config to validate
  * @param {number} index - Index in the panels array (for error messages)
  * @param {boolean} isFloat - Whether this is a floating panel (relaxes layoutType/priority requirements)
- * @returns {string[]} - Array of error messages
+ * @returns {{errors: string[], warnings: string[]}}
  */
 function validatePanelConfig(panel, index, isFloat = false) {
     const errors = []
+    const warnings = []
     const prefix = isFloat ? `FloatingPanel[${index}]` : `Panel[${index}]`
 
     if (!panel || typeof panel !== 'object') {
         errors.push(`${prefix}: Must be an object`)
-        return errors
+        return { errors, warnings }
     }
 
     // What actually governs float rendering/state-machine behavior at runtime is the
@@ -318,24 +328,21 @@ function validatePanelConfig(panel, index, isFloat = false) {
             errors.push(`${prefix}.capabilities: "resizable" is not supported on floating panels`)
         }
 
-        let minSize, maxSize
+        // Drag bounds are advisory. An unusable one is a warning, and the renderer
+        // falls back to the default it uses when none is configured.
+        const minSize = toPixelNumber(cap.minSize, { allowZero: true })
+        const maxSize = toPixelNumber(cap.maxSize)
 
-        if (cap.minSize !== undefined) {
-            minSize = Number(cap.minSize)
-            if (isNaN(minSize)) {
-                errors.push(`${prefix}.capabilities: "minSize" must be a valid number (got "${cap.minSize}")`)
-            }
+        if (isDimensionSet(cap.minSize) && minSize === null) {
+            warnings.push(`${prefix}.capabilities: "minSize" must be a number of pixels, 0 or greater — got "${cap.minSize}". Using the default instead.`)
         }
 
-        if (cap.maxSize !== undefined) {
-            maxSize = Number(cap.maxSize)
-            if (isNaN(maxSize)) {
-                errors.push(`${prefix}.capabilities: "maxSize" must be a valid number (got "${cap.maxSize}")`)
-            }
+        if (isDimensionSet(cap.maxSize) && maxSize === null) {
+            warnings.push(`${prefix}.capabilities: "maxSize" must be a number of pixels greater than 0 — got "${cap.maxSize}". Leaving the panel uncapped.`)
         }
 
-        if (minSize !== undefined && maxSize !== undefined && !isNaN(minSize) && !isNaN(maxSize) && minSize > maxSize) {
-            errors.push(`${prefix}.capabilities: "minSize" cannot be greater than "maxSize"`)
+        if (minSize !== null && maxSize !== null && minSize > maxSize) {
+            warnings.push(`${prefix}.capabilities: "minSize" (${minSize}) cannot be greater than "maxSize" (${maxSize}) — a drag will hold the panel at "minSize".`)
         }
     }
 
@@ -343,57 +350,24 @@ function validatePanelConfig(panel, index, isFloat = false) {
     if (panel.dimensions) {
         const dim = panel.dimensions
 
-        if (dim.iconifiedSize !== undefined) {
-            const iconifiedSize = Number(dim.iconifiedSize)
-            if (isNaN(iconifiedSize)) {
-                errors.push(`${prefix}.dimensions: "iconifiedSize" must be a valid number (got "${dim.iconifiedSize}")`)
-            }
+        if (isDimensionSet(dim.iconifiedSize) && toCssDimension(dim.iconifiedSize) === null) {
+            warnings.push(`${prefix}.dimensions: "iconifiedSize" must be ${DIMENSION_HINT} — got "${dim.iconifiedSize}". Using the default bar size instead.`)
         }
 
-        // expandedSize can be number, 'content', or object
-        if (dim.expandedSize !== undefined) {
-            if (dim.expandedSize === 'content' || (typeof dim.expandedSize === 'object' && dim.expandedSize !== null)) {
-                // Valid: 'content' or object
-            } else {
-                // Try to convert to number
-                const expandedSizeNum = Number(dim.expandedSize)
-                if (isNaN(expandedSizeNum)) {
-                    errors.push(
-                        `${prefix}.dimensions: "expandedSize" must be a valid number, "content", or object with min/max (got "${dim.expandedSize}")`
-                    )
-                }
-            }
-        }
-
-        // CSS dimension fields for floating panels (number or CSS string e.g. "50%", "40vh")
-        // Empty strings are treated as "not provided" and skipped.
-        const cssDimFields = ['defaultWidth', 'defaultHeight', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight']
+        // These take a number of pixels or a CSS length. An unusable one leaves
+        // the panel sized by its content.
+        const cssDimFields = ['expandedSize', 'defaultWidth', 'defaultHeight', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight']
         cssDimFields.forEach(field => {
             const val = dim[field]
-            if (val !== undefined && val !== '' && !isValidCssDimension(val)) {
-                errors.push(
-                    `${prefix}.dimensions: "${field}" must be a number (px), unitless "0", or a CSS string with a unit (px, %, vh, vw, svh, dvh, vmin, vmax, ch, rem, em) — got "${val}"`
+            if (isDimensionSet(val) && toCssDimension(val) === null) {
+                warnings.push(
+                    `${prefix}.dimensions: "${field}" must be ${DIMENSION_HINT} — got "${val}". Ignoring it.`
                 )
             }
         })
     }
 
-    return errors
-}
-
-/**
- * Returns true if v is a valid CSS dimension value: a number (treated as px)
- * or a string with a number followed by a recognised CSS unit.
- * @param {*} v
- * @returns {boolean}
- */
-function isValidCssDimension(v) {
-    if (typeof v === 'number') return true
-    if (typeof v === 'string') {
-        if (v === '0') return true
-        return /^\d+(\.\d+)?(px|%|vh|vw|svh|dvh|vmin|vmax|ch|rem|em)$/.test(v)
-    }
-    return false
+    return { errors, warnings }
 }
 
 /**

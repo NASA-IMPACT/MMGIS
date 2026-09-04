@@ -5,6 +5,7 @@ import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
 import { PANEL_STATE, FLOAT_POSITIONS } from '../PanelManager_/types/layout'
+import { toCssDimension, toPixelNumber } from '../PanelManager_/dimensions'
 import './UserInterfaceModern_.css'
 
 const logger = createLogger('UserInterfaceModern')
@@ -110,10 +111,6 @@ const _createPanelHeader = (panel) => {
     return header
 }
 
-// Converts a dimension value to a CSS string.
-// Numbers are treated as px; strings are passed through as-is (e.g. "40%", "50vh").
-const _toCssValue = (v) => (typeof v === 'number' ? v + 'px' : v)
-
 const _renderFloatRegions = (floatPanels) => {
     if (!floatPanels || floatPanels.length === 0) return null
 
@@ -150,9 +147,12 @@ const _renderFloatRegions = (floatPanels) => {
 
             // Width constraints go on the panel container
             const panelCss = {}
-            if (dims.defaultWidth)  panelCss['width']     = _toCssValue(dims.defaultWidth)
-            if (dims.minWidth)      panelCss['min-width'] = _toCssValue(dims.minWidth)
-            if (dims.maxWidth)      panelCss['max-width'] = _toCssValue(dims.maxWidth)
+            const width    = toCssDimension(dims.defaultWidth)
+            const minWidth = toCssDimension(dims.minWidth)
+            const maxWidth = toCssDimension(dims.maxWidth)
+            if (width)    panelCss['width']     = width
+            if (minWidth) panelCss['min-width'] = minWidth
+            if (maxWidth) panelCss['max-width'] = maxWidth
             if (Object.keys(panelCss).length) panelDiv.css(panelCss)
 
             if (panel.config.hasHeader) {
@@ -166,9 +166,12 @@ const _renderFloatRegions = (floatPanels) => {
             // Applying max-height only to the panel won't constrain the flex body's actual height,
             // so the body scroll never fires; setting it on the body directly fixes this.
             const bodyCss = {}
-            if (dims.defaultHeight) bodyCss['height']     = _toCssValue(dims.defaultHeight)
-            if (dims.minHeight)     bodyCss['min-height'] = _toCssValue(dims.minHeight)
-            if (dims.maxHeight)     bodyCss['max-height'] = _toCssValue(dims.maxHeight)
+            const height    = toCssDimension(dims.defaultHeight)
+            const minHeight = toCssDimension(dims.minHeight)
+            const maxHeight = toCssDimension(dims.maxHeight)
+            if (height)    bodyCss['height']     = height
+            if (minHeight) bodyCss['min-height'] = minHeight
+            if (maxHeight) bodyCss['max-height'] = maxHeight
             if (Object.keys(bodyCss).length) body.css(bodyCss)
             toolsMetadata.forEach(toolMetadata => {
                 const { toolCard, loadTool, targetId } = UserInterfaceModern_.createToolCard(toolMetadata, panel.containerId)
@@ -657,29 +660,82 @@ const UserInterfaceModern_ = {
                 $panel.find('.ui-panel-icon-btn').removeClass('active')
             }
 
-            // Float panels are sized via dimensions.defaultWidth/defaultHeight applied
-            // once at render time (see _renderFloatRegions) — the edge-panel
-            // expandedSize/iconifiedSize logic below doesn't apply and would clobber them.
+            // A float panel takes its size once at render time from
+            // dimensions.defaultWidth/defaultHeight (see _renderFloatRegions). The
+            // edge-panel sizing below would overwrite that.
             if (isFloatingPanel) {
                 // no-op
             } else if (panel.state === 'iconified') {
-                $panel.css({ width: '', height: '', flex: 'none' })
+                // Shrink-wrap the panel to its icon bar. The inline min-/max-* the
+                // expanded branch writes are cleared, or the panel would stay held
+                // to its expanded floor and cap. The bar itself is sized below.
+                $panel.css({ width: '', height: '', minWidth: '', maxWidth: '',
+                             minHeight: '', maxHeight: '', flex: 'none' })
             } else if (panel.state === 'expanded' || panel.state === 'focused') {
-                let targetSize = panel.currentSize;
+                // Size the panel on its resize axis — width for left/right, height
+                // for top/bottom. A drag wins; failing that a configured expandedSize
+                // fixes the size, applied with flex:none so content scrolls inside
+                // rather than growing the panel; with neither, the panel sizes to its
+                // content. maxSize caps whichever of those applies. Every property is
+                // written each pass, to '' or a value, so inline styles left by the
+                // drag handler cannot linger.
+                const region = panel.config.position
+                if (region === 'left' || region === 'right' || region === 'top' || region === 'bottom') {
+                    const capabilities = panel.config.capabilities || {}
+                    const expandedSize = toCssDimension(panel.config.dimensions?.expandedSize)
+                    const draggedSize = panel.currentSize
+                    // DEFAULT_MAX_PANEL_SIZE (9999) is a drag-clamp sentinel rather
+                    // than a real maximum, so a CSS cap is written only for a usable
+                    // maxSize. A cleared Configure field means no cap.
+                    const maxSize = toPixelNumber(capabilities.maxSize)
+                    const maxPx = maxSize !== null ? maxSize + 'px' : ''
 
-                if (!targetSize) {
-                    targetSize = panel.config.dimensions?.expandedSize;
-                }
+                    const isVertical = region === 'left' || region === 'right'
+                    const size = isVertical ? 'width' : 'height'
+                    const min = isVertical ? 'minWidth' : 'minHeight'
+                    const max = isVertical ? 'maxWidth' : 'maxHeight'
+                    const crossMin = isVertical ? 'minHeight' : 'minWidth'
+                    const crossMax = isVertical ? 'maxHeight' : 'maxWidth'
 
-                if (targetSize) {
-                    const region = panel.config.position
-                    if (region === 'left' || region === 'right') {
-                        $panel.css({ width: targetSize + 'px', flex: 'none' })
-                    } else if (region === 'top' || region === 'bottom') {
-                        $panel.css({ height: targetSize + 'px', flex: 'none' })
+                    if (!draggedSize && !expandedSize && !maxPx) {
+                        // Nothing configured — leave the panel to the stylesheet.
+                        $panel.css({ width: '', height: '', minWidth: '', maxWidth: '',
+                                     minHeight: '', maxHeight: '', flex: '' })
+                    } else {
+                        // min-* is always cleared, so a panel has no floor; max-* takes
+                        // the maxSize cap.
+                        const fixedSize = draggedSize
+                            ? draggedSize + 'px'
+                            : (expandedSize || '')
+                        $panel.css({ flex: 'none', [size]: fixedSize,
+                                     [min]: '', [max]: maxPx,
+                                     [crossMin]: '', [crossMax]: '' })
                     }
-                } else {
-                    $panel.css({ width: '', height: '', flex: '' })
+                }
+            }
+
+            // Icon-bar sizing, shared by the iconified and focused states so the bar
+            // looks the same in both. Its axis — width for left/right, height for
+            // top/bottom — is pinned to --ui-icon-bar-size, which the stylesheet
+            // gives a default and iconifiedSize overrides. The buttons divide up that
+            // same measure, so they stay in proportion at any bar size. Sizing the
+            // bar rather than the panel keeps the bar's padding intact.
+            if (!isFloatingPanel && (panel.state === 'iconified' || panel.state === 'focused')) {
+                const iconifiedSize = toCssDimension(panel.config.dimensions?.iconifiedSize)
+                const region = panel.config.position
+                const $icons = $panel.children('.ui-panel-icons')
+                if ($icons.length) {
+                    const barSize = 'var(--ui-icon-bar-size)'
+                    if (region === 'left' || region === 'right') {
+                        $icons.css({ width: barSize, height: '' })
+                    } else if (region === 'top' || region === 'bottom') {
+                        $icons.css({ width: '', height: barSize })
+                    } else {
+                        $icons.css({ width: '', height: '' })
+                    }
+
+                    if (iconifiedSize) $icons[0].style.setProperty('--ui-icon-bar-size', iconifiedSize)
+                    else $icons[0].style.removeProperty('--ui-icon-bar-size')
                 }
             }
         })
@@ -752,8 +808,13 @@ const UserInterfaceModern_ = {
             if (!isResizing || !$currentPanel || !currentRegion) return
 
             const capabilities = currentConfig?.capabilities || {}
-            const minSize = capabilities.minSize !== undefined ? capabilities.minSize : DEFAULT_MIN_PANEL_SIZE
-            const maxSize = capabilities.maxSize !== undefined ? capabilities.maxSize : DEFAULT_MAX_PANEL_SIZE
+            // An unusable or cleared bound falls back to its default. A non-numeric
+            // one reaching the clamp would make every comparison NaN and leave the
+            // drag unbounded.
+            const configuredMin = toPixelNumber(capabilities.minSize, { allowZero: true })
+            const configuredMax = toPixelNumber(capabilities.maxSize)
+            const minSize = configuredMin !== null ? configuredMin : DEFAULT_MIN_PANEL_SIZE
+            const maxSize = configuredMax !== null ? configuredMax : DEFAULT_MAX_PANEL_SIZE
 
             const strategy = resizeStrategies[currentRegion]
             if (!strategy) return

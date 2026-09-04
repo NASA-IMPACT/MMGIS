@@ -107,6 +107,9 @@ class ModernInterface {
 
         // Validate configuration before proceeding
         const validationResult = validateModernConfig(config)
+        if (validationResult.warnings?.length) {
+            console.warn('[Modern Interface] Configuration warnings:', validationResult.warnings)
+        }
         if (!validationResult.valid) {
             console.error('[Modern Interface] Configuration validation failed:', validationResult.errors)
             throw new Error('Invalid modern interface configuration')

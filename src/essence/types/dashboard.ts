@@ -114,6 +114,9 @@ export interface ValidationResult {
     /** Whether validation passed */
     valid: boolean;
 
-    /** Array of validation error messages */
+    /** Structural problems that make the configuration unusable */
     errors: string[];
+
+    /** Problems the renderer recovers from, such as an unusable panel size */
+    warnings?: string[];
 }
