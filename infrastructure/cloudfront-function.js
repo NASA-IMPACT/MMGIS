@@ -47,11 +47,7 @@ function handler(event) {
             headers: {
                 'www-authenticate': {
                     value: 'Basic realm="MMGIS Dashboard"'
-                },
-                // An edge that keeps Authorization out of its cache key is
-                // credential-blind, and must not replay this refusal to a
-                // visitor who did send the password.
-                'cache-control': { value: 'no-store' }
+                }
             }
         };
     }
@@ -94,19 +90,22 @@ function handler(event) {
             // a control character) is escaped into its %XX form here, so
             // the pair survives instead of being dropped. '%' is inside
             // the safe set, so an already-encoded value passes through
-            // byte-identical rather than double-encoding. A lone surrogate
-            // cannot be encoded at all and makes encodeURIComponent throw;
-            // that pair alone is dropped.
+            // byte-identical rather than double-encoding. The match is an
+            // unanchored run of disallowed characters — a run, so a
+            // surrogate pair encodes as the one character it is — which
+            // means it never leans on how '$' treats a trailing newline.
+            // A lone surrogate cannot be encoded at all and makes
+            // encodeURIComponent throw; that pair alone is dropped.
             var UNSAFE_KEY_G = /[^A-Za-z0-9%\-_.~!$'()*+,;:@\/?]+/g;
             var UNSAFE_VALUE_G = /[^A-Za-z0-9%\-_.~!$'()*+,;=:@\/?]+/g;
+            var escapeRun = function (run) {
+                return encodeURIComponent(run);
+            };
             var parts = [];
-            // Property order, not the order the request carried: integer-like
-            // keys come first and repeated keys group together. Nothing a
-            // dashboard reads depends on where a parameter sits.
             for (var key in qs) {
                 var safeKey;
                 try {
-                    safeKey = key.replace(UNSAFE_KEY_G, encodeURIComponent);
+                    safeKey = key.replace(UNSAFE_KEY_G, escapeRun);
                 } catch (keyErr) {
                     continue;
                 }
@@ -120,7 +119,7 @@ function handler(event) {
                     try {
                         safeVal = values[i].value.replace(
                             UNSAFE_VALUE_G,
-                            encodeURIComponent
+                            escapeRun
                         );
                     } catch (valErr) {
                         continue;

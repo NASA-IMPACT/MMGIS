@@ -11,25 +11,6 @@ const IMAGE_MIME_TO_EXT = {
     'image/svg+xml': 'svg',
 };
 
-// The object keys ./uploadRouter.js writes for plugin uploads when the S3
-// asset bucket is configured. Those look exactly like
-//
-//   assets/<mission>/<subdir>/uploads/<file>
-//
-// so this matches "assets/", then exactly two path segments, then "/uploads/".
-// The exactness matters: a plugin whose subdir is itself named "assets" stores
-// ordinary mission-relative values like "assets/uploads/x.png", and a looser
-// test ("starts with assets/") would grab those too and resolve them against
-// the wrong root.
-//
-// This is the documented home of that shape. src/pre/uploadKey.ts and
-// configure/src/core/upload.js each carry a copy because both frontend bundles
-// restrict imports to their own src/ (webpack's ModuleScopePlugin), which puts
-// this file out of reach of either. tests/unit/uploadKeyClassifier.spec.js runs
-// one table of values through all three and fails if they classify any of them
-// differently.
-const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
-
 // Map an upload mimetype to a safe file extension using the given allow-list,
 // or null if the type is not allowed.
 function extensionForMime(mimeType, allowedMimeToExt = IMAGE_MIME_TO_EXT) {
@@ -57,7 +38,6 @@ const isValidSubdir = isSafePathSegment;
 
 module.exports = {
     IMAGE_MIME_TO_EXT,
-    ASSETS_UPLOAD_KEY,
     extensionForMime,
     isSafePathSegment,
     isValidMission,

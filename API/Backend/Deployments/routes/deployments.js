@@ -8,15 +8,11 @@ const router = express.Router();
 const logger = require("../../../logger");
 const Deployments = require("../models/deployment");
 const STATUS = Deployments.STATUS;
-const { updateRefusalFor } = require("../updateRefusal");
 
 const triggerWebhooks = require("../../Webhooks/processes/triggerwebhooks");
 
 const provision = require("../../../../scripts/lib/aws-provision");
 const { stackNameForDeployment } = require("../../../../scripts/lib/cfn-template");
-const {
-  rowStillOursForFailure,
-} = require("../../../../scripts/lib/publish-flow");
 
 // Webhook payload for a deployment row.
 function webhookPayload(deployment) {
@@ -27,33 +23,6 @@ function webhookPayload(deployment) {
     status: deployment.status,
     cloudfront_url: deployment.cloudfront_url || null,
   };
-}
-
-// Starts the ECS task that does the long-running bake/build/provision/upload
-// work for `deployment` and returns at once — fire-and-forget, so a RunTask
-// failure marks the row failed with the error rather than crashing a request
-// that has already responded. That failure lands only while the row is still
-// the request's: a Delete, or a task that got the dashboard live, owns the
-// status from then on.
-function startPublishTask(deployment, action) {
-  provision
-    .runPublishTask({ deploymentId: deployment.id, action })
-    .catch((err) => {
-      logger(
-        "error",
-        `Failed to start ${action} task for deployment ${deployment.id}.`,
-        "deployments",
-        null,
-        err
-      );
-      Deployments.update(
-        {
-          status: STATUS.FAILED,
-          last_error: `Failed to start ${action} task: ${err.message}`,
-        },
-        { where: { id: deployment.id, ...rowStillOursForFailure(STATUS) } }
-      ).catch(() => {});
-    });
 }
 
 // Merges a deployment row with its live CloudFormation stack status
@@ -108,7 +77,26 @@ router.post("/publish", async function (req, res) {
       stack_name: stackNameForDeployment(deployment.id),
     });
 
-    startPublishTask(deployment, "publish");
+    // Fire-and-forget: a RunTask failure marks the row failed with the
+    // error, never crashes the request (which has already returned).
+    provision
+      .runPublishTask({ deploymentId: deployment.id, action: "publish" })
+      .catch((err) => {
+        logger(
+          "error",
+          `Failed to start publish task for deployment ${deployment.id}.`,
+          "deployments",
+          null,
+          err
+        );
+        Deployments.update(
+          {
+            status: STATUS.FAILED,
+            last_error: `Failed to start publish task: ${err.message}`,
+          },
+          { where: { id: deployment.id } }
+        ).catch(() => {});
+      });
 
     triggerWebhooks("deploymentPublish", webhookPayload(deployment));
 
@@ -124,53 +112,38 @@ router.post("/publish", async function (req, res) {
 });
 
 // POST /api/deployments/:id/update
-// Re-bakes against the mission's current configuration, converges the
-// CloudFormation stack (re-baking the current dashboards password into the
-// auth Function), then replaces the bundle in the existing bucket — same
-// stack, same URL.
-async function updateDeployment(req, res) {
+// Re-bakes against the mission's current configuration, replaces the bundle in
+// the existing dashboard bucket, and converges the CloudFormation stack via
+// UpdateStack (re-baking the current dashboard password into the auth
+// Function) — same stack, same URL.
+router.post("/:id/update", async function (req, res) {
   try {
     const deployment = await Deployments.findByPk(req.params.id);
     if (deployment == null) {
       res.send({ status: "failure", message: "Deployment not found." });
       return;
     }
-    // Read the live stack alongside the row (this also flips a `deleting` row
-    // whose stack is already gone to `deleted`).
-    const row = await withLiveStatus(deployment);
-    const refusal = updateRefusalFor(row, STATUS);
-    if (refusal != null) {
-      res.status(409).send({ status: "failure", message: refusal.message });
-      return;
-    }
 
-    // Claim the row conditionally on the status AND the `updatedAt` the
-    // refusal was judged against, both read moments ago from the same row:
-    // two clicks race here without it, and both would start a task against the
-    // same stack. A claim moves `updatedAt`, so even two clicks on a row that
-    // already reads `updating` — where the status alone matches either way —
-    // leave only the first one a row to write.
-    const [claimed] = await Deployments.update(
-      { status: STATUS.UPDATING, last_error: null },
-      {
-        where: {
-          id: deployment.id,
-          status: row.status,
-          updatedAt: row.updatedAt,
-        },
-      }
-    );
-    if (claimed === 0) {
-      res
-        .status(409)
-        .send({ status: "failure", message: "Deployment is already updating" });
-      return;
-    }
-    // The claim wrote the row, not this instance; carry the new status onto it
-    // so the webhook and the response body report what the row now holds.
-    deployment.set({ status: STATUS.UPDATING, last_error: null });
+    await deployment.update({ status: STATUS.UPDATING, last_error: null });
 
-    startPublishTask(deployment, "update");
+    provision
+      .runPublishTask({ deploymentId: deployment.id, action: "update" })
+      .catch((err) => {
+        logger(
+          "error",
+          `Failed to start update task for deployment ${deployment.id}.`,
+          "deployments",
+          null,
+          err
+        );
+        Deployments.update(
+          {
+            status: STATUS.FAILED,
+            last_error: `Failed to start update task: ${err.message}`,
+          },
+          { where: { id: deployment.id } }
+        ).catch(() => {});
+      });
 
     triggerWebhooks("deploymentUpdate", webhookPayload(deployment));
 
@@ -183,9 +156,7 @@ async function updateDeployment(req, res) {
     logger("error", "Failed to update deployment.", req.originalUrl, req, err);
     res.send({ status: "failure", message: "Failed to update deployment." });
   }
-}
-
-router.post("/:id/update", updateDeployment);
+});
 
 // Empties the deployment's bucket (if any) and issues DeleteStack.
 // Best-effort and not awaited by the route: failures are logged and recorded
@@ -290,9 +261,4 @@ router.get("/:id", async function (req, res) {
   }
 });
 
-module.exports = {
-  router,
-  teardownDeployment,
-  withLiveStatus,
-  updateDeployment,
-};
+module.exports = { router, teardownDeployment };

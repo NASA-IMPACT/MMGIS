@@ -17,8 +17,8 @@ const DEFAULT_STACK_NAME_PREFIX = "mmgis-dashboard-";
 
 // The readable source of the viewer-request CloudFront Function, resolved
 // from this module's own location so it works regardless of the process's
-// cwd. infrastructure/ therefore has to ship in the publish image: the
-// Dockerfile's `COPY . .` includes it, and .dockerignore must not exclude it.
+// cwd. See renderAuthFunctionCode's read error for the packaging
+// requirement this implies.
 const AUTH_FUNCTION_SOURCE_PATH = path.join(
   __dirname,
   "..",
@@ -227,13 +227,7 @@ function renderCfnTemplate({ password } = {}) {
             DefaultCacheBehavior: {
               TargetOriginId: "DashboardBucketOrigin",
               ViewerProtocolPolicy: "redirect-to-https",
-              // AWS managed policy: CachingOptimized — minimum TTL 1 s,
-              // default 86400 s, maximum 31536000 s. The Cache-Control tiers
-              // in scripts/lib/aws-provision.js rely on that maximum being at
-              // least a year, or the edge would cap the immutable tier. The
-              // minimum overrides the no-cache tier here, so the entry page
-              // and the baked config are at most a second stale at this edge
-              // rather than revalidated on every request.
+              // AWS managed policy: CachingOptimized
               CachePolicyId: "658327ea-f89d-4fab-a63d-7e88639e58f6",
               FunctionAssociations: [
                 {

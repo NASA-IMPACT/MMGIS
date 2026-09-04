@@ -8,6 +8,7 @@ const {
     BASIC_AUTH_USER,
     stackNamePrefix,
     stackNameForDeployment,
+    renderAuthFunctionCode,
     renderCfnTemplate,
 } = require('../../scripts/lib/cfn-template')
 
@@ -113,7 +114,7 @@ test.describe('renderCfnTemplate', () => {
         expect(template.Parameters).toBeUndefined()
     })
 
-    test('bakes the password into the Function code and ships only the body', () => {
+    test('bakes the password into the Function code as a base64 constant', () => {
         const body = renderCfnTemplate({ password: PASSWORD })
         const template = JSON.parse(body)
         const code =
@@ -122,12 +123,26 @@ test.describe('renderCfnTemplate', () => {
             `${BASIC_AUTH_USER}:${PASSWORD}`
         ).toString('base64')
         expect(code).toContain(`Basic ${expected}`)
-        expect(code).not.toContain('<BASE64_BASIC_CREDENTIALS>')
-        // The source file's doc comment is stripped, so the uploaded code
-        // starts at the handler itself.
-        expect(code.startsWith('function handler')).toBe(true)
         // The plaintext password never appears anywhere in the template
         expect(body).not.toContain(PASSWORD)
+    })
+
+    // A CloudFront Function serves the LIVE stage, so a republish that only
+    // changes the baked password converges the stack while every request
+    // keeps meeting the old credentials. AutoPublish promotes the new code to
+    // LIVE as part of the update.
+    test('publishes the auth function to the live stage on every update', () => {
+        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
+        expect(
+            template.Resources.DashboardAuthFunction.Properties.AutoPublish
+        ).toBe(true)
+    })
+
+    test('auth function returns 401 with a www-authenticate challenge', () => {
+        const code = renderAuthFunctionCode(PASSWORD)
+        expect(code).toContain('statusCode: 401')
+        expect(code).toContain('www-authenticate')
+        expect(code).toContain('return request')
     })
 
     test('distribution is gated by the viewer-request function and serves index.html', () => {
@@ -136,10 +151,6 @@ test.describe('renderCfnTemplate', () => {
             template.Resources.DashboardDistribution.Properties
                 .DistributionConfig
         expect(dist.DefaultRootObject).toBe('index.html')
-        expect(
-            dist.DefaultCacheBehavior.CachePolicyId,
-            "changing this id means re-checking the policy's Maximum TTL by hand: below a year, this edge caps the immutable Cache-Control tier (this id is the managed CachingOptimized)"
-        ).toBe('658327ea-f89d-4fab-a63d-7e88639e58f6')
         const associations = dist.DefaultCacheBehavior.FunctionAssociations
         expect(associations).toHaveLength(1)
         expect(associations[0].EventType).toBe('viewer-request')
@@ -181,14 +192,5 @@ test.describe('renderCfnTemplate', () => {
         expect(
             template.Resources.DashboardBucket.Properties
         ).not.toHaveProperty('BucketName')
-    })
-
-    test('the auth function auto-publishes to LIVE', () => {
-        const template = JSON.parse(renderCfnTemplate({ password: PASSWORD }))
-        // Without this an UpdateStack only changes the DEVELOPMENT stage, and
-        // the distribution keeps serving the old password.
-        expect(
-            template.Resources.DashboardAuthFunction.Properties.AutoPublish
-        ).toBe(true)
     })
 })

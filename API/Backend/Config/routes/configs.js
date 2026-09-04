@@ -14,7 +14,6 @@ const Config = require("../models/config");
 const config_template = require("../../../templates/config_template");
 const userModel = require("../../Users/models/user");
 const User = userModel.User;
-const { rootPath } = require("../../Utils/rootPath");
 
 // Sanitize user input to prevent XSS in error messages
 function sanitizeInput(input) {
@@ -876,7 +875,7 @@ function openWebSocket(body, response, info, forceClientUpdate) {
   const path = `${
     process.env.HTTPS == "true" ? "wss" : "ws"
   }://localhost:${port}${
-    process.env.WEBSOCKET_ROOT_PATH || rootPath()
+    process.env.WEBSOCKET_ROOT_PATH || process.env.ROOT_PATH || ""
   }/`;
   try {
     const ws = new WebSocket(path);

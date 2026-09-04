@@ -41,7 +41,6 @@ import MapLogo from './Ancillary/MapLogo'
 import Attributions from './Ancillary/Attributions'
 //import Swap from './Ancillary/Swap'
 import QueryURL from './Ancillary/QueryURL'
-import { nameMissionInUrl } from './Ancillary/landingFlags'
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import TimeUI from './Basics/TimeControl_/TimeUI'
 import calls from '../pre/calls'
@@ -340,10 +339,26 @@ var essence = {
         essence.configData = config
 
         //Make sure url matches mission
-        // The DB mission name is the one a deeplink can be resolved against.
-        const missionForUrl = config._dbMissionName || config.msv.mission
-        if (nameMissionInUrl({ mission: missionForUrl, swapping }))
+        var urlSplit = window.location.href.split('?')
+        var url = urlSplit[0]
+
+        if (
+            urlSplit.length == 1 ||
+            swapping ||
+            QueryURL.getSingleQueryVariable('forcelanding') !== false ||
+            QueryURL.getSingleQueryVariable('forceLanding') !== false ||
+            (urlSplit[1] && urlSplit[1].split('=')[0] === '_preview')
+        ) {
+            //then no parameters or old ones
+            // Use DB mission name for deeplinks (config._dbMissionName if available)
+            const missionForUrl = config._dbMissionName || config.msv.mission
+            url =
+                window.location.href.split('?')[0] +
+                '?mission=' +
+                missionForUrl
+            window.history.replaceState('', '', url)
             L_.url = window.location.href
+        }
 
         if (swapping) {
             essence.hasSwapped = true

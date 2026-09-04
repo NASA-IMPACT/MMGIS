@@ -6,14 +6,13 @@ The examples below use the path `/tools/dashboard`; substitute your own everywhe
 
 ## Setup
 
-1. **Add the dashboard as an origin** on your distribution: origin domain is the dashboard's address, origin protocol policy **HTTPS only**, and one custom origin header — `X-Forwarded-Prefix` with the path as its value: `/tools/dashboard`. Leading slash, no trailing slash; letters, digits, `-`, `_`, `.`, `~`, and `/` only, with no `//` and no `..` segment. Don't use `build`, `public`, `assets` or `Missions` as the path's first segment — those are real folders inside the dashboard, so a missing or wrong header would serve real files at the wrong depth instead of failing loudly.
+1. **Add the dashboard as an origin** on your distribution: origin domain is the dashboard's address, origin protocol policy **HTTPS only**, and one custom origin header — `X-Forwarded-Prefix` with the path as its value: `/tools/dashboard`. Leading slash, no trailing slash; letters, digits, `-`, `_`, `.`, `~`, and `/` only.
 
 2. **Create a custom cache policy** — not a managed one — with:
    - the `Authorization` header in the cache key,
    - all query strings in the cache key,
    - Minimum TTL 0,
-   - Maximum TTL 31536000 (one year) or more,
-   - Default TTL 0.
+   - Maximum TTL 31536000 (one year) or more.
 
 3. **Add two cache behaviors** pointing at that origin, both using that cache policy:
    - path pattern `/tools/dashboard` — exact, no wildcard,
@@ -32,14 +31,14 @@ With the two patterns above and header `X-Forwarded-Prefix: /tools/dashboard`:
 | The visitor opens | `X-Forwarded-Prefix` value | What our edge does | The visitor gets |
 |---|---|---|---|
 | `site.gov/tools/dashboard/` | `/tools/dashboard` | strips `/tools/dashboard`, serves `/index.html` | the dashboard |
-| `site.gov/tools/dashboard/build/static/js/main.a1b2c3.js` | `/tools/dashboard` | strips `/tools/dashboard` → `/build/static/js/main.a1b2c3.js` | the asset |
+| `site.gov/tools/dashboard/js/main.js` | `/tools/dashboard` | strips `/tools/dashboard` → `/js/main.js` | the asset |
 | `site.gov/tools/dashboard` *(no trailing slash)* | `/tools/dashboard` | 302 redirect to `/tools/dashboard/` | one redirect, then the dashboard |
 | `site.gov/tools/dashboard?view=2` | `/tools/dashboard` | 302 to `/tools/dashboard/?view=2` | the deep link, query string intact |
 | `site.gov/tools/dashboard-archive` *(a route of yours with a similar name)* | *(never sent)* | nothing — matches neither pattern, so it never leaves your site | your own route, unaffected |
 | anything under the path | **missing**, or wrong — e.g. `/tools/dashbord` *(typo)* | header invalid or matches nothing — no rewrite, no redirect | 403 on every request — loud failure, never the wrong files |
 | `d1abc23def.cloudfront.net/` *(the dashboard's own address, no header)* | *(none — no fronting CloudFront to add it)* | nothing — passes through | the dashboard, as always |
 
-Every dashboard is password-protected, so every row also sits behind the password: a wrong or missing password is a 401 before any of this runs.
+Every dashboard is password-protected: every row also sits behind it, and a wrong or missing password is a 401 before any of this runs.
 
 ## Why these settings
 
@@ -47,20 +46,16 @@ Every dashboard is password-protected, so every row also sits behind the passwor
 
 **The header** tells us how much of the forwarded path is yours. CloudFront forwards the full path exactly as the visitor typed it, so our side receives `/tools/dashboard/index.html` and needs to know that `/tools/dashboard` is prefix, not content. We remove exactly what the header declares and serve the file. If the header is missing or doesn't match the path, every request under the path fails with a 403 immediately — a loud failure on purpose, instead of quietly serving the wrong files. (It's a 403 rather than a 404 because the rejection comes from our storage layer, which answers "access denied.")
 
-**`Authorization` in the cache key:** dashboards are password-protected, and your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential. Nothing we return is marked for shared caches: our responses carry no `public` in their `Cache-Control`. Your CloudFront caches them anyway, on `max-age` alone, under the per-credential key you just configured — that is how CloudFront behaves. An intermediary proxy that follows the standard to the letter will never serve them to another request, because they were fetched with an `Authorization` header (RFC 9111 §3.5); reuse would take `public`, `must-revalidate` or `s-maxage`, and we send none of the three. Password-gated files stay out of caches we know nothing about. Every visitor needs that password — there is no unauthenticated mode today — and the same password opens every dashboard published from the same MMGIS environment, so give it only to an audience you would hand every one of those dashboards to. Never publish it on a page.
+**`Authorization` in the cache key:** dashboards are password-protected, and your CloudFront caches whatever we return. If the header is forwarded but not part of the cache key, one visitor's authenticated page gets cached and served to the next visitor who never entered a password. In the cache key, the header is both forwarded and kept separate per credential.
 
 **All query strings in the cache key:** a policy that drops query strings never sends them to us. A deep link like `/tools/dashboard?view=2` then reaches us stripped of its `?view=2`, and the address we redirect the visitor to has lost it for good.
 
-**Minimum TTL 0:** the managed policies you are likely to reach for impose a minimum cache time that overrides what our responses ask for. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next. A floor above 0 also holds the entry page and the mission configuration, which we mark to revalidate before every use (`no-cache`, not `no-store`); at 0 a republish reaches your domain with no purge on your side — those two immediately, the supporting files roughly five minutes after the publish completes, plus however long our invalidation takes to reach your region (the publish does not wait for it).
+**Minimum TTL 0:** the managed policies you are likely to reach for impose a minimum cache time that overrides what our responses ask for. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next. A floor above 0 also holds the pages we mark for revalidation, so a republish would not reach your visitors until that floor expired.
 
-**Maximum TTL a year:** the files whose names are content-fingerprinted — the JS, CSS and media bundles, and the images uploaded into the dashboard, each stored under a name that is never reused — are cacheable forever (`immutable`), and a policy maximum below a year would cap them at whatever it sets. AWS's managed `UseOriginCacheControlHeaders` policies (and the `-QueryStrings` variant) already pair Minimum TTL 0 with a one-year maximum, but neither puts `Authorization` in the cache key — which is why the policy has to be a custom one, with both bounds set by hand: Minimum 0 so it raises no floor over what we ask for, Maximum a year so it does not cap the immutable tier.
-
-**Default TTL:** every file we serve carries its own `Cache-Control`, so the policy default never decides how long one is held.
+**Maximum TTL a year:** our responses carry three cache tiers. The entry page and the mission configuration revalidate before every use (`no-cache`, not `no-store` — there is nothing for you to purge). The files whose names are content-fingerprinted — the application's own bundles, and the images and files uploaded into the dashboard, each stored under a name that is never reused — are cacheable forever (`immutable`). Everything else, the supporting files that can change in place, gets five minutes. So a republish reaches your visitors in stages: the entry page and the configuration immediately, the supporting files within about five minutes, plus however long our own invalidation takes to propagate. AWS's managed `UseOriginCacheControlHeaders` policies pair Minimum TTL 0 with a one-year maximum, but they leave `Authorization` out of the cache key, so a custom policy is still required: Minimum TTL 0 stops the policy raising our floor, and a Maximum TTL of at least a year stops it capping the immutable tier.
 
 **HTTPS only to the origin:** the dashboard's password rides on the `Authorization` header of every request you forward. Over plain HTTP it would cross the internet unencrypted.
 
 **No viewer `Host` header:** our distribution answers only to its own `*.cloudfront.net` name; a request carrying your hostname is rejected by AWS with a 403 before anything of ours runs. CloudFront omits the viewer's `Host` by default — the hazard is specifically the managed `AllViewer` origin request policy, which forwards it. `AllViewerExceptHostHeader` forwards everything else while excluding it.
 
-## After you're set up
-
-**After a password rotation, invalidate.** A new password does not evict what your edge is already holding under the old one: a cached object lives out its `max-age` whatever the credential now is. So when the dashboards password is rotated, run an invalidation on your own distribution — otherwise the retired password keeps opening cached pages until they age out, up to a year for the fingerprinted files.
+**After a dashboard's password is rotated:** invalidate your distribution. Your cache is keyed on the `Authorization` header, so the responses fetched under the old password sit in it and keep being served to anyone still presenting that password — never reaching us to be turned away — until they expire on their own, which for the immutable tier is a year. An invalidation clears them at once.

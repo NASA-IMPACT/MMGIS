@@ -2,27 +2,29 @@
  * publish-static.js
  * ECS publish-task entrypoint for the lean Deployments feature
  * (run as `node scripts/publish-static.js` from the repo root, in the same
- * image as the admin app; the ECS task definition that runs it lives in
- * infrastructure/terraform/modules/mmgis-environment/).
+ * image as the admin app — PR 11 provisions the task definition).
  *
  * Driven by environment:
  *   MMGIS_DEPLOYMENT_ID     - the deployments row to publish (required)
  *   MMGIS_DEPLOYMENT_ACTION - "publish" (default) creates the CloudFormation
- *                       stack when none exists yet and otherwise converges the
- *                       existing one (a previous attempt may have created it);
- *                       "update" converges the existing stack, and is refused
- *                       when the row's stack is gone (see lib/publish-flow.js).
- *                       Converging applies the current template via
+ *                       stack when none exists yet, or waits for an existing
+ *                       one to settle (a previous attempt may have created
+ *                       it, or an earlier "update" may still be converging
+ *                       it); "update" converges an existing stack's
+ *                       infrastructure to the current template via
  *                       UpdateStack — including re-baking the current
- *                       dashboards password into the auth Function. Both
- *                       actions then re-bake + re-upload the bundle (same URL).
+ *                       dashboards password into the auth Function — then
+ *                       re-bakes + re-uploads the bundle (same URL).
  *
- * Flow: read the mission config from Postgres → apply bake guards → bake
- * via bakeStaticConfig → build themes + static webpack bundle
- * (SERVER=static) → CreateStack/UpdateStack + poll to the terminal status
- * → same-key copy the mission's assets from the shared admin bucket →
- * upload the bundle → mark the row `published`.
- * Any failure marks the row `failed` with last_error.
+ * Flow: render the stack template and read the stack, so a bad password or
+ * an unusable stack is answered before the long steps → read the mission
+ * config from Postgres → apply bake guards → bake via bakeStaticConfig →
+ * build themes + static webpack bundle (SERVER=static) →
+ * CreateStack/UpdateStack + poll to the terminal status → same-key copy the
+ * mission's assets from the shared admin bucket → upload the bundle → mark
+ * the row `published`.
+ * Any failure marks the row `failed` with last_error. Both terminal writes
+ * skip a row a Delete has already claimed.
  */
 
 require("dotenv").config();
@@ -31,16 +33,11 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const Sequelize = require("sequelize");
 
 const rootDir = path.join(__dirname, "..");
 
 const provision = require("./lib/aws-provision");
-const {
-  rowStillOurs,
-  rowStillOursForFailure,
-  stackAction,
-  touchRow,
-} = require("./lib/publish-flow");
 const { renderCfnTemplate, stackNameForDeployment } = require("./lib/cfn-template");
 const { applyTimeBakeGuard } = require("./lib/bake-guards");
 
@@ -48,6 +45,36 @@ const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
 
 const { requireEnv } = provision;
+
+// Statuses a stack can neither be reused at nor driven forward from: it can
+// only be deleted (or, for a couple, have a rollback continued) — never
+// updated in place. Reaching one earns the actionable "delete and republish"
+// guidance BEFORE any busy classification, so a permanently-wedged stack is
+// never mistaken for one another task is merely busy updating.
+//   CREATE_FAILED / ROLLBACK_COMPLETE / ROLLBACK_IN_PROGRESS - a failed first
+//     create: CREATE_FAILED is where this code's own createStack (OnFailure:
+//     "DO_NOTHING") stops; the ROLLBACK_* pair is where an out-of-band operator
+//     create stops, and ROLLBACK_IN_PROGRESS pre-empts the ROLLBACK_COMPLETE it
+//     is on its way to.
+//   ROLLBACK_FAILED / UPDATE_ROLLBACK_FAILED / DELETE_FAILED - a rollback or a
+//     delete that itself failed; stuck until an operator intervenes.
+//   UPDATE_FAILED - where an update with rollback disabled stops; moved only by
+//     a ContinueUpdateRollback or a delete, so it can't be updated in place.
+//   DELETE_IN_PROGRESS - a teardown already under way: the bucket and
+//     distribution this run needs are on their way out, so waiting it out can
+//     only ever end at a stack that no longer exists.
+// UPDATE_ROLLBACK_COMPLETE is deliberately absent: a stack resting there has a
+// working bucket/distribution and stays reusable by a publish.
+const UNUSABLE_STACK_STATUSES = [
+  "CREATE_FAILED",
+  "ROLLBACK_COMPLETE",
+  "ROLLBACK_IN_PROGRESS",
+  "ROLLBACK_FAILED",
+  "UPDATE_ROLLBACK_FAILED",
+  "UPDATE_FAILED",
+  "DELETE_FAILED",
+  "DELETE_IN_PROGRESS",
+];
 
 function log(message) {
   console.log(`[publish-static] ${message}`);
@@ -120,57 +147,58 @@ async function main() {
   if (deployment == null)
     throw new Error(`Deployment row ${DEPLOYMENT_ID} not found`);
 
-  // A Delete that overlaps a running task owns the row's status from then on,
-  // so every terminal write below lands only while the row is still one this
-  // task is responsible for.
-  const publishedWhere = {
-    id: deployment.id,
-    ...rowStillOurs(Deployments.STATUS),
-  };
-  const failedWhere = {
-    id: deployment.id,
-    ...rowStillOursForFailure(Deployments.STATUS),
-  };
-  // The heartbeat: run around each long step, and from inside the copy and
-  // the uploads, so the row reads as a task that is still working and a Delete
-  // that landed meanwhile stops this one (see touchRow in lib/publish-flow.js).
-  const touchLiveRow = () =>
-    touchRow(Deployments, deployment.id, Deployments.STATUS);
+  // Scopes this task's terminal writes to a row the delete flow has not
+  // claimed. A Delete raised while this task runs moves the row to `deleting`
+  // and tears the stack down behind us; that row's next status is `deleted`,
+  // decided by the delete flow, not by however this task happens to end.
+  const liveRowWhere = (id) => ({
+    id,
+    status: {
+      [Sequelize.Op.notIn]: [
+        Deployments.STATUS.DELETING,
+        Deployments.STATUS.DELETED,
+      ],
+    },
+  });
 
   try {
     const mission = deployment.mission;
     const stackName =
       deployment.stack_name || stackNameForDeployment(deployment.id);
 
-    // A first read, purely to fail fast: an update whose stack is gone, and a
-    // stack only a delete can move, both stop here in seconds rather than after
-    // the multi-minute bake and build below. What gets created or converged is
-    // decided by a second read taken after that build, and convergeStackUpdate
-    // re-checks usability per attempt.
-    const existing = await provision.describeStack({ stackName });
-    const preflight = stackAction({
-      action: ACTION,
-      stack: existing,
-      stackName,
-      stackArn: deployment.stack_arn,
-    });
-    if (preflight.refuse) throw new Error(preflight.refuse);
-    if (existing != null)
-      provision.assertStackUsable({ stackName, stack: existing });
-
-    // Rendered alongside that read so a missing dashboards password stops the
-    // task in seconds as well; this is the body both branches below apply.
+    // 1. Preflight the stack and the template, before the minutes-long bake
+    //    and build: a missing password, a missing stack or a wedged one is a
+    //    verdict this run can reach in seconds, and reaching it late costs the
+    //    whole build for an answer that never depended on it.
     const templateBody = renderCfnTemplate({
       password: requireEnv("MMGIS_DASHBOARDS_PASSWORD"),
     });
+    // Idempotent re-run: a previous attempt may have created the stack (or a
+    // prior update converged it) — reuse it instead of dying on
+    // CloudFormation's AlreadyExistsException.
+    const existing = await provision.describeStack({ stackName });
+    // A stack in a delete-only dead-end state gets actionable guidance, never
+    // a wait and never a busy misclassification.
+    if (
+      existing != null &&
+      UNUSABLE_STACK_STATUSES.indexOf(existing.StackStatus) !== -1
+    )
+      throw new Error(
+        `Stack '${stackName}' is in ${existing.StackStatus} and cannot be used — ` +
+          "delete the deployment and publish it again (this mints a new URL)"
+      );
+    if (ACTION === "update" && existing == null)
+      throw new Error(
+        `Stack '${stackName}' does not exist — publish before updating`
+      );
 
-    // 1. Bake the mission config into the bundle
+    // 2. Bake the mission config into the bundle
     log(`Baking mission '${mission}' for deployment ${deployment.id}...`);
     const baked = await buildBakedConfig(mission);
     const { bakeStaticConfig } = require("../API/updateTools");
     bakeStaticConfig(baked);
 
-    // 2. Build the static bundle. Theme assets (dist/) are baked into the
+    // 3. Build the static bundle. Theme assets (dist/) are baked into the
     // image at image-build time (the deploy workflow runs build:themes before
     // docker build), and build-assets.sh needs tools absent from the slim
     // runtime image (rsync) — so only build themes when they're missing.
@@ -184,47 +212,52 @@ async function main() {
       SERVER: "static",
     });
 
-    // 3. Provision (publish) or converge (update) the dashboard stack
+    // 4. Provision (publish) or converge (update) the dashboard stack
     let stack;
-    // Which branch to take follows a read taken now, not the one from before
-    // the build: another task can have created the stack in the meantime (a
-    // CreateStack onto it is an AlreadyExistsException) or deleted it (a
-    // converge onto it has nothing to update).
-    const current = await provision.describeStack({ stackName });
-    const decision = stackAction({
-      action: ACTION,
-      stack: current,
-      stackName,
-      stackArn: deployment.stack_arn,
-    });
-    if (decision.refuse) throw new Error(decision.refuse);
-    // Provisioning is the point of no return for a Delete that landed during
-    // the build: past it, a stack exists whose teardown nobody is running.
-    await touchLiveRow();
-    if (decision.action === "create") {
-      log(`Creating stack '${stackName}'...`);
-      await provision.createStack({ stackName, templateBody });
-      stack = await provision.waitForStack({ stackName });
+    if (ACTION === "publish") {
+      // Publish only needs a working bucket, so it never runs UpdateStack: it
+      // either creates the stack, or waits for whatever the existing one is
+      // doing to settle. A stack already RESTING at its settle target
+      // (CREATE_COMPLETE / UPDATE_COMPLETE / UPDATE_ROLLBACK_COMPLETE) resolves
+      // on the first poll — status already matches, no `prior`, no pre-sleep.
+      if (existing == null) {
+        log(`Creating stack '${stackName}'...`);
+        await provision.createStack({ stackName, templateBody });
+        stack = await provision.waitForStack({ stackName });
+      } else {
+        log(
+          `Stack '${stackName}' already exists (${existing.StackStatus}); waiting for it to settle.`
+        );
+        stack = await provision.waitForStack({
+          stackName,
+          desiredStatus: provision.settleStatusFor(existing.StackStatus),
+        });
+      }
+      log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     } else {
+      log(
+        `Converging stack '${stackName}' to the current template — this ` +
+          "re-bakes the current dashboards password into the auth Function."
+      );
+      // Converge OUR OWN template through provision's single retry loop: it
+      // runs UpdateStack, waits out any concurrent operation (a double
+      // republish race) and retries our own update, and waits for OUR update
+      // to reach UPDATE_COMPLETE — a rollback throws rather than passing as
+      // success. The preflight above already rejected the delete-only dead-end
+      // statuses, so a busy error inside can only be a genuinely in-flight op.
       stack = await provision.convergeStackUpdate({
         stackName,
         templateBody,
-        fresh: current,
         log,
       });
+      log(`Stack '${stackName}' reached ${stack.StackStatus}.`);
     }
-    log(`Stack '${stackName}' is at ${stack.StackStatus}.`);
     const outputs = provision.getStackOutputs(stack);
     const bucket = outputs.BucketName;
     if (bucket == null)
       throw new Error(`Stack '${stackName}' has no BucketName output`);
 
-    // A delete can also have started during the stack wait, which is the
-    // longest step of all; filling the bucket it is about to empty only slows
-    // the teardown down. Everything below writes into that bucket.
-    await touchLiveRow();
-
-    // 4. Same-key copy the mission's assets from the shared admin bucket
+    // 5. Same-key copy the mission's assets from the shared admin bucket
     //    so document-relative assets/<mission>/… references resolve
     //    against the dashboard's document base (the customer prefix,
     //    when one is configured, included). Copied assets inherit the
@@ -240,15 +273,24 @@ async function main() {
         sourceBucket: sharedBucket,
         destBucket: bucket,
         prefix: `assets/${missionFolderName}/`,
-        onProgress: touchLiveRow,
       });
       log(`Copied ${copied} mission asset(s) from ${sharedBucket}.`);
+
+      // Viewer-panel mosaic file (conditional): the Photosphere/ModelViewer
+      // panes fetch this hardcoded same-origin path. Copy it when present;
+      // when absent the panes fail silently rather than erroring.
+      const mosaicKey = `Missions/${missionFolderName}/Data/mosaic_parameters.csv`;
+      const mosaicCopied = await provision.copyObjectIfExists({
+        sourceBucket: sharedBucket,
+        destBucket: bucket,
+        key: mosaicKey,
+      });
+      if (mosaicCopied) log(`Copied ${mosaicKey}.`);
     } else {
       log("MMGIS_SHARED_ASSET_BUCKET not set; skipping mission asset copy.");
     }
-    await touchLiveRow();
 
-    // 4.5 Interpolate the Pug placeholders in the built index. In server
+    // 5.5 Interpolate the Pug placeholders in the built index. In server
     // mode Express renders build/index.pug per request, filling globals
     // like FORCE_CONFIG_PATH and MAIN_MISSION; a dashboard has no server,
     // so bake the static equivalents here (unknown placeholders become
@@ -313,32 +355,25 @@ async function main() {
     );
     log("Interpolated static globals into index.html.");
 
-    // 5. Upload the bundle. The static index references ./build/... and
+    // 6. Upload the bundle. The static index references ./build/... and
     // public/... — the same paths Express mounts in server mode — so the
     // bucket must mirror that layout: the webpack output under build/,
     // the repo's public/ assets under public/, and index.html at the
     // root (the distribution's default root object).
-    // Both filters skip a template that still carries the raw #{...}
-    // placeholders: build/index.pug is the Pug conversion scripts/build.js
-    // writes into build/, and public/index.html is the HTML template the
-    // build renders from. Either one served as-is would hand a visitor the
-    // placeholders un-interpolated. The rendered page is uploaded below.
-    // A publish only writes; it deletes nothing already in the bucket.
+    // Both skipped keys are un-rendered templates whose bodies are still
+    // full of `#{…}` placeholders.
     const uploadedBuild = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "build"),
       prefix: "build/",
       filter: (key) => key !== "build/index.pug",
-      onProgress: touchLiveRow,
     });
     const uploadedPublic = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "public"),
       prefix: "public/",
       filter: (key) => key !== "public/index.html",
-      onProgress: touchLiveRow,
     });
-    await touchLiveRow();
     await provision.uploadFile({
       bucket,
       key: "index.html",
@@ -362,12 +397,11 @@ async function main() {
       `Uploaded ${uploadedBuild} build and ${uploadedPublic} public file(s) to ${bucket}.`
     );
 
-    // 5.5 Invalidate our own distribution so the five-minute tier serves the
-    // new release now. Customers' edges are governed by the Cache-Control
-    // tiers instead — see
-    // docs/infrastructure/serving-a-dashboard-from-your-domain.md. A brand-new
-    // distribution has nothing cached, so doing this unconditionally keeps
-    // publish and update on one path.
+    // 6.5 Bust the CDN so the refreshed bundle/config/assets serve
+    // immediately — the distribution caches aggressively, and only the
+    // hashed bundle filenames are naturally cache-safe. A brand-new
+    // distribution has nothing cached, so doing this unconditionally
+    // keeps publish and update on one path.
     if (outputs.DistributionId) {
       await provision.createInvalidation({
         distributionId: outputs.DistributionId,
@@ -376,14 +410,12 @@ async function main() {
       log("Created CloudFront invalidation (/*).");
     }
 
-    await touchLiveRow();
-
-    // 6. Terminal row update
+    // 7. Terminal row update
     const cloudfrontUrl =
       outputs.DistributionDomainName != null
         ? `https://${outputs.DistributionDomainName}`
         : deployment.cloudfront_url;
-    const [published] = await Deployments.update(
+    await Deployments.update(
       {
         status: Deployments.STATUS.PUBLISHED,
         stack_arn: stack.StackId,
@@ -396,13 +428,9 @@ async function main() {
           distributionId: outputs.DistributionId,
         },
       },
-      { where: publishedWhere }
+      { where: liveRowWhere(deployment.id) }
     );
-    log(
-      published
-        ? `Deployment ${deployment.id} published at ${cloudfrontUrl}.`
-        : `Deployment ${deployment.id} is being deleted; leaving its status alone.`
-    );
+    log(`Deployment ${deployment.id} published at ${cloudfrontUrl}.`);
   } catch (err) {
     console.error(err);
     await Deployments.update(
@@ -410,18 +438,15 @@ async function main() {
         status: Deployments.STATUS.FAILED,
         last_error: err.message || String(err),
       },
-      { where: failedWhere }
+      { where: liveRowWhere(deployment.id) }
     ).catch(() => {});
     throw err;
   }
 }
 
-// The publish runs only when this file is the process the ECS task started,
-// so a require() of it never starts one.
-if (require.main === module)
-  main()
-    .then(() => process.exit(0))
-    .catch((err) => {
-      console.error(`[publish-static] Failed: ${err.message}`);
-      process.exit(1);
-    });
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error(`[publish-static] Failed: ${err.message}`);
+    process.exit(1);
+  });
