@@ -1,7 +1,7 @@
 /**
  * AOI plugin — MMGIS wrapper.
  *
- * Pluggable contract (see specs/012-aoi-plugin/plan.md and PLUGIN-DEVELOPMENT-GUIDE.md):
+ * Pluggable contract:
  *
  *   pluginId: 'aoi'
  *
@@ -9,16 +9,15 @@
  *     - areaDrawn          { feature, source: 'search'|'draw'|'upload'|'inspect' }
  *     - analysisAOIReady   { feature }   — consumed by the FetchStats plugin
  *     - drawingCleared     {}
- *     - drawingCancelled   {}
  *
  *   Provides (auto-prefixed plugin:aoi:):
- *     - getCurrentSelection -> { feature, source } | null
+ *     - getCurrentSelection -> { feature, source, label } | null
  *
  *   Listens to:
- *     - tool:change                       (core)
  *     - map:drawstart / drawvertex /
  *       drawcomplete / drawcancel         (engine bus)
  *     - map:featureClick                  (inspect-mode boundary clicks, filtered by layerId)
+ *     - map:moveend                       (one-shot, while a selection waits for the camera)
  *     - plugin:fetch-stats:analysisProgress  { done, total }
  *     - plugin:fetch-stats:analysisReady     { analysisData }
  *     - plugin:fetch-stats:analysisSkipped   { reason }
@@ -27,17 +26,16 @@
  *     - map:createLayer / map:removeLayer
  *     - map:getBounds / map:fitBounds
  *     - map:enableDrawing / map:disableDrawing / map:finishDrawing
- *     - map:addOverlay / map:removeOverlay
+ *     - map:showPopup      (resolves with how the popup closed) / map:hidePopup
  *     - plugins:setState
-
- * AOIComponent.tsx and AOITooltip.tsx must stay MMGIS-agnostic.
+ *
+ * AOIComponent.tsx must stay MMGIS-agnostic.
  */
 
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 
 import AOIComponent from './AOIComponent'
-import AOITooltip from './AOITooltip'
 import { mmgisSetPluginState } from '../_shared/adapters/mmgisAPI'
 import {
     buildSearchIndex,
@@ -48,7 +46,7 @@ import {
     featureCentroid,
     featureBounds,
     selectionFitBounds,
-    selectionTooltipAnchor,
+    selectionPopupAnchor,
 } from './aoiHelpers'
 import { loadBoundaries } from './aoiBoundaryLoader'
 
@@ -58,7 +56,6 @@ const DEFAULT_DRAW_SHAPES = ['polygon', 'rectangle', 'circle']
 const VALID_DRAW_SHAPES = new Set(['point', 'linestring', 'polygon', 'rectangle', 'circle'])
 const SELECTION_LAYER_ID = 'aoi:selection'
 const INSPECT_BOUNDARIES_LAYER_ID = 'aoi:inspect-boundaries'
-const TOOLTIP_OVERLAY_ID = 'aoi:tooltip'
 
 // ── Draw-session keys ──────────────────────────────────────────────────────────
 // Components with these roles handle Escape themselves — a dialog, menu,
@@ -140,6 +137,11 @@ const AOITool = {
     _api: null,
     _analysisErrorTimeout: null,
     _drawKeyHandler: null,
+    // Cancels the deferred popup show while the camera is still moving.
+    _pendingPopup: null,
+    // The selection a drawing session took the card away from, held until the
+    // session either replaces it or is backed out of.
+    _suspendedAOI: null,
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -152,9 +154,16 @@ const AOITool = {
         }
         this._reactRoot = createRoot(container)
 
+        // The stand-in has to answer everything a real handle does, since the
+        // whole tool goes through it — a missing method is a crash, not a
+        // no-op, at whatever point the tool first reaches for it.
         this._api =
             (typeof window !== 'undefined' && window.mmgisAPI?.forPlugin?.(PLUGIN_ID)) ||
-            { emit: () => { }, provide: () => () => { } }
+            {
+                emit: () => { },
+                provide: () => () => { },
+                request: () => Promise.resolve(undefined),
+            }
 
         this._cleanups.push(
             this._api.provide('getCurrentSelection', () => this._state.currentAOI)
@@ -176,14 +185,14 @@ const AOITool = {
                 this._setState({ searchLoading: false, searchDisabled: true })
             })
 
-        const api = window.mmgisAPI
-        if (api?.on) {
+        // Subscriptions are on the global bus; only requests need the handle.
+        const bus = window.mmgisAPI
+        if (bus?.on) {
             const subscribe = (event, handler) => {
-                const off = api.on(event, handler)
+                const off = bus.on(event, handler)
                 this._cleanups.push(typeof off === 'function' ? off : () => { })
             }
-            subscribe('tool:change',       () => this._clearSelection())
-            subscribe('map:drawstart',     () => this._onDrawStart())
+            subscribe('map:drawstart',     (e) => this._onDrawStart(e))
             subscribe('map:drawvertex',    (e) => this._onDrawVertex(e))
             subscribe('map:drawcomplete',  (e) => this._onDrawComplete(e))
             subscribe('map:drawcancel',    () => this._onDrawCancelEvent())
@@ -227,13 +236,18 @@ const AOITool = {
             this._analysisErrorTimeout = null
         }
 
+        this._cancelPendingPopup()
+        // Nothing of the selection outlives the tool, so the cancel below has
+        // no card to put back.
+        this._suspendedAOI = null
+
         // Fire-and-forget: cancel any active drawing session via the bus.
         this._removeDrawKeys()
-        window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
+        this._api?.request('map:disableDrawing').catch(() => { })
 
         this._removeSelectionLayer()
         this._hideInspectBoundaries()
-        this._hideTooltip()
+        this._hidePopup()
 
         if (this._reactRoot) {
             this._reactRoot.unmount()
@@ -363,7 +377,7 @@ const AOITool = {
         if (prev === 'draw') {
             // Cancel any in-flight drawing session when leaving Draw mode.
             // The bus handler is a no-op if no session is active.
-            window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
+            this._api?.request('map:disableDrawing').catch(() => { })
         }
 
         this._setState({ mode: nextMode })
@@ -398,13 +412,31 @@ const AOITool = {
 
     _onDrawShapeChange(shape) {
         this._setState({ drawShape: shape, drawVerticesCount: 0 })
-        window.mmgisAPI?.request?.('map:enableDrawing', { shape })
+        // The engines end any live session without a cancel of its own before
+        // starting the new one, so a swap reaches the handlers below as a
+        // `drawstart` alone and the suspended selection stays suspended.
+        this._api?.request('map:enableDrawing', { shape })
             .catch((err) => console.warn('[AOI] enableDrawing failed', err))
     },
 
-    _onDrawStart() {
+    /**
+     * Arming a session is not the same act as replacing the selection, so the
+     * selection stays until a vertex actually lands. Its card cannot: it would
+     * sit over the map for the whole session, taking the Escape and Enter the
+     * session needs and offering to analyze an area being replaced.
+     */
+    _onDrawStart(e) {
+        this._cancelPendingPopup()
+        this._suspendedAOI = this._state.currentAOI
+        this._hidePopup()
         this._installDrawKeys()
-        this._setState({ isDrawing: true, drawVerticesCount: 0 })
+        this._setState({
+            isDrawing: true,
+            // The shape the engine actually started: its word on which session
+            // is live outranks the one the panel asked for.
+            drawShape: e?.shape ?? this._state.drawShape,
+            drawVerticesCount: 0,
+        })
     },
 
     /**
@@ -429,9 +461,9 @@ const AOITool = {
                 target?.closest?.(KEY_OWNING_ROLE_SELECTOR)
             ) return
             if (evt.key === 'Escape') {
-                window.mmgisAPI?.request?.('map:disableDrawing').catch(() => { })
+                this._api?.request('map:disableDrawing').catch(() => { })
             } else if (evt.key === 'Enter') {
-                window.mmgisAPI?.request?.('map:finishDrawing').catch(() => { })
+                this._api?.request('map:finishDrawing').catch(() => { })
             }
         }
         document.addEventListener('keydown', this._drawKeyHandler)
@@ -444,6 +476,11 @@ const AOITool = {
     },
 
     _onDrawVertex(e) {
+        // The first vertex is where the replacement begins, so this is where
+        // the previous selection goes: every shape reports its first committed
+        // vertex — a polygon's first click, a rectangle's first corner, a
+        // circle's centre, the point itself — before it can complete.
+        this._dropSuspendedSelection()
         const count = Array.isArray(e?.vertices) ? e.vertices.length : 0
         this._setState({ drawVerticesCount: count })
     },
@@ -452,7 +489,13 @@ const AOITool = {
         this._removeDrawKeys()
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
         const feature = e?.feature
-        if (!feature) return
+        if (!feature) {
+            // Defence against a payload with no feature: there is nothing to
+            // select, so the previous selection is left as it was found.
+            this._restoreSuspendedSelection()
+            return
+        }
+        this._suspendedAOI = null
         const label = feature.properties?.shape
             ? `Drawn ${feature.properties.shape}`
             : 'Drawn area'
@@ -462,6 +505,35 @@ const AOITool = {
     _onDrawCancelEvent() {
         this._removeDrawKeys()
         this._setState({ isDrawing: false, drawShape: null, drawVerticesCount: 0 })
+        this._restoreSuspendedSelection()
+    },
+
+    /** Let go of the selection a session suspended: it is being replaced. */
+    _dropSuspendedSelection() {
+        if (!this._suspendedAOI) return
+        this._suspendedAOI = null
+        this._clearSelection()
+    },
+
+    /**
+     * Put back the card of a selection a session suspended without replacing.
+     * Only the card: the selection itself never left the map. The camera is
+     * wherever the session left it and the centroid may well be off it — the
+     * search that made the selection may never have been able to frame it —
+     * so the card is anchored against the view, as the first show was.
+     */
+    _restoreSuspendedSelection() {
+        const aoi = this._suspendedAOI
+        this._suspendedAOI = null
+        if (!aoi || this._state.currentAOI !== aoi) return
+        this._api?.request('map:getBounds')
+            .catch(() => null)
+            .then((view) => {
+                // The read is a hop, and the selection can be replaced or
+                // cleared across it.
+                if (this._state.currentAOI !== aoi) return
+                this._showSelectionPopup(aoi.feature, aoi.label, view)
+            })
     },
 
     // ── Inspect mode ───────────────────────────────────────────────────────────
@@ -469,7 +541,7 @@ const AOITool = {
     _showInspectBoundaries() {
         const entries = this._state.searchAllEntries
         if (!entries.length) return
-        const api = window.mmgisAPI
+        const api = this._api
         if (!api?.request) return
 
         // Sort largest-area first so big polygons (e.g. "United States") render
@@ -498,7 +570,7 @@ const AOITool = {
     },
 
     _hideInspectBoundaries() {
-        window.mmgisAPI?.request?.('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
+        this._api?.request('map:removeLayer', { id: INSPECT_BOUNDARIES_LAYER_ID })
             .catch(() => { })
     },
 
@@ -569,10 +641,21 @@ const AOITool = {
     // ── Selection lifecycle ────────────────────────────────────────────────────
 
     _applySelection(feature, source, label) {
+        this._cancelPendingPopup()
         this._removeSelectionLayer()
+        // Retract AOI's popup up front: the click that starts a new selection
+        // would otherwise dismiss it a task later, which answers its request
+        // as a dismissal and clears the selection just made. Load-bearing, not
+        // redundant with the replacement `map:showPopup` performs for itself —
+        // the popup for this selection opens only once the camera settles,
+        // long after that deferred dismissal has fired.
+        this._hidePopup()
 
-        const api = window.mmgisAPI
-        api?.request?.('map:createLayer', {
+        // Requests go through AOI's handle so core sees who asked; the bus
+        // events are subscribed on the global, which is where `on`/`off` live.
+        const api = this._api
+        const bus = window.mmgisAPI
+        api?.request('map:createLayer', {
             id: SELECTION_LAYER_ID,
             type: 'vector',
             geojson: { type: 'FeatureCollection', features: [feature] },
@@ -581,73 +664,95 @@ const AOITool = {
         }).catch((err) => console.warn('[AOI] failed to add selection layer', err))
 
         this._state.currentAOI = { feature, source, label }
-        this._api?.emit('areaDrawn', { feature, source })
+        api?.emit('areaDrawn', { feature, source })
 
-        const c = featureCentroid(feature)
-        // `view` keeps the tooltip on-screen when the camera does not move; omit
-        // it once the camera has been fitted to the selection.
-        const showTooltip = (view) => {
-            if (c) {
-                this._showTooltip({
-                    label,
-                    latlng: selectionTooltipAnchor({ lat: c[1], lng: c[0] }, view),
-                    analyzeEnabled: true,
-                })
-            }
-        }
+        const showPopup = (view) => this._showSelectionPopup(feature, label, view)
 
         const bbox = featureBounds(feature)
-        if (bbox && api?.request && api?.on && api?.off) {
+        if (bbox && api?.request && bus?.on && bus?.off) {
+            // Pending from here on, before the camera is even read: a teardown
+            // or a superseding selection during that async hop must drop this
+            // popup. `disarm` is filled in only if the show waits on the camera.
+            let disarm = null
+            const cancel = () => disarm?.()
+            this._pendingPopup = cancel
+
+            // Pass a view to `showPopup` only when the camera never moved. Once
+            // fitBounds has framed the selection, its centroid is on-screen and
+            // needs no fallback anchor.
+            const settled = (unmovedView) => {
+                // Only the still-current show may fire: moveend, the fallback
+                // timer and a rejected fitBounds arbitrate to one popup.
+                if (this._pendingPopup !== cancel) return
+                this._cancelPendingPopup()
+                showPopup(unmovedView)
+            }
+
             // Leave the camera alone unless the selection extends beyond the
             // current view; then fit its extent minimally (selectionFitBounds).
             api.request('map:getBounds')
                 .catch(() => null)
                 .then((view) => {
+                    if (this._pendingPopup !== cancel) return
                     const fit = selectionFitBounds(bbox, view)
                     if (!fit) {
-                        showTooltip(view)
+                        // The camera stays put, so no moveend is coming:
+                        // open the popup now.
+                        settled(view)
                         return
                     }
-                    // Defer the tooltip until the fitBounds animation settles so it
-                    // mounts at the final centroid pixel instead of flickering through
-                    // intermediate positions during the camera move.
-                    let fallback
-                    // Pass a view here only when the camera never moved. Once
-                    // fitBounds has framed the selection, its centroid is
-                    // on-screen and needs no fallback anchor.
-                    const settle = (unmovedView) => {
-                        api.off('map:moveend', oneShot)
-                        clearTimeout(fallback)
-                        showTooltip(unmovedView)
+                    // Defer the popup to the next `map:moveend`, so it opens
+                    // at the framed centroid instead of tracking through the
+                    // fit. A camera already gliding can end first and open it
+                    // early; MapPopup_ re-anchors it as the fit runs.
+                    //
+                    // Subscribing before the fit is requested is load-bearing:
+                    // `mmgisAPI.request` runs its provider synchronously, and a
+                    // fit with no transition emits `moveend` from inside that
+                    // call, so a listener added afterwards would miss it and
+                    // leave the popup to the fallback timer.
+                    //
+                    // `map:moveend` hands its listener a view state, not a
+                    // ViewBounds, so drop the payload rather than pass it on.
+                    const oneShot = () => settled()
+                    // Safety net: an engine that skips moveend on a
+                    // programmatic fit still gets its popup.
+                    const timer = setTimeout(oneShot, 1500)
+                    bus.on('map:moveend', oneShot)
+                    disarm = () => {
+                        clearTimeout(timer)
+                        bus.off('map:moveend', oneShot)
                     }
-                    // `map:moveend` hands its listener a view state
-                    // ({ longitude, latitude, zoom }), not a ViewBounds. This
-                    // wrapper drops that payload so `settle` is called with no
-                    // view at all.
-                    const oneShot = () => settle()
-                    api.on('map:moveend', oneShot)
-                    // Safety net: if no moveend fires (e.g. an engine that
-                    // skips the event on a programmatic fit), show the tooltip
-                    // after a short timeout anyway.
-                    fallback = setTimeout(oneShot, 1500)
 
                     api.request('map:fitBounds', fit).catch((err) => {
                         console.warn('[AOI] fitBounds failed', err)
-                        settle(view)
+                        // The fit never happened, so the view read above is
+                        // still the one on screen: anchor against it.
+                        settled(view)
                     })
                 })
-                .catch((err) =>
+                .catch((err) => {
                     console.warn('[AOI] selection camera step failed', err)
-                )
+                    // Nothing can open this popup any more, so release the
+                    // pending slot — but only while it is still this chain's;
+                    // a superseding selection owns its own show.
+                    if (this._pendingPopup === cancel) this._cancelPendingPopup()
+                })
         } else {
-            showTooltip()
+            showPopup()
         }
+    },
+
+    /** Drop a popup that is still waiting for the camera to settle. */
+    _cancelPendingPopup() {
+        if (!this._pendingPopup) return
+        this._pendingPopup()
+        this._pendingPopup = null
     },
 
     _clearSelection() {
         if (!this._state.currentAOI) return
         this._removeSelectionLayer()
-        this._hideTooltip()
         this._state.currentAOI = null
         this._api?.emit('drawingCleared', {})
         this._render()
@@ -655,55 +760,85 @@ const AOITool = {
 
     _removeSelectionLayer() {
         // removeLayer is idempotent; no need for a hasLayer pre-check.
-        window.mmgisAPI?.request?.('map:removeLayer', { id: SELECTION_LAYER_ID })
+        this._api?.request('map:removeLayer', { id: SELECTION_LAYER_ID })
             .catch(() => { })
     },
 
-    // ── Tooltip overlay ────────────────────────────────────────────────────────
+    // ── Popup ──────────────────────────────────────────────────────────────────
 
     /**
-     * Show the analyze/cancel tooltip anchored to a feature centroid.
-     * Core's `map:addOverlay` owns the DOM and repositions on view change.
+     * Show a selection's card at its centroid, or at the centre of `view` when
+     * that centroid sits outside it (see {@link selectionPopupAnchor}) — which
+     * is what keeps the card, and so the only Analyze and Cancel the selection
+     * has, on screen. Pass no view once the camera has been fitted to the
+     * selection.
      */
-    _showTooltip({ label, latlng, analyzeEnabled }) {
-        const api = window.mmgisAPI
-        if (!api?.request) return
-        api.request('map:addOverlay', {
-            id: TOOLTIP_OVERLAY_ID,
-            latlng,
-            mount: (node) => {
-                const tooltipRoot = createRoot(node)
-                tooltipRoot.render(
-                    React.createElement(AOITooltip, {
-                        label,
-                        position: { x: 0, y: 0 },
-                        analyzeEnabled,
-                        onAnalyze: () => this._onAnalyze(),
-                        onCancel: () => this._onCancel(),
-                    })
-                )
-                return () => tooltipRoot.unmount()
-            },
-        }).catch((err) => console.warn('[AOI] addOverlay failed', err))
+    _showSelectionPopup(feature, label, view) {
+        const c = featureCentroid(feature)
+        if (!c) return
+        this._showPopup(label, selectionPopupAnchor({ lat: c[1], lng: c[0] }, view))
     },
 
-    _hideTooltip() {
-        window.mmgisAPI?.request?.('map:removeOverlay', { id: TOOLTIP_OVERLAY_ID })
-            .catch(() => { })
+    /**
+     * Ask core for the analyze/cancel popup at a feature centroid. The request
+     * is data only — core owns the DOM, the styling and the lifecycle — and it
+     * answers with how the popup closed.
+     *
+     * The selection's label travels as the popup's title, which core renders
+     * as text and names the card by: the card announces the area it is about
+     * rather than a generic popup, and markup in a label is nothing this
+     * plugin has to escape. A title over the two buttons is the whole card,
+     * so there is no body to send.
+     */
+    _showPopup(label, latlng) {
+        // Through AOI's own handle, which stamps the request with AOI's id —
+        // that is what lets core tell whose popup this one is, and so whose
+        // `map:hidePopup` may take it away again.
+        this._api
+            ?.request('map:showPopup', {
+                latlng,
+                title: label,
+                secondaryAction: { label: 'Cancel' },
+                primaryAction: { label: 'Analyze area' },
+            })
+            // Two-arg `then`, so the rejection handler covers the request only
+            // and a throw out of the outcome branches is not reported as a
+            // failure to show the popup.
+            .then(
+                ({ action } = {}) => {
+                    // Cancel, the X, Escape and a click on the map all abandon
+                    // the selection; 'closed' means the card went for some
+                    // other reason — AOI retracting it, another plugin taking
+                    // the slot, or core tearing the popup down — which leaves
+                    // the selection alone.
+                    if (action === 'primary') this._onAnalyze()
+                    else if (action === 'secondary' || action === 'dismiss') {
+                        this._clearSelection()
+                    }
+                },
+                (err) => console.warn('[AOI] showPopup failed', err)
+            )
+    },
+
+    /**
+     * Retract AOI's popup. Safe to call without knowing whether one is up:
+     * core retracts a popup only for the plugin that opened it, so this closes
+     * AOI's or nothing at all.
+     */
+    _hidePopup() {
+        this._api?.request('map:hidePopup').catch(() => { })
     },
 
     // ── Analysis hand-off ──────────────────────────────────────────────────────
 
+    /**
+     * The popup's result carries no data, so the feature is attached here:
+     * `analysisAOIReady` is what reaches the FetchStats and Chart plugins.
+     */
     _onAnalyze() {
         const aoi = this._state.currentAOI
         if (!aoi) return
         this._api?.emit('analysisAOIReady', { feature: aoi.feature })
-        this._hideTooltip()
-    },
-
-    _onCancel() {
-        this._api?.emit('drawingCancelled', {})
-        this._clearSelection()
     },
 
 }
