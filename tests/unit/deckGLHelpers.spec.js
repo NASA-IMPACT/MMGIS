@@ -331,6 +331,63 @@ test.describe('DeckGLHelpers', () => {
             expect(Array.isArray(layer.props.getLineColor)).toBe(true)
         })
 
+        // deck.gl decodes vector tiles into a binary form by default. Verified
+        // against @loaders.gl/gis and deck.gl 9.3.7: a numeric property is
+        // hoisted into one tile-wide typed array covering every feature, zero
+        // filled where the feature never carried it, and merged wholesale into
+        // the object accessors receive. Two polygons, only the first carrying
+        // `ele`, come back as:
+        //   {properties: {layerName: 'mountain_peak', name: 'Peak', ele: 3000}}
+        //   {properties: {layerName: 'landcover', class: 'grass', ele: 0}}
+        // The string properties kept alongside omit the key entirely and there
+        // is no presence mask, so a missing measurement cannot be told from a
+        // real zero. The fix is to stop asking for binary when it matters.
+        test.each([
+            ['fillColorProp', { fillColorProp: 'c' }],
+            ['fillOpacityProp', { fillOpacityProp: 'fo' }],
+            ['colorProp', { colorProp: 'c' }],
+            ['opacityProp', { opacityProp: 'o' }],
+            ['weightProp', { weightProp: 'w' }],
+            ['radiusProp', { radiusProp: 'r' }],
+        ])('decodes as GeoJSON when %s reads a property', (_label, extra) => {
+            // The same zero fill feeds every *Prop field, so a feature lacking
+            // the property would read 0 - an invisible line width, a zero
+            // radius - rather than falling back to the configured value.
+            const layer = buildDeckLayer(`prop-binary-off-${_label}`, {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#ff00ff', ...extra },
+            })
+            expect(layer.props.binary).toBe(false)
+        })
+
+        test('keeps binary decoding when no accessor reads a property', () => {
+            const layer = buildDeckLayer('binary-kept', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#ff00ff', radius: 5, weight: 2 },
+            })
+            expect(layer.props.binary).toBe(true)
+        })
+
+        test('lets a buildDeckLayer caller override the tile decoding format', () => {
+            // An adapter-internal channel: no makeLayer call site forwards
+            // a layer's own nativeOptions, so a mission cannot reach it.
+            const layer = buildDeckLayer('binary-override', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#ff00ff', fillColorProp: 'c' },
+            })
+            expect(layer.props.binary).toBe(false)
+            const overridden = buildDeckLayer('binary-override-2', {
+                type: 'vectortile',
+                url: 'https://example.com/tiles/{z}/{x}/{y}.mvt',
+                style: { fillColor: '#ff00ff', fillColorProp: 'c' },
+                nativeOptions: { binary: true },
+            })
+            expect(overridden.props.binary).toBe(true)
+        })
+
         test('creates a ScatterplotLayer for scatterplot type', () => {
             const layer = buildDeckLayer('scatter-1', {
                 type: 'scatterplot',
