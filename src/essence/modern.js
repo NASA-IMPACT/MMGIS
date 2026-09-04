@@ -47,15 +47,10 @@ import CursorInfo from './Ancillary/CursorInfo'
 import ContextMenu from './Ancillary/ContextMenu'
 import Coordinates from './Ancillary/Coordinates'
 import QueryURL from './Ancillary/QueryURL'
-import {
-    hasForceLanding,
-    hasPreview,
-    replaceMissionUrl,
-} from './Ancillary/landingFlags'
+import { nameMissionInUrl } from './Ancillary/landingFlags'
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import { stylize } from './Ancillary/Stylize'
 import { mmgisAPI_ } from './mmgisAPI/mmgisAPI'
-import { isStaticBuild } from '../pre/capabilities'
 
 import { validateModernConfig, sanitizeText } from './Validators/DashboardConfigValidator'
 
@@ -147,43 +142,21 @@ class ModernInterface {
     }
 
     /**
-     * Updates the browser URL with the mission name
-     *
-     * Validates the mission name, then rewrites the URL. Only updates URL when:
-     * - No query string exists
-     * - Mission is being swapped
-     * - Force landing or preview mode is active
-     *
-     * A static build is exempt (see replaceMissionUrl).
+     * Hands the config's mission name to nameMissionInUrl, which decides
+     * whether this entry URL is one that gets rewritten, and validates the
+     * name if it is.
      *
      * @param {MissionConfig} config - Mission configuration
      * @param {boolean} swapping - Whether this is a mission swap
      * @private
-     * @throws {Error} If mission name is invalid
+     * @throws {Error} If a URL is due and the mission name is invalid
      */
     _updateMissionUrl(config, swapping) {
-        if (isStaticBuild()) return
+        // The DB mission name is the one a deeplink can be resolved against.
+        const missionForUrl = config._dbMissionName || config.msv?.mission
 
-        const noQuery = window.location.search.replace(/^\?/, '') === ''
-
-        if (noQuery || swapping || hasForceLanding() || hasPreview()) {
-            // Use DB mission name for deeplinks (config._dbMissionName if available)
-            const missionForUrl = config._dbMissionName || config.msv?.mission
-
-            if (!missionForUrl || typeof missionForUrl !== 'string') {
-                console.error('[Modern Interface] Invalid mission name in config')
-                throw new Error('Invalid mission name')
-            }
-
-            // A swap keeps only the mission: the pairs in the URL point at the
-            // mission being left. Otherwise the deeplink stays, minus the flags
-            // that asked for the landing page.
-            replaceMissionUrl({
-                mission: missionForUrl.trim(),
-                keepParams: !swapping,
-            })
+        if (nameMissionInUrl({ mission: missionForUrl, swapping }))
             L_.url = window.location.href
-        }
     }
 
     /**

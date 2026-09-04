@@ -11,11 +11,16 @@ import {
 // One table of stored values, run through every copy of the upload-key
 // classifier. The app bundle and the Configure SPA cannot share a module, so
 // each carries its own regex; what they must agree on is which values are
-// upload keys written by API/Backend/Upload/uploadRouter.js, not the bytes of
-// the regex. A value one treats as an upload key and another as a
-// mission-relative path renders a broken image only at runtime. What each
-// consumer then does with a matched key differs by design, so the table
-// carries a column of expected URLs per consumer.
+// upload keys written by API/Backend/Upload/uploadRouter.js. A value one
+// treats as an upload key and another as a mission-relative path renders a
+// broken image only at runtime.
+//
+// The table proves the two copies agree on every value it lists. The
+// identity check alongside it covers the rest: a spelling that drifts in some
+// direction no listed value happens to separate still fails, and names the
+// edit that caused it. What each consumer then does with a matched key
+// differs by design, so the table carries a column of expected URLs per
+// consumer.
 
 const MISSION = 'M'
 const MISSION_PATH = 'Missions/M/'
@@ -61,9 +66,6 @@ const VALUES = [
 ]
 
 test.describe('upload-key classification', () => {
-    // The table below is what actually matters, but the two regexes being
-    // character-for-character identical says so in one line, and points at
-    // the edit that drifted when a table row starts failing.
     test('the two copies of the regex are the same pattern', () => {
         expect(APP_KEY.source).toBe(CMS_KEY.source)
         expect(APP_KEY.flags).toBe(CMS_KEY.flags)

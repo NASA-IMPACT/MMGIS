@@ -58,6 +58,18 @@ test.describe('buildPreviewSrc', () => {
         const src = buildPreviewSrc('CardPlugin/uploads/a.png', 'M', '')
         expect(src).toBe('/Missions/M/CardPlugin/uploads/a.png')
     })
+
+    test('a base missing its trailing slash is given one', () => {
+        // getApiBase() hands over a trailing-slashed URL; a caller that
+        // passes a bare prefix gets the same URL rather than
+        // '/mmgisassets/…'.
+        expect(
+            buildPreviewSrc('assets/M/CardPlugin/uploads/x.png', 'M', '/mmgis'),
+        ).toBe('/mmgis/assets/M/CardPlugin/uploads/x.png')
+        expect(buildPreviewSrc('CardPlugin/uploads/a.png', 'M', '/mmgis')).toBe(
+            '/mmgis/Missions/M/CardPlugin/uploads/a.png',
+        )
+    })
 })
 
 // The same non-table cases for the app bundle's resolver: what it does with a
