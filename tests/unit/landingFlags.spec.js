@@ -1,7 +1,9 @@
 import { test, expect, vi } from 'vitest'
 
 // landingFlags reads the query string through QueryURL, which pulls in the
-// app's calls/capabilities modules on import; neither is exercised here.
+// app's calls module on import; that one is never exercised here. The build
+// personality is mocked because it is the switch nameMissionInUrl reads
+// first.
 vi.mock('../../src/pre/calls', () => ({ default: { api: vi.fn() } }))
 vi.mock('../../src/pre/capabilities', () => ({
     isStaticBuild: vi.fn(() => false),
@@ -11,7 +13,9 @@ import {
     hasForceLanding,
     hasPreview,
     buildMissionUrl,
+    nameMissionInUrl,
 } from '../../src/essence/Ancillary/landingFlags'
+import { isStaticBuild } from '../../src/pre/capabilities'
 
 const at = (query) => window.history.replaceState({}, '', '/?' + query)
 
@@ -103,5 +107,80 @@ test.describe('the mission URL', () => {
         expect(build('?mission=Old&forcelanding=1', { keepParams: true })).toBe(
             'https://h/'
         )
+    })
+})
+
+test.describe('deciding whether to name the mission', () => {
+    const enter = (search) => window.history.replaceState({}, '', '/' + search)
+
+    test.beforeEach(() => {
+        isStaticBuild.mockReturnValue(false)
+    })
+
+    test('a static build writes nothing', () => {
+        // The one entry URL a served build would certainly rewrite, so the
+        // guard is what the assertion is about.
+        enter('')
+        isStaticBuild.mockReturnValue(true)
+
+        expect(nameMissionInUrl({ mission: 'Baked', swapping: false })).toBe(
+            false
+        )
+        expect(window.location.search).toBe('')
+    })
+
+    test('a static build with no mission name still writes nothing', () => {
+        // The name is checked only once a URL is going to be written, so a
+        // static build is never held to one it has no use for.
+        enter('')
+        isStaticBuild.mockReturnValue(true)
+
+        expect(nameMissionInUrl({ mission: undefined, swapping: false })).toBe(
+            false
+        )
+        expect(window.location.search).toBe('')
+    })
+
+    test('a mission name that names nothing is refused when a URL is due', () => {
+        enter('')
+
+        expect(() =>
+            nameMissionInUrl({ mission: undefined, swapping: false })
+        ).toThrow('Invalid mission name')
+    })
+
+    test('a bare entry URL is given the mission', () => {
+        enter('')
+
+        expect(nameMissionInUrl({ mission: 'M', swapping: false })).toBe(true)
+        expect(window.location.search).toBe('?mission=M')
+    })
+
+    test('a landing flag names the mission and keeps the rest of the query', () => {
+        enter('?keep=me&forcelanding')
+
+        expect(nameMissionInUrl({ mission: 'M', swapping: false })).toBe(true)
+        expect(window.location.search).toBe('?keep=me&mission=M')
+    })
+
+    test('a preview flag asks the same', () => {
+        enter('?keep=me&_preview')
+
+        expect(nameMissionInUrl({ mission: 'M', swapping: false })).toBe(true)
+        expect(window.location.search).toBe('?keep=me&mission=M')
+    })
+
+    test('a swap names the new mission and drops the old pairs', () => {
+        enter('?on=Base%20Map&mapLat=1')
+
+        expect(nameMissionInUrl({ mission: 'Next', swapping: true })).toBe(true)
+        expect(window.location.search).toBe('?mission=Next')
+    })
+
+    test('a deeplink carrying no flag is left as the visitor sent it', () => {
+        enter('?on=Base%20Map&mapLat=1')
+
+        expect(nameMissionInUrl({ mission: 'M', swapping: false })).toBe(false)
+        expect(window.location.search).toBe('?on=Base%20Map&mapLat=1')
     })
 })

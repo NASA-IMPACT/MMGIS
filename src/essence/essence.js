@@ -41,11 +41,7 @@ import MapLogo from './Ancillary/MapLogo'
 import Attributions from './Ancillary/Attributions'
 //import Swap from './Ancillary/Swap'
 import QueryURL from './Ancillary/QueryURL'
-import {
-    hasForceLanding,
-    hasPreview,
-    replaceMissionUrl,
-} from './Ancillary/landingFlags'
+import { nameMissionInUrl } from './Ancillary/landingFlags'
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import TimeUI from './Basics/TimeControl_/TimeUI'
 import calls from '../pre/calls'
@@ -344,29 +340,10 @@ var essence = {
         essence.configData = config
 
         //Make sure url matches mission
-        var urlSplit = window.location.href.split('?')
-
-        // A static build is exempt (see replaceMissionUrl).
-        if (
-            !isStaticBuild() &&
-            (urlSplit.length == 1 ||
-                swapping ||
-                hasForceLanding() ||
-                hasPreview())
-        ) {
-            //then no parameters or old ones
-            // Use DB mission name for deeplinks (config._dbMissionName if available)
-            const missionForUrl = config._dbMissionName || config.msv.mission
-            // Name the loaded mission and drop the flags that asked for it.
-            // A swap keeps nothing else: the pairs in the URL (`on`, `mapLat`,
-            // …) point at the mission being left, and queryURL() below skips
-            // them for that reason. Otherwise they stay for queryURL() to read.
-            replaceMissionUrl({
-                mission: missionForUrl,
-                keepParams: !swapping,
-            })
+        // The DB mission name is the one a deeplink can be resolved against.
+        const missionForUrl = config._dbMissionName || config.msv.mission
+        if (nameMissionInUrl({ mission: missionForUrl, swapping }))
             L_.url = window.location.href
-        }
 
         if (swapping) {
             essence.hasSwapped = true

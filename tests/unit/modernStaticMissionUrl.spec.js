@@ -1,9 +1,13 @@
 import { test, expect, vi, beforeEach } from 'vitest'
 
-// One method of the modern interface — the address-bar rewrite — driven
-// directly. Everything modern.js pulls in at load time is a browser-coupled
-// singleton it does not need for this, so the lot is stubbed; only the URL
-// the method leaves behind is under test.
+// The wiring between the modern interface and nameMissionInUrl: the mission
+// the config names and the swap flag both reach it, and the build
+// personality is honoured. Which entry URLs get rewritten is
+// nameMissionInUrl's own business, walked in tests/unit/landingFlags.spec.js.
+//
+// Everything modern.js pulls in at load time is a browser-coupled singleton
+// it does not need for this, so the lot is stubbed; only the URL the method
+// leaves behind is under test.
 vi.mock('../../src/essence/Basics/PanelManager_/PanelManager_', () => ({
     default: {},
 }))
@@ -68,4 +72,12 @@ test('a served build names the loaded mission', () => {
     modern._updateMissionUrl(CONFIG, false)
 
     expect(window.location.search).toBe('?keep=me&mission=Baked')
+})
+
+test('a swap carries the flag through, so the old pairs go', () => {
+    window.history.replaceState({}, '', '/?on=Base%20Map&mapLat=1')
+
+    modern._updateMissionUrl(CONFIG, true)
+
+    expect(window.location.search).toBe('?mission=Baked')
 })
