@@ -7,65 +7,146 @@ import { test, expect } from 'vitest'
 const {
     updateRefusalFor,
 } = require('../../API/Backend/Deployments/updateRefusal')
+const STATUS = require('../../API/Backend/Deployments/models/deployment').STATUS
+
+const NOW = Date.UTC(2026, 1, 1, 12, 0, 0)
+const MINUTE = 60 * 1000
+// Older than any task could still be running for, so a row carrying it is one
+// a killed task left behind. Every case that is not about the row's age uses
+// it, since a young row is refused whatever its stack says.
+const ABANDONED = NOW - 6 * 60 * MINUTE
+const ARN = 'arn:aws:cloudformation:us-west-2:111122223333:stack/x/abc'
+
+const refusalFor = (row) =>
+    updateRefusalFor({ updatedAt: ABANDONED, ...row }, STATUS, NOW)
 
 test.describe('updateRefusalFor', () => {
-    // [row status, live stack status, refusal message or null]
+    // [label, row, refusal message or null]
     const cases = [
         // A publish task killed before its error handler runs leaves the row
         // in `provisioning` forever. The live stack is what tells a task that
-        // is really running from a row nobody is coming back to — and with no
-        // stack at all there is nothing for an update to converge, so the
-        // answer names the way out rather than sending anyone off to wait.
+        // is really running from a row nobody is coming back to — and a row
+        // whose stack ARN names a stack that is gone has nothing for an update
+        // to converge, so the answer names the way out rather than sending
+        // anyone off to wait.
         [
-            'provisioning',
-            null,
+            'provisioning behind a stack that is gone',
+            { status: 'provisioning', stack_status: null, stack_arn: ARN },
             'Deployment is provisioning but has no stack; delete it and publish again.',
         ],
+        // Killed before CreateStack ever ran: no stack was minted, so no URL
+        // is at stake and the update creates one.
         [
-            'provisioning',
-            'CREATE_IN_PROGRESS',
+            'provisioning with no stack ever recorded',
+            { status: 'provisioning', stack_status: null, stack_arn: null },
+            null,
+        ],
+        [
+            'provisioning mid-create',
+            { status: 'provisioning', stack_status: 'CREATE_IN_PROGRESS' },
             'Deployment is provisioning; wait for it to finish',
         ],
-        ['provisioning', 'CREATE_COMPLETE', null],
         [
-            'updating',
+            'provisioning on a created stack',
+            { status: 'provisioning', stack_status: 'CREATE_COMPLETE' },
             null,
+        ],
+        [
+            'updating behind a stack that is gone',
+            { status: 'updating', stack_status: null, stack_arn: ARN },
             'Deployment is updating but has no stack; delete it and publish again.',
         ],
         [
-            'updating',
-            'UPDATE_IN_PROGRESS',
+            'updating mid-update',
+            { status: 'updating', stack_status: 'UPDATE_IN_PROGRESS' },
             'Deployment is updating; wait for it to finish',
         ],
-        ['updating', 'UPDATE_COMPLETE', null],
-        ['updating', 'UPDATE_ROLLBACK_COMPLETE', null],
+        [
+            'updating on a settled stack',
+            { status: 'updating', stack_status: 'UPDATE_COMPLETE' },
+            null,
+        ],
+        [
+            'updating on a rolled-back stack',
+            { status: 'updating', stack_status: 'UPDATE_ROLLBACK_COMPLETE' },
+            null,
+        ],
+        // A settled stack only lets an update in once the row is old enough
+        // that no task could still be working for it: a publish bakes and
+        // builds for minutes before CloudFormation hears about it, and the
+        // stack sits at its previous status the whole time.
+        [
+            'updating on a settled stack, minutes old',
+            {
+                status: 'updating',
+                stack_status: 'UPDATE_COMPLETE',
+                updatedAt: NOW - 5 * MINUTE,
+            },
+            'Deployment is updating; wait for it to finish',
+        ],
+        [
+            'updating on a settled stack, hours old',
+            {
+                status: 'updating',
+                stack_status: 'UPDATE_COMPLETE',
+                updatedAt: NOW - 120 * MINUTE,
+            },
+            null,
+        ],
+        // An operation in flight that no update will ever be accepted after,
+        // whatever it settles at: waiting it out gets the operator nowhere.
+        [
+            'provisioning behind a stack on its way out',
+            {
+                status: 'provisioning',
+                stack_status: 'DELETE_IN_PROGRESS',
+                stack_name: 'mmgis-dashboard-1',
+            },
+            "Stack 'mmgis-dashboard-1' is in DELETE_IN_PROGRESS and cannot be " +
+                'used — delete the deployment and publish it again (this mints a new URL)',
+        ],
+        [
+            'updating behind a rolling-back stack',
+            {
+                status: 'updating',
+                stack_status: 'ROLLBACK_IN_PROGRESS',
+                stack_name: 'mmgis-dashboard-1',
+            },
+            "Stack 'mmgis-dashboard-1' is in ROLLBACK_IN_PROGRESS and cannot " +
+                'be used — delete the deployment and publish it again (this mints a new URL)',
+        ],
         // A delete owns the row from the moment it starts, and its stack looks
         // settled for most of the teardown (the bucket is emptied before
         // DeleteStack goes out) — so no stack status lets an update in.
-        ['deleting', null, 'Deployment is deleting; wait for it to finish'],
         [
-            'deleting',
-            'DELETE_IN_PROGRESS',
+            'deleting with no stack read',
+            { status: 'deleting', stack_status: null },
             'Deployment is deleting; wait for it to finish',
         ],
         [
-            'deleting',
-            'CREATE_COMPLETE',
+            'deleting mid-teardown',
+            { status: 'deleting', stack_status: 'DELETE_IN_PROGRESS' },
             'Deployment is deleting; wait for it to finish',
         ],
-        ['deleted', null, 'Deployment was deleted; publish it again'],
+        [
+            'deleting with its stack still up',
+            { status: 'deleting', stack_status: 'CREATE_COMPLETE' },
+            'Deployment is deleting; wait for it to finish',
+        ],
+        [
+            'deleted',
+            { status: 'deleted', stack_status: null },
+            'Deployment was deleted; publish it again',
+        ],
         // Terminal rows are exactly what an update is for, whatever their
         // stack looks like — the publish task decides what to do with it.
-        ['published', null, null],
-        ['failed', 'ROLLBACK_COMPLETE', null],
+        ['published', { status: 'published', stack_status: null }, null],
+        ['failed', { status: 'failed', stack_status: 'ROLLBACK_COMPLETE' }, null],
     ]
 
-    cases.forEach(([status, stackStatus, message]) => {
-        test(`${status} on a ${stackStatus || 'missing'} stack`, () => {
-            const refusal = updateRefusalFor({
-                status,
-                stack_status: stackStatus,
-            })
+    cases.forEach(([label, row, message]) => {
+        test(label, () => {
+            const refusal = refusalFor(row)
             if (message == null) expect(refusal).toBe(null)
             else expect(refusal).toEqual({ message })
         })
@@ -77,7 +158,7 @@ test.describe('updateRefusalFor', () => {
     // on an operation that may not exist.
     test('a stack that could not be read is refused with the read error', () => {
         expect(
-            updateRefusalFor({
+            refusalFor({
                 status: 'updating',
                 stack_status: null,
                 stack_status_error: 'Could not load credentials',
@@ -92,7 +173,7 @@ test.describe('updateRefusalFor', () => {
     // doesn't stand in the way of one.
     test('a failed stack read does not block a published row', () => {
         expect(
-            updateRefusalFor({
+            refusalFor({
                 status: 'published',
                 stack_status: null,
                 stack_status_error: 'Could not load credentials',

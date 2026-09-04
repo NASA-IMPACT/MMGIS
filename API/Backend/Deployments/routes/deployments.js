@@ -127,7 +127,7 @@ router.post("/:id/update", async function (req, res) {
     // Read the live stack alongside the row (this also flips a `deleting` row
     // whose stack is already gone to `deleted`).
     const row = await withLiveStatus(deployment);
-    const refusal = updateRefusalFor(row);
+    const refusal = updateRefusalFor(row, STATUS);
     if (refusal != null) {
       res.status(409).send({ status: "failure", message: refusal.message });
       return;

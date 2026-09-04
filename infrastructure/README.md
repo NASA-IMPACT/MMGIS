@@ -296,14 +296,16 @@ it from the real login password (the full note lives in
   [`../docs/infrastructure/serving-a-dashboard-from-your-domain.md`](../docs/infrastructure/serving-a-dashboard-from-your-domain.md).
   Nothing is configured on our side — the customer's own CloudFront forwards
   the request and declares the path. After an edge-function change, an
-  existing dashboard picks the change up on its next Update — the Publish
-  button always creates a new dashboard.
+  existing dashboard picks the change up on its next Update — the Deployments
+  page's Publish button always creates a new dashboard; the config editor's
+  Publish updates the mission's existing one.
 - **A wedged dashboard stack is replaced, not repaired.** When a publish or
   update fails with `Stack '<name>' is in <STATUS> and cannot be used`,
-  CloudFormation will not move that stack on from the status the error names —
-  delete the deployment and publish it again. What comes back is a new stack
-  with a new CloudFront URL, so a customer serving that dashboard from their
-  own domain has to re-point their origin at it.
+  CloudFormation will not accept an update onto a stack in that status — either
+  it is on its way out or only a delete can move it on. Delete the deployment
+  and publish it again. What comes back is a new stack with a new CloudFront
+  URL, so a customer serving that dashboard from their own domain has to
+  re-point their origin at it.
 
 ## Placeholders in the recipe JSON
 
