@@ -420,10 +420,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
     private _basemapStyle: string | null = null
 
     /**
-     * Bound handler kept as a class field so it can be removed cleanly in {@link destroy}.
-     * Syncs `_viewState` from the basemap and emits the engine-level `'moveend'` event.
+     * Copy the basemap's camera into `_viewState` and re-emit it under
+     * `eventName`, so that {@link projectCoordinates} and
+     * {@link unprojectCoordinates} stay accurate mid-animation and anchored
+     * consumers can track the camera frame by frame.
      */
-    private _onBasemapMoveEnd = (): void => {
+    private _syncViewState = (eventName: 'move' | 'moveend'): void => {
         if (this._sbsSyncing) return
         const center = this._basemap!.getCenter()
         this._viewState = {
@@ -435,28 +437,14 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
             pitch: this._basemap!.getPitch(),
         }
         if (this._comparisonEnabled) this._syncComparisonCamera()
-        this._emitEvent('moveend', this._viewState)
+        this._emitEvent(eventName, this._viewState)
     }
 
-    /**
-     * Bound handler kept as a class field for clean removal.
-     * Silently keeps `_viewState` in sync during animations so that
-     * {@link projectCoordinates} and {@link unprojectCoordinates} remain
-     * accurate while the camera is moving.
-     */
-    private _onBasemapMove = (): void => {
-        if (this._sbsSyncing) return
-        const center = this._basemap!.getCenter()
-        this._viewState = {
-            ...this._viewState,
-            longitude: center.lng,
-            latitude: center.lat,
-            zoom: this._basemap!.getZoom(),
-            bearing: this._basemap!.getBearing(),
-            pitch: this._basemap!.getPitch(),
-        }
-        if (this._comparisonEnabled) this._syncComparisonCamera()
-    }
+    /** Bound handler kept as a class field so it can be removed cleanly in {@link destroy}. */
+    private _onBasemapMoveEnd = (): void => this._syncViewState('moveend')
+
+    /** Bound handler kept as a class field for clean removal. */
+    private _onBasemapMove = (): void => this._syncViewState('move')
 
     /**
      * Re-push layers once the basemap style has loaded.
@@ -691,6 +679,10 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      * Anchored HTML overlay. deck.gl renders to canvas and has no native
      * overlay system, so we own the DOM node directly: append to the
      * container, project lat/lng -> pixel on every view change, reposition.
+     *
+     * @deprecated See {@link IMapEngine.addOverlay}: card-shaped content
+     * belongs to the `map:showPopup` provider, while an anchored bare node
+     * with no chrome and no close of its own stays here.
      */
     addOverlay(options: OverlayOptions): void {
         if (!options?.id) {
@@ -2078,6 +2070,7 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
                 this._viewState = clamped
                 this._deckSetProps({ viewState: clamped })
                 if (this._comparisonEnabled) this._syncComparisonCamera()
+                this._emitEvent('move', clamped)
                 this._emitEvent('moveend', clamped)
             },
             onClick: this._onPointerClick,
@@ -2192,6 +2185,12 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
      *
      * When `options.animate` is absent or false, transition props are cleared so the
      * camera jumps immediately.
+     *
+     * A jump is reported here as `move` then `moveend`, matching what overlay
+     * mode gets from the basemap, so anchored consumers follow a programmatic
+     * `setView` / `setZoom` / `fitBounds`. A transition is left to deck's
+     * transition manager, which reports every frame — including the last —
+     * through `onViewStateChange`.
      */
     private _applyViewState(state: DeckViewState, options?: ViewOptions): void {
         const nextState: DeckViewState = {
@@ -2205,8 +2204,13 @@ export class DeckGLAdapter implements IMapEngine<Deck, Layer, PickingInfo> {
         this._viewState = nextState
         this._deckSetProps({ viewState: nextState })
         // A zero-duration move raises no `onViewStateChange`, so this is the
-        // only place the comparison surfaces hear about it.
+        // only place the comparison surfaces and anchored consumers hear about
+        // it.
         if (this._comparisonEnabled) this._syncComparisonCamera()
+        if (!nextState.transitionDuration) {
+            this._emitEvent('move', nextState)
+            this._emitEvent('moveend', nextState)
+        }
     }
 
     /**

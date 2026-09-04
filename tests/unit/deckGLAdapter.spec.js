@@ -1290,6 +1290,83 @@ test.describe('DeckGLAdapter', () => {
         })
     })
 
+    test.describe('camera events', () => {
+        const stubBasemap = (adapter) => {
+            adapter._basemap = {
+                getCenter: () => ({ lat: 12, lng: 34 }),
+                getZoom: () => 8,
+                getBearing: () => 45,
+                getPitch: () => 30,
+            }
+        }
+        const fullViewState = {
+            longitude: 34,
+            latitude: 12,
+            zoom: 8,
+            bearing: 45,
+            pitch: 30,
+        }
+
+        test('basemap movement syncs the full view state and emits move', () => {
+            const adapter = makeAdapter()
+            stubBasemap(adapter)
+            const moves = []
+            adapter.on('move', (state) => moves.push({ ...state }))
+
+            adapter._onBasemapMove()
+
+            expect(adapter._viewState).toEqual(fullViewState)
+            expect(moves).toEqual([fullViewState])
+        })
+
+        test('the end of basemap movement syncs the full view state and emits moveend', () => {
+            const adapter = makeAdapter()
+            stubBasemap(adapter)
+            const moveEnds = []
+            adapter.on('moveend', (state) => moveEnds.push({ ...state }))
+
+            adapter._onBasemapMoveEnd()
+
+            expect(adapter._viewState).toEqual(fullViewState)
+            expect(moveEnds).toEqual([fullViewState])
+        })
+
+        test('a programmatic camera jump in standalone mode emits move then moveend', () => {
+            const adapter = makeAdapter()
+            const events = []
+            adapter.on('move', (state) => events.push(['move', { ...state }]))
+            adapter.on('moveend', (state) => events.push(['moveend', { ...state }]))
+
+            adapter.setView({ lat: 20, lng: 10 }, 6)
+
+            // The camera the jump asked for, not whatever the adapter kept:
+            // both frames carry the view the caller named. Deck's own view
+            // state fields (the zoom limits, the transition) ride along.
+            const jumped = {
+                longitude: 10,
+                latitude: 20,
+                zoom: 6,
+                bearing: 0,
+                pitch: 0,
+            }
+            expect(events.map(([name]) => name)).toEqual(['move', 'moveend'])
+            events.forEach(([, state]) => expect(state).toMatchObject(jumped))
+            expect(adapter.getCenter()).toEqual({ lat: 20, lng: 10 })
+            expect(adapter.getZoom()).toBe(6)
+        })
+
+        test('an animated camera move leaves the frames to deck, emitting nothing up front', () => {
+            const adapter = makeAdapter()
+            const events = []
+            adapter.on('move', () => events.push('move'))
+            adapter.on('moveend', () => events.push('moveend'))
+
+            adapter.panTo({ lat: 20, lng: 10 }, { duration: 400 })
+
+            expect(events).toEqual([])
+        })
+    })
+
     // The props the engine is constructed with are where the adapter's handlers
     // are connected to deck's input. Calling those handlers directly, as the
     // tests above do, says nothing about which function deck ends up calling,
@@ -1360,6 +1437,37 @@ test.describe('DeckGLAdapter', () => {
                 expect(picks).toEqual([])
             })
         }
+
+        // A drag or a wheel zoom reaches the adapter only through deck's own
+        // onViewStateChange, once per frame. `move` is the event an anchored
+        // consumer follows the gesture by, and it leads: what else the frame
+        // reports is the adapter's own business.
+        test('standalone mode reports an interactive camera change while it happens', () => {
+            const { adapter, props } = initAdapter(null)
+            const events = []
+            adapter.on('move', (state) => events.push(['move', { ...state }]))
+            adapter.on('moveend', (state) => events.push(['moveend', { ...state }]))
+            const viewState = {
+                longitude: 10,
+                latitude: 20,
+                zoom: 6,
+                bearing: 45,
+                pitch: 30,
+            }
+
+            props.onViewStateChange({ viewState })
+
+            expect(events[0][0]).toBe('move')
+            expect(events[0][1]).toEqual(viewState)
+            // Anchored consumers read bearing and pitch off the adapter, so the
+            // gesture has to have been synced there before `move` goes out.
+            expect(adapter.getViewState()).toEqual({
+                center: { lat: 20, lng: 10 },
+                zoom: 6,
+                bearing: 45,
+                pitch: 30,
+            })
+        })
     })
 
     test.describe('destroy', () => {

@@ -434,6 +434,17 @@ const ToolControllerModern_ = {
             }
         }
 
+        // The teardown is announced on the bus rather than by any direct
+        // call, which is what keeps this controller from knowing anything
+        // about the services plugins reach for. It is an announcement, not a
+        // release: whatever the tool borrowed from core — the map popup, for
+        // one — its own destroy() hands back, because `pluginId` here is the
+        // controller's tool id, not the identity the tool spoke to core
+        // services with, so no listener could match this event to what the
+        // tool was holding. A listener releasing a shared resource on it
+        // would take a surviving plugin's with it.
+        mmgisAPI.emit('plugins:destroyed', Object.freeze({ pluginId: toolId }))
+
         if (destroyed) {
             logger.debug(`Destroyed tool "${toolName}" from container "${targetId}"`)
         }
@@ -446,6 +457,9 @@ const ToolControllerModern_ = {
      */
     destroyAllTools: function () {
         const targetIds = Array.from(loadedTools.keys())
+        const pluginIds = targetIds.map(
+            (targetId) => loadedTools.get(targetId).toolId
+        )
         const hadPlugins = toolIdToTargetId.size > 0 || deferredTools.size > 0
 
         logger.debug(`Destroying ${targetIds.length} loaded tools`)
@@ -456,6 +470,20 @@ const ToolControllerModern_ = {
 
         // Clear deferred registry (destroyTool already clears toolIdToTargetId and hiddenTools)
         deferredTools.clear()
+
+        // After the per-tool announcements, one collective signal that the
+        // plugins went down together. This is the event on which a core
+        // service lets go of a resource it holds for whichever plugin asked —
+        // the map popup, for one — because with every plugin gone the
+        // resource's owner is among them and no bystander pays for the
+        // release. Emitted only when there were instances to destroy: with
+        // nothing loaded, nothing was held on a plugin's behalf.
+        if (pluginIds.length > 0) {
+            mmgisAPI.emit(
+                'plugins:allDestroyed',
+                Object.freeze({ pluginIds: Object.freeze(pluginIds) })
+            )
+        }
 
         if (hadPlugins) this.notifyPluginsChanged()
     },

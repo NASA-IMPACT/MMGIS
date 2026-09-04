@@ -89,7 +89,7 @@ Register a provider that responds to requests.
 
 **Parameters:**
 - `name` (string): Provider name using namespace:action format
-- `handler` (function): Handler function that returns data (can be async)
+- `handler` (function): Handler function that returns data (can be async). It is called as `handler(params, caller)`, where `caller` is the id of the plugin whose handle made the request, or `undefined` for a request that went out without one. Most providers answer the same either way and take `params` alone; one that answers per-caller (`map:hidePopup`) reads it. An existing function registered point-free — `provide('x', someFn)` — is handed it too
 
 **Returns:** Cleanup function to remove the provider
 
@@ -106,17 +106,21 @@ const cleanup = window.mmgisAPI.provide('plugin:myPlugin:getData', (params) => {
 cleanup()
 ```
 
-### `mmgisAPI.request(name, params)`
+### `mmgisAPI.request(name, params, options)`
 
 Request data from a provider.
 
 **Parameters:**
 - `name` (string): Provider name
 - `params` (any): Parameters to pass to the provider
+- `options` (object, optional): How the request is made, as opposed to what it asks for
+  - `options.caller` (string, optional): Id of the plugin asking, handed to the provider beside `params` rather than mixed into it, so a payload of any shape reaches the provider as it was written. Plugins do not pass this themselves — `forPlugin(id).request(...)` stamps it, which is the only reason it says anything (see Scoped `request` below)
 
 **Returns:** Promise resolving to the provider's response
 
-**Throws:** Error if no provider is registered for the name
+**Throws:** Error if no provider is registered for the name, or if `options` is given as anything but an object
+
+The third argument is an object rather than one more positional slot because more than one thing belongs there: the caller now, and per-request settings such as the timeout a sandboxed plugin's requests travel with. Positionally those are indistinguishable, so a value in that slot that is not an object is refused outright rather than read as an absent caller — an unstamped request opens a popup the plugin that asked for it can never retract.
 
 ```javascript
 // Request data from a provider
@@ -210,6 +214,22 @@ console.log(data.result) // 42
 // Later, remove the provider
 cleanup()
 ```
+
+### Scoped `request(name, params)`
+
+Make a request stamped with the plugin's id.
+
+The name is **not** prefixed, unlike `emit` and `provide`: a request names someone else's provider, not one of this plugin's, and prefixing it would put `map:showPopup` out of reach. What the handle adds is the plugin's id: it fills the `caller` option, so the id travels beside the params and tells the provider who is asking.
+
+```javascript
+const api = window.mmgisAPI.forPlugin('myPlugin')
+
+// Reaches 'map:hidePopup' under that exact name, with 'myPlugin'
+// stamped on as the caller.
+await api.request('map:hidePopup')
+```
+
+Prefer this to `window.mmgisAPI.request(...)`: some providers answer differently for a caller they cannot identify. A request made straight on `mmgisAPI` carries no id, so `map:hidePopup` retracts only a popup that was opened the same anonymous way.
 
 ### Metadata Properties
 
@@ -342,6 +362,8 @@ window.mmgisAPI.on('legend:made', ({ layerName, legendData }) => {
 |-------|---------|-------------|
 | `panels:changed` | `{ panels }` | Fired whenever the panel layout changes — a panel registered or unregistered, changed state, lost a tool, or was resized — and once with an empty listing when the layout is torn down |
 | `plugins:changed` | `{ plugins }` | Fired whenever a plugin is shown, hidden, loaded or unloaded by command, once after a batch of plugins loads with the layout, and once with an empty listing when the layout is torn down |
+| `plugins:destroyed` | `{ pluginId }` | Fired as one plugin's instance is torn down — unloaded by command, replaced in its container, or cleared along with every other plugin when the layout re-renders |
+| `plugins:allDestroyed` | `{ pluginIds }` | Fired once after a full teardown — the layout re-rendering, or the UI going down — naming every plugin instance that was destroyed. Not fired when nothing was loaded |
 
 `panels` carries the same listing [`panels:getAll`](#panel-and-plugin-providers)
 returns, and `plugins` the same listing `plugins:getAll` returns, so there is
@@ -372,6 +394,17 @@ A component that seeds from `panels:getAll` and also subscribes to
 `panels:changed` must guard the seed so it cannot overwrite state an event
 has already delivered — the request can resolve after a later event lands.
 
+`plugins:destroyed` and `plugins:allDestroyed` report the teardown itself
+rather than the listing that results from it. The collective signal is the
+one a core service releases shared resources on — the map popup, for one,
+closes there — because with every plugin destroyed the resource's owner is
+among them and no surviving plugin pays for the release. A single plugin's
+teardown releases nothing centrally: the plugin hands back what it borrowed
+in its own `destroy()`, and `pluginId` names the tool the controller
+destroyed, which is not the identity the plugin spoke to services with, so a
+listener cannot match the event to what the plugin was holding. A teardown a
+command asked for is followed by `plugins:changed` carrying the new listing.
+
 ### WebSocket Events
 
 | Event | Payload | Description |
@@ -392,6 +425,8 @@ has already delivered — the request can resolve after a later event lands.
 | `map:setView` | `{ center, zoom }` | `true` | Set map view |
 | `map:fitBounds` | `bounds` | `true` | Fit map to bounds |
 | `map:panTo` | `{ lat, lng }` | `true` | Pan map to coordinates |
+| `map:showPopup` | `MapPopupRequest` | `MapPopupResult` | Show a map-anchored popup at a lat/lng, replacing any current popup. Answers only once the popup closes |
+| `map:hidePopup` | none | `boolean` | Retract the caller's own popup, resolving its request with `{ action: 'closed' }`. `false` when the popup showing is someone else's, or there is none |
 
 ```javascript
 // Get current map state
@@ -412,6 +447,79 @@ await window.mmgisAPI.request('map:fitBounds', [
 
 await window.mmgisAPI.request('map:panTo', { lat: 45, lng: -120 })
 ```
+
+#### `map:showPopup`
+
+A map-anchored popup rendered and styled by the core. The request holds only serializable data, so it survives a sandbox boundary — the plugin sends the content; the core owns the DOM, the theme, and the lifecycle. There is a single popup slot and no popup id: a request from any caller replaces the current popup, whose own request then resolves `'closed'`. Nothing about a popup is broadcast on the bus — the outcome travels back on the request's promise, which stays pending for as long as the popup is open and resolves with how it closed.
+
+```javascript
+const api = window.mmgisAPI.forPlugin('crater-info')
+
+// Pending until the popup closes — hold onto it rather than blocking on it.
+const outcome = api.request('map:showPopup', {
+    latlng: { lat: 45, lng: -120 }, // anchor, tracked as the map moves
+    title: 'Crater A', // heading, rendered as text on the close control's row
+    html: '<p>Diameter: 12 km</p>', // body, sanitized and given a shadow root of its own
+    primaryAction: { label: 'Analyze' },
+    secondaryAction: { label: 'Cancel' }
+})
+
+outcome.then(({ action }) => {
+    if (action === 'primary') analyze()
+    else if (action === 'secondary' || action === 'dismiss') clearSelection()
+    // 'closed': replaced or retracted — nothing for this plugin to undo.
+}, showError)
+
+// On teardown, retract freely: this closes only this plugin's own popup
+// (the request above then resolves 'closed') and rejects harmlessly when a
+// mission switch has already taken the provider down.
+function destroy() {
+    api.request('map:hidePopup').catch(() => {})
+}
+```
+
+The request holds:
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `latlng` | yes | Where the popup is anchored, tracked as the map moves |
+| `title` | no | Heading, rendered as text on the close control's row. Never HTML: markup in a title arrives as the characters it was written with, the same way a button label does |
+| `html` | no | Body, sanitized by the core before it reaches the DOM |
+| `primaryAction` | no | Filled button, first in the actions row |
+| `secondaryAction` | no | Outlined button, last in the actions row |
+
+The anchor is the only field a request always carries. Beyond it a card is a `title`, an `html`, or both — buttons are not content, so a request holding neither has nothing to show and is rejected.
+
+The result is `{ action }`:
+
+| `action` | Meaning |
+|----------|---------|
+| `'primary'` | The primary button was pressed |
+| `'secondary'` | The secondary button was pressed |
+| `'dismiss'` | The user dismissed the popup with the X, with Escape, or with a click elsewhere on the map |
+| `'closed'` | The popup went away without the user acting on it: another `map:showPopup` replaced it, `map:hidePopup` retracted it, a plugin was torn down, or the mission switched |
+
+Ownership decides who may *retract* a popup, never who may open one. A request made through a plugin's handle carries the plugin's id (see Scoped `request` above), and `map:hidePopup` retracts only the popup its own caller opened — answering `false` when the slot holds someone else's popup, or nothing — so a plugin asking through its own handle can call it blind on teardown. Prefer the handle to a bare `mmgisAPI.request(...)`: an id-less request opens a popup that any other id-less caller can retract, and an id-less blind hide on teardown can retract theirs.
+
+The request rejects — showing nothing — when it is invalid (`latlng` must hold finite numbers in range, `title` and `html` must be strings when given, and one of the two must be there) or when the popup could not be mounted. A title of nothing but whitespace reads as no title, and a card with a title takes its accessible name from it rather than from the generic one a title-less card carries. An action renders only when its `label` is a non-empty string; two actions render as equal-width buttons with the primary first, and a lone action takes the primary styling whichever field it arrived in, still answering with its own slot. The popup tracks its anchor as the map pans and hides for the length of the 2D engine's zoom animation, returning once the zoom settles.
+
+A click elsewhere on the map dismisses the popup on the task after that click, and which side of it a replacement lands on is what decides the earlier request. Shown in the click's own task — or after an `await` that settles within it — the replacement wins and the earlier request resolves `'closed'`. Shown from a later task, such as a timer or an `await` on a real round trip, it arrives after the dismissal and the earlier request resolves `'dismiss'`. Either way the plugin is told, exactly once.
+
+**What a card may hold**
+
+`html` is sanitized with DOMPurify's defaults and mounted in a shadow root of its own, which is what makes a card an author's to style: a `<style>` inside `html` is honoured, and its rules — `:hover`, `@keyframes`, all of it — reach the card's content and stop there. The app around the card is untouched, and the theme's custom properties and the card's typography still cross the boundary inwards, so a card that styles nothing looks like the app it opened over.
+
+In: text and structure, tables, `<details>`/`<summary>`, `<img>`, `<picture>`, `<video>`, `<audio>`, `<track>`, `<map>`/`<area>` image maps, MathML, and the whole of static SVG — gradients, patterns, masks, markers, filters and the `fe*` primitives included — carrying `class`, `id`, `style`, `data-*`, `aria-*` and `role`. Form controls and `<canvas>` render too, as inert content: the contract carries no script, so nothing reads a field back or paints a canvas, and a `<form>` that tries to submit is stopped before it can navigate.
+
+Out: whatever DOMPurify's defaults refuse — scripts, event handlers, `javascript:` urls, `<iframe>`, `<object>`, `<embed>` and the SMIL animation elements — and, on top of them, the `popover` and `popovertarget` attributes, which would lift content into the browser's top layer where the card's clipping cannot follow. The one default the card overrides in the other direction is `<style>`, which DOMPurify strips whole and the card gives back, the shadow root being what makes a stylesheet safe to hand an author.
+
+A link that goes anywhere opens in a tab of its own: the core sets `target="_blank"` and `rel="noopener noreferrer"` on every `<a>` and `<area>` `href` — and every SVG `xlink:href` — that is not a bare `#fragment`, so following a link in a card never navigates the app away. A bare fragment is left as the author wrote it. Fragment lookup never enters a shadow tree, so a `#` link in a card reaches none of the card's own ids; the most it can do is select an element of the app by id and put the fragment in the address bar, which navigates nothing.
+
+**The card as a dialog**
+
+An open popup is a dialog. It carries `role="dialog"`, focus moves onto the card as it opens, Tab and Shift+Tab cycle within it — through the plugin's own links and controls in their place — and focus returns to whatever held it when the popup closes, unless the user has moved focus somewhere of their own in the meantime. Escape, pressed while focus is inside the card, closes the popup and answers `'dismiss'`, exactly as the X does. A card with a `title` takes its accessible name from it; one without carries `aria-label="Map popup"`.
+
+Focus is trapped, but nothing is laid over the rest of the app: a pointer is still free to click anywhere while a popup is open.
 
 ### Layer Providers
 

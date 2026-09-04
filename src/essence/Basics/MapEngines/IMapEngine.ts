@@ -288,6 +288,11 @@ export interface IMapEngine<
     /**
      * Subscribe to a map event (click, moveend, zoomend, etc).
      *
+     * Every engine reports `click`, `move` and `moveend`, while `zoomstart`
+     * and `zoomend` are per-engine, so anything that has to follow the view
+     * listens for `move` and `moveend` and treats the zoom pair as a
+     * refinement it may never be given.
+     *
      * Clicks belonging to a drawing session are not reported: neither the ones
      * the session takes as vertices, nor the ones its finishing gesture leaves
      * the engine to deliver once the session is over.
@@ -435,12 +440,24 @@ export interface IMapEngine<
      *
      * Calling `addOverlay` with an `id` that already exists removes the
      * prior overlay first.
+     *
+     * @deprecated For card-shaped content, superseded by the `map:showPopup`
+     * provider, whose request is serializable — a description of a card rather
+     * than a `mount` callback, which is what lets it cross a sandbox boundary
+     * — and whose card the core owns whole: it sanitizes the content, renders
+     * the chrome around it, holds focus inside it, and answers the request
+     * with how the popup closed. An anchored bare node with no chrome and no
+     * close of its own — MapControl's measure label, which follows the pointer
+     * and has to coexist with a popup — has no replacement and stays here.
      */
     addOverlay(options: OverlayOptions): void
 
     /**
      * Remove an overlay by id. Runs the cleanup returned by `mount` and
      * removes the DOM node from the container. No-op if the id is unknown.
+     *
+     * @deprecated Alongside `addOverlay`: `map:hidePopup` retracts a card, not
+     * an overlay, so anything still on `addOverlay` is removed here.
      */
     removeOverlay(id: string): void
 

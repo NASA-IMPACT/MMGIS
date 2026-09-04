@@ -937,7 +937,10 @@ var mmgisAPI = {
     /**
      * Register a request handler (data provider)
      * @param {string} name - Request name (e.g., 'map:getCenter', 'plugin:info:showFeature')
-     * @param {function} handler - Async handler function that returns data
+     * @param {function} handler - Async handler function that returns data.
+     * Called as `handler(data, caller)`: `caller` is the id of the plugin
+     * whose handle made the request, absent for one made without a handle.
+     * A handler registered point-free is handed it too.
      * @returns {function} - Cleanup function to remove the handler
      * @example
      * const cleanup = mmgisAPI.provide('map:getCenter', () => Map_.map.getCenter());
@@ -955,18 +958,43 @@ var mmgisAPI = {
      * Make a request to a registered handler
      * @param {string} name - Request name
      * @param {*} data - Request data to pass to the handler
-     * @returns {Promise<*>} - Promise that resolves to handler's response
-     * @throws {Error} - If no handler is registered for the request name
+     * @param {Object} [options] - How the request is made, as opposed to what
+     * it asks for. An object rather than a third positional argument because
+     * the slot holds more than one thing — the caller today, the sandbox
+     * bridge's per-request timeout once there is a bridge — and positionally
+     * those two are indistinguishable to everything but the reader.
+     * @param {string} [options.caller] - Id of the plugin making the request,
+     * handed to the handler beside the data rather than mixed into it, so a
+     * payload of any shape — a string, an array, nothing at all — reaches the
+     * handler as it was written. Plugins do not pass this themselves:
+     * `forPlugin`'s `request` stamps it, which is the whole reason it is worth
+     * anything.
+     * @returns {Promise<*>} - Promise that resolves to handler's response, and
+     * rejects when no handler is registered for the request name or `options`
+     * is given as anything but an object
      * @example
      * const center = await mmgisAPI.request('map:getCenter');
      * const layers = await mmgisAPI.request('layers:getVisible');
      */
-    async request(name, data) {
+    async request(name, data, options) {
+        // A bare caller id in the options slot is the one mistake this
+        // signature exists to prevent, so it is refused outright rather than
+        // read as no caller at all: an unstamped request opens a popup the
+        // plugin that asked for it can never retract, and nothing downstream
+        // is in a position to notice.
+        if (
+            options != null &&
+            (typeof options !== 'object' || Array.isArray(options))
+        ) {
+            throw new Error(
+                '[mmgisAPI] request options must be an object: request(name, data, { caller })'
+            )
+        }
         const handler = handlers.get(name)
         if (!handler) {
             throw new Error(`[mmgisAPI] No handler for: "${name}"`)
         }
-        return await handler(data)
+        return await handler(data, options?.caller)
     },
 
     /**
@@ -987,10 +1015,14 @@ var mmgisAPI = {
      * reading the plugin's tool configuration. Event/handler names are
      * automatically prefixed with 'plugin:{pluginId}:'.
      *
-     * For subscribing (on) or requesting (request), use mmgisAPI directly with full paths.
+     * `request` is here too, but unprefixed — it names another provider, not
+     * one of this plugin's. Going through the handle is what stamps the
+     * plugin's id on the request, so prefer it to `mmgisAPI.request`: some
+     * providers answer differently when they cannot tell who is asking. For
+     * subscribing (on), use mmgisAPI directly with full paths.
      *
      * @param {string} pluginId - Unique plugin identifier (e.g., 'draw', 'info', 'layerManager')
-     * @returns {Object} Scoped API with emit, provide, and getVars methods
+     * @returns {Object} Scoped API with emit, provide, request and getVars methods
      * @example
      * const api = mmgisAPI.forPlugin('draw');
      *
@@ -1001,9 +1033,12 @@ var mmgisAPI = {
      * // Reading this plugin's configured tool variables
      * const vars = api.getVars();                    // -> L_.getToolVars('draw') || {}
      *
-     * // Subscribing/requesting (use mmgisAPI directly)
+     * // Requesting (full names, stamped with 'draw' as the caller)
+     * api.request('plugin:info:getData');
+     * api.request('map:hidePopup');                  // retracts draw's popup only
+     *
+     * // Subscribing (use mmgisAPI directly)
      * mmgisAPI.on('layer:visibilityChange', handler);
-     * mmgisAPI.request('plugin:info:getData');
      */
     forPlugin(pluginId) {
         const prefix = `plugin:${pluginId}:`
@@ -1018,6 +1053,13 @@ var mmgisAPI = {
         return {
             emit: (event, data) => mmgisAPI.emit(prefix + event, data),
             provide: (name, handler) => mmgisAPI.provide(prefix + name, handler),
+            // Not prefixed, unlike emit/provide: those name this plugin's own
+            // events and handlers, while a request addresses someone else's
+            // provider and so takes the full name. The plugin's id rides along
+            // beside the payload, so a provider can tell who is asking — which
+            // is how core knows whose popup a `map:hidePopup` may retract.
+            request: (name, data) =>
+                mmgisAPI.request(name, data, { caller: pluginId }),
             getVars: () => L_.getToolVars(pluginId) || {},
             pluginId,
             prefix,
