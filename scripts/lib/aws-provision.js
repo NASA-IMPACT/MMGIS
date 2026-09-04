@@ -310,6 +310,13 @@ async function waitForStack({
 // together — before it gives up and fails the row.
 const CONVERGE_DEADLINE_MS = 45 * 60 * 1000;
 
+// The tail both of a convergence's give-ups share: whatever is holding the
+// stack is another operation, which may clear on its own, so the next move is
+// to try again rather than to tear the deployment down.
+function stuckOperationGuidance() {
+  return "another operation may be stuck; try again shortly.";
+}
+
 // Converges `templateBody` onto an existing stack via UpdateStack and waits
 // for our update to finish. Returns the converged Stack, or the latest read
 // of it when there is nothing to update. Each attempt works from a fresh read
@@ -350,7 +357,7 @@ async function convergeStackUpdate({
     new Error(
       `Stack '${stackName}' did not converge within its ${Math.round(
         deadlineMs / 60000
-      )}-minute deadline — another operation may be stuck; try again shortly.` +
+      )}-minute deadline — ${stuckOperationGuidance()}` +
         (wait ? ` ${wait.message}` : "")
     );
   // Runs one waitForStack on what is left of the shared budget. An exhausted
@@ -403,7 +410,7 @@ async function convergeStackUpdate({
       if (attempt >= maxBusyRetries)
         throw new Error(
           `Stack '${stackName}' stayed busy after ${maxBusyRetries + 1} ` +
-            "UpdateStack attempts — another operation may be stuck; try again shortly."
+            `UpdateStack attempts — ${stuckOperationGuidance()}`
         );
       // The rejection names the status the other operation is holding, which is
       // fresher than the read taken before it.
@@ -559,18 +566,25 @@ function walkDirectory(dir, baseDir) {
 // (optionally prefixed). `filter` receives the prefixed key — the same string
 // cacheControlForKey is given — and keeps the file when it returns true.
 // Returns the number of files uploaded.
+//
+// `onProgress` is awaited once per `progressEvery` files, so a caller whose
+// row has to look alive can beat its heartbeat through an upload of thousands
+// of small files; throwing from it abandons the upload.
 async function uploadDirectory({
   bucket,
   dir,
   prefix = "",
   concurrency = 8,
   filter,
+  progressEvery = 500,
+  onProgress = () => {},
 }) {
   const { s3 } = getClients();
   const files = filter
     ? walkDirectory(dir).filter((file) => filter(`${prefix}${file.key}`))
     : walkDirectory(dir);
   let index = 0;
+  let uploaded = 0;
   async function worker() {
     while (index < files.length) {
       const file = files[index++];
@@ -588,6 +602,8 @@ async function uploadDirectory({
           CacheControl: cacheControlForKey(key),
         })
       );
+      uploaded++;
+      if (uploaded % progressEvery === 0) await onProgress();
     }
   }
   await Promise.all(
@@ -674,7 +690,16 @@ async function copiedHeaders({ s3, sourceBucket, key }) {
 // meta-* included. The upload router writes Content-Type alone; a hand-placed
 // object keeps the storage headers copiedHeaders restates for it. Returns the
 // number of objects copied.
-async function copyPrefix({ sourceBucket, destBucket, prefix }) {
+//
+// `onProgress` is awaited once per listed page, so a caller whose row has to
+// look alive can beat its heartbeat through a copy of many pages; throwing
+// from it abandons the copy.
+async function copyPrefix({
+  sourceBucket,
+  destBucket,
+  prefix,
+  onProgress = () => {},
+}) {
   const { s3 } = getClients();
   let copied = 0;
   let continuationToken;
@@ -704,6 +729,7 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
       );
       copied++;
     }
+    await onProgress();
     continuationToken = list.IsTruncated
       ? list.NextContinuationToken
       : undefined;

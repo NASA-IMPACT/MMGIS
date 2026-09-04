@@ -9,12 +9,8 @@ const provision = require('../../scripts/lib/aws-provision')
 const Deployments = require('../../API/Backend/Deployments/models/deployment')
 const STATUS = Deployments.STATUS
 const {
-    router,
+    updateDeployment,
 } = require('../../API/Backend/Deployments/routes/deployments')
-
-const updateRoute = router.stack.find(
-    (layer) => layer.route != null && layer.route.path === '/:id/update'
-).route.stack[0].handle
 
 const UPDATED_AT = new Date('2026-02-01T10:00:00Z')
 
@@ -52,7 +48,7 @@ function stubModel({ row, claimed = 1 }) {
 
 const callUpdate = async () => {
     const res = fakeRes()
-    await updateRoute(
+    await updateDeployment(
         { params: { id: '7' }, body: {}, originalUrl: '/7/update' },
         res
     )

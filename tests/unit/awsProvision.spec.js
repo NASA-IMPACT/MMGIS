@@ -6,6 +6,10 @@ import path from 'path'
 // Tests for scripts/lib/aws-provision.js using injected mock clients —
 // no test here (or anywhere) ever calls real AWS.
 
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
+
 const provision = require('../../scripts/lib/aws-provision')
 const { IMAGE_MIME_TO_EXT } = require('../../API/Backend/Upload/validate')
 
@@ -1449,6 +1453,87 @@ test.describe('copyPrefix', () => {
         expect(pageTwo.MetadataDirective).toBe('REPLACE')
         expect(pageTwo.CacheControl).toBe('max-age=300')
         expect(pageTwo.ContentType).toBe('image/png')
+    })
+
+    // The publish task's row has to keep looking alive through a copy of many
+    // pages, so the copy reports in once per page it lists.
+    test('reports progress once per listed page', async () => {
+        let page = 0
+        provision.setClients({
+            s3: mockClient((command) => {
+                if (command.constructor.name !== 'ListObjectsV2Command')
+                    return {}
+                page++
+                return page === 1
+                    ? {
+                          Contents: [{ Key: 'assets/M/a.png' }],
+                          IsTruncated: true,
+                          NextContinuationToken: 't',
+                      }
+                    : {
+                          Contents: [{ Key: 'assets/M/b.png' }],
+                          IsTruncated: false,
+                      }
+            }),
+        })
+        let beats = 0
+        const count = await provision.copyPrefix({
+            sourceBucket: 'shared',
+            destBucket: 'dash',
+            prefix: 'assets/M/',
+            onProgress: async () => {
+                beats++
+            },
+        })
+        expect(count).toBe(2)
+        expect(beats).toBe(2)
+    })
+})
+
+test.describe('uploadDirectory', () => {
+    let dir
+
+    test.beforeEach(() => {
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mmgis-upload-'))
+        for (let i = 0; i < 12; i++)
+            fs.writeFileSync(path.join(dir, `file-${i}.txt`), 'x')
+    })
+
+    test.afterEach(() => {
+        fs.rmSync(dir, { recursive: true, force: true })
+        provision.setClients(null)
+    })
+
+    test('uploads every file and reports progress every N of them', async () => {
+        const keys = []
+        provision.setClients({
+            s3: mockClient(async (command) => {
+                keys.push(command.input.Key)
+                // Drain the body the way a real PutObject does, so each file
+                // handle is closed before the directory goes.
+                await new Promise((resolve) =>
+                    command.input.Body.resume().on('end', resolve)
+                )
+                return {}
+            }),
+        })
+        let beats = 0
+        const count = await provision.uploadDirectory({
+            bucket: 'dash',
+            dir,
+            prefix: 'build/',
+            progressEvery: 5,
+            onProgress: async () => {
+                beats++
+            },
+        })
+        expect(count).toBe(12)
+        expect(keys.length).toBe(12)
+        expect(keys.every((key) => key.startsWith('build/file-'))).toBe(true)
+        // Thousands of small files would otherwise pass in silence, and the
+        // update endpoint reads a silent row as a task nobody is coming back
+        // to.
+        expect(beats).toBe(2)
     })
 })
 

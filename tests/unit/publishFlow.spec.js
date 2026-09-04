@@ -4,7 +4,15 @@ import { test, expect } from 'vitest'
 // functions of a row, an action, and a stack read, so they are tabled here
 // directly — no AWS and no database.
 
-const { stackAction, assertRowLive } = require('../../scripts/lib/publish-flow')
+const Sequelize = require('sequelize')
+
+const {
+    rowStillOurs,
+    rowStillOursForFailure,
+    stackAction,
+    assertRowLive,
+    touchRow,
+} = require('../../scripts/lib/publish-flow')
 const STATUS = require('../../API/Backend/Deployments/models/deployment').STATUS
 
 test.describe('stackAction', () => {
@@ -14,14 +22,14 @@ test.describe('stackAction', () => {
     // [action, live stack, row's stack_arn, outcome]
     const cases = [
         // Nothing to converge onto: publish is what mints a stack.
-        ['publish', null, null, 'create'],
+        ['publish', null, null, { action: 'create' }],
         // A publish retried after a stack was created but the task died: the
         // stack exists, and this run's template has to reach it.
-        ['publish', stack, arn, 'converge'],
-        ['update', stack, arn, 'converge'],
+        ['publish', stack, arn, { action: 'converge' }],
+        ['update', stack, arn, { action: 'converge' }],
         // An update of a row that never recorded a stack owns no URL a second
         // stack could displace, so it may create one.
-        ['update', null, null, 'create'],
+        ['update', null, null, { action: 'create' }],
         // An update of a row that DOES own one: creating would mint a second
         // URL behind the same row, which is not an update.
         [
@@ -29,6 +37,7 @@ test.describe('stackAction', () => {
             null,
             arn,
             {
+                action: 'converge',
                 refuse:
                     "Stack 'mmgis-dashboard-1' does not exist (deleted or " +
                     'never created) — delete the deployment and publish it ' +
@@ -48,6 +57,28 @@ test.describe('stackAction', () => {
                     stackArn,
                 })
             ).toEqual(expected)
+        })
+    })
+})
+
+test.describe('the row guards on the tasks terminal writes', () => {
+    // [builder, the statuses its write refuses to land on]. A Delete claims
+    // the row the moment it starts; a failure additionally leaves `published`
+    // alone, since a later task that got the dashboard live owns that status
+    // and a straggler's failure must not paint over it.
+    const cases = [
+        [rowStillOurs, [STATUS.DELETING, STATUS.DELETED]],
+        [
+            rowStillOursForFailure,
+            [STATUS.DELETING, STATUS.DELETED, STATUS.PUBLISHED],
+        ],
+    ]
+
+    cases.forEach(([build, excluded]) => {
+        test(`excludes ${excluded.join(', ')}`, () => {
+            expect(build(STATUS)).toEqual({
+                status: { [Sequelize.Op.notIn]: excluded },
+            })
         })
     })
 })
@@ -81,5 +112,38 @@ test.describe('assertRowLive', () => {
         test(`carries on for a ${status} row`, () => {
             expect(() => assertRowLive({ status }, STATUS)).not.toThrow()
         })
+    })
+})
+
+test.describe('touchRow', () => {
+    // Enough of a model instance to record what the touch asked of it.
+    function stubbedRow(status) {
+        const row = { status, changes: [], saveOptions: null }
+        row.changed = (field, value) => row.changes.push([field, value])
+        row.save = async (options) => {
+            row.saveOptions = options
+            return row
+        }
+        return row
+    }
+    const modelFor = (row) => ({ findByPk: async () => row })
+
+    test('writes the timestamp and nothing else', async () => {
+        const row = stubbedRow('provisioning')
+        await touchRow(modelFor(row), 4, STATUS)
+        // Sequelize skips a save of a column nothing assigned, so the touch
+        // has to mark it changed itself.
+        expect(row.changes).toEqual([['updatedAt', true]])
+        // Naming the field is what keeps the save from carrying whatever this
+        // instance was holding back onto the row.
+        expect(row.saveOptions).toEqual({ fields: ['updatedAt'] })
+    })
+
+    test('stops the task on a row a delete has claimed', async () => {
+        const row = stubbedRow('deleting')
+        await expect(touchRow(modelFor(row), 4, STATUS)).rejects.toThrow(
+            'Deployment is deleting; abandoning this publish'
+        )
+        expect(row.saveOptions).toBe(null)
     })
 })

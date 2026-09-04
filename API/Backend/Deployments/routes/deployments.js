@@ -29,6 +29,33 @@ function webhookPayload(deployment) {
   };
 }
 
+// Starts the ECS task that does the long-running bake/build/provision/upload
+// work for `deployment` and returns at once — fire-and-forget, so a RunTask
+// failure marks the row failed with the error rather than crashing a request
+// that has already responded. That failure lands only while the row is still
+// the request's: a Delete, or a task that got the dashboard live, owns the
+// status from then on.
+function startPublishTask(deployment, action) {
+  provision
+    .runPublishTask({ deploymentId: deployment.id, action })
+    .catch((err) => {
+      logger(
+        "error",
+        `Failed to start ${action} task for deployment ${deployment.id}.`,
+        "deployments",
+        null,
+        err
+      );
+      Deployments.update(
+        {
+          status: STATUS.FAILED,
+          last_error: `Failed to start ${action} task: ${err.message}`,
+        },
+        { where: { id: deployment.id, ...rowStillOursForFailure(STATUS) } }
+      ).catch(() => {});
+    });
+}
+
 // Merges a deployment row with its live CloudFormation stack status
 // (DescribeStacks at read time — no reconcile job). A row in `deleting`
 // whose stack no longer exists flips to `deleted`.
@@ -81,28 +108,7 @@ router.post("/publish", async function (req, res) {
       stack_name: stackNameForDeployment(deployment.id),
     });
 
-    // Fire-and-forget: a RunTask failure marks the row failed with the
-    // error, never crashes the request (which has already returned). The
-    // failure lands only while the row is still this request's — a Delete or
-    // a task that got the dashboard live owns the status from then on.
-    provision
-      .runPublishTask({ deploymentId: deployment.id, action: "publish" })
-      .catch((err) => {
-        logger(
-          "error",
-          `Failed to start publish task for deployment ${deployment.id}.`,
-          "deployments",
-          null,
-          err
-        );
-        Deployments.update(
-          {
-            status: STATUS.FAILED,
-            last_error: `Failed to start publish task: ${err.message}`,
-          },
-          { where: { id: deployment.id, ...rowStillOursForFailure(STATUS) } }
-        ).catch(() => {});
-      });
+    startPublishTask(deployment, "publish");
 
     triggerWebhooks("deploymentPublish", webhookPayload(deployment));
 
@@ -122,7 +128,7 @@ router.post("/publish", async function (req, res) {
 // CloudFormation stack (re-baking the current dashboards password into the
 // auth Function), then replaces the bundle in the existing bucket — same
 // stack, same URL.
-router.post("/:id/update", async function (req, res) {
+async function updateDeployment(req, res) {
   try {
     const deployment = await Deployments.findByPk(req.params.id);
     if (deployment == null) {
@@ -164,24 +170,7 @@ router.post("/:id/update", async function (req, res) {
     // so the webhook and the response body report what the row now holds.
     deployment.set({ status: STATUS.UPDATING, last_error: null });
 
-    provision
-      .runPublishTask({ deploymentId: deployment.id, action: "update" })
-      .catch((err) => {
-        logger(
-          "error",
-          `Failed to start update task for deployment ${deployment.id}.`,
-          "deployments",
-          null,
-          err
-        );
-        Deployments.update(
-          {
-            status: STATUS.FAILED,
-            last_error: `Failed to start update task: ${err.message}`,
-          },
-          { where: { id: deployment.id, ...rowStillOursForFailure(STATUS) } }
-        ).catch(() => {});
-      });
+    startPublishTask(deployment, "update");
 
     triggerWebhooks("deploymentUpdate", webhookPayload(deployment));
 
@@ -194,7 +183,9 @@ router.post("/:id/update", async function (req, res) {
     logger("error", "Failed to update deployment.", req.originalUrl, req, err);
     res.send({ status: "failure", message: "Failed to update deployment." });
   }
-});
+}
+
+router.post("/:id/update", updateDeployment);
 
 // Empties the deployment's bucket (if any) and issues DeleteStack.
 // Best-effort and not awaited by the route: failures are logged and recorded
@@ -299,4 +290,9 @@ router.get("/:id", async function (req, res) {
   }
 });
 
-module.exports = { router, teardownDeployment, withLiveStatus };
+module.exports = {
+  router,
+  teardownDeployment,
+  withLiveStatus,
+  updateDeployment,
+};
