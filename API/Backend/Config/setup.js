@@ -2,9 +2,8 @@ const router = require("./routes/configs");
 const triggerWebhooks = require("../Webhooks/processes/triggerwebhooks.js");
 const configurePackageJson = require("../../../configure/package.json");
 const { MODE, isLean } = require("../Utils/deploymentMode");
-const {
-  stripTrailingSlashRedirect,
-} = require("../../../scripts/lib/rootPathRedirect");
+const { stripTrailingSlashRedirect } = require("../Utils/rootPathRedirect");
+const { rootPath } = require("../Utils/rootPath");
 
 let setup = {
   //Once the app initializes
@@ -37,7 +36,7 @@ let setup = {
               process.env.NODE_ENV === "development"
                 ? ""
                 : /*(process.env.EXTERNAL_ROOT_PATH || "") +*/
-                  process.env.ROOT_PATH || "",
+                  rootPath(),
             WEBSOCKET_ROOT_PATH:
               process.env.NODE_ENV === "development"
                 ? ""

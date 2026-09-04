@@ -1,62 +1,25 @@
 import { test, expect } from 'vitest'
-import express from 'express'
-import http from 'http'
+import { startServer, closeServer, get } from './__helpers__/expressServer'
 
-// The entry redirects in scripts/lib/rootPathRedirect.js, driven over a real
-// express server on an ephemeral port (the harness in
-// tests/unit/uploadRouterS3.spec.js). Redirects are read off the wire rather
-// than followed, so the status, the Location and the caching directive are
-// all observable.
+// The entry redirects in API/Backend/Utils/rootPathRedirect.js. A redirect is
+// read off the wire rather than followed, so the status, the Location and the
+// caching directive are all observable.
 
 const {
     rootPathRedirect,
     stripTrailingSlashRedirect,
-} = require('../../scripts/lib/rootPathRedirect')
+} = require('../../API/Backend/Utils/rootPathRedirect')
 
-// Mounts `middleware` ahead of a handler that answers 'through', so a request
+// Runs one request against a fresh server and always tears it down. The
+// middleware sits ahead of a handler that answers 'through', so a request
 // that is not redirected is visibly distinguishable from one that is.
-function startServer(middleware) {
-    const app = express()
-    app.use(middleware)
-    app.use((req, res) => res.status(200).send('through'))
-    return new Promise((resolve) => {
-        const server = app.listen(0, () => {
-            resolve({
-                server,
-                base: `http://127.0.0.1:${server.address().port}`,
-            })
-        })
+async function drive(middleware, path, method) {
+    const { server, base } = await startServer((app) => {
+        app.use(middleware)
+        app.use((req, res) => res.status(200).send('through'))
     })
-}
-
-function closeServer(server) {
-    return new Promise((resolve) => server.close(resolve))
-}
-
-function get(base, path) {
-    return new Promise((resolve, reject) => {
-        const req = http.request(`${base}${path}`, { method: 'GET' }, (res) => {
-            let data = ''
-            res.on('data', (chunk) => (data += chunk))
-            res.on('end', () =>
-                resolve({
-                    status: res.statusCode,
-                    location: res.headers.location,
-                    cacheControl: res.headers['cache-control'],
-                    body: data,
-                })
-            )
-        })
-        req.on('error', reject)
-        req.end()
-    })
-}
-
-// Runs one request against a fresh server and always tears it down.
-async function drive(middleware, path) {
-    const { server, base } = await startServer(middleware)
     try {
-        return await get(base, path)
+        return await get(base, path, method)
     } finally {
         await closeServer(server)
     }
@@ -79,8 +42,28 @@ test.describe('rootPathRedirect', () => {
         expect(res.location).toBe('/mmgis/?a=1&b=2')
     })
 
+    test('a differently cased entry URL redirects to the canonical one', async () => {
+        const res = await drive(rootPathRedirect('/mmgis'), '/MMGIS')
+        expect(res.status).toBe(302)
+        expect(res.location).toBe('/mmgis/')
+    })
+
     test('the trailing-slash form passes through instead of redirecting to itself', async () => {
         const res = await drive(rootPathRedirect('/mmgis'), '/mmgis/')
+        expect(res.status).toBe(200)
+        expect(res.body).toBe('through')
+    })
+
+    test('a path under the prefix is left to the routes', async () => {
+        const res = await drive(rootPathRedirect('/mmgis'), '/mmgis/anything')
+        expect(res.status).toBe(200)
+        expect(res.body).toBe('through')
+    })
+
+    test('a POST to the bare prefix is left to the routes', async () => {
+        // A 302 asks the client to reissue the request at the new location,
+        // which for a POST is a request whose body has been dropped.
+        const res = await drive(rootPathRedirect('/mmgis'), '/mmgis', 'POST')
         expect(res.status).toBe(200)
         expect(res.body).toBe('through')
     })
