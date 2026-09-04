@@ -41,25 +41,30 @@ export interface PanelStateConstraints {
  */
 export interface PanelDimensions {
     /**
-     * Size of the icon bar when in iconified state (pixels).
+     * Size of the icon bar in the iconified and focused states, padding included.
+     * A number, or a numeric string, is pixels; a string with a unit is that CSS
+     * length. Prefer rem, which tracks the theme's type scale.
      * - For left/right panels: width of the vertical icon bar
      * - For top/bottom panels: height of the horizontal icon bar
-     * If omitted, the bar sizes to its icons.
+     * The icon buttons divide up this measure, so a smaller bar carries smaller
+     * icons. If omitted, the bar takes the default size its stylesheet sets.
      */
-    iconifiedSize?: number;
+    iconifiedSize?: number | string;
 
     /**
      * Expanded-state size: height for top/bottom panels, width for left/right.
-     * A number is pixels; a string is any single CSS length (e.g. "320px",
-     * "40vh", "30%"). Sets the panel to exactly this size — content scrolls
-     * internally rather than resizing it. Omit to size the panel to its content.
-     * A user drag-resize overrides it with a pixel currentSize.
+     * A number, or a numeric string, is pixels; a string with a unit is that CSS
+     * length (e.g. "320px", "40vh", "30%"). Sets the panel to exactly this size —
+     * content scrolls internally rather than resizing it. Omit, or leave empty,
+     * to size the panel to its content. A user drag-resize overrides it with a
+     * pixel currentSize.
      */
     expandedSize?: number | string;
 
     /**
      * CSS sizing for floating panels — applied directly as CSS properties on the panel element.
-     * Numbers are treated as px; strings are passed through as-is (e.g. "50%", "40vh", "300px").
+     * A number, or a numeric string, is pixels; a string with a unit is that CSS
+     * length (e.g. "50%", "40vh", "300px").
      *
      * Distinct from PanelCapabilities.minSize/maxSize, which constrain drag-resize handles
      * (single-axis, pixels only). These apply to both axes and support all CSS units.

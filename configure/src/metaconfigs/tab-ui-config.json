@@ -189,23 +189,22 @@
             {
               "field": "capabilities.maxSize",
               "name": "Max Size (px)",
-              "description": "Maximum size in pixels. Caps drag-resizing and caps a content-sized panel (one with no Expanded Size) so overflow scrolls internally. Works with or without resizable.",
+              "description": "Maximum size in pixels. Caps drag-resizing and caps a content-sized panel (one with no Expanded Size) so overflow scrolls internally. Works with or without resizable. Leave empty for no cap.",
               "type": "number",
               "width": 6,
-              "min": 0
+              "min": 1
             },
             {
               "field": "dimensions.iconifiedSize",
-              "name": "Iconified Size (px)",
-              "description": "Size of the icon bar when iconified (width for left/right, height for top/bottom). Leave empty to size to the icons.",
-              "type": "number",
-              "width": 6,
-              "min": 0
+              "name": "Iconified Size",
+              "description": "Size of the icon bar when iconified (width for left/right, height for top/bottom). Leave empty for the default 3.5rem. A plain number is pixels (e.g. 56); add a unit to use it instead (e.g. 3.5rem), and rem keeps the bar in step with the theme's text size. The icons scale with the bar, so a smaller bar means smaller icons.",
+              "type": "text",
+              "width": 6
             },
             {
               "field": "dimensions.expandedSize",
               "name": "Expanded Size",
-              "description": "Size when expanded (width for left/right, height for top/bottom). The panel is exactly this size and its content scrolls; leave empty to size to content. A plain number is pixels; a CSS length with a unit also works (e.g. '320px', '40vh', '20vw', '30%').",
+              "description": "Size when expanded (width for left/right, height for top/bottom). The panel is exactly this size and its content scrolls; leave empty to size to content. A plain number is pixels (e.g. 320); add a unit to use it instead (e.g. 40vh, 30%, 20rem).",
               "type": "text",
               "width": 6
             },

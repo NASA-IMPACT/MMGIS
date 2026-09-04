@@ -127,7 +127,6 @@
 /* Tool Cards - Base Styles (shared by stacked and tabbed) */
 .ui-tool-card {
     background-color: var(--theme-color-white, #ffffff);
-    width: 100%;
 }
 
 /* Cards fill the panel where they stack vertically. Top/bottom regions lay
@@ -320,7 +319,7 @@
 .ui-region-bottom .ui-panel-body {
     flex-direction: row;
     flex-wrap: nowrap;
-    align-items: stretch; /* fill panel height so full tools (e.g. Timeline) can scroll internally */
+    align-items: stretch; /* fill panel height so a tall tool can scroll internally */
     overflow-x: auto;
     overflow-y: auto; /* scroll when a tool exceeds the panel's capped (maxSize) height */
     min-height: 0; /* allow the flex child to shrink below content so it scrolls, not overflows */
@@ -355,10 +354,20 @@
 
 /* Sidebar Icons */
 .ui-panel-icons {
+    /* The bar's outer size along its own axis — width for a left/right panel,
+       height for a top/bottom one. syncDOMState applies it to that axis and
+       overrides this value with the panel's iconifiedSize when one is set, so a
+       configured bar and the default one are sized by the same rule. */
+    --ui-icon-bar-size: 3.5rem;
+    --ui-icon-bar-padding: var(--theme-spacing-05, 0.25rem);
+    /* What the buttons have to divide up once the bar's own padding is taken. */
+    --ui-icon-bar-inner: calc(var(--ui-icon-bar-size) - var(--ui-icon-bar-padding) * 2);
+
     display: none;
+    box-sizing: border-box; /* the bar's size covers its padding */
     background: transparent;
     color: var(--theme-color-white, #ffffff);
-    padding: var(--theme-spacing-05, 0.25rem);
+    padding: var(--ui-icon-bar-padding);
     gap: var(--theme-spacing-05, 0.25rem);
     align-items: center;
     z-index: 2;
@@ -372,11 +381,12 @@
     color: var(--theme-color-primary, #005ea2);
     opacity: 1;
     cursor: pointer;
-    /* Icon + padding scale off --ui-icon-size (set to the panel's iconifiedSize by
-       syncDOMState). Default 4rem keeps the icon at ~2rem / padding ~0.5rem, matching
-       the pre-scaling look when iconifiedSize is not configured. */
-    font-size: calc(var(--ui-icon-size, 4rem) * 0.5);
-    padding: calc(var(--ui-icon-size, 4rem) * 0.12);
+    /* The button divides up the bar's inner space: two thirds to the glyph, the
+       remaining third split between its two sides. The shares total one, so the
+       button box fills the bar exactly however wide the bar is. At the default
+       3.5rem bar that is a 2rem glyph with 0.5rem of padding. */
+    font-size: calc(var(--ui-icon-bar-inner, 3rem) * 2 / 3);
+    padding: calc(var(--ui-icon-bar-inner, 3rem) / 6);
     border-radius: var(--theme-radius-sm, 4px);
     display: flex;
     align-items: center;

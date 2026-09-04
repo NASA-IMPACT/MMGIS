@@ -5,6 +5,7 @@ import ToolControllerModern_ from '../ToolController_/ToolControllerModern_'
 import { getValidIconClass } from '../ToolController_/ToolMetadataUtils'
 import { createLogger } from '../Logger_/Logger_'
 import { PANEL_STATE, FLOAT_POSITIONS } from '../PanelManager_/types/layout'
+import { toCssDimension, toPixelNumber } from '../PanelManager_/dimensions'
 import './UserInterfaceModern_.css'
 
 const logger = createLogger('UserInterfaceModern')
@@ -110,10 +111,6 @@ const _createPanelHeader = (panel) => {
     return header
 }
 
-// Converts a dimension value to a CSS string.
-// Numbers are treated as px; strings are passed through as-is (e.g. "40%", "50vh").
-const _toCssValue = (v) => (typeof v === 'number' ? v + 'px' : v)
-
 const _renderFloatRegions = (floatPanels) => {
     if (!floatPanels || floatPanels.length === 0) return null
 
@@ -150,9 +147,12 @@ const _renderFloatRegions = (floatPanels) => {
 
             // Width constraints go on the panel container
             const panelCss = {}
-            if (dims.defaultWidth)  panelCss['width']     = _toCssValue(dims.defaultWidth)
-            if (dims.minWidth)      panelCss['min-width'] = _toCssValue(dims.minWidth)
-            if (dims.maxWidth)      panelCss['max-width'] = _toCssValue(dims.maxWidth)
+            const width    = toCssDimension(dims.defaultWidth)
+            const minWidth = toCssDimension(dims.minWidth)
+            const maxWidth = toCssDimension(dims.maxWidth)
+            if (width)    panelCss['width']     = width
+            if (minWidth) panelCss['min-width'] = minWidth
+            if (maxWidth) panelCss['max-width'] = maxWidth
             if (Object.keys(panelCss).length) panelDiv.css(panelCss)
 
             if (panel.config.hasHeader) {
@@ -166,9 +166,12 @@ const _renderFloatRegions = (floatPanels) => {
             // Applying max-height only to the panel won't constrain the flex body's actual height,
             // so the body scroll never fires; setting it on the body directly fixes this.
             const bodyCss = {}
-            if (dims.defaultHeight) bodyCss['height']     = _toCssValue(dims.defaultHeight)
-            if (dims.minHeight)     bodyCss['min-height'] = _toCssValue(dims.minHeight)
-            if (dims.maxHeight)     bodyCss['max-height'] = _toCssValue(dims.maxHeight)
+            const height    = toCssDimension(dims.defaultHeight)
+            const minHeight = toCssDimension(dims.minHeight)
+            const maxHeight = toCssDimension(dims.maxHeight)
+            if (height)    bodyCss['height']     = height
+            if (minHeight) bodyCss['min-height'] = minHeight
+            if (maxHeight) bodyCss['max-height'] = maxHeight
             if (Object.keys(bodyCss).length) body.css(bodyCss)
             toolsMetadata.forEach(toolMetadata => {
                 const { toolCard, loadTool, targetId } = UserInterfaceModern_.createToolCard(toolMetadata, panel.containerId)
@@ -646,11 +649,13 @@ const UserInterfaceModern_ = {
                 const region = panel.config.position
                 if (region === 'left' || region === 'right' || region === 'top' || region === 'bottom') {
                     const capabilities = panel.config.capabilities || {}
-                    const expandedSize = panel.config.dimensions?.expandedSize
+                    const expandedSize = toCssDimension(panel.config.dimensions?.expandedSize)
                     const draggedSize = panel.currentSize
                     // DEFAULT_MAX_PANEL_SIZE (9999) is a drag-clamp sentinel, not a real
-                    // max — only write a CSS cap when maxSize is explicitly configured.
-                    const maxPx = capabilities.maxSize !== undefined ? capabilities.maxSize + 'px' : ''
+                    // max — only write a CSS cap when maxSize is a usable size. A cleared
+                    // Configure field arrives as an empty string and means "no cap".
+                    const maxSize = toPixelNumber(capabilities.maxSize)
+                    const maxPx = maxSize !== null ? maxSize + 'px' : ''
 
                     const isVertical = region === 'left' || region === 'right'
                     const size = isVertical ? 'width' : 'height'
@@ -669,7 +674,7 @@ const UserInterfaceModern_ = {
                         // always cleared (no floor); max-* carries the maxSize cap.
                         const fixedSize = draggedSize
                             ? draggedSize + 'px'
-                            : (expandedSize ? _toCssValue(expandedSize) : '')
+                            : (expandedSize || '')
                         $panel.css({ flex: 'none', [size]: fixedSize,
                                      [min]: '', [max]: maxPx,
                                      [crossMin]: '', [crossMax]: '' })
@@ -678,27 +683,28 @@ const UserInterfaceModern_ = {
             }
 
             // Icon-bar sizing — shared by iconified and focused so the bar is
-            // identical in both states. iconifiedSize pins the bar's own axis
-            // (width for left/right, height for top/bottom); unset lets it size to
-            // its icons. Sizing the bar (not the panel) preserves its padding and
-            // keeps iconified and focused consistent.
+            // identical in both states. The bar's own axis (width for left/right,
+            // height for top/bottom) is pinned to --ui-icon-bar-size, which the CSS
+            // gives a default and iconifiedSize overrides. Both states therefore run
+            // the same rule, so configuring the default size changes nothing and the
+            // buttons, which divide up that same measure, stay in proportion.
+            // Sizing the bar rather than the panel keeps its padding intact.
             if (!isFloatingPanel && (panel.state === 'iconified' || panel.state === 'focused')) {
-                const iconifiedSize = panel.config.dimensions?.iconifiedSize
+                const iconifiedSize = toCssDimension(panel.config.dimensions?.iconifiedSize)
                 const region = panel.config.position
                 const $icons = $panel.children('.ui-panel-icons')
                 if ($icons.length) {
-                    if (iconifiedSize && (region === 'left' || region === 'right')) {
-                        $icons.css({ width: iconifiedSize + 'px', height: '' })
-                    } else if (iconifiedSize && (region === 'top' || region === 'bottom')) {
-                        $icons.css({ width: '', height: iconifiedSize + 'px' })
+                    const barSize = 'var(--ui-icon-bar-size)'
+                    if (region === 'left' || region === 'right') {
+                        $icons.css({ width: barSize, height: '' })
+                    } else if (region === 'top' || region === 'bottom') {
+                        $icons.css({ width: '', height: barSize })
                     } else {
                         $icons.css({ width: '', height: '' })
                     }
-                    // Scale the icon buttons to the bar via a CSS var that cascades to
-                    // them (.ui-panel-icon-btn font-size/padding read it); unset falls
-                    // back to the default icon size.
-                    if (iconifiedSize) $icons[0].style.setProperty('--ui-icon-size', iconifiedSize + 'px')
-                    else $icons[0].style.removeProperty('--ui-icon-size')
+
+                    if (iconifiedSize) $icons[0].style.setProperty('--ui-icon-bar-size', iconifiedSize)
+                    else $icons[0].style.removeProperty('--ui-icon-bar-size')
                 }
             }
         })
@@ -771,8 +777,13 @@ const UserInterfaceModern_ = {
             if (!isResizing || !$currentPanel || !currentRegion) return
 
             const capabilities = currentConfig?.capabilities || {}
-            const minSize = capabilities.minSize !== undefined ? capabilities.minSize : DEFAULT_MIN_PANEL_SIZE
-            const maxSize = capabilities.maxSize !== undefined ? capabilities.maxSize : DEFAULT_MAX_PANEL_SIZE
+            // An unusable or cleared bound falls back to the default rather than
+            // entering the clamp, where a non-numeric value would make every
+            // comparison NaN and free the drag of its limits entirely.
+            const configuredMin = toPixelNumber(capabilities.minSize, { allowZero: true })
+            const configuredMax = toPixelNumber(capabilities.maxSize)
+            const minSize = configuredMin !== null ? configuredMin : DEFAULT_MIN_PANEL_SIZE
+            const maxSize = configuredMax !== null ? configuredMax : DEFAULT_MAX_PANEL_SIZE
 
             const strategy = resizeStrategies[currentRegion]
             if (!strategy) return

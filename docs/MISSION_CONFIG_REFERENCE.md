@@ -280,8 +280,6 @@ Specifies panel sizes for different states.
 {
   "dimensions": {
     "iconifiedSize": 50,
-    "focusedWidth": 300,
-    "focusedHeight": 200,
     "expandedSize": 400
   }
 }
@@ -291,27 +289,44 @@ Specifies panel sizes for different states.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `iconifiedSize` | Number | Size of icon bar when in `iconified` state (pixels) |
-| `focusedWidth` | Number or `"content"` | Width when in `focused` state (vertical panels) |
-| `focusedHeight` | Number or `"content"` | Height when in `focused` state (horizontal panels) |
-| `expandedSize` | Number, `"content"`, or Object | Size when in `expanded` state |
+| `iconifiedSize` | Number or CSS length | Size of the icon bar in the `iconified` and `focused` states, padding included. Defaults to `3.5rem` |
+| `expandedSize` | Number or CSS length | Size in the `expanded` state |
+
+Both take the same size values. `minSize` and `maxSize` are pixels only — they
+bound a drag, and the interface stores the result as a pixel size.
 
 ### Size Values
 
-- **Number**: Fixed size in pixels (e.g., `300`)
-- **`"content"`**: Size based on content (grows to fit)
-- **Object**: Content-based with constraints: `{ "min": 200, "max": 500 }`
+- **Number**: a size in pixels, written either as a number (`400`) or as a numeric string (`"400"`)
+- **CSS length**: a string carrying a unit — `px`, `%`, `vh`, `vw`, `svh`, `dvh`, `vmin`, `vmax`, `ch`, `rem`, `em` (e.g. `"40vh"`)
+- **Omitted or empty**: the panel sizes to its content, and the icon bar takes its default
+
+A size of zero, a unit outside that list, and any other value are unusable. The
+interface logs a warning naming the panel and the field, then falls back to
+sizing by content; the rest of the mission loads normally.
+
+The icon buttons divide up the bar: two thirds of its inner space goes to the
+glyph and the rest to padding, so a smaller bar means smaller icons. At the
+default `3.5rem` that is a 2rem glyph, and setting `iconifiedSize` to `3.5rem`
+changes nothing — the default and a configured value are sized by one rule.
+
+`rem` keeps a size in step with the theme's text scale, which is how the rest of
+the interface is measured, so it holds its proportions when the text size changes.
+Viewport units (`vh`, `vw`, `vmin`) track the window instead, which suits a panel
+that should not swallow the map but makes a poor icon bar — it shrinks with a
+narrowed window.
+
+`maxSize` caps a panel whichever way its size was arrived at — see
+[Capabilities](#capabilities).
 
 ### Size Interpretation by Position
 
 **Left/Right Panels** (vertical):
 - `iconifiedSize` → width of icon bar
-- `focusedWidth` → width when single tool is open
 - `expandedSize` → width when all tools visible
 
 **Top/Bottom Panels** (horizontal):
 - `iconifiedSize` → height of icon bar
-- `focusedHeight` → height when single tool is open
 - `expandedSize` → height when all tools visible
 
 ### Common Dimension Patterns
@@ -321,7 +336,6 @@ Specifies panel sizes for different states.
 {
   "dimensions": {
     "iconifiedSize": 50,
-    "focusedWidth": 300,
     "expandedSize": 400
   }
 }
@@ -336,14 +350,20 @@ Specifies panel sizes for different states.
 }
 ```
 
-**Bottom Panel with Flexible Sizing**:
+**Bottom Panel sized to the viewport**:
 ```json
 {
   "dimensions": {
-    "expandedSize": {
-      "min": 200,
-      "max": 500
-    }
+    "expandedSize": "30vh"
+  }
+}
+```
+
+**Bottom Panel sized to its content, up to a cap**:
+```json
+{
+  "capabilities": {
+    "maxSize": 500
   }
 }
 ```
@@ -424,7 +444,6 @@ Full mission configuration with four panels:
         },
         "dimensions": {
           "iconifiedSize": 50,
-          "focusedWidth": 300,
           "expandedSize": 400
         },
         "tools": ["Layers", "Legend", "Info"]
@@ -446,7 +465,6 @@ Full mission configuration with four panels:
         },
         "dimensions": {
           "iconifiedSize": 50,
-          "focusedWidth": 300,
           "expandedSize": 400
         },
         "tools": ["Measure", "Chart", "PointCloud"]
@@ -468,7 +486,6 @@ Full mission configuration with four panels:
         },
         "dimensions": {
           "iconifiedSize": 50,
-          "focusedHeight": 200,
           "expandedSize": 300
         },
         "tools": ["Draw", "RasterTile", "Identifier"]
