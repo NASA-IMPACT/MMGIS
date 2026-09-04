@@ -508,16 +508,23 @@
             {
               "field": "time.dataStartTime",
               "name": "Data Start Time",
-              "description": "The earliest time for which data is available in this layer. This is for display purposes only and does not constrain queries. Format: ISO 8601 datetime string (e.g., 2020-01-01T00:00:00Z).",
+              "description": "The earliest time for which data is available in this layer. This is for display purposes only and does not constrain queries. Use an ISO 8601 datetime (e.g., 2020-01-01T00:00:00Z), or now to follow the current date, optionally offset by an ISO 8601 duration (e.g., now - P1D). An unreadable value is ignored.",
               "type": "text",
-              "width": 6
+              "width": 4
             },
             {
               "field": "time.dataEndTime",
               "name": "Data End Time",
-              "description": "The latest time for which data is available in this layer. This is for display purposes only and does not constrain queries. Format: ISO 8601 datetime string (e.g., 2025-12-31T23:59:59Z).",
+              "description": "The latest time for which data is available in this layer. This is for display purposes only and does not constrain queries. Use an ISO 8601 datetime (e.g., 2025-12-31T23:59:59Z), or now for a collection that is still growing, so the layer stays current without edits, optionally offset by an ISO 8601 duration (e.g., now + P5D). An unreadable value is ignored.",
               "type": "text",
-              "width": 6
+              "width": 4
+            },
+            {
+              "field": "time.interval",
+              "name": "Data Time Interval",
+              "description": "How often new data is added, as an ISO 8601 duration (e.g., P1D for daily, P7D for weekly, P1M for monthly). When set, the data end time snaps back to the most recent date that actually has data. Leave empty for continuous or irregular data. An unreadable value is ignored.",
+              "type": "text",
+              "width": 4
             }
           ]
         }

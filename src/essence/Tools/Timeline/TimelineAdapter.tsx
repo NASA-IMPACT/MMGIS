@@ -11,6 +11,7 @@ import {
     mmgisGetTimeEnd,
     mmgisGetTimeCurrent,
     type LayerConfig,
+    mmgisGetTemporalExtents,
 } from '../_shared/adapters/mmgisAPI'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
@@ -173,9 +174,10 @@ export const TimelineAdapter: React.FC = () => {
         let cancelled = false
 
         const fetchLayers = async () => {
-            const [configs, visibleLayers] = await Promise.all([
+            const [configs, visibleLayers, extents] = await Promise.all([
                 mmgisGetLayerConfigs(),
                 mmgisGetVisibleLayers(),
+                mmgisGetTemporalExtents(),
             ])
             if (cancelled || !configs) return
 
@@ -191,20 +193,11 @@ export const TimelineAdapter: React.FC = () => {
                 let color = 'var(--theme-color-base, #71767a)' // default grey
 
                 if (layer.time && layer.time.enabled) {
-                    const timeConfig = layer.time
-
-                    if (timeConfig.dataStartTime) {
-                        const parsedStart = new Date(timeConfig.dataStartTime)
-                        if (!isNaN(parsedStart.getTime())) {
-                            start = parsedStart
-                        }
-                    }
-                    if (timeConfig.dataEndTime) {
-                        const parsedEnd = timeConfig.dataEndTime === 'now' ? new Date() : new Date(timeConfig.dataEndTime)
-                        if (!isNaN(parsedEnd.getTime())) {
-                            end = parsedEnd
-                        }
-                    }
+                    // Core resolves the authored data times; null means
+                    // unset or unreadable, keep the fallback.
+                    const extent = extents?.[layerName]
+                    if (extent?.start != null) start = new Date(extent.start)
+                    if (extent?.end != null) end = new Date(extent.end)
 
                     // Time-enabled layers stand out in the theme's secondary colour
                     color = 'var(--theme-color-secondary, #c91b6e)'
