@@ -8,7 +8,8 @@ const logger = createLogger('ToolControllerModern')
 
 // --- Module-Level State ---
 /**
- * Map of loaded tool instances: targetId -> { toolInstance, toolName, toolId, toolMetadata }
+ * Map of loaded tool instances:
+ * targetId -> { toolInstance, toolName, toolId, toolMetadata, targetId, api }
  */
 const loadedTools = new Map()
 
@@ -29,7 +30,30 @@ const hiddenTools = new Set()
  */
 const deferredTools = new Map()
 
+/**
+ * The other two ways a mission config names a tool: its display name, and the
+ * registry binding its `js` carries. Both are rebuilt by buildToolConfigMap.
+ */
+const toolNameToId = new Map() // name -> id
+const toolModuleToId = new Map() // registry binding -> id
+
 // --- Internal Helper Functions ---
+
+/**
+ * The canonical id for however a config named a tool — its display name, its
+ * registry binding, or the id itself. An unrecognised string passes through so
+ * the caller reports it under the name the config used.
+ *
+ * @param {string} nameOrId - Tool name, registry binding, or canonical id
+ * @returns {string} Canonical tool id
+ */
+function resolvePluginId(nameOrId) {
+    return (
+        toolNameToId.get(nameOrId) ||
+        toolModuleToId.get(nameOrId) ||
+        nameOrId
+    )
+}
 
 /**
  * Finds a compatible panel for a tool, trying preferred position first
@@ -143,15 +167,29 @@ const ToolControllerModern_ = {
      */
     buildToolConfigMap: function (tools) {
         const toolConfigMap = new Map() // id -> { config, metadata }
-        const toolNameToId = new Map() // name -> id
+        toolNameToId.clear()
+        toolModuleToId.clear()
 
         tools.forEach(toolConfig => {
             const toolMetadata = generateToolMetadata(toolConfig)
 
-            // Store by ID (primary key)
-            if (toolConfigMap.has(toolMetadata.id)) {
-                logger.warn(`Duplicate tool ID detected: ${toolMetadata.id} - skipping duplicate tool`)
-                return
+            // Store by ID (primary key). The id is the tool's identity on the
+            // bus, in the DOM and in teardown events, so two live entries
+            // claiming it is a broken mission config rather than something to
+            // work around: whichever lost the race would be missing from the
+            // layout with only a console line to say why, while the other
+            // answered for it. A switched-off entry is not a claimant — it
+            // cannot be loaded beside its live twin — so it neither throws
+            // nor displaces the entry already holding the id.
+            const claimed = toolConfigMap.get(toolMetadata.id)
+            if (claimed) {
+                if (claimed.config.on !== false && toolConfig.on !== false) {
+                    throw new Error(
+                        `[ToolControllerModern] Duplicate tool id "${toolMetadata.id}": ` +
+                        `"${claimed.metadata.name}" and "${toolMetadata.name}" both claim it`
+                    )
+                }
+                if (toolConfig.on === false) return
             }
             toolConfigMap.set(toolMetadata.id, { config: toolConfig, metadata: toolMetadata })
 
@@ -161,13 +199,13 @@ const ToolControllerModern_ = {
             } else {
                 toolNameToId.set(toolMetadata.name, toolMetadata.id)
             }
+            if (toolMetadata.module) toolModuleToId.set(toolMetadata.module, toolMetadata.id)
         })
 
-        // Helper function to get tool data by name or ID
-        const getToolData = (nameOrId) => {
-            const id = toolNameToId.get(nameOrId) || nameOrId
-            return toolConfigMap.get(id)
-        }
+        // A panel names its tools however the mission config author wrote
+        // them: the display name, the canonical id, or the registry binding
+        // the config's `js` carries.
+        const getToolData = (nameOrId) => toolConfigMap.get(resolvePluginId(nameOrId))
 
         return { toolConfigMap, getToolData }
     },
@@ -304,7 +342,8 @@ const ToolControllerModern_ = {
      * Load and instantiate a tool in a specific target container
      *
      * @param {Object} toolMetadata - Tool metadata object
-     * @param {string} toolMetadata.id - Tool identifier (e.g., 'TitleTool')
+     * @param {string} toolMetadata.id - Canonical tool id (e.g., 'title')
+     * @param {string} toolMetadata.module - Registry binding (e.g., 'TitleTool')
      * @param {string} toolMetadata.name - Tool display name (e.g., 'Title')
      * @param {string} targetId - DOM element ID where tool should render
      * @returns {Object|null} Tool instance or null if failed
@@ -333,13 +372,27 @@ const ToolControllerModern_ = {
             return null
         }
 
+        // Held outside the try so a load that throws part-way can hand back
+        // whatever it had already taken.
+        let ToolClass = null
+        let api = null
+        let tracked = false
+
         try {
-            // Find the tool module in pre/tools.js exports
-            const ToolClass = toolModules[toolMetadata.id]
+            // The class is reached by the module binding; everything else about
+            // this tool is keyed by its canonical id. The own-property check is
+            // what makes a binding named after something on Object.prototype
+            // ('constructor', 'toString') miss: a bare lookup would hand back
+            // the inherited member, and the controller would stamp the tool's
+            // handle onto it and enter a phantom into the registries instead of
+            // reporting a module it cannot find.
+            ToolClass = Object.prototype.hasOwnProperty.call(toolModules, toolMetadata.module)
+                ? toolModules[toolMetadata.module]
+                : null
 
             if (!ToolClass) {
                 logger.error(
-                    `Tool module "${toolMetadata.id}" not found in toolModules.`,
+                    `Tool module "${toolMetadata.module}" (id "${toolMetadata.id}") not found in toolModules.`,
                     'Available tools:',
                     Object.keys(toolModules)
                 )
@@ -356,6 +409,13 @@ const ToolControllerModern_ = {
                 )
                 this.destroyTool(targetId)
             }
+
+            // Mint the tool's bus handle before it can run any of its own code,
+            // so initialize()/make() already have somewhere to hang providers
+            // and events. Whoever hands the handle out owns taking it back, so
+            // it is kept alongside the instance for destroyTool to release.
+            api = mmgisAPI.forPlugin(toolMetadata.id)
+            ToolClass.api = api
 
             // Initialize tool if it has an initialize method
             if (typeof ToolClass.initialize === 'function') {
@@ -375,8 +435,10 @@ const ToolControllerModern_ = {
                 toolName: toolMetadata.name,
                 toolId: toolMetadata.id,
                 toolMetadata: toolMetadata,
-                targetId: targetId
+                targetId: targetId,
+                api: api
             })
+            tracked = true
 
             // Register reverse lookup (toolId -> targetId) for show/hide/unload by toolId
             toolIdToTargetId.set(toolMetadata.id, targetId)
@@ -396,6 +458,18 @@ const ToolControllerModern_ = {
             return ToolClass
         } catch (error) {
             logger.error(`Failed to load tool "${toolMetadata.name}":`, error)
+
+            // The handle is minted before the tool runs any of its own code, so
+            // a load that got that far and then threw is holding registrations
+            // nothing else can reach: the instance was never tracked, so no
+            // destroyTool will ever come for it and its providers would answer
+            // for a tool that isn't there for the rest of the session.
+            if (api && !tracked) {
+                api.release()
+                // A handle exists only past the point the class was found, so
+                // ToolClass is there to read.
+                if (ToolClass.api === api) ToolClass.api = null
+            }
             return null
         }
     },
@@ -404,18 +478,22 @@ const ToolControllerModern_ = {
      * Destroy a tool instance in a specific container
      *
      * @param {string} targetId - DOM element ID of the tool container
-     * @returns {boolean} True if destroyed successfully
+     * @returns {boolean} True if destroyed successfully. False covers both a
+     * tool whose own destroy() threw and a bus handle whose release did — in
+     * either case the lifecycle registries are still cleared, but something the
+     * tool held was not given back.
      */
     destroyTool: function (targetId) {
         if (!loadedTools.has(targetId)) {
             return false
         }
 
-        const { toolInstance, toolName, toolId } = loadedTools.get(targetId)
+        const { toolInstance, toolName, toolId, api } = loadedTools.get(targetId)
         let destroyed = true
 
         try {
-            // Call destroy() if available
+            // Call destroy() if available. It runs before the handle is taken
+            // back, so a tool can still speak to core while shutting down.
             if (typeof toolInstance.destroy === 'function') {
                 toolInstance.destroy()
             }
@@ -432,17 +510,30 @@ const ToolControllerModern_ = {
                 toolIdToTargetId.delete(toolId)
                 hiddenTools.delete(toolId)
             }
+
+            // Hand back what the minted handle registered — last, and guarded
+            // so a throwing release cannot swallow the teardown announcement
+            // below. The instance is a module singleton, so its `api` is only
+            // cleared while it still points at this load's handle: a reload
+            // that already minted a fresh one keeps it.
+            if (api) {
+                try {
+                    api.release()
+                } catch (error) {
+                    logger.error(`Error releasing the bus handle for "${toolId}":`, error)
+                    destroyed = false
+                }
+                if (toolInstance.api === api) toolInstance.api = null
+            }
         }
 
-        // The teardown is announced on the bus rather than by any direct
-        // call, which is what keeps this controller from knowing anything
-        // about the services plugins reach for. It is an announcement, not a
-        // release: whatever the tool borrowed from core — the map popup, for
-        // one — its own destroy() hands back, because `pluginId` here is the
-        // controller's tool id, not the identity the tool spoke to core
-        // services with, so no listener could match this event to what the
-        // tool was holding. A listener releasing a shared resource on it
-        // would take a surviving plugin's with it.
+        // The teardown is announced on the bus rather than by any direct call,
+        // which is what keeps this controller from knowing anything about the
+        // services plugins reach for. `pluginId` is the tool's bus identity —
+        // the id its handle was minted with, the one it speaks to core
+        // services under — so a service holding a resource for this plugin can
+        // match the announcement to what it holds and let go of it, while a
+        // surviving plugin's stays untouched.
         mmgisAPI.emit('plugins:destroyed', Object.freeze({ pluginId: toolId }))
 
         if (destroyed) {
@@ -553,13 +644,15 @@ const ToolControllerModern_ = {
      * Show a plugin that was hidden via hidePlugin or startHidden config.
      * The plugin must already be loaded — its instance and state are preserved.
      *
-     * @param {string} pluginId - Tool ID (e.g., 'TitleTool')
+     * @param {string} nameOrId - Canonical tool id (e.g., 'title'), display
+     * name, or registry binding
      * @returns {boolean} True if shown successfully, false if not found
      */
-    showPlugin: function (pluginId) {
+    showPlugin: function (nameOrId) {
+        const pluginId = resolvePluginId(nameOrId)
         const targetId = toolIdToTargetId.get(pluginId)
         if (!targetId) {
-            logger.warn(`showPlugin: "${pluginId}" is not a loaded plugin`)
+            logger.warn(`showPlugin: "${nameOrId}" is not a loaded plugin`)
             return false
         }
         document.getElementById(targetId)?.classList.remove('plugin-hidden')
@@ -573,13 +666,14 @@ const ToolControllerModern_ = {
      * Hide a plugin without destroying it. Its instance and internal state are preserved;
      * calling showPlugin later restores it exactly as left.
      *
-     * @param {string} pluginId - Tool ID
+     * @param {string} nameOrId - Tool id, display name, or registry binding
      * @returns {boolean} True if hidden successfully, false if not found
      */
-    hidePlugin: function (pluginId) {
+    hidePlugin: function (nameOrId) {
+        const pluginId = resolvePluginId(nameOrId)
         const targetId = toolIdToTargetId.get(pluginId)
         if (!targetId) {
-            logger.warn(`hidePlugin: "${pluginId}" is not a loaded plugin`)
+            logger.warn(`hidePlugin: "${nameOrId}" is not a loaded plugin`)
             return false
         }
         document.getElementById(targetId)?.classList.add('plugin-hidden')
@@ -593,17 +687,18 @@ const ToolControllerModern_ = {
      * Load a plugin that is currently deferred (startUnloaded at init, or previously unloaded).
      * Calls make() on the existing DOM container. The plugin starts visible after load.
      *
-     * @param {string} pluginId - Tool ID
+     * @param {string} nameOrId - Tool id, display name, or registry binding
      * @returns {boolean} True if loaded (or already loaded), false if not found / load failed
      */
-    loadPlugin: function (pluginId) {
+    loadPlugin: function (nameOrId) {
+        const pluginId = resolvePluginId(nameOrId)
         if (toolIdToTargetId.has(pluginId)) {
-            logger.warn(`loadPlugin: "${pluginId}" is already loaded`)
+            logger.warn(`loadPlugin: "${nameOrId}" is already loaded`)
             return true
         }
         const deferred = deferredTools.get(pluginId)
         if (!deferred) {
-            logger.warn(`loadPlugin: "${pluginId}" not found in deferred registry`)
+            logger.warn(`loadPlugin: "${nameOrId}" not found in deferred registry`)
             return false
         }
         const instance = this.loadTool(deferred.toolMetadata, deferred.targetId)
@@ -622,18 +717,19 @@ const ToolControllerModern_ = {
      * Fully unload a plugin, releasing its instance and resources.
      * The DOM container is emptied but kept in place so loadPlugin can recreate it later.
      *
-     * @param {string} pluginId - Tool ID
+     * @param {string} nameOrId - Tool id, display name, or registry binding
      * @returns {boolean} True if unloaded successfully, false if not found or already unloaded
      */
-    unloadPlugin: function (pluginId) {
+    unloadPlugin: function (nameOrId) {
+        const pluginId = resolvePluginId(nameOrId)
         const targetId = toolIdToTargetId.get(pluginId)
         if (!targetId) {
-            logger.warn(`unloadPlugin: "${pluginId}" is not loaded`)
+            logger.warn(`unloadPlugin: "${nameOrId}" is not loaded`)
             return false
         }
         const toolData = loadedTools.get(targetId)
         if (!toolData) {
-            logger.warn(`unloadPlugin: "${pluginId}" data not found`)
+            logger.warn(`unloadPlugin: "${nameOrId}" data not found`)
             return false
         }
         const savedMetadata = toolData.toolMetadata
@@ -659,11 +755,11 @@ const ToolControllerModern_ = {
     /**
      * Check if a plugin is currently loaded (make() has been called and not yet destroyed)
      *
-     * @param {string} pluginId - Tool ID
+     * @param {string} nameOrId - Tool id, display name, or registry binding
      * @returns {boolean}
      */
-    isPluginLoaded: function (pluginId) {
-        return toolIdToTargetId.has(pluginId)
+    isPluginLoaded: function (nameOrId) {
+        return toolIdToTargetId.has(resolvePluginId(nameOrId))
     },
 
     /**
@@ -671,10 +767,11 @@ const ToolControllerModern_ = {
      * (loaded but not visible), or because it's deferred/unloaded (startUnloaded,
      * or unloadPlugin)
      *
-     * @param {string} pluginId - Tool ID
+     * @param {string} nameOrId - Tool id, display name, or registry binding
      * @returns {boolean}
      */
-    isPluginHidden: function (pluginId) {
+    isPluginHidden: function (nameOrId) {
+        const pluginId = resolvePluginId(nameOrId)
         return hiddenTools.has(pluginId) || deferredTools.has(pluginId)
     },
 
@@ -684,10 +781,11 @@ const ToolControllerModern_ = {
      * - hidden:   loaded, instance and state intact, not visible
      * - visible:  loaded and on screen
      *
-     * @param {string} pluginId - Tool ID
+     * @param {string} nameOrId - Tool id, display name, or registry binding
      * @returns {'unloaded'|'hidden'|'visible'|null} null when the id is unknown
      */
-    getPluginState: function (pluginId) {
+    getPluginState: function (nameOrId) {
+        const pluginId = resolvePluginId(nameOrId)
         if (deferredTools.has(pluginId)) return 'unloaded'
         if (!toolIdToTargetId.has(pluginId)) return null
         return hiddenTools.has(pluginId) ? 'hidden' : 'visible'
@@ -698,15 +796,16 @@ const ToolControllerModern_ = {
      * transition needs — asking for 'visible' on an unloaded plugin loads it.
      * Idempotent: asking for the state a plugin already holds changes nothing.
      *
-     * @param {string} pluginId - Tool ID
+     * @param {string} nameOrId - Tool id, display name, or registry binding
      * @param {'unloaded'|'hidden'|'visible'} state - Target state
      * @returns {object} { ok: true, state, changed } or { ok: false, reason }
      */
-    setPluginState: function (pluginId, state) {
+    setPluginState: function (nameOrId, state) {
         if (!['unloaded', 'hidden', 'visible'].includes(state)) {
             return { ok: false, reason: 'bad-request' }
         }
 
+        const pluginId = resolvePluginId(nameOrId)
         const current = this.getPluginState(pluginId)
         if (current === null) return { ok: false, reason: 'not-found' }
         if (current === state) return { ok: true, state, changed: false }

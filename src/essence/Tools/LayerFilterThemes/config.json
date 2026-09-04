@@ -25,6 +25,7 @@
         }
     },
     "name": "LayerFilterThemes",
+    "id": "layerfilterthemes",
     "defaultIcon": "view-dashboard-outline",
     "description": "Theme rail for the two-step layer filter (step 1). Configures its own theme list and owns the selection; pair it with a panel plugin (LayerFilter, or a swap-in) whose theme ids match. Also carries a chevron that opens/closes a neighbouring panel. Events \u2014 emits: plugin:layerfilterthemes:selectedThemeChanged { themeId, initial? }. Requests: tool:getVars, panels:getAll, panels:show, panels:hide. Listens: panels:changed.",
     "hasVars": true,

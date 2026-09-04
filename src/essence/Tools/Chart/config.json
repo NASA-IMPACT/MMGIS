@@ -10,6 +10,7 @@
     },
     "hasVars": false,
     "name": "Chart",
+    "id": "chart",
     "toolbarPriority": 6,
     "separatedTool": true,
     "paths": {

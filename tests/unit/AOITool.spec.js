@@ -164,6 +164,10 @@ beforeEach(async () => {
     api = makeFakeApi()
     window.mmgisAPI = api
 
+    // The controller injects the plugin-scoped handle before make() runs, and
+    // that handle is what stamps `aoi` on the requests these specs read.
+    AOITool.api = api.forPlugin('aoi')
+
     AOITool.make('toolPanel')
     await flush()
     api.reset()
@@ -173,6 +177,7 @@ afterEach(() => {
     AOITool.destroy()
     const container = document.getElementById('toolPanel')
     if (container) container.remove()
+    delete AOITool.api
     delete window.mmgisAPI
     vi.useRealTimers()
 })

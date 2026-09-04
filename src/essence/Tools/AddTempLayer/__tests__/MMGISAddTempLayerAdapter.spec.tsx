@@ -9,7 +9,8 @@ import { mount, click } from '../../_shared/__tests__/reactHarness'
  * a closed form sitting over the map, without an error anyone would notice.
  */
 
-const TOOL_ID = 'AddTempLayerTool'
+/** The plugin's canonical id, as declared in its config.json. */
+const TOOL_ID = 'addtemplayer'
 
 let request: ReturnType<typeof vi.fn>
 
@@ -34,7 +35,11 @@ test('the close button hides the plugin over the bus', async () => {
     expect(closeButton).not.toBeNull()
     await click(closeButton as Element)
 
-    expect(request).toHaveBeenCalledWith('plugins:hide', { pluginId: TOOL_ID })
+    expect(request).toHaveBeenCalledWith(
+        'plugins:hide',
+        { pluginId: TOOL_ID },
+        undefined
+    )
     await unmount()
 })
 

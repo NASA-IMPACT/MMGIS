@@ -22,9 +22,9 @@ const RAIL_PANEL = {
     id: 'rail',
     position: 'left',
     state: 'expanded',
-    // The `js` id a mission config gives the tool, which is what the layout
-    // lists — not the lowercased name `tool:getVars` is keyed by.
-    toolIds: ['LayerFilterThemesTool'],
+    // The canonical id declared in the tool's `config.json`, which is what the
+    // layout lists.
+    toolIds: ['layerfilterthemes'],
 }
 const NEIGHBOUR = {
     id: 'filters',
@@ -86,7 +86,11 @@ test('the chevron collapses the visible neighbour', async () => {
 
     await click(chevron(container) as Element)
 
-    expect(request).toHaveBeenCalledWith('panels:hide', { panelId: 'filters' })
+    expect(request).toHaveBeenCalledWith(
+        'panels:hide',
+        { panelId: 'filters' },
+        undefined
+    )
     await unmount()
 })
 
@@ -99,7 +103,11 @@ test('the chevron reopens the neighbour once the layout reports it collapsed', a
 
     expect(chevron(container)?.getAttribute('aria-label')).toBe('Open panel')
     await click(chevron(container) as Element)
-    expect(request).toHaveBeenCalledWith('panels:show', { panelId: 'filters' })
+    expect(request).toHaveBeenCalledWith(
+        'panels:show',
+        { panelId: 'filters' },
+        undefined
+    )
     await unmount()
 })
 
@@ -132,7 +140,11 @@ test('the configured panel wins over the neighbour it would have picked', async 
 
     await click(chevron(container) as Element)
 
-    expect(request).toHaveBeenCalledWith('panels:hide', { panelId: 'legend' })
+    expect(request).toHaveBeenCalledWith(
+        'panels:hide',
+        { panelId: 'legend' },
+        undefined
+    )
     await unmount()
 })
 

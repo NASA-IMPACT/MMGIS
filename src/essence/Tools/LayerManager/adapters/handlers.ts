@@ -74,7 +74,8 @@ export const compareLayer = (layerId: string): void => {
     mmgisEmit('plugin:comparison:startWithLayer', { layerId })
 }
 
-export const ADD_LAYER_PLUGIN_ID = 'AddTempLayerTool'
+/** AddTempLayer's canonical id, as declared in that plugin's config.json. */
+export const ADD_LAYER_PLUGIN_ID = 'addtemplayer'
 
 /** Reveals the "add layer from URL" form. */
 export const showAddLayer = (): void => {

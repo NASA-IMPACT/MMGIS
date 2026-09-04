@@ -73,7 +73,7 @@ Emit an event to all subscribers.
 
 ```javascript
 // Emit a custom event from your plugin
-window.mmgisAPI.emit('plugin:myPlugin:dataUpdated', {
+window.mmgisAPI.emit('plugin:my-plugin:dataUpdated', {
     timestamp: Date.now(),
     values: [1, 2, 3]
 })
@@ -95,7 +95,7 @@ Register a provider that responds to requests.
 
 ```javascript
 // Register a provider in your plugin
-const cleanup = window.mmgisAPI.provide('plugin:myPlugin:getData', (params) => {
+const cleanup = window.mmgisAPI.provide('plugin:my-plugin:getData', (params) => {
     return {
         value: params.id * 2,
         timestamp: Date.now()
@@ -158,9 +158,20 @@ anything there right now.
 
 ## Plugin Scoped API
 
-MMGIS automatically injects a scoped API into each tool as `this.api`. This API automatically prefixes event and provider names with `plugin:{pluginId}:`, where `pluginId` is derived from the tool's module name (e.g., `DrawTool` → `draw`).
+MMGIS injects a scoped API as `this.api` into each tool it loads. It prefixes event and provider names with `plugin:{pluginId}:`, where `pluginId` is the id the tool declares in its own `config.json`:
 
-> **Note:** Each plugin must have a unique ID. Multiple instances of the same plugin in a mission are not currently supported. If two plugins share the same ID, their events and providers will collide. This constraint is not currently enforced at runtime but may be in a future version.
+```json
+{
+    "name": "FetchStats",
+    "id": "fetch-stats"
+}
+```
+
+That declaration is the tool's whole identity — the same string names it on the bus, in `plugins:show:<pluginId>` and friends, and in the `plugins:destroyed` its teardown fires. MMGIS mints the handle from it before the tool's `initialize()` runs and releases it after the tool's `destroy()` returns, unregistering every provider the handle registered. Anything a tool subscribes to straight on `window.mmgisAPI` sits outside the handle and stays the tool's own to remove.
+
+> **Note:** An id must match `/^[a-z][a-z0-9-]*$/`, and no two tools may answer to the same one: the build refuses to generate the tool registry, and loading a mission whose live tools resolve to one id throws, both naming the pair that collided. One identity means one instance — a mission cannot run two instances of the same tool.
+
+Both layouts mint from the same declared id, so a tool answers to one identity whichever one loads it. The modern layout mints a handle each time it loads the tool and releases it when the tool is destroyed. The classic layout mints once per page load, holds the handle for the mission, and releases it on a mission swap without minting a replacement — a classic tool's `provide`d handlers and its `plugin:{id}:getVars` go off the bus at that point and do not come back; its `mmgisAPI.on` subscriptions are untouched.
 
 The scoped API is available on `this.api` in your tool's `initialize()` and `make()` functions:
 
@@ -182,13 +193,13 @@ const MyTool = {
 Emit an event with auto-prefixed name.
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
+const api = window.mmgisAPI.forPlugin('my-plugin')
 
-// This emits 'plugin:myPlugin:dataUpdated'
+// This emits 'plugin:my-plugin:dataUpdated'
 api.emit('dataUpdated', { value: 42 })
 
 // Subscribers listen using the full path
-window.mmgisAPI.on('plugin:myPlugin:dataUpdated', (data) => {
+window.mmgisAPI.on('plugin:my-plugin:dataUpdated', (data) => {
     console.log(data.value) // 42
 })
 ```
@@ -200,15 +211,15 @@ Register a provider with auto-prefixed name.
 **Returns:** Cleanup function
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
+const api = window.mmgisAPI.forPlugin('my-plugin')
 
-// This registers 'plugin:myPlugin:getData'
+// This registers 'plugin:my-plugin:getData'
 const cleanup = api.provide('getData', (params) => {
     return { result: params.input * 2 }
 })
 
 // Callers request using the full path
-const data = await window.mmgisAPI.request('plugin:myPlugin:getData', { input: 21 })
+const data = await window.mmgisAPI.request('plugin:my-plugin:getData', { input: 21 })
 console.log(data.result) // 42
 
 // Later, remove the provider
@@ -222,9 +233,9 @@ Make a request stamped with the plugin's id.
 The name is **not** prefixed, unlike `emit` and `provide`: a request names someone else's provider, not one of this plugin's, and prefixing it would put `map:showPopup` out of reach. What the handle adds is the plugin's id: it fills the `caller` option, so the id travels beside the params and tells the provider who is asking.
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
+const api = window.mmgisAPI.forPlugin('my-plugin')
 
-// Reaches 'map:hidePopup' under that exact name, with 'myPlugin'
+// Reaches 'map:hidePopup' under that exact name, with 'my-plugin'
 // stamped on as the caller.
 await api.request('map:hidePopup')
 ```
@@ -236,22 +247,23 @@ Prefer this to `window.mmgisAPI.request(...)`: some providers answer differently
 The scoped API also exposes metadata:
 
 ```javascript
-const api = window.mmgisAPI.forPlugin('myPlugin')
+const api = window.mmgisAPI.forPlugin('my-plugin')
 
-console.log(api.pluginId) // 'myPlugin'
-console.log(api.prefix)   // 'plugin:myPlugin:'
+console.log(api.pluginId) // 'my-plugin'
+console.log(api.prefix)   // 'plugin:my-plugin:'
 ```
 
 ### Complete Plugin Example
 
 ```javascript
-// MyPluginTool.js - this.api is automatically injected by ToolController
+// MyPluginTool.js - its config.json declares { "id": "my-plugin" }, and
+// ToolController injects this.api minted from that id
 const MyPluginTool = {
     _cleanups: [],
 
     initialize() {
         // this.api is available here (auto-injected)
-        // Register providers (auto-prefixed to 'plugin:myplugin:getData')
+        // Register providers (auto-prefixed to 'plugin:my-plugin:getData')
         this._cleanups.push(
             this.api.provide('getData', () => this.data),
             this.api.provide('setData', (newData) => { this.data = newData })
@@ -274,7 +286,7 @@ const MyPluginTool = {
     },
 
     notifyUpdate() {
-        // Emit events (auto-prefixed to 'plugin:myplugin:updated')
+        // Emit events (auto-prefixed to 'plugin:my-plugin:updated')
         this.api.emit('updated', { timestamp: Date.now() })
     }
 }
@@ -395,15 +407,14 @@ A component that seeds from `panels:getAll` and also subscribes to
 has already delivered — the request can resolve after a later event lands.
 
 `plugins:destroyed` and `plugins:allDestroyed` report the teardown itself
-rather than the listing that results from it. The collective signal is the
-one a core service releases shared resources on — the map popup, for one,
-closes there — because with every plugin destroyed the resource's owner is
-among them and no surviving plugin pays for the release. A single plugin's
-teardown releases nothing centrally: the plugin hands back what it borrowed
-in its own `destroy()`, and `pluginId` names the tool the controller
-destroyed, which is not the identity the plugin spoke to services with, so a
-listener cannot match the event to what the plugin was holding. A teardown a
-command asked for is followed by `plugins:changed` carrying the new listing.
+rather than the listing that results from it. Both are signals a core service
+releases shared resources on — the map popup, for one, closes there.
+`pluginId` is the identity the departing plugin spoke to services under, so a
+release matched against it reaches only what that plugin held and a surviving
+plugin's stays put. The collective signal releases outright, because with
+every plugin destroyed the resource's owner is among them and no surviving
+plugin pays for the release. A teardown a command asked for is followed by
+`plugins:changed` carrying the new listing.
 
 ### WebSocket Events
 
@@ -658,7 +669,7 @@ something already holds succeeds with `changed: false` and broadcasts nothing.
 
 ```javascript
 const panels = await window.mmgisAPI.request('panels:getAll')
-const mine = panels.find((p) => p.toolIds.includes('myPlugin'))
+const mine = panels.find((p) => p.toolIds.includes('my-plugin'))
 
 const result = await window.mmgisAPI.request(
     mine.state === 'collapsed' ? 'panels:show' : 'panels:hide',
@@ -808,8 +819,8 @@ function initProviders() {
         // Clean up previous providers
         _providerCleanups.forEach(cleanup => cleanup())
         _providerCleanups = [
-            window.mmgisAPI.provide('plugin:myPlugin:getData', handler1),
-            window.mmgisAPI.provide('plugin:myPlugin:setData', handler2),
+            window.mmgisAPI.provide('plugin:my-plugin:getData', handler1),
+            window.mmgisAPI.provide('plugin:my-plugin:setData', handler2),
         ]
     }
 }
@@ -817,7 +828,7 @@ function initProviders() {
 
 ### 4. Use `this.api` for Auto-Namespacing
 
-Tools have a scoped API automatically injected as `this.api`. Use it for emitting events and providing handlers:
+Every tool either layout loads has a scoped API automatically injected as `this.api`. Use it for emitting events and providing handlers:
 
 ```javascript
 // In your tool - this.api is auto-injected by ToolController

@@ -5,20 +5,19 @@ import { describe, test, expect, beforeAll, afterAll, afterEach, vi } from 'vite
 // real viewers, so stub the aggregator to keep Map_'s import chain parseable.
 vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
 
-// The controller resolves tool ids against the real tool registry. Two inert
-// modules cover what a teardown can meet: a tool that hands back nothing, and
-// a tool that retracts its own popup in destroy(), the way a well-behaved
-// plugin does.
+// The controller reaches a tool's class through its module binding in the real
+// tool registry. Two inert modules cover what a teardown can meet: a tool that
+// hands back nothing, and a tool that retracts its own popup in destroy(), the
+// way a well-behaved plugin does — through the handle the controller injected,
+// which is still its to use while destroy() runs.
 vi.mock('../../src/pre/tools', () => ({
+    toolIds: {},
     toolModules: {
         FakeTool: { make: () => {}, destroy: () => {} },
         RetractingTool: {
             make: () => {},
-            destroy: () => {
-                window.mmgisAPI
-                    .forPlugin('RetractingTool')
-                    .request('map:hidePopup')
-                    .catch(() => {})
+            destroy() {
+                this.api.request('map:hidePopup').catch(() => {})
             },
         },
     },
@@ -33,6 +32,7 @@ const { mmgisAPI } = await import('../../src/essence/mmgisAPI/mmgisAPI')
 const { default: ToolControllerModern_ } = await import(
     '../../src/essence/Basics/ToolController_/ToolControllerModern_'
 )
+const { toolModules } = await import('../../src/pre/tools')
 
 /**
  * The popup service run the way the app runs it: the real controller and the
@@ -81,11 +81,16 @@ const cardCount = () =>
 /** Let the bus promises settle and the popup's deferred wiring run. */
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-/** Open a popup as `pluginId` and hand back how its request settles. */
-async function showPopupAs(pluginId) {
+/**
+ * Open a popup through a handle, and hand back how its request settles.
+ *
+ * A loaded tool goes through the handle the controller injected — the same one
+ * its own code would reach for — so what these specs exercise is the identity
+ * the controller minted, not a second one standing in for it.
+ */
+async function showPopupThrough(api) {
     const outcome = { result: null }
-    const settled = mmgisAPI
-        .forPlugin(pluginId)
+    const settled = api
         .request('map:showPopup', popupRequest)
         .then((result) => {
             outcome.result = result
@@ -93,6 +98,10 @@ async function showPopupAs(pluginId) {
     await flush()
     return { outcome, settled }
 }
+
+/** A popup opened by a plugin that is not one of the loaded tools. */
+const showPopupAs = (pluginId) =>
+    showPopupThrough(mmgisAPI.forPlugin(pluginId))
 
 beforeAll(() => {
     // Map_ captured `window.L` at import; init writes onto it.
@@ -128,41 +137,44 @@ describe('a tool being torn down', () => {
         document.getElementById('retracting-target')?.remove()
     })
 
-    function loadTool(toolId, targetId) {
+    function loadTool(toolId, toolModule, targetId) {
         const target = document.createElement('div')
         target.id = targetId
         document.body.appendChild(target)
-        ToolControllerModern_.loadTool({ id: toolId, name: toolId }, targetId)
+        ToolControllerModern_.loadTool(
+            { id: toolId, module: toolModule, name: toolModule }, targetId
+        )
     }
 
-    // A layout re-render destroys every tool without going near `Map_.init`,
-    // which is the only other place a popup is ever dropped. The popup's owner
-    // is among the destroyed by construction — here it is the very tool whose
-    // destroy() hands nothing back — so core closing the slot wrongs no one.
-    test('a full teardown takes the popup with it and answers its request', async () => {
-        loadTool('FakeTool', 'fake-target')
-        const { outcome, settled } = await showPopupAs('FakeTool')
+    test('takes its own card with it and answers its request', async () => {
+        loadTool('fake', 'FakeTool', 'fake-target')
+        const { outcome, settled } = await showPopupThrough(
+            toolModules.FakeTool.api
+        )
         expect(cardCount()).toBe(1)
 
-        ToolControllerModern_.destroyAllTools()
+        // FakeTool's destroy() hands nothing back, so the card only goes if
+        // core reads the teardown announcement: it names the id the popup is
+        // owned by, which is all a close needs to be aimed rather than blanket.
+        expect(ToolControllerModern_.unloadPlugin('fake')).toBe(true)
 
+        await flush()
         expect(cardCount()).toBe(0)
         await settled
         expect(outcome.result).toEqual({ action: 'closed' })
     })
 
-    test("one tool unloading leaves another plugin's card standing", async () => {
-        loadTool('FakeTool', 'fake-target')
+    test("leaves another plugin's card standing", async () => {
+        loadTool('fake', 'FakeTool', 'fake-target')
 
-        // Deliberately someone else's popup. The plugin the controller
-        // destroys is announced by its tool id, which is not the identity the
-        // popup's opener spoke with, so core has nothing to match them by —
-        // and a blanket close would cost this bystander its card while its
-        // plugin is alive to stand behind it.
+        // Deliberately someone else's popup: 'crater-info' is not the plugin
+        // being unloaded, and it is alive to stand behind its card. The close
+        // is owner-gated, so the id the announcement carries reaches only the
+        // departing plugin's own popup.
         const { outcome } = await showPopupAs('crater-info')
         expect(cardCount()).toBe(1)
 
-        expect(ToolControllerModern_.unloadPlugin('FakeTool')).toBe(true)
+        expect(ToolControllerModern_.unloadPlugin('fake')).toBe(true)
 
         await flush()
         expect(cardCount()).toBe(1)
@@ -172,15 +184,18 @@ describe('a tool being torn down', () => {
         await mmgisAPI.forPlugin('crater-info').request('map:hidePopup')
     })
 
-    test('a plugin retracting in destroy() takes its own card with it', async () => {
-        loadTool('RetractingTool', 'retracting-target')
-        const { outcome, settled } = await showPopupAs('RetractingTool')
+    test('may retract its own card in destroy() before core does', async () => {
+        loadTool('retracting', 'RetractingTool', 'retracting-target')
+        const { outcome, settled } = await showPopupThrough(
+            toolModules.RetractingTool.api
+        )
         expect(cardCount()).toBe(1)
 
-        // Unloading one plugin runs its destroy(), where a well-behaved
-        // plugin hands the popup slot back itself — safely, because core
-        // retracts a popup only for the caller that opened it.
-        expect(ToolControllerModern_.unloadPlugin('RetractingTool')).toBe(true)
+        // Unloading one plugin runs its destroy() first, where this plugin
+        // hands the popup slot back itself — safely, because core retracts a
+        // popup only for the caller that opened it. The teardown announcement
+        // that follows finds an empty slot and leaves it empty.
+        expect(ToolControllerModern_.unloadPlugin('retracting')).toBe(true)
 
         await flush()
         expect(cardCount()).toBe(0)
@@ -188,21 +203,23 @@ describe('a tool being torn down', () => {
         expect(outcome.result).toEqual({ action: 'closed' })
     })
 
-    test('a card its own plugin failed to retract stands after the unload', async () => {
-        loadTool('FakeTool', 'fake-target')
-        const { outcome } = await showPopupAs('FakeTool')
+    // A layout re-render destroys every tool without going near `Map_.init`,
+    // which is the only other place a popup is ever dropped. With every plugin
+    // gone the popup's owner is among the departed whether or not the slot is
+    // held by one of them, so the collective signal empties it outright.
+    test('a full teardown takes a popup no plugin claims with it', async () => {
+        loadTool('fake', 'FakeTool', 'fake-target')
+
+        // 'crater-info' is nobody the sweep names, so only the collective
+        // signal can account for this card going away.
+        const { outcome, settled } = await showPopupAs('crater-info')
         expect(cardCount()).toBe(1)
 
-        // FakeTool's destroy() hands nothing back. Core leaves the card
-        // standing rather than guess at its owner: the user can still dismiss
-        // it, and closing on every unload is what cost bystanders theirs.
-        expect(ToolControllerModern_.unloadPlugin('FakeTool')).toBe(true)
+        ToolControllerModern_.destroyAllTools()
 
-        await flush()
-        expect(cardCount()).toBe(1)
-        expect(outcome.result).toBeNull()
-
-        await mmgisAPI.forPlugin('FakeTool').request('map:hidePopup')
+        expect(cardCount()).toBe(0)
+        await settled
+        expect(outcome.result).toEqual({ action: 'closed' })
     })
 
     test('leaves the map alone when there was no tool to destroy', async () => {
@@ -211,13 +228,40 @@ describe('a tool being torn down', () => {
 
         // Nothing is loaded, so nothing is announced and the popup stands.
         ToolControllerModern_.destroyAllTools()
-        expect(ToolControllerModern_.unloadPlugin('FakeTool')).toBe(false)
+        expect(ToolControllerModern_.unloadPlugin('fake')).toBe(false)
 
         await flush()
         expect(cardCount()).toBe(1)
         expect(outcome.result).toBeNull()
 
         await mmgisAPI.forPlugin('crater-info').request('map:hidePopup')
+    })
+
+    // "No id" is the anonymous owner's own identity, not a wildcard, so an
+    // announcement that names nobody would otherwise close exactly the popup
+    // that was opened without a handle.
+    test('an announcement naming no plugin leaves an unowned card standing', async () => {
+        // Opened without a handle on purpose: the sibling helper mints one,
+        // and the card this guards is the one no plugin owns.
+        let outcome = null
+        const settled = mmgisAPI
+            .request('map:showPopup', popupRequest)
+            .then((result) => {
+                outcome = result
+            })
+        await flush()
+        expect(cardCount()).toBe(1)
+
+        mmgisAPI.emit('plugins:destroyed', Object.freeze({}))
+
+        await flush()
+        expect(cardCount()).toBe(1)
+        expect(outcome).toBeNull()
+
+        // The slot is a singleton shared with every other spec in this file.
+        await mmgisAPI.request('map:hidePopup')
+        await settled
+        expect(outcome).toEqual({ action: 'closed' })
     })
 })
 

@@ -2,6 +2,7 @@ import $ from 'jquery'
 import L_ from '../Layers_/Layers_'
 import TimeUI from '../TimeControl_/TimeUI'
 import { toolModules, toolConfigs } from '../../../pre/tools'
+import { toolCanonicalId } from './ToolMetadataUtils'
 
 import tippy from 'tippy.js'
 
@@ -482,15 +483,16 @@ let ToolController_ = {
 
         ToolController_.toolModuleNames.forEach((t) => {
             const tool = ToolController_.toolModules[t]
-            if (tool) {
-                // Inject scoped API based on tool name (e.g., "DrawTool" -> "draw")
-                if (window.mmgisAPI && !tool.api) {
-                    const pluginId = t.replace(/Tool$/, '').toLowerCase()
-                    tool.api = window.mmgisAPI.forPlugin(pluginId)
-                }
-                if (typeof tool.initialize === 'function') {
-                    tool.initialize()
-                }
+            if (!tool) return
+            // Mint the tool's bus handle before it can run any of its own code,
+            // under the same canonical id the modern controller uses, so a tool
+            // speaks to core under one identity whichever layout loads it.
+            // clear() hands the handle back.
+            if (window.mmgisAPI && !tool.api) {
+                tool.api = window.mmgisAPI.forPlugin(toolCanonicalId({ js: t }))
+            }
+            if (typeof tool.initialize === 'function') {
+                tool.initialize()
             }
         })
 
@@ -501,6 +503,18 @@ let ToolController_ = {
     },
     clear() {
         $('#toolbarTools').remove()
+        // Hand back what each minted handle registered, guarded one tool at a
+        // time so a release that throws does not abandon the rest.
+        this.toolModuleNames.forEach((t) => {
+            const tool = this.toolModules[t]
+            if (!tool || !tool.api) return
+            try {
+                tool.api.release()
+            } catch (err) {
+                console.error(`Error releasing the bus handle for "${t}":`, err)
+            }
+            tool.api = null
+        })
         this.tools = null
         this.incToolsDiv = null
         this.excToolsDiv = null

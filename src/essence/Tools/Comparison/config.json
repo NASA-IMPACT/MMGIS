@@ -10,6 +10,7 @@
     },
     "hasVars": false,
     "name": "Comparison",
+    "id": "comparison",
     "toolbarPriority": 7,
     "width": 350,
     "height": 0,

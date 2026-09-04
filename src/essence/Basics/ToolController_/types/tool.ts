@@ -19,8 +19,11 @@ export type ToolOrientation = (typeof TOOL_ORIENTATION)[keyof typeof TOOL_ORIENT
  * Layout and UI-related properties should be defined here.
  */
 export interface ToolMetadata {
-    /** Unique identifier for the tool */
+    /** Canonical tool id: its identity on the bus, in the DOM and in events */
     id: string;
+
+    /** Binding that reaches the tool's class in the generated tool registry */
+    module?: string;
 
     /** Display name */
     name: string;

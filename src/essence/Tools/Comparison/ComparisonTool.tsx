@@ -35,7 +35,8 @@ import {
     mmgisShowPlugin,
 } from '../_shared/adapters/mmgisAPI'
 
-const PLUGIN_ID = 'ComparisonTool'
+/** This plugin's canonical id, as declared in its config.json. */
+const PLUGIN_ID = 'comparison'
 
 // ── Module-level state ────────────────────────────────────────────────────────
 // A hand-off can fire before make() has ever run, so the bus listeners live at

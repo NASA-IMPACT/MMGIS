@@ -31,17 +31,29 @@ describe('resolveAction', () => {
 
     test('maps a panel action to a panelId request', async () => {
         await resolveAction('panels:hide:left-panel')
-        expect(request).toHaveBeenCalledWith('panels:hide', { panelId: 'left-panel' })
+        expect(request).toHaveBeenCalledWith(
+            'panels:hide',
+            { panelId: 'left-panel' },
+            undefined
+        )
     })
 
     test('maps a plugin action to a pluginId request', async () => {
-        await resolveAction('plugins:show:DrawTool')
-        expect(request).toHaveBeenCalledWith('plugins:show', { pluginId: 'DrawTool' })
+        await resolveAction('plugins:show:draw')
+        expect(request).toHaveBeenCalledWith(
+            'plugins:show',
+            { pluginId: 'draw' },
+            undefined
+        )
     })
 
     test('preserves colons inside a target', async () => {
         await resolveAction('panels:hide:group:left')
-        expect(request).toHaveBeenCalledWith('panels:hide', { panelId: 'group:left' })
+        expect(request).toHaveBeenCalledWith(
+            'panels:hide',
+            { panelId: 'group:left' },
+            undefined
+        )
     })
 
     test('emits anything else as a plain event', async () => {
@@ -57,13 +69,13 @@ describe('resolveAction', () => {
 
         // Still emitted verbatim — a bare event name is legal.
         expect(emit).toHaveBeenCalledWith('refresh', undefined)
-        // But it reaches no `plugin:<toolId>:` listener, so it is called out
+        // But it reaches no `plugin:<pluginId>:` listener, so it is called out
         // and the warning names the form the author most likely wanted.
         expect(warn).toHaveBeenCalledWith(
             expect.stringContaining('"refresh" has no namespace'),
         )
         expect(warn).toHaveBeenCalledWith(
-            expect.stringContaining('plugin:<toolId>:refresh'),
+            expect.stringContaining('plugin:<pluginId>:refresh'),
         )
     })
 

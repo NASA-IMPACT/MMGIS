@@ -18,10 +18,9 @@ import type { ThemeSummary } from './lib/types'
 // replacement panel can subscribe without inheriting the old panel's name.
 const SELECTED_THEME_EVENT = 'plugin:layerfilterthemes:selectedThemeChanged'
 
-// How the layout identifies this plugin — the `js` id a mission config gives
-// the tool, which is what a panel lists in `toolIds`. Distinct from the
-// lowercased tool name `tool:getVars` is keyed by.
-const TOOL_ID = 'LayerFilterThemesTool'
+// How the layout identifies this plugin — the canonical id declared in
+// `config.json`, which is what a panel lists in `toolIds`.
+const TOOL_ID = 'layerfilterthemes'
 
 type ThemeRailVars = {
     themes?: unknown

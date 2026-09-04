@@ -3,7 +3,10 @@
  *
  * Pluggable contract:
  *
- *   pluginId: 'aoi'
+ *   pluginId: 'aoi' — declared in this plugin's config.json. The tool
+ *   controller mints the plugin-scoped bus handle from it and injects it as
+ *   `AOITool.api` before make() runs, which is what stamps every request
+ *   below with `aoi` and prefixes every emit and provide with `plugin:aoi:`.
  *
  *   Emits  (auto-prefixed plugin:aoi:):
  *     - areaDrawn          { feature, source: 'search'|'draw'|'upload'|'inspect' }
@@ -50,8 +53,7 @@ import {
 } from './aoiHelpers'
 import { loadBoundaries } from './aoiBoundaryLoader'
 
-// ── Plugin identity / layer ids ────────────────────────────────────────────────
-const PLUGIN_ID = 'aoi'
+// ── Draw shapes / layer ids ────────────────────────────────────────────────────
 const DEFAULT_DRAW_SHAPES = ['polygon', 'rectangle', 'circle']
 const VALID_DRAW_SHAPES = new Set(['point', 'linestring', 'polygon', 'rectangle', 'circle'])
 const SELECTION_LAYER_ID = 'aoi:selection'
@@ -154,16 +156,19 @@ const AOITool = {
         }
         this._reactRoot = createRoot(container)
 
-        // The stand-in has to answer everything a real handle does, since the
-        // whole tool goes through it — a missing method is a crash, not a
-        // no-op, at whatever point the tool first reaches for it.
-        this._api =
-            (typeof window !== 'undefined' && window.mmgisAPI?.forPlugin?.(PLUGIN_ID)) ||
-            {
-                emit: () => { },
-                provide: () => () => { },
-                request: () => Promise.resolve(undefined),
-            }
+        // The controller minted this tool's bus handle before make() ran. The
+        // stand-in covers environments that mount the tool without one (bare
+        // component tests), and has to answer everything a real handle does,
+        // since the whole tool goes through it — a missing method is a crash,
+        // not a no-op, at whatever point the tool first reaches for it.
+        // Releasing the handle belongs to the controller, not to destroy().
+        this._api = AOITool.api || {
+            emit: () => { },
+            provide: () => () => { },
+            request: () => Promise.resolve(undefined),
+            getVars: () => ({}),
+            release: () => { },
+        }
 
         this._cleanups.push(
             this._api.provide('getCurrentSelection', () => this._state.currentAOI)
@@ -384,7 +389,7 @@ const AOITool = {
     },
 
     _onClose() {
-        mmgisSetPluginState('AOITool', 'unloaded')
+        mmgisSetPluginState('aoi', 'unloaded')
             .then((result) => {
                 if (!result.ok) {
                     console.warn(`[AOI] unload refused: ${result.reason}`)

@@ -73,6 +73,7 @@ afterEach(() => {
     AOITool._suspendedAOI = null
     AOITool._api = null
     document.body.innerHTML = ''
+    delete AOITool.api
     delete window.mmgisAPI
 })
 
@@ -220,6 +221,9 @@ test.describe('AOI draw-session keys', () => {
             handlers[event] = handler
             return () => delete handlers[event]
         }
+        // The controller injects the plugin-scoped handle before make() runs,
+        // and every request the session makes goes through it.
+        AOITool.api = window.mmgisAPI.forPlugin('aoi')
         appendTo(document.body, 'div', { id: 'toolPanel' })
         AOITool.make('toolPanel')
 

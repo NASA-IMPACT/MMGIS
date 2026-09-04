@@ -3,12 +3,37 @@
  */
 
 import DOMPurify from 'dompurify'
+import { toolIds as generatedToolIds } from '../../../pre/tools'
 import { TOOL_ORIENTATION } from './types/tool'
 import { PANEL_POSITION } from '../PanelManager_/types/layout'
 import { createLogger } from '../Logger_/Logger_'
 
 const logger = createLogger('ToolMetadataUtils')
 
+// pre/tools.js is generated at server start and gitignored, so a bundle can be
+// built against a copy written before the registry carried ids at all. Reading
+// a property off undefined would take every tool's metadata down with it, and
+// the derivation each id falls back to instead quietly renames every tool whose
+// declared id is not its lowercased binding — so say so once. Regenerating the
+// registry is the fix, and nothing further down the line can tell you that.
+//
+// Read on first use, not at module scope: this module sits inside the
+// Layers_ -> ToolController_ -> pre/tools -> every tool -> Layers_ import
+// cycle, where a module-scope read can land before pre/tools has finished
+// evaluating and see nothing.
+let warnedAboutMissingIds = false
+function generatedIds() {
+    if (generatedToolIds) return generatedToolIds
+    if (!warnedAboutMissingIds) {
+        warnedAboutMissingIds = true
+        logger.warn(
+            'The generated tool registry carries no toolIds, so tool ids are ' +
+            'being derived from module bindings. Restart the server to ' +
+            'regenerate src/pre/tools.js.'
+        )
+    }
+    return {}
+}
 
 /**
  * Sanitizes a string value using DOMPurify to prevent XSS attacks
@@ -204,6 +229,14 @@ export function sanitizeToolMetadata(metadata) {
     // Sanitize critical string fields that are used in DOM
     sanitized.id = sanitizeValue(metadata.id, 'id')
     sanitized.name = sanitizeValue(metadata.name, 'text')
+    // generateToolMetadata always sets this, to '' for a config naming no
+    // module. The guard is for metadata assembled by hand — a panel's own
+    // fixtures, a caller sanitizing a partial object — which carries no
+    // binding at all and should come back without the key rather than with an
+    // empty one.
+    if (metadata.module !== undefined) {
+        sanitized.module = sanitizeValue(metadata.module, 'id')
+    }
     sanitized.icon = getValidIconClass(metadata.icon, sanitized.id)
 
     // Verify critical fields didn't become empty
@@ -513,6 +546,42 @@ export function getValidIconClass(iconClass, toolId) {
 }
 
 /**
+ * The canonical id a configured tool entry resolves to.
+ *
+ * Two identities, deliberately kept apart. `js` names the binding in the
+ * generated tool registry — it is only ever used to reach the class. The id
+ * this returns names the tool everywhere else: on the bus, in the modern
+ * controller's registries, in the DOM, in teardown events, and as the key a
+ * tool's configured variables are looked up under. `toolIds` carries the id
+ * each tool declares; a binding the registry doesn't know falls back to the
+ * same derivation the build applies, so both sides land on one id. An entry
+ * with no module at all is named after itself.
+ *
+ * The own-property check is load-bearing rather than belt-and-braces: the
+ * build assembles its map on a null prototype, but it reaches here as JSON and
+ * a plain object literal inherits from Object.prototype again. Without the
+ * check, a config naming 'constructor' or 'toString' reads a function as its
+ * id, which sanitizes to the empty string and takes the whole config map down
+ * with it.
+ *
+ * Every branch lowercases, so a canonical id is lowercase by construction.
+ *
+ * @param {Object} toolConfig - Tool configuration entry, read for { js, name }
+ * @returns {string} Canonical tool id
+ */
+export function toolCanonicalId(toolConfig) {
+    const toolModule = (toolConfig && toolConfig.js) || ''
+    if (toolModule) {
+        const toolIds = generatedIds()
+        return Object.prototype.hasOwnProperty.call(toolIds, toolModule)
+            ? toolIds[toolModule]
+            : toolModule.replace(/Tool$/, '').toLowerCase()
+    }
+    const toolName = (toolConfig && toolConfig.name) || 'Unknown'
+    return toolName.toLowerCase().replace(/\s+/g, '-')
+}
+
+/**
  * Generate tool metadata from tool configuration
  * Consolidates metadata from both root-level (legacy) and nested metadata object.
  * Nested metadata takes precedence over root-level for backward compatibility.
@@ -522,7 +591,9 @@ export function getValidIconClass(iconClass, toolId) {
  */
 export function generateToolMetadata(toolConfig) {
     const toolName = toolConfig.name || 'Unknown'
-    const toolId = toolConfig.js || toolName.toLowerCase().replace(/\s+/g, '-')
+
+    const toolModule = toolConfig.js || ''
+    const toolId = toolCanonicalId(toolConfig)
 
     // Read metadata from nested object (preferred location)
     const declaredMetadata = toolConfig.metadata || {}
@@ -531,6 +602,7 @@ export function generateToolMetadata(toolConfig) {
     // Nested metadata takes precedence
     const rawMetadata = {
         id: toolId,
+        module: toolModule,
         name: toolName,
         // Icon can be at root as 'defaultIcon' (legacy) or in metadata as 'icon'
         icon: declaredMetadata.icon || toolConfig.icon || toolConfig.defaultIcon || 'cog',

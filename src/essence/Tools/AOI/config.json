@@ -18,6 +18,7 @@
     },
     "hasVars": true,
     "name": "AOI",
+    "id": "aoi",
     "toolbarPriority": 5,
     "separatedTool": true,
     "paths": {

@@ -1,7 +1,20 @@
 type EventCleanup = () => void
 
+/**
+ * What a request carries beside its params. `caller` is the plugin's declared
+ * id — the one the controller minted its handle under. Some providers answer
+ * differently for a caller they can identify: `map:hidePopup` retracts only the
+ * card its caller opened, so an unstamped request cannot take back a stamped
+ * one's popup.
+ */
+export type RequestOptions = { caller?: string }
+
 type MMGISAPI = {
-    request: (name: string, params?: unknown) => Promise<unknown>
+    request: (
+        name: string,
+        params?: unknown,
+        options?: RequestOptions,
+    ) => Promise<unknown>
     on: (event: string, handler: (payload?: unknown) => void) => EventCleanup
     emit: (event: string, payload?: unknown) => void
     provide?: (name: string, handler: (...args: unknown[]) => unknown) => EventCleanup
@@ -42,11 +55,15 @@ declare global {
     }
 }
 
-export const mmgisRequest = async <T = unknown>(name: string, params?: unknown): Promise<T | null> => {
-    if (window.mmgisAPI?.request) {
-        return (await window.mmgisAPI.request(name, params)) as T
-    }
-    return null
+export const mmgisRequest = async <T = unknown>(
+    name: string,
+    params?: unknown,
+    options?: RequestOptions,
+): Promise<T | null> => {
+    if (!window.mmgisAPI?.request) return null
+    // Core reads an absent options object as no caller, so an unstamped request
+    // passes `undefined` through rather than dropping the argument.
+    return (await window.mmgisAPI.request(name, params, options)) as T
 }
 
 export const mmgisOn = (event: string, handler: (payload?: unknown) => void): EventCleanup => {
@@ -80,6 +97,11 @@ export const mmgisHasHandler = (name: string): boolean => {
 // else. Each wrapper resolves null when core is absent or too old to
 // register the handler; errors thrown by a registered handler still
 // propagate (they are real failures, not version skew).
+//
+// These wrappers name no caller, so every plugin on them is the same anonymous
+// one. A wrapper for a provider that answers per caller has to take the
+// plugin's declared id — the id its injected handle was minted under — and pass
+// it to `mmgisRequest` as `{ caller }`.
 
 const mmgisRequestIfProvided = async <T = unknown>(
     name: string,

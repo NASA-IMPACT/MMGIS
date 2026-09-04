@@ -252,16 +252,17 @@ test.describe('AOITool._applySelection camera behavior', () => {
             off: vi.fn(),
         }
         // Every request goes through the plugin's handle, which is what stamps
-        // it with the plugin's id.
+        // it with the plugin's id. The controller mints the handle from the bus
+        // and injects it as `api`, and `make()` copies it to `_api`; these
+        // specs drive `_applySelection` on its own, so both are set by hand.
         window.mmgisAPI.forPlugin = (pluginId) => ({
             emit: () => { },
             provide: () => () => { },
             request: (name, data) =>
                 window.mmgisAPI.request(name, data, { caller: pluginId }),
         })
-        // These specs drive `_applySelection` on its own rather than through
-        // `make()`, so hand the tool the handle `make()` would have given it.
-        AOITool._api = window.mmgisAPI.forPlugin('aoi')
+        AOITool.api = window.mmgisAPI.forPlugin('aoi')
+        AOITool._api = AOITool.api
         return calls
     }
     const names = (calls) => calls.map((c) => c.name)
@@ -277,6 +278,7 @@ test.describe('AOITool._applySelection camera behavior', () => {
         vi.clearAllTimers()
         vi.useRealTimers()
         delete window.mmgisAPI
+        delete AOITool.api
         AOITool._api = null
         AOITool._state.currentAOI = null
     })

@@ -1,16 +1,20 @@
 import { test, expect, vi, beforeEach, afterEach } from 'vitest'
 vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
-// loadPlugin looks tool ids up in the real tool registry; stand in a minimal
-// module so the load-then-show/hide paths in setPluginState have something to
-// load. 'GhostTool' is deliberately absent so a test can force a load failure.
+// loadPlugin reaches a tool's class through its module binding in the real
+// tool registry; stand in a minimal module so the load-then-show/hide paths in
+// setPluginState have something to load. 'GhostTool' is deliberately absent so
+// a test can force a load failure.
 vi.mock('../../src/pre/tools', () => ({
+    toolIds: {},
     toolModules: { FakeTool: { make: () => {}, destroy: () => {} } },
 }))
 
 import ToolControllerModern_ from '../../src/essence/Basics/ToolController_/ToolControllerModern_'
 import { mmgisAPI } from '../../src/essence/mmgisAPI/mmgisAPI'
 
-const metadata = { id: 'FakeTool', name: 'Fake Tool' }
+// The two names a tool carries: 'FakeTool' reaches its class, 'fake' is what
+// every lifecycle command below calls it.
+const metadata = { id: 'fake', module: 'FakeTool', name: 'Fake Tool' }
 
 // Set by a test that wants to observe plugins:changed; always torn down in
 // afterEach rather than at the end of the test body, so a failed assertion
@@ -37,12 +41,15 @@ afterEach(() => {
     // singletons shared by every test in this file; without resetting them a
     // plugin loaded or hidden by one test leaks into the next test's fixture.
     ToolControllerModern_.destroyAllTools()
+    // The name -> id and binding -> id maps are module-level too; an empty
+    // config map empties them.
+    ToolControllerModern_.buildToolConfigMap([])
     document.body.innerHTML = ''
     vi.restoreAllMocks()
 })
 
 test('a deferred plugin reads as unloaded', () => {
-    expect(ToolControllerModern_.getPluginState('FakeTool')).toBe('unloaded')
+    expect(ToolControllerModern_.getPluginState('fake')).toBe('unloaded')
 })
 
 test('an unknown plugin has no state', () => {
@@ -55,13 +62,13 @@ test('setting an unknown plugin is not-found', () => {
 })
 
 test('an unrecognised state is a bad-request', () => {
-    expect(ToolControllerModern_.setPluginState('FakeTool', 'sideways'))
+    expect(ToolControllerModern_.setPluginState('fake', 'sideways'))
         .toEqual({ ok: false, reason: 'bad-request' })
 })
 
 test('setting the current state is a quiet no-op', () => {
     const seen = listenForChanges()
-    expect(ToolControllerModern_.setPluginState('FakeTool', 'unloaded'))
+    expect(ToolControllerModern_.setPluginState('fake', 'unloaded'))
         .toEqual({ ok: true, state: 'unloaded', changed: false })
     expect(seen).toEqual([])
 })
@@ -69,55 +76,59 @@ test('setting the current state is a quiet no-op', () => {
 test('a successful transition emits plugins:changed', () => {
     const seen = listenForChanges()
 
-    expect(ToolControllerModern_.setPluginState('FakeTool', 'visible'))
+    expect(ToolControllerModern_.setPluginState('fake', 'visible'))
         .toEqual({ ok: true, state: 'visible', changed: true })
 
     expect(seen).toHaveLength(1)
-    expect(seen[0].plugins).toContainEqual({ id: 'FakeTool', state: 'visible' })
+    expect(seen[0].plugins).toContainEqual({ id: 'fake', state: 'visible' })
 })
 
 test('unloaded to hidden loads the plugin and lands it hidden, not visible', () => {
-    expect(ToolControllerModern_.setPluginState('FakeTool', 'hidden'))
+    expect(ToolControllerModern_.setPluginState('fake', 'hidden'))
         .toEqual({ ok: true, state: 'hidden', changed: true })
-    expect(ToolControllerModern_.getPluginState('FakeTool')).toBe('hidden')
+    expect(ToolControllerModern_.getPluginState('fake')).toBe('hidden')
     expect(document.getElementById('fake-target').classList.contains('plugin-hidden')).toBe(true)
 })
 
 test('visible to hidden hides an already-loaded plugin', () => {
-    ToolControllerModern_.setPluginState('FakeTool', 'visible')
+    ToolControllerModern_.setPluginState('fake', 'visible')
 
-    expect(ToolControllerModern_.setPluginState('FakeTool', 'hidden'))
+    expect(ToolControllerModern_.setPluginState('fake', 'hidden'))
         .toEqual({ ok: true, state: 'hidden', changed: true })
     expect(document.getElementById('fake-target').classList.contains('plugin-hidden')).toBe(true)
 })
 
 test('a plugin missing from the tool registry fails to load', () => {
     document.body.innerHTML += '<div id="ghost-target"></div>'
-    ToolControllerModern_.registerDeferred({ id: 'GhostTool', name: 'Ghost' }, 'ghost-target')
+    ToolControllerModern_.registerDeferred(
+        { id: 'ghost', module: 'GhostTool', name: 'Ghost' }, 'ghost-target'
+    )
 
-    expect(ToolControllerModern_.setPluginState('GhostTool', 'visible'))
+    expect(ToolControllerModern_.setPluginState('ghost', 'visible'))
         .toEqual({ ok: false, reason: 'load-failed' })
 })
 
 test('listPlugins unions plugins that are in different states', () => {
     document.body.innerHTML += '<div id="second-target"></div>'
-    ToolControllerModern_.registerDeferred({ id: 'SecondTool', name: 'Second' }, 'second-target')
-    ToolControllerModern_.setPluginState('FakeTool', 'visible')
+    ToolControllerModern_.registerDeferred(
+        { id: 'second', module: 'SecondTool', name: 'Second' }, 'second-target'
+    )
+    ToolControllerModern_.setPluginState('fake', 'visible')
 
     const plugins = ToolControllerModern_.listPlugins()
-    expect(plugins).toContainEqual({ id: 'FakeTool', state: 'visible' })
-    expect(plugins).toContainEqual({ id: 'SecondTool', state: 'unloaded' })
+    expect(plugins).toContainEqual({ id: 'fake', state: 'visible' })
+    expect(plugins).toContainEqual({ id: 'second', state: 'unloaded' })
 })
 
 test('the listing is frozen and cloneable', () => {
     const plugins = ToolControllerModern_.listPlugins()
-    expect(plugins).toContainEqual({ id: 'FakeTool', state: 'unloaded' })
+    expect(plugins).toContainEqual({ id: 'fake', state: 'unloaded' })
     expect(Object.isFrozen(plugins[0])).toBe(true)
     expect(() => structuredClone(plugins)).not.toThrow()
 })
 
 test('a mutator that refuses reports the transition, not a missing plugin', () => {
-    ToolControllerModern_.setPluginState('FakeTool', 'visible')
+    ToolControllerModern_.setPluginState('fake', 'visible')
     const seen = listenForChanges()
     // destroyTool keeps the lifecycle registries in step, so the only way a
     // mutator refuses a plugin getPluginState just resolved is those registries
@@ -125,7 +136,7 @@ test('a mutator that refuses reports the transition, not a missing plugin', () =
     // no test can reach.
     vi.spyOn(ToolControllerModern_, 'hidePlugin').mockReturnValue(false)
 
-    expect(ToolControllerModern_.setPluginState('FakeTool', 'hidden'))
+    expect(ToolControllerModern_.setPluginState('fake', 'hidden'))
         .toEqual({ ok: false, reason: 'transition-failed' })
     expect(seen).toEqual([])
 })
@@ -140,15 +151,15 @@ test('a load batch broadcasts once, after every plugin in it has loaded', () => 
     ToolControllerModern_.runLoadQueue([
         () => ToolControllerModern_.loadTool(metadata, 'second-target'),
         () => ToolControllerModern_.registerDeferred(
-            { id: 'SecondTool', name: 'Second' }, 'third-target'
+            { id: 'second', module: 'SecondTool', name: 'Second' }, 'third-target'
         ),
     ])
 
     // One event, not one per plugin, and it carries the settled listing rather
     // than the partial one a subscriber seeding mid-batch would have captured.
     expect(seen).toHaveLength(1)
-    expect(seen[0].plugins).toContainEqual({ id: 'FakeTool', state: 'visible' })
-    expect(seen[0].plugins).toContainEqual({ id: 'SecondTool', state: 'unloaded' })
+    expect(seen[0].plugins).toContainEqual({ id: 'fake', state: 'visible' })
+    expect(seen[0].plugins).toContainEqual({ id: 'second', state: 'unloaded' })
 })
 
 test('a plugin that throws while loading does not stop the batch', () => {
@@ -159,19 +170,19 @@ test('a plugin that throws while loading does not stop the batch', () => {
     ToolControllerModern_.runLoadQueue([
         () => { throw new Error('boom') },
         () => ToolControllerModern_.registerDeferred(
-            { id: 'SecondTool', name: 'Second' }, 'second-target'
+            { id: 'second', module: 'SecondTool', name: 'Second' }, 'second-target'
         ),
     ])
 
     expect(seen).toHaveLength(1)
-    expect(seen[0].plugins).toContainEqual({ id: 'SecondTool', state: 'unloaded' })
+    expect(seen[0].plugins).toContainEqual({ id: 'second', state: 'unloaded' })
 })
 
 test('tearing the layout down broadcasts the empty roster once', () => {
     document.body.innerHTML += '<div id="second-target"></div>'
     ToolControllerModern_.loadTool(metadata, 'second-target')
     ToolControllerModern_.registerDeferred(
-        { id: 'SecondTool', name: 'Second' }, 'second-target'
+        { id: 'second', module: 'SecondTool', name: 'Second' }, 'second-target'
     )
     const seen = listenForChanges()
 
@@ -190,4 +201,31 @@ test('tearing down an empty layout says nothing', () => {
     ToolControllerModern_.destroyAllTools()
 
     expect(seen).toEqual([])
+})
+
+// `plugins:show:DrawTool` is the documented form of the action a config author
+// writes on a button, and a panel's `panelTools` accepts the same three ways of
+// naming a tool. The lifecycle commands have to read all three too, or a stored
+// config that names a tool by its registry binding stops finding it.
+test('a lifecycle command reads a tool named by its binding or its name', () => {
+    ToolControllerModern_.buildToolConfigMap([
+        { name: 'Fake Tool', js: 'FakeTool' },
+    ])
+
+    expect(ToolControllerModern_.getPluginState('FakeTool')).toBe('unloaded')
+    expect(ToolControllerModern_.setPluginState('FakeTool', 'visible'))
+        .toEqual({ ok: true, state: 'visible', changed: true })
+    expect(ToolControllerModern_.isPluginLoaded('Fake Tool')).toBe(true)
+    expect(ToolControllerModern_.isPluginHidden('fake')).toBe(false)
+})
+
+// Nothing resolves an unknown string, so it reaches the registries as written
+// and is reported under the name the caller used.
+test('an unresolvable name is still not-found', () => {
+    ToolControllerModern_.buildToolConfigMap([
+        { name: 'Fake Tool', js: 'FakeTool' },
+    ])
+
+    expect(ToolControllerModern_.setPluginState('GhostTool', 'visible'))
+        .toEqual({ ok: false, reason: 'not-found' })
 })

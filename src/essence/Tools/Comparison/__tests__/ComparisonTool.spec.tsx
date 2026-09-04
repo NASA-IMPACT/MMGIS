@@ -86,7 +86,7 @@ describe('ComparisonTool hand-offs', () => {
         fire('plugin:comparison:startWithDates')
 
         expect(requested('plugins:show')).toEqual([
-            { name: 'plugins:show', params: { pluginId: 'ComparisonTool' } },
+            { name: 'plugins:show', params: { pluginId: 'comparison' } },
         ])
     })
 
@@ -149,7 +149,7 @@ describe('ComparisonTool hand-offs', () => {
         expect(requested('plugins:setState')).toEqual([
             {
                 name: 'plugins:setState',
-                params: { pluginId: 'ComparisonTool', state: 'unloaded' },
+                params: { pluginId: 'comparison', state: 'unloaded' },
             },
         ])
     })

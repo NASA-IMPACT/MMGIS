@@ -85,7 +85,7 @@ describe('ChartTool hand-offs', () => {
         fire('plugin:fetch-stats:analysisReady', { analysisData: ANALYSIS_DATA })
 
         expect(requested('plugins:show')).toEqual([
-            { name: 'plugins:show', params: { pluginId: 'ChartTool' } },
+            { name: 'plugins:show', params: { pluginId: 'chart' } },
         ])
     })
 
@@ -135,7 +135,7 @@ describe('ChartTool hand-offs', () => {
         expect(requested('plugins:setState')).toEqual([
             {
                 name: 'plugins:setState',
-                params: { pluginId: 'ChartTool', state: 'unloaded' },
+                params: { pluginId: 'chart', state: 'unloaded' },
             },
         ])
     })
