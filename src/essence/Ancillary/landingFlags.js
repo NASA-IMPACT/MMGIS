@@ -62,3 +62,29 @@ export const buildMissionUrl = ({
 
     return pairs.length > 0 ? pathnameHref + '?' + pairs.join('&') : pathnameHref
 }
+
+/**
+ * Puts the mission URL in the address bar, in place of the current entry, so
+ * a reload or a copied link comes back to what is on screen.
+ *
+ * A static build is the one caller that names no mission: it serves the one
+ * mission baked into it, so its URL names none and the landing flags are
+ * simply stripped. The classic and modern interfaces skip this call there —
+ * that stripped URL is the last word.
+ *
+ * @param {string} [mission] - the mission that loaded; leave it out for a URL
+ *     that names no mission
+ * @param {boolean} keepParams - see buildMissionUrl
+ */
+export const replaceMissionUrl = ({ mission, keepParams }) => {
+    window.history.replaceState(
+        '',
+        '',
+        buildMissionUrl({
+            search: window.location.search,
+            pathnameHref: window.location.origin + window.location.pathname,
+            mission,
+            keepParams,
+        })
+    )
+}

@@ -6,7 +6,7 @@ import QueryURL from '../Ancillary/QueryURL'
 import {
     hasForceLanding,
     hasPreview,
-    buildMissionUrl,
+    replaceMissionUrl,
 } from '../Ancillary/landingFlags'
 import calls from '../../pre/calls'
 import { mmgisAPI_ } from '../mmgisAPI/mmgisAPI'
@@ -76,16 +76,7 @@ export default {
                 QueryURL.getSingleQueryVariable('mission') !== false ||
                 hasForceLanding()
             ) {
-                history.replaceState(
-                    null,
-                    '',
-                    buildMissionUrl({
-                        search: window.location.search,
-                        pathnameHref:
-                            window.location.origin + window.location.pathname,
-                        keepParams: true,
-                    })
-                )
+                replaceMissionUrl({ keepParams: true })
             }
         }
 
