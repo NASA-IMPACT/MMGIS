@@ -11,7 +11,8 @@ The examples below use the path `/tools/dashboard`; substitute your own everywhe
 2. **Create a custom cache policy** — not a managed one — with:
    - the `Authorization` header in the cache key,
    - all query strings in the cache key,
-   - Minimum TTL 0.
+   - Minimum TTL 0,
+   - Maximum TTL 31536000 (one year) or more.
 
 3. **Add two cache behaviors** pointing at that origin, both using that cache policy:
    - path pattern `/tools/dashboard` — exact, no wildcard,
@@ -49,8 +50,12 @@ Every dashboard is password-protected: every row also sits behind it, and a wron
 
 **All query strings in the cache key:** a policy that drops query strings never sends them to us. A deep link like `/tools/dashboard?view=2` then reaches us stripped of its `?view=2`, and the address we redirect the visitor to has lost it for good.
 
-**Minimum TTL 0:** managed policies impose a minimum cache time that overrides what our responses ask for. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next.
+**Minimum TTL 0:** the managed policies you are likely to reach for impose a minimum cache time that overrides what our responses ask for. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next. A floor above 0 also holds the pages we mark for revalidation, so a republish would not reach your visitors until that floor expired.
+
+**Maximum TTL a year:** our responses carry three cache tiers. The entry page and the mission configuration revalidate before every use (`no-cache`, not `no-store` — there is nothing for you to purge). The files whose names are content-fingerprinted — the application's own bundles, and the images and files uploaded into the dashboard, each stored under a name that is never reused — are cacheable forever (`immutable`). Everything else, the supporting files that can change in place, gets five minutes. So a republish reaches your visitors in stages: the entry page and the configuration immediately, the supporting files within about five minutes, plus however long our own invalidation takes to propagate. AWS's managed `UseOriginCacheControlHeaders` policies pair Minimum TTL 0 with a one-year maximum, but they leave `Authorization` out of the cache key, so a custom policy is still required: Minimum TTL 0 stops the policy raising our floor, and a Maximum TTL of at least a year stops it capping the immutable tier.
 
 **HTTPS only to the origin:** the dashboard's password rides on the `Authorization` header of every request you forward. Over plain HTTP it would cross the internet unencrypted.
 
 **No viewer `Host` header:** our distribution answers only to its own `*.cloudfront.net` name; a request carrying your hostname is rejected by AWS with a 403 before anything of ours runs. CloudFront omits the viewer's `Host` by default — the hazard is specifically the managed `AllViewer` origin request policy, which forwards it. `AllViewerExceptHostHeader` forwards everything else while excluding it.
+
+**After a dashboard's password is rotated:** invalidate your distribution. Your cache is keyed on the `Authorization` header, so the responses fetched under the old password sit in it and keep being served to anyone still presenting that password — never reaching us to be turned away — until they expire on their own, which for the immutable tier is a year. An invalidation clears them at once.

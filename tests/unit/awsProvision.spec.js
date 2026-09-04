@@ -1,4 +1,7 @@
 import { test, expect } from 'vitest'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
 
 // Tests for scripts/lib/aws-provision.js using injected mock clients —
 // no test here (or anywhere) ever calls real AWS.
@@ -787,6 +790,153 @@ test.describe('emptyBucket', () => {
     })
 })
 
+test.describe('contentTypeForFile', () => {
+    test('maps a known extension', () => {
+        expect(provision.contentTypeForFile('a/b/c.png')).toBe('image/png')
+    })
+
+    test('matches extensions case-insensitively', () => {
+        expect(provision.contentTypeForFile('a/b/C.PNG')).toBe('image/png')
+    })
+
+    // Load-bearing under CopyObject's MetadataDirective: REPLACE, which drops
+    // the source's Content-Type and takes whatever this returns instead.
+    test('falls back to octet-stream for an unmapped extension', () => {
+        expect(provision.contentTypeForFile('a/b/c.xyz')).toBe(
+            'application/octet-stream'
+        )
+    })
+})
+
+test.describe('cacheControlForKey', () => {
+    // [key, expected Cache-Control]. Three tiers: revalidate-always for the
+    // entry page and the baked config, immutable for the content-addressed
+    // keys (hashed webpack output and the never-overwritten plugin uploads),
+    // a short TTL for everything else.
+    const TIERS = [
+        ['index.html', 'no-cache'],
+        ['build/index.html', 'no-cache'],
+        ['Missions/M/config.json', 'no-cache'],
+        [
+            'build/static/js/main.abc123.js',
+            'public, max-age=31536000, immutable',
+        ],
+        ['build/static/css/x.css', 'public, max-age=31536000, immutable'],
+        ['build/static/media/a.png', 'public, max-age=31536000, immutable'],
+        ['Missions/M/Data/mosaic_parameters.csv', 'public, max-age=300'],
+        // Under build/static but not content-hashed, so explicitly NOT
+        // immutable.
+        ['build/static/cesium/Cesium.js', 'public, max-age=300'],
+        ['public/workers/pdf.worker.min.mjs', 'public, max-age=300'],
+        // The upload router names every object crypto.randomUUID().<ext> and
+        // never overwrites, so the key is content-addressed in practice.
+        [
+            'assets/M/CardPlugin/uploads/a.png',
+            'public, max-age=31536000, immutable',
+        ],
+        // Under assets/ but not the writer's shape (no /uploads/ segment two
+        // levels down), so it stays on the fallback tier.
+        ['assets/M/CardPlugin/icon.png', 'public, max-age=300'],
+        // A lookalike: "uploads" here is the mission segment, not the
+        // router's directory, so it is not the content-addressed shape.
+        ['assets/uploads/a.png', 'public, max-age=300'],
+    ]
+
+    TIERS.forEach(([key, expected]) => {
+        test(`'${key}' -> '${expected}'`, () => {
+            expect(provision.cacheControlForKey(key)).toBe(expected)
+        })
+    })
+})
+
+// Runs fn(dir, puts) against a fresh temp directory with an injected S3
+// client that records every command input into `puts`, then resets the client
+// and removes the directory. The mock never reads the body, so the stream's
+// deferred fs.open() is swallowed here — otherwise the cleanup below can race
+// it into an unhandled 'error' event.
+async function withUploadFixture(fn) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mmgis-upload-'))
+    const puts = []
+    provision.setClients({
+        s3: mockClient((command) => {
+            puts.push(command.input)
+            if (command.input.Body) {
+                command.input.Body.on('error', () => {})
+                command.input.Body.destroy()
+            }
+            return {}
+        }),
+    })
+    try {
+        await fn(dir, puts)
+    } finally {
+        provision.setClients(null)
+        fs.rmSync(dir, { recursive: true, force: true })
+    }
+}
+
+test.describe('uploadDirectory', () => {
+    test('uploads every file with the tiered Cache-Control for its key', async () => {
+        await withUploadFixture(async (dir, puts) => {
+            fs.mkdirSync(path.join(dir, 'static', 'js'), { recursive: true })
+            fs.writeFileSync(path.join(dir, 'index.html'), '<html></html>')
+            fs.writeFileSync(
+                path.join(dir, 'static', 'js', 'main.abc123.js'),
+                'console.log(1)'
+            )
+            const count = await provision.uploadDirectory({
+                bucket: 'dash',
+                dir,
+                prefix: 'build/',
+            })
+            expect(count).toBe(2)
+            const byKey = Object.fromEntries(
+                puts.map((input) => [input.Key, input])
+            )
+            // Only the prefixed key earns the immutable tier — the relative
+            // path 'static/js/main.abc123.js' falls through to max-age=300 —
+            // so this fails if the tier is read off anything but the key.
+            expect(byKey['build/static/js/main.abc123.js'].CacheControl).toBe(
+                'public, max-age=31536000, immutable'
+            )
+            expect(byKey['build/index.html'].CacheControl).toBe('no-cache')
+        })
+    })
+
+    test('skips the keys `filter` rejects and leaves them out of the count', async () => {
+        await withUploadFixture(async (dir, puts) => {
+            fs.writeFileSync(path.join(dir, 'index.html'), '<html></html>')
+            fs.writeFileSync(path.join(dir, 'index.pug'), 'html')
+            const count = await provision.uploadDirectory({
+                bucket: 'dash',
+                dir,
+                prefix: 'build/',
+                // The prefixed key, which is what publish-static.js filters on.
+                filter: (key) => key !== 'build/index.pug',
+            })
+            expect(count).toBe(1)
+            expect(puts.map((input) => input.Key)).toEqual(['build/index.html'])
+        })
+    })
+})
+
+test.describe('uploadFile', () => {
+    test('sets CacheControl for the tier of the target key', async () => {
+        await withUploadFixture(async (dir, puts) => {
+            const filePath = path.join(dir, 'mosaic_parameters.csv')
+            fs.writeFileSync(filePath, 'a,b,c\n')
+            await provision.uploadFile({
+                bucket: 'dash',
+                key: 'Missions/M/Data/mosaic_parameters.csv',
+                filePath,
+            })
+            // Literal, not cacheControlForKey(key): that form would pass even
+            // if the tiering broke.
+            expect(puts[0].CacheControl).toBe('public, max-age=300')
+        })
+    })
+})
+
 test.describe('copyPrefix', () => {
     test.afterEach(() => provision.setClients(null))
 
@@ -832,6 +982,13 @@ test.describe('copyPrefix', () => {
         expect(copies[2].CopySource).toBe(
             'shared/assets/TestMission/with%20space.png'
         )
+        // CopyObject's default (COPY) keeps the source's metadata and cannot
+        // add the Cache-Control the source never had; REPLACE can, and in turn
+        // obliges the copy to restate its Content-Type. Tier coverage lives in
+        // the cacheControlForKey table — this pins the wiring at this site.
+        expect(copies[0].MetadataDirective).toBe('REPLACE')
+        expect(copies[0].ContentType).toBe('image/png')
+        expect(copies[0].CacheControl).toBe('public, max-age=300')
     })
 })
 
@@ -864,6 +1021,27 @@ test.describe('copyObjectIfExists', () => {
                 key: 'Missions/Test/Data/mosaic_parameters.csv',
             })
         ).toBe(true)
+    })
+
+    // The same wiring as copyPrefix, pinned at this second call site.
+    test('replaces metadata and sets ContentType + CacheControl on the copy', async () => {
+        let input
+        provision.setClients({
+            s3: mockClient((command) => {
+                input = command.input
+                return {}
+            }),
+        })
+        await provision.copyObjectIfExists({
+            sourceBucket: 'shared',
+            destBucket: 'dash',
+            key: 'Missions/Test/Data/mosaic_parameters.csv',
+        })
+        expect(input.MetadataDirective).toBe('REPLACE')
+        // REPLACE drops the source's own Content-Type, so the copy supplies
+        // one — '.csv' resolves through the extension map.
+        expect(input.ContentType).toBe('text/csv')
+        expect(input.CacheControl).toBe('public, max-age=300')
     })
 })
 

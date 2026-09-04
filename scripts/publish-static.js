@@ -360,15 +360,19 @@ async function main() {
     // bucket must mirror that layout: the webpack output under build/,
     // the repo's public/ assets under public/, and index.html at the
     // root (the distribution's default root object).
+    // Both skipped keys are un-rendered templates whose bodies are still
+    // full of `#{…}` placeholders.
     const uploadedBuild = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "build"),
       prefix: "build/",
+      filter: (key) => key !== "build/index.pug",
     });
     const uploadedPublic = await provision.uploadDirectory({
       bucket,
       dir: path.join(rootDir, "public"),
       prefix: "public/",
+      filter: (key) => key !== "public/index.html",
     });
     await provision.uploadFile({
       bucket,
