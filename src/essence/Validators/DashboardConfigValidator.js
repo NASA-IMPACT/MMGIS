@@ -247,6 +247,18 @@ function validatePanelConfig(panel, index, isFloat = false) {
         errors.push(`${prefix}: "hasHeader" must be a boolean`)
     }
 
+    // A pinned region holds tools above a vertically scrolling stack, so only
+    // left/right panels have one. Naming pinned tools elsewhere isn't fatal —
+    // they join the panel body and the layout logs a warning — so shape is all
+    // that's checked here.
+    if (panel.pinnedTools !== undefined) {
+        if (!Array.isArray(panel.pinnedTools)) {
+            errors.push(`${prefix}: "pinnedTools" must be an array`)
+        } else if (panel.pinnedTools.some(tool => typeof tool !== 'string')) {
+            errors.push(`${prefix}: "pinnedTools" must contain only tool names or IDs`)
+        }
+    }
+
     // Transparency only makes sense over the map. Edge panels claim viewport space
     // and, in the compact layout style, have no map behind them at all.
     if (panel.transparent !== undefined && typeof panel.transparent !== 'boolean') {

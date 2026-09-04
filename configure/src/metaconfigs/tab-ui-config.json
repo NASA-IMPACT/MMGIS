@@ -209,9 +209,17 @@
               "width": 6
             },
             {
+              "field": "pinnedTools",
+              "name": "Pinned Tools",
+              "description": "Tool identifiers to hold in this panel's pinned region. They render above Panel Tools, in the order listed, and stay in place while the rest of the panel scrolls. Only left and right panels have a pinned region. Same identifiers as Panel Tools; a tool belongs to one list or the other.",
+              "type": "textarray",
+              "default": [],
+              "width": 24
+            },
+            {
               "field": "panelTools",
               "name": "Panel Tools",
-              "description": "Tool identifiers to assign to this panel. Can be tool names (e.g., 'Title') or tool IDs (e.g., 'Title_instance1') for multiple instances. Must match values in the mission's tools array. Example: Title,Layers,Draw",
+              "description": "Tool identifiers to assign to this panel's scrolling body. Can be tool names (e.g., 'Title') or tool IDs (e.g., 'Title_instance1') for multiple instances. Must match values in the mission's tools array. Example: Title,Layers,Draw",
               "type": "textarray",
               "default": [],
               "width": 24
