@@ -31,9 +31,15 @@ test.describe('updateRefusalFor', () => {
         // anyone off to wait.
         [
             'provisioning behind a stack that is gone',
-            { status: 'provisioning', stack_status: null, stack_arn: ARN },
-            'Deployment is provisioning but has no stack; delete the ' +
-                'deployment and publish it again (this mints a new URL)',
+            {
+                status: 'provisioning',
+                stack_status: null,
+                stack_arn: ARN,
+                stack_name: 'mmgis-dashboard-1',
+            },
+            "Stack 'mmgis-dashboard-1' does not exist (deleted or never " +
+                'created) — delete the deployment and publish it again (this ' +
+                'mints a new URL)',
         ],
         // Killed before CreateStack ever ran: no stack was minted, so no URL
         // is at stake and the update creates one.
@@ -54,9 +60,15 @@ test.describe('updateRefusalFor', () => {
         ],
         [
             'updating behind a stack that is gone',
-            { status: 'updating', stack_status: null, stack_arn: ARN },
-            'Deployment is updating but has no stack; delete the deployment ' +
-                'and publish it again (this mints a new URL)',
+            {
+                status: 'updating',
+                stack_status: null,
+                stack_arn: ARN,
+                stack_name: 'mmgis-dashboard-1',
+            },
+            "Stack 'mmgis-dashboard-1' does not exist (deleted or never " +
+                'created) — delete the deployment and publish it again (this ' +
+                'mints a new URL)',
         ],
         [
             'updating mid-update',
@@ -196,30 +208,22 @@ test.describe('updateRefusalFor', () => {
 
     // DescribeStacks failing (expired credentials, throttling) leaves
     // stack_status null for a reason that has nothing to do with the row.
-    // Reporting it as "wait for it to finish" would send an operator waiting
-    // on an operation that may not exist.
-    test('a stack that could not be read is refused with the read error', () => {
-        expect(
-            refusalFor({
-                status: 'updating',
-                stack_status: null,
-                stack_status_error: 'Could not load credentials',
+    // Nothing then knows what that stack is doing, whatever status the row
+    // carries, and an update onto an unknown stack is one that may spend
+    // minutes baking and building into a CloudFormation rejection.
+    const unreadable = ['updating', 'published']
+    unreadable.forEach((status) => {
+        test(`a stack that could not be read refuses a ${status} row`, () => {
+            expect(
+                refusalFor({
+                    status,
+                    stack_status: null,
+                    stack_status_error: 'Could not load credentials',
+                })
+            ).toEqual({
+                message:
+                    "Could not read the deployment's stack: Could not load credentials",
             })
-        ).toEqual({
-            message:
-                "Could not read the deployment's stack: Could not load credentials",
         })
-    })
-
-    // A published row needs no live stack to be updated, so a failed read
-    // doesn't stand in the way of one.
-    test('a failed stack read does not block a published row', () => {
-        expect(
-            refusalFor({
-                status: 'published',
-                stack_status: null,
-                stack_status_error: 'Could not load credentials',
-            })
-        ).toBe(null)
     })
 })
