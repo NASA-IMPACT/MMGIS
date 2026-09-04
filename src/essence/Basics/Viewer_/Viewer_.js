@@ -45,6 +45,7 @@ var Viewer_ = {
     modelviewer: null,
     pdfviewer: null,
     baseToolbar: null,
+    lookupPath: null,
     toolBar: null,
     toolBarSelector: null,
     lastImageId: null,
@@ -183,6 +184,9 @@ var Viewer_ = {
             .html('To begin, select any imagery-enabled feature.')
         this.imageIntro.append(introMessage)
 
+        this.lookupPath =
+            L_.missionPath + 'Data/mosaic_parameters.csv'
+
         buildToolBar()
 
         this.imageViewerMap = OpenSeadragon({
@@ -318,7 +322,8 @@ var Viewer_ = {
 
             if (this.modelviewer == null) {
                 this.modelviewer = ModelViewer(
-                    document.getElementById('imageModelWebGL')
+                    document.getElementById('imageModelWebGL'),
+                    this.lookupPath
                 )
             }
 
@@ -372,6 +377,7 @@ var Viewer_ = {
             if (this.photosphere == null) {
                 this.photosphere = Photosphere(
                     document.getElementById('imagePanoramaWebGL'),
+                    this.lookupPath,
                     null,
                     Viewer_.Map_
                 )

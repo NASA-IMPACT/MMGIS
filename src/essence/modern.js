@@ -47,7 +47,6 @@ import CursorInfo from './Ancillary/CursorInfo'
 import ContextMenu from './Ancillary/ContextMenu'
 import Coordinates from './Ancillary/Coordinates'
 import QueryURL from './Ancillary/QueryURL'
-import { nameMissionInUrl } from './Ancillary/landingFlags'
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import { stylize } from './Ancillary/Stylize'
 import { mmgisAPI_ } from './mmgisAPI/mmgisAPI'
@@ -142,21 +141,52 @@ class ModernInterface {
     }
 
     /**
-     * Hands the config's mission name to nameMissionInUrl, which decides
-     * whether this entry URL is one that gets rewritten, and validates the
-     * name if it is.
+     * Updates the browser URL with the mission name
+     *
+     * Uses URLSearchParams for safe URL manipulation and validates mission name
+     * before encoding. Only updates URL when:
+     * - No query string exists
+     * - Mission is being swapped
+     * - Force landing or preview mode is active
      *
      * @param {MissionConfig} config - Mission configuration
      * @param {boolean} swapping - Whether this is a mission swap
      * @private
-     * @throws {Error} If a URL is due and the mission name is invalid
+     * @throws {Error} If mission name is invalid
      */
     _updateMissionUrl(config, swapping) {
-        // The DB mission name is the one a deeplink can be resolved against.
-        const missionForUrl = config._dbMissionName || config.msv?.mission
+        const urlParams = new URLSearchParams(window.location.search)
+        const hasForcelanding = urlParams.has('forcelanding') || urlParams.has('forceLanding')
+        const hasPreview = urlParams.has('_preview')
 
-        if (nameMissionInUrl({ mission: missionForUrl, swapping }))
-            L_.url = window.location.href
+        if (
+            urlParams.toString() === '' ||
+            swapping ||
+            hasForcelanding ||
+            hasPreview
+        ) {
+            // Use DB mission name for deeplinks (config._dbMissionName if available)
+            const missionForUrl = config._dbMissionName || config.msv?.mission
+
+            if (!missionForUrl || typeof missionForUrl !== 'string') {
+                console.error('[Modern Interface] Invalid mission name in config')
+                throw new Error('Invalid mission name')
+            }
+
+            // Sanitize and encode mission name for URL
+            const sanitizedMission = encodeURIComponent(missionForUrl.trim())
+            const baseUrl = window.location.href.split('?')[0]
+            const newUrl = `${baseUrl}?mission=${sanitizedMission}`
+
+            // Validate URL before applying
+            try {
+                new URL(newUrl) // Throws if invalid
+                window.history.replaceState('', '', newUrl)
+                L_.url = window.location.href
+            } catch (err) {
+                console.error('[Modern Interface] Failed to update URL:', err)
+            }
+        }
     }
 
     /**

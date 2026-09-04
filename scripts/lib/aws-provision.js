@@ -296,6 +296,30 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
   return copied;
 }
 
+// Same-key copies a single object if it exists in the source bucket.
+// Returns true when copied, false when the source object is absent.
+async function copyObjectIfExists({ sourceBucket, destBucket, key }) {
+  const { s3 } = getClients();
+  try {
+    await s3.send(
+      new CopyObjectCommand({
+        Bucket: destBucket,
+        Key: key,
+        CopySource: buildCopySource(sourceBucket, key),
+      })
+    );
+    return true;
+  } catch (err) {
+    if (
+      err.name === "NoSuchKey" ||
+      err.name === "NotFound" ||
+      err.$metadata?.httpStatusCode === 404
+    )
+      return false;
+    throw err;
+  }
+}
+
 // Deletes every object in the bucket (required before DeleteStack can
 // remove it). A missing bucket is treated as already empty.
 async function emptyBucket({ bucket }) {
@@ -412,6 +436,7 @@ module.exports = {
   uploadFile,
   createInvalidation,
   copyPrefix,
+  copyObjectIfExists,
   emptyBucket,
   requireEnv,
   runPublishTask,

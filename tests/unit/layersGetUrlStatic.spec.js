@@ -13,9 +13,8 @@ const { default: L_ } = await import(
 /**
  * L_.getUrl's throughTileServer/COG branch climbs out of the mission path
  * ('../../' non-Docker, '/' Docker) to reach a server-backed tile endpoint.
- * A static (published) build has neither a tile server nor tile data, so the
- * guard keeps the climb from producing a root-absolute URL that escapes the
- * dashboard's path prefix.
+ * A static (published) build has no such endpoint — its tiles live under
+ * Missions/<mission>/... in the bucket — so the climb must not apply there.
  */
 test.describe('L_.getUrl static-build guard', () => {
     beforeEach(() => {
@@ -36,7 +35,7 @@ test.describe('L_.getUrl static-build guard', () => {
         expect(url).toBe('Missions/M/cogs/a.tif')
     })
 
-    test('server, non-Docker: throughTileServer tile climbs', () => {
+    test('server, non-Docker: throughTileServer tile climbs (existing behavior)', () => {
         window.mmgisglobal = { SERVER: 'node', IS_DOCKER: 'false' }
         const url = L_.getUrl('tile', 'tiles/{z}/{x}/{y}.png', {
             throughTileServer: true,
@@ -44,7 +43,7 @@ test.describe('L_.getUrl static-build guard', () => {
         expect(url).toBe('../../Missions/M/tiles/{z}/{x}/{y}.png')
     })
 
-    test('server, Docker: throughTileServer tile roots to /', () => {
+    test('server, Docker: throughTileServer tile roots to / (existing behavior)', () => {
         window.mmgisglobal = { SERVER: 'node', IS_DOCKER: 'true' }
         const url = L_.getUrl('tile', 'tiles/{z}/{x}/{y}.png', {
             throughTileServer: true,

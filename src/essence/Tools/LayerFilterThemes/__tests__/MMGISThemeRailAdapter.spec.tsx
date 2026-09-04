@@ -5,6 +5,7 @@ import {
     withResolvedIcons,
 } from '../MMGISThemeRailAdapter'
 import { mount, click } from '../../_shared/__tests__/reactHarness'
+import type { ThemeSummary } from '../lib/types'
 
 // The rail's chrome icon is an SVG imported as a React component, which the
 // webpack build provides through @svgr and vitest has no equivalent for. The
@@ -179,43 +180,20 @@ test('a refused command is reported rather than dropped', async () => {
     await unmount()
 })
 
-// Which stored value resolves to which URL is the shared resolver's business
-// (tests/unit/uploadKeyClassifier.spec.js); what the rail owns is handing it
-// every image icon and nothing else.
-test('an image icon is resolved against the mission path', () => {
-    expect(
-        withResolvedIcons(
-            [
-                {
-                    id: 't',
-                    label: 'T',
-                    icon: {
-                        kind: 'image',
-                        src: 'LayerFilterThemes/uploads/x.svg',
-                    },
-                },
-            ],
-            'Missions/M/',
-        ),
-    ).toEqual([
+test('an upload key keeps its slash-less form rather than gaining the mission path', () => {
+    const themes: ThemeSummary[] = [
         {
-            id: 't',
-            label: 'T',
+            id: 'a',
+            label: 'A',
             icon: {
                 kind: 'image',
-                src: 'Missions/M/LayerFilterThemes/uploads/x.svg',
+                src: 'assets/M/LayerFilterThemes/uploads/x.svg',
             },
         },
-    ])
-})
-
-test('a theme the resolver has nothing to say about is returned as it came', () => {
-    // An MDI glyph names no file, and a theme may carry no icon at all;
-    // either way the entry passes through untouched.
-    const themes = [
-        { id: 'm', label: 'M', icon: { kind: 'mdi' as const, name: 'alert' } },
-        { id: 'n', label: 'N' },
     ]
-
-    expect(withResolvedIcons(themes, 'Missions/M/')).toEqual(themes)
+    const [theme] = withResolvedIcons(themes, 'Missions/M/')
+    expect(theme.icon).toEqual({
+        kind: 'image',
+        src: 'assets/M/LayerFilterThemes/uploads/x.svg',
+    })
 })

@@ -202,6 +202,38 @@ test.describe('copyPrefix', () => {
     })
 })
 
+test.describe('copyObjectIfExists', () => {
+    test.afterEach(() => provision.setClients(null))
+
+    test('returns false when the source object is absent', async () => {
+        provision.setClients({
+            s3: mockClient(() => {
+                const err = new Error('NoSuchKey')
+                err.name = 'NoSuchKey'
+                throw err
+            }),
+        })
+        expect(
+            await provision.copyObjectIfExists({
+                sourceBucket: 'shared',
+                destBucket: 'dash',
+                key: 'Missions/Test/Data/mosaic_parameters.csv',
+            })
+        ).toBe(false)
+    })
+
+    test('returns true when copied', async () => {
+        provision.setClients({ s3: mockClient(() => ({})) })
+        expect(
+            await provision.copyObjectIfExists({
+                sourceBucket: 'shared',
+                destBucket: 'dash',
+                key: 'Missions/Test/Data/mosaic_parameters.csv',
+            })
+        ).toBe(true)
+    })
+})
+
 test.describe('runPublishTask', () => {
     const ENV_NAMES = [
         'MMGIS_PUBLISH_ECS_CLUSTER',

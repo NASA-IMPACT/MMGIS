@@ -1,6 +1,5 @@
 const WebSocket = require("isomorphic-ws");
 const logger = require("./logger");
-const { rootPath } = require("./Backend/Utils/rootPath");
 
 const websocket = {
   wss: null,
@@ -67,7 +66,10 @@ const websocket = {
     server.on("upgrade", function upgrade(request, socket, head) {
       const pathname = request.url;
       try {
-        if (pathname === (process.env.WEBSOCKET_ROOT_PATH || rootPath()) + "/") {
+        if (
+          pathname ===
+          (process.env.WEBSOCKET_ROOT_PATH || process.env.ROOT_PATH || "") + "/"
+        ) {
           wss.handleUpgrade(request, socket, head, function done(ws) {
             wss.emit("connection", ws, request);
           });

@@ -57,11 +57,6 @@ const configFactory = require("../configuration/webpack.config");
 const createDevServerConfig = require("../configuration/webpackDevServer.config");
 
 const middleware = require("./middleware").middleware;
-const {
-  rootPathRedirect,
-  stripTrailingSlashRedirect,
-} = require("../API/Backend/Utils/rootPathRedirect");
-const { rootPath } = require("../API/Backend/Utils/rootPath");
 
 const { isFull } = require("../API/Backend/Utils/deploymentMode");
 const {
@@ -75,11 +70,7 @@ const isDevEnv = process.env.NODE_ENV === "development";
 //Username to use when not logged in
 const guestUsername = "guest";
 
-// Every use below appends its own "/…" to this, and the entry redirect
-// compares it against req.path, so it carries no trailing slash — rootPath()
-// sees to that. Development serves the app from the origin root whatever
-// ROOT_PATH is set to.
-const ROOT_PATH = isDevEnv ? "" : rootPath();
+const ROOT_PATH = isDevEnv ? "" : process.env.ROOT_PATH || "";
 
 if (!(process.env.PUBLIC_URL == null || process.env.PUBLIC_URL == ""))
   logger(
@@ -665,28 +656,21 @@ setups.getBackendSetups(function (setups) {
       express.static(path.join(rootDir, "/Missions"))
     );
   }
-  app.get(
-    s.ROOT_PATH + "/resetPassword",
-    // The page's asset URLs are document-relative off the slash-less address,
-    // so the slashed form Express also matches here is sent back to it rather
-    // than rendered.
-    stripTrailingSlashRedirect(s.ROOT_PATH + "/resetPassword"),
-    (req, res) => {
-      const user = process.env.AUTH === "csso" ? req.user : req.user || "";
-      res.render("../views/resetpassword.pug", {
-        user: user,
-        AUTH: process.env.AUTH,
-        NODE_ENV: process.env.NODE_ENV,
-        ROOT_PATH:
-          process.env.NODE_ENV === "development"
-            ? ""
-            : /*(process.env.EXTERNAL_ROOT_PATH || "") +*/
-              rootPath(),
-        CLEARANCE_NUMBER: process.env.CLEARANCE_NUMBER || "CL##-####",
-        CONTACT_INFO: process.env.CONTACT_INFO || "None Provided",
-      });
-    }
-  );
+  app.get(s.ROOT_PATH + "/resetPassword", (req, res) => {
+    const user = process.env.AUTH === "csso" ? req.user : req.user || "";
+    res.render("../views/resetpassword.pug", {
+      user: user,
+      AUTH: process.env.AUTH,
+      NODE_ENV: process.env.NODE_ENV,
+      ROOT_PATH:
+        process.env.NODE_ENV === "development"
+          ? ""
+          : /*(process.env.EXTERNAL_ROOT_PATH || "") +*/
+            process.env.ROOT_PATH || "",
+      CLEARANCE_NUMBER: process.env.CLEARANCE_NUMBER || "CL##-####",
+      CONTACT_INFO: process.env.CONTACT_INFO || "None Provided",
+    });
+  });
 
   if (isDevEnv) {
     app.use(
@@ -748,11 +732,6 @@ setups.getBackendSetups(function (setups) {
       // Each calls the ensureGroup middleware,
       // passing to it an array of LDAP group names (which were loaded
       // from the permissions.json file at the top of the file).
-
-      // The page's asset URLs are document-relative, so they only resolve
-      // under the prefix when the address bar carries the trailing slash. The
-      // slashed form falls through to the renderer below.
-      app.use(rootPathRedirect(ROOT_PATH));
 
       app.get(
         `${ROOT_PATH}/`,

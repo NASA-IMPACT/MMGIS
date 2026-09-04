@@ -9,6 +9,11 @@ export type RawCard = {
     linkUrl?: string
 }
 
+// Turns a stored card image value into the URL the <img> tag should use.
+// Shared with every other tool that renders an uploaded asset — see
+// src/pre/uploadKey.ts for the four shapes a stored value can take.
+export const resolveImageUrl = resolveMissionAssetUrl
+
 // Resolves a stored card link to an href that points where the author meant.
 // A link is either internal to the app or an absolute external http(s) link:
 //   - root-relative internal links ("/view", "//cdn/x") pass through untouched;
@@ -51,7 +56,7 @@ export function buildCardData(
 ): CardItem[] {
     if (!Array.isArray(cards)) return []
     return cards.map((card) => ({
-        imageUrl: resolveMissionAssetUrl(card.image, missionPath),
+        imageUrl: resolveImageUrl(card.image, missionPath),
         title: card.title,
         subtitle: card.subtitle,
         linkUrl: resolveLinkUrl(card.linkUrl),

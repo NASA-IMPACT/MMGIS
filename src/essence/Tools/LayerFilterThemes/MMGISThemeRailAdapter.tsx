@@ -58,10 +58,11 @@ function resolveTogglePanel(
 
 /**
  * Points an uploaded icon at the file the mission actually serves. The upload
- * field stores either a path relative to the mission directory
- * ("LayerFilterThemes/uploads/<uuid>.svg") or an asset-bucket key, and the
- * shared resolver tells the two apart; a link the author pasted is already
- * complete and passes through.
+ * field stores either a mission-relative path
+ * ("LayerFilterThemes/uploads/<uuid>.svg") or a lean-mode upload key
+ * ("assets/<mission>/LayerFilterThemes/uploads/<uuid>.svg"); a link the author
+ * pasted is already complete and passes through. src/pre/uploadKey.ts knows
+ * every shape, so the rail resolves through it rather than testing its own.
  */
 export function withResolvedIcons(
     themes: ThemeSummary[],
@@ -84,8 +85,8 @@ export function MMGISThemeRailAdapter() {
     // selected. The panel owns each theme's filters; the two join on `id`.
     const vars = useMMGISToolVars<ThemeRailVars>('layerfilterthemes')
 
-    // Mission-relative icons need the mission's path before the rail can draw
-    // them; asset-bucket keys need none.
+    // Uploaded icons are stored mission-relative, so the rail needs the
+    // mission's path before it can draw them.
     const [missionPath, setMissionPath] = useState<string | null>(null)
     const refreshMissionPath = useCallback(async () => {
         setMissionPath(await mmgisGetMissionPath())

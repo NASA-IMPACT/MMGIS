@@ -2,8 +2,6 @@ const router = require("./routes/configs");
 const triggerWebhooks = require("../Webhooks/processes/triggerwebhooks.js");
 const configurePackageJson = require("../../../configure/package.json");
 const { MODE, isLean } = require("../Utils/deploymentMode");
-const { stripTrailingSlashRedirect } = require("../Utils/rootPathRedirect");
-const { rootPath } = require("../Utils/rootPath");
 
 let setup = {
   //Once the app initializes
@@ -14,10 +12,6 @@ let setup = {
     ) {
       s.app.get(
         s.ROOT_PATH + "/configure",
-        // The CMS's asset URLs are document-relative off the slash-less
-        // address, so the slashed form Express also matches here is sent back
-        // to it rather than rendered.
-        stripTrailingSlashRedirect(s.ROOT_PATH + "/configure"),
         s.ensureGroup(s.permissions.users),
         s.ensureAdmin(true),
         (req, res) => {
@@ -36,7 +30,7 @@ let setup = {
               process.env.NODE_ENV === "development"
                 ? ""
                 : /*(process.env.EXTERNAL_ROOT_PATH || "") +*/
-                  rootPath(),
+                  process.env.ROOT_PATH || "",
             WEBSOCKET_ROOT_PATH:
               process.env.NODE_ENV === "development"
                 ? ""
