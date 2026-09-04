@@ -1,8 +1,8 @@
 import { test, expect } from 'vitest'
-import express from 'express'
 import fs from 'fs'
 import http from 'http'
 import path from 'path'
+import { startServer, closeServer } from './__helpers__/expressServer'
 
 // Tests for the Upload module's lean-mode storage repoint: in lean mode the
 // router writes validated images to the shared S3 asset bucket (via an
@@ -15,12 +15,11 @@ import path from 'path'
 // The router resolves the deployment mode through
 // API/Backend/Utils/deploymentMode.js, which reads the env once at load — so
 // each test clears the require cache and re-requires the router under a fresh
-// environment (same pattern as deploymentMode.spec.js). The HTTP harness
-// mirrors Card/uploadRouting.spec.js — a real express server on an ephemeral
-// port — but drives it with http.request and a hand-built multipart body
-// rather than global fetch: Card/uploadImage.spec.js replaces global.fetch
-// with a mock and never restores it, which poisons any later fetch-based
-// spec sharing its worker.
+// environment (same pattern as deploymentMode.spec.js). The router runs on
+// the shared express harness, but the requests are hand-built multipart
+// bodies sent through http.request rather than global fetch:
+// Card/uploadImage.spec.js replaces global.fetch with a mock and never
+// restores it, which poisons any later fetch-based spec sharing its worker.
 
 const ROUTER_PATH = '../../API/Backend/Upload/uploadRouter.js'
 const MODE_PATH = '../../API/Backend/Utils/deploymentMode.js'
@@ -38,24 +37,13 @@ function freshRouterModule(env) {
     return require(ROUTER_PATH)
 }
 
-async function startServer(routerModule, options = {}) {
-    const app = express()
-    app.use(
-        '/api/upload',
-        routerModule.createUploadRouter({ routePath: '/', ...options })
-    )
-    return await new Promise((resolve) => {
-        const server = app.listen(0, () => {
-            resolve({
-                server,
-                base: `http://127.0.0.1:${server.address().port}`,
-            })
-        })
+function startUploadServer(routerModule, options = {}) {
+    return startServer((app) => {
+        app.use(
+            '/api/upload',
+            routerModule.createUploadRouter({ routePath: '/', ...options })
+        )
     })
-}
-
-function closeServer(server) {
-    return new Promise((resolve) => server.close(resolve))
 }
 
 function mockS3() {
@@ -135,7 +123,7 @@ test.describe('upload router lean-mode S3 storage', () => {
         })
         const s3 = mockS3()
         routerModule.setS3Client(s3.client)
-        const { server, base } = await startServer(routerModule)
+        const { server, base } = await startUploadServer(routerModule)
         try {
             const res = await postUpload(
                 base,
@@ -187,7 +175,7 @@ test.describe('upload router lean-mode S3 storage', () => {
         })
         const s3 = mockS3()
         routerModule.setS3Client(s3.client)
-        const { server, base } = await startServer(routerModule, {
+        const { server, base } = await startUploadServer(routerModule, {
             maxFileBytes: 64,
         })
         try {
@@ -211,7 +199,7 @@ test.describe('upload router lean-mode S3 storage', () => {
         })
         const s3 = mockS3()
         routerModule.setS3Client(s3.client)
-        const { server, base } = await startServer(routerModule)
+        const { server, base } = await startUploadServer(routerModule)
         try {
             const res = await postUpload(
                 base,
@@ -233,7 +221,7 @@ test.describe('upload router lean-mode S3 storage', () => {
         })
         const s3 = mockS3()
         routerModule.setS3Client(s3.client)
-        const { server, base } = await startServer(routerModule)
+        const { server, base } = await startUploadServer(routerModule)
         try {
             const res = await postUpload(
                 base,
@@ -257,7 +245,7 @@ test.describe('upload router lean-mode S3 storage', () => {
         })
         const s3 = mockS3()
         routerModule.setS3Client(s3.client)
-        const { server, base } = await startServer(routerModule)
+        const { server, base } = await startUploadServer(routerModule)
         try {
             const res = await postUpload(
                 base,
@@ -283,7 +271,7 @@ test.describe('upload router lean-mode S3 storage', () => {
         // Inject a tripwire client: any S3 use in full mode fails the test.
         const s3 = mockS3()
         routerModule.setS3Client(s3.client)
-        const { server, base } = await startServer(routerModule)
+        const { server, base } = await startUploadServer(routerModule)
         try {
             const res = await postUpload(
                 base,

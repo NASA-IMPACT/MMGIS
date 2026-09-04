@@ -7,6 +7,7 @@
  */
 
 import QueryURL from './QueryURL'
+import { isStaticBuild } from '../../pre/capabilities'
 
 // Names left out of a rebuilt mission URL: the flags that asked for the
 // landing page, plus `mission` itself, which is re-appended with the mission
@@ -87,4 +88,48 @@ export const replaceMissionUrl = ({ mission, keepParams }) => {
             keepParams,
         })
     )
+}
+
+/**
+ * Names the loaded mission in the address bar, for the entry URLs that ask
+ * for it.
+ *
+ * Three URLs ask: one with no query string at all, which says nothing about
+ * what is on screen; one carrying the flags that asked for the landing page,
+ * which the loaded mission now answers; and a swap into a different mission.
+ * Any other URL is a deeplink the visitor arrived with, and it stands.
+ *
+ * A static build serves the one mission baked into it, so its URL names no
+ * mission: the landing page's stripped URL is the last word there and this
+ * writes nothing.
+ *
+ * The mission name is checked only once a URL is going to be written, since
+ * it is the one thing that URL is built out of. Callers that write nothing —
+ * a static build, a deeplink the visitor arrived with — never see the throw,
+ * whatever their config holds.
+ *
+ * @param {string} mission - the mission that loaded
+ * @param {boolean} swapping - true when a different mission is being swapped
+ *     in, whose layers and views the pairs in the URL do not name, so they go
+ * @returns {boolean} true when the address bar was rewritten
+ * @throws {Error} when a URL is due and `mission` does not name one
+ */
+export const nameMissionInUrl = ({ mission, swapping }) => {
+    if (isStaticBuild()) return false
+
+    if (
+        window.location.search !== '' &&
+        !swapping &&
+        !hasForceLanding() &&
+        !hasPreview()
+    )
+        return false
+
+    if (!mission || typeof mission !== 'string') {
+        console.error('Invalid mission name in config')
+        throw new Error('Invalid mission name')
+    }
+
+    replaceMissionUrl({ mission: mission.trim(), keepParams: !swapping })
+    return true
 }

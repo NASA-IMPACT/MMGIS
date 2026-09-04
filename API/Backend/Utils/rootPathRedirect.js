@@ -27,14 +27,25 @@ function redirect(req, res, location) {
  * to its trailing-slash form. An empty `rootPath` (the app is served from the
  * origin root, where there is no slash to add) yields a pass-through.
  *
+ * Only a GET or a HEAD is redirected: a 302 tells a client to reissue the
+ * request at the new location, which for a POST or a DELETE is a request
+ * whose body is gone. Anything else falls through to the routes.
+ *
+ * The entry path is matched without regard to case, since a host name is
+ * case-insensitive and visitors type the prefix as though the whole address
+ * were; the Location always carries `rootPath` as configured, so one
+ * canonical URL reaches the app.
+ *
  * @param {string} rootPath - the path prefix the app is served under, with no
  *     trailing slash
  * @returns {Function} an Express middleware
  */
 function rootPathRedirect(rootPath) {
   if (!rootPath) return (req, res, next) => next();
+  const entry = rootPath.toLowerCase();
   return (req, res, next) => {
-    if (req.path !== rootPath) return next();
+    if (req.method !== "GET" && req.method !== "HEAD") return next();
+    if (req.path.toLowerCase() !== entry) return next();
     redirect(req, res, `${rootPath}/`);
   };
 }

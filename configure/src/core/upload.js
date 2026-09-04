@@ -39,22 +39,24 @@ export const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 
 // Turns a stored upload-field value into the URL the CMS's preview <img>
 // should use: the same four cases as resolveMissionAssetUrl in
-// src/pre/uploadKey.ts, in the same order, but anchored to `base` (the
-// ROOT_PATH prefix, or '/' when unset) rather than left to the page. Naming
-// the root outright keeps the preview URL explicit and independent of how
-// deep the CMS is mounted. An upload key therefore comes back as `base` +
-// the key — the admin CloudFront serves /assets/* from the shared bucket —
-// and a mission-relative value as `base` + "Missions/<mission>/" + the value.
-// A rooted "/assets/..." value is the same key with a leading slash, stripped
-// before the test.
+// src/pre/uploadKey.ts, in the same order, but anchored to `base` — a
+// trailing-slashed base URL, as returned by getApiBase() — rather than left
+// to the page to resolve.
+//
+// An upload key hangs straight off that base because the admin CloudFront
+// serves /assets/* from the shared bucket; everything else is under
+// "Missions/<mission>/". A base that is empty or missing its trailing slash
+// is given one, so the preview URL stays root-anchored and names the same
+// file however deep the CMS is mounted.
 export function buildPreviewSrc(value, mission, base) {
     // Callers feed this runtime configuration JSON, so the type is a runtime
     // question.
     if (typeof value !== 'string' || !value) return '';
     if (/^(https?:|data:)/i.test(value)) return value;
+    const root = !base ? '/' : base.endsWith('/') ? base : `${base}/`;
     const rooted = value.startsWith('/');
     const rebased = rooted ? value.slice(1) : value;
-    if (ASSETS_UPLOAD_KEY.test(rebased)) return `${base || '/'}${rebased}`;
+    if (ASSETS_UPLOAD_KEY.test(rebased)) return `${root}${rebased}`;
     if (rooted) return value;
-    return `${base || '/'}Missions/${mission}/${value}`;
+    return `${root}Missions/${mission}/${value}`;
 }
