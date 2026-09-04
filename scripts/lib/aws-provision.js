@@ -103,13 +103,19 @@ const UNUSABLE_STACK_STATUSES = [
   "REVIEW_IN_PROGRESS",
 ];
 
+// The one way out of a deployment nothing can be published onto, and what
+// taking it costs, so every refusal that ends there carries the same warning.
+function republishGuidance() {
+  return "delete the deployment and publish it again (this mints a new URL)";
+}
+
 // The one wording for a stack no update will ever be accepted onto, so the
 // publish task and the update endpoint hand an operator the same sentence and
 // the same way out.
 function stackUnusableMessage(stackName, status) {
   return (
     `Stack '${stackName}' is in ${status} and cannot be used — ` +
-    "delete the deployment and publish it again (this mints a new URL)"
+    republishGuidance()
   );
 }
 
@@ -170,22 +176,26 @@ async function updateStack({ stackName, templateBody }) {
 }
 
 // The status named by the ValidationError CloudFormation raises when a stack
-// is busy with an operation genuinely IN FLIGHT ("Stack:arn:... is in
+// will not take an UpdateStack in the state it is in ("Stack:arn:... is in
 // UPDATE_IN_PROGRESS state and can not be updated."), or null for any other
-// error. Two republish clicks start two ECS tasks and the loser lands here — a
-// race to wait out, not a failure. CloudFormation reuses that same wording for
-// delete-only statuses, which are not another task updating, so the status has
-// to be both *_IN_PROGRESS and absent from UNUSABLE_STACK_STATUSES. Same error
-// NAME as the no-op and does-not-exist cases, so the message stays the only
-// discriminator.
-function busyStatusOf(err) {
+// error. Same error NAME as the no-op and does-not-exist cases, so the message
+// stays the only discriminator.
+function rejectedStatusOf(err) {
   if (err == null || err.name !== "ValidationError") return null;
   const named = (err.message || "").match(
     /is in ([A-Z_]+) state and can not be updated/
   );
-  if (named == null) return null;
-  const status = named[1];
-  if (!status.endsWith("_IN_PROGRESS")) return null;
+  return named == null ? null : named[1];
+}
+
+// That status when it belongs to an operation genuinely IN FLIGHT, else null.
+// Two republish clicks start two ECS tasks and the loser lands here — a race to
+// wait out, not a failure. CloudFormation reuses the same wording for
+// delete-only statuses, which are not another task updating, so the status has
+// to be both *_IN_PROGRESS and absent from UNUSABLE_STACK_STATUSES.
+function busyStatusOf(err) {
+  const status = rejectedStatusOf(err);
+  if (status == null || !status.endsWith("_IN_PROGRESS")) return null;
   return UNUSABLE_STACK_STATUSES.indexOf(status) === -1 ? status : null;
 }
 
@@ -291,16 +301,25 @@ async function waitForStack({
   }
 }
 
+// How long a whole convergence may take — every wait-out and retry counted
+// together — before it gives up and fails the row.
+const CONVERGE_DEADLINE_MS = 45 * 60 * 1000;
+
 // Converges `templateBody` onto an existing stack via UpdateStack and waits
 // for our update to finish. Returns the converged Stack, or the latest read
 // of it when there is nothing to update. Each attempt works from a fresh read
 // of the stack — its own, or the caller's `fresh` one for the first attempt.
 //
 // Every attempt starts on a stack assertStackUsable has cleared, so a busy
-// rejection here is only ever a concurrent republish. On that race we
+// rejection here is almost always a concurrent republish. On that race we
 // wait the other task's operation out and retry our OWN UpdateStack, so this
 // run's template — not merely the winner's — converges; `maxBusyRetries` bounds
 // how many rounds that takes and `deadlineMs` how long they may take in total.
+// The rejection is itself proof an operation is in flight, so the read taken
+// before it is stale: it goes to the wait-out as `prior`, which polls through
+// reads that still match it. The rejection can instead name a status only a
+// delete moves a stack out of — one the pre-update read was taken too early to
+// show — and that earns the delete-and-republish guidance.
 async function convergeStackUpdate({
   stackName,
   templateBody,
@@ -308,7 +327,7 @@ async function convergeStackUpdate({
   // attempt's own read. Later attempts always read the stack themselves.
   fresh = null,
   maxBusyRetries = 10,
-  deadlineMs = 45 * 60 * 1000,
+  deadlineMs = CONVERGE_DEADLINE_MS,
   log = () => {},
   // Forwarded to both waitForStack calls, and used as the pause between a busy
   // rejection and the retry (production takes the defaults — tests inject a
@@ -364,7 +383,18 @@ async function convergeStackUpdate({
       started = await updateStack({ stackName, templateBody });
     } catch (err) {
       const busyStatus = busyStatusOf(err);
-      if (busyStatus == null) throw err;
+      if (busyStatus == null) {
+        // A rejection naming a status only a delete moves the stack out of:
+        // answer it the way a read of that status would, not with
+        // CloudFormation's own opaque wording.
+        const rejected = rejectedStatusOf(err);
+        if (
+          rejected != null &&
+          UNUSABLE_STACK_STATUSES.indexOf(rejected) !== -1
+        )
+          throw new Error(stackUnusableMessage(stackName, rejected));
+        throw err;
+      }
       if (attempt >= maxBusyRetries)
         throw new Error(
           `Stack '${stackName}' stayed busy after ${maxBusyRetries + 1} ` +
@@ -378,9 +408,8 @@ async function convergeStackUpdate({
       );
       // Wait on whatever status the other operation settles at (a rollback
       // settles at UPDATE_ROLLBACK_COMPLETE, which is still updatable) and let
-      // the next attempt read it back and judge it. The busy rejection is
-      // itself proof an operation is in flight, so the read taken before it is
-      // stale: pass it as `prior` and poll through reads that still match it.
+      // the next attempt read it back and judge it. `prior` is the stale
+      // pre-rejection read (see this function's docblock).
       await waitWithinDeadline({
         stackName,
         desiredStatus: SETTLED_STACK_STATUSES,
@@ -699,6 +728,8 @@ module.exports = {
   assertStackUsable,
   stackMissingMessage,
   stackUnusableMessage,
+  republishGuidance,
+  CONVERGE_DEADLINE_MS,
   // convergeStackUpdate's own steps; exported for tests.
   updateStack,
   busyStatusOf,

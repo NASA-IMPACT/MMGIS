@@ -131,9 +131,20 @@ async function main() {
     id: deployment.id,
     ...rowStillOursForFailure(Deployments.STATUS),
   };
-  // The row as it stands now, for the steps that must not run on a deployment
-  // a Delete has claimed while this task was baking and building.
-  const readRow = () => Deployments.findByPk(deployment.id);
+  // Run between the task's long steps. Stops the task when a Delete has
+  // claimed the deployment while it was working, and otherwise marks the row
+  // as still being worked on: the update endpoint reads a `provisioning`/
+  // `updating` row's age as how long its task has been silent
+  // (LIVE_TASK_WINDOW_MS in API/Backend/Deployments/updateRefusal.js), so a
+  // touch per step is what keeps a publish that is still going from looking
+  // abandoned. Only the timestamp is written, so nothing this task read
+  // earlier can paint over the row.
+  const touchLiveRow = async () => {
+    const row = await Deployments.findByPk(deployment.id);
+    assertRowLive(row, Deployments.STATUS);
+    row.changed("updatedAt", true);
+    await row.save({ fields: ["updatedAt"] });
+  };
 
   try {
     const mission = deployment.mission;
@@ -198,7 +209,7 @@ async function main() {
     if (action.refuse) throw new Error(action.refuse);
     // Provisioning is the point of no return for a Delete that landed during
     // the build: past it, a stack exists whose teardown nobody is running.
-    assertRowLive(await readRow(), Deployments.STATUS);
+    await touchLiveRow();
     if (action === "create") {
       log(`Creating stack '${stackName}'...`);
       await provision.createStack({ stackName, templateBody });
@@ -220,7 +231,7 @@ async function main() {
     // A delete can also have started during the stack wait, which is the
     // longest step of all; filling the bucket it is about to empty only slows
     // the teardown down. Everything below writes into that bucket.
-    assertRowLive(await readRow(), Deployments.STATUS);
+    await touchLiveRow();
 
     // 4. Same-key copy the mission's assets from the shared admin bucket
     //    so document-relative assets/<mission>/… references resolve
@@ -398,9 +409,14 @@ async function main() {
   }
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(`[publish-static] Failed: ${err.message}`);
-    process.exit(1);
-  });
+// Only the ECS task runs the publish; a require() of this file gets main()
+// without starting one.
+if (require.main === module)
+  main()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error(`[publish-static] Failed: ${err.message}`);
+      process.exit(1);
+    });
+
+module.exports = { main };
