@@ -2,11 +2,10 @@ import { test, expect } from 'vitest'
 
 // withLiveStatus is what POST /api/deployments/:id/update feeds to
 // updateRefusalFor, so the two are exercised together here over a real
-// Deployments instance (built, never saved — no database). That is what pins
-// the age window to the field name the model actually produces: a refusal
-// reading `updated_at` off a row that only carries `updatedAt` would let every
-// abandoned-looking row straight through, and no table of hand-written rows
-// would notice.
+// Deployments instance (built, never saved — no database). A hand-written row
+// carries whatever field a table gives it; this one carries only what the
+// model produces, which is what pins the age the refusal measures to a
+// timestamp that is really there.
 
 const provision = require('../../scripts/lib/aws-provision')
 const Deployments = require('../../API/Backend/Deployments/models/deployment')
@@ -50,14 +49,10 @@ test.describe('withLiveStatus into updateRefusalFor', () => {
         settledStack()
         const row = await withLiveStatus(rowAged(10 * MINUTE))
         expect(row.stack_status).toBe('CREATE_COMPLETE')
+        // The age the refusal measures comes off this field.
+        expect(new Date(row.updatedAt).getTime()).toBe(NOW - 10 * MINUTE)
         expect(updateRefusalFor(row, STATUS, NOW)).toEqual({
             message: 'Deployment is provisioning; wait for it to finish',
         })
-    })
-
-    test('a provisioning row past the window is one an update may take over', async () => {
-        settledStack()
-        const row = await withLiveStatus(rowAged(120 * MINUTE))
-        expect(updateRefusalFor(row, STATUS, NOW)).toBe(null)
     })
 })

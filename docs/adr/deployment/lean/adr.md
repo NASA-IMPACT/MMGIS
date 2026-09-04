@@ -102,8 +102,9 @@ Publish, Update, and Delete actions live on a new Deployments page in `/configur
 The endpoint refuses with a `409` before starting anything when:
 
 - the row is `deleting` or `deleted`;
-- another click claimed the row first — the claim is conditional on the status the refusal was judged against, so only one of two simultaneous clicks starts a task;
-- or the row is `provisioning`/`updating` and any of: its stack could not be read at all; its stack sits in a status only a delete can move on from (answered with the delete-and-republish guidance); its stack is mid-operation; the row was last touched within 90 minutes, so a task may still be working for it; or it recorded a stack ARN whose stack is gone.
+- another click claimed the row first — the claim is conditional on both the status and the `updatedAt` the refusal was judged against, and a claim moves `updatedAt`, so only one of two simultaneous clicks starts a task even on a row that already reads `updating`;
+- its stack sits in a status only a delete can move on from, whatever the row's own status is — answered with the delete-and-republish guidance (and the warning that republishing mints a new URL), since no amount of waiting makes such a stack updatable;
+- or the row is `provisioning`/`updating` and any of: its stack could not be read at all; its stack is mid-operation; the row was last touched within 90 minutes — twice the convergence deadline, and the publish task touches its row between steps, so the window only has to outlast the longest single step — so a task may still be working for it; or it recorded a stack ARN whose stack is gone.
 
 **Delete:** `DELETE /api/deployments/:id` marks the row `deleting`, empties the bucket (its name from `settings.bucket`, falling back to the stack's `BucketName` output for a delete mid-provision), then calls `DeleteStack`. CFN handles the 15–30 min teardown. The row flips to `deleted` on the next read where `DescribeStacks` 404s.
 

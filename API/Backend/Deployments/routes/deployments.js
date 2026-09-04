@@ -14,6 +14,9 @@ const triggerWebhooks = require("../../Webhooks/processes/triggerwebhooks");
 
 const provision = require("../../../../scripts/lib/aws-provision");
 const { stackNameForDeployment } = require("../../../../scripts/lib/cfn-template");
+const {
+  rowStillOursForFailure,
+} = require("../../../../scripts/lib/publish-flow");
 
 // Webhook payload for a deployment row.
 function webhookPayload(deployment) {
@@ -79,7 +82,9 @@ router.post("/publish", async function (req, res) {
     });
 
     // Fire-and-forget: a RunTask failure marks the row failed with the
-    // error, never crashes the request (which has already returned).
+    // error, never crashes the request (which has already returned). The
+    // failure lands only while the row is still this request's — a Delete or
+    // a task that got the dashboard live owns the status from then on.
     provision
       .runPublishTask({ deploymentId: deployment.id, action: "publish" })
       .catch((err) => {
@@ -95,7 +100,7 @@ router.post("/publish", async function (req, res) {
             status: STATUS.FAILED,
             last_error: `Failed to start publish task: ${err.message}`,
           },
-          { where: { id: deployment.id } }
+          { where: { id: deployment.id, ...rowStillOursForFailure(STATUS) } }
         ).catch(() => {});
       });
 
@@ -133,13 +138,21 @@ router.post("/:id/update", async function (req, res) {
       return;
     }
 
-    // Claim the row conditionally on the status the refusal was judged
-    // against: two clicks race here without it, and both would start a task
-    // against the same stack. The status the loser finds is one the winner
-    // wrote, so only one claim lands.
+    // Claim the row conditionally on the status AND the `updatedAt` the
+    // refusal was judged against, both read moments ago from the same row:
+    // two clicks race here without it, and both would start a task against the
+    // same stack. A claim moves `updatedAt`, so even two clicks on a row that
+    // already reads `updating` — where the status alone matches either way —
+    // leave only the first one a row to write.
     const [claimed] = await Deployments.update(
       { status: STATUS.UPDATING, last_error: null },
-      { where: { id: deployment.id, status: row.status } }
+      {
+        where: {
+          id: deployment.id,
+          status: row.status,
+          updatedAt: row.updatedAt,
+        },
+      }
     );
     if (claimed === 0) {
       res
@@ -166,7 +179,7 @@ router.post("/:id/update", async function (req, res) {
             status: STATUS.FAILED,
             last_error: `Failed to start update task: ${err.message}`,
           },
-          { where: { id: deployment.id } }
+          { where: { id: deployment.id, ...rowStillOursForFailure(STATUS) } }
         ).catch(() => {});
       });
 
