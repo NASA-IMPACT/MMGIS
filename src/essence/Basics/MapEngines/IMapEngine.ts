@@ -374,13 +374,10 @@ export interface IMapEngine<
      * Circle: first click sets center, second click sets radius. The
      *   completed feature is a 32-segment Polygon approximation.
      *
-     * Calling `enableDrawing` while a session is already active ends the
-     * prior session and starts a new one — there is never more than one
-     * drawing session at a time on an engine. The swap emits no `drawcancel`:
-     * `drawstart` for the new shape is the whole of it, so a consumer
-     * switching shape hears only the shape it asked for. A swap that throws —
-     * an unknown shape — emits `drawcancel` for the session it ended, since
-     * no new one replaced it.
+     * Calling `enableDrawing` while a session is already active cancels that
+     * session (emitting `drawcancel` for the shape it was drawing) before
+     * emitting `drawstart` for the new one — there is never more than one
+     * drawing session at a time on an engine.
      *
      * Engines emit four lifecycle events through the existing `on(name, …)`:
      *   - `drawstart`    payload: {@link DrawStartEvent}
@@ -428,10 +425,10 @@ export interface IMapEngine<
      *
      * `source` is the native DOM event the click was made from. For consumers
      * that hear clicks from the map library directly rather than through
-     * {@link on}, which filters them out already. Optional: an engine that
-     * cannot be drawn on need not answer.
+     * {@link on}, whose click path filters these clicks out already. An engine
+     * that does not support drawing returns false.
      */
-    ownsDrawEndClick?(source: unknown): boolean
+    ownsDrawEndClick(source: unknown): boolean
 
     /**
      * Attach an HTML overlay anchored to a geographic point.

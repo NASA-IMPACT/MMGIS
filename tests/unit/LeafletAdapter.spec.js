@@ -1189,26 +1189,10 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
         expect(adapter.isDrawing()).toBe(false)
     })
 
-    // The restart ends the running session before it asks for the new mode, so
-    // a shape the engine has no mode for destroys the drawing the plugin is
-    // mid-way through. With no `drawstart` behind it, the cancel is the only
-    // word that plugin gets that the session it is showing hints for is gone.
-    test('cancels the session a failed shape switch ended', () => {
-        const { adapter } = setupDrawing({ shape: 'polygon' })
-        const cancels = []
-        adapter.on('drawcancel', (e) => cancels.push(e.shape))
-
-        expect(() => adapter.enableDrawing('freehand')).toThrow()
-
-        expect(cancels).toEqual(['polygon'])
-        expect(adapter.isDrawing()).toBe(false)
-    })
-
-    // Switching shape restarts the session on the engine's own account. A
-    // `drawcancel` there reads as the user backing out, and a plugin acting on
-    // one — dropping its selection, closing its panel — undoes the drawing the
-    // user is still in the middle of setting up.
-    test('switching shape starts the new session without cancelling', () => {
+    // Stopping a live session is a cancel whoever asked for the stop, so a
+    // plugin switching shape mid-drawing hears the drawing it replaced end
+    // before the one it asked for begins.
+    test('switching shape cancels the old session before starting the new', () => {
         const { adapter } = setupDrawing({ shape: 'polygon' })
         const events = []
         adapter.on('drawstart', (e) => events.push(['drawstart', e.shape]))
@@ -1216,8 +1200,26 @@ test.describe('LeafletAdapter - the click a drawing ended on', () => {
 
         adapter.enableDrawing('rectangle')
 
-        expect(events).toEqual([['drawstart', 'rectangle']])
+        expect(events).toEqual([
+            ['drawcancel', 'polygon'],
+            ['drawstart', 'rectangle'],
+        ])
         expect(adapter.isDrawing()).toBe(true)
+    })
+
+    // The switch cancels the running session before it asks for the new mode,
+    // so a shape the engine has no mode for leaves the cancel standing with no
+    // `drawstart` behind it.
+    test('a failed shape switch cancels and starts nothing', () => {
+        const { adapter } = setupDrawing({ shape: 'polygon' })
+        const events = []
+        adapter.on('drawstart', (e) => events.push(['drawstart', e.shape]))
+        adapter.on('drawcancel', (e) => events.push(['drawcancel', e.shape]))
+
+        expect(() => adapter.enableDrawing('freehand')).toThrow()
+
+        expect(events).toEqual([['drawcancel', 'polygon']])
+        expect(adapter.isDrawing()).toBe(false)
     })
 
     test('disableDrawing cancels the session it ends', () => {
