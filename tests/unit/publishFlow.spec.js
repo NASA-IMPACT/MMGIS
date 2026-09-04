@@ -5,11 +5,39 @@ import { test, expect } from 'vitest'
 // directly — no AWS, no database, and no import of publish-static.js (which
 // runs its main() the moment it is loaded).
 
+const Sequelize = require('sequelize')
 const {
+    rowStillOurs,
+    rowStillOursForFailure,
     stackAction,
     assertRowLive,
 } = require('../../scripts/lib/publish-flow')
 const STATUS = require('../../API/Backend/Deployments/models/deployment').STATUS
+
+// The `where` fragments the task's terminal writes carry, read back through
+// Sequelize's own operator symbol so the table names statuses rather than
+// shape.
+test.describe('terminal-write guards', () => {
+    // [label, fragment, the statuses it refuses to write onto]
+    const cases = [
+        [
+            'a publish that got the dashboard live leaves a torn-down row alone',
+            rowStillOurs(STATUS),
+            ['deleting', 'deleted'],
+        ],
+        [
+            "a straggler's failure also leaves a published row alone",
+            rowStillOursForFailure(STATUS),
+            ['deleting', 'deleted', 'published'],
+        ],
+    ]
+
+    cases.forEach(([label, fragment, statuses]) => {
+        test(label, () => {
+            expect(fragment.status[Sequelize.Op.notIn]).toEqual(statuses)
+        })
+    })
+})
 
 test.describe('stackAction', () => {
     const stack = { StackStatus: 'CREATE_COMPLETE' }
