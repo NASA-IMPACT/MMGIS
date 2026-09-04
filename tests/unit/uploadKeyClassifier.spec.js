@@ -18,42 +18,61 @@ const MISSION = 'M'
 const MISSION_PATH = 'Missions/M/'
 const BASE = '/mmgis/'
 
-// [stored value, the upload key it carries — null when it is not one]
+// [stored value, the URL the app asks for, the URL the CMS preview asks for]
+// A slash-less app URL is an upload key, left for the dashboard page to
+// resolve against its own root; a "Missions/M/" one is a mission-relative
+// path. The CMS anchors both outcomes to its own base.
 const VALUES = [
-    ['assets/M/S/uploads/x.png', 'assets/M/S/uploads/x.png'],
+    [
+        'assets/M/S/uploads/x.png',
+        'assets/M/S/uploads/x.png',
+        '/mmgis/assets/M/S/uploads/x.png',
+    ],
     // A leading slash is stripped before the test, so this is the same key.
-    ['/assets/M/S/uploads/x.png', 'assets/M/S/uploads/x.png'],
+    [
+        '/assets/M/S/uploads/x.png',
+        'assets/M/S/uploads/x.png',
+        '/mmgis/assets/M/S/uploads/x.png',
+    ],
     [
         'assets/M/LayerFilterThemes/uploads/icon.svg',
         'assets/M/LayerFilterThemes/uploads/icon.svg',
+        '/mmgis/assets/M/LayerFilterThemes/uploads/icon.svg',
     ],
     // A plugin whose own subdir is named "assets" stores this, mission-relative.
-    ['assets/uploads/x.png', null],
-    ['assets/M/x.png', null],
-    ['Assets/M/S/uploads/x.png', null],
+    [
+        'assets/uploads/x.png',
+        'Missions/M/assets/uploads/x.png',
+        '/mmgis/Missions/M/assets/uploads/x.png',
+    ],
+    [
+        'assets/M/x.png',
+        'Missions/M/assets/M/x.png',
+        '/mmgis/Missions/M/assets/M/x.png',
+    ],
+    [
+        'Assets/M/S/uploads/x.png',
+        'Missions/M/Assets/M/S/uploads/x.png',
+        '/mmgis/Missions/M/Assets/M/S/uploads/x.png',
+    ],
 ]
 
 test.describe('upload-key classification', () => {
-    // A matched key stays slash-less so the dashboard page resolves it
-    // against its own root; anything else is a mission-relative path.
-    test.each(VALUES)('resolveMissionAssetUrl: %s', (value, key) => {
-        expect(resolveMissionAssetUrl(value, MISSION_PATH)).toBe(
-            key === null ? MISSION_PATH + value : key,
-        )
+    test.each(VALUES)('resolveMissionAssetUrl: %s', (value, appUrl) => {
+        expect(resolveMissionAssetUrl(value, MISSION_PATH)).toBe(appUrl)
     })
 
-    // The CMS anchors both outcomes to its own base.
-    test.each(VALUES)('buildPreviewSrc: %s', (value, key) => {
-        expect(buildPreviewSrc(value, MISSION, BASE)).toBe(
-            key === null ? `${BASE}Missions/${MISSION}/${value}` : BASE + key,
-        )
+    test.each(VALUES)('buildPreviewSrc: %s', (value, appUrl, cmsUrl) => {
+        expect(buildPreviewSrc(value, MISSION, BASE)).toBe(cmsUrl)
     })
 
     // The regex itself, which every consumer applies to the value with any
-    // leading slash already stripped.
-    test.each(VALUES)('ASSETS_UPLOAD_KEY: %s', (value, key) => {
+    // leading slash already stripped. The rows it must match are the ones the
+    // app leaves for the page to resolve against its own root — every other
+    // row's app URL is anchored to the mission path.
+    test.each(VALUES)('ASSETS_UPLOAD_KEY: %s', (value, appUrl) => {
         expect(ASSETS_UPLOAD_KEY.test(value.replace(/^\//, ''))).toBe(
-            key !== null,
+            !appUrl.startsWith(MISSION_PATH),
         )
     })
 })

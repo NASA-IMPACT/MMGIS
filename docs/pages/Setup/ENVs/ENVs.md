@@ -17,6 +17,7 @@ Environment variables are set within `MMGIS/.env`. A sample file `MMGIS/sample.e
 The kind of server running | string enum | default `node`
 
 - _node:_ A node express server running NodeJS v20.11.1+
+- _static:_ A published dashboard bundle with no server behind it (set by the publish build)
 
 #### `AUTH=`
 

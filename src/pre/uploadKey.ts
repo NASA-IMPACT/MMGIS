@@ -12,28 +12,15 @@
 // configure/src/core/upload.js carries the third.
 const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//
 
-// What URL should the page request for a stored value? Four cases, checked
-// in this order:
-//
-//   - a full URL ("https://..." or "data:...") — used as-is.
-//   - an upload key ("assets/MSL/CardPlugin/uploads/a.png") — returned still
-//     slash-less, so the browser resolves it against the page's own folder.
-//     That folder is always the dashboard's root: the page is served only as
-//     <root>/ or <root>/index.html (the slash-less entry URL gets
-//     redirected), and the admin serves from the origin root. A rooted
-//     "/assets/..." value is the same key with a leading slash, stripped
-//     before the test, so it takes this branch too.
-//   - any other rooted path ("/somewhere/else.png") — used as-is.
-//   - anything else ("CardPlugin/uploads/a.png") — a mission-relative path,
-//     prefixed with the mission path ("Missions/MSL/"). This includes an
-//     "assets/..." value that misses the writer's exact shape, on purpose —
-//     see the regex above.
+// A matched key comes back slash-less so the browser resolves it against the
+// page's own folder, which is always the dashboard's root: the page is served
+// only as <root>/ or <root>/index.html (the slash-less entry URL gets
+// redirected), and the admin serves from the origin root.
 export function resolveMissionAssetUrl(
     value: string | undefined | null,
     missionPath: string | null,
 ): string {
     if (!value) return ''
-    if (typeof value !== 'string') return ''
     if (/^(https?:|data:)/i.test(value)) return value
     const rooted = value.startsWith('/')
     const rebased = rooted ? value.slice(1) : value

@@ -6,7 +6,7 @@ The examples below use the path `/tools/dashboard`; substitute your own everywhe
 
 ## Setup
 
-1. **Add the dashboard as an origin** on your distribution: origin domain is the dashboard's address, origin protocol policy **HTTPS only**, and one custom origin header — `X-Forwarded-Prefix` with the path as its value: `/tools/dashboard`. Leading slash, no trailing slash; letters, digits, `-`, `_`, `.`, `~`, and `/` only, with no `//` and no `..` segment.
+1. **Add the dashboard as an origin** on your distribution: origin domain is the dashboard's address, origin protocol policy **HTTPS only**, and one custom origin header — `X-Forwarded-Prefix` with the path as its value: `/tools/dashboard`. Leading slash, no trailing slash; letters, digits, `-`, `_`, `.`, `~`, and `/` only, with no `//` and no `..` segment. Don't use `build`, `public`, `assets` or `Missions` as the path's first segment — those are real folders inside the dashboard, so a missing or wrong header would serve real files at the wrong depth instead of failing loudly.
 
 2. **Create a custom cache policy** — not a managed one — with:
    - the `Authorization` header in the cache key,

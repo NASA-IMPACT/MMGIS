@@ -49,6 +49,10 @@ const ASSETS_UPLOAD_KEY = /^assets\/[^/]+\/[^/]+\/uploads\//;
 // the same key with a leading slash, stripped before the test.
 export function buildPreviewSrc(value, mission, base) {
     if (!value) return '';
+    // The CMS bundle is plain JavaScript and this value arrives from a
+    // hand-authored config, so the type is checked here; the app's
+    // resolveMissionAssetUrl is reached only from typed callers and carries
+    // no matching line.
     if (typeof value !== 'string') return '';
     if (/^(https?:|data:)/i.test(value)) return value;
     const rooted = value.startsWith('/');

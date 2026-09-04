@@ -10,7 +10,8 @@
  *   MMGIS_DEPLOYMENT_ACTION - "publish" (default) creates the CloudFormation
  *                       stack when none exists yet and otherwise converges the
  *                       existing one (a previous attempt may have created it);
- *                       "update" requires an existing stack and converges it.
+ *                       "update" converges the existing stack, and is refused
+ *                       when the row's stack is gone (see lib/publish-flow.js).
  *                       Converging applies the current template via
  *                       UpdateStack — including re-baking the current
  *                       dashboards password into the auth Function. Both
@@ -30,11 +31,16 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { spawnSync } = require("child_process");
-const Sequelize = require("sequelize");
 
 const rootDir = path.join(__dirname, "..");
 
 const provision = require("./lib/aws-provision");
+const {
+  rowStillOurs,
+  rowStillOursForFailure,
+  stackAction,
+  assertRowLive,
+} = require("./lib/publish-flow");
 const { renderCfnTemplate, stackNameForDeployment } = require("./lib/cfn-template");
 const { applyTimeBakeGuard } = require("./lib/bake-guards");
 
@@ -117,30 +123,36 @@ async function main() {
   // A Delete that overlaps a running task owns the row's status from then on,
   // so every terminal write below lands only while the row is still one this
   // task is responsible for.
-  const stillOurs = {
+  const publishedWhere = {
     id: deployment.id,
-    status: {
-      [Sequelize.Op.notIn]: [
-        Deployments.STATUS.DELETING,
-        Deployments.STATUS.DELETED,
-      ],
-    },
+    ...rowStillOurs(Deployments.STATUS),
   };
+  const failedWhere = {
+    id: deployment.id,
+    ...rowStillOursForFailure(Deployments.STATUS),
+  };
+  // The row as it stands now, for the steps that must not run on a deployment
+  // a Delete has claimed while this task was baking and building.
+  const readRow = () => Deployments.findByPk(deployment.id);
 
   try {
     const mission = deployment.mission;
     const stackName =
       deployment.stack_name || stackNameForDeployment(deployment.id);
 
-    const noStackForUpdate = `Stack '${stackName}' does not exist — publish before updating`;
-    // A first read, purely to fail fast: an "update" of something that was
-    // never published, and a stack only a delete can move, both stop here in
-    // seconds rather than after the multi-minute bake and build below. What
-    // gets created or converged is decided by a second read taken after that
-    // build, and convergeStackUpdate re-checks usability per attempt.
+    // A first read, purely to fail fast: an update whose stack is gone, and a
+    // stack only a delete can move, both stop here in seconds rather than after
+    // the multi-minute bake and build below. What gets created or converged is
+    // decided by a second read taken after that build, and convergeStackUpdate
+    // re-checks usability per attempt.
     const existing = await provision.describeStack({ stackName });
-    if (ACTION === "update" && existing == null)
-      throw new Error(noStackForUpdate);
+    const preflight = stackAction({
+      action: ACTION,
+      stack: existing,
+      stackName,
+      stackArn: deployment.stack_arn,
+    });
+    if (preflight.refuse) throw new Error(preflight.refuse);
     if (existing != null)
       provision.assertStackUsable({ stackName, stack: existing });
 
@@ -172,14 +184,19 @@ async function main() {
     // Which branch to take follows a read taken now, not the one from before
     // the build: another task can have created the stack in the meantime (a
     // CreateStack onto it is an AlreadyExistsException) or deleted it (a
-    // converge onto it has nothing to update). An existing stack is converged
-    // rather than reused as-is: the template this run renders has to reach it,
-    // and converging is what keeps two simultaneous republishes safe.
+    // converge onto it has nothing to update).
     const current = await provision.describeStack({ stackName });
-    if (current == null) {
-      // An update owns one stack and one URL; minting a second one behind the
-      // same row is not an update.
-      if (ACTION === "update") throw new Error(noStackForUpdate);
+    const action = stackAction({
+      action: ACTION,
+      stack: current,
+      stackName,
+      stackArn: deployment.stack_arn,
+    });
+    if (action.refuse) throw new Error(action.refuse);
+    // Provisioning is the point of no return for a Delete that landed during
+    // the build: past it, a stack exists whose teardown nobody is running.
+    assertRowLive(await readRow(), Deployments.STATUS);
+    if (action === "create") {
       log(`Creating stack '${stackName}'...`);
       await provision.createStack({ stackName, templateBody });
       stack = await provision.waitForStack({ stackName });
@@ -187,6 +204,7 @@ async function main() {
       stack = await provision.convergeStackUpdate({
         stackName,
         templateBody,
+        fresh: current,
         log,
       });
     }
@@ -195,6 +213,11 @@ async function main() {
     const bucket = outputs.BucketName;
     if (bucket == null)
       throw new Error(`Stack '${stackName}' has no BucketName output`);
+
+    // A delete can also have started during the stack wait, which is the
+    // longest step of all; filling the bucket it is about to empty only slows
+    // the teardown down. Everything below writes into that bucket.
+    assertRowLive(await readRow(), Deployments.STATUS);
 
     // 4. Same-key copy the mission's assets from the shared admin bucket
     //    so document-relative assets/<mission>/… references resolve
@@ -361,7 +384,7 @@ async function main() {
           distributionId: outputs.DistributionId,
         },
       },
-      { where: stillOurs }
+      { where: publishedWhere }
     );
     log(
       published
@@ -375,7 +398,7 @@ async function main() {
         status: Deployments.STATUS.FAILED,
         last_error: err.message || String(err),
       },
-      { where: stillOurs }
+      { where: failedWhere }
     ).catch(() => {});
     throw err;
   }

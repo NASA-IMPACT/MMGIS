@@ -47,9 +47,15 @@ import CursorInfo from './Ancillary/CursorInfo'
 import ContextMenu from './Ancillary/ContextMenu'
 import Coordinates from './Ancillary/Coordinates'
 import QueryURL from './Ancillary/QueryURL'
+import {
+    hasForceLanding,
+    hasPreview,
+    buildMissionUrl,
+} from './Ancillary/landingFlags'
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import { stylize } from './Ancillary/Stylize'
 import { mmgisAPI_ } from './mmgisAPI/mmgisAPI'
+import { isStaticBuild } from '../pre/capabilities'
 
 import { validateModernConfig, sanitizeText } from './Validators/DashboardConfigValidator'
 
@@ -143,11 +149,14 @@ class ModernInterface {
     /**
      * Updates the browser URL with the mission name
      *
-     * Uses URLSearchParams for safe URL manipulation and validates mission name
-     * before encoding. Only updates URL when:
+     * Validates the mission name, then rewrites the URL. Only updates URL when:
      * - No query string exists
      * - Mission is being swapped
      * - Force landing or preview mode is active
+     *
+     * A static build is exempt: it serves the one mission baked into it, so
+     * its URL never names a mission and the URL LandingPage stripped of the
+     * landing flags is the last word.
      *
      * @param {MissionConfig} config - Mission configuration
      * @param {boolean} swapping - Whether this is a mission swap
@@ -155,16 +164,11 @@ class ModernInterface {
      * @throws {Error} If mission name is invalid
      */
     _updateMissionUrl(config, swapping) {
-        const urlParams = new URLSearchParams(window.location.search)
-        const hasForcelanding = urlParams.has('forcelanding') || urlParams.has('forceLanding')
-        const hasPreview = urlParams.has('_preview')
+        const noQuery = window.location.search.replace(/^\?/, '') === ''
 
-        if (
-            urlParams.toString() === '' ||
-            swapping ||
-            hasForcelanding ||
-            hasPreview
-        ) {
+        if (isStaticBuild()) return
+
+        if (noQuery || swapping || hasForceLanding() || hasPreview()) {
             // Use DB mission name for deeplinks (config._dbMissionName if available)
             const missionForUrl = config._dbMissionName || config.msv?.mission
 
@@ -173,10 +177,15 @@ class ModernInterface {
                 throw new Error('Invalid mission name')
             }
 
-            // Sanitize and encode mission name for URL
-            const sanitizedMission = encodeURIComponent(missionForUrl.trim())
-            const baseUrl = window.location.href.split('?')[0]
-            const newUrl = `${baseUrl}?mission=${sanitizedMission}`
+            // A swap keeps only the mission: the pairs in the URL point at the
+            // mission being left. Otherwise the deeplink stays, minus the flags
+            // that asked for the landing page.
+            const newUrl = buildMissionUrl({
+                search: window.location.search,
+                pathnameHref: window.location.origin + window.location.pathname,
+                mission: missionForUrl.trim(),
+                keepParams: !swapping,
+            })
 
             // Validate URL before applying
             try {

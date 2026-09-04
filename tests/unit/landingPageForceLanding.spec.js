@@ -9,13 +9,22 @@ vi.mock('../../src/essence/modern', () => ({ default: { init: vi.fn() } }))
 vi.mock('../../src/essence/mmgisAPI/mmgisAPI', () => ({ mmgisAPI_: {} }))
 vi.mock('../../src/external/attributions', () => ({ default: [] }))
 vi.mock('../../src/essence/Basics/Viewer_/Viewer_', () => ({ default: {} }))
-vi.mock('../../src/pre/calls', () => ({ default: { api: vi.fn() } }))
+// The config fetch answers with a classic-mode config, so a straight-through
+// load reaches essence.init.
+vi.mock('../../src/pre/calls', () => ({
+    default: {
+        api: vi.fn((verb, params, onSuccess) =>
+            onSuccess({ msv: { mission: 'OnlyMission' } })
+        ),
+    },
+}))
 vi.mock('../../src/pre/capabilities', () => ({
     isStaticBuild: vi.fn(() => false),
 }))
 
 import LandingPage from '../../src/essence/LandingPage/LandingPage'
 import { isStaticBuild } from '../../src/pre/capabilities'
+import s from '../../src/essence/essence'
 
 const MISSIONS = ['OnlyMission']
 
@@ -27,23 +36,24 @@ const initAt = (query) => {
 beforeEach(() => {
     document.body.innerHTML = ''
     window.mmgisglobal = { version: '0.0.0', MAIN_MISSION: '' }
+    vi.clearAllMocks()
     isStaticBuild.mockReturnValue(false)
 })
 
 test('a lone mission loads straight through when the flag is absent', () => {
     initAt('')
     expect(document.querySelector('.landingPage')).toBeNull()
+    expect(s.init).toHaveBeenCalled()
 })
 
-// Either casing, and with or without a value: all four spellings are the
-// same request — hold the mission list up instead of auto-loading.
-test.each(['forcelanding', 'forceLanding', 'forcelanding=1', 'forceLanding=1'])(
-    '?%s holds the mission list up',
-    (query) => {
-        initAt(query)
-        expect(document.querySelector('.landingPage')).not.toBeNull()
-    }
-)
+// Which spellings of the flag count is landingFlags' business, and its own
+// table in tests/unit/landingFlags.spec.js walks them. What the landing page
+// owns is the response: a recognized flag holds the mission list up instead
+// of auto-loading the lone mission.
+test('?forcelanding holds the mission list up', () => {
+    initAt('forcelanding')
+    expect(document.querySelector('.landingPage')).not.toBeNull()
+})
 
 test('a static build strips both spellings from its URL', () => {
     // A static dashboard only ever shows its baked mission, so the flag is
