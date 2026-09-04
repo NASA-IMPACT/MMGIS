@@ -185,7 +185,7 @@ var Viewer_ = {
         this.imageIntro.append(introMessage)
 
         this.lookupPath =
-            'Missions/' + L_.mission + '/' + 'Data/mosaic_parameters.csv'
+            L_.missionPath + 'Data/mosaic_parameters.csv'
 
         buildToolBar()
 
@@ -305,10 +305,8 @@ var Viewer_ = {
         if (o.hasOwnProperty('master') && o.master != null) {
             this.masterImg = o.master
             //Check if it's absolute or relative
-            //../../../../ is from get_profile to mmgis dir
             if (!F_.isUrlAbsolute(this.masterImg))
-                this.masterImg =
-                    '../../../../' + L_.missionPath + this.masterImg
+                this.masterImg = L_.missionPath + this.masterImg
         } else this.masterImg = null
 
         if (o.isModel) {
@@ -331,7 +329,7 @@ var Viewer_ = {
 
             let textureURL = o.texture
             if (!F_.isUrlAbsolute(textureURL))
-                textureURL = '../../../../' + L_.missionPath + textureURL
+                textureURL = L_.missionPath + textureURL
 
             window.onresize = this.modelviewer.resize
             Viewer_.toolBarLoading.css('opacity', '1')

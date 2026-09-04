@@ -1,4 +1,5 @@
 import type { CardItem } from '../lib/types'
+import { resolveMissionAssetUrl } from '../../../../pre/uploadKey'
 
 // Raw card shape as stored in the tool's config variables.
 export type RawCard = {
@@ -8,18 +9,10 @@ export type RawCard = {
     linkUrl?: string
 }
 
-// Resolves a stored card image value to a renderable URL.
-// Mission-relative paths (e.g. "CardPlugin/uploads/a.png") are prefixed with
-// the mission path (e.g. "Missions/MSL/"); absolute/data/root-relative URLs
-// pass through unchanged.
-export function resolveImageUrl(
-    image: string | undefined | null,
-    missionPath: string | null,
-): string {
-    if (!image) return ''
-    if (/^(https?:|data:|\/)/i.test(image)) return image
-    return (missionPath || '') + image
-}
+// Turns a stored card image value into the URL the <img> tag should use.
+// Shared with every other tool that renders an uploaded asset — see
+// src/pre/uploadKey.ts for the four shapes a stored value can take.
+export const resolveImageUrl = resolveMissionAssetUrl
 
 // Resolves a stored card link to an href that points where the author meant.
 // A link is either internal to the app or an absolute external http(s) link:

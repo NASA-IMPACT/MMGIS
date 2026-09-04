@@ -1,12 +1,14 @@
 import React, { useRef, useState } from 'react';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import { uploadImage } from '../upload';
+import { uploadImage, buildPreviewSrc } from '../upload';
 
 // A generic config field that uploads an image and stores the returned
-// mission-relative path. `value` is the current stored path (may be empty);
-// `subdir` is the upload target folder declared by the field's config (so this
-// field is not tied to any one plugin). On success it calls onChange(path); on
+// path — mission-relative on disk, or a document-relative
+// "assets/<mission>/<subdir>/uploads/<file>" key in lean mode (see
+// upload.js). `value` is the current stored path (may be empty); `subdir` is
+// the upload target folder declared by the field's config (so this field is
+// not tied to any one plugin). On success it calls onChange(path); on
 // failure it calls onError(message) and keeps the old value.
 export default function UploadField({
     label,
@@ -15,7 +17,7 @@ export default function UploadField({
     mission,
     subdir,
     disabled,
-    domain,
+    base,
     onChange,
     onError,
 }) {
@@ -46,13 +48,8 @@ export default function UploadField({
         }
     };
 
-    // Build a preview URL for the current value (mission-relative path).
-    const previewSrc =
-        value && /^(https?:|data:|\/)/i.test(value)
-            ? value
-            : value
-              ? `${domain || ''}Missions/${mission}/${value}`
-              : '';
+    // Build a preview URL for the current stored value.
+    const previewSrc = buildPreviewSrc(value, mission, base);
 
     return (
         <div style={disabled ? { opacity: 0.5 } : {}}>

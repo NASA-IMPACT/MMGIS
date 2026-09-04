@@ -10,7 +10,24 @@
  * surface in DescribeStacks output, which the Deployments list reads.
  */
 
+const fs = require("fs");
+const path = require("path");
+
 const DEFAULT_STACK_NAME_PREFIX = "mmgis-dashboard-";
+
+// The readable source of the viewer-request CloudFront Function, resolved
+// from this module's own location so it works regardless of the process's
+// cwd. See renderAuthFunctionCode's read error for the packaging
+// requirement this implies.
+const AUTH_FUNCTION_SOURCE_PATH = path.join(
+  __dirname,
+  "..",
+  "..",
+  "infrastructure",
+  "cloudfront-function.js"
+);
+
+const BASIC_AUTH_CREDENTIALS_PLACEHOLDER = "<BASE64_BASIC_CREDENTIALS>";
 
 // Basic-auth username paired with the shared password.
 const BASIC_AUTH_USER = "mmgis";
@@ -64,34 +81,29 @@ function stackNameForDeployment(deploymentId) {
 }
 
 /**
- * The viewer-request CloudFront Function source. The expected
- * "Basic <base64>" Authorization value is baked in as a constant.
+ * The viewer-request CloudFront Function source, read from
+ * infrastructure/cloudfront-function.js (the single source of truth for the
+ * function body) with its leading doc-comment header stripped and the
+ * <BASE64_BASIC_CREDENTIALS> placeholder substituted with
+ * base64("mmgis:" + password). See that file for what the function itself
+ * does (auth gate, X-Forwarded-Prefix handling).
  */
 function renderAuthFunctionCode(password) {
+  const source = fs.readFileSync(AUTH_FUNCTION_SOURCE_PATH, "utf8");
+
+  const body = source.replace(/^\/\*[\s\S]*?\*\/\s*/, "").trimEnd();
+
+  if (body.indexOf(BASIC_AUTH_CREDENTIALS_PLACEHOLDER) === -1)
+    throw new Error(
+      `renderAuthFunctionCode: ${AUTH_FUNCTION_SOURCE_PATH} is missing the ` +
+        `${BASIC_AUTH_CREDENTIALS_PLACEHOLDER} placeholder — cannot bake in ` +
+        "the shared password."
+    );
+
   const expected = Buffer.from(`${BASIC_AUTH_USER}:${password}`).toString(
     "base64"
   );
-  return [
-    "function handler(event) {",
-    "    var request = event.request;",
-    `    var EXPECTED = 'Basic ${expected}';`,
-    "    var headers = request.headers;",
-    "    var auth =",
-    "        headers.authorization && headers.authorization.value;",
-    "    if (auth !== EXPECTED) {",
-    "        return {",
-    "            statusCode: 401,",
-    "            statusDescription: 'Unauthorized',",
-    "            headers: {",
-    "                'www-authenticate': {",
-    "                    value: 'Basic realm=\"MMGIS Dashboard\"'",
-    "                }",
-    "            }",
-    "        };",
-    "    }",
-    "    return request;",
-    "}",
-  ].join("\n");
+  return body.replace(BASIC_AUTH_CREDENTIALS_PLACEHOLDER, expected);
 }
 
 /**

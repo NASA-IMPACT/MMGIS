@@ -165,9 +165,10 @@ async function main() {
       throw new Error(`Stack '${stackName}' has no BucketName output`);
 
     // 4. Same-key copy the mission's assets from the shared admin bucket
-    //    so root-relative /assets/<mission>/… references resolve
-    //    same-origin against the dashboard's CloudFront. Copied assets
-    //    inherit the dashboard's password gate as ordinary bundle content.
+    //    so document-relative assets/<mission>/… references resolve
+    //    against the dashboard's document base (the customer prefix,
+    //    when one is configured, included). Copied assets inherit the
+    //    dashboard's password gate as ordinary bundle content.
     const sharedBucket = process.env.MMGIS_SHARED_ASSET_BUCKET;
     if (sharedBucket != null && sharedBucket !== "") {
       // Uploads are keyed by the mission's FOLDER name (msv.missionFolderName,
