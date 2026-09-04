@@ -32,7 +32,7 @@ With the two patterns above and header `X-Forwarded-Prefix: /tools/dashboard`:
 | The visitor opens | `X-Forwarded-Prefix` value | What our edge does | The visitor gets |
 |---|---|---|---|
 | `site.gov/tools/dashboard/` | `/tools/dashboard` | strips `/tools/dashboard`, serves `/index.html` | the dashboard |
-| `site.gov/tools/dashboard/js/main.js` | `/tools/dashboard` | strips `/tools/dashboard` → `/js/main.js` | the asset |
+| `site.gov/tools/dashboard/build/static/js/main.a1b2c3.js` | `/tools/dashboard` | strips `/tools/dashboard` → `/build/static/js/main.a1b2c3.js` | the asset |
 | `site.gov/tools/dashboard` *(no trailing slash)* | `/tools/dashboard` | 302 redirect to `/tools/dashboard/` | one redirect, then the dashboard |
 | `site.gov/tools/dashboard?view=2` | `/tools/dashboard` | 302 to `/tools/dashboard/?view=2` | the deep link, query string intact |
 | `site.gov/tools/dashboard-archive` *(a route of yours with a similar name)* | *(never sent)* | nothing — matches neither pattern, so it never leaves your site | your own route, unaffected |
@@ -51,7 +51,7 @@ Every dashboard is password-protected, so every row also sits behind the passwor
 
 **All query strings in the cache key:** a policy that drops query strings never sends them to us. A deep link like `/tools/dashboard?view=2` then reaches us stripped of its `?view=2`, and the address we redirect the visitor to has lost it for good.
 
-**Minimum TTL 0:** a policy's minimum cache time overrides what our responses ask for, and most of the managed ones sit above 0. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next. A floor above 0 also holds the entry page and the mission configuration, which we mark to revalidate before every use (`no-cache`, not `no-store`); at 0 a republish reaches your domain with no purge on your side — those two immediately, the supporting files roughly five minutes after the publish completes, plus however long our invalidation takes to reach your region (the publish does not wait for it).
+**Minimum TTL 0:** the managed policies you are likely to reach for impose a minimum cache time that overrides what our responses ask for. Our slash-less-entry redirect must not be cached — it contains one visitor's query string — and without an explicit 0 your edge would replay that visitor's redirect to the next. A floor above 0 also holds the entry page and the mission configuration, which we mark to revalidate before every use (`no-cache`, not `no-store`); at 0 a republish reaches your domain with no purge on your side — those two immediately, the supporting files roughly five minutes after the publish completes, plus however long our invalidation takes to reach your region (the publish does not wait for it).
 
 **Maximum TTL a year:** the files whose names are content-fingerprinted — the JS, CSS and media bundles, and the images uploaded into the dashboard, each stored under a name that is never reused — are cacheable forever (`immutable`), and a policy maximum below a year would cap them at whatever it sets. AWS's managed `UseOriginCacheControlHeaders` policies (and the `-QueryStrings` variant) already pair Minimum TTL 0 with a one-year maximum, but neither puts `Authorization` in the cache key — which is why the policy has to be a custom one, with both bounds set by hand: Minimum 0 so it raises no floor over what we ask for, Maximum a year so it does not cap the immutable tier.
 

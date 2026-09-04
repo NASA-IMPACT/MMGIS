@@ -251,6 +251,12 @@ test.describe('dashboard CloudFront Function behavior', () => {
     // As in the "/../" test above, every request URI here begins with its
     // declared prefix, so a prefix accepted when it should be rejected
     // visibly shortens the URI and the assertion fails.
+    //
+    // Each shape is driven twice: once at an asset URI under the prefix (the
+    // strip path) and once at the entry URI, where the request URI is the
+    // prefix itself (the redirect path). Only the second reaches the
+    // anti-open-redirect clauses' payoff — an accepted "//evil.example.com"
+    // would answer with a Location pointing off-site.
     // [what is wrong with it, declared prefix, request URI]
     const MALFORMED_PREFIXES = [
         ['bare slash', '/', '//x'],
@@ -259,14 +265,17 @@ test.describe('dashboard CloudFront Function behavior', () => {
         ['an embedded "\\"', '/\\evil.com', '/\\evil.com/x'],
     ]
 
-    test('a malformed declared prefix is ignored', () => {
-        for (const [flaw, prefix, uri] of MALFORMED_PREFIXES) {
-            expect(
-                handler(makeEvent(uri, { prefix })).uri,
-                `prefix with ${flaw} is ignored`
-            ).toBe(uri)
+    test.each(MALFORMED_PREFIXES)(
+        'a declared prefix with %s is ignored',
+        (flaw, prefix, uri) => {
+            expect(handler(makeEvent(uri, { prefix })).uri).toBe(uri)
+
+            const entry = handler(makeEvent(prefix, { prefix }))
+            expect(entry.uri).toBe(prefix)
+            expect(entry.statusCode).toBeUndefined()
+            expect(entry.headers.location).toBeUndefined()
         }
-    })
+    )
 
     test('a lone surrogate in the declared prefix is treated as absent, not a crash', () => {
         const result = handler(

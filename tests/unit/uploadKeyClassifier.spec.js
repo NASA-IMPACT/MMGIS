@@ -1,6 +1,12 @@
 import { test, expect } from 'vitest'
-import { resolveMissionAssetUrl } from '../../src/pre/uploadKey.ts'
-import { buildPreviewSrc } from '../../configure/src/core/upload.js'
+import {
+    resolveMissionAssetUrl,
+    ASSETS_UPLOAD_KEY as APP_KEY,
+} from '../../src/pre/uploadKey.ts'
+import {
+    buildPreviewSrc,
+    ASSETS_UPLOAD_KEY as CMS_KEY,
+} from '../../configure/src/core/upload.js'
 
 const { ASSETS_UPLOAD_KEY } = require('../../API/Backend/Upload/validate')
 
@@ -58,6 +64,14 @@ const VALUES = [
 ]
 
 test.describe('upload-key classification', () => {
+    // The table below is what actually matters, but the two regexes being
+    // character-for-character identical says so in one line, and points at
+    // the edit that drifted when a table row starts failing.
+    test('the two copies of the regex are the same pattern', () => {
+        expect(APP_KEY.source).toBe(CMS_KEY.source)
+        expect(APP_KEY.flags).toBe(CMS_KEY.flags)
+    })
+
     test.each(VALUES)('resolveMissionAssetUrl: %s', (value, appUrl) => {
         expect(resolveMissionAssetUrl(value, MISSION_PATH)).toBe(appUrl)
     })

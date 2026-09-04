@@ -50,7 +50,7 @@ import QueryURL from './Ancillary/QueryURL'
 import {
     hasForceLanding,
     hasPreview,
-    buildMissionUrl,
+    replaceMissionUrl,
 } from './Ancillary/landingFlags'
 import TimeControl from './Basics/TimeControl_/TimeControl'
 import { stylize } from './Ancillary/Stylize'
@@ -154,9 +154,7 @@ class ModernInterface {
      * - Mission is being swapped
      * - Force landing or preview mode is active
      *
-     * A static build is exempt: it serves the one mission baked into it, so
-     * its URL never names a mission and the URL LandingPage stripped of the
-     * landing flags is the last word.
+     * A static build is exempt (see replaceMissionUrl).
      *
      * @param {MissionConfig} config - Mission configuration
      * @param {boolean} swapping - Whether this is a mission swap
@@ -164,9 +162,9 @@ class ModernInterface {
      * @throws {Error} If mission name is invalid
      */
     _updateMissionUrl(config, swapping) {
-        const noQuery = window.location.search.replace(/^\?/, '') === ''
-
         if (isStaticBuild()) return
+
+        const noQuery = window.location.search.replace(/^\?/, '') === ''
 
         if (noQuery || swapping || hasForceLanding() || hasPreview()) {
             // Use DB mission name for deeplinks (config._dbMissionName if available)
@@ -180,21 +178,11 @@ class ModernInterface {
             // A swap keeps only the mission: the pairs in the URL point at the
             // mission being left. Otherwise the deeplink stays, minus the flags
             // that asked for the landing page.
-            const newUrl = buildMissionUrl({
-                search: window.location.search,
-                pathnameHref: window.location.origin + window.location.pathname,
+            replaceMissionUrl({
                 mission: missionForUrl.trim(),
                 keepParams: !swapping,
             })
-
-            // Validate URL before applying
-            try {
-                new URL(newUrl) // Throws if invalid
-                window.history.replaceState('', '', newUrl)
-                L_.url = window.location.href
-            } catch (err) {
-                console.error('[Modern Interface] Failed to update URL:', err)
-            }
+            L_.url = window.location.href
         }
     }
 
