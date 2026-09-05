@@ -6,6 +6,57 @@ import { DeckGLAdapter } from '../../src/essence/Basics/MapEngines/Adapters/Deck
 import { MAP_ENGINE } from '../../src/essence/Basics/MapEngines/types/engine.ts'
 import { drawModeKeyEvents } from '../../src/essence/Basics/MapEngines/Adapters/DrawingHelpers.ts'
 
+// Both init() branches build their engine through a real constructor, so the
+// props they wire the adapter's handlers into can only be read back off that
+// constructor. jsdom has no WebGL, so the constructors are replaced — and only
+// they are: everything else the adapter imports alongside them stays real.
+const constructed = vi.hoisted(() => ({ deck: [], overlay: [] }))
+
+vi.mock('@deck.gl/core', async (importOriginal) => {
+    const actual = await importOriginal()
+    class MockDeck {
+        constructor(props) {
+            constructed.deck.push(props)
+        }
+        setProps() {}
+        redraw() {}
+        finalize() {}
+    }
+    return { ...actual, Deck: MockDeck }
+})
+
+vi.mock('@deck.gl/mapbox', async (importOriginal) => {
+    const actual = await importOriginal()
+    class MockMapboxOverlay {
+        constructor(props) {
+            constructed.overlay.push(props)
+        }
+        setProps() {}
+        finalize() {}
+    }
+    return { ...actual, MapboxOverlay: MockMapboxOverlay }
+})
+
+vi.mock('maplibre-gl', async (importOriginal) => {
+    const actual = await importOriginal()
+    class MockMap {
+        constructor() {
+            this._canvas = document.createElement('canvas')
+        }
+        addControl() {}
+        removeControl() {}
+        on() {}
+        off() {}
+        once() {}
+        setMaxBounds() {}
+        remove() {}
+        getCanvas() {
+            return this._canvas
+        }
+    }
+    return { ...actual, Map: MockMap }
+})
+
 function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
     const adapter = new DeckGLAdapter()
     adapter._viewState = { longitude, latitude, zoom, bearing: 0, pitch: 0 }
@@ -14,6 +65,112 @@ function makeAdapter({ longitude = -120, latitude = 40, zoom = 5 } = {}) {
 
 function makeLayer(id, props = {}) {
     return { id, ...props, clone: (overrides = {}) => makeLayer(id, { ...props, ...overrides }) }
+}
+
+// Just enough of the maplibre Map API for TerraDrawMapLibreGLAdapter to
+// construct, register its layers, place a pointer on the globe, and tear itself
+// down. Registered ids are tracked so getLayer() answers the way a real style
+// would. The map is given a size and put in the document because terra-draw
+// drops a pointer that falls outside the map's own bounds, and because an
+// event only reaches a window listener from a node that is in the page.
+function makeDrawingBasemap() {
+    const canvas = document.createElement('canvas')
+    const container = document.createElement('div')
+    container.appendChild(canvas)
+    document.body.appendChild(container)
+    const bounds = {
+        x: 0, y: 0, left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600,
+    }
+    container.getBoundingClientRect = () => bounds
+    canvas.getBoundingClientRect = () => bounds
+    const styleLayers = new Set()
+    return {
+        getContainer: () => container,
+        getCanvas: () => canvas,
+        project: ({ lng, lat }) => ({ x: lng, y: lat }),
+        unproject: ({ x, y }) => ({ lng: x, lat: y }),
+        dragRotate: { isEnabled: () => true, enable: () => {}, disable: () => {} },
+        dragPan: { isEnabled: () => true, enable: () => {}, disable: () => {} },
+        doubleClickZoom: { enable: () => {}, disable: () => {} },
+        addSource: vi.fn(),
+        addLayer: vi.fn((layer) => styleLayers.add(layer.id)),
+        removeLayer: vi.fn((id) => styleLayers.delete(id)),
+        removeSource: vi.fn(),
+        getLayer: (id) => (styleLayers.has(id) ? { id } : undefined),
+        getSource: () => ({ setData: () => {} }),
+        setStyle: vi.fn(() => styleLayers.clear()),
+        off: vi.fn(),
+        removeControl: vi.fn(),
+        remove: vi.fn(),
+        version: '5.8.0',
+    }
+}
+
+/** An overlay-mode adapter a real terra-draw session can be started on. */
+function makeOverlayDrawingAdapter() {
+    const adapter = makeAdapter()
+    adapter._isOverlayMode = true
+    adapter._basemap = makeDrawingBasemap()
+    adapter._overlay = { setProps: vi.fn(), finalize: vi.fn() }
+    return adapter
+}
+
+/** A DOM event stamped as the browser would stamp one made at `timeStamp`. */
+function stamped(type, timeStamp) {
+    const event = new Event(type)
+    Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+    return event
+}
+
+/**
+ * End a drawing session the way a click on the map does, and return the
+ * pointerup it ended on. terra-draw commits from inside the pointerup, so the
+ * adapter's pointer watch is looking at that very event as the session ends —
+ * which is what tells the guard a click of the drawing's is still to come, and
+ * which event it will be made from.
+ */
+function stopOnPointer(adapter, at) {
+    const element = adapter._drawEventElement()
+    const stop = () => adapter._stopDrawing()
+    const up = stamped('pointerup', at)
+    element.addEventListener('pointerup', stop)
+    element.dispatchEvent(up)
+    element.removeEventListener('pointerup', stop)
+    return up
+}
+
+/** The basemap's double-click zoom handler, reporting the state it is left in. */
+function makeDoubleClickZoom(initial = true) {
+    let enabled = initial
+    return {
+        isEnabled: () => enabled,
+        enable: () => { enabled = true },
+        disable: () => { enabled = false },
+    }
+}
+
+/** The shapes the adapter registers a terra-draw mode for. */
+const DRAW_SHAPES = ['point', 'linestring', 'polygon', 'rectangle', 'circle']
+
+/**
+ * Stands in for terra-draw, which disables double-click zoom as it starts a
+ * mode, leaves it disabled when the mode stops, and throws when asked for a
+ * mode it has none of.
+ */
+function makeTerraDraw(doubleClickZoom) {
+    let started = false
+    return {
+        get enabled() { return started },
+        start: () => { started = true },
+        clear: () => {},
+        setMode: (mode) => {
+            if (!DRAW_SHAPES.includes(mode)) {
+                throw new Error('No mode with this name present')
+            }
+            doubleClickZoom?.disable()
+        },
+        stop: () => { started = false },
+    }
 }
 
 test.describe('DeckGLAdapter', () => {
@@ -372,48 +529,13 @@ test.describe('DeckGLAdapter', () => {
     test.describe('drawing overlay stacking', () => {
         const ANCHOR_ID = 'td-polygon'
 
-        // Just enough of the maplibre Map API for TerraDrawMapLibreGLAdapter
-        // to construct, register its layers, and tear them down. Registered ids
-        // are tracked so getLayer() answers the way a real style would.
-        function makeDrawingBasemap() {
-            const canvas = document.createElement('canvas')
-            const container = document.createElement('div')
-            const styleLayers = new Set()
-            return {
-                getContainer: () => container,
-                getCanvas: () => canvas,
-                dragRotate: { isEnabled: () => true, enable: () => {}, disable: () => {} },
-                dragPan: { isEnabled: () => true, enable: () => {}, disable: () => {} },
-                doubleClickZoom: { enable: () => {}, disable: () => {} },
-                addSource: vi.fn(),
-                addLayer: vi.fn((layer) => styleLayers.add(layer.id)),
-                removeLayer: vi.fn((id) => styleLayers.delete(id)),
-                removeSource: vi.fn(),
-                getLayer: (id) => (styleLayers.has(id) ? { id } : undefined),
-                getSource: () => ({ setData: () => {} }),
-                setStyle: vi.fn(() => styleLayers.clear()),
-                off: vi.fn(),
-                removeControl: vi.fn(),
-                remove: vi.fn(),
-                version: '5.8.0',
-            }
-        }
-
-        function makeDrawingAdapter() {
-            const adapter = makeAdapter()
-            adapter._isOverlayMode = true
-            adapter._basemap = makeDrawingBasemap()
-            adapter._overlay = { setProps: vi.fn(), finalize: vi.fn() }
-            return adapter
-        }
-
         function lastSyncedLayers(adapter) {
             const calls = adapter._overlay.setProps.mock.calls
             return calls[calls.length - 1][0].layers
         }
 
         test('enableDrawing anchors every deck layer below the terra-draw stack', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.addLayer(makeLayer('raster'))
             adapter.addLayer(makeLayer('vector'))
             adapter.enableDrawing('polygon')
@@ -424,20 +546,20 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('the anchor id matches the bottom-most layer terra-draw registers', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.enableDrawing('polygon')
             expect(adapter._basemap.addLayer.mock.calls[0][0].id).toBe('td-polygon')
         })
 
         test('layers added mid-draw are anchored too', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.enableDrawing('rectangle')
             adapter.addLayer(makeLayer('added-mid-draw'))
             expect(lastSyncedLayers(adapter).map((l) => l.beforeId)).toEqual([ANCHOR_ID])
         })
 
         test('no anchor is stamped while the terra-draw layers are out of the style', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.addLayer(makeLayer('raster'))
             adapter.enableDrawing('polygon')
             adapter._basemap.getLayer = () => undefined
@@ -449,7 +571,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('setBasemapStyle drops the anchor before the swap wipes the terra-draw layers', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.addLayer(makeLayer('raster'))
             adapter.enableDrawing('polygon')
             adapter.setBasemapStyle('https://example.com/style.json')
@@ -460,7 +582,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('setBasemapStyle cancels the live drawing session', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             const cancels = []
             adapter.on('drawcancel', (e) => cancels.push(e))
             adapter.enableDrawing('polygon')
@@ -470,7 +592,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('destroy cancels the live drawing session', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             const cancels = []
             adapter.on('drawcancel', (e) => cancels.push(e))
             adapter.enableDrawing('polygon')
@@ -479,7 +601,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('disableDrawing drops the anchor', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             adapter.addLayer(makeLayer('raster'))
             adapter.enableDrawing('polygon')
             adapter.disableDrawing()
@@ -487,7 +609,7 @@ test.describe('DeckGLAdapter', () => {
         })
 
         test('the layer registry keeps the original un-anchored instances', () => {
-            const adapter = makeDrawingAdapter()
+            const adapter = makeOverlayDrawingAdapter()
             const original = makeLayer('raster')
             adapter.addLayer(original)
             adapter.enableDrawing('polygon')
@@ -672,16 +794,19 @@ test.describe('DeckGLAdapter', () => {
     })
 
     test.describe('drawing', () => {
-        // enableDrawing needs a real terra-draw session against a MapLibre map,
-        // so drive the finish path with the two things it touches: the session
-        // flag and the canvas terra-draw listens on.
-        function makeSessionAdapter(shape) {
+        // A session started the way a plugin starts one, on a stand-in for
+        // terra-draw: enableDrawing is what wires the pointer watch and the
+        // guard to the canvas terra-draw would listen on. The canvas is in the
+        // page because an event only reaches a window listener from a node
+        // that is in it.
+        function makeSessionAdapter(shape, { doubleClickZoom } = {}) {
             const adapter = makeAdapter()
             const canvas = document.createElement('canvas')
+            document.body.appendChild(canvas)
             adapter._isOverlayMode = true
-            adapter._basemap = { getCanvas: () => canvas }
-            adapter._terraDraw = {}
-            adapter._drawingShape = shape
+            adapter._basemap = { getCanvas: () => canvas, doubleClickZoom }
+            adapter._terraDraw = makeTerraDraw(doubleClickZoom)
+            adapter.enableDrawing(shape)
             return { adapter, canvas }
         }
 
@@ -754,6 +879,287 @@ test.describe('DeckGLAdapter', () => {
             expect(keys).toEqual(['Enter'])
         })
 
+        // A deck pick, whose `coordinate` is in [lng, lat] order.
+        const pickAt = (lng, lat) => ({ coordinate: [lng, lat], x: 12, y: 34 })
+
+        // The input event deck hands `onClick` alongside the pick. Its
+        // `srcEvent` is the DOM event the click was recognised from: for
+        // deck's own recognizers, the pointerup object itself.
+        const clickFrom = (srcEvent) => ({ srcEvent })
+
+        // deck reports a click through its `click` recognizer, which waits for
+        // a double-click to fail before it fires, so the click terra-draw
+        // committed the shape on arrives long after the session it ended — with
+        // `_drawingShape` already null, so that guard is no longer looking.
+        // Reporting it hands every consumer a map click the user never made,
+        // one that would dismiss the popup a plugin opened from the
+        // `drawcomplete` that came first.
+        test('the click a drawing ended on is not reported as a map click', () => {
+            const { adapter } = makeSessionAdapter('rectangle')
+            const clicks = []
+            const picks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+            adapter.onFeatureClick((result) => picks.push(result))
+
+            // terra-draw commits on pointerup, and the adapter ends the session
+            // there and then — this is what deck calls afterwards, made from
+            // that very pointerup.
+            const up = stopOnPointer(adapter, 1000)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
+
+            expect(clicks).toEqual([])
+            expect(picks).toEqual([])
+        })
+
+        // How late deck delivers that click is not the guard's to know: the
+        // recognizer's timer runs as late as the main thread lets it, and a
+        // `drawcomplete` handler that renders something heavy holds it up well
+        // past any window measured on the clock. The click is still made from
+        // the pointerup the session ended on, whenever it lands.
+        test('the click a drawing ended on is not reported however late deck delivers it', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter } = makeSessionAdapter('rectangle')
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                const up = stopOnPointer(adapter, 1000)
+                vi.advanceTimersByTime(5000)
+                adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
+
+                expect(clicks).toEqual([])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // A click need not be the pointerup object itself to be the drawing's.
+        // One the browser stamped with that pointerup — the native click the
+        // overlaid overlay forwards inside a MapLibre event — was released
+        // before the drawing's gesture was over, however late it is delivered.
+        test('a click stamped with the finishing pointerup is not reported however late it lands', () => {
+            vi.useFakeTimers()
+            try {
+                const { adapter } = makeSessionAdapter('rectangle')
+                const clicks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                stopOnPointer(adapter, 1000)
+                vi.advanceTimersByTime(5000)
+                adapter._onPointerClick(
+                    pickAt(-120, 40),
+                    clickFrom({ originalEvent: stamped('click', 1000) })
+                )
+
+                expect(clicks).toEqual([])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // A pointer that goes down more than a tap interval after the finish is
+        // too late to be the second tap of a double-click that ended the
+        // drawing, so it is the user's own next gesture, and the click made
+        // from its pointerup is theirs.
+        test('the click that starts the next gesture is still reported', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            stopOnPointer(adapter, 1000)
+            canvas.dispatchEvent(stamped('pointerdown', 1400))
+            const up = stamped('pointerup', 1450)
+            canvas.dispatchEvent(up)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        })
+
+        // The user's next gesture can begin while deck is still holding the
+        // drawing's click. Both land after it, each made from its own pointerup.
+        test('the drawing\'s click and the user\'s are told apart by source, not order', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            const finish = stopOnPointer(adapter, 1000)
+            canvas.dispatchEvent(stamped('pointerdown', 1400))
+            const next = stamped('pointerup', 1450)
+            canvas.dispatchEvent(next)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(finish))
+            adapter._onPointerClick(pickAt(-121, 41), clickFrom(next))
+
+            expect(clicks).toEqual([{ lat: 41, lng: -121 }])
+        })
+
+        // Finishing on a double-click is trained behaviour, and one of the two
+        // taps is not the one the session ends on: `point` commits on the
+        // first, the click-per-vertex modes on the last. deck maps `dblclick`
+        // onto `onClick` alongside `click` (@deck.gl/core EVENT_HANDLERS), from
+        // the second tap's pointerup — after a pointerdown that a horizon read
+        // alone would take as proof of a new gesture.
+        test('the double-click a drawing ended on is not reported as a map click', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            const picks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+            adapter.onFeatureClick((result) => picks.push(result))
+
+            // Tap 1's pointerup is where terra-draw commits; the guard's own
+            // listeners only go on from here, so that pointerup is not one of
+            // the events it sees.
+            stopOnPointer(adapter, 1000)
+
+            // Tap 2, inside the tap interval that makes the pair a double-click.
+            canvas.dispatchEvent(stamped('pointerdown', 1150))
+            const up = stamped('pointerup', 1200)
+            canvas.dispatchEvent(up)
+
+            // The recognizer's click, made from the second tap.
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
+
+            expect(clicks).toEqual([])
+            expect(picks).toEqual([])
+        })
+
+        // A third tap is the user's, even one pressed within an interval of the
+        // second: the drawing's clicks run to where their gesture began.
+        test('a third tap after a double-click finish is reported', () => {
+            const { adapter, canvas } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            stopOnPointer(adapter, 1000)
+            canvas.dispatchEvent(stamped('pointerdown', 1150))
+            const second = stamped('pointerup', 1200)
+            canvas.dispatchEvent(second)
+            canvas.dispatchEvent(stamped('pointerdown', 1400))
+            const third = stamped('pointerup', 1440)
+            canvas.dispatchEvent(third)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(second))
+            adapter._onPointerClick(pickAt(-121, 41), clickFrom(third))
+
+            expect(clicks).toEqual([{ lat: 41, lng: -121 }])
+        })
+
+        // The click a finishing gesture was covered for does not always come:
+        // a pointerup deck reads as the end of a drag produces none. Nothing is
+        // left absorbing — the user's next click is stamped past the horizon.
+        test('a finish that produced no click leaves the user\'s next one reported', () => {
+            const { adapter } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            stopOnPointer(adapter, 1000)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(stamped('pointerup', 1300)))
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        })
+
+        // A click that came from no DOM event was no gesture of the drawing's.
+        test('a click with no source event is reported', () => {
+            const { adapter } = makeSessionAdapter('rectangle')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            stopOnPointer(adapter, 1000)
+            adapter._onPointerClick(pickAt(-120, 40))
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        })
+
+        // terra-draw leaves double-click zoom disabled when the mode stops, so
+        // the guard is what gives it back — and giving it back the moment the
+        // session ends would let the second click of a double-click finish
+        // zoom the map. It waits out as long as the browser may still make a
+        // double-click of the gesture.
+        test('double-click zoom comes back once the finish hold passes', () => {
+            vi.useFakeTimers()
+            try {
+                const zoom = makeDoubleClickZoom()
+                const { adapter } = makeSessionAdapter('rectangle', { doubleClickZoom: zoom })
+                expect(zoom.isEnabled()).toBe(false)
+
+                stopOnPointer(adapter, 1000)
+                expect(zoom.isEnabled()).toBe(false)
+
+                vi.advanceTimersByTime(600)
+                expect(zoom.isEnabled()).toBe(true)
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // `map:enableDrawing` takes its shape straight off the bus, so a plugin
+        // can ask for one no mode was registered for. terra-draw throws on the
+        // lookup, with double-click zoom already taken for a session that will
+        // never end to give it back — and with its listeners already back on
+        // the canvas, routed to whichever mode the failed one was replacing.
+        // Left running, that mode draws under the cursor of a map whose
+        // adapter reports no drawing at all.
+        test('leaves nothing running when the mode fails to start', () => {
+            const zoom = makeDoubleClickZoom()
+            const { adapter } = makeSessionAdapter('rectangle', { doubleClickZoom: zoom })
+
+            expect(() => adapter.enableDrawing('freehand')).toThrow()
+
+            expect(zoom.isEnabled()).toBe(true)
+            expect(adapter._terraDraw.enabled).toBe(false)
+            expect(adapter.isDrawing()).toBe(false)
+        })
+
+        // Stopping a live session is a cancel whoever asked for the stop, so a
+        // plugin switching shape mid-drawing hears the drawing it replaced end
+        // before the one it asked for begins.
+        test('switching shape cancels the old session before starting the new', () => {
+            const { adapter } = makeSessionAdapter('polygon')
+            const events = []
+            adapter.on('drawstart', (e) => events.push(['drawstart', e.shape]))
+            adapter.on('drawcancel', (e) => events.push(['drawcancel', e.shape]))
+
+            adapter.enableDrawing('rectangle')
+
+            expect(events).toEqual([
+                ['drawcancel', 'polygon'],
+                ['drawstart', 'rectangle'],
+            ])
+            expect(adapter.isDrawing()).toBe(true)
+        })
+
+        // The switch cancels the running session before it asks for the new
+        // mode, so a shape the engine has no mode for leaves the cancel
+        // standing with no `drawstart` behind it.
+        test('a failed shape switch cancels and starts nothing', () => {
+            const { adapter } = makeSessionAdapter('polygon')
+            const events = []
+            adapter.on('drawstart', (e) => events.push(['drawstart', e.shape]))
+            adapter.on('drawcancel', (e) => events.push(['drawcancel', e.shape]))
+
+            expect(() => adapter.enableDrawing('freehand')).toThrow()
+
+            expect(events).toEqual([['drawcancel', 'polygon']])
+            expect(adapter.isDrawing()).toBe(false)
+        })
+
+        // A plugin ending the drawing from its own panel — a Finish button, a
+        // tab, a shape picker — ends it on a pointer that never touched the
+        // map, and no click of the drawing's is on its way. The click the user
+        // makes next is theirs from the first one.
+        test('a session a plugin ended from its panel does not swallow the next click', () => {
+            const { adapter } = makeSessionAdapter('polygon')
+            const clicks = []
+            adapter.on('click', (e) => clicks.push(e.latlng))
+            const button = document.createElement('button')
+            document.body.appendChild(button)
+
+            button.dispatchEvent(stamped('pointerdown', 1000))
+            button.dispatchEvent(stamped('pointerup', 1000))
+            adapter.disableDrawing()
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(stamped('click', 1100)))
+
+            expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+        })
+
         test('disableDrawing emits drawcancel once', () => {
             const { adapter } = makeDrawingAdapter({ finishes: false })
             const shapes = []
@@ -762,6 +1168,198 @@ test.describe('DeckGLAdapter', () => {
             adapter.disableDrawing()
             expect(shapes).toEqual(['polygon'])
         })
+    })
+
+    // Which clicks a finish leaves behind is not something terra-draw says: it
+    // emits `finish` from inside whatever event it is reacting to, and the
+    // pointer that placed the last vertex may be a separate event again. These
+    // drive real terra-draw sessions, so the answer comes from the events the
+    // way it does on a real map.
+    test.describe('drawing - the clicks a finish leaves behind', () => {
+        const pointer = (canvas, type, x, y) => {
+            const event = new PointerEvent(type, {
+                clientX: x,
+                clientY: y,
+                bubbles: true,
+                isPrimary: true,
+            })
+            canvas.dispatchEvent(event)
+            return event
+        }
+
+        /** A two-vertex linestring, one click short of a finish. */
+        const drawLine = (adapter, canvas) => {
+            adapter.enableDrawing('linestring')
+            pointer(canvas, 'pointerdown', 10, 10)
+            pointer(canvas, 'pointerup', 10, 10)
+            pointer(canvas, 'pointermove', 50, 50)
+            pointer(canvas, 'pointerdown', 50, 50)
+            return pointer(canvas, 'pointerup', 50, 50)
+        }
+
+        // A deck pick, whose `coordinate` is in [lng, lat] order.
+        const pickAt = (lng, lat) => ({ coordinate: [lng, lat], x: 12, y: 34 })
+
+        // The input event deck hands `onClick`, made from `pointerup`.
+        const clickFrom = (pointerup) => ({ srcEvent: pointerup })
+
+        // Point mode commits on the pointerup of the click that places it, and
+        // deck reports that click a tap interval later — with the session over.
+        test('the click a shape was finished on is not reported', () => {
+            const adapter = makeOverlayDrawingAdapter()
+            const canvas = adapter._basemap.getCanvas()
+            const finished = []
+            const clicks = []
+            adapter.on('drawcomplete', (e) => finished.push(e))
+            adapter.on('click', (e) => clicks.push(e.latlng))
+
+            adapter.enableDrawing('point')
+            pointer(canvas, 'pointerdown', 10, 10)
+            const up = pointer(canvas, 'pointerup', 10, 10)
+            adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
+
+            expect(finished).toHaveLength(1)
+            expect(clicks).toEqual([])
+        })
+
+        // Enter finishes from a keyup, but deck is still holding the click that
+        // placed the last vertex: it holds every one a tap interval to see
+        // whether a double-click is coming. That click lands with the session
+        // over, and reporting it would dismiss whatever a plugin opened from
+        // the `drawcomplete` the key produced a moment earlier.
+        test('the last vertex click deck still holds when Enter finishes is covered', () => {
+            vi.useFakeTimers()
+            try {
+                const adapter = makeOverlayDrawingAdapter()
+                const canvas = adapter._basemap.getCanvas()
+                const finished = []
+                const clicks = []
+                adapter.on('drawcomplete', (e) => finished.push(e))
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                const lastVertex = drawLine(adapter, canvas)
+                vi.advanceTimersByTime(100)
+                canvas.dispatchEvent(
+                    new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })
+                )
+
+                // deck's recognizer, a tap interval after that last pointerup,
+                // hands over the click it made from it.
+                vi.advanceTimersByTime(200)
+                adapter._onPointerClick(pickAt(-120, 40), clickFrom(lastVertex))
+
+                expect(finished).toHaveLength(1)
+                expect(clicks).toEqual([])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+
+        // Enter used the way it usually is — the shape read back, then the key
+        // — comes with the last vertex click long delivered, so there is
+        // nothing left to cover and the user's next click is theirs.
+        test('a shape finished on Enter with the pointer idle leaves the guard out of the way', () => {
+            vi.useFakeTimers()
+            try {
+                const adapter = makeOverlayDrawingAdapter()
+                const canvas = adapter._basemap.getCanvas()
+                const finished = []
+                const clicks = []
+                adapter.on('drawcomplete', (e) => finished.push(e))
+                adapter.on('click', (e) => clicks.push(e.latlng))
+
+                drawLine(adapter, canvas)
+                vi.advanceTimersByTime(400)
+                canvas.dispatchEvent(
+                    new KeyboardEvent('keyup', { key: 'Enter', bubbles: true })
+                )
+
+                expect(finished).toHaveLength(1)
+
+                // The user's own next click, deck reporting it an interval
+                // after the gesture as always.
+                pointer(canvas, 'pointerdown', 80, 80)
+                const up = pointer(canvas, 'pointerup', 80, 80)
+                vi.advanceTimersByTime(300)
+                adapter._onPointerClick(pickAt(-120, 40), clickFrom(up))
+
+                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+            } finally {
+                vi.useRealTimers()
+            }
+        })
+    })
+
+    // The props the engine is constructed with are where the adapter's handlers
+    // are connected to deck's input. Calling those handlers directly, as the
+    // tests above do, says nothing about which function deck ends up calling,
+    // and each mode wires its own copy.
+    test.describe('constructed engine props', () => {
+        const CONTAINER_ID = 'deckgl-init'
+        const MAPLIBRE_BASEMAP = {
+            provider: 'maplibre',
+            style: 'https://example.com/style.json',
+        }
+
+        // A deck pick, whose `coordinate` is in [lng, lat] order.
+        const pickAt = (lng, lat) => ({ coordinate: [lng, lat], x: 12, y: 34 })
+
+        // Run the real init() path and hand back the props of whichever engine
+        // it built: deck's own in standalone mode, the MapboxOverlay's in
+        // overlay mode.
+        function initAdapter(basemap) {
+            constructed.deck.length = 0
+            constructed.overlay.length = 0
+            let container = document.getElementById(CONTAINER_ID)
+            if (!container) {
+                container = document.createElement('div')
+                container.id = CONTAINER_ID
+                document.body.appendChild(container)
+            }
+            const adapter = new DeckGLAdapter()
+            adapter.init({
+                containerId: CONTAINER_ID,
+                center: { lat: 40, lng: -120 },
+                zoom: 5,
+                ...(basemap ? { basemap } : {}),
+            })
+            return {
+                adapter,
+                props: basemap ? constructed.overlay[0] : constructed.deck[0],
+            }
+        }
+
+        for (const [mode, basemap] of [
+            ['standalone', null],
+            ['overlay', MAPLIBRE_BASEMAP],
+        ]) {
+            test(`${mode} mode reports the clicks deck picks`, () => {
+                const { adapter, props } = initAdapter(basemap)
+                const clicks = []
+                const picks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+                adapter.onFeatureClick((result) => picks.push(result))
+
+                props.onClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([{ lat: 40, lng: -120 }])
+                expect(picks).toHaveLength(1)
+            })
+
+            test(`${mode} mode holds back the clicks a drawing takes as vertices`, () => {
+                const { adapter, props } = initAdapter(basemap)
+                const clicks = []
+                const picks = []
+                adapter.on('click', (e) => clicks.push(e.latlng))
+                adapter.onFeatureClick((result) => picks.push(result))
+                adapter._drawingShape = 'polygon'
+
+                props.onClick(pickAt(-120, 40))
+
+                expect(clicks).toEqual([])
+                expect(picks).toEqual([])
+            })
+        }
     })
 
     test.describe('destroy', () => {
