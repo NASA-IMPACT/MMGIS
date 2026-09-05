@@ -99,7 +99,7 @@ resource "aws_iam_role_policy" "admin_exec" {
 # ── Admin task role (runtime container code) ──
 resource "aws_iam_role" "admin_task" {
   name                 = "${local.name_prefix}-admin-task"
-  description          = "Runtime role for the ${local.admin_family} container: RunTask + PassRole of the publish roles, dashboard stack read/delete + teardown, admin asset upload. Lean deployment only."
+  description          = "Runtime role for the ${local.admin_family} container: RunTask + PassRole of the publish roles, dashboard stack read/delete + teardown, admin asset upload and read (a mission clone copies the source mission's uploads). Lean deployment only."
   assume_role_policy   = local.ecs_tasks_assume_role
   permissions_boundary = var.permissions_boundary
 }
@@ -180,6 +180,23 @@ resource "aws_iam_role_policy" "admin_task" {
         Effect   = "Allow"
         Action   = ["s3:PutObject"]
         Resource = "${aws_s3_bucket.assets.arn}/*"
+      },
+      {
+        # Cloning a mission copies the source mission's uploads to the clone's
+        # prefix from inside this container, and CopyObject reads the source
+        # with the caller's credentials — PutObject alone is not enough.
+        Sid      = "ReadAdminAssets"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${aws_s3_bucket.assets.arn}/*"
+      },
+      {
+        # The copy enumerates the source prefix with ListObjectsV2, which
+        # authorizes against the bucket rather than its objects.
+        Sid      = "ListAdminAssetBucket"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.assets.arn
       },
       {
         # The runtime container fetches the current DB password from the

@@ -46,6 +46,7 @@ const websocket = require("../../../websocket.js");
 const WebSocket = require("isomorphic-ws");
 
 const fs = require("fs");
+const { isFull } = require("../../Utils/deploymentMode");
 const deepmerge = require("deepmerge");
 const mergeConfigWithTemplate = require("../mergeConfigWithTemplate");
 
@@ -246,36 +247,55 @@ router.get("/get", function (req, res, next) {
   get(req, res, next);
 });
 
+// A valid mission name is a non-empty string that survives the punctuation
+// strip unchanged (notably: no quotes, backslashes, or slashes — so a valid
+// name also serializes verbatim inside JSON), doesn't start with a number,
+// and contains no path traversal.
+function isInvalidMissionName(mission) {
+  return (
+    typeof mission !== "string" ||
+    mission.length === 0 ||
+    mission !==
+      mission.replace(/[`~!@#$%^&*()|+\-=?;:'",.<>\{\}\[\]\\\/]/gi, "") ||
+    !isNaN(mission[0]) ||
+    mission.includes("../") ||
+    mission.includes("..\\")
+  );
+}
+
 function add(req, res, next, cb) {
+  req.body = req.body || {};
+
+  // Validate the mission name before it is used anywhere below.
+  if (isInvalidMissionName(req.body.mission)) {
+    logger("error", "Attempted to add bad mission name.", req.originalUrl, req);
+    if (cb) cb({ status: "failure", message: "Bad mission name." });
+    else res.send({ status: "failure", message: "Bad mission name." });
+    return;
+  }
+
   let configTemplate = JSON.parse(JSON.stringify(config_template));
 
   // If a config is provided, merge it over the template. The template acts
   // only as fallback defaults: posted arrays replace the template's arrays
-  // rather than concatenating with them (issue #194).
+  // rather than concatenating with them.
   if (req.body.config) {
     configTemplate = mergeConfigWithTemplate(configTemplate, req.body.config);
+  }
+
+  // A posted config can clobber msv (e.g. msv: null survives the merge);
+  // make sure it's an object before writing the mission name into it.
+  if (
+    configTemplate.msv == null ||
+    typeof configTemplate.msv !== "object" ||
+    Array.isArray(configTemplate.msv)
+  ) {
+    configTemplate.msv = {};
   }
 
   configTemplate.msv.mission = req.body.mission;
   // Set missionFolderName to match the mission name by default
   configTemplate.msv.missionFolderName = req.body.mission;
-
-  // Fix validation logic: use OR conditions instead of AND
-  if (
-    req.body.mission !==
-      req.body.mission.replace(
-        /[`~!@#$%^&*()|+\-=?;:'",.<>\{\}\[\]\\\/]/gi,
-        ""
-      ) ||
-    req.body.mission.length === 0 ||
-    !isNaN(req.body.mission[0]) ||
-    req.body.mission.includes("../") ||
-    req.body.mission.includes("..\\")
-  ) {
-    logger("error", "Attempted to add bad mission name.", req.originalUrl, req);
-    res.send({ status: "failure", message: "Bad mission name." });
-    return;
-  }
 
   let newConfig = {
     mission: req.body.mission,
@@ -293,18 +313,35 @@ function add(req, res, next, cb) {
       if (!mission) {
         Config.create(newConfig)
           .then((created) => {
-            if (req.body.makedir === true || req.body.makedir === "true") {
-              let dir = "./Missions/" + created.mission;
-              if (!fs.existsSync(dir)) {
-                fs.mkdirSync(dir);
-                let dir2 = dir + "/Layers";
-                if (!fs.existsSync(dir2)) {
-                  fs.mkdirSync(dir2);
-                }
-                let dir3 = dir + "/Data";
-                if (!fs.existsSync(dir3)) {
-                  fs.mkdirSync(dir3);
-                }
+            // In lean mode mission assets are served from object storage, not
+            // a local Missions/ filesystem, so skip creating the directory tree.
+            if (
+              (req.body.makedir === true || req.body.makedir === "true") &&
+              isFull()
+            ) {
+              const dir = "./Missions/" + created.mission;
+              try {
+                fs.mkdirSync(dir, { recursive: true });
+                fs.mkdirSync(dir + "/Layers", { recursive: true });
+                fs.mkdirSync(dir + "/Data", { recursive: true });
+              } catch (err) {
+                logger(
+                  "error",
+                  "Created mission '" +
+                    created.mission +
+                    "' but failed to create its Missions/ directories.",
+                  req.originalUrl,
+                  req,
+                  err
+                );
+                const failure = {
+                  status: "failure",
+                  message:
+                    "The mission's configuration was created, but its Missions/ directories could not be.",
+                };
+                if (cb) cb(failure);
+                else res.send(failure);
+                return null;
               }
             }
 
@@ -315,8 +352,12 @@ function add(req, res, next, cb) {
               req
             );
             if (cb)
+              // Callers get the created row's id so they can act on that
+              // exact row — the lean clone rolls back by it rather than by
+              // mission name.
               cb({
                 status: "success",
+                id: created.id,
                 mission: created.mission,
                 version: created.version,
               });
@@ -733,6 +774,120 @@ function relativizePaths(config, mission) {
   return relConfig;
 }
 
+// Lean-mode clone. There is no local Missions/ filesystem to script over;
+// instead, uploads live in the shared asset bucket under
+// assets/<missionFolderName>/… and configs reference them as root-relative
+// /assets/<missionFolderName>/… URLs. So: rewrite those URLs to the new
+// mission's prefix and copy the stored objects across. hasPaths /
+// relativizePaths is deliberately skipped — its "no ://" heuristic would
+// mangle the root-relative /assets/… URLs.
+function cloneLean(req, res, next, r) {
+  const oldFolderName =
+    (r.config.msv && r.config.msv.missionFolderName) ||
+    req.body.existingMission;
+  const newMission = req.body.cloneMission;
+
+  // add() validates the name again below, but the check must come first here:
+  // a valid name contains no quotes or backslashes, which is what makes
+  // splicing it into the serialized config below JSON-safe.
+  if (isInvalidMissionName(newMission)) {
+    logger(
+      "error",
+      "Attempted to clone to a bad mission name.",
+      req.originalUrl,
+      req
+    );
+    res.send({ status: "failure", message: "Bad mission name." });
+    return;
+  }
+
+  // msv.mission / msv.missionFolderName are not set here: add() writes both
+  // from req.body.mission below.
+  let cloneConfig;
+  try {
+    cloneConfig = JSON.parse(
+      JSON.stringify(r.config)
+        .split(`/assets/${oldFolderName}/`)
+        .join(`/assets/${newMission}/`)
+    );
+  } catch (err) {
+    logger(
+      "error",
+      "Failed to rewrite the clone's asset paths.",
+      req.originalUrl,
+      req,
+      err
+    );
+    res.send({ status: "failure", message: "Failed to clone mission." });
+    return;
+  }
+  req.body.config = cloneConfig;
+  req.body.mission = newMission;
+
+  add(req, res, next, function (r2) {
+    if (r2.status != "success") {
+      res.send(r2);
+      return;
+    }
+    // Copy the existing mission's stored assets to the clone's prefix so the
+    // rewritten /assets/<newMission>/… URLs resolve. No bucket configured
+    // means no assets were ever uploaded — nothing to copy.
+    const bucket = process.env.MMGIS_SHARED_ASSET_BUCKET;
+    if (!bucket) {
+      res.send(r2);
+      return;
+    }
+    const provision = require("../../../../scripts/lib/aws-provision");
+    provision
+      .copyPrefix({
+        sourceBucket: bucket,
+        destBucket: bucket,
+        prefix: `assets/${oldFolderName}/`,
+        destPrefix: `assets/${newMission}/`,
+      })
+      .then(() => {
+        res.send(r2);
+      })
+      .catch((err) => {
+        logger(
+          "error",
+          "Failed to copy the mission's assets to the clone.",
+          req.originalUrl,
+          req,
+          err
+        );
+        // Roll the configuration back so a failed clone leaves no half-made
+        // mission. Deleting by the created row's id, not by mission name:
+        // a concurrent save writes another row under the same name, and a
+        // name-wide delete would take it too. Any objects already copied are
+        // orphaned under a prefix nothing references — harmless, and a retry
+        // overwrites them.
+        Config.destroy({ where: { id: r2.id } })
+          .then(() => {
+            res.send({
+              status: "failure",
+              message:
+                "Failed to copy the mission's assets. The clone was rolled back.",
+            });
+          })
+          .catch((destroyErr) => {
+            logger(
+              "error",
+              "Failed to roll back the clone's configuration.",
+              req.originalUrl,
+              req,
+              destroyErr
+            );
+            res.send({
+              status: "failure",
+              message:
+                "Failed to copy the mission's assets. The cloned configuration was created, but its assets are missing.",
+            });
+          });
+      });
+  });
+}
+
 //existingMission
 //cloneMission
 //hasPaths
@@ -743,6 +898,10 @@ if (fullAccess)
 
     get(req, res, next, function (r) {
       if (r.status == "success") {
+        if (!isFull()) {
+          cloneLean(req, res, next, r);
+          return;
+        }
         r.config.msv.mission = req.body.cloneMission;
         // Set missionFolderName to match the new mission name
         r.config.msv.missionFolderName = req.body.cloneMission;
@@ -758,7 +917,36 @@ if (fullAccess)
             encodeURIComponent(req.body.cloneMission),
           ],
           function (error, stdout, stderr) {
-            stdout = JSON.parse(stdout);
+            if (error) {
+              logger(
+                "error",
+                "Failed to clone mission.",
+                req.originalUrl,
+                req,
+                error
+              );
+              res.send({
+                status: "failure",
+                message: "Failed to clone mission.",
+              });
+              return;
+            }
+            try {
+              stdout = JSON.parse(stdout);
+            } catch (parseErr) {
+              logger(
+                "error",
+                "Failed to parse mission clone script output.",
+                req.originalUrl,
+                req,
+                parseErr
+              );
+              res.send({
+                status: "failure",
+                message: "Failed to clone mission.",
+              });
+              return;
+            }
             if (stdout.status == "success") {
               add(req, res, next, function (r2) {
                 if (r2.status == "success") {

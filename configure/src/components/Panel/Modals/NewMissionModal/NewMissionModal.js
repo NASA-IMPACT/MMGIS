@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useSelector, useDispatch } from "react-redux";
 
 import { calls } from "../../../../core/calls";
+import { isLeanMode } from "../../../../core/capabilities";
 
 import {
   setMissions,
@@ -129,7 +130,8 @@ const NewMissionModal = (props) => {
   const dispatch = useDispatch();
 
   const [missionName, setMissionName] = useState("");
-  const [createDir, setCreateDir] = useState(true);
+  // Lean mode has no local Missions/ filesystem — never ask for a directory.
+  const [createDir, setCreateDir] = useState(!isLeanMode());
   const [selectedPlanet, setSelectedPlanet] = useState("Earth");
   const [selectedEngine, setSelectedEngine] = useState("deckgl");
   const [selectedMode, setSelectedMode] = useState("modern");
@@ -180,7 +182,7 @@ const NewMissionModal = (props) => {
       "add",
       {
         mission: missionName,
-        makedir: createDir,
+        makedir: isLeanMode() ? false : createDir,
         config: config,
       },
       (res) => {
@@ -200,7 +202,7 @@ const NewMissionModal = (props) => {
             );
             // reset fields
             setMissionName("");
-            setCreateDir(true);
+            setCreateDir(!isLeanMode());
             setSelectedPlanet("Earth");
             setSelectedEngine("deckgl");
             setSelectedMode("modern");
@@ -221,7 +223,7 @@ const NewMissionModal = (props) => {
 
             // reset fields
             setMissionName("");
-            setCreateDir(true);
+            setCreateDir(!isLeanMode());
             setSelectedPlanet("Earth");
             setSelectedEngine("deckgl");
             setSelectedMode("modern");
@@ -391,23 +393,27 @@ const NewMissionModal = (props) => {
             )}
           </>
         )}
-        <FormGroup>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={createDir}
-                onChange={(e) => {
-                  setCreateDir(!createDir);
-                }}
+        {!isLeanMode() ? (
+          <>
+            <FormGroup>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={createDir}
+                    onChange={(e) => {
+                      setCreateDir(!createDir);
+                    }}
+                  />
+                }
+                label="Create a /Missions/{Mission Name} directory"
               />
-            }
-            label="Create a /Missions/{Mission Name} directory"
-          />
-        </FormGroup>
-        <Typography className={c.subtitle2}>
-          {`Layer, Tiles and Data for this mission can be stored in /Missions/{Mission Name} directory.
+            </FormGroup>
+            <Typography className={c.subtitle2}>
+              {`Layer, Tiles and Data for this mission can be stored in /Missions/{Mission Name} directory.
             Whenever a non-absolute URL is found in this mission's configuration, it will be treated as relative to this folder regardless of whether this folder exists.`}
-        </Typography>
+            </Typography>
+          </>
+        ) : null}
       </DialogContent>
       <DialogActions>
         <Button

@@ -265,9 +265,11 @@ function buildCopySource(bucket, key) {
   return `${bucket}/${encodedKey}`;
 }
 
-// Same-key copies every object under `prefix` from sourceBucket into
-// destBucket. Returns the number of objects copied.
-async function copyPrefix({ sourceBucket, destBucket, prefix }) {
+// Copies every object under `prefix` from sourceBucket into destBucket.
+// By default keys are kept as-is (same-key copy); when `destPrefix` is
+// given, each key's leading `prefix` is replaced with it. Returns the
+// number of objects copied.
+async function copyPrefix({ sourceBucket, destBucket, prefix, destPrefix }) {
   const { s3 } = getClients();
   let copied = 0;
   let continuationToken;
@@ -283,7 +285,10 @@ async function copyPrefix({ sourceBucket, destBucket, prefix }) {
       await s3.send(
         new CopyObjectCommand({
           Bucket: destBucket,
-          Key: obj.Key,
+          Key:
+            destPrefix != null
+              ? destPrefix + obj.Key.slice(prefix.length)
+              : obj.Key,
           CopySource: buildCopySource(sourceBucket, obj.Key),
         })
       );
