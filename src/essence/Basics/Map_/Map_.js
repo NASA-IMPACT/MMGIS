@@ -982,124 +982,121 @@ async function makeLayer(
         layerRegistry: L_.layers,
         default: true,
     }
-    return new Promise(async (resolve, reject) => {
-        const layerName = L_.asLayerUUID(layerObj.name)
-        if (forceMake !== true && L_._layersBeingMade[layerName] === true) {
-            console.error(
-                `ERROR - makeLayer: Cannot make layer ${layerObj.display_name}/${layerObj.name} as it's already being made!`
-            )
-            resolve(false)
-            return
-        } else {
-            L_._layersBeingMade[layerName] = true
-        }
-        try {
-            //Decide what kind of layer it is
-            //Headers do not need to be made
-            if (layerObj.type != 'header') {
-                //Simply call the appropriate function for each layer type
-                switch (layerObj.type) {
-                    case 'vector':
-                        await makeVectorLayer(
-                            layerObj,
-                            evenIfOff,
-                            null,
-                            forceGeoJSON,
-                            isRefresh,
-                            mapContext
-                        )
-                        break
-                    case 'velocity':
-                        await makeVelocityLayer(
-                            layerObj,
-                            evenIfOff,
-                            null,
-                            forceGeoJSON,
-                            mapContext
-                        )
-                        break
-                    case 'tile':
-                        await makeTileLayer(layerObj, mapContext)
-                        break
-                    case 'vectortile':
-                        makeVectorTileLayer(layerObj, mapContext)
-                        break
-                    case 'query':
-                        await makeVectorLayer(
-                            layerObj,
-                            false,
-                            true,
-                            forceGeoJSON,
-                            false,
-                            mapContext
-                        )
-                        break
-                    case 'data':
-                        makeDataLayer(layerObj, mapContext)
-                        break
-                    case 'image':
-                        makeImageLayer(layerObj, mapContext)
-                        break
-                    case 'model':
-                        //Globe only
-                        makeModelLayer(layerObj, mapContext)
-                        break
-                    case 'video':
-                        makeVideoLayer(layerObj, mapContext)
-                        break
-                    case 'GeoJsonLayer':
-                    case 'ScatterplotLayer':
-                        await makeVectorLayer(
-                            layerObj,
-                            evenIfOff,
-                            null,
-                            forceGeoJSON,
-                            isRefresh,
-                            mapContext
-                        )
-                        break
-                    case 'TileLayer':
-                    case 'BitmapLayer':
-                        await makeTileLayer(layerObj, mapContext)
-                        break
-                    case 'MVTLayer':
-                        makeVectorTileLayer(layerObj, mapContext)
-                        break
-                    case 'PointCloudLayer':
-                    case 'Tile3DLayer':
-                        await makeTileLayer(layerObj, mapContext)
-                        break
-                    default:
-                        console.warn('Unknown layer type: ' + layerObj.type)
-                }
+    const layerName = L_.asLayerUUID(layerObj.name)
+    if (forceMake !== true && L_._layersBeingMade[layerName] === true) {
+        console.error(
+            `ERROR - makeLayer: Cannot make layer ${layerObj.display_name}/${layerObj.name} as it's already being made!`
+        )
+        return false
+    } else {
+        L_._layersBeingMade[layerName] = true
+    }
+    try {
+        //Decide what kind of layer it is
+        //Headers do not need to be made
+        if (layerObj.type != 'header') {
+            //Simply call the appropriate function for each layer type
+            switch (layerObj.type) {
+                case 'vector':
+                    await makeVectorLayer(
+                        layerObj,
+                        evenIfOff,
+                        null,
+                        forceGeoJSON,
+                        isRefresh,
+                        mapContext
+                    )
+                    break
+                case 'velocity':
+                    await makeVelocityLayer(
+                        layerObj,
+                        evenIfOff,
+                        null,
+                        forceGeoJSON,
+                        mapContext
+                    )
+                    break
+                case 'tile':
+                    await makeTileLayer(layerObj, mapContext)
+                    break
+                case 'vectortile':
+                    makeVectorTileLayer(layerObj, mapContext)
+                    break
+                case 'query':
+                    await makeVectorLayer(
+                        layerObj,
+                        false,
+                        true,
+                        forceGeoJSON,
+                        false,
+                        mapContext
+                    )
+                    break
+                case 'data':
+                    makeDataLayer(layerObj, mapContext)
+                    break
+                case 'image':
+                    makeImageLayer(layerObj, mapContext)
+                    break
+                case 'model':
+                    //Globe only
+                    makeModelLayer(layerObj, mapContext)
+                    break
+                case 'video':
+                    makeVideoLayer(layerObj, mapContext)
+                    break
+                case 'GeoJsonLayer':
+                case 'ScatterplotLayer':
+                    await makeVectorLayer(
+                        layerObj,
+                        evenIfOff,
+                        null,
+                        forceGeoJSON,
+                        isRefresh,
+                        mapContext
+                    )
+                    break
+                case 'TileLayer':
+                case 'BitmapLayer':
+                    await makeTileLayer(layerObj, mapContext)
+                    break
+                case 'MVTLayer':
+                    makeVectorTileLayer(layerObj, mapContext)
+                    break
+                case 'PointCloudLayer':
+                case 'Tile3DLayer':
+                    await makeTileLayer(layerObj, mapContext)
+                    break
+                default:
+                    console.warn('Unknown layer type: ' + layerObj.type)
             }
-
-            // Every builder above is awaited, so the layer exists by now. Image
-            // and video finish on their own schedule and hand off themselves.
-            handOffToEngine(layerObj, mapContext)
-
-            // release hold on layer
-            L_._layersBeingMade[layerName] = false
-
-            if (stopLoops !== true && layerObj.type === 'vector') {
-                Filtering.updateGeoJSON(layerObj.name)
-                Filtering.triggerFilter(layerObj.name)
-            }
-            resolve(true)
-        } catch (e) {
-            console.error(
-                `ERROR - makeLayer: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
-                e
-            )
-            // release hold on layer so it can be remade
-            L_._layersBeingMade[layerName] = false
-            // count this layer as done (unsuccessfully) so a failed layer
-            // doesn't stall allLayersLoaded()/essenceFina() for the mission
-            L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
-            allLayersLoaded()
-            reject(e)
         }
-    })
+
+        // Every builder above is awaited, so the layer exists by now. Image
+        // and video finish on their own schedule and hand off themselves.
+        handOffToEngine(layerObj, mapContext)
+
+        // release hold on layer
+        L_._layersBeingMade[layerName] = false
+
+        if (stopLoops !== true && layerObj.type === 'vector') {
+            Filtering.updateGeoJSON(layerObj.name)
+            Filtering.triggerFilter(layerObj.name)
+        }
+        return true
+    } catch (e) {
+        console.error(
+            `ERROR - makeLayer: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
+            e
+        )
+        // release hold on layer so it can be remade
+        L_._layersBeingMade[layerName] = false
+        // count this layer as done (unsuccessfully) so a failed layer
+        // doesn't stall allLayersLoaded()/essenceFina() for the mission
+        L_._layersLoaded[L_._layersOrdered.indexOf(layerObj.name)] = true
+        allLayersLoaded()
+        throw e
+    }
 }
 
 //Default is onclick show full properties and onhover show 1st property

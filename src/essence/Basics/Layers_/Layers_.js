@@ -761,6 +761,10 @@ const L_ = {
         if (L_.layers.on[s.name] === true) on = true
         else on = false
 
+        // toggleLayerHelper already logs the specific failure; if it
+        // rejects, don't tell subscribers the toggle succeeded when the
+        // layer never built, but still resync the UI below like normal
+        let toggled = true
         try {
             await L_.toggleLayerHelper(
                 s,
@@ -770,19 +774,21 @@ const L_ = {
                 skipOrderedBringToFront
             )
         } catch (e) {
-            // toggleLayerHelper already logged the specific failure; don't
-            // tell subscribers the toggle succeeded when the layer never built
-            return
+            toggled = false
         }
 
-        Object.keys(L_._onLayerToggleSubscriptions).forEach((k) => {
-            L_._onLayerToggleSubscriptions[k](s.name, !on)
-        })
+        if (toggled) {
+            Object.keys(L_._onLayerToggleSubscriptions).forEach((k) => {
+                L_._onLayerToggleSubscriptions[k](s.name, !on)
+            })
 
-        Object.keys(L_._onSpecificLayerToggleSubscriptions).forEach((k) => {
-            const subs = L_._onSpecificLayerToggleSubscriptions[k]
-            if (subs.layer === s.name) subs.func(s.name, !on)
-        })
+            Object.keys(L_._onSpecificLayerToggleSubscriptions).forEach(
+                (k) => {
+                    const subs = L_._onSpecificLayerToggleSubscriptions[k]
+                    if (subs.layer === s.name) subs.func(s.name, !on)
+                }
+            )
+        }
 
         // Always reupdate layer infos at the end to keep them in sync
         Description.updateInfo()
@@ -791,6 +797,8 @@ const L_ = {
         if (typeof Attributions !== 'undefined' && Attributions.update) {
             Attributions.update()
         }
+
+        if (!toggled) return
 
         // Deselect active feature if its layer is being turned off
         if (L_.activeFeature && L_.activeFeature.layerName === s.name && on) {
@@ -1022,12 +1030,10 @@ const L_ = {
                     try {
                         await L_.Map_.makeLayer(s, true, null, null, true)
                     } catch (e) {
-                        console.error(
-                            `ERROR - toggleLayerHelper: Failed to make layer ${s.display_name}/${s.name}`,
-                            e
-                        )
-                        // rethrow: toggleLayer must not report this toggle as
-                        // successful to its subscribers when the layer never built
+                        // makeLayer already logged this; rethrow so
+                        // toggleLayer doesn't report the toggle as
+                        // successful to its subscribers when the layer
+                        // never built
                         throw e
                     }
                     Description.updateInfo()
@@ -1047,12 +1053,9 @@ const L_ = {
                         try {
                             await L_.Map_.makeLayer(s, true, null, null, true)
                         } catch (e) {
-                            console.error(
-                                `ERROR - toggleLayerHelper: Failed to make layer ${s.display_name}/${s.name}`,
-                                e
-                            )
-                            // rethrow: toggleLayer must not report this toggle
-                            // as successful to its subscribers when the layer
+                            // makeLayer already logged this; rethrow so
+                            // toggleLayer doesn't report the toggle as
+                            // successful to its subscribers when the layer
                             // never built
                             throw e
                         }
