@@ -6,9 +6,9 @@
         }
     },
     "defaultIcon": "share-variant",
-    "description": "An icon button, named \"Share map\" by its tooltip, that opens a menu to share the current view as a link, PNG, or PDF.",
+    "description": "A \"Share map\" button that opens a menu to share the current view as a link, PNG, or PDF.",
     "descriptionFull": {
-        "title": "Adds an icon button that carries no on-screen text: hovering it shows a \"Share map\" tooltip, which is also its accessible name. It is typically placed in a floating panel over the map (e.g. float-top-right). Clicking it opens a compact dropdown menu. \"Copy link to view\" copies a complete, self-contained URL (layers, place, zoom, time) to the clipboard. \"Export as PNG\" downloads a snapshot of the current map, and \"Export as PDF\" embeds that same snapshot centered on a portrait page. The PNG and PDF items can each be toggled on or off per-dashboard; the share link is always available.",
+        "title": "Adds a \"Share map\" button, typically placed in a floating panel over the map (e.g. float-top-right). Clicking it opens a compact dropdown menu. \"Copy link to view\" copies a complete, self-contained URL (layers, place, zoom, time) to the clipboard. \"Export as PNG\" downloads a snapshot of the current map, and \"Export as PDF\" embeds that same snapshot centered on a portrait page. The PNG and PDF items can each be toggled on or off per-dashboard; the share link is always available.",
         "example": {
             "exportPng": true,
             "exportPdf": true

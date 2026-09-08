@@ -2,8 +2,7 @@ import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MMGISShareExportAdapter } from './MMGISShareExportAdapter'
 
-// ShareExport's share control — an icon button whose "Share map" tooltip is
-// the only place that names the action. Placement is layout-owned: the layout
+// ShareExport's "Share map" control. Placement is layout-owned: the layout
 // assigns the tool a panel (e.g. a `float-top-right` floating panel) and calls
 // make(targetId); the React root mounts into that container. Only the
 // transient dropdown escapes the panel card (portaled by <ShareMenu>).
