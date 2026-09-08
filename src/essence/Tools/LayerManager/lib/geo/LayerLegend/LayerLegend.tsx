@@ -388,8 +388,8 @@ export function LayerLegend({
                     <ColorRampPicker
                         layerId={id}
                         colormap={cog.colormap}
-                        min={cog.min}
-                        max={cog.max}
+                        min={cog.min ?? cog.defaultMin}
+                        max={cog.max ?? cog.defaultMax}
                         units={cog.units}
                         titilerUrl={cog.titilerUrl}
                         onColormapChange={onColormapChange}

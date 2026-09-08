@@ -147,6 +147,27 @@
           "focusedWidth": "",
           "expandedSize": "320"
         }
+      },
+      {
+        "position": "bottom",
+        "priority": 3,
+        "layoutType": "stacked",
+        "hasHeader": false,
+        "stateConstraints": {
+          "allowedStates": [
+            "expanded"
+          ],
+          "defaultState": "expanded"
+        },
+        "capabilities": {
+          "resizable": false,
+          "supportedOrientation": "horizontal",
+          "maxSize": 200
+        },
+        "panelTools": [
+          "TimelineTool"
+        ],
+        "id": "bottom-panel"
       }
     ],
     "floatingPanels": [
@@ -267,7 +288,8 @@
       "on": true,
       "variables": {
         "exportPng": true,
-        "exportPdf": true
+        "exportPdf": true,
+        "includeLegend": true
       },
       "metadata": {
         "icon": "share-variant",
@@ -458,6 +480,22 @@
         "width": 66,
         "height": 0
       }
+    },
+    {
+      "name": "Timeline",
+      "icon": "timeline",
+      "js": "TimelineTool",
+      "on": true,
+      "variables": {},
+      "metadata": {
+        "icon": "timeline",
+        "requiredOrientation": "horizontal",
+        "compatiblePositions": [
+          "bottom"
+        ],
+        "preferredPosition": "bottom",
+        "modernLayoutSupport": true
+      }
     }
   ],
   "layers": [
@@ -492,7 +530,11 @@
         "type": "global",
         "format": "%Y-%m-%dT%H:%M:%SZ",
         "start": "2015-03-13T00:00:00Z",
-        "end": "2026-01-29T00:00:00Z"
+        "end": "2026-01-29T00:00:00Z",
+        "interval": "P1D",
+        "isPeriodic": false,
+        "dataStartTime": "2015-03-13T00:00:00Z",
+        "dataEndTime": "2026-01-29T23:59:59Z"
       },
       "variables": {
         "legendOrientation": "vertical",
@@ -552,7 +594,11 @@
         "type": "global",
         "format": "%Y-%m-%dT%H:%M:%SZ",
         "start": "2023-10-18T00:00:00Z",
-        "end": "2025-07-10T00:00:00Z"
+        "end": "2025-07-10T00:00:00Z",
+        "interval": "P1D",
+        "isPeriodic": false,
+        "dataStartTime": "2023-10-18T00:00:00Z",
+        "dataEndTime": "2025-07-10T23:59:59Z"
       },
       "variables": {
         "legendOrientation": "vertical",
@@ -608,7 +654,9 @@
         "blend": "none"
       },
       "time": {
-        "enabled": false
+        "enabled": false,
+        "dataStartTime": "2025-01-12T00:00:00Z",
+        "dataEndTime": "2025-01-12T23:59:59Z"
       },
       "variables": {
         "legendOrientation": "vertical",
@@ -724,7 +772,11 @@
         "type": "global",
         "format": "%Y-%m-%dT%H:%M:%SZ",
         "start": "2023-01-15T00:00:00Z",
-        "end": "2026-01-28T00:00:00Z"
+        "end": "2026-01-28T00:00:00Z",
+        "interval": "P1D",
+        "isPeriodic": false,
+        "dataStartTime": "2023-01-15T00:00:00Z",
+        "dataEndTime": "2026-01-28T23:59:59Z"
       },
       "variables": {
         "legendOrientation": "vertical",
@@ -790,7 +842,11 @@
         "type": "global",
         "format": "%Y-%m-%dT%H:%M:%SZ",
         "compositeTile": false,
-        "refreshIntervalEnabled": false
+        "refreshIntervalEnabled": false,
+        "interval": "P1D",
+        "isPeriodic": false,
+        "dataStartTime": "2024-09-30T00:00:00Z",
+        "dataEndTime": "2024-10-17T23:59:59Z"
       },
       "variables": {
         "legendOrientation": "vertical",
@@ -951,7 +1007,11 @@
         "type": "global",
         "format": "%Y-%m-%dT%H:%M:%SZ",
         "start": "2023-01-01T01:59:15Z",
-        "end": "2024-11-23T23:49:03Z"
+        "end": "2024-11-23T23:49:03Z",
+        "interval": "PT1S",
+        "isPeriodic": false,
+        "dataStartTime": "2023-01-01T01:59:15Z",
+        "dataEndTime": "2024-11-23T23:49:03Z"
       },
       "variables": {
         "legendOrientation": "vertical",

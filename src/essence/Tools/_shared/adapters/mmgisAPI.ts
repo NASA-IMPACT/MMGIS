@@ -22,10 +22,20 @@ export type LayerConfig = {
     display_name?: string
     time?: {
         enabled?: boolean
+        /**
+         * 'global' and 'requery' track the global cursor; 'local' carries its
+         * own window in `start`/`end`.
+         */
+        type?: string
+        start?: string | null
+        end?: string | null
+        /** As authored: a concrete ISO datetime or a policy string ("now",
+         *  "now - P1D"). Ask mmgisGetTemporalExtents for the dates. */
         dataStartTime?: string
         dataEndTime?: string
         [key: string]: unknown
     }
+    url?: string
     [key: string]: unknown
 }
 
@@ -175,6 +185,35 @@ export const mmgisGetLayerCogCapabilities = (
     )
 }
 
+/** When a layer has data, as ISO datetimes; null where unset or unreadable. */
+export type TemporalExtent = {
+    start: string | null
+    end: string | null
+}
+
+/**
+ * Temporal extent for every layer, keyed by layer UUID, resolved by core at
+ * the moment of asking. Null against a core without the handler.
+ */
+export const mmgisGetTemporalExtents = (): Promise<Record<
+    string,
+    TemporalExtent
+> | null> => {
+    return mmgisRequestIfProvided<Record<string, TemporalExtent>>(
+        'layers:getTemporalExtent',
+    )
+}
+
+/** Temporal extent for one layer, by UUID or display name. */
+export const mmgisGetLayerTemporalExtent = (
+    layerUUID: string,
+): Promise<TemporalExtent | null> => {
+    return mmgisRequestIfProvided<TemporalExtent>(
+        'layers:getTemporalExtent',
+        layerUUID,
+    )
+}
+
 /** A geographic extent as `[[south, west], [north, east]]`. */
 export type LayerBounds = [[number, number], [number, number]]
 
@@ -234,6 +273,44 @@ export const mmgisGetTiTilerUrls = (): Promise<Record<
 /** Whether the mission has time enabled at all. */
 export const mmgisIsTimeEnabled = (): Promise<boolean | null> => {
     return mmgisRequestIfProvided<boolean>('time:isEnabled')
+}
+
+/**
+ * The time cursor as core holds it: an ISO string, unformatted, for callers
+ * that need to do arithmetic on it rather than print it. Null when time is
+ * disabled or not yet seeded.
+ */
+export const mmgisGetCurrentTime = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getCurrent')
+}
+
+/**
+ * The current time already rendered through the mission's configured time
+ * format (`L_.configData.time.format`), so a header displaying it matches
+ * what TimeControl's own UI shows rather than a raw ISO string. Null when
+ * time is disabled, not yet seeded, or against a core that predates the
+ * handler — callers fall back to their own raw time string in that case.
+ */
+export const mmgisGetCurrentTimeFormatted = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getCurrentFormatted')
+}
+
+/**
+ * A caller-supplied time rendered through that same mission format, for
+ * displaying a time the caller holds itself rather than the cursor's. Null
+ * for a missing or unparseable time, and against a core that predates the
+ * handler — callers show no time at all rather than one formatted their own
+ * way, which would disagree with the mission's.
+ */
+export const mmgisFormatTime = (
+    time: string | number | null | undefined,
+): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:formatTime', time)
+}
+
+/** The global time cursor's window start; null until time is seeded. */
+export const mmgisGetTimeStart = (): Promise<string | null> => {
+    return mmgisRequestIfProvided<string>('time:getStart')
 }
 
 /**

@@ -66,6 +66,14 @@
                         "type": "checkbox",
                         "width": 3,
                         "defaultChecked": true
+                    },
+                    {
+                        "field": "variables.includeLegend",
+                        "name": "Include Legend On Exports",
+                        "description": "Append a legend below exported PNGs and PDFs: layer names, color bars with ranges and units, and the selected date.",
+                        "type": "checkbox",
+                        "width": 3,
+                        "defaultChecked": true
                     }
                 ]
             }

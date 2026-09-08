@@ -28,6 +28,32 @@ const relativeTimeFormat = new RegExp(
     /^(-?)(?:2[0-3]|[01]?[0-9]):[0-5][0-9]:[0-5][0-9]$/
 )
 
+// A mission's time.format is written in one of two languages: d3 time-format
+// (e.g. '%Y-%m-%dT%H:%M:%SZ'), marked by a '%', or moment tokens (e.g.
+// 'YYYY-MM-DDTHH:mm:ss[Z]') as used elsewhere in the app (TimeUI.js,
+// DrawTool_Templater.js's default). Falls back to this when a mission has
+// time enabled but never configured a format.
+const DEFAULT_TIME_FORMAT = 'YYYY-MM-DDTHH:mm:ss[Z]'
+
+// Formats a time through the mission's configured time.format, choosing the
+// formatter that matches the language the format string is written in. Any
+// failure falls back to the default so a malformed format string can't break
+// a caller (e.g. an export stamping the time onto a legend).
+const formatMissionTime = (time) => {
+    const format = L_.configData.time?.format || DEFAULT_TIME_FORMAT
+    try {
+        return format.includes('%')
+            ? utcFormat(format)(new Date(time))
+            : moment.utc(time).format(format)
+    } catch (err) {
+        console.warn(
+            `Invalid 'Time Format' provided. Defaulting to ${DEFAULT_TIME_FORMAT}.`,
+            err
+        )
+        return moment.utc(time).format(DEFAULT_TIME_FORMAT)
+    }
+}
+
 var TimeControl = {
     enabled: false,
     isRelative: true,
@@ -37,7 +63,6 @@ var TimeControl = {
     endTime: null,
     relativeStartTime: '01:00:00',
     relativeEndTime: '00:00:00',
-    globalTimeFormat: null,
     _updateLockedForAcceptingInput: false,
     customTimes: {
         times: [],
@@ -63,6 +88,27 @@ var TimeControl = {
                 // seeded"; the getters below return null for both.
                 window.mmgisAPI.provide('time:isEnabled', () => TimeControl.enabled === true),
                 window.mmgisAPI.provide('time:getCurrent', () => TimeControl.getTime()),
+                // Same current time as time:getCurrent, but through the
+                // mission's time.format (d3 or moment style) rather than raw
+                // ISO — null whenever time isn't enabled or not yet seeded,
+                // matching time:isEnabled/getCurrent's own null-until-ready
+                // convention.
+                window.mmgisAPI.provide('time:getCurrentFormatted', () =>
+                    TimeControl.enabled && TimeControl.currentTime != null
+                        ? formatMissionTime(TimeControl.currentTime)
+                        : null
+                ),
+                // Formats a caller-supplied time through that same mission
+                // format, so a plugin displaying a time it holds itself
+                // (e.g. a per-layer window on an exported legend) matches
+                // what TimeControl's UI shows. Deliberately not gated on
+                // TimeControl.enabled: the time comes from the caller, not
+                // from the cursor. Null for a missing or unparseable time.
+                window.mmgisAPI.provide('time:formatTime', (time) =>
+                    time != null && !isNaN(new Date(time).getTime())
+                        ? formatMissionTime(time)
+                        : null
+                ),
                 window.mmgisAPI.provide('time:getStart', () => TimeControl.getStartTime()),
                 window.mmgisAPI.provide('time:getEnd', () => TimeControl.getEndTime()),
                 window.mmgisAPI.provide('time:set', (params) => {
@@ -83,9 +129,6 @@ var TimeControl = {
 
         if (L_.configData.time && L_.configData.time.enabled === true) {
             TimeControl.enabled = true
-            TimeControl.globalTimeFormat = utcFormat(
-                L_.configData.time.format
-            )
         } else {
             TimeControl.enabled = false
             return

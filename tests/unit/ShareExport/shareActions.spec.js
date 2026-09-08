@@ -12,6 +12,7 @@ import {
     mmgisWriteCoordinateURL,
     mmgisGetMapScreenshot,
     mmgisGetViewState,
+    mmgisGetCurrentTimeFormatted,
 } from '../../../src/essence/Tools/_shared/adapters/mmgisAPI.ts'
 
 // Issue #144 - the adapter must call the right plugin-API methods and package
@@ -83,6 +84,7 @@ test.describe('bus wiring of the shared-client wrappers', () => {
             'map:getScreenshot': screenshot,
             'map:getViewState': viewState,
             'app:copyText': true,
+            'time:getCurrentFormatted': '2024-01-01T00:00:00Z',
         })
         window.mmgisAPI = api
         try {
@@ -92,11 +94,15 @@ test.describe('bus wiring of the shared-client wrappers', () => {
             await expect(mmgisGetMapScreenshot()).resolves.toBe(screenshot)
             await expect(mmgisGetViewState()).resolves.toBe(viewState)
             await expect(mmgisCopyText('hello')).resolves.toBe(true)
+            await expect(mmgisGetCurrentTimeFormatted()).resolves.toBe(
+                '2024-01-01T00:00:00Z',
+            )
             expect(requests.map((r) => r.name)).toEqual([
                 'map:writeCoordinateURL',
                 'map:getScreenshot',
                 'map:getViewState',
                 'app:copyText',
+                'time:getCurrentFormatted',
             ])
             expect(requests[3].params).toBe('hello')
         } finally {
@@ -122,6 +128,7 @@ test.describe('bus wiring of the shared-client wrappers', () => {
             await expect(mmgisWriteCoordinateURL()).resolves.toBe(null)
             await expect(mmgisGetMapScreenshot()).resolves.toBe(null)
             await expect(mmgisGetViewState()).resolves.toBe(null)
+            await expect(mmgisGetCurrentTimeFormatted()).resolves.toBe(null)
             // hasHandler said no, so request() must never have been risked.
             expect(requests).toEqual([])
         } finally {
@@ -272,6 +279,117 @@ test.describe('buildExportFilename', () => {
 
     test('degrades to the generic name with no view state', () => {
         expect(buildExportFilename('png', null)).toBe('mmgis-map.png')
+    })
+})
+
+test.describe('legend compositing in downloadSharePng', () => {
+    const screenshot = {
+        blob: new Blob(['png'], { type: 'image/png' }),
+        mimeType: 'image/png',
+        extension: 'png',
+        width: 640,
+        height: 480,
+    }
+    const composedBlob = new Blob(['composed'], { type: 'image/png' })
+    const composed = { ...screenshot, blob: composedBlob, height: 700 }
+    const emptyModel = { missionName: null, headerLines: [], rows: [] }
+
+    test('composes by default and downloads the composed blob', async () => {
+        const composeCalls = []
+        const downloads = []
+        const result = await downloadSharePng({
+            getScreenshot: async () => screenshot,
+            download: (blob, filename) => downloads.push({ blob, filename }),
+            getLegendModel: async () => emptyModel,
+            compose: async (shot, model) => {
+                composeCalls.push({ shot, model })
+                return composed
+            },
+        })
+        expect(composeCalls).toEqual([{ shot: screenshot, model: emptyModel }])
+        expect(downloads).toEqual([
+            { blob: composedBlob, filename: PNG_FILENAME },
+        ])
+        expect(result).toBe(composed)
+    })
+
+    test('includeLegend: false skips the legend entirely', async () => {
+        const getLegendModel = () => {
+            throw new Error('should not be called')
+        }
+        const compose = () => {
+            throw new Error('should not be called')
+        }
+        const downloads = []
+        const result = await downloadSharePng({
+            getScreenshot: async () => screenshot,
+            download: (blob, filename) => downloads.push({ blob, filename }),
+            includeLegend: false,
+            getLegendModel,
+            compose,
+        })
+        expect(downloads).toEqual([
+            { blob: screenshot.blob, filename: PNG_FILENAME },
+        ])
+        expect(result).toBe(screenshot)
+    })
+
+    test('a legend model failure downloads the plain map instead of throwing', async () => {
+        const downloads = []
+        const result = await downloadSharePng({
+            getScreenshot: async () => screenshot,
+            download: (blob, filename) => downloads.push({ blob, filename }),
+            getLegendModel: async () => {
+                throw new Error('legend model blew up')
+            },
+        })
+        expect(downloads).toEqual([
+            { blob: screenshot.blob, filename: PNG_FILENAME },
+        ])
+        expect(result).toBe(screenshot)
+    })
+})
+
+test.describe('legend compositing in downloadSharePdf', () => {
+    const screenshot = {
+        blob: new Blob(['png'], { type: 'image/png' }),
+        mimeType: 'image/png',
+        extension: 'png',
+        width: 640,
+        height: 480,
+    }
+    const composedBlob = new Blob(['composed'], { type: 'image/png' })
+    const composed = { ...screenshot, blob: composedBlob, height: screenshot.height + 100 }
+    const emptyModel = { missionName: null, headerLines: [], rows: [] }
+
+    test('buildPdf receives the composed width/height, not the original', async () => {
+        const buildArgs = []
+        const doc = await downloadSharePdf({
+            getScreenshot: async () => screenshot,
+            blobToDataUrl: async () => 'data:image/png;base64,x',
+            buildPdf: (data, w, h) => {
+                buildArgs.push({ w, h })
+                return { save: () => {} }
+            },
+            getLegendModel: async () => emptyModel,
+            compose: async () => composed,
+        })
+        expect(buildArgs).toEqual([{ w: composed.width, h: composed.height }])
+        expect(doc).toBeTruthy()
+    })
+
+    test('includeLegend: false uses the original dimensions', async () => {
+        const buildArgs = []
+        await downloadSharePdf({
+            getScreenshot: async () => screenshot,
+            blobToDataUrl: async () => 'data:image/png;base64,x',
+            buildPdf: (data, w, h) => {
+                buildArgs.push({ w, h })
+                return { save: () => {} }
+            },
+            includeLegend: false,
+        })
+        expect(buildArgs).toEqual([{ w: screenshot.width, h: screenshot.height }])
     })
 })
 

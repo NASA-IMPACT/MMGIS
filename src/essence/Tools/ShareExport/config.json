@@ -2,16 +2,18 @@
     "defaults": {
         "variables": {
             "exportPng": true,
-            "exportPdf": true
+            "exportPdf": true,
+            "includeLegend": true
         }
     },
     "defaultIcon": "share-variant",
     "description": "A \"Share map\" button that opens a menu to share the current view as a link, PNG, or PDF.",
     "descriptionFull": {
-        "title": "Adds a \"Share map\" button, typically placed in a floating panel over the map (e.g. float-top-right). Clicking it opens a compact dropdown menu. \"Copy link to view\" copies a complete, self-contained URL (layers, place, zoom, time) to the clipboard. \"Export as PNG\" downloads a snapshot of the current map, and \"Export as PDF\" embeds that same snapshot centered on a portrait page. The PNG and PDF items can each be toggled on or off per-dashboard; the share link is always available.",
+        "title": "Adds a \"Share map\" button, typically placed in a floating panel over the map (e.g. float-top-right). Clicking it opens a compact dropdown menu. \"Copy link to view\" copies a complete, self-contained URL (layers, place, zoom, time) to the clipboard. \"Export as PNG\" downloads a snapshot of the current map, and \"Export as PDF\" embeds that same snapshot centered on a portrait page. Both exports append a legend band below the map — visible layer names, color bars with ranges and units, and the selected date — which can be toggled off. The PNG and PDF items can each be toggled on or off per-dashboard; the share link is always available.",
         "example": {
             "exportPng": true,
-            "exportPdf": true
+            "exportPdf": true,
+            "includeLegend": true
         }
     },
     "hasVars": true,
@@ -54,6 +56,20 @@
                         "field": "variables.exportPdf",
                         "name": "Enable PDF Download",
                         "description": "Offer a PDF (the PNG snapshot centered on a portrait page) for download.",
+                        "type": "checkbox",
+                        "width": 6,
+                        "defaultChecked": true
+                    }
+                ]
+            },
+            {
+                "name": "Export Legend",
+                "description": "Appends a legend band below exported images.",
+                "components": [
+                    {
+                        "field": "variables.includeLegend",
+                        "name": "Include Legend On Exports",
+                        "description": "Append a legend below exported PNGs and PDFs: layer names, color bars with ranges and units, and the selected date.",
                         "type": "checkbox",
                         "width": 6,
                         "defaultChecked": true
