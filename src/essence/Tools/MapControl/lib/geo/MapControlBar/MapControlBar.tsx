@@ -7,7 +7,6 @@ import type {
     MapOverlayOpts,
     MapSubscribeHandlers,
 } from '../../types'
-import { useCollapseIfItAddsARow } from '../../hooks/useCollapseIfItAddsARow'
 import { useDebouncedSearch } from '../../hooks/useDebouncedSearch'
 import { useMeasure } from '../../hooks/useMeasure'
 import { FloatingPopover } from '../../FloatingPopover'
@@ -39,15 +38,16 @@ export type MapControlBarProps = {
 
     // Action button
     /**
-     * Label rendered inside the action button. It doubles as the button's
-     * tooltip and accessible name, so it should read as the action itself.
+     * Text rendered inside the action button, which also serves as its tooltip
+     * and accessible name — so it should read as the action itself. Left unset
+     * the button draws its glyph alone; the host owns any wording to fall back
+     * on, since the bar has no idea what the action does.
      */
     actionLabel?: string
     /**
-     * Optional glyph shown ahead of the label — either an icon-font class or
-     * an image the bar paints as a silhouette. An icon is also what lets the
-     * button collapse to glyph-only when the bar runs out of room; without one
-     * the label always stays visible.
+     * Glyph drawn ahead of the label — either an icon-font class or an image
+     * the bar paints as a silhouette. Left unset the button draws its label
+     * alone.
      */
     actionIcon?: ActionIcon
     /**
@@ -66,19 +66,18 @@ export type MapControlBarProps = {
 }
 
 /**
- * The class holding the action button in its glyph-only box. One definition,
- * shared by the markup that renders it and the measurement that toggles it on
- * the node to size the collapsed layout up.
- */
-const ACTION_COLLAPSED_CLASS = 'blocks-map-control__btn--collapsed'
-
-/**
- * The class holding the glyph's box. Both icon forms carry it, so the two
- * measure the same however the button is configured — which is what the
- * collapse measurement depends on, since it sizes the collapsed button up from
- * the glyph alone.
+ * The class holding the glyph's box. Both icon forms carry it, so an icon-font
+ * glyph and an image are drawn at the same size — and the image, being a mask
+ * with no intrinsic size, has a box at all.
  */
 const ACTION_ICON_CLASS = 'blocks-map-control__btn-icon'
+
+/**
+ * The action button's accessible name where no label is configured, leaving
+ * only a glyph on screen. Generic on purpose: the bar knows the control is the
+ * row's action and nothing more about it.
+ */
+const ACTION_FALLBACK_NAME = 'Action'
 
 /**
  * The action button's glyph.
@@ -115,17 +114,6 @@ function ActionIconMark({ icon }: { icon: ActionIcon }) {
     )
 }
 
-/**
- * A string standing for the configured glyph, for the collapse measurement's
- * signature. The measurement only needs to know when the icon changed, and the
- * two forms are drawn in the same box, so which form it is does not matter —
- * only that a different icon reads as a different value.
- */
-function actionIconKey(icon: ActionIcon | undefined): string {
-    if (!icon) return ''
-    return icon.kind === 'mdi' ? icon.className : icon.src
-}
-
 export function MapControlBar({
     basemapStyles = [],
     activeBasemap = null,
@@ -139,13 +127,11 @@ export function MapControlBar({
     onRemoveMeasureLabel,
     onSetCursor,
     onSearchSelect,
-    actionLabel = 'Analyze area',
+    actionLabel,
     actionIcon,
     onActionClick,
     endSlot,
 }: MapControlBarProps) {
-    const barRef = useRef<HTMLDivElement>(null)
-    const actionBtnRef = useRef<HTMLButtonElement>(null)
     const searchBtnRef = useRef<HTMLButtonElement>(null)
     const basemapBtnRef = useRef<HTMLButtonElement>(null)
     const measureBtnRef = useRef<HTMLButtonElement>(null)
@@ -189,31 +175,10 @@ export function MapControlBar({
     const hasStyles = basemapStyles.length > 0
     const hasZoom = Boolean(onZoomIn && onZoomOut)
 
-    // The action button gives up its label only where showing it would push the
-    // row onto another line. Collapsing needs a glyph to fall back to, so a
-    // button configured without one is left out of the measurement entirely.
-    //
-    // The signature names everything that decides the outcome besides the bar's
-    // width: which controls share the row, and the icon and label the button
-    // asks room for. It deliberately leaves out the bar's transient state —
-    // open panels and measure-mode redraws re-render the bar many times over
-    // without moving a control, and each re-measure costs the document a
-    // synchronous layout.
-    const actionCollapsed = useCollapseIfItAddsARow({
-        rowRef: barRef,
-        itemRef: actionBtnRef,
-        collapsedClass: ACTION_COLLAPSED_CLASS,
-        enabled: Boolean(onActionClick && actionIcon),
-        signature: [
-            Boolean(onSearchSelect),
-            hasStyles,
-            measure.supported,
-            hasZoom,
-            Boolean(endSlot),
-            actionIconKey(actionIcon),
-            actionLabel,
-        ].join('|'),
-    })
+    // A glyph-only button carries no text, so the name falls back to a generic
+    // one rather than leaving the control unnamed. title matches it, so the
+    // tooltip and the accessible name never disagree.
+    const actionName = actionLabel || ACTION_FALLBACK_NAME
 
     function toggleBasemap() {
         setBasemapOpen((v) => !v)
@@ -235,7 +200,7 @@ export function MapControlBar({
 
     return (
         <div className="blocks-map-control">
-            <div ref={barRef} className="blocks-map-control__bar">
+            <div className="blocks-map-control__bar">
                 {onSearchSelect && (
                     <div className="blocks-map-control__group">
                         <button
@@ -292,46 +257,29 @@ export function MapControlBar({
                 )}
                 {endSlot}
                 {/* Built from the same __group and __btn classes as the icon
-                    buttons, so it sits in the row at their height and box. The
-                    --wide and --action modifiers relax the square icon sizing
-                    to fit a text label and fill the button in the theme's
-                    primary, which restates the color treatment the icon
-                    buttons take from __btn.
-
-                    The two collapse modifiers say different things and the
-                    stylesheet draws the glyph-only box only for a button
-                    carrying both. --collapsible is a standing fact about the
-                    configuration: there is a glyph to fall back to, so giving
-                    the label up leaves something behind rather than an empty
-                    box. --collapsed is the measurement's answer for the width
-                    the bar is at, and it is only ever asked for a collapsible
-                    button.
-
-                    The label's span stays in the markup either way and the
-                    stylesheet hides it, so the text is on the element whether
-                    or not it is on screen. aria-label repeats it so the button
-                    keeps its accessible name while it is hidden; it matches
-                    the text exactly, so it never disagrees with what is
-                    drawn. */}
+                    buttons, so it sits in the row at their height. --wide
+                    hands the slot the row's free width; --action fills the
+                    button in the theme's primary and sizes it from its
+                    contents rather than as a square. It draws whatever it was
+                    handed — glyph, label, or both. */}
                 {onActionClick && (
-                    <div className="blocks-map-control__group blocks-map-control__group--wide">
+                    /* The slot only claims the row's free width when there is a
+                       label to spend it on; a glyph on its own sizes like the
+                       bar's other icon buttons. */
+                    <div
+                        className={`blocks-map-control__group${actionLabel ? ' blocks-map-control__group--wide' : ''}`}
+                    >
                         <button
-                            ref={actionBtnRef}
                             type="button"
-                            className={[
-                                'blocks-map-control__btn',
-                                'blocks-map-control__btn--action',
-                                actionIcon ? 'blocks-map-control__btn--collapsible' : '',
-                                actionCollapsed ? ACTION_COLLAPSED_CLASS : '',
-                            ]
-                                .filter(Boolean)
-                                .join(' ')}
+                            className={`blocks-map-control__btn blocks-map-control__btn--action${actionLabel ? '' : ' blocks-map-control__btn--action-glyph'}`}
                             onClick={onActionClick}
-                            title={actionLabel}
-                            aria-label={actionLabel}
+                            title={actionName}
+                            aria-label={actionName}
                         >
                             {actionIcon && <ActionIconMark icon={actionIcon} />}
-                            <span className="blocks-map-control__btn-label">{actionLabel}</span>
+                            {actionLabel && (
+                                <span className="blocks-map-control__btn-label">{actionLabel}</span>
+                            )}
                         </button>
                     </div>
                 )}

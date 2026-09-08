@@ -8,13 +8,10 @@ import { mount } from '../../_shared/__tests__/reactHarness'
  * The action button is the one control on the bar whose whole existence is a
  * prop decision, so these cases drive it from props alone — no host, no
  * `window.mmgisAPI` — and assert on the markup a stylesheet keys off: the
- * presence of the button, its modifier classes and its accessible name. Those
- * are the parts a mission author never sees but every mission depends on; the
- * label text and the collapsible modifier both have exactly one definition in
- * the component, and a change to either fails silently on screen.
+ * presence of the button, the classes it carries and its accessible name. Those
+ * are the parts a mission author never sees but every mission depends on, and
+ * they have exactly one definition apiece in the component.
  */
-
-const DEFAULT_LABEL = 'Analyze area'
 
 /** The two icon forms the bar draws, already resolved as a host hands them in. */
 const MDI_ICON: ActionIcon = { kind: 'mdi', className: 'mdi mdi-chart-box' }
@@ -29,46 +26,6 @@ const actionLabel = (container: HTMLElement) =>
 /** The glyph inside the action button, whichever form it took. */
 const actionIconMark = (container: HTMLElement) =>
     container.querySelector('.blocks-map-control__btn-icon')
-
-/**
- * Stands a ResizeObserver up on the global for the length of a case and
- * records what each instance observes. jsdom ships none, so the component's
- * guarded path is what the rest of the file exercises; these records are how a
- * case can tell whether the bar subscribed the row to resizes at all, which is
- * the one side of the measurement an environment without layout still shows.
- */
-const installResizeObserver = () => {
-    const records: { target: Element; disconnected: boolean }[] = []
-
-    class StubResizeObserver {
-        private record: { target: Element; disconnected: boolean } | null = null
-
-        constructor(_callback: () => void) {}
-
-        observe(target: Element) {
-            this.record = { target, disconnected: false }
-            records.push(this.record)
-        }
-
-        unobserve() {}
-
-        disconnect() {
-            if (this.record) this.record.disconnected = true
-        }
-    }
-
-    const holder = globalThis as unknown as { ResizeObserver?: unknown }
-    const original = holder.ResizeObserver
-    holder.ResizeObserver = StubResizeObserver
-
-    return {
-        records,
-        restore: () => {
-            if (original === undefined) delete holder.ResizeObserver
-            else holder.ResizeObserver = original
-        },
-    }
-}
 
 const barChildren = (container: HTMLElement) =>
     Array.from(container.querySelector('.blocks-map-control__bar')!.children)
@@ -104,38 +61,36 @@ describe('MapControlBar action button', () => {
         await unmount()
     })
 
-    test('falls back to its own label when none is configured', async () => {
-        const { container, unmount } = await mount(
-            <MapControlBar onActionClick={() => {}} />,
-        )
-
-        expect(actionButton(container)?.textContent).toBe(DEFAULT_LABEL)
-
-        await unmount()
-    })
-
-    test('shows the configured label in place of the default', async () => {
-        const { container, unmount } = await mount(
-            <MapControlBar onActionClick={() => {}} actionLabel="Run statistics" />,
-        )
-
-        expect(actionButton(container)?.textContent).toBe('Run statistics')
-
-        await unmount()
-    })
-
-    test('may collapse to a glyph only when it has one', async () => {
+    test('draws the glyph ahead of the label when configured with both', async () => {
         const { container, unmount } = await mount(
             <MapControlBar
                 onActionClick={() => {}}
+                actionLabel="Run statistics"
                 actionIcon={MDI_ICON}
             />,
         )
 
         const button = actionButton(container)!
-        expect(button.classList.contains('blocks-map-control__btn--collapsible')).toBe(
-            true,
+        // Source order is the drawn order: the glyph leads the text.
+        expect(button.firstElementChild).toBe(actionIconMark(container))
+        expect(actionLabel(container)?.textContent).toBe('Run statistics')
+        expect(button.getAttribute('aria-label')).toBe('Run statistics')
+        expect(button.getAttribute('title')).toBe('Run statistics')
+
+        await unmount()
+    })
+
+    test('draws the glyph alone when configured without a label', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar onActionClick={() => {}} actionIcon={MDI_ICON} />,
         )
+
+        const button = actionButton(container)!
+        expect(actionIconMark(container)).not.toBeNull()
+        // No label element and no text: the bar supplies no wording of its own
+        // for a button the host configured as a glyph.
+        expect(actionLabel(container)).toBeNull()
+        expect(button.textContent).toBe('')
         expect(button.querySelector('i')?.className).toBe(
             'mdi mdi-chart-box blocks-map-control__btn-icon',
         )
@@ -143,18 +98,49 @@ describe('MapControlBar action button', () => {
         await unmount()
     })
 
-    test('may collapse to an image glyph just as it does to a font one', async () => {
+    test('sizes a glyph-only button like the other icon buttons', async () => {
         const { container, unmount } = await mount(
-            <MapControlBar onActionClick={() => {}} actionIcon={IMAGE_ICON} />,
+            <MapControlBar onActionClick={() => {}} actionIcon={MDI_ICON} />,
         )
 
-        // Collapsing turns on the presence of a glyph, not on which form it
-        // took — an uploaded file leaves as much behind as an icon-font one.
-        expect(
-            actionButton(container)?.classList.contains(
-                'blocks-map-control__btn--collapsible',
-            ),
-        ).toBe(true)
+        // The wide slot exists to give a label room, so a button without one
+        // stays square instead of stretching across the row.
+        const button = actionButton(container)!
+        expect(button.className).toContain('blocks-map-control__btn--action-glyph')
+        expect(button.parentElement?.className).not.toContain(
+            'blocks-map-control__group--wide',
+        )
+
+        await unmount()
+    })
+
+    test('names a glyph-only button, since its glyph carries no text', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar onActionClick={() => {}} actionIcon={MDI_ICON} />,
+        )
+
+        const button = actionButton(container)!
+        // Nothing inside the button is readable — the glyph is aria-hidden —
+        // so the fallback name is all a screen reader has to announce it by.
+        const name = button.getAttribute('aria-label')
+        expect(name).toBeTruthy()
+        expect(button.getAttribute('title')).toBe(name)
+        // It is a name, not content: it never reaches the markup as text.
+        expect(button.textContent).toBe('')
+
+        await unmount()
+    })
+
+    test('draws the label alone when configured without a glyph', async () => {
+        const { container, unmount } = await mount(
+            <MapControlBar onActionClick={() => {}} actionLabel="Run statistics" />,
+        )
+
+        const button = actionButton(container)!
+        expect(actionIconMark(container)).toBeNull()
+        expect(actionLabel(container)?.textContent).toBe('Run statistics')
+        expect(button.getAttribute('aria-label')).toBe('Run statistics')
+        expect(button.getAttribute('title')).toBe('Run statistics')
 
         await unmount()
     })
@@ -199,67 +185,6 @@ describe('MapControlBar action button', () => {
         await unmount()
     })
 
-    test('gives both glyph forms the same box', async () => {
-        const withFont = await mount(
-            <MapControlBar onActionClick={() => {}} actionIcon={MDI_ICON} />,
-        )
-        const withImage = await mount(
-            <MapControlBar onActionClick={() => {}} actionIcon={IMAGE_ICON} />,
-        )
-
-        // The collapse measurement sizes the collapsed button up from the
-        // glyph alone, so the two forms have to be drawn in one box — which is
-        // the shared class, since a mask has no intrinsic size of its own.
-        // jsdom applies no stylesheet, so the class is the assertable part.
-        expect(
-            actionIconMark(withFont.container)?.classList.contains(
-                'blocks-map-control__btn-icon',
-            ),
-        ).toBe(true)
-        expect(
-            actionIconMark(withImage.container)?.classList.contains(
-                'blocks-map-control__btn-icon',
-            ),
-        ).toBe(true)
-
-        await withFont.unmount()
-        await withImage.unmount()
-    })
-
-    test('keeps its label on screen when there is no glyph to fall back to', async () => {
-        const { container, unmount } = await mount(
-            <MapControlBar onActionClick={() => {}} />,
-        )
-
-        const button = actionButton(container)!
-        // The stylesheet's hide-the-label rule asks for both modifiers, so a
-        // button missing this one can't narrow down to an empty box whatever
-        // the measurement concludes — and the measurement is skipped for it.
-        expect(button.classList.contains('blocks-map-control__btn--collapsible')).toBe(
-            false,
-        )
-        expect(button.classList.contains('blocks-map-control__btn--collapsed')).toBe(
-            false,
-        )
-        expect(actionIconMark(container)).toBeNull()
-
-        await unmount()
-    })
-
-    test('names itself with the label for readers who never see it', async () => {
-        const { container, unmount } = await mount(
-            <MapControlBar onActionClick={() => {}} actionLabel="Run statistics" />,
-        )
-
-        const button = actionButton(container)!
-        // The visible label is hidden at narrow widths, leaving these two as
-        // the button's only name — so they carry the label and nothing else.
-        expect(button.getAttribute('aria-label')).toBe('Run statistics')
-        expect(button.getAttribute('title')).toBe('Run statistics')
-
-        await unmount()
-    })
-
     test('places the end slot after the built-in controls and before itself', async () => {
         const { container, unmount } = await mount(
             <MapControlBar
@@ -278,121 +203,6 @@ describe('MapControlBar action button', () => {
         expect(zoom).toBeGreaterThanOrEqual(0)
         expect(endSlot).toBeGreaterThan(zoom)
         expect(action).toBeGreaterThan(endSlot)
-
-        await unmount()
-    })
-})
-
-/**
- * The bar decides between the label and a bare glyph by laying the row out
- * both ways and comparing how many lines each takes. jsdom runs no layout —
- * every rect it reports reads as zero — so both passes count the row as a
- * single line, the counts tie, and the decision lands on the expanded side
- * every time. That leaves one branch reachable here, and these cases cover
- * what survives without layout: the markup the decision writes, the parts that
- * hold whichever way it goes, and whether the row is measured at all.
- *
- * The other branch — the row that has width for the glyph but not the label —
- * needs real line boxes and belongs to a browser, not to this file. Faking
- * rects to force it would assert on the fake.
- */
-describe('MapControlBar action button collapse', () => {
-    test('keeps the label in the markup alongside the glyph', async () => {
-        const { container, unmount } = await mount(
-            <MapControlBar
-                onActionClick={() => {}}
-                actionLabel="Run statistics"
-                actionIcon={MDI_ICON}
-            />,
-        )
-
-        // The label element is never rendered away — the stylesheet is what
-        // hides it — so the text is on the button whether or not it is drawn.
-        expect(actionLabel(container)?.textContent).toBe('Run statistics')
-        expect(actionButton(container)?.getAttribute('aria-label')).toBe(
-            'Run statistics',
-        )
-
-        await unmount()
-    })
-
-    test('leaves the glyph-only class off a row that has room for the label', async () => {
-        const { container, unmount } = await mount(
-            <MapControlBar
-                onActionClick={() => {}}
-                actionIcon={MDI_ICON}
-            />,
-        )
-
-        // Both passes tie at one line, so the label costs the row nothing.
-        expect(
-            actionButton(container)?.classList.contains(
-                'blocks-map-control__btn--collapsed',
-            ),
-        ).toBe(false)
-
-        await unmount()
-    })
-
-    test('measures the row only for a button with a glyph to fall back to', async () => {
-        const observer = installResizeObserver()
-        try {
-            const withIcon = await mount(
-                <MapControlBar
-                    onActionClick={() => {}}
-                    actionIcon={MDI_ICON}
-                />,
-            )
-            expect(observer.records).toHaveLength(1)
-            expect(observer.records[0].target).toBe(
-                withIcon.container.querySelector('.blocks-map-control__bar'),
-            )
-            await withIcon.unmount()
-
-            // Nothing to collapse to, so the row is never sized up: the button
-            // keeps its label at every width and there is no answer to take.
-            const withoutIcon = await mount(<MapControlBar onActionClick={() => {}} />)
-            expect(observer.records).toHaveLength(1)
-            await withoutIcon.unmount()
-        } finally {
-            observer.restore()
-        }
-    })
-
-    test('stops watching the row once it goes away', async () => {
-        const observer = installResizeObserver()
-        try {
-            const { unmount } = await mount(
-                <MapControlBar
-                    onActionClick={() => {}}
-                    actionIcon={MDI_ICON}
-                />,
-            )
-            expect(observer.records[0].disconnected).toBe(false)
-
-            await unmount()
-            expect(observer.records[0].disconnected).toBe(true)
-        } finally {
-            observer.restore()
-        }
-    })
-
-    test('renders where the environment supplies no ResizeObserver', async () => {
-        // jsdom is such an environment, so this is the state the file's other
-        // cases run in; asserted outright because the button has to draw with
-        // its label wherever the bar cannot subscribe to resizes.
-        expect(typeof (globalThis as unknown as { ResizeObserver?: unknown })
-            .ResizeObserver).toBe('undefined')
-
-        const { container, unmount } = await mount(
-            <MapControlBar
-                onActionClick={() => {}}
-                actionLabel="Run statistics"
-                actionIcon={MDI_ICON}
-            />,
-        )
-
-        expect(actionLabel(container)?.textContent).toBe('Run statistics')
 
         await unmount()
     })

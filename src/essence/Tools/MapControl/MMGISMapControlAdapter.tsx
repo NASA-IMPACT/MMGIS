@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapControlBar, resolveActionIcon } from './lib'
-import type { BasemapStyle } from './lib'
+import type { ActionIcon, BasemapStyle } from './lib'
 // The shared share-menu control (_shared/share) — same look
 // and behaves identically wherever it's hosted. Importing the lib barrel also
 // loads its (host-class-scoped) styles.
@@ -9,6 +9,7 @@ import { resolveAction } from '../_shared/actions/resolveAction'
 import { resolveIconClass } from '../_shared/content/iconClass'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
+import { mmgisGetMissionPath } from '../_shared/adapters/mmgisAPI'
 import {
     copyShareLink,
     downloadSharePng,
@@ -40,31 +41,37 @@ type ToolVars = {
     actionButtonIconUpload?: unknown
     actionButtonIconUrl?: unknown
     actionButtonIconMdi?: unknown
-    // The single-field form of the icon, which takes an icon-font class on its
-    // own. Configure offers the four fields above instead, but a mission
-    // carrying this one still draws the glyph it names.
-    actionButtonIcon?: unknown
 }
 
 const COPIED_RESET_MS = 1800
 
+// What the action button says when the mission configured neither text nor an
+// icon, so the control is never an empty box.
+const ACTION_FALLBACK_LABEL = 'Analyze area'
+
 const isFalsy = (v: unknown) =>
     v === false || v === 'false' || v === 0 || v === '0'
 
-// Tool vars are the raw `variables` object out of mission JSON, so every field
-// arrives unvalidated and may be any JSON type — which is why they are typed
-// `unknown` here. Calling a string method straight on one of them throws during
-// render, and MapControlTool mounts this adapter without an error boundary, so
-// a single mistyped value would take the whole control bar down with it: no
-// search, no basemaps, no measure, no zoom, no share.
-//
-// Only a string is meaningful for any of these fields: an action is a URL, a
-// namespaced core request or an event name, an icon is a class, a file path or
-// a URL, and a label is display text. Every other JSON type reads as unset
-// rather than being coerced, so a number never becomes an event named '0' and
-// an object never becomes one named '[object Object]'. Trimming makes a
-// whitespace-only value read as unset too.
+// Tool vars come from mission JSON, so any field may be any JSON type, and only
+// a string is meaningful for these. Every other type — and a whitespace-only
+// string — reads as unset rather than being coerced, so a mistyped value costs
+// one feature rather than throwing through a bar that has no error boundary.
 const asText = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+
+/**
+ * Points an uploaded icon at the file the mission actually serves. The upload
+ * field stores a path relative to the mission directory
+ * ("MapControl/uploads/<uuid>.svg"); an absolute or root-relative value is
+ * already complete and passes through.
+ */
+function withResolvedIcon(
+    icon: ActionIcon | null,
+    missionPath: string | null
+): ActionIcon | null {
+    if (icon?.kind !== 'image') return icon
+    if (/^(https?:|data:|\/)/i.test(icon.src)) return icon
+    return { kind: 'image', src: (missionPath || '') + icon.src }
+}
 
 export function MMGISMapControlAdapter() {
     const [basemapStyles, setBasemapStyles] = useState<BasemapStyle[]>([])
@@ -73,6 +80,14 @@ export function MMGISMapControlAdapter() {
     const [shareCopied, setShareCopied] = useState(false)
     const copiedTimer = useRef<number | null>(null)
     const vars = useMMGISToolVars<ToolVars>('mapcontrol')
+
+    // Uploaded icons are stored mission-relative, so the bar needs the
+    // mission's path before it can draw them.
+    const [missionPath, setMissionPath] = useState<string | null>(null)
+    const refreshMissionPath = useCallback(async () => {
+        setMissionPath(await mmgisGetMissionPath())
+    }, [])
+    useMMGISHandlerReady('app:getMissionPath', refreshMissionPath)
 
     // Same handler pattern as MMGISShareExportAdapter, wired to the shared
     // share actions.
@@ -123,30 +138,35 @@ export function MMGISMapControlAdapter() {
     const showZoom = !isFalsy(vars.showZoom)
     const showShare = !isFalsy(vars.showShare)
 
-    // The action button defaults OFF, so it deliberately skips isFalsy: only a
-    // mission that configured a link gets one, and every other mission gets a
-    // bar without it.
+    // The action button appears only for a mission that configured a link;
+    // every other mission gets a bar without it.
     const actionLink = asText(vars.actionButtonLink)
     const actionText = asText(vars.actionButtonText)
-    // An icon may come from any of three inputs — an uploaded file, a link to
-    // one, or a named icon-font glyph — and which one a mission meant is the
-    // library's to work out. Every field goes through asText first, so a
-    // mistyped value reads as an unfilled field rather than reaching string
-    // handling as some other JSON type.
-    //
-    // Which icon-font spellings a mission may write — the full class, the
-    // mdi/js export name, the icon name on its own — is core's to decide, so
-    // the named glyph goes through the shared resolver instead of reaching the
-    // bar as a class the stylesheet may not have.
-    const actionIcon = resolveActionIcon(
-        {
-            source: asText(vars.actionButtonIconSource),
-            upload: asText(vars.actionButtonIconUpload),
-            url: asText(vars.actionButtonIconUrl),
-            mdi: asText(vars.actionButtonIconMdi),
-            legacy: asText(vars.actionButtonIcon),
-        },
-        resolveIconClass
+    // Which of the icon fields a mission meant is the library's to work out;
+    // which icon-font spellings it may write is core's, which is what
+    // resolveIconClass is passed in for. Memoized because an unusable value
+    // warns, and share and basemap state re-render this often.
+    const actionIcon = useMemo(
+        () =>
+            withResolvedIcon(
+                resolveActionIcon(
+                    {
+                        source: asText(vars.actionButtonIconSource),
+                        upload: asText(vars.actionButtonIconUpload),
+                        url: asText(vars.actionButtonIconUrl),
+                        mdi: asText(vars.actionButtonIconMdi),
+                    },
+                    resolveIconClass
+                ),
+                missionPath
+            ),
+        [
+            vars.actionButtonIconSource,
+            vars.actionButtonIconUpload,
+            vars.actionButtonIconUrl,
+            vars.actionButtonIconMdi,
+            missionPath,
+        ]
     )
 
     // What the link means — an external URL, a panel/plugin request, a custom
@@ -184,13 +204,11 @@ export function MMGISMapControlAdapter() {
             onRemoveMeasureLabel={showMeasure ? removeMeasureLabel : undefined}
             onSetCursor={showMeasure ? setCursor : undefined}
             onSearchSelect={showSearch ? flyToResult : undefined}
-            // A blank label leaves the prop unset so the bar applies its own
-            // default text, keeping that string in one place.
-            actionLabel={actionText || undefined}
-            // An icon nobody configured and one core cannot resolve both leave
-            // the prop unset, which is what tells the bar it may not collapse
-            // the button down to a glyph, since there would be nothing left to
-            // identify the action by.
+            // A configured glyph stands on its own, so only a button with
+            // neither text nor icon falls back to generic wording.
+            actionLabel={
+                actionText || (actionIcon ? undefined : ACTION_FALLBACK_LABEL)
+            }
             actionIcon={actionIcon ?? undefined}
             onActionClick={actionLink ? handleActionClick : undefined}
             endSlot={

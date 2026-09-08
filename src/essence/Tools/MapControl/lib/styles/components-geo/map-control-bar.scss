@@ -53,17 +53,13 @@
             flex-grow: 2;
         }
 
-        /* The slot holding the bar's labelled action button. Its grow factor
-           dwarfs the sum of every other group's — the icon groups and the zoom
-           pair come to six units — so it takes all but a few percent of the
-           row's free width and the icon buttons sit at their 36px floor. The
-           ratio, rather than a modifier on the bar, is what carries the
-           arrangement: a bar configured without the action button holds no
-           --wide group, and the icon groups divide the slack evenly again with
-           no other rule needing to know. The same holds line by line once the
-           bar wraps, which a bar-level rule could not express — the icon groups
-           on a line the action button did not land on still fill that line.
-           The few percent the icon groups keep is what leaves them growing.
+        /* The slot holding the bar's action button. Its grow factor is large
+           enough to dominate the handful of one- and two-unit icon groups
+           beside it, so the free width lands here and they stay near their
+           36px floor. Carrying the arrangement as a ratio keeps it right per
+           line: the icon groups on a line the action button did not land on
+           divide that line between them, and a bar with no action button
+           divides every line evenly.
 
            max-width holds the slot inside the bar. Its basis is its button's
            content and the slot does not shrink below it, so a long configured
@@ -123,18 +119,18 @@
         }
     }
 
-    /* The bar's labelled action button, filled in the theme's primary so it
-       reads as the row's one call to action rather than another glyph. Because
-       the fill occupies the surface &__btn's states tint, this restates the
-       whole color treatment — resting, hover, active and the focus ring. Each
-       restatement matches the specificity of the &__btn rule it stands in for
-       and is written after it, so source order is what carries them.
+    /* The bar's action button, filled in the theme's primary so it reads as the
+       row's one call to action rather than another glyph. The fill occupies the
+       surface &__btn's resting, :hover and :focus-visible states tint, so each
+       is restated here — at the same specificity and after the rule it stands
+       in for, so source order is what carries it — alongside a :active shade
+       for the press, which the icon buttons have no equivalent of.
 
-       Content-sized rather than square: the basis follows the label while the
-       36px floor and the row's 36px height stay as &__btn states them, so a
-       one-glyph label still fills a box the size of the bar's icon buttons and
-       the control sits in the row rather than standing above it. It shrinks,
-       so the clamp on the slot around it reaches the label. */
+       Content-sized rather than square: the basis follows the contents while
+       the 36px floor and the row's 36px height stay as &__btn states them, so a
+       button holding a lone glyph still fills a box the size of the bar's icon
+       buttons. It shrinks, which is what carries the slot's clamp down to the
+       label. */
     &__btn--action {
         flex-basis: auto;
         flex-shrink: 1;
@@ -152,6 +148,14 @@
         /* Holds the label on one line: a wrapped label would push past the
            36px box, and the bar wraps the whole group instead. */
         white-space: nowrap;
+
+        /* A glyph with no label beside it fills the bar's square button box
+           rather than a text button's wider one, so it lines up with the icon
+           buttons it sits among. */
+        &-glyph {
+            flex-basis: 36px;
+            padding: 0;
+        }
 
         &:hover {
             background: var(--theme-color-primary-dark, #0b3d91);
@@ -173,12 +177,11 @@
     }
 
     /* The action button's glyph, in a box stated outright rather than left to
-       the icon's own metrics. Both forms carry this class and so measure the
-       same, which the bar's collapse decision rests on: it sizes the collapsed
-       button up from the glyph alone, and a mask has no intrinsic size to fall
-       back on. Sized a step above the label so the glyph reads as the leading
-       mark rather than as another character of the text, and squarely enough
-       that the collapsed button is a glyph centered in the bar's 36px box.
+       the icon's own metrics: the image form is a mask, which has no intrinsic
+       size and would draw at nothing without one. Stating it on the class both
+       forms carry is also what makes an uploaded file and an icon-font glyph
+       the same size. Sized a step above the label so the glyph reads as the
+       leading mark rather than as another character of the text.
 
        font-size drives the icon-font form, which draws its glyph at the
        element's own size; line-height holds that glyph's line box to the same
@@ -209,8 +212,9 @@
     }
 
     /* The action button's text. It ellipses rather than holding its full width,
-       so a long configured label narrows the button — down to the floor the
-       slot's clamp drives it to — instead of pushing the row past the bar. */
+       so a long configured label narrows the button instead of pushing the row
+       past the bar. min-width is what lets it: a flex item does not shrink
+       below its content without one, so the ellipsis would never engage. */
     &__btn-label {
         min-width: 0;
         overflow: hidden;
@@ -237,11 +241,8 @@
            it to the next one.
 
            The cap is for the case where that next row holds nothing else: a
-           lone item on a flex line takes the whole line, drawing this slot as a
-           bar-wide white box behind a single 16px glyph. A slot sharing its
-           line with others stays under half the bar — its grown width is under
-           a whole line divided by the number of groups on it — so the cap binds
-           in the lone case alone and leaves every other row untouched. */
+           lone item on a flex line takes the whole line, which would draw this
+           slot as a bar-wide white box behind a single 16px glyph. */
         flex: 1 0 auto;
         max-width: 50%;
         background: var(--theme-color-white, #ffffff);
@@ -262,45 +263,5 @@
             height: 36px;
             justify-content: center;
         }
-    }
-
-    /* The action button's glyph-only form, applied by the bar's own layout
-       measurement: it holds this form wherever showing the label would cost
-       the row another line, and takes the label back wherever the label is
-       free — the row has the width to spare, or the button has already been
-       wrapped onto a line of its own, where the space is there either way.
-
-       The rule asks for both classes. --collapsible is the standing fact that
-       there is a glyph to fall back to; --collapsed is the measurement's
-       answer at the current width. Requiring the pair is what keeps a button
-       configured without an icon from ever drawing as an empty box, whatever
-       the measurement concludes.
-
-       No width floor stands under this. A row too narrow even for a lone
-       button's label ellipses it, which still leaves the glyph and the
-       button's leading characters on screen — a milder failure than dropping
-       the text, and one aria-label and the tooltip both carry the whole of
-       anyway. A floor would also have to agree with the measurement to avoid
-       drawing a bar-wide box around a single glyph, which is a second source
-       of truth for one decision. */
-    &__group--wide:has(&__btn--collapsed) {
-        /* The slot stops claiming the row's free width and shares it at the
-           rate every other icon group grows at, so the glyph sits in a box the
-           size of the bar's other icon buttons. */
-        flex-grow: 1;
-    }
-
-    /* A square box holding the glyph, which the centering &__btn already
-       states puts in the middle of it. */
-    &__btn--collapsible#{&}__btn--collapsed {
-        flex-basis: 36px;
-        padding: 0;
-    }
-
-    /* Hidden rather than dropped from the markup: the text stays on the
-       element for the accessible name and for anything reading the button's
-       content, and the box measures the same however long the label is. */
-    &__btn--collapsed &__btn-label {
-        display: none;
     }
 }

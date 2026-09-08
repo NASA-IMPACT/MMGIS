@@ -4,8 +4,14 @@
  * Core owns the spellings a config author is allowed to write, the rules that
  * turn each one into a CSS class, and the icon stylesheet those classes name. A
  * plugin hands over whatever the mission JSON held and renders the class it
- * gets back, so no plugin carries its own copy of the prefixing rules or the
- * sanitization that guards them.
+ * gets back, so no plugin carries its own copy of the prefixing rules.
+ *
+ * Markup and the characters a class attribute cannot hold are stripped, but
+ * spaces survive — they have to, since 'mdi mdi-poll' and 'fas fa-home' are
+ * accepted spellings. A value like 'mdi mdi-poll some-other-class' therefore
+ * reaches the element with the extra class intact. Mission config is
+ * admin-authored and the worst outcome is a differently-styled glyph, so this
+ * is a fidelity limit, not a security boundary.
  *
  * A synchronous import rather than an mmgisAPI request: resolving an icon is a
  * pure string transform, and putting it on the bus would make every caller

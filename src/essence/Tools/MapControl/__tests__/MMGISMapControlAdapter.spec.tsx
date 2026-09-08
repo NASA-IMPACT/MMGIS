@@ -26,6 +26,8 @@ vi.mock('../../_shared/share/share-map.svg', () => ({
  */
 
 const LINK = 'https://example.com/analysis'
+/** Where the loaded mission's files are served from, as core reports it. */
+const MISSION_PATH = 'Missions/Test/'
 
 let request: ReturnType<typeof vi.fn>
 
@@ -35,6 +37,8 @@ const withVars = (vars: Record<string, unknown>) => {
         switch (name) {
             case 'tool:getVars':
                 return vars
+            case 'app:getMissionPath':
+                return MISSION_PATH
             case 'map:getBasemapStyles':
                 return []
             case 'map:getBasemap':
@@ -96,14 +100,11 @@ describe('MMGISMapControlAdapter action button', () => {
 
             const mounted = await mount(<MMGISMapControlAdapter />)
 
-            // The bar itself survives — the point of the guard, since a throw
-            // here would leave the mission with no map controls at all.
             expect(
                 mounted.container.querySelector('.blocks-map-control__bar'),
             ).not.toBeNull()
-            // An action is only ever a string — a URL, a namespaced core
-            // request or an event name — so every other type reads as unset
-            // rather than becoming an event named '0' or '[object Object]'.
+            // An action is only ever a string, so every other type reads as
+            // unset rather than being coerced into one.
             expect(actionButton(mounted.container)).toBeNull()
 
             await mounted.unmount()
@@ -139,7 +140,7 @@ describe('MMGISMapControlAdapter action button', () => {
         await unmount()
     })
 
-    test('leaves the label to the bar when the mission names none', async () => {
+    test('falls back to generic wording when neither text nor icon is configured', async () => {
         withVars({ actionButtonLink: LINK })
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
@@ -153,14 +154,15 @@ describe('MMGISMapControlAdapter action button', () => {
  * The icon is configured across four fields a config author fills in by hand:
  * a source naming which of three inputs supplies the glyph, and the three
  * inputs themselves — an uploaded file, a link to one, and an icon-font name.
- * A mission may also carry the single-field form, which took a font name on
- * its own.
  *
- * So what matters here is which field a given combination draws from, that the
- * font name arrives on the element as a class the stylesheet can draw (the
- * spellings the icon set documents are not that class, and core owns the
+ * So what matters here is which field a given combination draws from, that an
+ * uploaded file is pointed at the path the mission actually serves it from,
+ * that the font name arrives on the element as a class the stylesheet can draw
+ * (the spellings the icon set documents are not that class, and core owns the
  * mapping), and that anything unusable leaves the button in the same state as
- * a mission that configured no icon at all.
+ * a mission that configured no icon at all — saying so on the console, since
+ * an icon that silently never appears is indistinguishable from one the author
+ * forgot to fill in.
  */
 describe('MMGISMapControlAdapter action button icon', () => {
     const fontIcon = (container: HTMLElement) =>
@@ -174,34 +176,46 @@ describe('MMGISMapControlAdapter action button icon', () => {
     const anyIcon = (container: HTMLElement) =>
         container.querySelector('.blocks-map-control__btn-icon')
 
-    const isCollapsible = (container: HTMLElement) =>
-        actionButton(container)?.classList.contains(
-            'blocks-map-control__btn--collapsible',
-        )
-
-    test('draws the uploaded file the source names', async () => {
+    test('points an uploaded file at the mission that stores it', async () => {
         withVars({
             actionButtonLink: LINK,
             actionButtonIconSource: 'upload',
-            actionButtonIconUpload: 'Missions/Test/MapControl/glyph.svg',
+            // What the upload endpoint stores: a path relative to the mission
+            // directory, which the browser cannot fetch as written.
+            actionButtonIconUpload: 'MapControl/uploads/ab12.svg',
             actionButtonIconUrl: 'https://example.com/other.svg',
             actionButtonIconMdi: 'poll',
         })
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
         expect(imageIcon(container)?.style.maskImage).toBe(
-            'url("Missions/Test/MapControl/glyph.svg")',
+            'url("Missions/Test/MapControl/uploads/ab12.svg")',
         )
         expect(fontIcon(container)).toBeNull()
 
         await unmount()
     })
 
-    test('draws the linked file the source names', async () => {
+    test('leaves an already-absolute upload value alone', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconSource: 'upload',
+            actionButtonIconUpload: '/assets/shared/glyph.svg',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(imageIcon(container)?.style.maskImage).toBe(
+            'url("/assets/shared/glyph.svg")',
+        )
+
+        await unmount()
+    })
+
+    test('draws the linked file the source names, without a mission prefix', async () => {
         withVars({
             actionButtonLink: LINK,
             actionButtonIconSource: 'link',
-            actionButtonIconUpload: 'Missions/Test/MapControl/glyph.svg',
+            actionButtonIconUpload: 'MapControl/uploads/ab12.svg',
             actionButtonIconUrl: 'https://example.com/other.svg',
             actionButtonIconMdi: 'poll',
         })
@@ -275,50 +289,7 @@ describe('MMGISMapControlAdapter action button icon', () => {
         await unmount()
     })
 
-    test('draws the single-field form as an icon-font glyph', async () => {
-        withVars({ actionButtonLink: LINK, actionButtonIcon: 'mdiPoll' })
-        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
-
-        // A mission carrying only the older field names a font glyph there —
-        // the value holds no path and no scheme — and keeps drawing it.
-        expect(fontIcon(container)?.getAttribute('class')).toBe(
-            'mdi mdi-poll blocks-map-control__btn-icon',
-        )
-
-        await unmount()
-    })
-
-    test('draws a single-field form holding a path as an image', async () => {
-        withVars({
-            actionButtonLink: LINK,
-            actionButtonIcon: 'Missions/Test/glyph.svg',
-        })
-        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
-
-        expect(imageIcon(container)?.style.maskImage).toBe(
-            'url("Missions/Test/glyph.svg")',
-        )
-
-        await unmount()
-    })
-
-    test('prefers the named fields over the single-field form', async () => {
-        withVars({
-            actionButtonLink: LINK,
-            actionButtonIcon: 'mdiPoll',
-            actionButtonIconSource: 'mdi',
-            actionButtonIconMdi: 'chart-box',
-        })
-        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
-
-        expect(fontIcon(container)?.getAttribute('class')).toBe(
-            'mdi mdi-chart-box blocks-map-control__btn-icon',
-        )
-
-        await unmount()
-    })
-
-    test('collapses to the glyph only once an icon resolves', async () => {
+    test('lets the glyph stand alone when the mission names no text', async () => {
         withVars({
             actionButtonLink: LINK,
             actionButtonIconSource: 'mdi',
@@ -326,25 +297,16 @@ describe('MMGISMapControlAdapter action button icon', () => {
         })
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
-        expect(isCollapsible(container)).toBe(true)
+        expect(fontIcon(container)).not.toBeNull()
+        // A glyph already names the action, so the generic fallback wording
+        // would only crowd it.
+        expect(actionButton(container)?.textContent).toBe('')
 
         await unmount()
     })
 
-    test('collapses to an uploaded glyph just as it does to a font one', async () => {
-        withVars({
-            actionButtonLink: LINK,
-            actionButtonIconSource: 'upload',
-            actionButtonIconUpload: 'Missions/Test/MapControl/glyph.svg',
-        })
-        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
-
-        expect(isCollapsible(container)).toBe(true)
-
-        await unmount()
-    })
-
-    test('renders no icon, and no collapsing, for a value naming no icon', async () => {
+    test('warns and renders no icon for a value naming no icon', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         withVars({
             actionButtonLink: LINK,
             actionButtonIconSource: 'mdi',
@@ -353,19 +315,35 @@ describe('MMGISMapControlAdapter action button icon', () => {
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
         expect(anyIcon(container)).toBeNull()
-        // Hiding the label at narrow widths is only safe when a glyph is left
-        // to name the button, so an unusable icon has to read as no icon.
-        expect(isCollapsible(container)).toBe(false)
+        expect(warn).toHaveBeenCalledWith(
+            expect.stringContaining('Not An Icon'),
+        )
+        // With no usable glyph the button is back to needing a name.
+        expect(actionButton(container)?.textContent).toBe('Analyze area')
 
         await unmount()
     })
 
-    test('renders no icon, and no collapsing, for a mission that configures none', async () => {
+    test('warns when the named source is the only thing configured', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        withVars({ actionButtonLink: LINK, actionButtonIconSource: 'upload' })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(anyIcon(container)).toBeNull()
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('"upload"'))
+
+        await unmount()
+    })
+
+    test('renders no icon for a mission that configures none', async () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
         withVars({ actionButtonLink: LINK })
         const { container, unmount } = await mount(<MMGISMapControlAdapter />)
 
         expect(anyIcon(container)).toBeNull()
-        expect(isCollapsible(container)).toBe(false)
+        // Nothing was asked for, so nothing is wrong — an empty icon config is
+        // the common case and must stay quiet.
+        expect(warn).not.toHaveBeenCalled()
 
         await unmount()
     })
@@ -384,18 +362,14 @@ describe('MMGISMapControlAdapter action button icon', () => {
                 actionButtonIconUpload: value,
                 actionButtonIconUrl: value,
                 actionButtonIconMdi: value,
-                actionButtonIcon: value,
             })
 
             const mounted = await mount(<MMGISMapControlAdapter />)
 
-            // The bar itself survives — the point of the guard, since a throw
-            // here would leave the mission with no map controls at all.
             expect(
                 mounted.container.querySelector('.blocks-map-control__bar'),
             ).not.toBeNull()
             expect(anyIcon(mounted.container)).toBeNull()
-            expect(isCollapsible(mounted.container)).toBe(false)
 
             await mounted.unmount()
         })
