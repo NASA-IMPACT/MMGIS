@@ -366,7 +366,25 @@ function resolveStyleAccessors(style: Record<string, unknown>) {
           }
         : staticPointRadius
 
-    return { getFillColor, getLineColor, getLineWidth, getPointRadius }
+    // Whether anything above actually reads a feature property. Vector tile
+    // layers need this to pick a tile decoding format: see the `vectortile`
+    // case in buildDeckLayer.
+    const readsFeatureProperties = Boolean(
+        fillColorProp ||
+            fillOpacityProp ||
+            colorProp ||
+            opacityProp ||
+            weightProp ||
+            radiusProp
+    )
+
+    return {
+        getFillColor,
+        getLineColor,
+        getLineWidth,
+        getPointRadius,
+        readsFeatureProperties,
+    }
 }
 
 /**
@@ -504,8 +522,13 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
             // The layer configuration UI offers vector tile layers the same
             // per-feature style fields as vector layers, so resolve them the
             // same way.
-            const { getFillColor, getLineColor, getLineWidth, getPointRadius } =
-                resolveStyleAccessors(style)
+            const {
+                getFillColor,
+                getLineColor,
+                getLineWidth,
+                getPointRadius,
+                readsFeatureProperties,
+            } = resolveStyleAccessors(style)
 
             return new MVTLayer({
                 id,
@@ -514,6 +537,22 @@ export function buildDeckLayer(id: string, options: LayerOptions): Layer {
                 maxZoom: o.maxNativeZoom ?? o.maxZoom,
                 opacity: o.opacity ?? 1,
                 pickable: o.interactive ?? true,
+                // deck.gl decodes vector tiles into a binary form by default,
+                // which hoists every numeric property into one tile-wide typed
+                // array covering every feature in the tile. A feature that
+                // never carried the property gets the array's zero fill, and
+                // the whole set is merged into the object accessors are handed
+                // - so `{class: 'grass'}` arrives as `{class: 'grass', ele: 0}`
+                // and a missing measurement is indistinguishable from a real
+                // zero. Nothing in the binary payload records presence: the
+                // string properties it keeps alongside simply omit the key,
+                // and there is no mask. So whenever an accessor reads a
+                // feature property, decode to GeoJSON instead, where an absent
+                // key is genuinely absent. Everything else keeps the binary
+                // fast path. Picking, autoHighlight and uniqueIdProperty all
+                // work in either mode - MVTLayer carries a branch for each,
+                // and GlobeView already forces this same setting.
+                binary: !readsFeatureProperties,
                 getFillColor,
                 getLineColor,
                 getLineWidth,
