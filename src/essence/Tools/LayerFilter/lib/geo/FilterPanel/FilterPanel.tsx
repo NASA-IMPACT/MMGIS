@@ -298,9 +298,6 @@ function EntryField({
 
     return (
         <div className="blocks-layer-filter__results">
-            <div className="blocks-layer-filter__results-label">
-                Matching {noun}
-            </div>
             <div className="blocks-layer-filter__countline">
                 <span className="blocks-layer-filter__count">
                     {options.length}
