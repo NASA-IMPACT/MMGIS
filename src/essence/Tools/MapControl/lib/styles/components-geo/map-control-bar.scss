@@ -23,15 +23,6 @@
     flex-direction: column;
     align-items: flex-end;
     width: 100%;
-    /* The query container the bar's collapse rule measures against. The bar
-       lives in a resizable floating panel, so the viewport is the wrong
-       signal — what the row has to fit into is this element, which spans the
-       panel's tool card. Inline-size containment is safe here: the width comes
-       from the parent rather than from the contents, and every popover and
-       dropdown opened from inside the bar is portaled to the body, so the
-       containing block this establishes for fixed descendants holds nothing. */
-    container-type: inline-size;
-    container-name: map-control;
     pointer-events: auto;
     font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue', sans-serif);
 
@@ -181,6 +172,42 @@
         }
     }
 
+    /* The action button's glyph, in a box stated outright rather than left to
+       the icon's own metrics. Both forms carry this class and so measure the
+       same, which the bar's collapse decision rests on: it sizes the collapsed
+       button up from the glyph alone, and a mask has no intrinsic size to fall
+       back on. Sized a step above the label so the glyph reads as the leading
+       mark rather than as another character of the text, and squarely enough
+       that the collapsed button is a glyph centered in the bar's 36px box.
+
+       font-size drives the icon-font form, which draws its glyph at the
+       element's own size; line-height holds that glyph's line box to the same
+       square, since the button's own line-height would otherwise size it. */
+    &__btn-icon {
+        flex: none;
+        display: block;
+        width: 18px;
+        height: 18px;
+        font-size: 18px;
+        line-height: 1;
+        /* The glyph is drawn in currentColor, so it takes the button's white
+           against the primary fill and follows it through every state. */
+        color: inherit;
+    }
+
+    /* A configured image is painted as a mask filled with the button's own
+       color, so one file reads correctly on the primary fill and matches the
+       label beside it. The `mask-image` itself is set inline, per mission. */
+    &__btn-icon--image {
+        background-color: currentColor;
+        mask-repeat: no-repeat;
+        mask-position: center;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        -webkit-mask-size: contain;
+    }
+
     /* The action button's text. It ellipses rather than holding its full width,
        so a long configured label narrows the button — down to the floor the
        slot's clamp drives it to — instead of pushing the row past the bar. */
@@ -237,33 +264,43 @@
         }
     }
 
-    /* Below this width the row has no room left for the action button's label,
-       so a button the mission gave an icon drops to that glyph and the row
-       stays on one line instead of wrapping. The threshold is read off the
-       fullest bar: six 36px icon buttons, the zoom pair's 1px divider and the
-       five 4px gaps between the six groups come to 237px, and a two-word label
-       with its glyph and padding needs about 135px beside them, so the label
-       runs out of room around 372px; the value is rounded up from there for
-       slack. It stays a heuristic — each of the bar's controls is
-       independently configurable, so the icon count varies, and the label's
-       length is the mission's to choose. */
-    @container map-control (max-width: 380px) {
-        /* A button configured without an icon has nothing to collapse to and
-           carries no --collapsible, so its slot keeps the wide grow factor and
-           its label. */
-        &__group--wide:has(&__btn--collapsible) {
-            flex-grow: 1;
-        }
+    /* The action button's glyph-only form, applied by the bar's own layout
+       measurement: it holds this form wherever showing the label would cost
+       the row another line, and takes the label back wherever the label is
+       free — the row has the width to spare, or the button has already been
+       wrapped onto a line of its own, where the space is there either way.
 
-        /* A square box holding the glyph, which the centering &__btn already
-           states puts in the middle of it. */
-        &__btn--collapsible {
-            flex-basis: 36px;
-            padding: 0;
-        }
+       The rule asks for both classes. --collapsible is the standing fact that
+       there is a glyph to fall back to; --collapsed is the measurement's
+       answer at the current width. Requiring the pair is what keeps a button
+       configured without an icon from ever drawing as an empty box, whatever
+       the measurement concludes.
 
-        &__btn--collapsible &__btn-label {
-            display: none;
-        }
+       No width floor stands under this. A row too narrow even for a lone
+       button's label ellipses it, which still leaves the glyph and the
+       button's leading characters on screen — a milder failure than dropping
+       the text, and one aria-label and the tooltip both carry the whole of
+       anyway. A floor would also have to agree with the measurement to avoid
+       drawing a bar-wide box around a single glyph, which is a second source
+       of truth for one decision. */
+    &__group--wide:has(&__btn--collapsed) {
+        /* The slot stops claiming the row's free width and shares it at the
+           rate every other icon group grows at, so the glyph sits in a box the
+           size of the bar's other icon buttons. */
+        flex-grow: 1;
+    }
+
+    /* A square box holding the glyph, which the centering &__btn already
+       states puts in the middle of it. */
+    &__btn--collapsible#{&}__btn--collapsed {
+        flex-basis: 36px;
+        padding: 0;
+    }
+
+    /* Hidden rather than dropped from the markup: the text stays on the
+       element for the accessible name and for anything reading the button's
+       content, and the box measures the same however long the label is. */
+    &__btn--collapsed &__btn-label {
+        display: none;
     }
 }

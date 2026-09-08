@@ -78,21 +78,50 @@
                         "name": "Button Text",
                         "description": "Text shown on the action button. If empty, the button reads 'Analyze area'. The button is shown whenever Button Link is set.",
                         "type": "text",
-                        "width": 4
+                        "width": 6
                     },
                     {
                         "field": "variables.actionButtonLink",
                         "name": "Button Link",
                         "description": "An external http(s) URL (opened in a new tab); one of 'panels:show:PANEL_ID', 'panels:hide:PANEL_ID', 'plugins:show:PLUGIN_ID', 'plugins:hide:PLUGIN_ID' (e.g. 'panels:hide:left-panel', 'plugins:show:DrawTool'); or a custom event name, which is emitted as-is. Event names should be namespaced (e.g. 'plugin:mapcontrol:analyze'). Leave empty to hide the button.",
                         "type": "text",
-                        "width": 4
+                        "width": 6
+                    }
+                ]
+            },
+            {
+                "name": "Action Button Icon",
+                "description": "An optional glyph shown ahead of the button text. Pick where it comes from, then fill in the matching field; an icon is drawn in the button's own color whichever source it came from. Configuring one also lets the button shrink to just the glyph when showing the text would cost the control bar an extra row; leaving all three empty keeps the text visible at every width.",
+                "components": [
+                    {
+                        "field": "variables.actionButtonIconSource",
+                        "name": "Icon Source",
+                        "description": "Which of the three fields beside this one supplies the glyph.",
+                        "type": "dropdown",
+                        "width": 3,
+                        "options": ["upload", "link", "mdi"]
                     },
                     {
-                        "field": "variables.actionButtonIcon",
-                        "name": "Button Icon",
-                        "description": "Optional Material Design Icons class for a glyph shown ahead of the button text, e.g. 'mdi mdi-chart-box mdi-18px'. Setting one also lets the button shrink to just the glyph when the control bar is too narrow for the text; leaving it empty keeps the text visible at every width.",
+                        "field": "variables.actionButtonIconUpload",
+                        "name": "Upload Icon",
+                        "description": "An SVG or PNG for the button. Drawn as a silhouette in the button's color, so a single-color glyph on a transparent background works best.",
+                        "type": "upload",
+                        "subdir": "MapControl",
+                        "width": 3
+                    },
+                    {
+                        "field": "variables.actionButtonIconUrl",
+                        "name": "Icon Link",
+                        "description": "URL of an icon hosted elsewhere. Drawn as a silhouette, the same as an uploaded one.",
                         "type": "text",
-                        "width": 4
+                        "width": 3
+                    },
+                    {
+                        "field": "variables.actionButtonIconMdi",
+                        "name": "MDI Icon Name",
+                        "description": "A Material Design Icons name, e.g. 'poll'. The 'mdiPoll' and 'mdi mdi-poll' spellings are accepted too.",
+                        "type": "text",
+                        "width": 3
                     }
                 ]
             }

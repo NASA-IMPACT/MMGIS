@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { MapControlBar } from './lib'
+import { MapControlBar, resolveActionIcon } from './lib'
 import type { BasemapStyle } from './lib'
 // The shared share-menu control (_shared/share) — same look
 // and behaves identically wherever it's hosted. Importing the lib barrel also
 // loads its (host-class-scoped) styles.
 import { ShareMenu } from '../_shared/share'
 import { resolveAction } from '../_shared/actions/resolveAction'
+import { resolveIconClass } from '../_shared/content/iconClass'
 import { useMMGISToolVars } from '../_shared/adapters/useMMGISToolVars'
 import { useMMGISHandlerReady } from '../_shared/adapters/useMMGISHandlerReady'
 import {
@@ -35,6 +36,13 @@ type ToolVars = {
     showShare?: unknown
     actionButtonText?: unknown
     actionButtonLink?: unknown
+    actionButtonIconSource?: unknown
+    actionButtonIconUpload?: unknown
+    actionButtonIconUrl?: unknown
+    actionButtonIconMdi?: unknown
+    // The single-field form of the icon, which takes an icon-font class on its
+    // own. Configure offers the four fields above instead, but a mission
+    // carrying this one still draws the glyph it names.
     actionButtonIcon?: unknown
 }
 
@@ -51,11 +59,11 @@ const isFalsy = (v: unknown) =>
 // search, no basemaps, no measure, no zoom, no share.
 //
 // Only a string is meaningful for any of these fields: an action is a URL, a
-// namespaced core request or an event name, an icon is an mdi class, and a
-// label is display text. Every other JSON type reads as unset rather than
-// being coerced, so a number never becomes an event named '0' and an object
-// never becomes one named '[object Object]'. Trimming makes a whitespace-only
-// value read as unset too.
+// namespaced core request or an event name, an icon is a class, a file path or
+// a URL, and a label is display text. Every other JSON type reads as unset
+// rather than being coerced, so a number never becomes an event named '0' and
+// an object never becomes one named '[object Object]'. Trimming makes a
+// whitespace-only value read as unset too.
 const asText = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
 
 export function MMGISMapControlAdapter() {
@@ -120,7 +128,26 @@ export function MMGISMapControlAdapter() {
     // bar without it.
     const actionLink = asText(vars.actionButtonLink)
     const actionText = asText(vars.actionButtonText)
-    const actionIcon = asText(vars.actionButtonIcon)
+    // An icon may come from any of three inputs — an uploaded file, a link to
+    // one, or a named icon-font glyph — and which one a mission meant is the
+    // library's to work out. Every field goes through asText first, so a
+    // mistyped value reads as an unfilled field rather than reaching string
+    // handling as some other JSON type.
+    //
+    // Which icon-font spellings a mission may write — the full class, the
+    // mdi/js export name, the icon name on its own — is core's to decide, so
+    // the named glyph goes through the shared resolver instead of reaching the
+    // bar as a class the stylesheet may not have.
+    const actionIcon = resolveActionIcon(
+        {
+            source: asText(vars.actionButtonIconSource),
+            upload: asText(vars.actionButtonIconUpload),
+            url: asText(vars.actionButtonIconUrl),
+            mdi: asText(vars.actionButtonIconMdi),
+            legacy: asText(vars.actionButtonIcon),
+        },
+        resolveIconClass
+    )
 
     // What the link means — an external URL, a panel/plugin request, a custom
     // event — is resolveAction's business; the adapter only forwards it.
@@ -160,10 +187,11 @@ export function MMGISMapControlAdapter() {
             // A blank label leaves the prop unset so the bar applies its own
             // default text, keeping that string in one place.
             actionLabel={actionText || undefined}
-            // Leaving the icon unset when none is configured is what tells the
-            // bar it may not collapse the button down to a glyph, since there
-            // would be nothing left to identify the action by.
-            actionIcon={actionIcon || undefined}
+            // An icon nobody configured and one core cannot resolve both leave
+            // the prop unset, which is what tells the bar it may not collapse
+            // the button down to a glyph, since there would be nothing left to
+            // identify the action by.
+            actionIcon={actionIcon ?? undefined}
             onActionClick={actionLink ? handleActionClick : undefined}
             endSlot={
                 showShare ? (

@@ -148,3 +148,256 @@ describe('MMGISMapControlAdapter action button', () => {
         await unmount()
     })
 })
+
+/**
+ * The icon is configured across four fields a config author fills in by hand:
+ * a source naming which of three inputs supplies the glyph, and the three
+ * inputs themselves — an uploaded file, a link to one, and an icon-font name.
+ * A mission may also carry the single-field form, which took a font name on
+ * its own.
+ *
+ * So what matters here is which field a given combination draws from, that the
+ * font name arrives on the element as a class the stylesheet can draw (the
+ * spellings the icon set documents are not that class, and core owns the
+ * mapping), and that anything unusable leaves the button in the same state as
+ * a mission that configured no icon at all.
+ */
+describe('MMGISMapControlAdapter action button icon', () => {
+    const fontIcon = (container: HTMLElement) =>
+        container.querySelector('.blocks-map-control__btn--action i')
+
+    const imageIcon = (container: HTMLElement) =>
+        container.querySelector<HTMLElement>(
+            '.blocks-map-control__btn-icon--image',
+        )
+
+    const anyIcon = (container: HTMLElement) =>
+        container.querySelector('.blocks-map-control__btn-icon')
+
+    const isCollapsible = (container: HTMLElement) =>
+        actionButton(container)?.classList.contains(
+            'blocks-map-control__btn--collapsible',
+        )
+
+    test('draws the uploaded file the source names', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconSource: 'upload',
+            actionButtonIconUpload: 'Missions/Test/MapControl/glyph.svg',
+            actionButtonIconUrl: 'https://example.com/other.svg',
+            actionButtonIconMdi: 'poll',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(imageIcon(container)?.style.maskImage).toBe(
+            'url("Missions/Test/MapControl/glyph.svg")',
+        )
+        expect(fontIcon(container)).toBeNull()
+
+        await unmount()
+    })
+
+    test('draws the linked file the source names', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconSource: 'link',
+            actionButtonIconUpload: 'Missions/Test/MapControl/glyph.svg',
+            actionButtonIconUrl: 'https://example.com/other.svg',
+            actionButtonIconMdi: 'poll',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(imageIcon(container)?.style.maskImage).toBe(
+            'url("https://example.com/other.svg")',
+        )
+
+        await unmount()
+    })
+
+    test('draws the icon-set export name as the class the stylesheet uses', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconSource: 'mdi',
+            actionButtonIconMdi: 'mdiPoll',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(fontIcon(container)?.getAttribute('class')).toBe(
+            'mdi mdi-poll blocks-map-control__btn-icon',
+        )
+
+        await unmount()
+    })
+
+    test('leaves a full class untouched', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconSource: 'mdi',
+            actionButtonIconMdi: 'mdi mdi-poll',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(fontIcon(container)?.getAttribute('class')).toBe(
+            'mdi mdi-poll blocks-map-control__btn-icon',
+        )
+
+        await unmount()
+    })
+
+    test('falls back to the field that is filled when the source names an empty one', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconSource: 'upload',
+            actionButtonIconMdi: 'poll',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        // A half-finished configuration draws the icon it visibly has rather
+        // than nothing at all.
+        expect(fontIcon(container)?.getAttribute('class')).toBe(
+            'mdi mdi-poll blocks-map-control__btn-icon',
+        )
+
+        await unmount()
+    })
+
+    test('draws the only filled field when no source is named', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconUrl: 'https://example.com/glyph.png',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(imageIcon(container)?.style.maskImage).toBe(
+            'url("https://example.com/glyph.png")',
+        )
+
+        await unmount()
+    })
+
+    test('draws the single-field form as an icon-font glyph', async () => {
+        withVars({ actionButtonLink: LINK, actionButtonIcon: 'mdiPoll' })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        // A mission carrying only the older field names a font glyph there —
+        // the value holds no path and no scheme — and keeps drawing it.
+        expect(fontIcon(container)?.getAttribute('class')).toBe(
+            'mdi mdi-poll blocks-map-control__btn-icon',
+        )
+
+        await unmount()
+    })
+
+    test('draws a single-field form holding a path as an image', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIcon: 'Missions/Test/glyph.svg',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(imageIcon(container)?.style.maskImage).toBe(
+            'url("Missions/Test/glyph.svg")',
+        )
+
+        await unmount()
+    })
+
+    test('prefers the named fields over the single-field form', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIcon: 'mdiPoll',
+            actionButtonIconSource: 'mdi',
+            actionButtonIconMdi: 'chart-box',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(fontIcon(container)?.getAttribute('class')).toBe(
+            'mdi mdi-chart-box blocks-map-control__btn-icon',
+        )
+
+        await unmount()
+    })
+
+    test('collapses to the glyph only once an icon resolves', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconSource: 'mdi',
+            actionButtonIconMdi: 'mdiPoll',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(isCollapsible(container)).toBe(true)
+
+        await unmount()
+    })
+
+    test('collapses to an uploaded glyph just as it does to a font one', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconSource: 'upload',
+            actionButtonIconUpload: 'Missions/Test/MapControl/glyph.svg',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(isCollapsible(container)).toBe(true)
+
+        await unmount()
+    })
+
+    test('renders no icon, and no collapsing, for a value naming no icon', async () => {
+        withVars({
+            actionButtonLink: LINK,
+            actionButtonIconSource: 'mdi',
+            actionButtonIconMdi: 'Not An Icon',
+        })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(anyIcon(container)).toBeNull()
+        // Hiding the label at narrow widths is only safe when a glyph is left
+        // to name the button, so an unusable icon has to read as no icon.
+        expect(isCollapsible(container)).toBe(false)
+
+        await unmount()
+    })
+
+    test('renders no icon, and no collapsing, for a mission that configures none', async () => {
+        withVars({ actionButtonLink: LINK })
+        const { container, unmount } = await mount(<MMGISMapControlAdapter />)
+
+        expect(anyIcon(container)).toBeNull()
+        expect(isCollapsible(container)).toBe(false)
+
+        await unmount()
+    })
+
+    describe.each([
+        ['a boolean', true],
+        ['a number', 7],
+        ['an object', { src: 'glyph.svg' }],
+        ['null', null],
+        ['an array', ['glyph.svg']],
+    ])('icon fields configured as %s', (_label, value) => {
+        test('render the bar without an icon, and do not throw', async () => {
+            withVars({
+                actionButtonLink: LINK,
+                actionButtonIconSource: value,
+                actionButtonIconUpload: value,
+                actionButtonIconUrl: value,
+                actionButtonIconMdi: value,
+                actionButtonIcon: value,
+            })
+
+            const mounted = await mount(<MMGISMapControlAdapter />)
+
+            // The bar itself survives — the point of the guard, since a throw
+            // here would leave the mission with no map controls at all.
+            expect(
+                mounted.container.querySelector('.blocks-map-control__bar'),
+            ).not.toBeNull()
+            expect(anyIcon(mounted.container)).toBeNull()
+            expect(isCollapsible(mounted.container)).toBe(false)
+
+            await mounted.unmount()
+        })
+    })
+})
