@@ -518,7 +518,17 @@ var mmgisAPI_ = {
                 await L_.toggleLayer(L_.layers.data[layerName])
             } else {
                 let state = !on
-                await L_.toggleLayerHelper(L_.layers.data[layerName], state)
+                try {
+                    await L_.toggleLayerHelper(
+                        L_.layers.data[layerName],
+                        state
+                    )
+                } catch (e) {
+                    console.error(
+                        `ERROR - mmgisAPI.toggleLayer: Failed to make layer ${layerName}`,
+                        e
+                    )
+                }
             }
 
             if (ToolController_.activeToolName === 'LayersTool') {

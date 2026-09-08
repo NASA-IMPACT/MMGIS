@@ -761,13 +761,19 @@ const L_ = {
         if (L_.layers.on[s.name] === true) on = true
         else on = false
 
-        await L_.toggleLayerHelper(
-            s,
-            on,
-            ignoreToggleStateChange,
-            null,
-            skipOrderedBringToFront
-        )
+        try {
+            await L_.toggleLayerHelper(
+                s,
+                on,
+                ignoreToggleStateChange,
+                null,
+                skipOrderedBringToFront
+            )
+        } catch (e) {
+            // toggleLayerHelper already logged the specific failure; don't
+            // tell subscribers the toggle succeeded when the layer never built
+            return
+        }
 
         Object.keys(L_._onLayerToggleSubscriptions).forEach((k) => {
             L_._onLayerToggleSubscriptions[k](s.name, !on)
@@ -1020,7 +1026,9 @@ const L_ = {
                             `ERROR - toggleLayerHelper: Failed to make layer ${s.display_name}/${s.name}`,
                             e
                         )
-                        return
+                        // rethrow: toggleLayer must not report this toggle as
+                        // successful to its subscribers when the layer never built
+                        throw e
                     }
                     Description.updateInfo()
                     L_.Map_.engine.addLayer(
@@ -1043,7 +1051,10 @@ const L_ = {
                                 `ERROR - toggleLayerHelper: Failed to make layer ${s.display_name}/${s.name}`,
                                 e
                             )
-                            return
+                            // rethrow: toggleLayer must not report this toggle
+                            // as successful to its subscribers when the layer
+                            // never built
+                            throw e
                         }
                         Description.updateInfo()
                         hadToMake = true
@@ -1597,7 +1608,15 @@ const L_ = {
         })
 
         if (initialOn) {
-            L_.toggleLayerHelper(L_.layers.data[layer._layerName], false)
+            L_.toggleLayerHelper(
+                L_.layers.data[layer._layerName],
+                false
+            ).catch((e) => {
+                console.error(
+                    `ERROR - addGeoJSONData: Failed to make layer ${layer._layerName}`,
+                    e
+                )
+            })
             L_.layers.on[layer._layerName] = true
         }
         //L_.syncSublayerData(layer._layerName)
@@ -3442,7 +3461,15 @@ const L_ = {
 
                 const initialOn = L_.layers.on[layerName]
                 if (initialOn) {
-                    L_.toggleLayerHelper(L_.layers.data[layerName], false)
+                    L_.toggleLayerHelper(
+                        L_.layers.data[layerName],
+                        false
+                    ).catch((e) => {
+                        console.error(
+                            `ERROR - appendLineString: Failed to make layer ${layerName}`,
+                            e
+                        )
+                    })
                     L_.layers.on[layerName] = true
                 }
 
@@ -3614,7 +3641,16 @@ const L_ = {
                 await L_.toggleLayerHelper(s, true, true, true)
                 // Toggle the layer so its drawn in the globe
                 // turn on
-                if (!onlyClear) await L_.toggleLayerHelper(s, false, true, true)
+                if (!onlyClear) {
+                    try {
+                        await L_.toggleLayerHelper(s, false, true, true)
+                    } catch (e) {
+                        console.error(
+                            `ERROR - globeLithoLayerHelper: Failed to make layer ${s.display_name}/${s.name}`,
+                            e
+                        )
+                    }
+                }
             }
         }
     },

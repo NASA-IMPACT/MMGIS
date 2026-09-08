@@ -760,6 +760,7 @@ let Map_ = {
                 // Original
                 if (L_._layersBeingMade[layerObj.name] !== true) {
                     // makeLayer now handles all layer swapping internally for refresh operations
+                    const wasOn = L_.layers.on[layerObj.name]
                     L_.layers.on[layerObj.name] = true
                     try {
                         await makeLayer(
@@ -776,6 +777,9 @@ let Map_ = {
                             `ERROR - refreshLayer: Failed to make layer ${layerObj.display_name}/${layerObj.name}`,
                             e
                         )
+                        // the layer never actually built, so don't leave it
+                        // marked on
+                        L_.layers.on[layerObj.name] = wasOn
                         if (typeof cb === 'function') cb()
                         return false
                     }
