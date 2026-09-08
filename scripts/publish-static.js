@@ -24,7 +24,13 @@
  * mission's assets from the shared admin bucket → upload the bundle → mark
  * the row `published`.
  * Any failure marks the row `failed` with last_error. Both terminal writes
- * skip a row a Delete has already claimed.
+ * skip a row a Delete has already claimed, and a task that finds its row
+ * already claimed by a Delete when it starts stops before touching AWS.
+ *
+ * On ECS the task first records its own ARN on the row (from the container
+ * metadata endpoint ECS injects as ECS_CONTAINER_METADATA_URI_V4), so the
+ * admin can ask ECS whether it is still alive; a local run has no such
+ * endpoint and skips the step.
  */
 
 require("dotenv").config();
@@ -106,6 +112,28 @@ async function buildBakedConfig(mission) {
   };
 }
 
+// Records this task's own ECS task ARN on the row, so a row whose task dies
+// before its terminal write can still be reconciled against ECS. The admin
+// that started the task records the ARN too; this write covers the window
+// before that one lands and the case where it never does. Best-effort: a
+// failure here only logs, a metadata endpoint that does not answer within
+// five seconds counts as one, and a run outside ECS (no endpoint) skips it.
+async function registerOwnTaskArn(Deployments, deploymentId) {
+  const metadataUri = process.env.ECS_CONTAINER_METADATA_URI_V4;
+  if (metadataUri == null || metadataUri === "") return;
+  try {
+    const resp = await fetch(`${metadataUri}/task`, {
+      signal: AbortSignal.timeout(5000),
+    });
+    const taskArn = (await resp.json()).TaskARN;
+    if (taskArn == null) throw new Error("task metadata carries no TaskARN");
+    await Deployments.recordPublishTaskArn(deploymentId, taskArn);
+    log(`Registered this task as ${taskArn}.`);
+  } catch (err) {
+    log(`Could not register this task's ARN (${err.message}); continuing.`);
+  }
+}
+
 async function main() {
   if (DEPLOYMENT_ID == null || DEPLOYMENT_ID === "")
     throw new Error("MMGIS_DEPLOYMENT_ID is required (env or first argument)");
@@ -116,6 +144,8 @@ async function main() {
   const deployment = await Deployments.findByPk(DEPLOYMENT_ID);
   if (deployment == null)
     throw new Error(`Deployment row ${DEPLOYMENT_ID} not found`);
+
+  await registerOwnTaskArn(Deployments, deployment.id);
 
   // Scopes this task's terminal writes to a row the delete flow has not
   // claimed. A Delete raised while this task runs moves the row to `deleting`
@@ -132,6 +162,18 @@ async function main() {
   });
 
   try {
+    // A Delete raised between the admin's request and this task's first
+    // line has already claimed the row and is tearing its stack down; this
+    // task must not create or converge a stack behind it.
+    await deployment.reload();
+    if (
+      deployment.status === Deployments.STATUS.DELETING ||
+      deployment.status === Deployments.STATUS.DELETED
+    )
+      throw new Error(
+        `Deployment row ${deployment.id} is ${deployment.status}, not publishing`
+      );
+
     const mission = deployment.mission;
     const stackName =
       deployment.stack_name || stackNameForDeployment(deployment.id);

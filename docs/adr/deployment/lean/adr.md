@@ -103,6 +103,8 @@ Publish, Update, and Delete actions live on a new Deployments page in `/configur
 
 **Live state:** `GET /api/deployments*` joins each row's `stack_arn` with `DescribeStacks`. The row holds identity (id, mission, owner, stack ARN); CFN holds status. No reconcile job.
 
+**Admin lock:** the routes remember each publish task's ECS task ARN on the row (`settings.publish_task_arn`; the task also registers its own at startup from the container metadata endpoint), and every read asks ECS `DescribeTasks` whether an in-flight row's task is still alive. Update is one compare-and-set to `updating` that only succeeds from `published` or `failed`; otherwise it is refused with a 409 whose body names the reason (`in_progress`, `deleting`, `deleted`) in words the admin sees. Delete is refused only while the task is confirmed alive, so a row ECS cannot vouch for can still be cleared; a task that starts to find its row already claimed by a Delete stops before touching AWS. Publish refuses a second dashboard for a mission unless the request is forced, which the Deployments page does only after a confirmation. A task ECS reports as stopped or missing flips its row to `failed` with the stop reason on that same read; nothing else ever manufactures a `failed` row. The admin task role holds `ecs:DescribeTasks` scoped to the environment's cluster for this, alongside `RunTask`; the check fails open, so a denied call leaves the row in flight and reported to the page as `unknown`.
+
 ### What dashboards read at runtime
 
 - **Mission config** — JS module generated at publish time, imported by the bundle.

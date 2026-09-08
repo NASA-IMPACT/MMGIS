@@ -569,6 +569,48 @@ test.describe('infrastructure/ recipes (JSON and Terraform)', () => {
             ).toContain(`"${action}"`)
         }
     })
+
+    // The admin task starts publish tasks and then asks ECS whether they are
+    // still alive (the Deployments routes gate Update and Delete on that and
+    // reconcile a task that died before reporting). Both calls need every
+    // layer, or the page silently degrades to "unknown" for every in-flight
+    // row. Each layer pins the resource past its type: RunTask to the publish
+    // task family, and DescribeTasks to the environment's cluster (task ARNs
+    // are cluster-scoped), so a bare `task/*` in any layer fails here.
+    // [Sid shared by all three layers, action, resource fragment per layer]
+    const ADMIN_ECS_GRANTS = [
+        ['RunPublishTask', 'ecs:RunTask', {
+            recipe: ':task-definition/mmgis-publish:',
+            module: ':task-definition/${local.publish_family}:',
+            boundary: ':task-definition/mmgis-${each.key}',
+        }],
+        ['DescribePublishTasks', 'ecs:DescribeTasks', {
+            recipe: ':task/<ECS_CLUSTER_NAME>/',
+            module: ':task/${local.cluster_name}/',
+            boundary: ':task/mmgis-${each.key}*/',
+        }],
+    ]
+
+    test('every IAM layer grants the admin task its ECS actions on a pinned resource', () => {
+        const adminRole = readJson('iam/admin-task-role.json')
+        const iamTf = readTfModuleFile('iam.tf')
+        const boundary = fs.readFileSync(
+            path.join(INFRA, 'terraform', 'bootstrap', 'boundary.tf'),
+            'utf8'
+        )
+        for (const [sid, action, pinned] of ADMIN_ECS_GRANTS) {
+            const statement = statementBySid(adminRole, sid)
+            expect(statement.Action, `admin task role '${sid}' allows ${action}`).toContain(action)
+            for (const resource of collectResources(statement))
+                expect(resource, `admin task role '${sid}' resource`).toContain(pinned.recipe)
+            const moduleStatement = sliceTerraformStatement(iamTf, sid)
+            expect(moduleStatement, `terraform module '${sid}' allows ${action}`).toContain(`"${action}"`)
+            expect(moduleStatement, `terraform module '${sid}' resource`).toContain(pinned.module)
+            const boundaryStatement = sliceTerraformStatement(boundary, sid)
+            expect(boundaryStatement, `boundary '${sid}' caps ${action}`).toContain(`"${action}"`)
+            expect(boundaryStatement, `boundary '${sid}' resource`).toContain(pinned.boundary)
+        }
+    })
 })
 
 test.describe('dashboard CloudFront Function behavior', () => {

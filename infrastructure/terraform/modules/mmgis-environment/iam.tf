@@ -99,7 +99,7 @@ resource "aws_iam_role_policy" "admin_exec" {
 # ── Admin task role (runtime container code) ──
 resource "aws_iam_role" "admin_task" {
   name                 = "${local.name_prefix}-admin-task"
-  description          = "Runtime role for the ${local.admin_family} container: RunTask + PassRole of the publish roles, dashboard stack read/delete + teardown, admin asset upload. Lean deployment only."
+  description          = "Runtime role for the ${local.admin_family} container: RunTask + PassRole of the publish roles, DescribeTasks on the cluster's publish tasks, dashboard stack read/delete + teardown, admin asset upload. Lean deployment only."
   assume_role_policy   = local.ecs_tasks_assume_role
   permissions_boundary = var.permissions_boundary
 }
@@ -115,6 +115,16 @@ resource "aws_iam_role_policy" "admin_task" {
         Effect   = "Allow"
         Action   = ["ecs:RunTask"]
         Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task-definition/${local.publish_family}:*"
+      },
+      {
+        # The Deployments backend asks ECS whether a publish task it started
+        # is still alive: that answer gates Update and Delete on the row and
+        # reconciles a task that died before reporting. Task ARNs are
+        # cluster-scoped, so the grant pins this environment's cluster.
+        Sid      = "DescribePublishTasks"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTasks"]
+        Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task/${local.cluster_name}/*"
       },
       {
         # Because the admin calls RunTask and hands the publish task its two
