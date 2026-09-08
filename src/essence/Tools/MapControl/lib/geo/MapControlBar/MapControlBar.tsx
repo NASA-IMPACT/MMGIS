@@ -35,9 +35,30 @@ export type MapControlBarProps = {
     // Geocode search
     onSearchSelect?: (result: GeocodeResult) => void
 
+    // Action button
     /**
-     * Optional element rendered at the right end of the bar (e.g. a share
-     * control). The bar only places it; look and behavior belong to the host.
+     * Label rendered inside the action button. It doubles as the button's
+     * tooltip and accessible name, so it should read as the action itself.
+     */
+    actionLabel?: string
+    /**
+     * Optional mdi class string for a glyph shown ahead of the label (e.g.
+     * 'mdi mdi-chart-box mdi-18px'). An icon is also what lets the button
+     * collapse to glyph-only when the bar runs out of room; without one the
+     * label always stays visible.
+     */
+    actionIcon?: string
+    /**
+     * Invoked when the action button is clicked. Supplying it is what makes the
+     * button render, matching how the bar gates its other features on the host
+     * providing their handlers. What the action does belongs to the host.
+     */
+    onActionClick?: () => void
+
+    /**
+     * Optional element rendered after the bar's built-in controls and before
+     * the action button (e.g. a share control). The bar only places it; look
+     * and behavior belong to the host.
      */
     endSlot?: React.ReactNode
 }
@@ -55,6 +76,9 @@ export function MapControlBar({
     onRemoveMeasureLabel,
     onSetCursor,
     onSearchSelect,
+    actionLabel = 'Analyze area',
+    actionIcon,
+    onActionClick,
     endSlot,
 }: MapControlBarProps) {
     const searchBtnRef = useRef<HTMLButtonElement>(null)
@@ -176,6 +200,34 @@ export function MapControlBar({
                     </div>
                 )}
                 {endSlot}
+                {/* Built from the same __group and __btn classes as the icon
+                    buttons, so it sits in the row at their height and box. The
+                    --wide and --action modifiers relax the square icon sizing
+                    to fit a text label and fill the button in the theme's
+                    primary, which restates the color treatment the icon
+                    buttons take from __btn.
+
+                    --collapsible is only applied when there is an icon to fall
+                    back to: it opts the button into the stylesheet rule that
+                    hides the label at narrow widths, which would otherwise
+                    leave an empty box. aria-label repeats the visible text so
+                    the button keeps its accessible name once that rule hides
+                    the label; it matches the text exactly, so it never
+                    disagrees with what is on screen. */}
+                {onActionClick && (
+                    <div className="blocks-map-control__group blocks-map-control__group--wide">
+                        <button
+                            type="button"
+                            className={`blocks-map-control__btn blocks-map-control__btn--action${actionIcon ? ' blocks-map-control__btn--collapsible' : ''}`}
+                            onClick={onActionClick}
+                            title={actionLabel}
+                            aria-label={actionLabel}
+                        >
+                            {actionIcon && <i className={actionIcon} aria-hidden="true" />}
+                            <span className="blocks-map-control__btn-label">{actionLabel}</span>
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Portaled to <body> so the panel clears the floating panel card

@@ -23,6 +23,15 @@
     flex-direction: column;
     align-items: flex-end;
     width: 100%;
+    /* The query container the bar's collapse rule measures against. The bar
+       lives in a resizable floating panel, so the viewport is the wrong
+       signal — what the row has to fit into is this element, which spans the
+       panel's tool card. Inline-size containment is safe here: the width comes
+       from the parent rather than from the contents, and every popover and
+       dropdown opened from inside the bar is portaled to the body, so the
+       containing block this establishes for fixed descendants holds nothing. */
+    container-type: inline-size;
+    container-name: map-control;
     pointer-events: auto;
     font-family: var(--theme-font-ui, 'Inter Variable', 'Helvetica Neue', sans-serif);
 
@@ -37,7 +46,9 @@
     }
 
     /* Groups grow by one unit per button they hold, so every button in the bar
-       widens at the same rate and they all stay equal to each other. */
+       widens at the same rate and they all stay equal to each other. The one
+       exception is the --wide slot, which is meant to take the row's free
+       width rather than share it; it states why below. */
     &__group {
         display: flex;
         flex-direction: row;
@@ -49,6 +60,33 @@
 
         &--pair {
             flex-grow: 2;
+        }
+
+        /* The slot holding the bar's labelled action button. Its grow factor
+           dwarfs the sum of every other group's — the icon groups and the zoom
+           pair come to six units — so it takes all but a few percent of the
+           row's free width and the icon buttons sit at their 36px floor. The
+           ratio, rather than a modifier on the bar, is what carries the
+           arrangement: a bar configured without the action button holds no
+           --wide group, and the icon groups divide the slack evenly again with
+           no other rule needing to know. The same holds line by line once the
+           bar wraps, which a bar-level rule could not express — the icon groups
+           on a line the action button did not land on still fill that line.
+           The few percent the icon groups keep is what leaves them growing.
+
+           max-width holds the slot inside the bar. Its basis is its button's
+           content and the slot does not shrink below it, so a long configured
+           label would otherwise give the slot a hypothetical width past the
+           bar's own — which wrapping cannot rescue, since a line holding one
+           un-shrinkable item overflows it — and the panel's card would clip the
+           row. Clamped, the button shrinks and its label ellipses instead.
+
+           The white the other groups paint is left to the button here: it would
+           otherwise show at the corners of the button's rounded primary fill. */
+        &--wide {
+            flex-grow: 100;
+            max-width: 100%;
+            background: transparent;
         }
     }
 
@@ -94,22 +132,91 @@
         }
     }
 
+    /* The bar's labelled action button, filled in the theme's primary so it
+       reads as the row's one call to action rather than another glyph. Because
+       the fill occupies the surface &__btn's states tint, this restates the
+       whole color treatment — resting, hover, active and the focus ring. Each
+       restatement matches the specificity of the &__btn rule it stands in for
+       and is written after it, so source order is what carries them.
+
+       Content-sized rather than square: the basis follows the label while the
+       36px floor and the row's 36px height stay as &__btn states them, so a
+       one-glyph label still fills a box the size of the bar's icon buttons and
+       the control sits in the row rather than standing above it. It shrinks,
+       so the clamp on the slot around it reaches the label. */
+    &__btn--action {
+        flex-basis: auto;
+        flex-shrink: 1;
+        gap: var(--theme-spacing-1, 0.5rem);
+        padding: 0 var(--theme-spacing-105, 0.75rem);
+        border-radius: var(--theme-radius-sm, 2px);
+        background: var(--theme-color-primary, #1c67e3);
+        color: var(--theme-color-white, #ffffff);
+        /* A button does not inherit the bar's font family on its own, so the
+           label would otherwise render in the UA's default face. */
+        font-family: inherit;
+        font-size: var(--theme-font-size-2xs, 0.87rem);
+        font-weight: var(--theme-font-weight-bold, 700);
+        line-height: var(--theme-line-height-1, 1);
+        /* Holds the label on one line: a wrapped label would push past the
+           36px box, and the bar wraps the whole group instead. */
+        white-space: nowrap;
+
+        &:hover {
+            background: var(--theme-color-primary-dark, #0b3d91);
+            color: var(--theme-color-white, #ffffff);
+        }
+
+        &:active {
+            background: var(--theme-color-primary-darker, #082c6b);
+        }
+
+        /* The bar's ring is the primary color, which is the color this button
+           is filled with and so invisible on it; the ring is drawn in white and
+           inset over the fill instead. --theme-color-accent-cool is no
+           alternative — it resolves to the primary color as well. */
+        &:focus-visible {
+            outline: var(--theme-border-width-md, 2px) solid var(--theme-color-white, #ffffff);
+            outline-offset: -2px;
+        }
+    }
+
+    /* The action button's text. It ellipses rather than holding its full width,
+       so a long configured label narrows the button — down to the floor the
+       slot's clamp drives it to — instead of pushing the row past the bar. */
+    &__btn-label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     &__divider {
         flex: 0 0 1px;
         height: 24px;
         background: var(--theme-color-base-lighter, #e3e3e3);
     }
 
-    // The hosted share control ("Share map") in the bar's end slot. Its colors,
-    // square corners and interaction states come from the component's own
-    // tokens, which resolve to the same theme values the bar uses; the boxed
-    // chrome and the control's geometry are the bar's to state.
+    // The hosted share control's slot in the bar, drawn as a bare glyph so it
+    // reads as one of the bar's icon buttons. Its colors, square corners and
+    // interaction states come from the component's own tokens, which resolve to
+    // the same theme values the bar uses; the boxed chrome and the control's
+    // geometry are the bar's to state.
     &__share {
         display: flex;
         align-items: center;
-        /* Grows at the rate of a two-button group, and never shrinks below its
-           label, so a row too narrow to hold it sends it to the next one. */
-        flex: 2 0 auto;
+        /* An icon slot, sized like a single-button &__group: it grows by the
+           same one unit, so its glyph stays equal to every other icon button in
+           the bar, and it never shrinks, so a row too narrow to hold it sends
+           it to the next one.
+
+           The cap is for the case where that next row holds nothing else: a
+           lone item on a flex line takes the whole line, drawing this slot as a
+           bar-wide white box behind a single 16px glyph. A slot sharing its
+           line with others stays under half the bar — its grown width is under
+           a whole line divided by the number of groups on it — so the cap binds
+           in the lone case alone and leaves every other row untouched. */
+        flex: 1 0 auto;
+        max-width: 50%;
         background: var(--theme-color-white, #ffffff);
         border-radius: var(--theme-radius-0, 0);
 
@@ -118,12 +225,45 @@
             width: 100%;
         }
 
+        /* The trigger spans the slot and carries the bar's 36px button floor.
+           The floor sits here rather than on the slot for the reason &__btn
+           gives: the slot is measured from the trigger's content, and a 16px
+           glyph alone would size it below the bar's other icon buttons. */
         &.shareExport-tool-host .share-menu__trigger {
             width: 100%;
+            min-width: 36px;
             height: 36px;
             justify-content: center;
-            font-size: var(--theme-font-size-2xs, 0.88rem);
         }
     }
 
+    /* Below this width the row has no room left for the action button's label,
+       so a button the mission gave an icon drops to that glyph and the row
+       stays on one line instead of wrapping. The threshold is read off the
+       fullest bar: six 36px icon buttons, the zoom pair's 1px divider and the
+       five 4px gaps between the six groups come to 237px, and a two-word label
+       with its glyph and padding needs about 135px beside them, so the label
+       runs out of room around 372px; the value is rounded up from there for
+       slack. It stays a heuristic — each of the bar's controls is
+       independently configurable, so the icon count varies, and the label's
+       length is the mission's to choose. */
+    @container map-control (max-width: 380px) {
+        /* A button configured without an icon has nothing to collapse to and
+           carries no --collapsible, so its slot keeps the wide grow factor and
+           its label. */
+        &__group--wide:has(&__btn--collapsible) {
+            flex-grow: 1;
+        }
+
+        /* A square box holding the glyph, which the centering &__btn already
+           states puts in the middle of it. */
+        &__btn--collapsible {
+            flex-basis: 36px;
+            padding: 0;
+        }
+
+        &__btn--collapsible &__btn-label {
+            display: none;
+        }
+    }
 }
