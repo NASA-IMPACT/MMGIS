@@ -71,6 +71,8 @@ export function geometryBounds(
     if (geometry == null) return null
     try {
         const [west, south, east, north] = turf.bbox(geometry as turf.helpers.Geometry)
+        // turf seeds with infinities and returns them unchanged for a geometry with no coordinates.
+        if (![west, south, east, north].every(Number.isFinite)) return null
         return [[south, west], [north, east]]
     } catch {
         return null
