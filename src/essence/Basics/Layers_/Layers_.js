@@ -1013,7 +1013,15 @@ const L_ = {
                     if (['streamlines', 'particles'].includes(s.kind)) {
                         L_.Map_.rmNotNull(L_.layers.layer[s.name])
                     }
-                    await L_.Map_.makeLayer(s, true, null, null, true)
+                    try {
+                        await L_.Map_.makeLayer(s, true, null, null, true)
+                    } catch (e) {
+                        console.error(
+                            `ERROR - toggleLayerHelper: Failed to make layer ${s.display_name}/${s.name}`,
+                            e
+                        )
+                        return
+                    }
                     Description.updateInfo()
                     L_.Map_.engine.addLayer(
                         L_.Map_.nativeLayer(L_.layers.layer[s.name])
@@ -1028,7 +1036,15 @@ const L_ = {
                         L_.layers.layer[s.name] === false &&
                         globeOnly != true
                     ) {
-                        await L_.Map_.makeLayer(s, true, null, null, true)
+                        try {
+                            await L_.Map_.makeLayer(s, true, null, null, true)
+                        } catch (e) {
+                            console.error(
+                                `ERROR - toggleLayerHelper: Failed to make layer ${s.display_name}/${s.name}`,
+                                e
+                            )
+                            return
+                        }
                         Description.updateInfo()
                         hadToMake = true
                     }
@@ -1573,7 +1589,12 @@ const L_ = {
             null,
             null,
             stopLoops
-        )
+        ).catch((e) => {
+            console.error(
+                `ERROR - addGeoJSONData: Failed to make layer ${layer._layerName}`,
+                e
+            )
+        })
 
         if (initialOn) {
             L_.toggleLayerHelper(L_.layers.data[layer._layerName], false)
@@ -3665,7 +3686,15 @@ const L_ = {
 
             for (let i = 0; i < layersOrdered.length; i++) {
                 // Add layer
-                await L_.Map_.makeLayer(L_.layers.data[layersOrdered[i]])
+                try {
+                    await L_.Map_.makeLayer(L_.layers.data[layersOrdered[i]])
+                } catch (e) {
+                    console.error(
+                        `ERROR - addLayerToLayersData: Failed to make layer ${layersOrdered[i]}`,
+                        e
+                    )
+                    continue
+                }
                 L_.addVisible(L_.Map_, [layersOrdered[i]])
             }
         }
