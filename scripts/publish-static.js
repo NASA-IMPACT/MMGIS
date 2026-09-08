@@ -44,37 +44,7 @@ const { applyTimeBakeGuard } = require("./lib/bake-guards");
 const DEPLOYMENT_ID = process.env.MMGIS_DEPLOYMENT_ID || process.argv[2];
 const ACTION = process.env.MMGIS_DEPLOYMENT_ACTION || process.argv[3] || "publish";
 
-const { requireEnv } = provision;
-
-// Statuses a stack can neither be reused at nor driven forward from: it can
-// only be deleted (or, for a couple, have a rollback continued) — never
-// updated in place. Reaching one earns the actionable "delete and republish"
-// guidance BEFORE any busy classification, so a permanently-wedged stack is
-// never mistaken for one another task is merely busy updating.
-//   CREATE_FAILED / ROLLBACK_COMPLETE / ROLLBACK_IN_PROGRESS - a failed first
-//     create: CREATE_FAILED is where this code's own createStack (OnFailure:
-//     "DO_NOTHING") stops; the ROLLBACK_* pair is where an out-of-band operator
-//     create stops, and ROLLBACK_IN_PROGRESS pre-empts the ROLLBACK_COMPLETE it
-//     is on its way to.
-//   ROLLBACK_FAILED / UPDATE_ROLLBACK_FAILED / DELETE_FAILED - a rollback or a
-//     delete that itself failed; stuck until an operator intervenes.
-//   UPDATE_FAILED - where an update with rollback disabled stops; moved only by
-//     a ContinueUpdateRollback or a delete, so it can't be updated in place.
-//   DELETE_IN_PROGRESS - a teardown already under way: the bucket and
-//     distribution this run needs are on their way out, so waiting it out can
-//     only ever end at a stack that no longer exists.
-// UPDATE_ROLLBACK_COMPLETE is deliberately absent: a stack resting there has a
-// working bucket/distribution and stays reusable by a publish.
-const UNUSABLE_STACK_STATUSES = [
-  "CREATE_FAILED",
-  "ROLLBACK_COMPLETE",
-  "ROLLBACK_IN_PROGRESS",
-  "ROLLBACK_FAILED",
-  "UPDATE_ROLLBACK_FAILED",
-  "UPDATE_FAILED",
-  "DELETE_FAILED",
-  "DELETE_IN_PROGRESS",
-];
+const { requireEnv, UNUSABLE_STACK_STATUSES, unusableStackMessage } = provision;
 
 function log(message) {
   console.log(`[publish-static] ${message}`);
@@ -177,16 +147,13 @@ async function main() {
     // prior update converged it) — reuse it instead of dying on
     // CloudFormation's AlreadyExistsException.
     const existing = await provision.describeStack({ stackName });
-    // A stack in a delete-only dead-end state gets actionable guidance, never
+    // A stack in a dead-end state gets guidance matched to that state, never
     // a wait and never a busy misclassification.
     if (
       existing != null &&
       UNUSABLE_STACK_STATUSES.indexOf(existing.StackStatus) !== -1
     )
-      throw new Error(
-        `Stack '${stackName}' is in ${existing.StackStatus} and cannot be used — ` +
-          "delete the deployment and publish it again (this mints a new URL)"
-      );
+      throw new Error(unusableStackMessage(stackName, existing.StackStatus));
     if (ACTION === "update" && existing == null)
       throw new Error(
         `Stack '${stackName}' does not exist — publish before updating`

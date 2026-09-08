@@ -152,6 +152,76 @@ function settleStatusFor(stackStatus) {
   return "CREATE_COMPLETE";
 }
 
+// Statuses a stack can neither be reused at nor driven forward from: it can
+// only be deleted (or, for a couple, have a rollback continued) — never
+// updated in place. The publish task turns one away BEFORE any busy
+// classification, so a permanently-wedged stack is never mistaken for one
+// another task is merely busy updating.
+//   CREATE_FAILED / ROLLBACK_COMPLETE / ROLLBACK_IN_PROGRESS - a failed first
+//     create: CREATE_FAILED is where this code's own createStack (OnFailure:
+//     "DO_NOTHING") stops; the ROLLBACK_* pair is where an out-of-band operator
+//     create stops, and ROLLBACK_IN_PROGRESS pre-empts the ROLLBACK_COMPLETE it
+//     is on its way to.
+//   ROLLBACK_FAILED / UPDATE_ROLLBACK_FAILED / DELETE_FAILED - a rollback or a
+//     delete that itself failed; stuck until an operator intervenes.
+//   UPDATE_FAILED - where an update with rollback disabled stops; moved only by
+//     a ContinueUpdateRollback or a delete, so it can't be updated in place.
+//   DELETE_IN_PROGRESS - a teardown already under way: the bucket and
+//     distribution this run needs are on their way out, so waiting it out can
+//     only ever end at a stack that no longer exists.
+// UPDATE_ROLLBACK_COMPLETE is deliberately absent: a stack resting there has a
+// working bucket/distribution and stays reusable by a publish.
+const UNUSABLE_STACK_STATUSES = [
+  "CREATE_FAILED",
+  "ROLLBACK_COMPLETE",
+  "ROLLBACK_IN_PROGRESS",
+  "ROLLBACK_FAILED",
+  "UPDATE_ROLLBACK_FAILED",
+  "UPDATE_FAILED",
+  "DELETE_FAILED",
+  "DELETE_IN_PROGRESS",
+];
+
+// The error message for a stack found in one of UNUSABLE_STACK_STATUSES.
+// Every message starts with `Stack '<name>' is in <STATUS>`; the guidance
+// after that matches the state:
+//   UPDATE_ROLLBACK_FAILED - the dashboard was live before this republish and
+//     its URL may be hardcoded by a customer, so the console's "Continue
+//     update rollback" (which keeps the URL) comes first and a delete second.
+//   DELETE_FAILED / DELETE_IN_PROGRESS - the row is already `deleting`, so the
+//     publish task's terminal writes skip it and this text only ever reaches
+//     the task log; it is written for that reader. The Deployments page shows
+//     the live stack status, and Delete there retries.
+//   Everything else - a delete and a fresh publish is the only way forward.
+function unusableStackMessage(stackName, stackStatus) {
+  const prefix = `Stack '${stackName}' is in ${stackStatus}`;
+  switch (stackStatus) {
+    case "UPDATE_ROLLBACK_FAILED":
+      return (
+        `${prefix}: open the stack in the CloudFormation console and choose ` +
+        '"Continue update rollback"; once the stack reads ' +
+        "UPDATE_ROLLBACK_COMPLETE, republish and the URL is kept. Deleting " +
+        "the deployment and publishing it again also works but mints a new URL."
+      );
+    case "DELETE_IN_PROGRESS":
+      return (
+        `${prefix}: the deployment is being deleted, so a publish or update ` +
+        "cannot run; let the delete finish first."
+      );
+    case "DELETE_FAILED":
+      return (
+        `${prefix}: the deployment's delete failed, so a publish or update ` +
+        "cannot run; retry the delete first (the usual cause is a bucket " +
+        "that is not empty)."
+      );
+    default:
+      return (
+        `${prefix} and cannot be used — ` +
+        "delete the deployment and publish it again (this mints a new URL)"
+      );
+  }
+}
+
 // Returns the Stack object, or null when the stack does not exist. Only the
 // ValidationError that names a missing stack reads as absence; every other
 // error (credentials, network, throttling, a malformed stack name) is
@@ -243,7 +313,7 @@ async function waitForStack({
 // stands when there is nothing to update.
 //
 // Callers must first turn away the delete-only dead-end statuses (see
-// publish-static UNUSABLE_STACK_STATUSES), so an isStackBusyError here is
+// UNUSABLE_STACK_STATUSES above), so an isStackBusyError here is
 // only ever a concurrent republish. On that race we wait the other task's
 // operation out and retry our OWN UpdateStack, so this run's template — not
 // merely the winner's — converges; `maxBusyRetries` bounds the wait.
@@ -625,6 +695,8 @@ module.exports = {
   updateStack,
   isStackBusyError,
   settleStatusFor,
+  UNUSABLE_STACK_STATUSES,
+  unusableStackMessage,
   describeStack,
   waitForStack,
   convergeStackUpdate,

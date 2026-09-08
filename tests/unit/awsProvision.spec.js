@@ -22,6 +22,63 @@ function replayStacks(stacks) {
     return state
 }
 
+test.describe('unusableStackMessage', () => {
+    const generic =
+        "Stack 'mmgis-dashboard-1' is in STATUS and cannot be used — " +
+        'delete the deployment and publish it again (this mints a new URL)'
+
+    // One row per UNUSABLE_STACK_STATUSES entry: the exact text for the
+    // states whose guidance is specific, the unchanged generic text for
+    // the rest.
+    const cases = [
+        {
+            status: 'UPDATE_ROLLBACK_FAILED',
+            expected:
+                "Stack 'mmgis-dashboard-1' is in UPDATE_ROLLBACK_FAILED: open the " +
+                'stack in the CloudFormation console and choose "Continue update ' +
+                'rollback"; once the stack reads UPDATE_ROLLBACK_COMPLETE, ' +
+                'republish and the URL is kept. Deleting the deployment and ' +
+                'publishing it again also works but mints a new URL.',
+        },
+        {
+            status: 'DELETE_IN_PROGRESS',
+            expected:
+                "Stack 'mmgis-dashboard-1' is in DELETE_IN_PROGRESS: the " +
+                'deployment is being deleted, so a publish or update cannot run; ' +
+                'let the delete finish first.',
+        },
+        {
+            status: 'DELETE_FAILED',
+            expected:
+                "Stack 'mmgis-dashboard-1' is in DELETE_FAILED: the deployment's " +
+                'delete failed, so a publish or update cannot run; retry the ' +
+                'delete first (the usual cause is a bucket that is not empty).',
+        },
+        ...[
+            'CREATE_FAILED',
+            'ROLLBACK_COMPLETE',
+            'ROLLBACK_IN_PROGRESS',
+            'ROLLBACK_FAILED',
+            'UPDATE_FAILED',
+        ].map((status) => ({
+            status,
+            expected: generic.replace('STATUS', status),
+        })),
+    ]
+
+    test('covers every unusable status exactly once', () => {
+        expect(cases.map((c) => c.status).sort()).toEqual(
+            [...provision.UNUSABLE_STACK_STATUSES].sort()
+        )
+    })
+
+    test.each(cases)('$status', ({ status, expected }) => {
+        const message = provision.unusableStackMessage('mmgis-dashboard-1', status)
+        expect(message.startsWith(`Stack 'mmgis-dashboard-1' is in ${status}`)).toBe(true)
+        expect(message).toBe(expected)
+    })
+})
+
 test.describe('describeStack', () => {
     test.afterEach(() => provision.setClients(null))
 
