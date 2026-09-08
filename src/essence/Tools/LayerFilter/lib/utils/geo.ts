@@ -63,3 +63,16 @@ export function geometriesIntersect(a: unknown, b: unknown): boolean {
         return false
     }
 }
+
+/** GeoJSON geometry → [[south, west], [north, east]]; null when unmeasurable. */
+export function geometryBounds(
+    geometry: unknown,
+): [[number, number], [number, number]] | null {
+    if (geometry == null) return null
+    try {
+        const [west, south, east, north] = turf.bbox(geometry as turf.helpers.Geometry)
+        return [[south, west], [north, east]]
+    } catch {
+        return null
+    }
+}
