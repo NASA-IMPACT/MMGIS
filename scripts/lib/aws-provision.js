@@ -3,7 +3,7 @@
  * Thin wrappers over the @aws-sdk v3 clients used by the Deployments
  * publish flow: CloudFormation stack lifecycle, S3 bundle upload /
  * asset copy / bucket emptying, and the ECS RunTask that starts the
- * publish task.
+ * publish task plus the DescribeTasks that reports whether it is still alive.
  *
  * Clients are created lazily (first call) and can be injected with
  * setClients() so unit tests never touch real AWS.
@@ -26,7 +26,11 @@ const {
   ListObjectsV2Command,
   DeleteObjectsCommand,
 } = require("@aws-sdk/client-s3");
-const { ECSClient, RunTaskCommand } = require("@aws-sdk/client-ecs");
+const {
+  ECSClient,
+  RunTaskCommand,
+  DescribeTasksCommand,
+} = require("@aws-sdk/client-ecs");
 const {
   CloudFrontClient,
   CreateInvalidationCommand,
@@ -654,6 +658,9 @@ async function runPublishTask({ deploymentId, action }) {
     new RunTaskCommand({
       cluster,
       taskDefinition,
+      // The SDK reuses the same input on retry, so ECS returns the
+      // already-started task instead of starting a second one.
+      clientToken: `${deploymentId}-${action}-${Date.now()}`,
       launchType: "FARGATE",
       count: 1,
       networkConfiguration: {
@@ -688,6 +695,75 @@ async function runPublishTask({ deploymentId, action }) {
   return (resp.tasks && resp.tasks[0] && resp.tasks[0].taskArn) || null;
 }
 
+// Publish task liveness as reported by ECS DescribeTasks.
+const TASK_STATE = Object.freeze({
+  ALIVE: "alive",
+  STOPPED: "stopped",
+  MISSING: "missing",
+});
+
+// What ECS knows about how a stopped task ended, as one line: the stop
+// reason and code, then the first container's exit code and reason.
+function stoppedTaskDetail(task) {
+  const parts = [];
+  if (task.stoppedReason) parts.push(task.stoppedReason);
+  if (task.stopCode) parts.push(task.stopCode);
+  const container = (task.containers || [])[0];
+  if (container != null) {
+    if (container.exitCode != null) parts.push(`exit code ${container.exitCode}`);
+    if (container.reason) parts.push(container.reason);
+  }
+  return parts.length > 0 ? parts.join("; ") : "no stop reason reported";
+}
+
+// The cluster a task ARN belongs to. A task ARN is
+// `arn:aws:ecs:<region>:<account>:task/<cluster>/<id>`, and the task can only
+// be described in that cluster; MMGIS_PUBLISH_ECS_CLUSTER stands in for the
+// older `task/<id>` form, which names none.
+function clusterOfTaskArn(taskArn) {
+  const parts = taskArn.split("/");
+  return parts.length >= 3 ? parts[1] : requireEnv("MMGIS_PUBLISH_ECS_CLUSTER");
+}
+
+// Reads the live state of a publish task started by runPublishTask, keyed by
+// the ARN it returned. Resolves { state, detail }:
+//   alive   - any lastStatus other than STOPPED (PROVISIONING, PENDING,
+//             ACTIVATING, RUNNING, DEACTIVATING, STOPPING, DEPROVISIONING);
+//             detail is that status.
+//   stopped - the task has exited; detail says how (stoppedTaskDetail).
+//   missing - ECS no longer has a record of the task. ECS forgets a stopped
+//             task about an hour after it stops and reports that as a
+//             failures[] entry with reason MISSING, not as an error.
+// Every other outcome (credentials, network, a denied DescribeTasks, a
+// failure with another reason) throws, so a caller can tell an answered
+// question from an unanswered one.
+async function describePublishTask({ taskArn }) {
+  const cluster = clusterOfTaskArn(taskArn);
+  const { ecs } = getClients();
+  const resp = await ecs.send(
+    new DescribeTasksCommand({ cluster, tasks: [taskArn] })
+  );
+  const task = (resp.tasks || [])[0];
+  if (task == null) {
+    const failure = (resp.failures || [])[0];
+    if (failure != null && failure.reason === "MISSING")
+      return {
+        state: TASK_STATE.MISSING,
+        detail: "ECS no longer has a record of the task",
+      };
+    throw new Error(
+      `ECS DescribeTasks failed: ${
+        failure != null
+          ? `${failure.reason || "unknown"}${failure.detail ? ` (${failure.detail})` : ""}`
+          : "no task in the response"
+      }`
+    );
+  }
+  if (task.lastStatus !== "STOPPED")
+    return { state: TASK_STATE.ALIVE, detail: task.lastStatus };
+  return { state: TASK_STATE.STOPPED, detail: stoppedTaskDetail(task) };
+}
+
 module.exports = {
   getClients,
   setClients,
@@ -711,4 +787,6 @@ module.exports = {
   emptyBucket,
   requireEnv,
   runPublishTask,
+  TASK_STATE,
+  describePublishTask,
 };

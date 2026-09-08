@@ -86,6 +86,15 @@ resource "aws_iam_policy" "ci_role_boundary" {
         Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task-definition/mmgis-${each.key}*"
       },
       {
+        # The admin task reads whether a publish task it started is still
+        # alive. Task ARNs are scoped by cluster; no separator before the * so
+        # the development-scratch cluster also matches.
+        Sid      = "DescribePublishTasks"
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTasks"]
+        Resource = "arn:aws:ecs:${local.region}:${local.account_id}:task/mmgis-${each.key}*/*"
+      },
+      {
         # Without it the admin task's RunTask fails with an AccessDenied that
         # never mentions PassRole.
         Sid      = "PassRuntimeRolesToEcs"

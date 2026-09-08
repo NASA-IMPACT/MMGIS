@@ -982,6 +982,9 @@ test.describe('runPublishTask', () => {
         const env = input.overrides.containerOverrides[0].environment
         expect(env).toContainEqual({ name: 'MMGIS_DEPLOYMENT_ID', value: '7' })
         expect(env).toContainEqual({ name: 'MMGIS_DEPLOYMENT_ACTION', value: 'update' })
+        // Dedupes SDK retries of one RunTask; unique per launch attempt.
+        expect(typeof input.clientToken).toBe('string')
+        expect(input.clientToken).toMatch(/^7-update-/)
     })
 
     test('throws when RunTask reports failures', async () => {
@@ -999,5 +1002,128 @@ test.describe('runPublishTask', () => {
         await expect(
             provision.runPublishTask({ deploymentId: 7, action: 'publish' })
         ).rejects.toThrow(/RESOURCE:MEMORY/)
+    })
+})
+
+test.describe('describePublishTask', () => {
+    const TASK_ARN = 'arn:aws:ecs:us-east-1:123:task/mmgis-cluster/abc'
+    let savedCluster
+
+    test.beforeEach(() => {
+        savedCluster = process.env.MMGIS_PUBLISH_ECS_CLUSTER
+        process.env.MMGIS_PUBLISH_ECS_CLUSTER = 'mmgis-cluster'
+    })
+
+    test.afterEach(() => {
+        if (savedCluster === undefined) delete process.env.MMGIS_PUBLISH_ECS_CLUSTER
+        else process.env.MMGIS_PUBLISH_ECS_CLUSTER = savedCluster
+        provision.setClients(null)
+    })
+
+    test('a task ECS still lists as anything but STOPPED is alive', async () => {
+        let input
+        provision.setClients({
+            ecs: mockClient((command) => {
+                input = command.input
+                return { tasks: [{ taskArn: TASK_ARN, lastStatus: 'RUNNING' }], failures: [] }
+            }),
+        })
+        const result = await provision.describePublishTask({ taskArn: TASK_ARN })
+        expect(result).toEqual({ state: 'alive', detail: 'RUNNING' })
+        expect(input.tasks).toEqual([TASK_ARN])
+    })
+
+    test('asks the cluster the task ARN names, not the one this environment publishes into', async () => {
+        process.env.MMGIS_PUBLISH_ECS_CLUSTER = 'other-cluster'
+        let input
+        provision.setClients({
+            ecs: mockClient((command) => {
+                input = command.input
+                return { tasks: [{ taskArn: TASK_ARN, lastStatus: 'RUNNING' }], failures: [] }
+            }),
+        })
+        await provision.describePublishTask({ taskArn: TASK_ARN })
+        expect(input.cluster).toBe('mmgis-cluster')
+    })
+
+    test('an old-format task ARN with no cluster segment falls back to the environment cluster', async () => {
+        const oldArn = 'arn:aws:ecs:us-east-1:123:task/abc'
+        let input
+        provision.setClients({
+            ecs: mockClient((command) => {
+                input = command.input
+                return { tasks: [{ taskArn: oldArn, lastStatus: 'RUNNING' }], failures: [] }
+            }),
+        })
+        await provision.describePublishTask({ taskArn: oldArn })
+        expect(input.cluster).toBe('mmgis-cluster')
+    })
+
+    test('a STOPPED task reports how it ended', async () => {
+        provision.setClients({
+            ecs: mockClient(() => ({
+                tasks: [
+                    {
+                        taskArn: TASK_ARN,
+                        lastStatus: 'STOPPED',
+                        stoppedReason: 'Essential container in task exited',
+                        stopCode: 'EssentialContainerExited',
+                        containers: [{ exitCode: 1, reason: 'OutOfMemoryError' }],
+                    },
+                ],
+                failures: [],
+            })),
+        })
+        const result = await provision.describePublishTask({ taskArn: TASK_ARN })
+        expect(result.state).toBe('stopped')
+        expect(result.detail).toBe(
+            'Essential container in task exited; EssentialContainerExited; exit code 1; OutOfMemoryError'
+        )
+    })
+
+    test('a STOPPED task with nothing to say still gets a readable detail', async () => {
+        provision.setClients({
+            ecs: mockClient(() => ({
+                tasks: [{ taskArn: TASK_ARN, lastStatus: 'STOPPED' }],
+                failures: [],
+            })),
+        })
+        const result = await provision.describePublishTask({ taskArn: TASK_ARN })
+        expect(result).toEqual({ state: 'stopped', detail: 'no stop reason reported' })
+    })
+
+    test('a task ECS has forgotten (failures[] MISSING) is missing, not an error', async () => {
+        provision.setClients({
+            ecs: mockClient(() => ({
+                tasks: [],
+                failures: [{ arn: TASK_ARN, reason: 'MISSING' }],
+            })),
+        })
+        const result = await provision.describePublishTask({ taskArn: TASK_ARN })
+        expect(result.state).toBe('missing')
+        expect(result.detail).toMatch(/no longer has a record/)
+    })
+
+    test('any other failure or SDK error is thrown, never read as a verdict', async () => {
+        provision.setClients({
+            ecs: mockClient(() => ({
+                tasks: [],
+                failures: [{ arn: TASK_ARN, reason: 'ACCESS_DENIED' }],
+            })),
+        })
+        await expect(
+            provision.describePublishTask({ taskArn: TASK_ARN })
+        ).rejects.toThrow(/ACCESS_DENIED/)
+
+        provision.setClients({
+            ecs: mockClient(() => {
+                const err = new Error('User is not authorized to perform ecs:DescribeTasks')
+                err.name = 'AccessDeniedException'
+                throw err
+            }),
+        })
+        await expect(
+            provision.describePublishTask({ taskArn: TASK_ARN })
+        ).rejects.toThrow(/not authorized/)
     })
 })
