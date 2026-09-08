@@ -91,9 +91,9 @@ The header is the mission name, then `Time cursor <time>` — the cursor as `tim
 
 Each row carries one date line, and every date line opens with one of two words. **Collected** means the data on screen was gathered inside the range that follows: the app knows the layer's coverage and, for a layer that follows the slider, has narrowed it to what the request could have returned. **Requested** means the app knows only the span it asked the server for. A bare `A → B` never appears, so a range can never be mistaken for a stronger claim than it is.
 
-A layer's **coverage** is its Data Time Extent, `dataStartTime` to `dataEndTime`, resolved for every layer in one `layers:getTemporalExtent` call. It is the only statement the app holds about when a layer's data exists.
+A layer's **coverage** is its Data Time Extent: the two config fields `time.dataStartTime` and `time.dataEndTime`, which an admin typed into the layer's Configure page, the VEDA STAC Source action copied from the STAC collection's temporal extent, or a mission blueprint shipped. Core resolves them into concrete dates for every layer in one `layers:getTemporalExtent` call, turning a `now` policy into today. That is the only statement the app holds about when a layer's data exists; nothing is read from tile responses or URL text.
 
-A layer that is **not time-enabled** shows its coverage as it is: `Collected <start> → <end>`, or `Collected from <start>` / `Collected until <end>` for a half-open extent. No coverage means no date line.
+A layer that is **not time-enabled** shows its coverage unchanged: `Collected <start> → <end>`, or `Collected from <start>` / `Collected until <end>` for a half-open extent. No coverage means no date line.
 
 For a **time-enabled layer**, `time.enabled` is the whole test. The URL is not inspected: core appends `datetime=` and `starttime=` to URLs that carry no placeholder, so a placeholder test would drop most of a mission's stack. Such a layer's cursor is its own `time.end` when `time.type` is `local`, and the Time Control's `time:getCurrent` otherwise; its window start is its own `time.start`, or `time:getStart`. The request the map made is window start to cursor. Then:
 
