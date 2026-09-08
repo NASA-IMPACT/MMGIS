@@ -29,6 +29,12 @@ const report = (action: string, result: Promise<void>): void => {
     })
 }
 
+// Module scope keeps the handler stable, so the subscription is made once.
+const zoomWhenShown = (payload?: unknown): void => {
+    const { layerName, visible } = (payload ?? {}) as { layerName?: string; visible?: boolean }
+    if (visible === true && layerName) report('zoomToLayer', zoomToLayer(layerName))
+}
+
 export function MMGISLayerManagerAdapter() {
     const [layers, setLayers] = useState<Layer[]>([])
     const [loading, setLoading] = useState(true)
@@ -56,6 +62,7 @@ export function MMGISLayerManagerAdapter() {
     }, [])
 
     useMMGISEvent('layer:visibilityChange', refresh)
+    useMMGISEvent('layer:visibilityChange', zoomWhenShown)
     useMMGISEvent('layer:refreshStatusChange', refresh)
     useMMGISEvent('layer:opacityChange', refresh)
     useMMGISEvent('layer:listedChange', refresh)
